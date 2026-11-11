@@ -1,12 +1,26 @@
-import { FileText, Inbox, Plus, RotateCcw, Search, X } from "lucide-react";
+import {
+  Brain,
+  FileText,
+  Inbox,
+  Mail,
+  Plus,
+  Puzzle,
+  RotateCcw,
+  Search,
+  Workflow,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
 import {
   closeTrash,
   newPage,
+  openCollection,
   openFind,
   openPage,
+  openSettings,
   restoreFromTrash,
+  showFlows,
   toggleInbox,
   useStore,
 } from "../store.ts";
@@ -34,6 +48,11 @@ function pathOf(p: PageInfo, pages: PageInfo[], untitled: string): string {
 export const FIND_ACTIONS: readonly { name: string; icon: typeof Plus; run: () => void }[] = [
   { name: "pages.create", icon: Plus, run: () => void newPage() },
   { name: "inbox.pending", icon: Inbox, run: () => toggleInbox(true) },
+  // What Boni remembers is a note of «Memoria», written where Juan writes it.
+  { name: "memory.save", icon: Brain, run: () => openCollection("memory") },
+  { name: "flows.save", icon: Workflow, run: () => showFlows() },
+  { name: "connectors.mail_view", icon: Mail, run: () => openSettings(true, "mail") },
+  { name: "extensions.enable", icon: Puzzle, run: () => openSettings(true, "extensions") },
 ];
 type Found = { action: (typeof FIND_ACTIONS)[number] } | { page: PageInfo };
 

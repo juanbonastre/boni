@@ -199,7 +199,7 @@ sitios o en ninguno.
 páginas. Con la lista, su plan es crear la página y añadirle una gráfica, lo mismo que haría Juan con «/» y «Gráfica»,
 con Deshacer.
 
-**Lo que hay (la 86, primera y segunda parte: 2026-11-11).** El registro es la lista (`apps/server/src/actions.ts`,
+**Lo que hay (la 86, en sus tres partes: 2026-11-11).** El registro es la lista (`apps/server/src/actions.ts`,
 `serverRegistry()`): cada acción dice su **área** (datos, páginas, Bandeja, flujos, Boni, extensiones, conectores…).
 
 - **Páginas y vistas:** `pages.create`, `pages.add_block` (texto, título, gráfica o tabla de una colección por su
@@ -224,32 +224,63 @@ con Deshacer.
 - **Flujos:** `flows.enable` (encender o apagar) es **su toque** (P21), como ejecutar uno (`flows.run`, P8); borrar
   (`flows.delete`) va con su tarjeta (P5) y `flows.test` («Probar») no cambia nada. Lo que una ejecución encendió,
   apagó o borró se guarda con ella, su turno ofrece «Deshacer» y Deshacer de la ejecución lo devuelve
-  (`AgentHost.undoFlows`), salvo lo que Juan cambió después; volver a encender pasa las mismas comprobaciones que su
+  (`AgentHost.undoKept`), salvo lo que Juan cambió después; volver a encender pasa las mismas comprobaciones que su
   interruptor. «Probar» da al modelo las decisiones y los recuentos de cada paso, nunca un texto (el correo de muestra,
   lo que un paso escribiría: `testFacts`). Un flujo no prueba
   otro: `flows.test` no es paso de «Añadir paso» y su lista de problemas lo dice (`flow-in-flow`)
   (`apps/server/src/flowActions.ts`).
+- **Vistas de una colección:** `schema.set_view` guarda una vista como pestaña de una colección, por su nombre (el
+  mismo nombre la cambia; `remove` la quita), con sus campos por nombre como `pages.set_view`; `schema.set_tree`
+  enseña u oculta sus notas en el árbol. Las mismas funciones que las rutas (`setRowUi`, `setNotesInTree`).
+- **Calendarios:** `calendars.list` (los calendarios de Boni Calendar y las colecciones con fecha que podrían serlo),
+  `calendars.add`, `calendars.split` (por una propiedad, o entero otra vez), `calendars.color`,
+  `calendars.reminders` (sus avisos propios, solo lo que se lee como avisos) y `calendars.remove` (con su tarjeta;
+  la colección y sus notas se quedan). El mismo código que las rutas de Boni Calendar (`calendarStore.ts`); un
+  calendario de una colección cerrada a los modelos no está para ellos (`apps/server/src/calendarActions.ts`). Los
+  calendarios de fuera son solo de Juan: su dirección es su clave (A-05).
+- **Conectores y extensiones:** `connectors.mail_view` dice cómo lee Boni el correo (si está activo, sus colecciones,
+  lo último que trajo, si espera una sugerencia), nunca el servidor, el usuario ni la contraseña. Lo que decide cómo
+  se lee son **su toque** (P21): `connectors.mail` (activarlo, sus colecciones; las cerradas a los modelos se quedan
+  como estaban), `connectors.mail_guide` (las palabras de su guía) y `connectors.mail_suggestion` (tomar o dejar la
+  sugerencia del revisor), y `extensions.enable` (encender o apagar una extensión instalada). Traer el correo ahora
+  (`connectors.mail_check`), releer uno para la Bandeja (`connectors.mail_propose`), releer los últimos días
+  (`connectors.mail_reread`, con su tarjeta: gasta modelos) y pedir la revisión de la guía (`connectors.mail_review`)
+  solo los pide un turno (`TURN_ONLY`): los flujos de Boni y su programador ya lo hacen. Lo que traen va a la Bandeja,
+  donde se acepta o se rechaza; no se deshace (traer antes lo que el programador traería). La cuenta, su servidor y
+  su contraseña, olvidarla y aceptar una versión de una extensión viendo su código son solo de Juan, en Ajustes
+  (A-05, P16) (`apps/server/src/connectorActions.ts`).
+- **Deshacer lo que no está en el registro de operaciones:** lo que una ejecución cambió fuera del registro (un flujo,
+  una extensión, un ajuste: la definición de un calendario, las pestañas o el árbol de una colección, los ajustes y
+  la guía del correo) se guarda con ella (`apps/server/src/runUndo.ts`), y Deshacer de la ejecución (la ruta y el
+  `undo` del MCP) lo devuelve, lo más nuevo primero y solo lo que sigue como lo dejó: si algo posterior está encima,
+  espera a que se deshaga eso.
 - **Rutas:** cada ruta de la API que cambia algo dice su acción, su Deshacer, que es solo de Juan (con su porqué) o
   que no es una acción (preguntar, confirmar, calcular). Las rutas de páginas y de la Bandeja llaman al mismo módulo
   que su acción (`pages.ts`, `data.ts`, la aceptación del agente, `switchFlow` / `trashFlow` / `tryFlow`); la prueba
-  comprueba la tabla, no la llamada. Las que aún no están en una acción van en `NOT_YET`, una lista que solo puede
-  encoger (39 hoy: calendarios, conectores, conversaciones, preferencias, extensiones, y las vistas guardadas de una
-  colección y su «Notas en el árbol», con las de las páginas).
+  comprueba la tabla, no la llamada. Ya no hay lista de pendientes: una ruta nueva que cambia algo sin decir cuál de
+  las cuatro es no pasa el CI. No son acciones las conversaciones (una nueva es donde Juan pregunta; su nombre y su
+  modelo son de la conversación misma; borrarla es solo suyo), cómo se ve Boni Calendar en cada dispositivo (de la
+  pantalla, §4.7) y las primeras pantallas del dinero (v1: sus gráficas, atajos y widgets; las gráficas de la IA van
+  en páginas).
 - **App:** cada control dice su acción (`data-boni-action`): el nombre por el que Boni sobre la pantalla lo señalará
-  (hoy solo se escribe; leerlo es de §4.7); «Buscar»
-  (`Ctrl+K`) ofrece las acciones que no tienen otro sitio («Nueva página», «Abrir la Bandeja»). Tras un turno que
-  cambió algo, y tras Deshacer, la app vuelve a leer las páginas y la Bandeja. Las acciones aún sin control
-  (`NO_CONTROL_YET`, 1: `memory.save`, que va con las preferencias) también solo pueden encoger.
+  (hoy solo se escribe; leerlo es de §4.7), también en Boni Calendar (sus calendarios, su color, «Separar por», sus
+  avisos); «Buscar» (`Ctrl+K`) ofrece las acciones que no tienen otro sitio («Nueva página», «Abrir la Bandeja»,
+  «Recordar algo», «Nuevo flujo», «Ajustes del correo», «Activar o quitar extensiones»). Tras un turno que cambió
+  algo, y tras Deshacer, la app vuelve a leer las páginas y la Bandeja. Ya no hay acciones sin control: la prueba de
+  paridad sola guarda D-41.
 - **MCP:** `pages_create`, `pages_add_block`, `pages_set_view`, `pages_update`, `rename_collection`,
-  `move_collection`, `change_property`, `move_note`, cada una con su Deshacer y solo sobre lo que está del todo
+  `move_collection`, `change_property`, `move_note`, `collection_view`, `notes_in_tree`, `calendars`,
+  `calendars_add`, `calendars_split`, `calendars_color`, `calendars_reminders`, cada una con su Deshacer (`undo`
+  devuelve también lo que guardó `runUndo.ts`) y solo sobre lo que está del todo
   abierto a los modelos (nivel «visible»), y `flows_test` (leer; un flujo que empieza por un correo se prueba en
   Boni). Su toque y
   borrar no tienen herramienta (su porqué en `ACTION_MCP`); las piezas de Boni y las de una extensión solo corren en
   un flujo (A-19).
-- **«Añadir paso»:** las acciones de su toque no son pasos (P21 las rechaza en un flujo), ni `flows.test`; el resto, sí.
+- **«Añadir paso»:** las acciones de su toque no son pasos (P21 las rechaza en un flujo), ni las que solo pide un turno
+  (`TURN_ONLY`: `flows.test` y traer, releer o revisar el correo; su lista de problemas lo dice: `flow-in-flow`); el
+  resto, sí.
 
-Queda (la 86, tercera parte): calendarios, conectores, conversaciones, preferencias y extensiones, hasta que `NOT_YET` y
-`NO_CONTROL_YET` queden vacías. Las acciones de pantalla (abrir, desplazarse, resaltar, filtrar la vista abierta) y
+Queda, fuera de F10: las acciones de pantalla (abrir, desplazarse, resaltar, filtrar la vista abierta) y
 leer `data-boni-action` van con Boni sobre la pantalla (§4.7, tras la 86). Lo que cada acción declara de sí (cómo se
 deshace, cómo se confirma, su icono) va hoy en tablas (`UNDO_ROUTES`, el efecto y `alwaysConfirm`, `FIND_ACTIONS`);
 pasarlo a la definición de la acción, cuando se use en «Añadir paso» y en los pasos de un turno.
@@ -931,7 +962,7 @@ con sus datos (`AGENTS.md`, paso 4).
 | F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» (D-50) y «Revisar la guía» (D-51) como flujos de Boni; el 2026-11-11, «Aviso del presupuesto» (D-53), con su flecha «avisa» a «Dispositivos» en el mapa, y cuándo y cuánto aprende «Revisar la guía» como ajustes del flujo, con el techo del código (D-54; «Aprender» sin flujo propio, decidido por Juan); «Conversación» queda para F11) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo, Revisar la guía y Aviso del presupuesto son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
 | F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (el de una tarjeta de la Bandeja, «Recorrido» desde la 90), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. El 2026-11-11 (la 83, en main; hecha cuando Juan la pruebe): «Dispositivos» y la flecha «avisa», lo que avisan los flujos y la conversación, salvo marcar «de fuera» por las etiquetas de cada aviso. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
 | F9 Boni sobre la pantalla (la 85; primera parte en main el 2026-11-06: el círculo, `Ctrl+E`, la ventana y la pantalla como datos, A-20; segunda, «Abrir» resaltando, I-30; tercera, el 2026-11-10: Señalar bloques, filas y tarjetas con un clic o arrastrando, las fichas, la consulta y las cifras de lo señalado y el borrador que no se pierde, A-21 e I-31; faltan señalar nodos y párrafos de una nota, `data-boni-ref` en lo que no se señala, las demás acciones de pantalla y lo demás de «Falta» en §4.7) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
-| F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta. **En main la primera parte** (registro por áreas, páginas y vistas, Bandeja, la prueba de paridad; §4.1 «Lo que hay»); **la segunda, datos y flujos** (colecciones, campos, «Mover a», corregir una propuesta, encender, borrar y probar un flujo, `flows_test` en el MCP); quedan calendarios, conectores, conversaciones, preferencias y extensiones |
+| F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta. **Hecha en sus tres partes** (§4.1 «Lo que hay»): registro por áreas, páginas y vistas, Bandeja, la prueba de paridad; datos y flujos (colecciones, campos, «Mover a», corregir una propuesta, encender, borrar y probar un flujo); calendarios, las pestañas y el árbol de una colección, el correo y las extensiones, con Deshacer de lo que queda fuera del registro (`runUndo.ts`). Ninguna ruta ni acción queda pendiente: la prueba de paridad sola guarda D-41. Las acciones de pantalla van con §4.7 |
 | F11 Páginas conectadas (la 87) | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |
 | F12 Disparadores por colección (la 88) | «Cambia una colección»; los topes; lo que puede hacer solo (decisión 5) | «Cuando se crea un movimiento de más de 100 €, avísame» llega una vez por movimiento; un ciclo no se puede encender |
 | F13 Paquetes (la 89) | Las extensiones pasan a paquetes; la Conciliación (E4b, C6) como el primer paquete nuevo | En el mapa, «De Correo» agrupa su conector, su colección y sus tres flujos; Ajustes → Extensiones ya no está |

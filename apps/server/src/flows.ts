@@ -469,10 +469,10 @@ export function flowCatalog(
     };
   return {
     // Juan's touch (accepting a card of the Bandeja) is only his, from his turn (P21): no flow step decides for him.
-    // Nor does a flow try one (`flows.test` would never end).
+    // Nor does a flow try one (`flows.test` would never end), nor ask what only his turn asks (`TURN_ONLY`).
     tools: registry
       .all()
-      .filter((t) => t.effect !== "touch" && t.name !== "flows.test")
+      .filter((t) => t.effect !== "touch" && !TURN_ONLY.has(t.name))
       .map((t) => ({
         name: t.name,
         title: t.title,
@@ -561,9 +561,23 @@ export interface FlowCheck {
  * trigger's origin and names (`checkPlan`, the run's own check), a collection the models may not see, a tool its
  * origin may not use; and, for each step, the values it may take from the trigger and the steps before it.
  */
-/** A tool that runs a flow (`flows.run`; `flows.test`, dry): never a step of another flow. */
+/**
+ * The actions only Juan's turn runs, never a step of a flow (their service refuses them in a flow's run): trying a
+ * flow (`flows.test` would never end), and asking the mail's own work sooner (bringing it, reading one again for the
+ * Bandeja, reading days again, the guide's review), which Boni's own flows and its scheduler already do, on its
+ * budget.
+ */
+export const TURN_ONLY: ReadonlySet<string> = new Set([
+  "flows.test",
+  "connectors.mail_check",
+  "connectors.mail_propose",
+  "connectors.mail_reread",
+  "connectors.mail_review",
+]);
+
+/** A tool that runs a flow (`flows.run`; `flows.test`, dry) or only a turn's: never a step of another flow. */
 const startsAFlow = (t: { name: string; effect: string } | null | undefined) =>
-  !!t && (t.effect === "flow" || t.name === "flows.test");
+  !!t && (t.effect === "flow" || TURN_ONLY.has(t.name));
 
 export function checkFlow(
   store: UserStore,

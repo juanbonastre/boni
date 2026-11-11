@@ -1,4 +1,6 @@
-import { coreTools, type ToolRegistry } from "@boni/agent";
+import { coreTools, type ToolDef, type ToolRegistry } from "@boni/agent";
+import { withCalendarActions } from "./calendarActions.ts";
+import { withConnectorActions } from "./connectorActions.ts";
 import { withDataActions } from "./dataActions.ts";
 import { withFlowActions } from "./flowActions.ts";
 import { withFunctionSteps } from "./functionSteps.ts";
@@ -17,8 +19,14 @@ import { withPieces } from "./pieces.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  return withInboxActions(
-    withFlowActions(withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools()))))),
+  return withConnectorActions(
+    withCalendarActions(
+      withInboxActions(
+        withFlowActions(
+          withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+        ),
+      ),
+    ),
   );
 }
 
@@ -60,11 +68,33 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/agent/flows/:id/enabled": ["flows.enable"],
   "DELETE /api/agent/flows/:id": ["flows.delete"],
   "POST /api/agent/flows/:id/run": ["flows.run"],
+  // Boni Calendar: a record moved, made or deleted in the grid; a calendar of the list (calendarActions.ts).
+  "POST /api/apply": ["entities.create", "entities.update", "entities.delete"],
+  "POST /api/collections/add": ["calendars.add"],
+  "POST /api/collections/remove": ["calendars.remove"],
+  "POST /api/collections/split": ["calendars.split"],
+  "POST /api/collections/color": ["calendars.color"],
+  "PUT /api/collections/reminders": ["calendars.reminders"],
+  // Boni's first screens (v1): a movement written from the money screen.
+  "POST /api/v1/actions": ["entities.create"],
+  // Ajustes «Correo» and «Extensiones» (connectorActions.ts).
+  "PUT /api/mail": ["connectors.mail"],
+  "POST /api/mail/check": ["connectors.mail_check"],
+  "POST /api/mail/reread": ["connectors.mail_reread"],
+  "PUT /api/mail/guide": ["connectors.mail_guide"],
+  "POST /api/mail/review": ["connectors.mail_review"],
+  "POST /api/mail/suggestion": ["connectors.mail_suggestion"],
+  "POST /api/mail/propose": ["connectors.mail_propose"],
+  "PUT /api/agent/extensions/:id": ["extensions.enable"],
+  // A collection's tabs and its notes in the sidebar tree (dataActions.ts).
+  "PUT /api/data/types/:type/row-ui": ["schema.set_view"],
+  "PUT /api/data/types/:type/tree": ["schema.set_tree"],
 };
 
 /** A route that is the Undo of actions (each action says how it is undone, docs/sistema.md §4.1). */
 export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = {
-  // The run's operations, and what it switched or deleted in «Flujos» (AgentHost.undoFlows).
+  // The run's operations, and what it changed beside the log (runUndo.ts, AgentHost.undoKept): what it switched or
+  // deleted in «Flujos», a calendar's definition, a collection's tabs or tree, the mail's settings and guide.
   "POST /api/agent/runs/:id/undo": [
     "pages.create",
     "pages.add_block",
@@ -82,7 +112,20 @@ export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = {
     "schema.remove_field",
     "flows.enable",
     "flows.delete",
+    "calendars.add",
+    "calendars.remove",
+    "calendars.split",
+    "calendars.color",
+    "calendars.reminders",
+    "schema.set_view",
+    "schema.set_tree",
+    "connectors.mail",
+    "connectors.mail_guide",
+    "connectors.mail_suggestion",
+    "extensions.enable",
   ],
+  // A movement of the money screen, taken back there.
+  "DELETE /api/v1/actions/:id": ["entities.create"],
   "POST /api/pages/:id/restore": ["pages.delete"],
   "POST /api/data/rows/:id/restore": ["entities.delete", "schema.delete_type", "flows.delete"],
   "POST /api/data/types/:type/fields/:field/restore": ["schema.remove_field"],
@@ -113,6 +156,15 @@ export const JUAN_ONLY: Readonly<Record<string, string>> = {
   "PUT /api/data/audit/settings": "la auditoría que vigila a la IA",
   "PUT /api/agent/decisions/:area": "lo que Boni hace solo (docs/fiabilidad.md)",
   "PUT /api/agent/learning": "lo que Boni aprende solo (D-54)",
+  "PUT /api/account/externals": "sus calendarios de fuera: su dirección es su clave (A-05)",
+  "POST /api/mail/forget": "la cuenta de correo, su servidor y su contraseña (A-05)",
+  "POST /api/agent/extensions/:id/activate":
+    "una versión de una extensión se acepta viendo su código, en Ajustes (P16)",
+  "POST /api/agent/extensions/:id/reject":
+    "una versión de una extensión se acepta viendo su código, en Ajustes (P16)",
+  "POST /api/agent/extensions/:id/revert":
+    "una versión de una extensión se acepta viendo su código, en Ajustes (P16)",
+  "DELETE /api/agent/conversations/:id": "lo que dijo en una conversación lo borra él",
 };
 
 /** A route that changes something and is no action: how an action is asked, confirmed or computed. */
@@ -131,54 +183,27 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
   "POST /api/data/blocks": "computes a page's numbers, changes nothing",
   "POST /api/data/blocks/rows": "computes the rows a number counts, changes nothing",
   "POST /api/mcp": "the MCP: one more way to the actions",
+  "POST /api/agent/conversations": "the conversation: a new one is where Juan asks",
+  "PUT /api/agent/conversations/:id":
+    "the conversation itself: its name and the model that answers in it",
+  "POST /api/collections/link-column":
+    "made with «Enlazar» when Juan accepts a card linked to an external event (inbox.accept, task 50)",
+  "PUT /api/account/prefs":
+    "how Boni Calendar shows itself on his devices (a screen's own, docs/sistema.md §4.7)",
+  // Boni's first screens (v1, the transition): their charts, shortcuts and widgets are how the money screen is laid
+  // out; the AI draws a chart on a page (pages.add_block).
+  "POST /api/v1/charts": "the money screen's layout (v1); the AI's charts go on pages",
+  "PUT /api/v1/charts/order": "the money screen's layout (v1); the AI's charts go on pages",
+  "PUT /api/v1/charts/:id": "the money screen's layout (v1); the AI's charts go on pages",
+  "DELETE /api/v1/charts/:id": "the money screen's layout (v1); the AI's charts go on pages",
+  "POST /api/v1/shortcuts": "the money screen's layout (v1)",
+  "PUT /api/v1/shortcuts/order": "the money screen's layout (v1)",
+  "PUT /api/v1/shortcuts/:id": "the money screen's layout (v1)",
+  "DELETE /api/v1/shortcuts/:id": "the money screen's layout (v1)",
+  "POST /api/v1/widgets": "the money screen's layout (v1)",
+  "PUT /api/v1/widgets/:id": "the money screen's layout (v1)",
+  "DELETE /api/v1/widgets/:id": "the money screen's layout (v1)",
 };
-
-/**
- * The routes not yet on an action (F10 goes by areas: calendars, connectors, conversations next; a collection's saved
- * views and its notes-in-tree display, with the pages' saved views). This list may only
- * shrink: a route that gets its action leaves it, and a new route never enters it (`actions.test.ts`).
- */
-export const NOT_YET: readonly string[] = [
-  "POST /api/apply",
-  "PUT /api/account/prefs",
-  "PUT /api/account/externals",
-  "PUT /api/collections/reminders",
-  "POST /api/collections/add",
-  "POST /api/collections/remove",
-  "POST /api/collections/split",
-  "POST /api/collections/color",
-  "POST /api/collections/link-column",
-  "POST /api/v1/actions",
-  "DELETE /api/v1/actions/:id",
-  "POST /api/v1/charts",
-  "PUT /api/v1/charts/order",
-  "PUT /api/v1/charts/:id",
-  "DELETE /api/v1/charts/:id",
-  "POST /api/v1/shortcuts",
-  "PUT /api/v1/shortcuts/order",
-  "PUT /api/v1/shortcuts/:id",
-  "DELETE /api/v1/shortcuts/:id",
-  "POST /api/v1/widgets",
-  "PUT /api/v1/widgets/:id",
-  "DELETE /api/v1/widgets/:id",
-  "POST /api/agent/conversations",
-  "PUT /api/agent/conversations/:id",
-  "DELETE /api/agent/conversations/:id",
-  "PUT /api/agent/extensions/:id",
-  "POST /api/agent/extensions/:id/activate",
-  "POST /api/agent/extensions/:id/reject",
-  "POST /api/agent/extensions/:id/revert",
-  "PUT /api/mail",
-  "POST /api/mail/check",
-  "POST /api/mail/reread",
-  "PUT /api/mail/guide",
-  "POST /api/mail/review",
-  "POST /api/mail/suggestion",
-  "POST /api/mail/propose",
-  "POST /api/mail/forget",
-  "PUT /api/data/types/:type/row-ui",
-  "PUT /api/data/types/:type/tree",
-];
 
 /**
  * Each action's tool in Boni's MCP, or why it has none: Juan's touch needs his card, which an assistant cannot
@@ -221,13 +246,35 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "pages.set_view": "pages_set_view",
   "pages.update": "pages_update",
   "pages.delete": { why: "deleting is Juan's touch: his card, in his app" },
+  "calendars.list": "calendars",
+  "calendars.add": "calendars_add",
+  "calendars.remove": { why: "taking a calendar away is Juan's card, in his app (P5)" },
+  "calendars.split": "calendars_split",
+  "calendars.color": "calendars_color",
+  "calendars.reminders": "calendars_reminders",
+  "schema.set_view": "collection_view",
+  "schema.set_tree": "notes_in_tree",
+  "connectors.mail_view": { why: "an assistant reads the mail Boni brought with query" },
+  "connectors.mail": { why: "Juan's touch: his card, in his app (P21)" },
+  "connectors.mail_guide": { why: "Juan's touch: his card, in his app (P21)" },
+  "connectors.mail_suggestion": { why: "Juan's touch: his card, in his app (P21)" },
+  "connectors.mail_check": {
+    why: "Boni brings the mail every few minutes; an assistant reads it with query",
+  },
+  "connectors.mail_propose": {
+    why: "Boni's own models read mail for the Bandeja, on its budget, from Juan's turn",
+  },
+  "connectors.mail_reread": {
+    why: "Boni's own models read mail again on its budget: his card, in his app",
+  },
+  "connectors.mail_review": { why: "Boni's own reviewer, on its budget, from Juan's turn" },
+  "extensions.enable": { why: "Juan's touch: his card, in his app (P21)" },
 };
 /** The areas whose actions run only inside a flow (A-19): their control is «Añadir paso», and no MCP tool. */
 export const FLOW_ONLY_AREAS: readonly string[] = ["boni", "extensions"];
-
 /**
- * The actions with no control of their own in the app yet (F10 goes by areas): this list may only shrink. A control
- * says which action it runs with `data-boni-action` (or a menu row's `boniAction`), which Boni over the screen
- * points at too.
+ * Whether an action runs only inside a flow: Boni's pieces and an extension's steps. Juan's touch on an extension
+ * (switching it on or off) is his, in Ajustes, not a step.
  */
-export const NO_CONTROL_YET: readonly string[] = ["memory.save"];
+export const flowOnly = (t: Pick<ToolDef, "area" | "effect">): boolean =>
+  FLOW_ONLY_AREAS.includes(t.area) && t.effect !== "touch";

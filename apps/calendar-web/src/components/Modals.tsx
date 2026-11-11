@@ -336,6 +336,7 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
           type="button"
           key={c}
           className={`swatch pick ${c === color ? "on" : ""}`}
+          data-boni-action="calendars.color"
           style={{ "--c": c } as React.CSSProperties}
           onClick={() => setColor(id, c)}
           aria-label={who ? `${who}: ${c}` : c}
@@ -348,6 +349,7 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
       <select
         className="select"
         aria-label={t("schema.splitBy")}
+        data-boni-action="calendars.split"
         value={splitField ?? ""}
         disabled={busy > 0}
         onChange={(e) => {
@@ -425,7 +427,12 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
       <ViewMapping calendarId={cal.id} />
       {source === "server" && (
         <div className="schema-remove">
-          <button type="button" className="btn ghost" onClick={remove}>
+          <button
+            type="button"
+            className="btn ghost"
+            data-boni-action="calendars.remove"
+            onClick={remove}
+          >
             {t("schema.removeCalendar")}
           </button>
         </div>

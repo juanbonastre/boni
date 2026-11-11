@@ -132,6 +132,7 @@ export function setEnabled(
   store.update(
     i.entity,
     { f_state: v(on ? "on" : "off") },
+    // Boni's own collection: only the system writes it; a run that switched it keeps that beside the log (runUndo.ts).
     { actor: "system", ...(device ? { device } : {}) },
   );
   return extension(store, id);

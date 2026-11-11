@@ -86,6 +86,10 @@ import { likeTitle, normalizeSubject, threadIdOf, whenOf, whenParts } from "./th
  * server's secret key; never sent back to a device) and `mail-state` (where it is: UIDVALIDITY, the last
  * UID, the collection's id, the last check and its error).
  */
+/** Where the store keeps the mailbox's settings and Juan's reading guide (sealed): a run's Undo takes them back as kept. */
+export const MAIL_SETTINGS_AT = "ext/correo/settings";
+export const MAIL_GUIDE_AT = "ext/correo/guide";
+
 export interface MailSettings {
   host: string;
   port: number;
@@ -1027,9 +1031,9 @@ export class Mails {
    * them, once, and removes them from there.
    */
   private static readonly PLACES: Record<string, { at: string; sealed: boolean }> = {
-    mail: { at: "ext/correo/settings", sealed: true },
+    mail: { at: MAIL_SETTINGS_AT, sealed: true },
     "mail-state": { at: "ext/correo/state", sealed: false },
-    "mail-guide": { at: "ext/correo/guide", sealed: true },
+    "mail-guide": { at: MAIL_GUIDE_AT, sealed: true },
   };
   private keys = new Map<number, Buffer>();
 

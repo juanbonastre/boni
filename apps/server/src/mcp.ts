@@ -28,6 +28,7 @@ import {
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { serverRegistry } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
+import { calendarDefs } from "./calendarStore.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
 import { checkFlow, flowCatalog, stepsOf, type TestView, testFacts } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
@@ -36,6 +37,7 @@ import { storeFiles } from "./money/storeFiles.ts";
 import { originFacts, pendingFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { proposals, propose } from "./proposals.ts";
+import { undoKept } from "./runUndo.ts";
 import { codeHash } from "./sandbox.ts";
 
 /**
@@ -359,7 +361,7 @@ const REF = {
 };
 
 /**
- * The actions of «Páginas y vistas» and «Datos» (F10) for an assistant: the planner's own (pageActions.ts,
+ * The actions of «Páginas y vistas», «Datos» and «Calendarios» (F10) for an assistant: the planner's own (pageActions.ts,
  * dataActions.ts), run with this call's run (`undo` takes them back) and its words as a model's. What it names (a
  * collection, its fields) is found as the models see them: a collection closed to them is not there. Deleting is
  * Juan's card, and has no tool here.
@@ -429,6 +431,56 @@ const ACTION_TOOLS: readonly {
       "Moves a note to another of Juan's collections (type: its key), keeping its id and its history.",
     required: ["id", "type"],
   },
+  {
+    name: "collection_view",
+    action: "schema.set_view",
+    description:
+      'Saves a view of a collection as one of its tabs, by its name (the same name changes that tab): view {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}]}; view null takes the tab out.',
+    required: ["type", "name"],
+    nullable: ["view"],
+  },
+  {
+    name: "notes_in_tree",
+    action: "schema.set_tree",
+    description:
+      'Shows a collection\'s notes under it in Boni\'s sidebar tree (on: "true") or only the collection ("false").',
+    required: ["type", "on"],
+  },
+  {
+    name: "calendars",
+    action: "calendars.list",
+    description:
+      "Juan's calendars in Boni Calendar (each one's id, name, collection, colour, the field it is split by, the calendar a split one is under) and the collections that could be one.",
+    required: [],
+  },
+  {
+    name: "calendars_add",
+    action: "calendars.add",
+    description:
+      "Shows one of Juan's collections with a date as a calendar in Boni Calendar (type: its key), with the first colour free.",
+    required: ["type"],
+  },
+  {
+    name: "calendars_split",
+    action: "calendars.split",
+    description:
+      "Splits a calendar (its id, as calendars gives it) into one per value of a property of its collection (field: its key), or makes it whole again (field null).",
+    required: ["calendar"],
+    nullable: ["field"],
+  },
+  {
+    name: "calendars_color",
+    action: "calendars.color",
+    description: "Changes a calendar's colour (color: #rrggbb).",
+    required: ["calendar", "color"],
+  },
+  {
+    name: "calendars_reminders",
+    action: "calendars.reminders",
+    description:
+      'Sets a calendar\'s own reminders: timed "10m, 1h, 2d" (before they start), all_day "0d@09:00, 1d@18:00"; "none" for none.',
+    required: ["calendar"],
+  },
 ];
 function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
   const def = REGISTRY.get(t.action);
@@ -437,7 +489,7 @@ function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
     Object.entries(def.args).map(([k, a]) => [
       k,
       a.role === "definition"
-        ? { type: "object" }
+        ? { type: t.nullable?.includes(k) ? ["object", "null"] : "object" }
         : a.role === "page" || t.nullable?.includes(k)
           ? { type: ["string", "null"] }
           : { type: "string" },
@@ -459,6 +511,14 @@ function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
           );
           if (t && v.level(t.id) !== "visible")
             throw new ToolFail(`${t.name} is not writable for a model`);
+        }
+        // A calendar is its collection's: writable only where the collection is wholly open (F10).
+        if (k === "calendar") {
+          const p = calendarDefs(c.store).find(
+            (d) => d.def.id === given || d.path?.some((n) => n.id === given),
+          );
+          if (p && v.level(p.type) !== "visible")
+            throw new ToolFail("that calendar is not writable for a model");
         }
         if (x.role === "entity") {
           const e = v.ro.get(given);
@@ -1379,10 +1439,11 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const run = str(a.run, "run", 80);
       if (!run.startsWith("mcp-")) throw new ToolFail("only this server's runs");
-      return {
-        undone: c.store.undoRun(run, { actor: "agent", device: c.device, by: `mcp:${c.device}` })
-          .length,
-      };
+      // Its operations, then the settings it rewrote (a calendar, a collection's tabs or tree: runUndo.ts).
+      const ops = c.store.runUndoable(run)
+        ? c.store.undoRun(run, { actor: "agent", device: c.device, by: `mcp:${c.device}` }).length
+        : 0;
+      return { undone: ops + undoKept(c.store, run) };
     },
   },
 ];

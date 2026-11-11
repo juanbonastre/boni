@@ -148,7 +148,7 @@ export function RemindersSettings() {
         const set = (patch: Partial<ReminderDefaults>) =>
           void app.setCalendarReminders(c.id, { ...d, ...patch });
         return (
-          <div key={c.id} className="reminder-cal">
+          <div key={c.id} className="reminder-cal" data-boni-action="calendars.reminders">
             <div className="reminder-cal-name">
               <Bell size={13} />
               <span className="swatch" style={{ "--c": c.color } as CSSProperties} />

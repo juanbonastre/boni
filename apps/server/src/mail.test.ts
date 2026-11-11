@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { callFn, leaf, plain, rec, ScriptedProvider } from "@boni/agent";
+import { callFn, leaf, plain, readStore, rec, ScriptedProvider } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { saveExternals } from "./account.ts";
@@ -2706,6 +2706,200 @@ describe("Boni's «Leer correo» kept current (release 34)", () => {
     expect(mine).toMatchObject({ flow: { version: 3, by: "user" } });
     h.mailFlowCurrent?.(1);
     expect(store.journal.flow(MAIL_FLOW)).toMatchObject({ version: 3, by: "user" });
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("the mail's actions in the conversation (docs/sistema.md §4.1, F10)", () => {
+  it("«lee también Gestiones, y escribe en la guía…»: Juan's touch on the mail's settings and guide, the mail brought and read again from his turn, and Undo of the run", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-actions-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const plans: unknown[] = [];
+    const lit = (v: unknown) => ({ lit: v });
+    // One scripted model: the mail's reader and chooser, and the planner (its plans, in turn).
+    const model = new ScriptedProvider("fake", (req) =>
+      /find what it asks of the user/.test(req.system)
+        ? {
+            items: [
+              { quote: "…", actor: "recipient", kind: "task", title: "Revisar el acta", due: null },
+            ],
+          }
+        : /choose the one option/.test(req.system)
+          ? { choice: "Docencia" }
+          : plans.shift(),
+    );
+    const h = new AgentHost({ dataDir: d, providers: { planner: model, reader: model } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [{ id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own }],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    const a = makeApp({
+      db: sdb,
+      key,
+      feeds: new Feeds(async () => ""),
+      guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
+      agent: h,
+      mails: m,
+    });
+    const s = serve(a, "tailnet");
+    await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
+    const post = async (t: string, path: string, body: unknown = {}) =>
+      (await (
+        await fetch(`${at}${path}`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${t}` },
+          body: JSON.stringify(body),
+        })
+      ).json()) as Record<string, unknown>;
+    type Turn = {
+      run: string;
+      status: string;
+      error: string | null;
+      pending: { kind: string; id: string; view: { rows: unknown[] } } | null;
+    };
+    const turn = async (t: string, text: string, tool: string, args: Record<string, unknown>) => {
+      plans.push({
+        version: 1,
+        steps: [
+          {
+            id: "a",
+            op: "call",
+            tool,
+            args: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, lit(v)])),
+          },
+        ],
+      });
+      return (await post(t, "/api/agent/turn", { text })) as unknown as Turn;
+    };
+    const confirm = async (t: string, x: Turn) =>
+      (await post(t, "/api/agent/confirm", {
+        run: x.run,
+        confirmation: x.pending?.id,
+      })) as unknown as Turn;
+    box.uidValidity = 21;
+    box.mails = new Map([[1, mail(41, "Acta", "¿Revisas el acta?", "jefa@example.com")]]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    const r = await fetch(`${at}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ user: "juan", password: PASSWORD, device: "portatil-ejemplo" }),
+    });
+    const t = ((await r.json()) as { token: string }).token;
+
+    // What it sees: never the server, the user or the password.
+    const seen = await turn(t, "¿cómo va el correo?", "connectors.mail_view", {});
+    expect(seen.status).toBe("done");
+    const said = await (
+      await fetch(`${at}/api/agent/runs/${seen.run}`, { headers: { authorization: `Bearer ${t}` } })
+    ).text();
+    expect(said).toContain('"error":null');
+    const view = h.tools.get("connectors.mail_view")?.run as (c: unknown, a: unknown) => unknown;
+    const facts = JSON.stringify(
+      plain(
+        (await view(
+          {
+            store: readStore(store, () => NOW),
+            service: { mails: m, account: 1, store, run: "r", inFlow: false },
+          },
+          {},
+        )) as never,
+      ),
+    );
+    expect(facts).toContain('"collections":["docencia"]');
+    for (const secret of [APP_PASSWORD, "imap.example.com", "juan@example.com"])
+      expect(said + facts).not.toContain(secret);
+
+    // His touch: the collections it reads into change only when he confirms, and Undo puts them back.
+    const more = await turn(t, "lee también Gestiones", "connectors.mail", {
+      collections: "docencia, gestiones",
+    });
+    expect(more.pending?.kind).toBe("confirm");
+    expect(m.settings(1)?.collections).toEqual(["t_docencia"]);
+    expect((await confirm(t, more)).status).toBe("done");
+    expect(m.settings(1)?.collections).toEqual(["t_docencia", "t_gestiones"]);
+    expect(m.settings(1)?.password).toBe(APP_PASSWORD);
+    expect((await post(t, `/api/agent/runs/${more.run}/undo`)).undone).toBe(1);
+    expect(m.settings(1)?.collections).toEqual(["t_docencia"]);
+
+    // The guide's words, on his touch, and back with Undo.
+    const words = await turn(
+      t,
+      "en la guía: lo de la jefa va a Docencia",
+      "connectors.mail_guide",
+      {
+        instructions: "Lo que pida la jefa va a Docencia.",
+      },
+    );
+    expect(words.pending?.kind).toBe("confirm");
+    expect((await confirm(t, words)).status).toBe("done");
+    expect(m.guide(1).instructions).toBe("Lo que pida la jefa va a Docencia.");
+    expect((await post(t, `/api/agent/runs/${words.run}/undo`)).undone).toBe(1);
+    expect(m.guide(1).instructions).toBe("");
+
+    // Brought now from his turn: its task waits in the Bandeja.
+    const brought = await turn(t, "trae el correo", "connectors.mail_check", {});
+    expect(brought.status).toBe("done");
+    expect(store.journal.proposals("pending")).toHaveLength(1);
+    // That mail read again for the Bandeja: what it asks already waits there.
+    const type = m.state(1).type as string;
+    const one = store.list(type)[0]?.entity.id as string;
+    const again = await turn(t, "propón desde este correo", "connectors.mail_propose", {
+      id: one,
+    });
+    expect(again.status).toBe("done");
+    expect(store.journal.proposals("pending")).toHaveLength(1);
+    // Days read again: his card first (P5).
+    const reread = await turn(t, "relee la última semana", "connectors.mail_reread", { days: 7 });
+    expect(reread.pending?.kind).toBe("confirm");
+    expect((await confirm(t, reread)).status).toBe("done");
+    // The reviewer, asked from his turn: off, it says so.
+    const review = await turn(t, "revisa la guía", "connectors.mail_review", {});
+    expect(review.status).not.toBe("waiting");
+    expect(m.state(1).suggestion ?? null).toBeNull();
+    // No suggestion waits: nothing to answer, and nothing changes.
+    const answer = await turn(t, "acepta la sugerencia", "connectors.mail_suggestion", {
+      accept: true,
+    });
+    if (answer.pending?.kind === "confirm") await confirm(t, answer);
+    expect(m.guide(1).rules).toEqual([]);
+
+    s.closeAllConnections();
+    await new Promise((x) => s.close(x));
+    a.close();
+    await m.close();
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

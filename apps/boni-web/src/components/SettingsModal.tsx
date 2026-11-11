@@ -800,7 +800,7 @@ function MailSettings() {
       <p className="muted small setting-note">{t("mail.help")}</p>
       {mail && !editing ? (
         <>
-          <div className="setting">
+          <div className="setting" data-boni-action="connectors.mail_view">
             <div className="setting-label">
               <span>{t("mail.connectedAs", { user: mail.user })}</span>
               <span className="muted small">
@@ -815,6 +815,7 @@ function MailSettings() {
               <button
                 type="button"
                 className="btn"
+                data-boni-action="connectors.mail_check"
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true);
@@ -849,6 +850,7 @@ function MailSettings() {
                         type="checkbox"
                         className="switch"
                         aria-label={v.name}
+                        data-boni-action="connectors.mail"
                         checked={mail.collections.includes(v.id)}
                         onChange={(e) => void toggle(v.id, e.target.checked)}
                       />
@@ -885,6 +887,7 @@ function MailSettings() {
                 <button
                   type="button"
                   className="btn"
+                  data-boni-action="connectors.mail_reread"
                   disabled={rereading}
                   onClick={async () => {
                     setRereading(true);
@@ -1051,7 +1054,12 @@ function MailGuideSettings({
     >
       <p className="muted small setting-note">{t("mail.guide.help")}</p>
       {suggestion && (
-        <div className="suggestion" role="group" aria-label={t("mail.suggestion.title")}>
+        <div
+          className="suggestion"
+          role="group"
+          aria-label={t("mail.suggestion.title")}
+          data-boni-action="connectors.mail_suggestion"
+        >
           <div className="suggestion-head">
             <strong>{t("mail.suggestion.title")}</strong>
             <span className="muted small">
@@ -1143,6 +1151,7 @@ function MailGuideSettings({
           <button
             type="button"
             className="btn"
+            data-boni-action="connectors.mail_guide"
             disabled={text.trim() === guide.instructions.trim()}
             onClick={() => void save({ instructions: text }, "mail.guide.saved")}
           >
@@ -1249,6 +1258,7 @@ function MailGuideSettings({
           <button
             type="button"
             className="btn"
+            data-boni-action="connectors.mail_review"
             disabled={reviewing}
             onClick={async () => {
               setReviewing(true);
@@ -1459,6 +1469,7 @@ function Extensions() {
                 type="checkbox"
                 className="switch"
                 aria-label={x.name}
+                data-boni-action="extensions.enable"
                 checked={x.enabled}
                 onChange={(e) => void toggle(x.id, e.target.checked)}
               />

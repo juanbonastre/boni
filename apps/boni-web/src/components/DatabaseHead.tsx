@@ -113,7 +113,12 @@ export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Lay
   const [renaming, setRenaming] = useState<string | null>(null);
   const iconOf = (l: DatabaseView["layout"]) => layouts.find((x) => x.id === l)?.icon;
   return (
-    <div className="db-views" role="tablist" aria-label={t("db.views")}>
+    <div
+      className="db-views"
+      role="tablist"
+      aria-label={t("db.views")}
+      data-boni-action="schema.set_view"
+    >
       {views.list.map((v) =>
         renaming === v.id ? (
           <span key={v.id} className="db-view-name">

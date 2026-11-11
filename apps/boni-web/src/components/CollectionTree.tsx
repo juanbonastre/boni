@@ -296,6 +296,7 @@ export function EyeToggle({ c, always }: { c: TreeCollection; always?: boolean }
       title={label}
       aria-label={`${label}: ${c.name}`}
       aria-pressed={c.notes}
+      data-boni-action="schema.set_tree"
       onClick={() => void setNotesInTree(c.id, !c.notes)}
     >
       {c.notes ? <Eye size={13} strokeWidth={1.8} /> : <EyeOff size={13} strokeWidth={1.8} />}
