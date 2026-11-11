@@ -320,4 +320,50 @@ describe("flows (docs/flujos.md, F1)", () => {
     expect(j.callsDone("notify", { run: "f" })).toEqual([]);
     expect(j.callsDone("write", { from: 0, to: 10_000 })).toEqual([{ run: "h", step: "w", n: 1 }]);
   });
+
+  it("keeps one draft per flow beside its versions, read back as written, replaced and dropped (task 80)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-journal-"));
+    const store = openUserStore(join(dir, "user.db"));
+    cleanups.push(() => {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const j = store.journal;
+    expect(j.flowDraft("resumen")).toBeNull();
+    const plan = { version: 1, steps: [{ id: "a", op: "reply" }] };
+    j.saveFlowDraft({
+      id: "resumen",
+      base: 1,
+      trigger: { manual: true },
+      plan,
+      device: "d1",
+      updated: 1000,
+    });
+    expect(j.flowDraft("resumen")).toEqual({
+      id: "resumen",
+      base: 1,
+      trigger: { manual: true },
+      plan,
+      device: "d1",
+      updated: 1000,
+    });
+    j.saveFlowDraft({
+      id: "resumen",
+      base: 2,
+      trigger: {},
+      plan: { steps: [] },
+      device: null,
+      updated: 2000,
+    });
+    expect(j.flowDraft("resumen")).toMatchObject({
+      base: 2,
+      plan: { steps: [] },
+      device: null,
+      updated: 2000,
+    });
+    // A draft is no version: the list of flows does not see it.
+    expect(j.flows()).toEqual([]);
+    j.deleteFlowDraft("resumen");
+    expect(j.flowDraft("resumen")).toBeNull();
+  });
 });

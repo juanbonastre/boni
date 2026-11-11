@@ -21,7 +21,7 @@ import {
   useViews,
 } from "../store.ts";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
-import { FlowEditor } from "./FlowEditor.tsx";
+import { draftKept, FlowEditor } from "./FlowEditor.tsx";
 
 const FLOWS = SYS.flows.id;
 const TABLE: DatabaseView = { layout: "table", hide: [SYS.flows.version] };
@@ -79,14 +79,17 @@ function FlowPage({ id }: { id: string }) {
   useEffect(() => {
     let gone = false;
     setError(null);
-    agentApi.flowDetail(id, days).then(
-      (d) => {
-        if (gone) return;
-        if (d) setDetail(d);
-        else setError(t("flows.gone"));
-      },
-      (e) => !gone && setError(errorText(t, e)),
-    );
+    // Asked once what its editor left pending is kept (task 80), so it opens with it.
+    draftKept(id)
+      .then(() => agentApi.flowDetail(id, days))
+      .then(
+        (d) => {
+          if (gone) return;
+          if (d) setDetail(d);
+          else setError(t("flows.gone"));
+        },
+        (e) => !gone && setError(errorText(t, e)),
+      );
     return () => {
       gone = true;
     };

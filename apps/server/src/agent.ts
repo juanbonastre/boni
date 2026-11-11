@@ -40,6 +40,7 @@ import {
   flowProposalView,
   flowsView,
   flowView,
+  keepDraft,
   MAIL_FLOW,
   originOf,
   revertFlow,
@@ -663,6 +664,28 @@ async function serveFlows(
         const status = r.error === "not-found" ? 404 : r.error === "conflict" ? 409 : 400;
         return send(res, status, { error: r.error, problems: check.problems });
       }
+      // «Guardar» made the draft a version: there is nothing left to keep (task 80).
+      store.journal.deleteFlowDraft(id);
+      return send(res, 200, detail(id));
+    }
+    // The editor keeps what Juan changes as the flow's draft, as he changes it (docs/flujos.md §6, decision 6): no
+    // version, nothing runs it; the answer is only the draft, so a keystroke costs no drawing of the flow.
+    case "PUT /api/agent/flows/:id/draft": {
+      const b = (await bodyOf(req)) as { base?: unknown; trigger?: unknown; plan?: unknown };
+      const r = keepDraft(
+        store,
+        id,
+        { base: b.base, trigger: b.trigger, plan: b.plan },
+        who.device,
+        Date.now(),
+      );
+      if ("error" in r) return send(res, r.error === "not-found" ? 404 : 400, { error: r.error });
+      return send(res, 200, r);
+    }
+    // «Descartar»: the draft dropped, the flow as its last version.
+    case "DELETE /api/agent/flows/:id/draft": {
+      if (!store.journal.flow(id)) return send(res, 404, { error: "not-found" });
+      store.journal.deleteFlowDraft(id);
       return send(res, 200, detail(id));
     }
     case "PUT /api/agent/flows/:id/enabled": {

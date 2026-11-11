@@ -89,4 +89,33 @@ describe("principles (docs/principios.md)", () => {
     ])
       expect(existsSync(join(root, ...gone)), gone.join("/")).toBe(false);
   });
+
+  it("D-55: a flow's draft never runs: only the flow editor's functions in flows.ts read it, only the journal touches its table", () => {
+    const root = join(import.meta.dirname, "..", "..", "..");
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.name === "node_modules"
+          ? []
+          : e.isDirectory()
+            ? sources(join(dir, e.name))
+            : /\.(ts|tsx)$/.test(e.name) && !/\.test\.|test-util/.test(e.name)
+              ? [join(dir, e.name)]
+              : [],
+      );
+    const files = [
+      join(root, "apps", "server", "src"),
+      ...readdirSync(join(root, "packages")).map((p) => join(root, "packages", p, "src")),
+    ]
+      .filter((d) => existsSync(d))
+      .flatMap(sources);
+    const where = (re: RegExp) =>
+      files.filter((f) => re.test(readFileSync(f, "utf8"))).map((f) => f.slice(root.length + 1));
+    // The scheduler, a run, the mail, «Probar», the MCP and the map read `journal.flow` (the saved version); the
+    // draft is read only to show it in the editor (`flowView`) and to keep or move it (`keepDraft`, `renameFlow`).
+    expect(where(/\.flowDraft\(/)).toEqual(["apps/server/src/flows.ts"]);
+    expect(where(/\bflow_drafts\b/).sort()).toEqual([
+      "packages/store/src/journal.ts",
+      "packages/store/src/migrations.ts",
+    ]);
+  });
 });

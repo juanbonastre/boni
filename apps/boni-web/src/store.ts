@@ -3590,6 +3590,15 @@ export async function editCell(type: string, id: string, field: string, value: D
   }
 }
 
+/**
+ * A flow's new name from its editor (task 80): the same change as its «Nombre» in «Flujos» (a version with the
+ * same steps), so the list says it at once, its rows here too.
+ */
+export async function renameFlow(id: string, name: string): Promise<void> {
+  const saved = await agent.updateRow(SYS.flows.row + id, { [SYS.flows.title]: name });
+  if (saved) putRow(SYS.flows.id, saved);
+}
+
 /** The file a row holds (a file block names the row): its bytes' hash and its name; null when it is gone. */
 export async function fileOfRow(id: string): Promise<{ sha: string; name: string } | null> {
   const row = await agent.dataRow(id).catch(() => null);

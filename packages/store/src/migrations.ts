@@ -319,6 +319,16 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 20: each step's calls counted from an index, never from the rows with their texts (A-15): the map and a flow's
   // page ask it on every request.
   "CREATE INDEX model_calls_step ON model_calls(run, step, usage) WHERE step IS NOT NULL",
+  // 21: a flow's draft (docs/flujos.md §6, decision 6; task 80): what the editor changed since the version it started
+  // from (`base`), one per flow, kept until «Guardar» makes it a version or «Descartar» drops it. Nothing runs it.
+  `CREATE TABLE flow_drafts (
+     id TEXT PRIMARY KEY,
+     base INTEGER NOT NULL,
+     trigger TEXT NOT NULL,
+     plan TEXT NOT NULL,
+     device TEXT,
+     updated INTEGER NOT NULL
+   )`,
 ];
 
 export function migrate(db: DatabaseSync): void {
