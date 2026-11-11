@@ -482,6 +482,11 @@ export interface RunDetail {
     type: string;
     fields?: { name: string; value: string }[];
   } | null;
+  /**
+   * What it told the account's devices, by the step that did: the notices that left, as the server counts them (a
+   * «Probar» told none, nor did an «Avisar» its tool refused). Never worked out here from the steps' decisions.
+   */
+  told: { step: string; n: number }[];
   /** The node of the map it belongs to (`flow:…`, `boni:chat`, `boni:review`, `boni:inbox`); null: none. */
   owner: string | null;
   /** Its flow as it ran, when that is not the flow's latest version: the map draws the run over these boxes. */
@@ -804,6 +809,8 @@ export interface MapNode extends MapNodeLike {
   plan: FlowPlan | null;
   steps: FlowStepNode[];
   pack: string | null;
+  /** The devices: how many notices they were told in the period. */
+  notices: number;
 }
 export interface MapEdge extends MapEdgeLike {
   steps: string[];
@@ -813,7 +820,15 @@ export interface MapView {
   nodes: MapNode[];
   edges: MapEdge[];
 }
-const MAP_KINDS: readonly MapKind[] = ["connector", "collection", "flow", "boni", "actor", "page"];
+const MAP_KINDS: readonly MapKind[] = [
+  "connector",
+  "collection",
+  "flow",
+  "boni",
+  "actor",
+  "page",
+  "device",
+];
 const MAP_EDGES: readonly MapEdgeKind[] = [
   "brings",
   "starts",
@@ -825,8 +840,15 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "learns",
   "improves",
   "shows",
+  "tells",
 ];
-const MAP_ID = /^(conn|col|flow|boni|actor|page):[A-Za-z0-9_.:@-]{1,120}$/;
+const MAP_ID = /^(conn|col|flow|boni|actor|page|dev):[A-Za-z0-9_.:@-]{1,120}$/;
+/** The account's devices on the map (the server's `DEVICES`): where what Boni tells arrives. */
+export const MAP_DEVICES = "dev:all";
+/** The devices' node as a map has it, for one whose period has no notice (a run that told before it goes to them). */
+export const mapDevices = (): MapNode | null =>
+  parseMap({ nodes: [{ id: MAP_DEVICES, kind: "device", code: "devices" }], edges: [] })
+    ?.nodes[0] ?? null;
 /** Name and value pairs, as text (a record's fields, a proposal's rows). */
 function namedValues(v: unknown): { name: string; value: string }[] {
   return Array.isArray(v)
@@ -889,6 +911,7 @@ export function parseMap(b: unknown): MapView | null {
         ? n.steps.map(parseFlowNode).filter((x): x is FlowStepNode => x !== null)
         : [],
       pack: strOf(n.pack, 40),
+      notices: numOf(n.notices),
     });
   }
   const ids = new Set(nodes.map((n) => n.id));
@@ -3295,6 +3318,9 @@ export class AgentApi {
             fields: namedValues(b.input.fields),
           }
         : null,
+      told: list(b.told, (x) => ({ step: str(x.step, 40) ?? "", n: num(x.n) })).filter(
+        (x) => x.step && x.n > 0,
+      ),
       owner: typeof b.owner === "string" && MAP_ID.test(b.owner) ? b.owner : null,
       drawn:
         isObj(b.drawn) && isObj(b.drawn.plan) && Array.isArray(b.drawn.steps)

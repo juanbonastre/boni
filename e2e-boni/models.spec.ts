@@ -28,6 +28,7 @@ import {
   MAP_BUDGET,
   MAP_CHOSEN,
   MAP_FETCH,
+  MAP_TELLS,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -38,11 +39,18 @@ import {
   ORIGIN_USER,
   RUN_BOOK,
   RUN_BUDGET,
+  RUN_BUDGET_TEST,
+  RUN_DAILY,
+  RUN_DAILY_TEST,
   RUN_MAIL,
   RUN_MAIL_LANES,
   RUN_MAIL_OLD,
+  RUN_TURN_TOLD,
   RUNS,
   RUNS_BUDGET,
+  RUNS_DAILY,
+  RUNS_DAILY_TEST,
+  RUNS_TURN_TOLD,
 } from "./agent-scenarios.ts";
 import { openApp, openInTree, recorded, TEMPLATE } from "./fixtures.ts";
 
@@ -1758,7 +1766,7 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
   await expect(page.getByRole("button", { name: "Probar", exact: true })).toBeDisabled();
 });
 
-test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger to «Avisar»; turned off, Ajustes → Modelos says the notice is off (D-53)", async ({
+test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger through «Avisar» to «Dispositivos»; the whole map draws what it tells («avisa»); turned off, Ajustes → Modelos says so (D-53)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1785,6 +1793,10 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(page.locator(".mp-centre").first()).toContainText("Aviso del presupuesto");
   await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
   const stage = page.locator(".mp-stage");
+  const card = (name: string) =>
+    stage.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
   await expect(stage.locator(".mp-trig .mp-name")).toHaveText("El gasto del mes pasa del aviso");
   await expect(stage.locator(".mp-trig")).toContainText("Gasto del mes · Presupuesto");
   await expect(stage.locator(".mp-trig")).toHaveClass(/run-ran/);
@@ -1793,29 +1805,65 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(steps.first()).toContainText("Avisar");
   await expect(steps.first()).toContainText("Hecho");
   await expect(steps.first()).toHaveClass(/run-ran/);
+  // What it told went on to the devices: the way ends there, by the arrow that leaves its «Avisar».
+  await expect(card("Dispositivos")).toHaveClass(/way/);
+  await expect(card("Dispositivos")).toContainText("1 aviso");
+  const tells = stage.locator(
+    '[data-id="step:flow:aviso-presupuesto:notify>dev:all>tells"] path.mp-edge',
+  );
+  await expect(tells).toHaveClass(/way/);
+  await expect(stage.locator(".mp-edge-label", { hasText: "avisa · 1" })).toBeVisible();
   await expect(page.locator(".mp-way ol").first().locator(":scope > li")).toHaveText([
     /^Aviso del presupuesto \(v1\) · 21 oct/,
+    "Avisó a tus dispositivos",
   ]);
   await page.screenshot({ path: `${SHOTS}/flows-map-budget.png` });
-  // Without the run, the flow stays in the centre, unfolded.
+  // Without the run and without a centre, the whole map draws it: it is joined to the devices by what it tells.
   await page.getByRole("button", { name: "Quitar la ejecución" }).click();
+  await page.getByRole("button", { name: "Quitar del centro" }).click();
   const frame = stage.locator(".mp-frame.flow", { hasText: "Aviso del presupuesto" });
   await expect(frame).toBeVisible();
-  // Alone (it reads and writes no collection), the whole map does not draw it (§4.4: «lo que no es de nadie no
-  // sale»): it is found by its name, and its panel says whose it is, what starts it and its run.
+  await expect(card("Dispositivos")).toBeVisible();
+  await expect(card("Dispositivos")).not.toHaveClass(/way/);
+  await expect(card("Leer correo")).toBeVisible();
+  // The devices' panel: what they are, the period's notices, and who tells them.
+  await card("Dispositivos").locator(".mp-name").click();
+  const panel = page.locator(".mp-panel");
+  await expect(panel.locator("h3")).toHaveText("Dispositivos");
+  await expect(panel.locator(".mp-panel-title")).toContainText("Avisos");
+  await expect(panel).toContainText("1 aviso");
+  await expect(panel.getByRole("region", { name: "Entra" })).toContainText(
+    "Aviso del presupuesto · avisa · 1",
+  );
+  await expect(panel.getByRole("region", { name: "Sale" })).toHaveCount(0);
+  // In the centre, one arrow back: who tells.
+  await panel.getByRole("button", { name: "Poner en el centro" }).click();
+  await expect(page.locator(".mp-centre")).toContainText("Dispositivos");
+  await expect(frame).toBeVisible();
+  await expect(card("Leer correo")).toHaveCount(0);
   await page.getByRole("button", { name: "Quitar del centro" }).click();
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  // Telling changes no data: «Solo lo que escribe» takes the arrow away, and with it what it alone joined.
+  await page.getByRole("button", { name: "Filtros" }).click();
+  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).check();
+  await expect(card("Dispositivos")).toHaveCount(0);
   await expect(frame).toHaveCount(0);
-  await expect(stage.locator(".mp-card", { hasText: "Aviso del presupuesto" })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).uncheck();
+  await page.keyboard.press("Escape");
+  await expect(card("Dispositivos")).toBeVisible();
+  // The flow is found by its name, and its panel says whose it is, what starts it, its run and what it tells.
   const find = page.getByRole("combobox", { name: "Buscar en el mapa" });
   await find.click();
   await page.keyboard.type("Aviso del pres", { delay: 15 });
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Aviso del presupuesto");
-  const panel = page.locator(".mp-panel");
   await expect(panel.locator("h3")).toHaveText("Aviso del presupuesto");
   for (const text of ["Flujo · De Boni", "El gasto del mes pasa del aviso", "1 ejecución"])
     await expect(panel).toContainText(text);
-  // «Agrupar por disparador» names what starts it.
+  await expect(panel.getByRole("region", { name: "Sale" })).toContainText(
+    "Dispositivos · avisa · 1",
+  );
+  // «Agrupar por disparador» names what starts it; the devices are in no frame.
   await page.getByRole("combobox", { name: "Agrupar" }).selectOption("trigger");
   await expect(
     stage.locator(".mp-frame.group", { hasText: "El gasto del mes pasa del aviso" }),
@@ -1825,6 +1873,194 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(page.locator(".models-spend")).toContainText(
     "Presupuesto: 10,00 € al mes, aviso apagado",
   );
+});
+
+// What a run told is what the server says it told, never what its steps' decisions suggest: a «Probar» logs its
+// «Avisar» as allowed and tells nothing.
+for (const [title, run, boxes] of [
+  [
+    "a run that told, drawn in the conversation: its way ends in «Dispositivos», as on the map (I-29)",
+    RUN_BUDGET,
+    ["Aviso del presupuesto", "Dispositivos"],
+  ],
+  [
+    "a «Probar» drawn in the conversation told nothing: its way does not go to «Dispositivos»",
+    RUN_BUDGET_TEST,
+    ["Aviso del presupuesto"],
+  ],
+] as const)
+  test(title, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, "/?still", {
+      agent: {
+        "POST api/agent/turn": [ORIGIN_TURN],
+        "GET api/agent/runs/:id": [run],
+        "GET api/agent/runs": [RUNS_BUDGET],
+        "GET api/agent/map": [MAP_BUDGET],
+        "GET api/agent/models": [MODELS],
+        "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+      },
+    });
+    await page.getByRole("button", { name: /^Conversación/ }).click();
+    const box = page.getByRole("textbox", { name: /Escribe/ });
+    await box.click();
+    await page.keyboard.type("¿Qué fue el aviso del presupuesto?", { delay: 5 });
+    await page.keyboard.press("Enter");
+    const way = page.getByRole("group", { name: "El recorrido de la ejecución" });
+    await expect(way.locator(".run-path-box strong")).toHaveText([...boxes]);
+  });
+
+/** The Registro's first run, its «Recorrido»: the map with that run on it. */
+const openWay = async (page: Page) => {
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  await page.locator(".log-list li").first().locator(".log-head").click();
+  await page.locator(".log-detail").getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+};
+const mapCard = (page: Page, name: string) =>
+  page.locator(".mp-stage .mp-card", {
+    has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+  });
+const tellsFrom = (page: Page, from: string) =>
+  page.locator(`.mp-stage [data-id="${from}>dev:all>tells"] path.mp-edge`);
+
+test("who tells, on the whole map: Boni's flow, a flow of the user's that has told nothing yet (its arrow with no number) and the conversation; «Dispositivos» says the period's notices (A-16)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/map": [MAP_TELLS],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.getByRole("tab", { name: "Mapa" }).click();
+  for (const name of ["Aviso del presupuesto", "Resumen diario", "Conversación"])
+    await expect(mapCard(page, name), name).toBeVisible();
+  await expect(mapCard(page, "Dispositivos")).toContainText("3 avisos");
+  for (const from of ["flow:aviso-presupuesto", "flow:resumen-diario-a1", "boni:chat"])
+    await expect(tellsFrom(page, from), from).toBeAttached();
+  // The devices chosen, every arrow into them says its words (task 90: said when lit, whatever they cover): «avisa» with its
+  // notices of the period; the flow that has told nothing yet, «avisa» alone.
+  await mapCard(page, "Dispositivos").locator(".mp-name").click();
+  const words = page.locator(".mp-stage .mp-edge-label");
+  await expect(words).toHaveCount(3);
+  for (const w of [/^avisa · 1$/, /^avisa · 2$/, /^avisa$/])
+    await expect(words.filter({ hasText: w }), String(w)).toHaveCount(1);
+  // Their panel: who tells them, each with its number.
+  const panel = page.locator(".mp-panel");
+  await expect(panel).toContainText("3 avisos");
+  await expect(panel.getByRole("region", { name: "Entra" }).locator("li")).toHaveText([
+    "Aviso del presupuesto · avisa · 1",
+    "Resumen diario · avisa",
+    "Conversación · avisa · 2",
+  ]);
+  // Unfolded, the arrow leaves from each «Avisar» of the flow.
+  await panel.getByRole("button", { name: "Resumen diario" }).click();
+  await expect(panel.locator("h3")).toHaveText("Resumen diario");
+  await panel.getByRole("button", { name: "Ver los pasos" }).click();
+  for (const step of ["a", "b"])
+    await expect(tellsFrom(page, `step:flow:resumen-diario-a1:${step}`)).toBeAttached();
+  await expect(tellsFrom(page, "flow:resumen-diario-a1")).toHaveCount(0);
+});
+
+test("a run that told through one «Avisar» and skipped the other lights only the arrow of the one that told", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS_DAILY],
+      "GET api/agent/runs/:id": [RUN_DAILY],
+      "GET api/agent/map": [MAP_TELLS],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+    },
+  });
+  await openWay(page);
+  await expect(mapCard(page, "Dispositivos")).toHaveClass(/way/);
+  await expect(tellsFrom(page, "step:flow:resumen-diario-a1:a")).toHaveClass(/way/);
+  await expect(tellsFrom(page, "step:flow:resumen-diario-a1:b")).not.toHaveClass(/way/);
+  // The lit arrow says the words; the quiet one says nothing.
+  await expect(page.locator(".mp-stage .mp-edge-label.tells")).toHaveText(["avisa"]);
+  await expect(page.locator(".mp-way ol").first().locator(":scope > li")).toHaveText([
+    /^Resumen diario \(v1\)/,
+    "Avisó a tus dispositivos",
+  ]);
+});
+
+test("the «Recorrido» of a «Probar» tells nothing: its «Avisar» are logged as allowed, and its way does not go to «Dispositivos»", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS_DAILY_TEST],
+      "GET api/agent/runs/:id": [RUN_DAILY_TEST],
+      "GET api/agent/map": [MAP_TELLS],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  await expect(page.locator(".log-list li").first().locator(".log-head")).toContainText(
+    "Prueba de «Resumen diario»",
+  );
+  await page.locator(".log-list li").first().locator(".log-head").click();
+  await page.locator(".log-detail").getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  // Both «Avisar» ran in the try (it says what each would tell).
+  const steps = page.locator(".mp-stage .mp-step:not(.mp-trig)");
+  await expect(steps).toHaveCount(3);
+  for (const i of [1, 2]) await expect(steps.nth(i)).toHaveClass(/run-ran/);
+  // Nothing was told: the devices are not on its way, no arrow to them is lit, and its story does not say it told.
+  await expect(mapCard(page, "Dispositivos")).not.toHaveClass(/way/);
+  for (const step of ["a", "b"])
+    await expect(tellsFrom(page, `step:flow:resumen-diario-a1:${step}`)).not.toHaveClass(/way/);
+  await expect(page.locator(".mp-way ol").first().locator(":scope > li")).toHaveText([
+    /^Resumen diario \(v1\)/,
+  ]);
+  await expect(page.locator(".mp-way")).not.toContainText("Avisó");
+});
+
+test("a turn of the conversation that told before the map's period still ends in «Dispositivos»: the arrow drawn for it, with no number", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // The period's map has no notice at all: neither the devices nor an arrow to them.
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS_TURN_TOLD],
+      "GET api/agent/runs/:id": [RUN_TURN_TOLD],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await openWay(page);
+  await expect(mapCard(page, "Conversación")).toHaveClass(/way/);
+  await expect(mapCard(page, "Dispositivos")).toHaveClass(/way/);
+  await expect(tellsFrom(page, "boni:chat")).toHaveClass(/way/);
+  await expect(page.locator(".mp-stage .mp-edge-label.tells")).toHaveText(["avisa"]);
+  await expect(page.locator(".mp-way")).toContainText("Avisó a tus dispositivos");
+  // The devices' card opens its panel, with who told them: this run's conversation.
+  await mapCard(page, "Dispositivos").locator(".mp-name").click();
+  const panel = page.locator(".mp-panel");
+  await expect(panel.locator("h3")).toHaveText("Dispositivos");
+  await expect(panel.getByRole("region", { name: "Entra" }).locator("li")).toHaveText([
+    "Conversación · avisa",
+  ]);
+  // Without the run, the period's map is as it was: nothing told, no devices, and nothing chosen (the arrows of the
+  // rest are not left quiet for a box that is gone).
+  await page.getByRole("button", { name: "Quitar la ejecución" }).click();
+  await expect(mapCard(page, "Dispositivos")).toHaveCount(0);
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator(".mp-stage path.mp-edge").first()).toBeAttached();
+  await expect(page.locator(".mp-stage path.mp-edge.dim")).toHaveCount(0);
 });
 
 test("his own version of «Aviso del presupuesto», whose text takes neither figure: its trigger still gives both, on its card and in its panel (D-53)", async ({

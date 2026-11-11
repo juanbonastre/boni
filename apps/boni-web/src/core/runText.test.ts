@@ -45,6 +45,7 @@ const run = (steps: RunStep[]): RunDetail => ({
   read: [{ collection: "Correos", type: "t_01m6correo", titles: ["Informe mensual"], n: 3 }],
   changes: [],
   proposals: [],
+  told: [],
   input: null,
   owner: "boni:chat",
   decisions: [],

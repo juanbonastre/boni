@@ -3,9 +3,11 @@
  * graph computed from what is saved and what happened, never declared by hand (it replaces the «Modelos» canvas of
  * task 59b and its hand-made `pipeline.ts`). The nodes: the mail connector, the collections, the flows (each with its
  * steps, for the app to unfold), the Bandeja (what is proposed waits there until it is accepted), Boni's own work
- * that is not a flow yet (the conversation, the guide's reviewer), the user, the assistants by the MCP and the pages.
- * The arrows: what the flows' saved plans name (a step's collection is a literal: D-48), what the journal says the
- * runs proposed, what was accepted and what they changed, and what the audit says each one wrote in the period. Each
+ * that is not a flow yet (the conversation, the guide's reviewer), the user, the assistants by the MCP, the pages and
+ * the account's devices (where what Boni tells arrives).
+ * The arrows: what the flows' saved plans name (a step's collection is a literal: D-48; an «Avisar» tells the
+ * devices), what the journal says the runs proposed, told, what was accepted and what they changed, and what the
+ * audit says each one wrote in the period. Each
  * node and arrow carries its numbers of the last days; the app words Boni's own nodes and the arrows (i18n), a
  * collection, a flow and a page by their own names.
  */
@@ -26,7 +28,7 @@ import { timed } from "./perf.ts";
 import { whatOf } from "./runInfo.ts";
 import { recentActivity } from "./systemCollections.ts";
 
-export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page";
+export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page" | "device";
 /** What an arrow says: data flows along it, from → to. */
 export type MapEdgeKind =
   | "brings"
@@ -42,7 +44,9 @@ export type MapEdgeKind =
   /** What the guide's reviewer learns from: the decisions taken in the Bandeja. */
   | "learns"
   | "improves"
-  | "shows";
+  | "shows"
+  /** Out to the account's devices: what a flow's «Avisar» or a turn of the conversation told them. */
+  | "tells";
 
 export interface MapNode {
   id: string;
@@ -51,7 +55,7 @@ export interface MapNode {
    * `code`). */
   name: string | null;
   /** Boni's own nodes by what they are: `mail` (connector), `chat`, `review` and `inbox` (Boni's), `user`, `import`,
-   * `assistant` (actors). */
+   * `assistant` (actors), `devices` (the account's devices). */
   code: string | null;
   icon?: string;
   /** In the period: runs (a flow, Boni's work), when the last was, model calls and their cost (US dollars). */
@@ -84,6 +88,8 @@ export interface MapNode {
   steps?: FlowNode[];
   /** What it came with (the package, docs/sistema.md §4.5): `correo` for the mail's connector, collection and flows. */
   pack?: string | null;
+  /** The devices: how many notices they were told in the period. */
+  notices?: number;
 }
 
 export interface MapEdge {
@@ -116,6 +122,11 @@ export interface MapView {
 const DAY = 24 * 60 * 60_000;
 /** The Bandeja's node. */
 const INBOX = "boni:inbox";
+/** The account's devices: where what Boni tells arrives (its phone and its computers, A-17). */
+const DEVICES = "dev:all";
+/** The effect of a tool that tells the devices, and a step that does: the tool «Avisar». */
+const TELLS = "notify";
+const tellsStep = (s: Record<string, unknown>) => s.op === "call" && s.tool === "notify";
 const READS = new Set(["entities.query", "entities.search", "entities.aggregate", "entities.get"]);
 const WRITES = new Set(["entities.create", "entities.update", "entities.delete"]);
 /** The role a reader's model plays (packages/agent models.ts). */
@@ -205,6 +216,14 @@ function makeMap(
     }
   };
 
+  /** Something told the devices: its arrow, with how many notices in the period; the devices' node with their sum. */
+  let notices = 0;
+  const tells = (who: string, n: number, steps: string[] | null, outside: boolean) => {
+    notices += n;
+    node({ id: DEVICES, kind: "device", name: null, code: "devices", notices });
+    edge({ from: who, to: DEVICES, kind: "tells", n, ...(steps ? { steps } : {}), outside });
+  };
+
   // The collections: every one of the user's, each with its rows and where it is.
   const mine = userTypes(store);
   const byKey = new Map(mine.map((t) => [t.key, t.id]));
@@ -237,6 +256,14 @@ function makeMap(
   };
   const owner = new Map<string, string | null>();
   for (const r of runs) owner.set(r.id, ownerOf(r));
+  // What the period's runs told the devices, by whose run it was: the journal's own lines (each says its tool's
+  // effect: neither the name of an «Avisar» nor the version of its flow matters), in one query for the whole map. What
+  // the tool refused afterwards and what a «Probar» would have told are no notices.
+  const told = new Map<string, number>();
+  for (const c of j.callsDone(TELLS, { from, to })) {
+    const who = owner.get(c.run);
+    if (who) told.set(who, (told.get(who) ?? 0) + c.n);
+  }
   const stats = new Map<
     string,
     { runs: number; last: number | null; calls: number; cost: number; models: Set<string> }
@@ -439,6 +466,13 @@ function makeMap(
     }
     // What a flow a mail starts writes carries the mail's words.
     const outside = !!starts && starts === mailCol;
+    // What its «Avisar» steps tell goes to the devices: the arrow from its plan, its number what its runs told in the
+    // period, whichever version each ran. A flow that tells no more keeps the arrow while notices of its are left.
+    const telling = stepsOf(f.plan)
+      .filter(tellsStep)
+      .map((s) => s.id);
+    const toldN = told.get(id) ?? 0;
+    if (telling.length || toldN > 0) tells(id, toldN, telling.length ? telling : null, outside);
     // Each proposing step once: one that chooses among collections is named once for each («Crear en la elegida»).
     const proposing = new Set<string>();
     for (const { type, kind, steps } of named.values()) {
@@ -510,6 +544,9 @@ function makeMap(
     const [who, type] = k.split("|") as [string, string];
     edge({ from: who, to: colId(type), kind: "writes", n, outside: false });
   }
+  // What the conversation's turns told the devices (the planner's «Avisar»).
+  const chatTold = told.get("boni:chat") ?? 0;
+  if (chatTold) tells("boni:chat", chatTold, null, false);
   // The Bandeja (docs/sistema.md §4.4: «Leer correo → Bandeja → Juan acepta → Tarea y Evento»): what is proposed
   // waits in it; out of it, what was accepted into each collection; the user's decisions in it teach the reviewer.
   const all = proposed.get("|");

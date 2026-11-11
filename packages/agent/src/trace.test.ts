@@ -168,6 +168,8 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
       ["r", "extract_tasks", "allow", null, ["m"]],
       ["n0", "entities.create", "propose", "P4", ["r"]],
     ]);
+    // None of its steps is an «Avisar»: it told the devices nothing (what one tells: test/agent.test.ts).
+    expect(d?.told).toEqual([]);
     // The reader's answer belongs to the read step, as text and as it was answered (what it gave the next step),
     // with its calls and their cost in this run (task 91).
     expect(d?.steps[1]?.answers).toEqual(['{"items":[{"title":"Revisar actas"}]}']);

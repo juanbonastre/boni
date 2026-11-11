@@ -11,6 +11,7 @@ import { AgentHost, serveAgent } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
+import { flowMap } from "./flowMap.ts";
 import { BUDGET_FLOW, checkFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
@@ -461,6 +462,21 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(s.store().journal.flowVersions(BUDGET_FLOW)).toHaveLength(1);
   });
 
+  /** What the map says the flow told the devices in the last week (flowMap.ts): its arrow's number and theirs. */
+  const onMap = (s: ReturnType<typeof serverOf>) => {
+    const m = flowMap(s.store(), {
+      now: s.clock.now + 1,
+      days: 7,
+      tz: "Europe/Madrid",
+      mailType: null,
+      mailAccount: null,
+    });
+    return [
+      m.edges.find((e) => e.from === `flow:${BUDGET_FLOW}` && e.kind === "tells")?.n,
+      m.nodes.find((n) => n.kind === "device")?.notices,
+    ];
+  };
+
   it("passing the warning runs it once a month: one run with no model call, its «Avisar» telling the devices", async () => {
     const s = serverOf();
     s.spend(5); // 4.50 € of 10 €: under the warning (80 %)
@@ -490,6 +506,8 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
         .journal.steps(run?.id ?? "")
         .map((x) => [x.step, x.decision]),
     ).toEqual([["notify", "allow"]]);
+    // On the map, that notice is the flow's: its arrow to the devices, and their number.
+    expect(onMap(s)).toEqual([1, 1]);
     // Asked again and again in the month, with more spent: no other run, no other notice.
     s.spend(0.5);
     expect(await s.check()).toBe(false);
@@ -663,6 +681,8 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(await t.check()).toBe(true);
     expect(await t.check()).toBe(true);
     expect([t.runs().length, t.told.length]).toEqual([1, 1]);
+    // What the code told is no run's: the map counts no notice of the flow's (its arrow stays, with no number).
+    expect(onMap(t)).toEqual([0, 0]);
 
     // A run that stops after its «Avisar» has told already (his text): the code adds nothing.
     const u = serverOf();
@@ -673,6 +693,8 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(await u.check()).toBe(true);
     expect(u.runs().map((r) => r.status)).toEqual(["stopped:P13-month-budget"]);
     expect(u.told.map((n) => n.text)).toEqual(["Gasto en IA: 10.80"]);
+    // That one is the run's, though it stopped afterwards.
+    expect(onMap(u)).toEqual([1, 1]);
   });
 
   it("a «Probar» that asks a model gets the cap's answer and starts nothing: the notice waits for the next call that is no test", async () => {
@@ -791,6 +813,8 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
       { text: "Los modelos llevan 8.10 € de 10 € este mes.", integrity: "own" },
     ]);
     expect(s.runs()).toEqual([]);
+    // Told by code, with no run: it is not on the map (docs/sistema.md §4.4), whose notices are the runs' own.
+    expect(onMap(s)).toEqual([0, 0]);
     expect(await s.check()).toBe(false);
     expect(s.told).toHaveLength(1);
     // Off: no notice there either.

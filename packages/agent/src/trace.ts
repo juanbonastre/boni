@@ -2,7 +2,8 @@
  * What one run did, step by step, from the journal and the audit (task 52, «Recorrido»; Juan, 2026-11-03: «ver bien
  * cómo se están moviendo sus datos en un diagrama como el de n8n»): each step of its plan with the policy's decision
  * and rule, the steps it took its data from (the diagram's edges) and what the models said in it; what the run read
- * (the audit's accesses, by collection), what it changed, what it proposed, its decisions and the models it called.
+ * (the audit's accesses, by collection), what it changed, what it proposed, what it told the devices, its decisions
+ * and the models it called.
  * Nothing new is recorded: a view of what the journal and the audit already keep. Everything is text; what came from
  * outside is shown as it is, never followed.
  */
@@ -62,6 +63,11 @@ export interface RunDetail {
     step: string | null;
     record: RecordView | null;
   }[];
+  /**
+   * What it told the account's devices, by the step that did: the notices that left (the journal's own count: none
+   * of what a «Probar» would have told, nor of what the tool refused after the policy allowed it).
+   */
+  told: { step: string; n: number }[];
   /** The record that started it (a mail), by its title and collection, with its first fields: the way starts there. */
   input: {
     id: string;
@@ -422,6 +428,7 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     read: [...read.values()],
     changes,
     proposals,
+    told: j.callsDone("notify", { run: id }).map((c) => ({ step: c.step, n: c.n })),
     input:
       inputId && started
         ? { id: inputId, ...started, fields: recordView(store, inputId, 4)?.fields ?? [] }

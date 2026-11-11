@@ -9803,6 +9803,7 @@ button.rows-panel-row:hover {
 }
 .mp-card.connector,
 .mp-card.actor,
+.mp-card.device,
 .mp-card.page {
   background: var(--surface);
   border-style: dashed;
