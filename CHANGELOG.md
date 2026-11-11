@@ -5,6 +5,39 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-11 (fortieth) — server 0.8.116 · Boni desktop 0.4.84 · Boni Android
+
+Needs:
+- The server, 0.8.116, to deploy. It brings the flow «Aviso del presupuesto» and what Boni tells on the map.
+- Boni desktop 0.4.84 (`release/boni_0.4.84_amd64.deb`), to install after the server.
+- Boni Android from main, through Obtainium.
+
+What it brings (#374–#375):
+- **«Aviso del presupuesto»** is a flow of Boni (task 83, D-53): «El gasto del mes pasa del aviso» → «Avisar».
+  - Its text is the flow's now: change it in the editor. One run a month, with no model call.
+  - Off, it tells nothing and Ajustes → Modelos says «aviso apagado». The cap is the same on, off or changed: at the
+    budget, background work calls no model.
+  - «Probar» tells nothing: it says what it would tell, with the month's figures.
+  - With no budget (0 €) nothing is told any more (it said «0.00 € de 0 €» every month); Ajustes says «Sin
+    presupuesto».
+  - Fixed on the way: during a burst of background calls the month's spending was not read again, so neither the
+    warning nor the cap acted until 30 s of calm; and «Probar hasta aquí» before a Boni flow's required step gave an
+    error (also in «Traer correo» and «Revisar la guía»).
+- **What Boni tells is on the map** (A-16): a node «Dispositivos» and an arrow «avisa» from every flow with an
+  «Avisar» step, Boni's or Juan's, and from the conversation when a turn of it told. A run that told ends in
+  «Dispositivos» and its explanation says «Avisó a tus dispositivos».
+- To try: in «Flujos», «Aviso del presupuesto»: «Probar», change the text of «Avisar» and save, turn it off and look
+  at Ajustes → Modelos. In «Flujos» → «Mapa», with nothing in the centre, it is joined to «Dispositivos»; a click on
+  «Dispositivos» says who tells you.
+- Decided by the assistant, for Juan to accept or change: on, the month's notice is never lost (when its run stops
+  before «Avisar», when the account has no models or when the flow cannot be kept, the code tells as before); a flow
+  that is deleted leaves the map with what it told.
+- Still missing: the arrow «avisa» marked «de fuera» by the labels of what each notice carried (today only when a
+  mail starts the flow; `docs/sistema.md` §4.4); «El gasto del mes pasa del aviso» does not fit the trigger's card
+  in the editor (whole in its tooltip). Of task 83: when and how much «Revisar la guía» learns as settings of the
+  flow (decided on 2026-11-11, not started) and «Conversación» as a flow (F11).
+- Not checked: the fixes that the review of #375 asked for were not looked at by a second agent.
+
 ## 2026-11-11 (thirty-ninth) — server 0.8.115 · Boni desktop 0.4.83 · Boni Android
 
 Needs:
