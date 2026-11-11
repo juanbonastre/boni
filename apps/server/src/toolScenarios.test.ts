@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { EFFECTS, READERS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
 import { serverRegistry } from "./actions.ts";
+import { TURN_ONLY } from "./flows.ts";
 
 /**
  * A-18 (docs/principios.md; Juan, 2026-11-05, task 64, measure E): every tool a model can call has its scenario, a test
@@ -37,7 +38,56 @@ const FLOW_TEST =
   "a flow switched on only on Juan's touch, never from background work, tried by an assistant, deleted on his card, and Undo of the run switches it back";
 const CORRECT_TEST =
   "«corrígela: Pedir cita en el taller el lunes, en Notas»: a proposal accepted corrected on Juan's touch";
+/** «Calendarios», a collection's tabs and tree, «Conectores» and «Extensiones» (F10, part 3). */
+const CAL_ACTIONS = "apps/server/src/calendarActions.test.ts";
+const CAL_TEST =
+  "«pon Viajes como calendario, sepáralo por Tipo, en verde y con aviso un día antes»: done in his turn, taking it away is his card, and Undo of the run takes each back";
+const CAL_MCP_TEST =
+  "an assistant by the MCP: the calendars, a tab and the tree, and its `undo` takes them back";
+const TAB_TEST = "a collection's tab and its notes in the tree, in his turn, with Undo";
+const EXT_TEST =
+  "«desactiva la extensión del correo»: his touch on the card, never alone or in a flow, and Undo switches it back";
+const MAIL_ACTIONS_TEST =
+  "«lee también Gestiones, y escribe en la guía…»: Juan's touch on the mail's settings and guide, the mail brought and read again from his turn, and Undo of the run";
 const SCENARIOS: Record<string, { file: string; test: string }[]> = {
+  "calendars.list": [
+    { file: CAL_ACTIONS, test: CAL_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "calendars.add": [
+    { file: CAL_ACTIONS, test: CAL_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "calendars.remove": [{ file: CAL_ACTIONS, test: CAL_TEST }],
+  "calendars.split": [
+    { file: CAL_ACTIONS, test: CAL_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "calendars.color": [
+    { file: CAL_ACTIONS, test: CAL_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "calendars.reminders": [
+    { file: CAL_ACTIONS, test: CAL_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "schema.set_view": [
+    { file: CAL_ACTIONS, test: TAB_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "schema.set_tree": [
+    { file: CAL_ACTIONS, test: TAB_TEST },
+    { file: CAL_ACTIONS, test: CAL_MCP_TEST },
+  ],
+  "extensions.enable": [{ file: CAL_ACTIONS, test: EXT_TEST }],
+  "connectors.mail_view": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_check": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_propose": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_reread": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_guide": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_review": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
+  "connectors.mail_suggestion": [{ file: MAIL, test: MAIL_ACTIONS_TEST }],
   "schema.rename_type": [{ file: DATA_ACTIONS, test: DATA_TEST }],
   "schema.move_type": [{ file: DATA_ACTIONS, test: DATA_TEST }],
   "schema.update_field": [{ file: DATA_ACTIONS, test: DATA_TEST }],
@@ -263,10 +313,10 @@ describe("every step a flow may have says in one line what it does (I-27)", () =
   it("each tool of the registry and each reader has its `flow.desc` line, in Spanish and in English", () => {
     const words = readFileSync(join(ROOT, "apps/boni-web/src/i18n.ts"), "utf8");
     const steps = [
-      // Juan's touch is no flow's step (P21): it is not in «Añadir paso».
+      // Juan's touch is no flow's step (P21), nor what only a turn asks (flows.ts `TURN_ONLY`): not in «Añadir paso».
       ...serverRegistry()
         .all()
-        .filter((t) => t.effect !== "touch")
+        .filter((t) => t.effect !== "touch" && !TURN_ONLY.has(t.name))
         .map((t) => t.name),
       ...READERS,
       "op.ask",

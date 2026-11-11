@@ -997,6 +997,7 @@ function ListItem({
         <button
           type="button"
           className="reply-open"
+          data-boni-action="connectors.mail_propose"
           title={t("chat.proposeTask")}
           aria-label={t("chat.proposeTask")}
           aria-busy={proposing}

@@ -287,6 +287,8 @@ export function makeApp(opts: ServerOptions): App {
     // «Enlazar» needs the field its record keeps the link in (the calendar's, made if missing).
     const external = new ExternalItems(opts.feeds, tz);
     const agentHost = opts.agent;
+    // F10: the actions of «Conectores» run on the accounts' mailboxes, as Ajustes does.
+    agentHost.mails = opts.mails ?? null;
     agentHost.externalItems = (account, days) =>
       external.items(account, readAccount(db, key, account).externals, days);
     agentHost.linkField = async (account, typeId, device) =>

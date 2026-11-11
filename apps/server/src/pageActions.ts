@@ -156,24 +156,26 @@ export function withBlock(p: Page, block: PageBlock): PageSpec {
   return spec;
 }
 
+const viewField = (d: TypeDef, name: unknown) => {
+  if (name === undefined || name === null || name === "") return undefined;
+  if (typeof name !== "string") throw new ToolError("bad-view");
+  const f = fieldByName(d, name);
+  if (!f) throw new ToolError("unknown-field");
+  return f.id;
+};
+
+/** A view of a collection as a model writes it (its fields by name), as a table or a saved view keeps it (by id). */
+export const viewOf = (def: TypeDef, raw: unknown) => viewFrom(def, raw, viewField);
+
 /** A table's block with its view changed. */
 export function withView(p: Page, ro: ReadStore, blockId: string, raw: unknown): PageSpec {
   const b = p.spec.blocks.find((x) => x.id === blockId);
   if (!b || b.type !== "database") throw new ToolError("no-such-block");
   const def = Object.values(ro.schema().types).find((t) => t.id === b.source);
   if (!def) throw new ToolError("unknown-type");
-  const field = (d: TypeDef, name: unknown) => {
-    if (name === undefined || name === null || name === "") return undefined;
-    if (typeof name !== "string") throw new ToolError("bad-view");
-    const f = fieldByName(d, name);
-    if (!f) throw new ToolError("unknown-field");
-    return f.id;
-  };
   const spec: PageSpec = {
     ...p.spec,
-    blocks: p.spec.blocks.map((x) =>
-      x.id === blockId ? { ...b, view: viewFrom(def, raw, field) } : x,
-    ),
+    blocks: p.spec.blocks.map((x) => (x.id === blockId ? { ...b, view: viewOf(def, raw) } : x)),
   };
   if (pageErrors(spec).length) throw new ToolError("bad-view");
   return spec;

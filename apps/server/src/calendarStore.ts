@@ -752,6 +752,38 @@ export function setCalendarColor(store: UserStore, calendarId: string, color: st
   return true;
 }
 
+/**
+ * A calendar's reminders (its own, by kind of event) and the column of each event's own, in its definition (a split
+ * one's, for every calendar it makes). "conflict": no such calendar, or a definition that would not read back.
+ */
+export function setCalendarReminders(
+  store: UserStore,
+  collectionId: string,
+  edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
+): "ok" | "conflict" {
+  const read = calendarDefs(store).find((x) => x.def.id === collectionId);
+  const kept = storedCalendarDefs(store);
+  const p = kept.find((x) => x.raw.id === (read?.group?.id ?? read?.def.id));
+  if (!p) return "conflict";
+  const raw: Record<string, unknown> = { ...p.raw };
+  if (edit.reminders === null) delete raw.reminders;
+  else if (edit.reminders) raw.reminders = edit.reminders;
+  const mapping = { ...((raw.mapping as Record<string, unknown>) ?? {}) };
+  if (edit.eventColumn && !mapping.reminders) {
+    const columns = Array.isArray(raw.columns) ? [...raw.columns] : [];
+    if (!columns.some((c) => (c as { id?: unknown }).id === EVENT_REMINDERS_COLUMN.id))
+      columns.push(EVENT_REMINDERS_COLUMN);
+    raw.columns = columns;
+    raw.mapping = { ...mapping, reminders: EVENT_REMINDERS_COLUMN.id };
+  }
+  if (!parseCollectionDef(raw).ok) return "conflict";
+  saveCalendarDefs(
+    store,
+    kept.map((x) => (x === p ? { ...x, raw } : x)),
+  );
+  return "ok";
+}
+
 /** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
 export function saveCalendarDefs(store: UserStore, list: readonly Stored[]): void {
   store.setSetting(
@@ -1366,26 +1398,8 @@ export class StoreCalendar implements CalendarSource {
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
   ): Promise<"ok" | "conflict"> {
     if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
-    const read = calendarDefs(this.store).find((x) => x.def.id === collectionId);
-    const kept = storedCalendarDefs(this.store);
-    const p = kept.find((x) => x.raw.id === (read?.group?.id ?? read?.def.id));
-    if (!p) return "conflict";
-    const raw: Record<string, unknown> = { ...p.raw };
-    if (edit.reminders === null) delete raw.reminders;
-    else if (edit.reminders) raw.reminders = edit.reminders;
-    const mapping = { ...((raw.mapping as Record<string, unknown>) ?? {}) };
-    if (edit.eventColumn && !mapping.reminders) {
-      const columns = Array.isArray(raw.columns) ? [...raw.columns] : [];
-      if (!columns.some((c) => (c as { id?: unknown }).id === EVENT_REMINDERS_COLUMN.id))
-        columns.push(EVENT_REMINDERS_COLUMN);
-      raw.columns = columns;
-      raw.mapping = { ...mapping, reminders: EVENT_REMINDERS_COLUMN.id };
-    }
-    if (!parseCollectionDef(raw).ok) return "conflict";
-    saveCalendarDefs(
-      this.store,
-      kept.map((x) => (x === p ? { ...x, raw } : x)),
-    );
+    const r = setCalendarReminders(this.store, collectionId, edit);
+    if (r !== "ok") return r;
     this.poll();
     return "ok";
   }

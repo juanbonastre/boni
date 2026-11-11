@@ -34,7 +34,7 @@ export function CalendarList() {
   ];
 
   return (
-    <div className="cal-list">
+    <div className="cal-list" data-boni-action="calendars.list">
       {groups.map((g) => {
         if (g.cals.length === 0) return null;
         const closed = collapsed.has(g.id);
@@ -109,6 +109,7 @@ function AddCalendar() {
               type="button"
               role="menuitem"
               className="menu-item"
+              data-boni-action="calendars.add"
               onClick={() => {
                 setOpen(false);
                 void useApp.getState().addCalendar(c.type);

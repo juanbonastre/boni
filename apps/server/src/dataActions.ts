@@ -23,9 +23,16 @@ import {
   deleteCollection,
   moveCollection,
   moveRow,
+  ROW_UI,
   removeColumn,
   renameCollection,
+  rowUiOf,
+  setNotesInTree,
+  setRowUi,
+  TREE_UI,
 } from "./data.ts";
+import { viewOf } from "./pageActions.ts";
+import { keepingSettings } from "./runUndo.ts";
 
 /**
  * The actions of the area «Datos» that the core's tools did not have (docs/sistema.md §4.1, F10): renaming, moving
@@ -233,6 +240,68 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
       const to = typeOf(c.store, a.type);
       wrap(() => moveRow(s.store, id, { type: to.id }, who(s, [a.type], extra)));
       return leaf({ id, type: typeName(to) }, code);
+    },
+  });
+  r.register({
+    name: "schema.set_view",
+    effect: "write",
+    area: "data",
+    service: "data",
+    title: "Guardar vista",
+    describe:
+      'Save a view of one of Juan\'s collections as one of its tabs, by its name (the same name: that tab changed): view {"lit": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [...], "filter": [...]}} by its fields\' keys; remove true (and no view): that tab taken out',
+    args: {
+      type,
+      name: { role: "content", required: true, describe: "the tab's name" },
+      view: { role: "definition", describe: "the view" },
+      remove: { role: "option", describe: "true: take the tab out" },
+    },
+    run(c, a) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const name = text(a.name).slice(0, 60);
+      const raw = a.view ? plain(a.view) : null;
+      // A plan says it with `remove`; the MCP also with view null.
+      if (raw === null && !a.view && !(a.remove && plain(a.remove) === true))
+        throw new ToolError("bad-argument");
+      const views = rowUiOf(s.store, def.id).views;
+      const at = views.findIndex((v) => v.name.toLowerCase() === name.toLowerCase());
+      let next = views;
+      if (raw === null) {
+        if (at < 0) throw new ToolError("no-such-view");
+        next = views.filter((_, i) => i !== at);
+      } else {
+        const view = viewOf(def, raw);
+        const id = views[at]?.id ?? `v_${Date.now().toString(36)}${views.length}`;
+        const saved = { ...view, id, name };
+        next = at < 0 ? [...views, saved] : views.map((v, i) => (i === at ? saved : v));
+      }
+      const out = keepingSettings(s.store, s.meta.run, [`${ROW_UI}${def.id}`], () =>
+        setRowUi(s.store, def.id, { views: next }),
+      );
+      if ("error" in out) throw new ToolError(out.error);
+      return leaf({ collection: typeName(def), views: out.views.map((v) => v.name) }, code);
+    },
+  });
+  r.register({
+    name: "schema.set_tree",
+    effect: "write",
+    area: "data",
+    service: "data",
+    title: "Notas en el árbol",
+    describe:
+      "Show a collection's notes under it in Boni's sidebar tree (on true), or only the collection (false)",
+    args: { type, on: { role: "option", required: true, describe: "true or false" } },
+    run(c, a) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const v = a.on ? plain(a.on) : null;
+      const on = v === true || v === "true" ? true : v === false || v === "false" ? false : null;
+      if (on === null) throw new ToolError("bad-argument");
+      keepingSettings(s.store, s.meta.run, [`${TREE_UI}${def.id}`], () =>
+        wrap(() => setNotesInTree(s.store, def.id, on)),
+      );
+      return leaf({ collection: typeName(def), notes: on }, code);
     },
   });
   return r;

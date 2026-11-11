@@ -739,6 +739,7 @@ function ViewOptions({
                 <MenuSep />
                 <MenuRow
                   label={inTree.notes ? t("tree.notesHide") : t("tree.notesShow")}
+                  boniAction="schema.set_tree"
                   onClick={() => void setNotesInTree(type.id, !inTree.notes)}
                 />
               </>

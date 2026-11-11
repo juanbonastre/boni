@@ -26,6 +26,7 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
@@ -53,6 +54,7 @@ import type { Runner } from "./functions.ts";
 import type { InboxService } from "./inboxActions.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
+import type { Mails } from "./mail.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { originFacts, pendingFacts, recordOrigin } from "./origin.ts";
@@ -60,6 +62,7 @@ import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
+import { keep as keepForRun, undoable, undoKept } from "./runUndo.ts";
 import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
 
 /**
@@ -113,8 +116,6 @@ import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
  *   POST /api/agent/extensions/:id/reject    the proposal goes away
  *   POST /api/agent/extensions/:id/revert    back to the version before the active one (and forward again)
  */
-/** The setting that keeps what a run changed in «Flujos», for its Undo (`AgentHost.undoFlows`). */
-const FLOW_UNDO = "flows/undo/";
 
 export interface Providers {
   planner: ModelProvider;
@@ -156,6 +157,8 @@ export class AgentHost {
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
+  /** The accounts' mailboxes (mail.ts), for the actions of «Conectores» (connectorActions.ts); set by the server. */
+  mails: Mails | null = null;
   /** A saved chart of the account's first pages (the v1 API's), for one pointed at on the screen (F9; http.ts). */
   savedChart: ((account: number, id: string) => SavedChart | null) | null = null;
   /** The account's external calendars' events on some days (externalItems.ts), for the inbox's cards (task 51). */
@@ -293,7 +296,7 @@ export class AgentHost {
         // The services an action's area needs (F10): the pages' and the data's writer, with the run it belongs to
         // (its Undo); the flows' and the Bandeja's code, as their routes run it.
         services: (name, run) => this.service(account, name, run),
-        undoable: (run) => this.flowsUndoable(account, run),
+        undoable: (run) => this.keptUndoable(account, run),
       });
       this.agents.set(account, a);
       this.used.set(account, p);
@@ -334,13 +337,22 @@ export class AgentHost {
           return { proposal, run: r.done.run || null, error: r.done.error ?? null };
         },
       } satisfies InboxService;
+    if (name === "mail") {
+      const mails = this.mails;
+      return mails
+        ? ({
+            mails,
+            account,
+            store,
+            run: run.run,
+            inFlow: !!run.inFlow,
+          } satisfies MailService)
+        : null;
+    }
     if (name !== "flows") return null;
-    // What this run switched or deleted, so that its Undo takes it back (`undoFlows`).
-    const keep = (flow: string, was: { enabled?: boolean; deleted?: boolean }) => {
-      const key = `${FLOW_UNDO}${run.run}`;
-      const list = JSON.parse(store.setting(key) ?? "[]") as unknown[];
-      store.setSetting(key, JSON.stringify([...list, { flow, ...was }]));
-    };
+    // What this run switched or deleted, so that its Undo takes it back (`undoKept`).
+    const keep = (flow: string, was: { enabled?: boolean; deleted?: boolean }) =>
+      keepForRun(store, run.run, { flow, ...was });
     const named = (flow: string) => store.journal.flow(flow)?.name ?? "";
     return {
       enable: (flow, on) => {
@@ -369,48 +381,35 @@ export class AgentHost {
     } satisfies FlowsService;
   }
 
-  /**
-   * Takes back what a run switched on or off or deleted in «Flujos» (journal rows, not in the store's log), newest
-   * first; how many. Undo of the run (`POST /api/agent/runs/:id/undo`) calls it with the store's own.
-   */
-  /** Whether a run switched or deleted a flow that its Undo has not taken back yet. */
-  flowsUndoable(account: number, run: string): boolean {
-    return (this.store(account).setting(`${FLOW_UNDO}${run}`) ?? "[]") !== "[]";
+  /** Whether a run changed something beside the log (a flow, a setting) that its Undo has not taken back yet. */
+  keptUndoable(account: number, run: string): boolean {
+    return undoable(this.store(account), run);
   }
 
-  undoFlows(account: number, run: string): number {
+  /**
+   * Takes back what a run changed beside the store's log (runUndo.ts): what it switched on or off or deleted in
+   * «Flujos» (journal rows) and the settings it rewrote, newest first; how many. Undo of the run
+   * (`POST /api/agent/runs/:id/undo`, the MCP's `undo`) calls it with the store's own.
+   */
+  undoKept(account: number, run: string): number {
     const store = this.store(account);
-    const key = `${FLOW_UNDO}${run}`;
-    const list = JSON.parse(store.setting(key) ?? "[]") as {
-      flow: string;
-      enabled?: boolean;
-      deleted?: boolean;
-    }[];
-    let n = 0;
-    for (const c of [...list].reverse()) {
+    return undoKept(store, run, (c) => {
       const f = store.journal.flow(c.flow);
-      if (!f) continue;
+      if (!f) return false;
       const live = store.journal.flows().some((x) => x.id === c.flow);
+      // Brought back only if it is still deleted.
       if (c.deleted !== undefined) {
-        // Brought back only if it is still deleted.
-        if (!live) {
-          store.journal.setFlowDeleted(c.flow, c.deleted);
-          n++;
-        }
-        continue;
+        if (live) return false;
+        store.journal.setFlowDeleted(c.flow, c.deleted);
+        return true;
       }
       // Juan's own change since then wins: only a flow still as the run left it is switched back. Switching one
       // back on goes through the same checks as his switch.
-      if (c.enabled === undefined || !live || f.enabled === c.enabled) continue;
-      if (
-        c.enabled
-          ? !switchFlow(this, account, c.flow, true)
-          : (store.journal.setFlowEnabled(c.flow, false), true)
-      )
-        n++;
-    }
-    store.setSetting(key, null);
-    return n;
+      if (c.enabled === undefined || !live || f.enabled === c.enabled) return false;
+      if (c.enabled) return !switchFlow(this, account, c.flow, true);
+      store.journal.setFlowEnabled(c.flow, false);
+      return true;
+    });
   }
 
   subscribe(account: number, l: (event: string, data: unknown) => void): () => void {
@@ -771,7 +770,7 @@ async function serveConversations(
       if (!c) return send(res, 404, { error: "not-found" });
       return send(res, 200, {
         conversation: c,
-        turns: turnViews(store, id, (run) => host.flowsUndoable(who.account, run)),
+        turns: turnViews(store, id, (run) => host.keptUndoable(who.account, run)),
       });
     }
     case "PUT /api/agent/conversations/:id": {
@@ -1114,13 +1113,13 @@ async function answerAgent(
       return o ? send(res, 200, o) : send(res, 404, { error: "not-found" });
     }
     case "POST /api/agent/runs/:id/undo": {
-      // The store's operations of the run, then what it switched or deleted in «Flujos» (F10); a later change of
+      // The store's operations of the run, then what it changed beside the log (F10: «Flujos», settings); a later change of
       // Juan's in the way stops both.
       const run = params.id ?? "";
       const store = host.store(who.account);
       try {
         const undone = store.runUndoable(run) ? agent.undoRun(run).length : 0;
-        const flows = host.undoFlows(who.account, run);
+        const flows = host.undoKept(who.account, run);
         return undone + flows
           ? send(res, 200, { undone: undone + flows })
           : send(res, 409, { error: "cannot-undo" });

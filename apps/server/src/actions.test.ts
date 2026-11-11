@@ -3,11 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ACTION_MCP,
-  FLOW_ONLY_AREAS,
+  flowOnly,
   JUAN_ONLY,
-  NO_CONTROL_YET,
   NOT_ACTIONS,
-  NOT_YET,
   ROUTE_ACTIONS,
   serverRegistry,
   UNDO_ROUTES,
@@ -18,14 +16,12 @@ import { ROUTES } from "./routes.ts";
 /**
  * D-41 (docs/principios.md), extended by F10 (docs/sistema.md §4.1): one list of actions for the app, the planner,
  * the flows and the MCP. A route that changes something runs its action or says why it is none; an action has its
- * control in the app (or its «Buscar» entry) and its tool in the MCP, or says why not. What is not on an action yet
- * is in a list that may only shrink.
+ * control in the app (or its «Buscar» entry) and its tool in the MCP, or says why not. Nothing waits for its action
+ * any more (task 86, F10): a new route or a new action that does not say which is which does not merge.
  */
-// Lower these when a route or an action gets its own; never raise them.
-const NOT_YET_AT_MOST = 39;
-const NO_CONTROL_AT_MOST = 1;
-
 const WEB = join(import.meta.dirname, "..", "..", "boni-web", "src");
+/** Boni Calendar's controls: its calendars' actions are there. */
+const CALENDAR_WEB = join(import.meta.dirname, "..", "..", "calendar-web", "src");
 const sources = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory()
@@ -45,15 +41,12 @@ describe("one list of actions (D-41, F10)", () => {
       Object.keys(UNDO_ROUTES),
       Object.keys(JUAN_ONLY),
       Object.keys(NOT_ACTIONS),
-      NOT_YET,
     ];
     const said = lists.flat();
     // Each once, and only routes there are.
     expect(said.length).toBe(new Set(said).size);
     expect(said.filter((r) => !(r in ROUTES))).toEqual([]);
     expect(changing.filter((r) => !said.includes(r))).toEqual([]);
-    // What is not yet an action may only shrink.
-    expect(NOT_YET.length).toBeLessThanOrEqual(NOT_YET_AT_MOST);
     // A route on its action names actions there are.
     const named = [...Object.values(ROUTE_ACTIONS), ...Object.values(UNDO_ROUTES)].flat();
     expect(named.filter((a) => !names.has(a))).toEqual([]);
@@ -65,7 +58,7 @@ describe("one list of actions (D-41, F10)", () => {
     const tools = new Set(mcpToolNames());
     const missing: string[] = [];
     for (const t of registry.all()) {
-      if (FLOW_ONLY_AREAS.includes(t.area)) continue;
+      if (flowOnly(t)) continue;
       const m = ACTION_MCP[t.name];
       if (m === undefined) missing.push(`${t.name}: nothing`);
       else if (typeof m === "string" && !tools.has(m)) missing.push(`${t.name}: no tool ${m}`);
@@ -77,7 +70,7 @@ describe("one list of actions (D-41, F10)", () => {
   });
 
   it("every action has its control in the app, or its «Buscar» entry, the same name both ways", () => {
-    const text = sources(WEB).join("\n");
+    const text = [...sources(WEB), ...sources(CALENDAR_WEB)].join("\n");
     const controlled = new Set(
       [...text.matchAll(/(?:data-boni-action|boniAction)=\{?"([a-z_.]+)"/g)].map((m) => m[1]),
     );
@@ -87,11 +80,9 @@ describe("one list of actions (D-41, F10)", () => {
     expect([...controlled].filter((a) => a && !names.has(a))).toEqual([]);
     const lacking = registry
       .all()
-      .filter((t) => !FLOW_ONLY_AREAS.includes(t.area) && !controlled.has(t.name))
-      .map((t) => t.name)
-      .sort();
-    expect(lacking).toEqual([...NO_CONTROL_YET].sort());
-    expect(NO_CONTROL_YET.length).toBeLessThanOrEqual(NO_CONTROL_AT_MOST);
+      .filter((t) => !flowOnly(t) && !controlled.has(t.name))
+      .map((t) => t.name);
+    expect(lacking).toEqual([]);
     // Each «Buscar» action has its words, in Spanish and in English.
     const words = readFileSync(join(WEB, "i18n.ts"), "utf8");
     for (const m of find.matchAll(/\{ name: "([a-z_.]+)", icon:/g))
@@ -103,6 +94,8 @@ describe("one list of actions (D-41, F10)", () => {
     for (const t of registry.all().filter((x) => x.effect !== "piece")) {
       if (t.name.startsWith("pages.")) expect(t.area, t.name).toBe("pages");
       if (t.name.startsWith("inbox.")) expect(t.area, t.name).toBe("inbox");
+      if (t.name.startsWith("calendars.")) expect(t.area, t.name).toBe("calendars");
+      if (t.name.startsWith("connectors.")) expect(t.area, t.name).toBe("connectors");
     }
     expect(
       registry
@@ -110,6 +103,15 @@ describe("one list of actions (D-41, F10)", () => {
         .filter((t) => t.effect === "touch")
         .map((t) => t.name)
         .sort(),
-    ).toEqual(["flows.enable", "inbox.accept", "inbox.correct", "inbox.reject"]);
+    ).toEqual([
+      "connectors.mail",
+      "connectors.mail_guide",
+      "connectors.mail_suggestion",
+      "extensions.enable",
+      "flows.enable",
+      "inbox.accept",
+      "inbox.correct",
+      "inbox.reject",
+    ]);
   });
 });
