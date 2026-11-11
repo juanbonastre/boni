@@ -5,6 +5,10 @@ import {
   ACCURACY_ON,
   CARD_DETAILED,
   DONE,
+  FLOW_BUDGET,
+  FLOW_BUDGET_CHECK,
+  FLOW_BUDGET_CHECK_NONE,
+  FLOW_BUDGET_TEST,
   FLOW_CATALOG,
   FLOW_CATALOG_FUNCTIONS,
   FLOW_CHANGE,
@@ -16,9 +20,11 @@ import {
   FLOW_SUMMARY,
   FLOW_TEST,
   FLOWS,
+  FLOWS_WITH_BUDGET,
   FLOWS_WITH_SUMMARY,
   GUIDE_RULES,
   MAP,
+  MAP_BUDGET,
   MAP_CHOSEN,
   MAP_FETCH,
   MODELS,
@@ -30,10 +36,12 @@ import {
   ORIGIN_TURN,
   ORIGIN_USER,
   RUN_BOOK,
+  RUN_BUDGET,
   RUN_MAIL,
   RUN_MAIL_LANES,
   RUN_MAIL_OLD,
   RUNS,
+  RUNS_BUDGET,
 } from "./agent-scenarios.ts";
 import { openApp, openInTree, recorded, TEMPLATE } from "./fixtures.ts";
 
@@ -1671,6 +1679,151 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
   await expect(page.getByRole("menuitemradio", { name: "Ejecutar flujo" })).toHaveCount(0);
   // With no extension's function active, nothing to name: no «Funciones» (task 93).
   await expect(page.getByRole("menuitemradio", { name: "Función", exact: true })).toHaveCount(0);
+});
+
+test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the month's spending, with its «Avisar»; its trigger is fixed and it is not run by hand; «Probar» says what it would tell; without «Avisar» it is not saved", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+      "GET api/agent/flows/:id": [FLOW_BUDGET],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_BUDGET_CHECK, FLOW_BUDGET_CHECK_NONE],
+      "POST api/agent/flows/:id/test": [FLOW_BUDGET_TEST],
+    },
+  });
+  // «Flujos»: its row says what starts it, that it is on and that it is Boni's.
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const row = page.locator(".db-table tbody tr", { hasText: "Aviso del presupuesto" });
+  for (const text of ["El gasto del mes pasa del aviso", "Encendido", "Boni"])
+    await expect(row).toContainText(text);
+  await openFlow(page, "Aviso del presupuesto");
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  // What starts it and what that gives, by a person's names (I-08); then its one step.
+  const trigger = canvas.locator(".fl-node.source");
+  await expect(trigger.locator(".fl-name")).toHaveText("El gasto del mes pasa del aviso");
+  // Cut to the card's width: whole in its tooltip.
+  await expect(trigger.locator(".fl-card")).toHaveAttribute(
+    "title",
+    "El gasto del mes pasa del aviso",
+  );
+  await expect(trigger.locator(".fl-input")).toHaveText(["Gasto del mes", "Presupuesto"]);
+  await expect(trigger).not.toContainText("$");
+  await expect(canvas.locator(".fl-node")).toHaveCount(2);
+  const tell = canvas.locator(".fl-node", {
+    has: page.locator(".fl-name", { hasText: /^Avisar$/ }),
+  });
+  await expect(tell).toContainText("1 vez");
+  await expect(page.locator(".flow-whose")).toHaveText("De Boni");
+  // Its spending starts it, never a hand.
+  await expect(page.getByRole("button", { name: "Ejecutar", exact: true })).toHaveCount(0);
+  // The trigger's panel says it and what it gives; there is nothing to choose.
+  await trigger.locator(".fl-name").click();
+  const panel = page.locator(".flow-step-panel");
+  await expect(panel).toContainText("El gasto del mes pasa del aviso");
+  await expect(panel.locator(".flow-args li")).toHaveText([
+    /^Gasto del mes\s*texto$/,
+    /^Presupuesto\s*texto$/,
+  ]);
+  await expect(panel.locator("select")).toHaveCount(0);
+  // «Avisar»: its text is the flow's, in parts he can change; what comes in is the two figures.
+  await tell.locator(".fl-name").click();
+  await expect(panel.locator("h3")).toHaveText("Avisar");
+  const comesIn = panel.getByRole("region", { name: "Entra" });
+  await expect(comesIn.locator("li")).toHaveText([
+    /^Gasto del mes\s*texto$/,
+    /^Presupuesto\s*texto$/,
+  ]);
+  await expect(panel.locator(".expr-arg input.expr-input").first()).toHaveValue(
+    "Los modelos llevan ",
+  );
+  await page.screenshot({ path: `${SHOTS}/flow-budget.png` });
+  // «Probar»: nothing reaches a device; the step says what it would tell, with the month's figures.
+  await page.getByRole("button", { name: "Probar", exact: true }).click();
+  await expect(page.locator(".flow-test-bar")).toContainText("sin escribir nada");
+  await expect(tell).toContainText("Haría: Avisar «Los modelos llevan 8.55 € de 10 € este mes.»");
+  // Without its «Avisar» the checklist says so, and it can be neither saved nor tried (the checklist was asked
+  // once for the flow as it came; the change asks again).
+  await expect
+    .poll(async () => (await requests(page, "POST api/agent/flows/check")).length)
+    .toBe(1);
+  await panel.getByRole("button", { name: "Quitar" }).click();
+  await expect(canvas.locator(".fl-node")).toHaveCount(1);
+  await expect(page.locator(".flow-checklist")).toContainText("Falta «Avisar», sin condición");
+  await expect(trigger.locator(".fl-card")).toHaveClass(/bad/);
+  await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Probar", exact: true })).toBeDisabled();
+});
+
+test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger to «Avisar»; turned off, Ajustes → Modelos says the notice is off (D-53)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS_BUDGET],
+      "GET api/agent/runs/:id": [RUN_BUDGET],
+      "GET api/agent/map": [MAP_BUDGET],
+      "GET api/agent/models": [{ ...MODELS, notice: false }],
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+    },
+  });
+  // The Registro names the run by its flow, a line of its own.
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  const entry = page.locator(".log-list li").first();
+  await expect(entry.locator(".log-head")).toContainText("Aviso del presupuesto");
+  await entry.locator(".log-head").click();
+  const detail = page.locator(".log-detail");
+  await expect(detail.locator(".log-step")).toHaveCount(1);
+  await expect(detail.locator(".log-step").first()).toContainText("Avisar — Hecho");
+  // Its Recorrido is the map: the flow in the centre, unfolded from what started it, its one step done.
+  await detail.getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-centre").first()).toContainText("Aviso del presupuesto");
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  const stage = page.locator(".mp-stage");
+  await expect(stage.locator(".mp-trig .mp-name")).toHaveText("El gasto del mes pasa del aviso");
+  await expect(stage.locator(".mp-trig")).toContainText("Gasto del mes · Presupuesto");
+  await expect(stage.locator(".mp-trig")).toHaveClass(/run-ran/);
+  const steps = stage.locator(".mp-step:not(.mp-trig)");
+  await expect(steps).toHaveCount(1);
+  await expect(steps.first()).toContainText("Avisar");
+  await expect(steps.first()).toContainText("Hecho");
+  await expect(steps.first()).toHaveClass(/run-ran/);
+  await expect(page.locator(".mp-way ol").first().locator(":scope > li")).toHaveText([
+    /^Aviso del presupuesto \(v1\) · 21 oct/,
+  ]);
+  await page.screenshot({ path: `${SHOTS}/flows-map-budget.png` });
+  // Without the run, the flow stays in the centre, unfolded.
+  await page.getByRole("button", { name: "Quitar la ejecución" }).click();
+  const frame = stage.locator(".mp-frame.flow", { hasText: "Aviso del presupuesto" });
+  await expect(frame).toBeVisible();
+  // Alone (it reads and writes no collection), the whole map does not draw it (§4.4: «lo que no es de nadie no
+  // sale»): it is found by its name, and its panel says whose it is, what starts it and its run.
+  await page.getByRole("button", { name: "Quitar del centro" }).click();
+  await expect(frame).toHaveCount(0);
+  await expect(stage.locator(".mp-card", { hasText: "Aviso del presupuesto" })).toHaveCount(0);
+  const find = page.getByRole("combobox", { name: "Buscar en el mapa" });
+  await find.click();
+  await page.keyboard.type("Aviso del pres", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".mp-centre")).toContainText("Aviso del presupuesto");
+  const panel = page.locator(".mp-panel");
+  await expect(panel.locator("h3")).toHaveText("Aviso del presupuesto");
+  for (const text of ["Flujo · De Boni", "El gasto del mes pasa del aviso", "1 ejecución"])
+    await expect(panel).toContainText(text);
+  // «Agrupar por disparador» names what starts it.
+  await page.getByRole("combobox", { name: "Agrupar" }).selectOption("trigger");
+  await expect(
+    stage.locator(".mp-frame.group", { hasText: "El gasto del mes pasa del aviso" }),
+  ).toBeVisible();
+  // Off: Ajustes → Modelos says the notice is off, by the budget.
+  await openModels(page);
+  await expect(page.locator(".models-spend")).toContainText(
+    "Presupuesto: 10,00 € al mes, aviso apagado",
+  );
 });
 
 test("«Función» as a step (task 93, D-52): «Añadir paso» offers it under «Funciones»; its panel chooses an active function and shows its code and its tests, to read", async ({

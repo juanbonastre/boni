@@ -174,7 +174,8 @@ export function Spending({
         ) : (
           <p className="models-line">
             <span className="muted">
-              {t("models.budget", {
+              {/* With «Aviso del presupuesto» off (one of Boni's flows), nothing is told at the warning. */}
+              {t(view.notice ? "models.budget" : "models.budgetQuiet", {
                 eur: eur(budget.monthlyEur),
                 pct: Math.round(budget.warnAt * 100),
               })}

@@ -4,6 +4,7 @@ import { label } from "@boni/entities";
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
 import {
+  BUDGET_FLOW,
   checkFlow,
   createFlow,
   drawnRun,
@@ -18,10 +19,13 @@ import {
   REVIEW_FLOW,
   revertFlow,
   saveUserFlow,
+  triggerNames,
   triggerOk,
   typeKeysOf,
 } from "./flows.ts";
+import { triggerWords } from "./flowsCollection.ts";
 import { foldDays, mailPlan } from "./mail.ts";
+import { BUDGET_PLAN, BUDGET_TRIGGER } from "./models.ts";
 import { withPieces } from "./pieces.ts";
 
 const CODE_LABEL = label("own", "public", [{ kind: "code", id: "test" }]);
@@ -747,6 +751,118 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       step: "g",
       at: null,
       code: "piece-needs-mailbox",
+    });
+    store.close();
+  });
+
+  it("«Aviso del presupuesto» (D-53): its trigger is the month's spending, well formed alone, kept and only its own; it gives the spending and the budget; its checklist wants «Avisar» always; a copy starts by hand", () => {
+    const store = withTypes();
+    const trigger = BUDGET_TRIGGER;
+    expect(trigger).toEqual({ spending: "warn" });
+    expect(triggerOk(trigger)).toBe(true);
+    expect(triggerOk({ spending: "warn", schedule: { every: "day" } })).toBe(false);
+    expect(triggerOk({ spending: "warn", manual: true })).toBe(false);
+    expect(triggerOk({ spending: "budget" })).toBe(false);
+    // What it gives the plan: the month's spending and the budget, each a text; nothing else is bound.
+    expect(triggerNames(trigger)).toEqual(["spent", "budget"]);
+    expect(inputsOf(BUDGET_PLAN, trigger)).toEqual([
+      { id: "spent", what: "text" },
+      { id: "budget", what: "text" },
+    ]);
+    expect(triggerWords(trigger, () => null)).toBe("El gasto del mes pasa del aviso");
+    // Boni's own passes its checklist, and its «Avisar» may take both figures and nothing of a mail.
+    const check = (t: unknown, steps: unknown[]) =>
+      checkFlow(store, registry, { trigger: t, plan: { version: 1, steps } }, o);
+    const boni = check(trigger, BUDGET_PLAN.steps);
+    expect(boni.problems).toEqual([]);
+    expect(boni.refs.notify).toEqual([
+      { ref: "$spent", t: "text" },
+      { ref: "$budget", t: "text" },
+    ]);
+    // Without «Avisar», or with it only on a condition or once per item: the month's run could say nothing.
+    const [tell] = BUDGET_PLAN.steps;
+    const missing = { step: null, at: "trigger", code: "budget-needs-notice" };
+    for (const steps of [
+      [],
+      [{ id: "q", op: "call", tool: "entities.query", args: { type: { lit: "tarea" } } }],
+      [{ ...tell, when: { fn: "eq", args: [{ ref: "$spent" }, { lit: "0.00" }] } }],
+      [
+        { id: "q", op: "call", tool: "entities.query", args: { type: { lit: "tarea" } } },
+        { ...tell, each: { ref: "$q.items" } },
+      ],
+    ])
+      expect(check(trigger, steps).problems).toContainEqual(missing);
+    // Another step around it is his to add: the checklist only wants the «Avisar» that always runs.
+    expect(
+      check(trigger, [
+        { id: "r", op: "read", reader: "summarize", input: { ref: "$spent" } },
+        tell,
+        { id: "again", op: "call", tool: "notify", args: { text: { ref: "$r.text" } } },
+      ]).problems,
+    ).toEqual([]);
+    // Its figures are its own trigger's: by hand, nothing gives them.
+    expect(check({ manual: true }, BUDGET_PLAN.steps).problems).toContainEqual(
+      expect.objectContaining({ step: "notify", code: "ref-to-unknown-step" }),
+    );
+    // The trigger is kept, and no other flow may have it.
+    ensureFlow(
+      store,
+      { id: BUDGET_FLOW, name: "Aviso del presupuesto", trigger, plan: BUDGET_PLAN, by: "preset" },
+      1000,
+    );
+    for (const other of [{ manual: true }, { schedule: { every: "day", at: "08:00" } }])
+      expect(
+        saveUserFlow(store, BUDGET_FLOW, { base: 1, plan: BUDGET_PLAN, trigger: other }, [], 2000),
+      ).toEqual({ error: "trigger" });
+    const other = createFlow(store, { name: "Otro" }, 3000);
+    if (!other) throw new Error("no flow");
+    expect(
+      saveUserFlow(
+        store,
+        other.id,
+        { base: 1, plan: { version: 1, steps: [] }, trigger },
+        [],
+        4000,
+      ),
+    ).toEqual({ error: "trigger" });
+    // His own version of it keeps the trigger and stays as it was, on or off.
+    const mine = {
+      version: 1,
+      steps: [{ ...tell, args: { text: { lit: "Ojo con el gasto en IA" } } }],
+    };
+    store.journal.setFlowEnabled(BUDGET_FLOW, false);
+    const saved = saveUserFlow(store, BUDGET_FLOW, { base: 1, plan: mine }, [], 5000);
+    expect("flow" in saved && saved.flow).toMatchObject({
+      version: 2,
+      by: "user",
+      trigger,
+      enabled: false,
+    });
+    // Boni keeps his version (what runs is what he saved) until «Volver al de Boni».
+    expect(
+      ensureFlow(
+        store,
+        {
+          id: BUDGET_FLOW,
+          name: "Aviso del presupuesto",
+          trigger,
+          plan: BUDGET_PLAN,
+          by: "preset",
+        },
+        6000,
+      ),
+    ).toMatchObject({ version: 2, by: "user" });
+    expect(revertFlow(store, BUDGET_FLOW, { preset: true }, 7000)).toMatchObject({
+      version: 3,
+      by: "preset",
+      plan: BUDGET_PLAN,
+      enabled: false,
+    });
+    // «Duplicar» gives a copy that starts by hand, off: the trigger stays Boni's flow's alone.
+    expect(createFlow(store, { name: "Copia", from: BUDGET_FLOW }, 8000)).toMatchObject({
+      trigger: { manual: true },
+      enabled: false,
+      by: "user",
     });
     store.close();
   });

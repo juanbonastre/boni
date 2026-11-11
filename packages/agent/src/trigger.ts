@@ -26,9 +26,10 @@ export function runnableNames(trigger: unknown): string[] | null {
 
 /**
  * Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, on a schedule, new mail in the
- * mailbox (`connector: "mail"`, Boni's «Traer correo», D-50: only a look that finds mail starts a run), or Juan's
- * decisions calling for a review (`learning: "mail"`, Boni's «Revisar la guía», D-51). None of the last three is
- * run by hand.
+ * mailbox (`connector: "mail"`, Boni's «Traer correo», D-50: only a look that finds mail starts a run), Juan's
+ * decisions calling for a review (`learning: "mail"`, Boni's «Revisar la guía», D-51), or the month's spending on
+ * models passing the budget's warning (`spending: "warn"`, Boni's «Aviso del presupuesto», D-53: once a month). Only
+ * one by hand or on a schedule is run by hand (`runnableNames`).
  */
 export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) return false;
@@ -37,6 +38,8 @@ export function triggerOk(trigger: unknown): boolean {
   if (t.connector !== undefined) return t.connector === "mail" && Object.keys(t).length === 1;
   // Boni's «Revisar la guía»: Juan's decisions ask for a review (D-51).
   if (t.learning !== undefined) return t.learning === "mail" && Object.keys(t).length === 1;
+  // Boni's «Aviso del presupuesto»: the month's spending passes the warning (D-53).
+  if (t.spending !== undefined) return t.spending === "warn" && Object.keys(t).length === 1;
   if (t.manual === true) {
     if (t.inputs === undefined) return true;
     return (

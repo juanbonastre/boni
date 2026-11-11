@@ -114,6 +114,8 @@ export function triggerText(
   if (on.connector === "mail") return t("flows.on.connector.mail");
   // Boni's «Revisar la guía»: Juan's decisions ask for a review.
   if (on.learning === "mail") return t("flows.on.learning.mail");
+  // Boni's «Aviso del presupuesto» (D-53): the month's spending on models passes the budget's warning.
+  if (on.spending === "warn") return t("flows.on.spending.warn");
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
@@ -127,9 +129,16 @@ export function triggerText(
   return t("flows.on.other");
 }
 
-/** What a trigger gives its plan when it is not a record's: the form's names, or `today` on a schedule. */
+/**
+ * What a trigger gives its plan when it is not a record's: the form's names, `today` on a schedule, or the month's
+ * spending and the budget for Boni's «Aviso del presupuesto» (the server's `SPENDING_INPUTS`).
+ */
 const givenNames = (trigger: Record<string, unknown>): string[] =>
-  trigger.schedule && typeof trigger.schedule === "object" ? ["today"] : formNames(trigger);
+  trigger.schedule && typeof trigger.schedule === "object"
+    ? ["today"]
+    : trigger.spending === "warn"
+      ? ["spent", "budget"]
+      : formNames(trigger);
 
 /** The names a manual trigger's form asks for. */
 const formNames = (trigger: Record<string, unknown>): string[] =>
@@ -315,8 +324,12 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
 
 const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) {
   const t = useStore((s) => s.t);
+  // What starts it is cut to the card's width when long («El gasto del mes pasa del aviso»): whole in its tooltip.
   return (
-    <div className={`fl-card source${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}>
+    <div
+      className={`fl-card source${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}
+      title={data.text}
+    >
       <div className="fl-head">
         <span className="fl-icon">
           <Zap size={14} strokeWidth={1.8} aria-hidden />
@@ -1096,11 +1109,13 @@ function TriggerPanel({
   onClose: () => void;
 }) {
   const t = useStore((s) => s.t);
-  // What a record or the mail connector starts is not changed here (Boni's «Leer correo» and «Traer correo»).
+  // What a record, the mail connector, Juan's decisions or the month's spending start is not changed here (Boni's
+  // «Leer correo», «Traer correo», «Revisar la guía» and «Aviso del presupuesto»).
   const fixed =
     typeof draft.trigger.created === "string" ||
     draft.trigger.connector === "mail" ||
-    draft.trigger.learning === "mail";
+    draft.trigger.learning === "mail" ||
+    draft.trigger.spending === "warn";
   const names = formNames(draft.trigger);
   const schedule =
     draft.trigger.schedule && typeof draft.trigger.schedule === "object"

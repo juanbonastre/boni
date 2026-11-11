@@ -211,7 +211,7 @@ versiones y «Volver al de Boni». Los de hoy, con su disparador:
 | Revisar la guía | Cuando tus decisiones lo piden: 20 decisiones nuevas o «Revisar ahora»; una vez al día como mucho | Tus decisiones (pieza, con las reglas que ya muestran sus correcciones) → Revisora → Medir releyendo (pieza, 45 al día) → Sugerencia (pieza) | Un flujo de Boni desde el 2026-11-06 (D-51); `mailReview.ts` |
 | Aprender | Las decisiones de Juan | Señales → Sugerencia o «Solo» | `learning.ts`, `autoAccept.ts` |
 | Conversación | Un mensaje de Juan | Contexto (historial, memoria, colecciones, pantalla) → Agente → el plan que escribió → Respuesta | `agent.ts` |
-| Aviso del presupuesto | El gasto en IA del mes pasa del aviso | Avisar | `agent.ts` |
+| Aviso del presupuesto | El gasto del mes pasa del aviso (se mira antes de cada llamada de segundo plano a un modelo; una vez al mes) | Avisar, con su texto | Un flujo de Boni desde el 2026-11-11 (D-53); `models.ts` |
 | Mantenimiento | Cada 6 horas | Copias, alargar series | `backups.ts`, `calendarStore.ts`; fuera del mapa salvo «Mostrar mantenimiento» |
 
 **La pieza de Boni** es el paso que es código: sus entradas y su salida con su forma, sus ajustes en el panel, su
@@ -313,11 +313,38 @@ preguntas · 0,41 €»):
     «Guardar en Correos» solo en «Traer correo». Al duplicarlo, la copia empieza a mano.
   - En el mapa es ese flujo: aprende de la Bandeja y mejora «Leer correo». Las relecturas al medir cuentan en sus
     llamadas y su coste, nunca como ejecuciones suyas.
-  - Falta, como flujos:
-    - «Aprender» y «Conversación»: su trabajo ya se ve en el mapa (la Bandeja y la conversación). Como flujos con
-      pasos piden diseño (la conversación como flujo es la F11);
-    - «Aviso del presupuesto»: salta mientras se mira el presupuesto antes de cada llamada a un modelo; como
-      ejecución pide cuidar ese momento.
+- **«Aviso del presupuesto» es un flujo de Boni** (D-53; la propuesta recomendada de la 83, «Lo que queda de F7»,
+  2026-11-10; en main el 2026-11-11):
+  - Su disparador es «El gasto del mes pasa del aviso»: el gasto del mes en modelos llega a la fracción de aviso del
+    presupuesto (Ajustes → Modelos: «aviso al 80 %»). Se mira donde siempre, antes de cada llamada de segundo plano a
+    un modelo.
+  - El disparador da a sus pasos dos valores, «Gasto del mes» y «Presupuesto» (en euros, como texto).
+  - Su paso es «Avisar», la herramienta de siempre, con su texto («Los modelos llevan 8.55 € de 10 € este mes.»). El
+    texto es del flujo: se cambia en el editor como el de cualquier paso, y se le pueden añadir pasos.
+  - Hay una ejecución al mes, cuando salta, sin llamar a ningún modelo. Sale en el Registro con el nombre del flujo y
+    cuenta en el mapa como una ejecución suya.
+  - Apagado, no avisa, no hay ejecución y el mes no queda marcado: encendido más tarde ese mes, avisa entonces.
+    Ajustes → Modelos dice «aviso apagado» junto al presupuesto.
+  - El tope no es un paso: encendido, apagado o cambiado, al llegar al presupuesto el trabajo de segundo plano deja
+    de llamar a modelos igual. También el de este flujo: un paso con modelo que se le añada se para como cualquier
+    otro. Cambiar un flujo de Boni cambia lo que hace, nunca lo que se le permite.
+  - Sin recursión: el mes se marca antes de empezar la ejecución. Así hay una al mes pase lo que pase en ella (si
+    para, no se repite), y la mirada al presupuesto de la propia ejecución no empieza otra.
+  - Su disparador no se cambia (el servidor lo guarda), solo él lo tiene y no se ejecuta a mano. Al duplicarlo, la
+    copia empieza a mano y apagada; su lista de comprobación dice que a mano nadie le da las dos cifras.
+  - Su lista de comprobación pide «Avisar» sin condición.
+  - En «Probar» no avisa: dice lo que avisaría, con las cifras del mes, y no cuenta como ejecución.
+  - Sin modelos para la cuenta no hay quien ejecute el flujo: el aviso sale como antes, por código y sin ejecución
+    (hoy no llega a pasar, porque el presupuesto solo se mira antes de una llamada a un modelo). Lo mismo si el flujo
+    no se pudiera guardar. Apagado, tampoco ahí avisa.
+  - Sin presupuesto (0 €) no hay aviso que pasar (antes avisaba «0.00 € de 0 €» cada mes).
+  - En el mapa es un flujo de Boni con sus ejecuciones. No lee ni escribe ninguna colección, así que no tiene
+    flechas: por la regla de §4.4 («lo que no es de nadie no sale») se ve al ponerlo en el centro («Ver en el mapa»,
+    el buscador) o con una ejecución suya encima, desplegado desde su disparador hasta «Avisar».
+  - Falta: una flecha propia en el mapa (a quién avisa). Pide un nodo nuevo, los dispositivos, y es decisión de Juan.
+- Falta, como flujos, «Aprender» y «Conversación»: su trabajo ya se ve en el mapa (la Bandeja y la conversación). Como
+  flujos con pasos piden diseño (la conversación como flujo es la F11; de «Aprender», Juan decide si tiene flujo
+  propio).
 
 ### 4.3 Los disparadores
 
@@ -330,7 +357,7 @@ preguntas · 0,41 €»):
 | Un chat | La conversación, el chat de una página, Boni sobre la pantalla | Turno de Juan | La conversación, aún no como flujo |
 | A mano | «Ejecutar» en el editor | Turno de Juan | F2 («Disparado por el usuario») |
 | Lo pide el planificador | «Ejecuta mi cierre de mes» | Turno de Juan, confirmado (P8) | F4 (`flows.run`) |
-| Algo de Boni | 20 decisiones nuevas | Segundo plano | Código (la revisora) |
+| Algo de Boni | 20 decisiones nuevas; el gasto del mes pasa del aviso | Segundo plano | «Revisar la guía» (`learning: "mail"`, D-51) y «Aviso del presupuesto» (`spending: "warn"`, D-53) |
 
 Para que no se enreden (F12):
 
@@ -793,7 +820,7 @@ con sus datos (`AGENTS.md`, paso 4).
 
 | Fase | Qué | Criterio de hecho (lo que verá Juan) |
 |---|---|---|
-| F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» (D-50) y «Revisar la guía» (D-51) como flujos de Boni; faltan Aprender, Conversación y Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
+| F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» (D-50) y «Revisar la guía» (D-51) como flujos de Boni; el 2026-11-11, «Aviso del presupuesto» (D-53), salvo su flecha en el mapa; faltan Aprender, que espera a Juan, y Conversación, que es la F11) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo, Revisar la guía y Aviso del presupuesto son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
 | F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (el de una tarjeta de la Bandeja, «Recorrido» desde la 90), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
 | F9 Boni sobre la pantalla (la 85; primera parte en main el 2026-11-06: el círculo, `Ctrl+E`, la ventana y la pantalla como datos, A-20; segunda, «Abrir» resaltando, I-30; tercera, el 2026-11-10: Señalar bloques, filas y tarjetas con un clic o arrastrando, las fichas, la consulta y las cifras de lo señalado y el borrador que no se pierde, A-21 e I-31; faltan señalar nodos y párrafos de una nota, `data-boni-ref` en lo que no se señala, las demás acciones de pantalla y lo demás de «Falta» en §4.7) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
 | F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |

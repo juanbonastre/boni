@@ -131,6 +131,8 @@ export interface AgentHostOptions {
 export class AgentHost {
   private o: AgentHostOptions;
   private stores = new Map<number, UserStore>();
+  /** The accounts whose «Aviso del presupuesto» was kept current since their store opened (`store`). */
+  private flowsKept = new Set<number>();
   private agents = new Map<number, Agent>();
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
@@ -219,7 +221,22 @@ export class AgentHost {
       ensurePresets(s);
       this.stores.set(account, s);
     }
+    // Boni's «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with
+    // «Modelos» there (models.ts, D-53): once per account, also for a store opened before (the day's copy at start).
+    if (this.models && !this.flowsKept.has(account)) {
+      this.flowsKept.add(account);
+      this.models.keepFlowCurrent(account);
+    }
     return s;
+  }
+
+  /**
+   * Boni's own flows brought up to date for an account before «Flujos» or the map show them: the mail's (mail.ts
+   * `keepFlowCurrent`) and «Aviso del presupuesto» (models.ts).
+   */
+  boniFlowsCurrent(account: number): void {
+    this.mailFlowCurrent?.(account);
+    this.models?.keepFlowCurrent(account);
   }
 
   /** The files of the stores open now (the checkpoint worker asks every few seconds). */
@@ -354,6 +371,7 @@ export class AgentHost {
   close(): void {
     for (const s of this.stores.values()) s.close();
     this.stores.clear();
+    this.flowsKept.clear();
     this.agents.clear();
   }
 }
@@ -402,7 +420,7 @@ export async function serveAgent(
     case "GET /api/agent/map": {
       if (!host.hasData) return send(res, 503, { error: "no-store" });
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
-      host.mailFlowCurrent?.(who.account);
+      host.boniFlowsCurrent(who.account);
       const q = new URL(req.url ?? "/", "http://boni").searchParams;
       const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
       return send(
@@ -481,7 +499,7 @@ async function serveFlows(
     return send(res, 403, { error: "personal-device-only" });
   switch (route) {
     case "GET /api/agent/flows":
-      host.mailFlowCurrent?.(who.account);
+      host.boniFlowsCurrent(who.account);
       return send(res, 200, { flows: flowsView(store) });
     case "GET /api/agent/flows/catalog":
       return send(res, 200, flowCatalog(host.tools, store, forEditor().modules, { ids: true }));
@@ -602,6 +620,9 @@ async function serveFlows(
               ? leaf(v.slice(0, 2000), typed)
               : leaf(n === "today" ? host.today() : "", codeLabel("today"));
         }
+        // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own.
+        if ((trigger as { spending?: unknown }).spending === "warn")
+          Object.assign(bind, host.models?.noticeBind(who.account) ?? {});
       }
       const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
       const r = await host.agent(who.account).dryRun(plan, bind, {

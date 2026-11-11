@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { createCollection, createRow } from "./data.ts";
 import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
-import { ensureFlow, FETCH_FLOW, REVIEW_FLOW } from "./flows.ts";
+import { BUDGET_FLOW, ensureFlow, FETCH_FLOW, REVIEW_FLOW } from "./flows.ts";
+import { BUDGET_PLAN, BUDGET_TRIGGER } from "./models.ts";
 import { createPage } from "./pages.ts";
 
 /**
@@ -491,6 +492,78 @@ describe("Boni's map, computed (F8; A-16)", () => {
     });
     expect(edgeOf(m, "boni:inbox", `flow:${REVIEW_FLOW}`, "learns")).toBeDefined();
     expect(edgeOf(m, `flow:${REVIEW_FLOW}`, "flow:leer-correo", "improves")).toBeDefined();
+  });
+
+  it("with Boni's «Aviso del presupuesto», the notice is that flow: its run of the month counts at it and a «Probar» does not; what a step of it would write is proposed (D-53)", () => {
+    const w = world();
+    const id = `flow:${BUDGET_FLOW}`;
+    const flow = ensureFlow(
+      store,
+      {
+        id: BUDGET_FLOW,
+        name: "Aviso del presupuesto",
+        trigger: BUDGET_TRIGGER,
+        plan: BUDGET_PLAN,
+        by: "preset",
+      },
+      NOW - 20 * DAY,
+    );
+    // The month's run as the agent starts it (models.ts `warn`: background, its flow and version), and a «Probar».
+    const run = (rid: string, origin: string, at: number) =>
+      store.journal.startRun({
+        id: rid,
+        turn: null,
+        origin,
+        device: origin === "test" ? "portatil" : null,
+        started: at,
+        flow: BUDGET_FLOW,
+        flowVersion: flow.version,
+      });
+    run("b1", "background", NOW - 2 * DAY);
+    run("b0", "test", NOW - DAY);
+    const m = mapOf(7, w.correo);
+    expect(m.nodes.find((n) => n.id === id)).toMatchObject({
+      kind: "flow",
+      name: "Aviso del presupuesto",
+      trigger: { spending: "warn" },
+      boni: true,
+      on: true,
+      by: "preset",
+      runs: 1,
+      last: NOW - 2 * DAY,
+      calls: 0,
+      roles: [],
+      // It did not come with the mail.
+      pack: null,
+      steps: [expect.objectContaining({ id: "notify", what: "notify", deps: ["spent", "budget"] })],
+    });
+    // It reads and writes no collection: no arrow of its own.
+    expect(m.edges.filter((e) => e.from === id || e.to === id)).toEqual([]);
+    const owner = (rid: string) => {
+      const r = store.journal.run(rid);
+      if (!r) throw new Error("no run");
+      return mapOwnerOf(store, r, null);
+    };
+    expect([owner("b1"), owner("b0")]).toEqual([id, null]);
+    // A version of Juan's with a «Crear»: it is work of Boni's own (the background), so what it writes is proposed.
+    store.journal.saveFlow({
+      id: BUDGET_FLOW,
+      name: "Aviso del presupuesto",
+      trigger: BUDGET_TRIGGER,
+      inputs: [],
+      plan: { version: 1, steps: [...BUDGET_PLAN.steps, create("n", keyOf(w.tarea))] },
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: NOW - DAY,
+    });
+    const mine = mapOf(7, w.correo);
+    expect(edgeOf(mine, id, "boni:inbox", "proposes")).toMatchObject({
+      steps: ["n"],
+      into: [`col:${w.tarea}`],
+    });
+    expect(edgeOf(mine, id, `col:${w.tarea}`, "writes")).toBeUndefined();
+    expect(mine.nodes.find((n) => n.id === id)).toMatchObject({ boni: true, by: "user" });
   });
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {

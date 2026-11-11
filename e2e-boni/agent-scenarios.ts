@@ -2832,6 +2832,185 @@ export const FLOWS_WITH_SUMMARY = {
   ],
 };
 
+/**
+ * Boni's «Aviso del presupuesto» (D-53), as the server gives it (apps/server models.ts and flows.ts; copied from what
+ * a server of the tests answered): started by the month's spending, one «Avisar» whose text takes the spending and
+ * the budget from its trigger.
+ */
+const BUDGET_PLAN = {
+  version: 1,
+  steps: [
+    {
+      id: "notify",
+      op: "call",
+      tool: "notify",
+      args: {
+        text: {
+          fn: "concat",
+          args: [
+            { lit: "Los modelos llevan " },
+            { ref: "$spent" },
+            { lit: " € de " },
+            { ref: "$budget" },
+            { lit: " € este mes." },
+          ],
+        },
+      },
+    },
+  ],
+};
+const BUDGET_ROW = {
+  id: "aviso-presupuesto",
+  name: "Aviso del presupuesto",
+  version: 1,
+  trigger: { spending: "warn" },
+  by: "preset",
+  enabled: true,
+  steps: 1,
+  runs: 1,
+  last: Date.UTC(2026, 9, 21, 7, 40),
+};
+const BUDGET_STEP = flowStep("notify", "call", "notify", {
+  title: "Avisar",
+  args: ['text: concat("Los modelos llevan ", $spent, " € de ", $budget, " € este mes.")'],
+  deps: ["spent", "budget"],
+  ran: { allow: 1 },
+});
+export const FLOWS_WITH_BUDGET = { flows: [...FLOWS.flows, BUDGET_ROW] };
+export const FLOW_BUDGET = {
+  ...BUDGET_ROW,
+  inputs: [
+    { id: "spent", what: "text" },
+    { id: "budget", what: "text" },
+  ],
+  nodes: [BUDGET_STEP],
+  days: 7,
+  versions: [{ version: 1, by: "preset", created: Date.UTC(2026, 9, 12, 8, 0) }],
+  plan: BUDGET_PLAN,
+  preset: 1,
+  mailKey: null,
+};
+/** Its checklist, empty, with what its «Avisar» may take: the two figures its trigger gives. */
+export const FLOW_BUDGET_CHECK = {
+  problems: [],
+  refs: {
+    notify: [
+      { ref: "$spent", t: "text" },
+      { ref: "$budget", t: "text" },
+    ],
+  },
+  outs: { notify: [{ ref: "$notify", t: "bool" }] },
+};
+/** Its checklist with «Avisar» taken out. */
+export const FLOW_BUDGET_CHECK_NONE = {
+  problems: [
+    { step: null, at: null, code: "no-steps" },
+    { step: null, at: "trigger", code: "budget-needs-notice" },
+  ],
+  refs: {},
+  outs: {},
+};
+/** «Probar» on it: nothing is told; the step says what it would tell, with the month's figures. */
+export const FLOW_BUDGET_TEST = {
+  run: "run-test-budget",
+  status: "done",
+  error: null,
+  sample: null,
+  steps: {
+    notify: {
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      out: { t: "none" },
+      would: [
+        {
+          decision: "allow",
+          rule: "P1",
+          tool: "notify",
+          title: "Avisar",
+          type: null,
+          text: "Los modelos llevan 8.55 € de 10 € este mes.",
+        },
+      ],
+    },
+  },
+};
+/** The map with it: a flow of Boni's with its run of the month and no arrow (it reads and writes no collection). */
+export const MAP_BUDGET = {
+  ...MAP,
+  nodes: [
+    ...MAP.nodes,
+    mapNode({
+      id: "flow:aviso-presupuesto",
+      kind: "flow",
+      name: "Aviso del presupuesto",
+      trigger: { spending: "warn" },
+      on: true,
+      by: "preset",
+      boni: true,
+      runs: 1,
+      last: BUDGET_ROW.last,
+      plan: BUDGET_PLAN,
+      steps: [BUDGET_STEP],
+      pack: null,
+    }),
+  ],
+};
+/** The month's run of it, as the Registro lists it and as its Recorrido says it: one «Avisar», no model call. */
+export const RUNS_BUDGET = {
+  runs: [
+    {
+      id: "run-b1",
+      origin: "background",
+      device: null,
+      status: "done",
+      started: BUDGET_ROW.last,
+      finished: BUDGET_ROW.last,
+      what: { kind: "flow", flow: "Aviso del presupuesto" },
+      proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+      changes: [],
+      changed: 0,
+    },
+  ],
+};
+export const RUN_BUDGET = {
+  id: "run-b1",
+  status: "done",
+  origin: "background",
+  started: BUDGET_ROW.last,
+  finished: BUDGET_ROW.last,
+  request: null,
+  flow: "aviso-presupuesto",
+  flowVersion: 1,
+  inputs: ["spent", "budget"],
+  steps: [
+    {
+      id: "notify",
+      op: "call",
+      what: "notify",
+      args: BUDGET_PLAN.steps[0]?.args,
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      deps: [],
+      uses: ["spent", "budget"],
+      title: "Avisar",
+      answers: [],
+      calls: 0,
+      cost: 0,
+      output: null,
+    },
+  ],
+  read: [],
+  changes: [],
+  proposals: [],
+  input: null,
+  decisions: [],
+  models: [],
+  owner: "flow:aviso-presupuesto",
+  drawn: null,
+};
+
 /** Flows a model proposed (docs/flujos.md F5): a new one, and a change of one of the user's. */
 export const FLOW_PROPOSAL = {
   id: "pf1",

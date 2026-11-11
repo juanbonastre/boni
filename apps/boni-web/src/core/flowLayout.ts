@@ -357,6 +357,8 @@ export function groupOf(n: MapNodeLike, by: Grouping): string | null {
     // Boni's «Traer correo»: the mail connector starts it (never «by the user»).
     if (t.connector === "mail") return "on:connector:mail";
     if (t.learning === "mail") return "on:learning:mail";
+    // Boni's «Aviso del presupuesto»: the month's spending starts it.
+    if (t.spending === "warn") return "on:spending:warn";
     if (t.schedule) return "on:schedule";
     return "on:manual";
   }

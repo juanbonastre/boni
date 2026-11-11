@@ -32,6 +32,8 @@ export const MAIL_FLOW = "leer-correo";
 export const FETCH_FLOW = "traer-correo";
 /** Boni's «Revisar la guía» (docs/sistema.md §4.2): Juan's decisions on mail proposals, read by the reviewer. */
 export const REVIEW_FLOW = "revisar-guia";
+/** Boni's «Aviso del presupuesto» (docs/sistema.md §4.2, D-53): the month's spending on models passes the warning. */
+export const BUDGET_FLOW = "aviso-presupuesto";
 
 /** What a flow's trigger binds to its plan by name, each with what it is (for the trigger's node). */
 export interface FlowInput {
@@ -73,19 +75,27 @@ export const MAIL_INPUTS: Readonly<Record<string, FlowInput["what"]>> = {
 };
 /** The inputs a step's collection decides, by the collection's key. */
 export const PER_COLLECTION = ["fill", "prefill"];
+/**
+ * What «Aviso del presupuesto»'s trigger binds (models.ts `noticeBind`): the month's spending on models and the
+ * month's budget, in euros, each as a text («8.55», «10»).
+ */
+export const SPENDING_INPUTS: readonly string[] = ["spent", "budget"];
+const bySpending = (trigger: unknown): boolean =>
+  (trigger as { spending?: unknown } | null)?.spending === "warn";
 
 /** The names a plan takes from outside (not its own steps nor `$item`/`$zip` of an iteration), as inputs. */
 export function inputsOf(plan: unknown, trigger: unknown = null): FlowInput[] {
   const steps = stepsOf(plan);
   const own = new Set([...steps.map((s) => s.id), "item", "zip"]);
-  const manual = manualInputs(trigger);
+  // What a form asks for and the figures of «Aviso del presupuesto» are texts.
+  const texts = [...manualInputs(trigger), ...(bySpending(trigger) ? SPENDING_INPUTS : [])];
   const seen = new Set<string>();
   const out: FlowInput[] = [];
   for (const s of steps)
     for (const r of refsOf(s))
       if (!own.has(r) && !seen.has(r)) {
         seen.add(r);
-        out.push({ id: r, what: manual.includes(r) ? "text" : (MAIL_INPUTS[r] ?? "value") });
+        out.push({ id: r, what: texts.includes(r) ? "text" : (MAIL_INPUTS[r] ?? "value") });
       }
   return out;
 }
@@ -361,20 +371,24 @@ const cut = (s: string) => (s.length > 60 ? `${s.slice(0, 57)}…` : s);
 
 // ------------------------------------------------------------------ triggers
 
-/** What starts a flow (docs/flujos.md §4.3): a new mail, by hand with a form, on a schedule, or new mail in the
- * mailbox (Boni's «Traer correo»: it binds nothing; its piece brings what the connector found). */
+/** What starts a flow (docs/flujos.md §4.3): a new mail, by hand with a form, on a schedule, new mail in the
+ * mailbox (Boni's «Traer correo»: it binds nothing; its piece brings what the connector found), Juan's decisions
+ * (Boni's «Revisar la guía»), or the month's spending on models passing the budget's warning (Boni's «Aviso del
+ * presupuesto»: it binds the spending and the budget). */
 export type Trigger =
   | { created: string }
   | { manual: true; inputs?: { name: string }[] }
   | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } }
   | { connector: "mail" }
-  | { learning: "mail" };
+  | { learning: "mail" }
+  | { spending: "warn" };
 
 /** The names a trigger binds to the plan. */
 export function triggerNames(trigger: unknown): string[] {
   const t = trigger as { created?: unknown; schedule?: unknown } | null;
   if (typeof t?.created === "string") return Object.keys(MAIL_INPUTS);
   if (t?.schedule) return ["today"];
+  if (bySpending(trigger)) return [...SPENDING_INPUTS];
   return manualInputs(trigger);
 }
 
@@ -652,6 +666,14 @@ export function checkFlow(
     );
     if (!saves) problems.push({ step: null, at: "trigger", code: "fetch-needs-save" });
   }
+  // «Aviso del presupuesto» (D-53) tells, always: without an «Avisar» that runs every time (none, or one only on a
+  // condition or once per item), the month's one run could pass the warning and say nothing.
+  if (bySpending(flow.trigger)) {
+    const tells = steps.some(
+      (s) => s.op === "call" && s.tool === "notify" && s.when === undefined && s.each === undefined,
+    );
+    if (!tells) problems.push({ step: null, at: "trigger", code: "budget-needs-notice" });
+  }
   // A flow never starts another (docs/flujos.md §4.3): `flows.run` is the planner's, in the user's turn.
   for (const s of steps)
     if (
@@ -752,6 +774,7 @@ function inputShapes(trigger: unknown, types: TypeDef[]): Record<string, Shape> 
     };
   }
   if (t?.schedule) return { today: TEXT() };
+  if (bySpending(trigger)) return Object.fromEntries(SPENDING_INPUTS.map((n) => [n, TEXT()]));
   return Object.fromEntries(manualInputs(trigger).map((n) => [n, TEXT()]));
 }
 
@@ -923,9 +946,15 @@ export function createFlow(
 ): FlowRow | null {
   const from = o.from ? store.journal.flow(o.from) : null;
   if (o.from && !from) return null;
-  // A copy of «Traer correo» or «Revisar la guía» starts by hand: their triggers are only theirs (D-50, D-51).
-  const on = (from?.trigger ?? {}) as { connector?: unknown; learning?: unknown };
-  const boniOnly = on.connector !== undefined || on.learning !== undefined;
+  // A copy of «Traer correo», «Revisar la guía» or «Aviso del presupuesto» starts by hand: their triggers are only
+  // theirs (D-50, D-51, D-53).
+  const on = (from?.trigger ?? {}) as {
+    connector?: unknown;
+    learning?: unknown;
+    spending?: unknown;
+  };
+  const boniOnly =
+    on.connector !== undefined || on.learning !== undefined || on.spending !== undefined;
   return store.journal.saveFlow({
     id: newFlowId(o.name),
     name: o.name,
@@ -959,17 +988,19 @@ export function saveUserFlow(
   if (latest.version !== edit.base) return { error: "conflict" };
   if (problems.length) return { error: "invalid" };
   const trigger = edit.trigger ?? latest.trigger;
-  // Boni's «Leer correo», «Traer correo» and «Revisar la guía» keep what starts them; only «Traer correo» is started by
-  // the connector, only «Revisar la guía» by Juan's decisions.
+  // Boni's «Leer correo», «Traer correo», «Revisar la guía» and «Aviso del presupuesto» keep what starts them; only
+  // «Traer correo» is started by the connector, only «Revisar la guía» by Juan's decisions, only «Aviso del
+  // presupuesto» by the month's spending.
   if (
-    (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW) &&
+    (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW || id === BUDGET_FLOW) &&
     JSON.stringify(trigger) !== JSON.stringify(latest.trigger)
   )
     return { error: "trigger" };
-  const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown };
+  const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown; spending?: unknown };
   if (
     (id !== FETCH_FLOW && on.connector !== undefined) ||
-    (id !== REVIEW_FLOW && on.learning !== undefined)
+    (id !== REVIEW_FLOW && on.learning !== undefined) ||
+    (id !== BUDGET_FLOW && on.spending !== undefined)
   )
     return { error: "trigger" };
   return {

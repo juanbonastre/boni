@@ -983,7 +983,15 @@ contraseña ni un código aquí» under a question.
   and a reading's Recorrido lights that way too. Boni's «Revisar la guía» (D-51) starts with «Cuando tus decisiones
   lo piden», fixed in the same way, and reads «Tus decisiones» → «Revisora» → «Medir releyendo» → «Sugerencia», the
   last card saying «De Boni · deja una sugerencia»; on the map it replaces the reviewer's own box, learning from the
-  Bandeja and improving «Leer correo». «Función» (task 93, D-52), offered in «Añadir paso» under «Funciones» with
+  Bandeja and improving «Leer correo». Boni's «Aviso del presupuesto» (D-53) starts with «El gasto del mes pasa del
+  aviso», fixed in the same way and never run by hand; its trigger's card lists what it gives by a person's names,
+  «Gasto del mes» and «Presupuesto», and its one step is an ordinary «Avisar» whose text is the flow's, made of parts
+  (texts and those two figures) that are changed like any step's. What starts a flow is cut to its card's width when
+  it is long, whole in its tooltip (as a lane's name). «Probar» says what it would tell («Haría: Avisar «Los modelos
+  llevan 8.55 € de 10 € este mes.»») and tells nothing. On the map it has no arrow (it reads and writes no
+  collection), so it is drawn in the centre («Ver en el mapa», the search) or with a run of it on the map, its
+  trigger's box saying «Gasto del mes · Presupuesto»; «Agrupar por disparador» names its frame «El gasto del mes pasa
+  del aviso». «Función» (task 93, D-52), offered in «Añadir paso» under «Funciones» with
   «Aplicar cambios» only while an extension's function is active, chooses among them in a select («Banco ·
   importar»), with «Código» under it (a `<details>`, the code in a scroll of at most 240 px, to read, never to edit)
   and «Pruebas (n)», its tests' names; «Aplicar cambios» takes its result whole, and in the Bandeja its card is
@@ -1070,7 +1078,9 @@ contraseña ni un código aquí» under a question.
   providers; readers only those that answer a fixed form, the Decisor only Jev) and under the list, fixed while it
   scrolls, «Ahora» and «Nuevo» with their scores, «Evaluar» and «Usar este modelo» (enabled only with a recent
   evaluation). Then the month's spending against the budget (a tile with its bar), the spending per model and
-  «Cambiar el presupuesto»; «Claves» folded at the end (a password field in place; the key never comes back). What the
+  «Cambiar el presupuesto», by the line that says the budget and its warning («Presupuesto: 10,00 € al mes, aviso al
+  80 %»; with Boni's «Aviso del presupuesto» turned off, «…, aviso apagado»: a state in a word, §5; D-53); «Claves»
+  folded at the end (a password field in place; the key never comes back). What the
   models did is the page «Uso de la IA».
 - **Registro** (Boni): an ordinary template page over the read-only «Ejecuciones» collection, with total runs, time and
   cost, a daily chart and the runs table. «Actividad» links to that page. The conversation's «Registro» keeps the

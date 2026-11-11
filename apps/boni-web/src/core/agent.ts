@@ -743,6 +743,8 @@ export interface ModelsView {
   roles: ModelRoleView[];
   connections: { connection: ModelConnection; mine: boolean; server: boolean }[];
   budget: { monthlyEur: number; warnAt: number };
+  /** Passing the warning tells: Boni's «Aviso del presupuesto» is on (a server from before it always told). */
+  notice: boolean;
   usdToEur: number;
   spending: {
     month: string;
@@ -1403,6 +1405,7 @@ export function parseModels(b: unknown): ModelsView | null {
       return connection ? [{ connection, mine: c.mine === true, server: c.server === true }] : [];
     }),
     budget: { monthlyEur: num(budget.monthlyEur, 10), warnAt: num(budget.warnAt, 0.8) },
+    notice: b.notice !== false,
     usdToEur: num(b.usdToEur, 0.9),
     spending: {
       month: s200(sp.month, 7),
