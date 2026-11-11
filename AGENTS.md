@@ -51,8 +51,10 @@ with the same click fixed twice, was «todo un poco liado»):
    - Before a phase or task is called finished (its PR, the design's phase table, the CHANGELOG), an agent that did
      not build it compares the design's section with the change, point by point: done, partly, missing. Its table
      goes in the PR; what is missing goes in the CHANGELOG and into the queue. How: `docs/agents/conformance.md`.
-   - Merged with CI green, a phase or task is «en main»; it becomes «hecha» only when Juan has tried it with his
-     data and its criterion holds. The design's phase table and the task's state say which.
+   - Merged with CI green, a phase or task is «en main». There is no list of things for Juan to try (Juan,
+     2026-11-11: he tries the whole app when it is ready): a task whose only thing left is his trial leaves the
+     queue as hecha, its state saying «en main; Juan la prueba con la app entera». Only something important (it
+     changes his data, or its shape is in doubt) is named for him to try, in its task and in the CHANGELOG.
 5. Every change to `apps/boni-web` ships in a new desktop version: `apps/boni-desktop/package.json` must be newer
    than the last release's version in `CHANGELOG.md` (CI refuses the change otherwise, I-05); the same for
    `apps/calendar-web` and `apps/calendar-desktop/package.json`. **Bump once per batch**: the first PR of the batch

@@ -49,5 +49,5 @@ done. Each row has:
 - The table goes in the PR's description.
 - Every row that is not «done» either gets done in the same PR, or goes into the queue (the task of the phase or a
   new one), the design's phase table («salvo …») and the release's CHANGELOG entry.
-- Merged with CI green, the phase is «en main». It becomes «hecha» only when Juan has tried it with his data and its
-  criterion holds (`AGENTS.md`, «How a change is made»).
+- Merged with CI green, the phase is «en main»; with nothing left but Juan's own trial, it leaves the queue as hecha
+  (`AGENTS.md`, «How a change is made»).
