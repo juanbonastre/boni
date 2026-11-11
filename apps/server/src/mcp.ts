@@ -5,6 +5,7 @@ import {
   type FieldType,
   type Interface,
   interfacesOf,
+  type Label,
   label,
   MAX_DESCRIPTION,
   type Roles,
@@ -28,7 +29,7 @@ import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { serverRegistry } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
-import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
+import { checkFlow, flowCatalog, stepsOf, type TestView, testFacts } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
@@ -74,7 +75,15 @@ interface Ctx {
   run: string;
   /** What of Juan's entities this call sends back to the model (the audit). */
   seen: Seen[];
+  /** «Probar» a flow, as the editor's route runs it (agent.ts `tryFlow`); none without the agent. */
+  tryFlow?: FlowTry;
 }
+/** Tries a saved flow dry with its form's values (`said`: whose they are); the route's status and answer. */
+export type FlowTry = (
+  flow: string,
+  inputs: Record<string, string>,
+  said: Label,
+) => Promise<{ status: number; body: unknown }>;
 /** Arguments as the audit keeps them: no long texts (what a call writes is in the operation log anyway). */
 const auditArgs = (a: Args): Record<string, unknown> =>
   Object.fromEntries(
@@ -329,6 +338,7 @@ const READS = new Set([
   "inbox",
   "recent_changes",
   "extensions_describe",
+  "flows_test",
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
 /** The list of actions (docs/sistema.md §4.1, D-41): what a flow may use, and the actions an assistant runs here. */
@@ -349,15 +359,18 @@ const REF = {
 };
 
 /**
- * The actions of «Páginas y vistas» (F10) for an assistant: the planner's own (pageActions.ts), run with this call's
- * run (`undo` takes them back) and its words as a model's. What it names (a collection, its fields) is found as the
- * models see them: a collection closed to them is not there.
+ * The actions of «Páginas y vistas» and «Datos» (F10) for an assistant: the planner's own (pageActions.ts,
+ * dataActions.ts), run with this call's run (`undo` takes them back) and its words as a model's. What it names (a
+ * collection, its fields) is found as the models see them: a collection closed to them is not there. Deleting is
+ * Juan's card, and has no tool here.
  */
-const PAGE_TOOLS: readonly {
+const ACTION_TOOLS: readonly {
   name: string;
   action: string;
   description: string;
   required: string[];
+  /** Arguments that may be null (to the top). */
+  nullable?: string[];
 }[] = [
   {
     name: "pages_create",
@@ -387,8 +400,37 @@ const PAGE_TOOLS: readonly {
       "Renames a page, changes its icon (one emoji) or moves it under another page (parent: its id; null: to the top).",
     required: ["page"],
   },
+  {
+    name: "rename_collection",
+    action: "schema.rename_type",
+    description:
+      "Renames one of Juan's collections (type: its key, as collections gives it); its key and its notes stay.",
+    required: ["type", "name"],
+  },
+  {
+    name: "move_collection",
+    action: "schema.move_type",
+    description:
+      "Moves one of Juan's collections inside another (parent: that one's key; null: to the top), with what is inside it.",
+    required: ["type"],
+    nullable: ["parent"],
+  },
+  {
+    name: "change_property",
+    action: "schema.update_field",
+    description:
+      "Changes a property of a collection (field: its key): its name, its kind (with values, only among kinds of text) or a list's options (comma-separated; one still in use stays).",
+    required: ["type", "field"],
+  },
+  {
+    name: "move_note",
+    action: "entities.move",
+    description:
+      "Moves a note to another of Juan's collections (type: its key), keeping its id and its history.",
+    required: ["id", "type"],
+  },
 ];
-function pageTool(t: (typeof PAGE_TOOLS)[number]): Tool {
+function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
   const def = REGISTRY.get(t.action);
   if (!def) throw new Error(`no action ${t.action}`);
   const props = Object.fromEntries(
@@ -396,7 +438,7 @@ function pageTool(t: (typeof PAGE_TOOLS)[number]): Tool {
       k,
       a.role === "definition"
         ? { type: "object" }
-        : a.role === "page"
+        : a.role === "page" || t.nullable?.includes(k)
           ? { type: ["string", "null"] }
           : { type: "string" },
     ]),
@@ -406,6 +448,27 @@ function pageTool(t: (typeof PAGE_TOOLS)[number]): Tool {
     description: t.description,
     inputSchema: obj(props, t.required),
     async call(c, a) {
+      // As every write of this server: only what is wholly open to the models (its level «visible»).
+      const v = view(c);
+      for (const [k, x] of Object.entries(def.args)) {
+        const given = a[k];
+        if (typeof given !== "string") continue;
+        if (x.role === "type") {
+          const t = Object.values(c.store.schema().types).find(
+            (d) => d.key === given || d.id === given,
+          );
+          if (t && v.level(t.id) !== "visible")
+            throw new ToolFail(`${t.name} is not writable for a model`);
+        }
+        if (x.role === "entity") {
+          const e = v.ro.get(given);
+          if (
+            e &&
+            (v.level(e.entity.type) !== "visible" || Object.values(e.labels).some((l) => l.noModel))
+          )
+            throw new ToolFail("that note is not writable for a model");
+        }
+      }
       const said = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
       const args: Record<string, Val> = {};
       for (const k of Object.keys(def.args))
@@ -1283,7 +1346,32 @@ const TOOLS: Tool[] = [
       return { proposed: true, proposal: r.proposal, waitsFor: "Juan, in Boni's inbox" };
     },
   },
-  ...PAGE_TOOLS.map(pageTool),
+  ...ACTION_TOOLS.map(actionTool),
+  {
+    name: "flows_test",
+    description:
+      "Tries one of Juan's flows as «Probar» does in Boni (flow: its id, from flows_describe; inputs: its form's values by name): it runs dry, changes nothing, and says what each step would decide and call (no texts). A flow started by mail is tried in Boni.",
+    inputSchema: obj(
+      {
+        flow: { type: "string" },
+        inputs: { type: "object", additionalProperties: { type: "string" } },
+      },
+      ["flow"],
+    ),
+    async call(c, a) {
+      if (!c.tryFlow) throw new ToolFail("the agent is off");
+      const inputs: Record<string, string> = {};
+      if (a.inputs && typeof a.inputs === "object")
+        for (const [k, v] of Object.entries(a.inputs)) if (typeof v === "string") inputs[k] = v;
+      // An assistant's words: its own (`model`), never Juan's.
+      const said = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
+      const r = await c.tryFlow(str(a.flow, "flow", 80), inputs, said);
+      if (r.status !== 200)
+        throw new ToolFail(String((r.body as { error?: unknown }).error ?? r.status));
+      // Decisions and counts, never the texts: they are Juan's data at their own labels.
+      return testFacts(r.body as TestView);
+    },
+  },
   {
     name: "undo",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
@@ -1389,8 +1477,18 @@ export async function mcpAnswer(
   now: () => number = Date.now,
   scope: readonly Scope[] | null = null,
   mailAccount: string | null = null,
+  tryFlow?: FlowTry,
 ): Promise<unknown | null> {
-  const c: Ctx = { store, device, now, run: "", seen: [], scope, mailAccount };
+  const c: Ctx = {
+    store,
+    device,
+    now,
+    run: "",
+    seen: [],
+    scope,
+    mailAccount,
+    ...(tryFlow ? { tryFlow } : {}),
+  };
   if (Array.isArray(body)) {
     const out: unknown[] = [];
     for (const m of body) {

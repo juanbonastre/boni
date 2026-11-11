@@ -459,7 +459,9 @@ contraseña ni un código aquí» under a question.
   page's bottom (above a toast) says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕, so nothing in the
   head or the table moves; the head keeps its options, and a click on one of them, Esc or a click outside the table
   lets go; Supr deletes them (one Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre,
-  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. A card of the
+  «Mover a…», Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first.
+  «Mover a…» turns the menu into the list of Juan's other collections (never Boni's own); a click moves the note
+  there, out of this table, with a toast «Movida a X» and its Undo. A card of the
   board, the gallery or the list opens the same menu where the pointer is (task 42), lit while it is open; its
   «Cambiar nombre» writes the card's title in place. **A column's menu**
   (task 40; Notion's property menu): a click on its name opens it under the name, the right button where the pointer

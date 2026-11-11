@@ -14,13 +14,14 @@ import {
   listConversations,
   type ModelProvider,
   runnableNames,
+  ToolError,
   type ToolRegistry,
   turnViews,
   updateConversation,
   type Val,
 } from "@boni/agent";
 import { dayToIso, todayIn } from "@boni/calendar";
-import { label } from "@boni/entities";
+import { type Label, label } from "@boni/entities";
 import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
@@ -28,6 +29,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
+import type { FlowsService } from "./flowActions.ts";
 import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
   checkFlow,
@@ -41,11 +43,14 @@ import {
   originOf,
   revertFlow,
   saveUserFlow,
+  type TestView,
+  testFacts,
   testView,
   triggerNames,
   WHOLE_FLOW_ONLY,
 } from "./flows.ts";
 import type { Runner } from "./functions.ts";
+import type { InboxService } from "./inboxActions.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -108,6 +113,9 @@ import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
  *   POST /api/agent/extensions/:id/reject    the proposal goes away
  *   POST /api/agent/extensions/:id/revert    back to the version before the active one (and forward again)
  */
+/** The setting that keeps what a run changed in «Flujos», for its Undo (`AgentHost.undoFlows`). */
+const FLOW_UNDO = "flows/undo/";
+
 export interface Providers {
   planner: ModelProvider;
   reader: ModelProvider;
@@ -282,19 +290,10 @@ export class AgentHost {
         // To this account's devices only: the recipient is the code's (7.9).
         notify: (text, l) => this.notify(account, text, l.integrity),
         onRequest: () => this.emit(account, "requests", {}),
-        // The services an action's area needs (F10): the pages' writer, with the run it belongs to (its Undo).
-        services: (name, run) =>
-          name === "pages"
-            ? {
-                store: this.store(account),
-                meta: {
-                  actor: "agent",
-                  run: run.run,
-                  ...(run.action !== undefined ? { action: run.action } : {}),
-                  ...(run.device ? { device: run.device } : {}),
-                },
-              }
-            : null,
+        // The services an action's area needs (F10): the pages' and the data's writer, with the run it belongs to
+        // (its Undo); the flows' and the Bandeja's code, as their routes run it.
+        services: (name, run) => this.service(account, name, run),
+        undoable: (run) => this.flowsUndoable(account, run),
       });
       this.agents.set(account, a);
       this.used.set(account, p);
@@ -307,6 +306,111 @@ export class AgentHost {
       }
     }
     return a;
+  }
+
+  /** What an action of an area runs on, for one run (`ToolDef.service`, docs/sistema.md §4.1). */
+  private service(
+    account: number,
+    name: string,
+    run: { run: string; action?: number; device?: string; inFlow?: boolean },
+  ): unknown {
+    const store = this.store(account);
+    if (name === "pages" || name === "data")
+      return {
+        store,
+        meta: {
+          actor: "agent",
+          run: run.run,
+          ...(run.action !== undefined ? { action: run.action } : {}),
+          ...(run.device ? { device: run.device } : {}),
+        },
+      };
+    const who = { account, device: run.device ?? "agent", trust: "personal" as const };
+    if (name === "inbox")
+      return {
+        correct: async (proposal, edits) => {
+          const r = await acceptCorrected(this, who, proposal, edits);
+          if ("error" in r) throw new ToolError(r.error);
+          return { proposal, run: r.done.run || null, error: r.done.error ?? null };
+        },
+      } satisfies InboxService;
+    if (name !== "flows") return null;
+    // What this run switched or deleted, so that its Undo takes it back (`undoFlows`).
+    const keep = (flow: string, was: { enabled?: boolean; deleted?: boolean }) => {
+      const key = `${FLOW_UNDO}${run.run}`;
+      const list = JSON.parse(store.setting(key) ?? "[]") as unknown[];
+      store.setSetting(key, JSON.stringify([...list, { flow, ...was }]));
+    };
+    const named = (flow: string) => store.journal.flow(flow)?.name ?? "";
+    return {
+      enable: (flow, on) => {
+        const r = switchFlow(this, account, flow, on);
+        if (r)
+          throw new ToolError(
+            r.error === "already" ? (on ? "already-on" : "already-off") : `flow-${r.error}`,
+          );
+        keep(flow, { enabled: !on });
+        return { flow, name: named(flow), enabled: on };
+      },
+      remove: (flow) => {
+        const r = trashFlow(store, flow);
+        if (r) throw new ToolError(`flow-${r.error}`);
+        keep(flow, { deleted: false });
+        return { flow, name: named(flow) };
+      },
+      test: async (flow, inputs, said) => {
+        // Trying a flow from a flow's run, or from its «Probar», would never end.
+        if (run.inFlow) throw new ToolError("flow-in-flow");
+        const r = await tryFlow(this, who, flow, { inputs }, said);
+        if (r.status !== 200) throw new ToolError(`flow-${(r.body as { error: string }).error}`);
+        // The model reads the decisions and counts, never the sample's or the steps' texts.
+        return testFacts(r.body as TestView);
+      },
+    } satisfies FlowsService;
+  }
+
+  /**
+   * Takes back what a run switched on or off or deleted in «Flujos» (journal rows, not in the store's log), newest
+   * first; how many. Undo of the run (`POST /api/agent/runs/:id/undo`) calls it with the store's own.
+   */
+  /** Whether a run switched or deleted a flow that its Undo has not taken back yet. */
+  flowsUndoable(account: number, run: string): boolean {
+    return (this.store(account).setting(`${FLOW_UNDO}${run}`) ?? "[]") !== "[]";
+  }
+
+  undoFlows(account: number, run: string): number {
+    const store = this.store(account);
+    const key = `${FLOW_UNDO}${run}`;
+    const list = JSON.parse(store.setting(key) ?? "[]") as {
+      flow: string;
+      enabled?: boolean;
+      deleted?: boolean;
+    }[];
+    let n = 0;
+    for (const c of [...list].reverse()) {
+      const f = store.journal.flow(c.flow);
+      if (!f) continue;
+      const live = store.journal.flows().some((x) => x.id === c.flow);
+      if (c.deleted !== undefined) {
+        // Brought back only if it is still deleted.
+        if (!live) {
+          store.journal.setFlowDeleted(c.flow, c.deleted);
+          n++;
+        }
+        continue;
+      }
+      // Juan's own change since then wins: only a flow still as the run left it is switched back. Switching one
+      // back on goes through the same checks as his switch.
+      if (c.enabled === undefined || !live || f.enabled === c.enabled) continue;
+      if (
+        c.enabled
+          ? !switchFlow(this, account, c.flow, true)
+          : (store.journal.setFlowEnabled(c.flow, false), true)
+      )
+        n++;
+    }
+    store.setSetting(key, null);
+    return n;
   }
 
   subscribe(account: number, l: (event: string, data: unknown) => void): () => void {
@@ -564,15 +668,11 @@ async function serveFlows(
     }
     case "PUT /api/agent/flows/:id/enabled": {
       const b = (await bodyOf(req)) as { enabled?: unknown };
-      const latest = store.journal.flow(id);
-      if (!latest) return send(res, 404, { error: "not-found" });
       if (typeof b.enabled !== "boolean") return send(res, 400, { error: "bad-request" });
-      if (b.enabled) {
-        const check = checkFlow(store, host.tools, latest, forEditor());
-        if (check.problems.length)
-          return send(res, 400, { error: "invalid", problems: check.problems });
-      }
-      store.journal.setFlowEnabled(id, b.enabled);
+      const r = switchFlow(host, who.account, id, b.enabled);
+      if (r?.error === "not-found") return send(res, 404, { error: "not-found" });
+      // Already so: nothing to do.
+      if (r && r.error !== "already") return send(res, 400, r);
       return send(res, 200, detail(id));
     }
     case "POST /api/agent/flows/:id/revert": {
@@ -588,74 +688,13 @@ async function serveFlows(
       return v ? send(res, 200, detail(id)) : send(res, 404, { error: "not-found" });
     }
     case "DELETE /api/agent/flows/:id": {
-      if (!store.journal.flow(id)) return send(res, 404, { error: "not-found" });
-      // Boni's own flows are turned off, never deleted.
-      if (store.journal.flowVersions(id).some((v) => v.by === "preset"))
-        return send(res, 409, { error: "preset" });
-      store.journal.setFlowDeleted(id, true);
+      const r = trashFlow(store, id);
+      if (r) return send(res, r.error === "not-found" ? 404 : 409, r);
       return send(res, 200, {});
     }
     case "POST /api/agent/flows/:id/test": {
-      // «Probar» (docs/flujos.md F3): the draft as the editor has it (or the saved flow), dry, with a sample.
-      if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
-      const f = store.journal.flow(id);
-      if (!f) return send(res, 404, { error: "not-found" });
-      const b = (await bodyOf(req)) as {
-        plan?: unknown;
-        trigger?: unknown;
-        mail?: unknown;
-        inputs?: unknown;
-      };
-      const plan = b.plan ?? f.plan;
-      const trigger = b.trigger ?? f.trigger;
-      const check = checkFlow(store, host.tools, { trigger, plan }, forEditor());
-      // A part of a flow may be tried («Probar hasta aquí»): what only the whole flow must have is not asked here.
-      const problems = check.problems.filter((p) => !WHOLE_FLOW_ONLY.has(p.code));
-      if (problems.length) return send(res, 400, { error: "invalid", problems });
-      let bind: Record<string, Val> = {};
-      let sample: { mail: string; subject: string } | null = null;
-      if (typeof (trigger as { created?: unknown }).created === "string") {
-        const mail = b.mail === undefined ? null : str(b.mail, 80);
-        const s = await host.mailSample?.(who.account, mail, plan);
-        if (!s) return send(res, 409, { error: "no-sample" });
-        bind = s.bind;
-        sample = { mail: s.mail, subject: s.subject };
-      } else {
-        const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
-          string,
-          unknown
-        >;
-        const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
-        // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own, never
-        // what the request brings.
-        const figures =
-          (trigger as { spending?: unknown }).spending === "warn"
-            ? (host.models?.noticeBind(who.account) ?? {})
-            : null;
-        for (const n of triggerNames(trigger)) {
-          const v = given[n];
-          bind[n] = figures
-            ? (figures[n] ?? leaf("", codeLabel("spending")))
-            : typeof v === "string"
-              ? leaf(v.slice(0, 2000), typed)
-              : leaf(n === "today" ? host.today() : "", codeLabel("today"));
-        }
-      }
-      const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
-      const r = await host.agent(who.account).dryRun(plan, bind, {
-        origin: originOf(trigger, who.device),
-        flow: {
-          id: f.id,
-          version: f.version,
-          by: unchanged ? f.by : "user",
-          ...(sample ? { input: sample.mail } : {}),
-        },
-      });
-      return send(
-        res,
-        200,
-        testView(store, r, sample, (tool) => host.toolTitle(tool), plan),
-      );
+      const r = await tryFlow(host, who, id, await bodyOf(req));
+      return send(res, r.status, r.body);
     }
     case "POST /api/agent/flows/:id/run": {
       if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
@@ -730,7 +769,10 @@ async function serveConversations(
     case "GET /api/agent/conversations/:id": {
       const c = conversation(store, id);
       if (!c) return send(res, 404, { error: "not-found" });
-      return send(res, 200, { conversation: c, turns: turnViews(store, id) });
+      return send(res, 200, {
+        conversation: c,
+        turns: turnViews(store, id, (run) => host.flowsUndoable(who.account, run)),
+      });
     }
     case "PUT /api/agent/conversations/:id": {
       const b = ((await bodyOf(req)) ?? {}) as { title?: unknown; model?: unknown };
@@ -970,44 +1012,9 @@ async function answerAgent(
     case "POST /api/agent/requests/:id/dismiss":
       return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
     case "POST /api/agent/proposals/:id/accept": {
-      // Juan's corrections first (a new title, another collection), as the agent's edits.
-      const b = ((await bodyOf(req)) ?? {}) as {
-        edits?: { title?: unknown; collection?: unknown; done?: unknown; values?: unknown };
-      };
-      const store = host.store(who.account);
-      const p = store.journal.proposal(params.id ?? "");
-      const edits = b.edits && p ? acceptEdits(store, p, b.edits) : {};
-      if ("error" in edits) return send(res, 400, { error: edits.error });
-      // A task's time the procedure set alone goes with it; what Juan made of a suggested time judges it.
-      const timed = p ? timeOnAccept(store, p, edits) : edits;
-      // «Enlazar» (task 51): the record is made linked to the external event the calendar already had.
-      const link = linkOf(b.edits);
-      if ("error" in link) return send(res, 400, { error: link.error });
-      let final = timed;
-      if (link.id && p) {
-        const rows = (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
-        const typeKey = timed.type ?? rows.find((r) => r.arg === "type")?.value;
-        const t = Object.values(store.schema().types).find((x) => x.key === typeKey);
-        const field = t ? await host.linkField?.(who.account, t.id, who.device) : null;
-        if (!field) return send(res, 400, { error: "no-link-field" });
-        final = { ...timed, values: { ...(timed.values ?? {}), [field.key]: link.id } };
-      }
-      // «Es el mismo» (task 58): the record the calendar already had takes what the proposal adds; no new record.
-      const into = intoOf(b.edits);
-      if ("error" in into) return send(res, 400, { error: into.error });
-      if (into.id && p) {
-        const merged = mergeInto(store, p, into.id, final.values ?? {});
-        if ("error" in merged) return send(res, 400, { error: merged.error });
-        final = { ...final, values: merged.values };
-      }
-      const r = await agent.acceptProposal(
-        params.id ?? "",
-        who.trust,
-        final,
-        into.id ? { into: into.id } : {},
-      );
-      if (p && !r.error) judgeTime(store, p, final.values ?? {}, Date.now());
-      return send(res, 200, after(r));
+      const b = ((await bodyOf(req)) ?? {}) as { edits?: unknown };
+      const r = await acceptCorrected(host, who, params.id ?? "", b.edits);
+      return "error" in r ? send(res, 400, { error: r.error }) : send(res, 200, after(r.done));
     }
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
@@ -1106,12 +1113,21 @@ async function answerAgent(
       });
       return o ? send(res, 200, o) : send(res, 404, { error: "not-found" });
     }
-    case "POST /api/agent/runs/:id/undo":
+    case "POST /api/agent/runs/:id/undo": {
+      // The store's operations of the run, then what it switched or deleted in «Flujos» (F10); a later change of
+      // Juan's in the way stops both.
+      const run = params.id ?? "";
+      const store = host.store(who.account);
       try {
-        return send(res, 200, { undone: agent.undoRun(params.id ?? "").length });
+        const undone = store.runUndoable(run) ? agent.undoRun(run).length : 0;
+        const flows = host.undoFlows(who.account, run);
+        return undone + flows
+          ? send(res, 200, { undone: undone + flows })
+          : send(res, 409, { error: "cannot-undo" });
       } catch {
         return send(res, 409, { error: "cannot-undo" });
       }
+    }
     case "GET /api/agent/visibility": {
       const store = host.store(who.account);
       const levels = store.aiAccess();
@@ -1203,4 +1219,160 @@ function decisionsView(store: UserStore) {
   const ms = Math.round(performance.now() - t0);
   if (ms > 500) console.warn(`decisions view took ${ms} ms`);
   return view;
+}
+
+/**
+ * Juan's acceptance of a proposal with his corrections (a new title, another collection, «Enlazar», «Es el mismo»),
+ * kept as his edits: the route's «Aceptar», and the action `inbox.correct` (docs/sistema.md §4.1, F10), the same code.
+ */
+export async function acceptCorrected(
+  host: AgentHost,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+  id: string,
+  raw: unknown,
+): Promise<{ error: string } | { done: Awaited<ReturnType<Agent["acceptProposal"]>> }> {
+  const asked = (raw && typeof raw === "object" ? raw : undefined) as
+    | { title?: unknown; collection?: unknown; done?: unknown; values?: unknown }
+    | undefined;
+  const agent = host.agent(who.account);
+  // Juan's corrections first (a new title, another collection), as the agent's edits.
+  const store = host.store(who.account);
+  const p = store.journal.proposal(id);
+  const edits = asked && p ? acceptEdits(store, p, asked) : {};
+  if ("error" in edits) return { error: edits.error };
+  // A task's time the procedure set alone goes with it; what Juan made of a suggested time judges it.
+  const timed = p ? timeOnAccept(store, p, edits) : edits;
+  // «Enlazar» (task 51): the record is made linked to the external event the calendar already had.
+  const link = linkOf(asked);
+  if ("error" in link) return { error: link.error };
+  let final = timed;
+  if (link.id && p) {
+    const rows = (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
+    const typeKey = timed.type ?? rows.find((r) => r.arg === "type")?.value;
+    const t = Object.values(store.schema().types).find((x) => x.key === typeKey);
+    const field = t ? await host.linkField?.(who.account, t.id, who.device) : null;
+    if (!field) return { error: "no-link-field" };
+    final = { ...timed, values: { ...(timed.values ?? {}), [field.key]: link.id } };
+  }
+  // «Es el mismo» (task 58): the record the calendar already had takes what the proposal adds; no new record.
+  const into = intoOf(asked);
+  if ("error" in into) return { error: into.error };
+  if (into.id && p) {
+    const merged = mergeInto(store, p, into.id, final.values ?? {});
+    if ("error" in merged) return { error: merged.error };
+    final = { ...final, values: merged.values };
+  }
+  const r = await agent.acceptProposal(id, who.trust, final, into.id ? { into: into.id } : {});
+  if (p && !r.error) judgeTime(store, p, final.values ?? {}, Date.now());
+  return { done: r };
+}
+
+/** What «Flujos» checks a flow against: the mail's reading modules and its collection. */
+const editorOf = (host: AgentHost, account: number) => ({
+  modules: host.mailModulesOf?.(account) ?? ["tasks", "events"],
+  mailType: host.mailTypeOf?.(account) ?? null,
+});
+
+/**
+ * A flow switched on or off (its switch in «Flujos», and the action `flows.enable`, F10): on, only when it has no
+ * problems. Null when done; `already` when it was so.
+ */
+export function switchFlow(
+  host: AgentHost,
+  account: number,
+  id: string,
+  on: boolean,
+): { error: string; problems?: unknown } | null {
+  const store = host.store(account);
+  const latest = store.journal.flow(id);
+  if (!latest) return { error: "not-found" };
+  if (latest.enabled === on) return { error: "already" };
+  if (on) {
+    const check = checkFlow(store, host.tools, latest, editorOf(host, account));
+    if (check.problems.length) return { error: "invalid", problems: check.problems };
+  }
+  store.journal.setFlowEnabled(id, on);
+  return null;
+}
+
+/** A flow to the trash («Borrar» in «Flujos», and `flows.delete`): Boni's own are turned off, never deleted. */
+export function trashFlow(store: UserStore, id: string): { error: string } | null {
+  if (!store.journal.flow(id)) return { error: "not-found" };
+  if (store.journal.flowVersions(id).some((v) => v.by === "preset")) return { error: "preset" };
+  store.journal.setFlowDeleted(id, true);
+  return null;
+}
+
+/**
+ * «Probar» (docs/flujos.md F3): the draft as the editor has it (or the saved flow), dry, with a sample. The route's,
+ * and the action `flows.test` (the MCP's `flows_test`, task 63 point 13), the same code.
+ */
+export async function tryFlow(
+  host: AgentHost,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+  id: string,
+  raw: unknown,
+  /** Whose the form's values are: Juan's, typed in the editor; a model's, from the action. */
+  said?: Label,
+  /** False from an assistant over the MCP: a flow started by mail is tried in Boni, where its sample is read. */
+  sampleMail = true,
+): Promise<{ status: number; body: unknown }> {
+  // «Probar» (docs/flujos.md F3): the draft as the editor has it (or the saved flow), dry, with a sample.
+  if (!host.onFor(who.account)) return { status: 503, body: { error: "agent-off" } };
+  const store = host.store(who.account);
+  const f = store.journal.flow(id);
+  if (!f) return { status: 404, body: { error: "not-found" } };
+  const b = (raw && typeof raw === "object" ? raw : {}) as {
+    plan?: unknown;
+    trigger?: unknown;
+    mail?: unknown;
+    inputs?: unknown;
+  };
+  const plan = b.plan ?? f.plan;
+  const trigger = b.trigger ?? f.trigger;
+  const check = checkFlow(store, host.tools, { trigger, plan }, editorOf(host, who.account));
+  // A part of a flow may be tried («Probar hasta aquí»): what only the whole flow must have is not asked here.
+  const problems = check.problems.filter((p) => !WHOLE_FLOW_ONLY.has(p.code));
+  if (problems.length) return { status: 400, body: { error: "invalid", problems } };
+  let bind: Record<string, Val> = {};
+  let sample: { mail: string; subject: string } | null = null;
+  if (typeof (trigger as { created?: unknown }).created === "string") {
+    if (!sampleMail) return { status: 409, body: { error: "mail-sample-in-boni" } };
+    const mail = b.mail === undefined ? null : str(b.mail, 80);
+    const s = await host.mailSample?.(who.account, mail, plan);
+    if (!s) return { status: 409, body: { error: "no-sample" } };
+    bind = s.bind;
+    sample = { mail: s.mail, subject: s.subject };
+  } else {
+    const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
+      string,
+      unknown
+    >;
+    const typed = said ?? label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
+    // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own, never
+    // what the request brings.
+    const figures =
+      (trigger as { spending?: unknown }).spending === "warn"
+        ? (host.models?.noticeBind(who.account) ?? {})
+        : null;
+    for (const n of triggerNames(trigger)) {
+      const v = given[n];
+      bind[n] = figures
+        ? (figures[n] ?? leaf("", codeLabel("spending")))
+        : typeof v === "string"
+          ? leaf(v.slice(0, 2000), typed)
+          : leaf(n === "today" ? host.today() : "", codeLabel("today"));
+    }
+  }
+  const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
+  const r = await host.agent(who.account).dryRun(plan, bind, {
+    origin: originOf(trigger, who.device),
+    flow: {
+      id: f.id,
+      version: f.version,
+      by: unchanged ? f.by : "user",
+      ...(sample ? { input: sample.mail } : {}),
+    },
+  });
+  return { status: 200, body: testView(store, r, sample, (tool) => host.toolTitle(tool), plan) };
 }

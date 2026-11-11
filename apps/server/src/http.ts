@@ -11,7 +11,7 @@ import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
 import { dataRowTarget, flowRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
-import { type AgentHost, serveAgent } from "./agent.ts";
+import { type AgentHost, serveAgent, tryFlow } from "./agent.ts";
 import {
   auditAction,
   auditActions,
@@ -428,6 +428,15 @@ export function makeApp(opts: ServerOptions): App {
         opts.now ?? Date.now,
         s.scope,
         opts.agent.mailAccountOf?.(s.user.id) ?? null,
+        (flow, inputs, said) =>
+          tryFlow(
+            opts.agent as AgentHost,
+            { account: s.user.id, device: s.device, trust: s.trust },
+            flow,
+            { inputs },
+            said,
+            false,
+          ),
       );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });

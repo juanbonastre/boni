@@ -189,6 +189,7 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
     "Ver en el mapa",
     "¿De dónde viene?",
     "Cambiar nombre",
+    "Mover a…",
     "Copiar enlace",
     "Borrar",
   ]);
@@ -203,6 +204,20 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await check(0).click();
   await rows.nth(0).click({ button: "right", position: { x: 120, y: 10 } });
   await expect(menu.getByRole("menuitemradio")).toHaveText(["Borrar 2"]);
+  // «Mover a…» (F10, entities.move): Juan's other collections, never Boni's own; the note leaves the table.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(chosen).toHaveCount(0);
+  await rows.filter({ hasText: "Rayuela" }).click({ button: "right", position: { x: 120, y: 10 } });
+  await menu.getByRole("menuitemradio", { name: "Mover a…" }).click();
+  await expect(menu.getByRole("menuitemradio", { name: "Libros" })).toHaveCount(0);
+  await expect(menu.getByRole("menuitemradio", { name: "Correos" })).toHaveCount(0);
+  await menu.getByRole("menuitemradio", { name: "Documentos" }).click();
+  await expect
+    .poll(() => sent(page, "PUT api/data/rows/", '"type":"t_private_documentos"'))
+    .toBe(true);
+  await expect(rows).toHaveCount(2);
+  await expect(page.locator(".toast")).toContainText("Movida a Documentos");
 });
 
 test("the right button on a card (task 42): the board's, the gallery's and the list's open the row's menu where the pointer is", async ({
@@ -223,6 +238,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
       "Ver en el mapa",
       "¿De dónde viene?",
       "Cambiar nombre",
+      "Mover a…",
       "Copiar enlace",
       "Borrar",
     ]);

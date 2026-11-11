@@ -372,6 +372,7 @@ function useCorrection(p: Proposal) {
     <button
       type="button"
       className={`icon-btn inbox-fix${edit ? " on" : ""}`}
+      data-boni-action="inbox.correct"
       aria-pressed={!!edit}
       title={t("inbox.correct")}
       aria-label={t("inbox.correct")}

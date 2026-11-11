@@ -22,8 +22,8 @@ import { ROUTES } from "./routes.ts";
  * is in a list that may only shrink.
  */
 // Lower these when a route or an action gets its own; never raise them.
-const NOT_YET_AT_MOST = 60;
-const NO_CONTROL_AT_MOST = 14;
+const NOT_YET_AT_MOST = 39;
+const NO_CONTROL_AT_MOST = 1;
 
 const WEB = join(import.meta.dirname, "..", "..", "boni-web", "src");
 const sources = (dir: string): string[] =>
@@ -110,6 +110,6 @@ describe("one list of actions (D-41, F10)", () => {
         .filter((t) => t.effect === "touch")
         .map((t) => t.name)
         .sort(),
-    ).toEqual(["inbox.accept", "inbox.reject"]);
+    ).toEqual(["flows.enable", "inbox.accept", "inbox.correct", "inbox.reject"]);
   });
 });

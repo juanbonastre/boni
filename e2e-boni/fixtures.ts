@@ -1094,6 +1094,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         const moved = /^api\/data\/rows\/([^/]+)\/type$/.exec(p);
         if (moved && method === "PUT") {
           const to = String((body as { type?: string }).type ?? "");
+          // A book to another collection (its row's «Mover a…»): out of «Libros».
+          if (
+            to !== "t_libro" &&
+            userCols().some((c) => c.id === to) &&
+            rows.some((r) => r.id === moved[1])
+          ) {
+            rows = rows.filter((r) => r.id !== moved[1]);
+            return [200, "{}"];
+          }
           const n = treeNotes.find((x) => x.id === moved[1]);
           if (!n || !userCols().some((c) => c.id === to)) return [404, '{"error":"not-found"}'];
           n.type = to;

@@ -550,6 +550,7 @@ function Canvas({
                       {parent && (
                         <MenuRow
                           label={t("data.moveOut", { name: parent.name })}
+                          boniAction="schema.move_type"
                           onClick={() => {
                             close();
                             const up = parent.parent ?? null;

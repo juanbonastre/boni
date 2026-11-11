@@ -207,7 +207,7 @@ export interface Caps {
   write_irreversible: { store: ReadStore; writer: Writer; service?: unknown };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
   send: { store: ReadStore; net: Pick<Net, "send"> };
-  schema: { store: ReadStore; schema: SchemaWriter };
+  schema: { store: ReadStore; schema: SchemaWriter; service?: unknown };
   memory: { store: ReadStore; memory: MemoryWriter };
   notify: { store: ReadStore; notifier: Notifier };
   flow: { store: ReadStore; flows: FlowStarter };
@@ -215,7 +215,7 @@ export interface Caps {
   /** What the server gives Boni's pieces for this account (opaque here: the core knows no app, A-02), and the
    * proposals this run has made so far. */
   piece: { pieces: unknown; proposals: () => readonly string[]; dry: boolean };
-  touch: { store: ReadStore; inbox: InboxDecider };
+  touch: { store: ReadStore; inbox: InboxDecider; service?: unknown };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -290,7 +290,10 @@ export class ToolRegistry {
       throw new Error(`tool ${def.name}: unclassified effect`);
     if (!(AREAS as readonly string[]).includes(def.area))
       throw new Error(`tool ${def.name}: no area`);
-    if (def.service && !["read", "write", "write_irreversible"].includes(def.effect))
+    if (
+      def.service &&
+      !["read", "write", "write_irreversible", "schema", "touch"].includes(def.effect)
+    )
       throw new Error(`tool ${def.name}: a service in a ${def.effect} tool`);
     if (!def.describe || !def.title) throw new Error(`tool ${def.name}: no description`);
     for (const [name, a] of Object.entries(def.args)) {
@@ -556,7 +559,7 @@ function matching(
 
 // ---------------------------------------------------------------- the first tools
 
-const FIELD_KINDS: readonly FieldType[] = [
+export const FIELD_KINDS: readonly FieldType[] = [
   "text",
   "longtext",
   "number",
@@ -1404,7 +1407,7 @@ export function makeCaps(c: CapsContext): Caps {
         },
       },
     },
-    schema: { store: ro, schema },
+    schema: { store: ro, schema, ...(c.service !== undefined ? { service: c.service } : {}) },
     memory: { store: ro, memory },
     notify: { store: ro, notifier },
     flow: {
@@ -1422,6 +1425,7 @@ export function makeCaps(c: CapsContext): Caps {
     piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []), dry: !!c.dry },
     touch: {
       store: ro,
+      ...(c.service !== undefined ? { service: c.service } : {}),
       inbox: c.inbox ?? {
         accept: () => Promise.reject(new ToolError("not-available")),
         reject: () => {

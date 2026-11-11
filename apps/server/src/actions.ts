@@ -1,5 +1,8 @@
 import { coreTools, type ToolRegistry } from "@boni/agent";
+import { withDataActions } from "./dataActions.ts";
+import { withFlowActions } from "./flowActions.ts";
 import { withFunctionSteps } from "./functionSteps.ts";
+import { withInboxActions } from "./inboxActions.ts";
 import { withPageActions } from "./pageActions.ts";
 import { withPieces } from "./pieces.ts";
 
@@ -14,7 +17,9 @@ import { withPieces } from "./pieces.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  return withPageActions(withFunctionSteps(withPieces(coreTools())));
+  return withInboxActions(
+    withFlowActions(withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools()))))),
+  );
 }
 
 /** A route that changes something, and the actions it runs: the same code as the action's (its area's module). */
@@ -24,19 +29,64 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/pages/:id": ["pages.update", "pages.add_block", "pages.set_view"],
   "DELETE /api/pages/:id": ["pages.delete"],
   // Juan's corrections (title, collection, «Enlazar», «Es el mismo») go with it; the acceptance is the agent's.
-  "POST /api/agent/proposals/:id/accept": ["inbox.accept"],
+  "POST /api/agent/proposals/:id/accept": ["inbox.accept", "inbox.correct"],
   "POST /api/agent/proposals/:id/reject": ["inbox.reject"],
+  // «Datos» (dataActions.ts and the core's): a collection, its fields, a record. A row of «Flujos», «Mis datos» or
+  // «Páginas» is that area's own (flow, collection, page), as the route runs it.
+  "POST /api/data/types": ["schema.create_type"],
+  "DELETE /api/data/types/:type": ["schema.delete_type"],
+  "PUT /api/data/types/:type/parent": ["schema.move_type"],
+  "PUT /api/data/types/:type/name": ["schema.rename_type"],
+  "POST /api/data/types/:type/fields": ["schema.add_field"],
+  "PUT /api/data/types/:type/fields/:field": ["schema.update_field"],
+  "DELETE /api/data/types/:type/fields/:field": ["schema.remove_field"],
+  "PUT /api/data/rows/:id/type": ["entities.move"],
+  "POST /api/data/types/:type/rows": [
+    "entities.create",
+    "flows.save",
+    "schema.create_type",
+    "pages.create",
+  ],
+  "PUT /api/data/rows/:id": ["entities.update", "flows.save", "schema.rename_type", "pages.update"],
+  "DELETE /api/data/rows/:id": [
+    "entities.delete",
+    "flows.delete",
+    "schema.delete_type",
+    "pages.delete",
+  ],
+  // «Flujos» (flowActions.ts and the core's).
+  "POST /api/agent/flows": ["flows.save"],
+  "PUT /api/agent/flows/:id": ["flows.save"],
+  "PUT /api/agent/flows/:id/enabled": ["flows.enable"],
+  "DELETE /api/agent/flows/:id": ["flows.delete"],
+  "POST /api/agent/flows/:id/run": ["flows.run"],
 };
 
 /** A route that is the Undo of actions (each action says how it is undone, docs/sistema.md §4.1). */
 export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = {
+  // The run's operations, and what it switched or deleted in «Flujos» (AgentHost.undoFlows).
   "POST /api/agent/runs/:id/undo": [
     "pages.create",
     "pages.add_block",
     "pages.set_view",
     "pages.update",
+    "entities.create",
+    "entities.update",
+    "entities.move",
+    "schema.create_type",
+    "schema.add_field",
+    "schema.rename_type",
+    "schema.move_type",
+    "schema.update_field",
+    "schema.delete_type",
+    "schema.remove_field",
+    "flows.enable",
+    "flows.delete",
   ],
   "POST /api/pages/:id/restore": ["pages.delete"],
+  "POST /api/data/rows/:id/restore": ["entities.delete", "schema.delete_type", "flows.delete"],
+  "POST /api/data/types/:type/fields/:field/restore": ["schema.remove_field"],
+  "POST /api/agent/flows/:id/revert": ["flows.save"],
   "POST /api/agent/proposals/:id/restore": ["inbox.accept", "inbox.reject"],
 };
 
@@ -75,6 +125,8 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
   "POST /api/agent/requests/:id/answer": "a flow's question, answered",
   "POST /api/agent/requests/:id/dismiss": "a flow's question, set aside",
   "POST /api/agent/flows/check": "checks a flow, changes nothing",
+  "POST /api/agent/flows/:id/test": "«Probar» a flow (flows.test): it runs dry, changes nothing",
+  "POST /api/data/files": "a file's bytes from Juan's device: no model has them",
   "POST /api/v1/charts/preview": "computes a chart, changes nothing",
   "POST /api/data/blocks": "computes a page's numbers, changes nothing",
   "POST /api/data/blocks/rows": "computes the rows a number counts, changes nothing",
@@ -82,7 +134,8 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
 };
 
 /**
- * The routes not yet on an action (F10 goes by areas: flows, data, calendars, connectors next). This list may only
+ * The routes not yet on an action (F10 goes by areas: calendars, connectors, conversations next; a collection's saved
+ * views and its notes-in-tree display, with the pages' saved views). This list may only
  * shrink: a route that gets its action leaves it, and a new route never enters it (`actions.test.ts`).
  */
 export const NOT_YET: readonly string[] = [
@@ -111,13 +164,6 @@ export const NOT_YET: readonly string[] = [
   "POST /api/agent/conversations",
   "PUT /api/agent/conversations/:id",
   "DELETE /api/agent/conversations/:id",
-  "POST /api/agent/flows",
-  "PUT /api/agent/flows/:id",
-  "PUT /api/agent/flows/:id/enabled",
-  "POST /api/agent/flows/:id/revert",
-  "DELETE /api/agent/flows/:id",
-  "POST /api/agent/flows/:id/run",
-  "POST /api/agent/flows/:id/test",
   "PUT /api/agent/extensions/:id",
   "POST /api/agent/extensions/:id/activate",
   "POST /api/agent/extensions/:id/reject",
@@ -130,20 +176,6 @@ export const NOT_YET: readonly string[] = [
   "POST /api/mail/suggestion",
   "POST /api/mail/propose",
   "POST /api/mail/forget",
-  "POST /api/data/types",
-  "DELETE /api/data/types/:type",
-  "PUT /api/data/types/:type/parent",
-  "PUT /api/data/types/:type/name",
-  "POST /api/data/types/:type/fields",
-  "PUT /api/data/types/:type/fields/:field",
-  "DELETE /api/data/types/:type/fields/:field",
-  "POST /api/data/types/:type/fields/:field/restore",
-  "PUT /api/data/rows/:id/type",
-  "POST /api/data/types/:type/rows",
-  "PUT /api/data/rows/:id",
-  "DELETE /api/data/rows/:id",
-  "POST /api/data/rows/:id/restore",
-  "POST /api/data/files",
   "PUT /api/data/types/:type/row-ui",
   "PUT /api/data/types/:type/tree",
 ];
@@ -167,7 +199,19 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "entities.update": "set_properties",
   "entities.delete": "trash",
   "schema.create_type": "create_collection",
-  "schema.add_field": { why: "not yet: F10, the data area" },
+  "schema.add_field": {
+    why: "an assistant gives a collection its properties when it makes it (create_collection)",
+  },
+  "schema.rename_type": "rename_collection",
+  "schema.move_type": "move_collection",
+  "schema.update_field": "change_property",
+  "schema.delete_type": { why: "deleting is Juan's touch: his card, in his app" },
+  "schema.remove_field": { why: "deleting is Juan's touch: his card, in his app" },
+  "entities.move": "move_note",
+  "flows.enable": { why: "Juan's touch: his card, in his app (P21)" },
+  "flows.delete": { why: "deleting is Juan's touch: his card, in his app" },
+  "flows.test": "flows_test",
+  "inbox.correct": { why: "Juan's touch: his card, in his app (P21)" },
   "memory.save": { why: "an assistant writes Juan's instructions with edit (guide)" },
   "flows.run": { why: "Juan's touch: his card, in his app (P8)" },
   "flows.save": "flows_propose",
@@ -186,19 +230,4 @@ export const FLOW_ONLY_AREAS: readonly string[] = ["boni", "extensions"];
  * says which action it runs with `data-boni-action` (or a menu row's `boniAction`), which Boni over the screen
  * points at too.
  */
-export const NO_CONTROL_YET: readonly string[] = [
-  "entities.query",
-  "entities.get",
-  "entities.origin",
-  "entities.aggregate",
-  "entities.search",
-  "entities.create",
-  "entities.update",
-  "entities.delete",
-  "schema.describe",
-  "schema.create_type",
-  "schema.add_field",
-  "memory.save",
-  "flows.run",
-  "flows.save",
-];
+export const NO_CONTROL_YET: readonly string[] = ["memory.save"];

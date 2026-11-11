@@ -1,0 +1,239 @@
+import {
+  codeLabel,
+  deepLabel,
+  FIELD_KINDS,
+  fieldByName,
+  fieldName,
+  leaf,
+  neutralize,
+  plain,
+  type ReadStore,
+  ToolError,
+  type ToolRegistry,
+  typeByKey,
+  typeName,
+  type Val,
+} from "@boni/agent";
+import { type FieldType, join, type Label, type TypeDef } from "@boni/entities";
+import type { OpMeta, UserStore } from "@boni/store";
+import {
+  changeColumn,
+  DataError,
+  type DataWho,
+  deleteCollection,
+  moveCollection,
+  moveRow,
+  removeColumn,
+  renameCollection,
+} from "./data.ts";
+
+/**
+ * The actions of the area «Datos» that the core's tools did not have (docs/sistema.md §4.1, F10): renaming, moving
+ * and deleting a collection, changing or taking out one of its fields, moving a record to another collection. The
+ * planner, a flow and an assistant run the same code as the app's routes (data.ts), as the run's writer, so Undo of
+ * the run takes it back. A model names collections and fields as it sees them (their keys): a collection closed to
+ * the models is not found. Deleting is Juan's card (P5); lowering a collection's level for the models is only his,
+ * in its page (A-04), and is no action.
+ */
+
+/** What the server gives a data action for its run (`ToolDef.service` "data"): the store, and the run's meta. */
+export interface DataService {
+  store: UserStore;
+  meta: OpMeta;
+}
+const serviceOf = (s: unknown): DataService => {
+  if (!s || typeof s !== "object" || !("store" in s)) throw new ToolError("not-available");
+  return s as DataService;
+};
+const code = codeLabel("data");
+const low = (l: Label) => l.integrity === "model" || l.integrity === "external";
+const text = (v: Val | undefined): string => {
+  const x = v ? plain(v) : null;
+  if (typeof x !== "string" || !x.trim()) throw new ToolError("bad-argument");
+  // A name a model or someone outside wrote is painted as text, never as markup.
+  return low(deepLabel(v as Val)) ? neutralize(x.trim()) : x.trim();
+};
+const who = (s: DataService, args: readonly (Val | undefined)[], extra: Label): DataWho => ({
+  meta: s.meta,
+  label: join(extra, ...args.filter((a): a is Val => !!a).map(deepLabel)),
+});
+const wrap = <T>(f: () => T): T => {
+  try {
+    return f();
+  } catch (e) {
+    if (e instanceof DataError) throw new ToolError(e.code);
+    throw e;
+  }
+};
+const typeOf = (ro: ReadStore, v: Val | undefined): TypeDef => {
+  const key = v ? plain(v) : null;
+  if (typeof key !== "string") throw new ToolError("bad-argument");
+  return typeByKey(ro, key);
+};
+const fieldOf = (def: TypeDef, v: Val | undefined) => {
+  const name = v ? plain(v) : null;
+  if (typeof name !== "string") throw new ToolError("bad-argument");
+  const f = fieldByName(def, name);
+  if (!f) throw new ToolError("unknown-field");
+  return f;
+};
+/** A list's options as a model writes them («Por leer, Leído»): one it had keeps its id (and its records). */
+const optionsOf = (def: TypeDef, field: string, v: Val): { id?: string; name: string }[] => {
+  const was = def.fields.find((f) => f.id === field)?.options ?? [];
+  const raw = plain(v);
+  const names = (
+    Array.isArray(raw) ? raw : typeof raw === "string" ? raw.split(/[,;\n]/) : []
+  ).filter((x): x is string => typeof x === "string" && !!x.trim());
+  if (!names.length || names.length > 50) throw new ToolError("select-needs-options");
+  return names.map((n) => {
+    const name = low(deepLabel(v)) ? neutralize(n.trim()) : n.trim();
+    const old = was.find((o) => o.name.toLowerCase() === name.toLowerCase());
+    return old ? { id: old.id, name: old.name } : { name };
+  });
+};
+
+const type = { role: "type" as const, required: true, describe: "the collection's key" };
+
+/** The data actions, added to a registry (the server's, and the MCP's that describes what a flow may be made of). */
+export function withDataActions(r: ToolRegistry): ToolRegistry {
+  r.register({
+    name: "schema.rename_type",
+    effect: "schema",
+    area: "data",
+    service: "data",
+    title: "Renombrar colección",
+    describe: "Rename one of Juan's collections (its key stays); the name is used once",
+    args: { type, name: { role: "content", required: true, describe: "its new name" } },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      wrap(() =>
+        renameCollection(s.store, def.id, { name: text(a.name) }, who(s, [a.name], extra)),
+      );
+      return leaf(typeName(def), code);
+    },
+  });
+  r.register({
+    name: "schema.move_type",
+    effect: "schema",
+    area: "data",
+    service: "data",
+    title: "Mover colección",
+    describe:
+      "Move one of Juan's collections inside another (parent: its key), with what is inside it; parent null: to the top",
+    args: {
+      type,
+      parent: { role: "type", describe: "the collection it goes inside; null: to the top" },
+    },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const to = a.parent ? plain(a.parent) : null;
+      const parent = to === null ? null : typeOf(c.store, a.parent).id;
+      wrap(() => moveCollection(s.store, def.id, { parent }, who(s, [a.parent], extra)));
+      return leaf(typeName(def), code);
+    },
+  });
+  r.register({
+    name: "schema.delete_type",
+    effect: "write",
+    area: "data",
+    service: "data",
+    // Deleting is Juan's card (docs/sistema.md §4.1, P5); only an empty collection goes, and Undo brings it back.
+    alwaysConfirm: true,
+    title: "Borrar colección",
+    describe:
+      "Delete one of Juan's collections, only when nothing is left in it (no records, no collection inside); he confirms it",
+    args: { type },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      wrap(() => deleteCollection(s.store, def.id, who(s, [], extra)));
+      return leaf({ deleted: typeName(def) }, code);
+    },
+  });
+  r.register({
+    name: "schema.update_field",
+    effect: "schema",
+    area: "data",
+    service: "data",
+    title: "Cambiar campo",
+    describe: `Rename a field of a collection, change its kind (${FIELD_KINDS.join(", ")}; with values, only among kinds of text) or a list's options (comma-separated; one still in use stays)`,
+    args: {
+      type,
+      field: { role: "field", required: true, describe: "the field's key" },
+      name: { role: "content", describe: "its new name" },
+      kind: { role: "option", describe: "its new kind" },
+      options: {
+        role: "content",
+        describe: 'select and multiselect: all its options, comma-separated ("Por leer, Leído")',
+      },
+    },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const f = fieldOf(def, a.field);
+      const body: Record<string, unknown> = {};
+      if (a.name) body.name = text(a.name);
+      if (a.kind) {
+        const kind = plain(a.kind) as FieldType;
+        if (!FIELD_KINDS.includes(kind)) throw new ToolError("bad-option");
+        body.type = kind;
+      }
+      if (a.options) body.options = optionsOf(def, f.id, a.options);
+      if (!Object.keys(body).length) throw new ToolError("bad-argument");
+      wrap(() =>
+        changeColumn(s.store, def.id, f.id, body, who(s, [a.name, a.kind, a.options], extra)),
+      );
+      return leaf(
+        fieldName(c.store.schema().types[def.id]?.fields.find((x) => x.id === f.id) ?? f),
+        code,
+      );
+    },
+  });
+  r.register({
+    name: "schema.remove_field",
+    effect: "write",
+    area: "data",
+    service: "data",
+    // Taking a field out keeps its values (archived); still Juan's card, as deleting (P5).
+    alwaysConfirm: true,
+    title: "Quitar campo",
+    describe:
+      "Take a field out of a collection (its values are kept, and Undo brings it back); he confirms it",
+    args: { type, field: { role: "field", required: true, describe: "the field's key" } },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const f = fieldOf(def, a.field);
+      wrap(() => removeColumn(s.store, def.id, f.id, who(s, [], extra)));
+      return leaf({ removed: fieldName(f) }, code);
+    },
+  });
+  r.register({
+    name: "entities.move",
+    effect: "write",
+    area: "data",
+    service: "data",
+    title: "Mover a",
+    describe:
+      "Move a record to another of Juan's collections (type: its key), keeping its id and its history",
+    args: {
+      id: { role: "entity", required: true, describe: "the record's id" },
+      type: { role: "type", required: true, describe: "the collection it goes to" },
+    },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const id = a.id ? plain(a.id) : null;
+      // A record the models may not see is not there for them; one they see only as a handle (opaque) stays where
+      // Juan keeps it: moved to a collection open to them it would be read (A-04, his alone).
+      const seen = typeof id === "string" ? c.store.get(id) : null;
+      if (typeof id !== "string" || !seen) throw new ToolError("not-found");
+      if (Object.values(seen.labels).some((l) => l.noModel)) throw new ToolError("not-writable");
+      const to = typeOf(c.store, a.type);
+      wrap(() => moveRow(s.store, id, { type: to.id }, who(s, [a.type], extra)));
+      return leaf({ id, type: typeName(to) }, code);
+    },
+  });
+  return r;
+}

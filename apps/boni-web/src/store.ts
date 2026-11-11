@@ -3010,6 +3010,31 @@ export async function moveInTree(
   }
 }
 
+/** A record to another collection, from its row's «Mover a» (F10, `entities.move`); its toast's Undo takes it back. */
+export async function moveRowTo(from: string, id: string, to: string) {
+  const t = get().t;
+  const name = get().dataTypes?.find((x) => x.id === to)?.name ?? "";
+  try {
+    await agent.moveRow(id, to);
+  } catch {
+    return toast(t("tree.failed"));
+  }
+  const now = get().rows[from];
+  if (now)
+    set({
+      rows: { ...get().rows, [from]: { ...now, rows: now.rows.filter((r) => r.id !== id) } },
+    });
+  void loadTree();
+  toast(t("db.movedTo", { name }), {
+    label: t("toast.undo"),
+    run: () =>
+      void agent
+        .moveRow(id, from)
+        .then(() => Promise.all([loadRows(from), loadTree()]))
+        .catch(() => toast(t("tree.failed"))),
+  });
+}
+
 /** A note's new title from the sidebar's menu (task 42): its record's title, then the tree again. */
 export async function renameNote(type: string, id: string, title: string) {
   const def = get().dataTypes?.find((x) => x.id === type);

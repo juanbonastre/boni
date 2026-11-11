@@ -123,7 +123,7 @@ export function DataBlockView({
   if (block.type === "bars") {
     const points = data?.series[0]?.points ?? [];
     return (
-      <div className="data-blk-bars">
+      <div className="data-blk-bars" data-boni-action="entities.aggregate">
         <h2 className="dash-h2">{title}</h2>
         {note && <p className="muted small">{note}</p>}
         <BarList
@@ -138,7 +138,11 @@ export function DataBlockView({
   }
   const color = PALETTE.find((c) => c.name === block.color)?.hex ?? null;
   return (
-    <div className="data-blk-chart" style={{ height: HEIGHTS[block.at?.h ?? "m"] }}>
+    <div
+      className="data-blk-chart"
+      data-boni-action="entities.aggregate"
+      style={{ height: HEIGHTS[block.at?.h ?? "m"] }}
+    >
       <ChartCardContent
         title={title}
         color={color}

@@ -469,9 +469,10 @@ export function flowCatalog(
     };
   return {
     // Juan's touch (accepting a card of the Bandeja) is only his, from his turn (P21): no flow step decides for him.
+    // Nor does a flow try one (`flows.test` would never end).
     tools: registry
       .all()
-      .filter((t) => t.effect !== "touch")
+      .filter((t) => t.effect !== "touch" && t.name !== "flows.test")
       .map((t) => ({
         name: t.name,
         title: t.title,
@@ -560,6 +561,10 @@ export interface FlowCheck {
  * trigger's origin and names (`checkPlan`, the run's own check), a collection the models may not see, a tool its
  * origin may not use; and, for each step, the values it may take from the trigger and the steps before it.
  */
+/** A tool that runs a flow (`flows.run`; `flows.test`, dry): never a step of another flow. */
+const startsAFlow = (t: { name: string; effect: string } | null | undefined) =>
+  !!t && (t.effect === "flow" || t.name === "flows.test");
+
 export function checkFlow(
   store: UserStore,
   registry: ToolRegistry,
@@ -689,12 +694,13 @@ export function checkFlow(
     );
     if (!tells) problems.push({ step: null, at: "trigger", code: "budget-needs-notice" });
   }
-  // A flow never starts another (docs/flujos.md §4.3): `flows.run` is the planner's, in the user's turn.
+  // A flow never starts another (docs/flujos.md §4.3): `flows.run` and `flows.test` are the planner's, in the user's
+  // turn.
   for (const s of steps)
     if (
       s.op === "call" &&
       typeof s.tool === "string" &&
-      registry.get(s.tool)?.effect === "flow" &&
+      startsAFlow(registry.get(s.tool)) &&
       !problems.some((p) => p.step === s.id && p.code === "flow-in-flow")
     )
       problems.push({ step: s.id, at: null, code: "flow-in-flow" });
@@ -1326,6 +1332,38 @@ export function testView(
     };
   }
   return { run: r.run, status: r.status, error: r.error, sample, steps };
+}
+
+/**
+ * A dry run as a model may read it (the action `flows.test`, the MCP's `flows_test`): each step's decision, rule and
+ * error, the tools it would call and the pieces' counts, never a text. The sample mail, what a step found and what it
+ * would write are Juan's data at their own labels (a collection closed to the models among them), so they stay in his
+ * editor; what is left is the code's own.
+ */
+export function testFacts(v: TestView) {
+  const steps: Record<string, unknown> = {};
+  for (const [id, s] of Object.entries(v.steps)) {
+    const counts = s.piece
+      ? Object.fromEntries(
+          Object.entries(s.piece).filter(
+            ([k, x]) => k === "piece" || typeof x === "number" || typeof x === "boolean",
+          ),
+        )
+      : null;
+    steps[id] = {
+      decision: s.decision,
+      rule: s.rule,
+      error: s.error,
+      ...(counts ? { piece: counts } : {}),
+      would: s.would.map((w) => ({
+        decision: w.decision,
+        rule: w.rule,
+        tool: w.tool,
+        title: w.title,
+      })),
+    };
+  }
+  return { run: v.run, status: v.status, error: v.error, sample: v.sample !== null, steps };
 }
 
 // ------------------------------------------------------------------ a flow a model proposes (F5)

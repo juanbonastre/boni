@@ -146,6 +146,11 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "pages_add_block",
       "pages_set_view",
       "pages_update",
+      "rename_collection",
+      "move_collection",
+      "change_property",
+      "move_note",
+      "flows_test",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);

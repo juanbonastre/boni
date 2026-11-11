@@ -82,6 +82,7 @@ export function QuickFind() {
           <input
             // biome-ignore lint/a11y/noAutofocus: the search opens to be typed in
             autoFocus
+            data-boni-action="entities.search"
             value={query}
             placeholder={t("find.placeholder")}
             aria-label={t("find.placeholder")}

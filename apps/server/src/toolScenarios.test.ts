@@ -27,7 +27,27 @@ const TABLE_TEST =
   "a table of a page: added, its view changed, the page renamed and moved, and deleted only on Juan's touch";
 const INBOX_TEST =
   "«acepta estas dos»: the Bandeja's cards on the screen, accepted on a card that names them, and one rejected";
+/** «Datos», «Flujos» and «Corregir» (F10, part 2). */
+const DATA_ACTIONS = "apps/server/src/dataActions.test.ts";
+const DATA_TEST =
+  "«llama Gastos a Movimientos, mete Libros en Lecturas y pasa esta nota a Tareas»: done in his turn, and Undo of the run takes it all back";
+const DELETE_TEST =
+  "a collection deleted and a field taken out only on Juan's touch, and back with Undo of the run";
+const FLOW_TEST =
+  "a flow switched on only on Juan's touch, never from background work, tried by an assistant, deleted on his card, and Undo of the run switches it back";
+const CORRECT_TEST =
+  "«corrígela: Pedir cita en el taller el lunes, en Notas»: a proposal accepted corrected on Juan's touch";
 const SCENARIOS: Record<string, { file: string; test: string }[]> = {
+  "schema.rename_type": [{ file: DATA_ACTIONS, test: DATA_TEST }],
+  "schema.move_type": [{ file: DATA_ACTIONS, test: DATA_TEST }],
+  "schema.update_field": [{ file: DATA_ACTIONS, test: DATA_TEST }],
+  "entities.move": [{ file: DATA_ACTIONS, test: DATA_TEST }],
+  "schema.delete_type": [{ file: DATA_ACTIONS, test: DELETE_TEST }],
+  "schema.remove_field": [{ file: DATA_ACTIONS, test: DELETE_TEST }],
+  "flows.enable": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
+  "flows.delete": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
+  "flows.test": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
+  "inbox.correct": [{ file: DATA_ACTIONS, test: CORRECT_TEST }],
   "pages.create": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.add_block": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.set_view": [{ file: ACTIONS, test: TABLE_TEST }],
