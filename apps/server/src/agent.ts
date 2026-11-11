@@ -43,6 +43,7 @@ import {
   saveUserFlow,
   testView,
   triggerNames,
+  WHOLE_FLOW_ONLY,
 } from "./flows.ts";
 import { withFunctionSteps } from "./functionSteps.ts";
 import type { Runner } from "./functions.ts";
@@ -173,8 +174,8 @@ export class AgentHost {
   readingGuideOf: ((account: number) => Val | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
   providersFor: ((account: number) => Providers | null) | null = null;
-  /** The account spent its month's budget (models.ts): background work calls no model. */
-  overBudget: ((account: number) => boolean) | null = null;
+  /** The account spent its month's budget (models.ts): background work calls no model. `dry`: a «Probar» asks. */
+  overBudget: ((account: number, asking?: { dry: boolean }) => boolean) | null = null;
   /** What Boni's pieces work with for an account (mail.ts `piecesFor`, set by the mail when it starts). */
   pieces: ((account: number) => unknown) | null = null;
   /** The box an extension's function runs in (the real one when null; a stand-in in tests). */
@@ -258,7 +259,7 @@ export class AgentHost {
         reader: p.reader,
         ...(p.decider ? { decider: p.decider } : {}),
         ...(p.reviewer ? { reviewer: p.reviewer } : {}),
-        overBudget: () => this.overBudget?.(account) ?? false,
+        overBudget: (asking) => this.overBudget?.(account, asking) ?? false,
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
         pieces: () => this.pieces?.(account) ?? null,
@@ -597,8 +598,9 @@ async function serveFlows(
       const plan = b.plan ?? f.plan;
       const trigger = b.trigger ?? f.trigger;
       const check = checkFlow(store, host.tools, { trigger, plan }, forEditor());
-      if (check.problems.length)
-        return send(res, 400, { error: "invalid", problems: check.problems });
+      // A part of a flow may be tried («Probar hasta aquí»): what only the whole flow must have is not asked here.
+      const problems = check.problems.filter((p) => !WHOLE_FLOW_ONLY.has(p.code));
+      if (problems.length) return send(res, 400, { error: "invalid", problems });
       let bind: Record<string, Val> = {};
       let sample: { mail: string; subject: string } | null = null;
       if (typeof (trigger as { created?: unknown }).created === "string") {
@@ -613,16 +615,20 @@ async function serveFlows(
           unknown
         >;
         const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
+        // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own, never
+        // what the request brings.
+        const figures =
+          (trigger as { spending?: unknown }).spending === "warn"
+            ? (host.models?.noticeBind(who.account) ?? {})
+            : null;
         for (const n of triggerNames(trigger)) {
           const v = given[n];
-          bind[n] =
-            typeof v === "string"
+          bind[n] = figures
+            ? (figures[n] ?? leaf("", codeLabel("spending")))
+            : typeof v === "string"
               ? leaf(v.slice(0, 2000), typed)
               : leaf(n === "today" ? host.today() : "", codeLabel("today"));
         }
-        // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own.
-        if ((trigger as { spending?: unknown }).spending === "warn")
-          Object.assign(bind, host.models?.noticeBind(who.account) ?? {});
       }
       const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
       const r = await host.agent(who.account).dryRun(plan, bind, {

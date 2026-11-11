@@ -8,6 +8,7 @@ import {
   FLOW_BUDGET,
   FLOW_BUDGET_CHECK,
   FLOW_BUDGET_CHECK_NONE,
+  FLOW_BUDGET_MINE,
   FLOW_BUDGET_TEST,
   FLOW_CATALOG,
   FLOW_CATALOG_FUNCTIONS,
@@ -1824,6 +1825,52 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(page.locator(".models-spend")).toContainText(
     "Presupuesto: 10,00 € al mes, aviso apagado",
   );
+});
+
+test("his own version of «Aviso del presupuesto», whose text takes neither figure: its trigger still gives both, on its card and in its panel (D-53)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [
+        {
+          flows: FLOWS_WITH_BUDGET.flows.map((f) =>
+            f.id === FLOW_BUDGET_MINE.id ? { ...f, version: 2, by: "user" } : f,
+          ),
+        },
+      ],
+      "GET api/agent/flows/:id": [FLOW_BUDGET_MINE],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_BUDGET_CHECK],
+    },
+  });
+  await openFlow(page, "Aviso del presupuesto");
+  await expect(page.locator(".flow-whose")).toHaveText("Tu versión");
+  const trigger = page.locator(".flow-editor .flow-canvas .fl-node.source");
+  await expect(trigger.locator(".fl-input")).toHaveText(["Gasto del mes", "Presupuesto"]);
+  await trigger.locator(".fl-name").click();
+  await expect(page.locator(".flow-step-panel .flow-args li")).toHaveText([
+    /^Gasto del mes\s*texto$/,
+    /^Presupuesto\s*texto$/,
+  ]);
+});
+
+test("without a budget (0 €), Ajustes → Modelos says «Sin presupuesto» and the spending's bar is not in its warning colour (D-53)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/models": [{ ...MODELS, budget: { monthlyEur: 0, warnAt: 0.8 } }] },
+  });
+  await openModels(page);
+  const line = page.locator(".models-spend .models-line").last();
+  await expect(line).toContainText("Sin presupuesto");
+  await expect(line).not.toContainText("aviso");
+  // The server never warns without a budget: the bar does not say it would.
+  const bar = page.locator(".modal .kpi").first().locator(".kpi-meter-fill");
+  await expect(bar).toHaveClass(/\bok\b/);
+  await expect(bar).not.toHaveClass(/warn|over/);
 });
 
 test("«Función» as a step (task 93, D-52): «Añadir paso» offers it under «Funciones»; its panel chooses an active function and shows its code and its tests, to read", async ({

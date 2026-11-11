@@ -94,6 +94,13 @@ const bindOf = (f: Figures): Record<string, Val> => ({
   spent: leaf(f.spent, codeLabel("spending")),
   budget: leaf(f.budget, codeLabel("spending")),
 });
+/** Whether a run told: its «Avisar» ran (the journal's step of the tool `notify`, allowed). */
+const toldIn = (store: UserStore, run: string): boolean =>
+  store.journal
+    .steps(run)
+    .some(
+      (x) => x.decision === "allow" && (x.detail as { tool?: unknown } | null)?.tool === "notify",
+    );
 
 /** One evaluation kept for the page (the last few per account). */
 export interface Evaluation extends EvalResult {
@@ -315,19 +322,27 @@ export class AccountModels {
   }
 
   /**
-   * The month's budget is spent (asked before each background model call; read again every 30 s). Passing its
-   * warning fraction starts Boni's «Aviso del presupuesto» once a month (`warn`). The answer is the cap, and nothing
-   * of that flow changes it: on, off or changed, background work stops at the budget (D-53).
+   * The month's budget is spent (asked before each background model call). The month's spending is read again once
+   * its figure is 30 s old, also while the calls keep coming (a burst of readings never looks at an old figure for
+   * longer). Passing the budget's warning fraction starts Boni's «Aviso del presupuesto» once a month (`warn`). The
+   * answer is the cap, and nothing of that flow changes it: on, off or changed, background work stops at the budget
+   * (D-53). A «Probar» that asks (`dry`) gets the same answer and starts nothing: the notice waits for the next call
+   * that is no test (D-43).
    */
-  overBudget(account: number): boolean {
-    const had = this.spent.get(account);
-    const eur = had && this.now() - had.at < 30_000 ? had.eur : this.spending(account).eur;
-    this.spent.set(account, { at: this.now(), eur });
+  overBudget(account: number, asking: { dry?: boolean } = {}): boolean {
+    const now = this.now();
+    let had = this.spent.get(account);
+    if (!had || now - had.at >= 30_000) {
+      had = { at: now, eur: this.spending(account).eur };
+      this.spent.set(account, had);
+    }
+    const eur = had.eur;
     const { budget } = this.config(account);
     const store = this.o.host.store(account);
     const month = this.month().label;
     // Without a budget (0) there is no warning to pass.
     if (
+      !asking.dry &&
       budget.monthlyEur > 0 &&
       eur >= budget.monthlyEur * budget.warnAt &&
       store.setting(WARNED) !== month
@@ -339,9 +354,11 @@ export class AccountModels {
   /**
    * The month's spending passed the warning and the month is not marked yet: one run of «Aviso del presupuesto», whose
    * «Avisar» tells the devices. Turned off, nothing is told and the month stays unmarked (turned on later in the
-   * month, it tells then). The month is marked before the run starts, so there is one run a month whatever it does,
-   * and the run's own budget check (a model step Juan added to it) starts no other. Without the flow (it could not be
-   * kept) or without models for the account (nothing to run it), the notice is told as before, by code, with no run.
+   * month, the next check tells). The month is marked before the run starts, so there is one run a month whatever it
+   * does, and the run's own budget check (a model step Juan added to it) starts no other. On, the month's notice is
+   * never lost to the machinery: without the flow (it could not be kept), without models for the account (nothing to
+   * run it) or when its run stops before its «Avisar» (a model step of his version stopped by the cap, a model down),
+   * the code tells as before, with its own text.
    */
   private warn(account: number, store: UserStore, month: string, figures: Figures): void {
     let flow: FlowRow | null = null;
@@ -350,25 +367,25 @@ export class AccountModels {
     } catch (e) {
       console.warn(`models ${account}: «Aviso del presupuesto» not kept (${(e as Error).message})`);
     }
+    const passed = `${figures.spent} € of ${figures.budget} € this month, past the warning`;
     if (flow && !flow.enabled) {
       if (this.silent.get(account) !== month)
-        console.log(
-          `models ${account}: ${figures.spent} € of ${figures.budget} € this month, past the warning; «Aviso del presupuesto» is off: no notice`,
-        );
+        console.log(`models ${account}: ${passed}; «Aviso del presupuesto» is off: no notice`);
       this.silent.set(account, month);
       return;
     }
     store.setSetting(WARNED, month);
-    const agent = flow ? this.agentOf(account) : null;
-    if (!flow || !agent) {
+    const byCode = (why: string) => {
       this.o.host.notify(
         account,
         `Los modelos llevan ${figures.spent} € de ${figures.budget} € este mes.`,
         "own",
       );
-      console.log(
-        `models ${account}: ${figures.spent} € of ${figures.budget} € this month, past the warning: told by code (no run)`,
-      );
+      console.log(`models ${account}: ${passed}: told by code (${why})`);
+    };
+    const agent = flow ? this.agentOf(account) : null;
+    if (!flow || !agent) {
+      byCode(flow ? "no models to run the flow" : "the flow could not be kept");
       return;
     }
     const version = flow;
@@ -382,14 +399,23 @@ export class AccountModels {
         }),
       )
       .then(
-        (r) =>
+        (r) => {
           console.log(
-            `models ${account}: ${figures.spent} € of ${figures.budget} € this month, past the warning: «Aviso del presupuesto» v${version.version} ran (${r.status}${r.error ? `, ${r.error}` : ""})`,
-          ),
-        (e) =>
+            `models ${account}: ${passed}: «Aviso del presupuesto» v${version.version} ran (${r.status}${r.error ? `, ${r.error}` : ""})`,
+          );
+          if (r.status === "stopped" && !toldIn(store, r.run))
+            byCode("its run stopped before «Avisar»");
+        },
+        (e) => {
           console.error(
             `models ${account}: «Aviso del presupuesto» failed (${(e as Error).message})`,
-          ),
+          );
+          byCode("its run failed");
+        },
+      )
+      // Whatever goes wrong telling, the job ends: nothing here may take the server down.
+      .catch((e) =>
+        console.error(`models ${account}: the notice failed (${(e as Error).message})`),
       );
     this.jobs.add(job);
     void job.finally(() => this.jobs.delete(job));
@@ -412,11 +438,12 @@ export class AccountModels {
   }
 
   /**
-   * «Aviso del presupuesto» is among the account's flows before «Flujos» or the map show them (asked when its store
-   * opens and before they are listed). Nothing on a server without models.
+   * «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with «Modelos»
+   * there (agent.ts `store`), and before «Flujos» or the map list them: on a server with no model at all too, where it
+   * never fires. Nothing without a data folder (then there is no store, no agent, and nobody asks the budget).
    */
   keepFlowCurrent(account: number): void {
-    if (!this.o.host.on || !this.o.host.hasData) return;
+    if (!this.o.host.hasData) return;
     try {
       this.noticeFlow(this.o.host.store(account));
     } catch (e) {

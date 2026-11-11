@@ -800,6 +800,13 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
         { id: "again", op: "call", tool: "notify", args: { text: { ref: "$r.text" } } },
       ]).problems,
     ).toEqual([]);
+    // A step named like one of its figures is refused, as the run (which always binds both) would refuse it.
+    expect(
+      check(trigger, [
+        { id: "budget", op: "read", reader: "summarize", input: { ref: "$spent" } },
+        { ...tell, args: { text: { ref: "$spent" } } },
+      ]).problems,
+    ).toContainEqual(expect.objectContaining({ step: "budget", code: "bad-id" }));
     // Its figures are its own trigger's: by hand, nothing gives them.
     expect(check({ manual: true }, BUDGET_PLAN.steps).problems).toContainEqual(
       expect.objectContaining({ step: "notify", code: "ref-to-unknown-step" }),

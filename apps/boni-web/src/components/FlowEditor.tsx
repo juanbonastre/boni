@@ -1117,6 +1117,12 @@ function TriggerPanel({
     draft.trigger.learning === "mail" ||
     draft.trigger.spending === "warn";
   const names = formNames(draft.trigger);
+  // What it gives: for «Aviso del presupuesto», both figures always, as its card says (whatever its text takes);
+  // for a record's, what the saved plan takes of it.
+  const gives =
+    draft.trigger.spending === "warn"
+      ? givenNames(draft.trigger).map((id) => ({ id, what: "text" }))
+      : detail.inputs;
   const schedule =
     draft.trigger.schedule && typeof draft.trigger.schedule === "object"
       ? (draft.trigger.schedule as ScheduleDraft)
@@ -1145,7 +1151,7 @@ function TriggerPanel({
             )}
           </p>
           <ul className="flow-args">
-            {detail.inputs.map((i) => (
+            {gives.map((i) => (
               <li key={i.id}>
                 {inputName(t, i.id)} <span className="muted">{t(`flows.input.${i.what}`)}</span>
               </li>

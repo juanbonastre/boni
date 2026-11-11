@@ -2890,6 +2890,34 @@ export const FLOW_BUDGET = {
   preset: 1,
   mailKey: null,
 };
+/** His own version of it, whose text takes neither figure (the server lists as inputs only what the plan takes). */
+export const FLOW_BUDGET_MINE = {
+  ...FLOW_BUDGET,
+  version: 2,
+  by: "user",
+  inputs: [],
+  nodes: [
+    flowStep("notify", "call", "notify", {
+      title: "Avisar",
+      args: ['text: "Ojo con el gasto en IA"'],
+    }),
+  ],
+  versions: [
+    { version: 2, by: "user", created: Date.UTC(2026, 9, 22, 18, 0) },
+    ...FLOW_BUDGET.versions,
+  ],
+  plan: {
+    version: 1,
+    steps: [
+      {
+        id: "notify",
+        op: "call",
+        tool: "notify",
+        args: { text: { lit: "Ojo con el gasto en IA" } },
+      },
+    ],
+  },
+};
 /** Its checklist, empty, with what its «Avisar» may take: the two figures its trigger gives. */
 export const FLOW_BUDGET_CHECK = {
   problems: [],

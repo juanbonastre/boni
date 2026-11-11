@@ -14,7 +14,7 @@ import { Feeds } from "./feeds.ts";
 import { BUDGET_FLOW, checkFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { AccountModels, BUDGET_PLAN, catalogueOf, serveModels } from "./models.ts";
+import { AccountModels, BUDGET_PLAN, BUDGET_TRIGGER, catalogueOf, serveModels } from "./models.ts";
 
 /** «Modelos» over HTTP with invented keys (never real ones) and no model calls. */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -76,7 +76,7 @@ beforeAll(async () => {
   });
   host.models = models;
   host.providersFor = (a) => models.providers(a);
-  host.overBudget = (a) => models.overBudget(a);
+  host.overBudget = (a, asking) => models.overBudget(a, asking);
   host.subscribe(1, (event, data) => event === "notify" && notes.push(data));
   app = makeApp({
     db,
@@ -323,7 +323,16 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     vi.restoreAllMocks();
   });
 
-  function serverOf(o: { models?: boolean } = {}) {
+  /** His version with a step more: a reader that asks a model before it tells. */
+  const WITH_READER = {
+    version: 1,
+    steps: [
+      { id: "r", op: "read", reader: "summarize", input: { ref: "$spent" } },
+      ...BUDGET_PLAN.steps,
+    ],
+  };
+
+  function serverOf(o: { models?: boolean; storeFirst?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "boni-budget-"));
     const sys = openDb(join(dir, "system.db"));
     addUser(sys, "juan", PASSWORD);
@@ -343,10 +352,12 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
       serverKeys: {},
       now: () => clock.now,
     });
+    // A store asked for before «Modelos» is there (the day's copy at the server's start does that).
+    if (o.storeFirst) h.store(1);
     // As main.ts wires them.
     h.models = m;
     h.providersFor = (a) => m.providers(a);
-    h.overBudget = (a) => m.overBudget(a);
+    h.overBudget = (a, asking) => m.overBudget(a, asking);
     const told: { text: string; integrity: string }[] = [];
     h.subscribe(1, (event, data) => {
       if (event === "notify") told.push(data as { text: string; integrity: string });
@@ -389,6 +400,33 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
         store()
           .journal.runsIn(0, clock.now + 1)
           .filter((r) => r.flow === BUDGET_FLOW && r.origin !== "test"),
+      /** A request of the app from a personal device, as the server answers it (the flow's own by default). */
+      async ask(route: string, q: { body?: unknown; id?: string; url?: string } = {}) {
+        const res = { status: 0, body: "" };
+        const out = {
+          writeHead: (st: number) => {
+            res.status = st;
+            return out;
+          },
+          end: (b?: string) => {
+            res.body = b ?? "";
+            return out;
+          },
+          setHeader: () => out,
+        } as unknown as ServerResponse;
+        const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(q.body ?? {}))]), {
+          url: q.url ?? "/",
+        }) as unknown as IncomingMessage;
+        await serveAgent(
+          h,
+          req,
+          out,
+          route,
+          { id: q.id ?? BUDGET_FLOW },
+          { account: 1, device: "portatil-ejemplo", trust: "personal" },
+        );
+        return { status: res.status, json: JSON.parse(res.body || "null") as unknown };
+      },
     };
   }
 
@@ -417,6 +455,12 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(s.store().journal.flowVersions(BUDGET_FLOW)).toHaveLength(1);
   });
 
+  it("an account whose store was asked for before «Modelos» was there has it all the same, the next time it is asked for", () => {
+    const s = serverOf({ storeFirst: true });
+    expect(s.store().journal.flow(BUDGET_FLOW)).toMatchObject({ by: "preset", enabled: true });
+    expect(s.store().journal.flowVersions(BUDGET_FLOW)).toHaveLength(1);
+  });
+
   it("passing the warning runs it once a month: one run with no model call, its «Avisar» telling the devices", async () => {
     const s = serverOf();
     s.spend(5); // 4.50 € of 10 €: under the warning (80 %)
@@ -424,7 +468,11 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect([s.told, s.runs()]).toEqual([[], []]);
     s.spend(4); // 8.10 €: past it
     expect(await s.check()).toBe(false);
-    expect(s.told.map((n) => n.text)).toEqual(["Los modelos llevan 8.10 € de 10 € este mes."]);
+    // The text as before; told by the flow's step, it carries what any literal of a plan Boni wrote carries (the
+    // model's label: `Agent` gives it to a preset flow's literals), where the code's own notice said «own».
+    expect(s.told).toEqual([
+      { text: "Los modelos llevan 8.10 € de 10 € este mes.", integrity: "model" },
+    ]);
     const [run] = s.runs();
     expect(run).toMatchObject({
       origin: "background",
@@ -459,6 +507,57 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     ]);
     expect(s.runs()).toHaveLength(2);
     expect(s.store().journal.flowRuns(BUDGET_FLOW).runs).toBe(2);
+  });
+
+  it("the month's run is the flow's where the app asks: the Registro's list and its Recorrido, «Flujos» and the flow's page", async () => {
+    const s = serverOf();
+    s.spend(9);
+    expect(await s.check()).toBe(false);
+    const [run] = s.runs();
+    const id = run?.id ?? "";
+    // The Registro names it by its flow, a run of its own.
+    const log = await s.ask("GET /api/agent/runs", { url: "/api/agent/runs" });
+    expect((log.json as { runs: unknown[] }).runs).toEqual([
+      expect.objectContaining({
+        id,
+        origin: "background",
+        status: "done",
+        what: { kind: "flow", flow: "Aviso del presupuesto" },
+        changed: 0,
+      }),
+    ]);
+    // Its Recorrido: the flow and its version, what its trigger gave, its one step, no model.
+    const way = await s.ask("GET /api/agent/runs/:id", { id, url: `/api/agent/runs/${id}` });
+    expect(way.json).toMatchObject({
+      status: "done",
+      flow: BUDGET_FLOW,
+      flowVersion: 1,
+      owner: `flow:${BUDGET_FLOW}`,
+      inputs: ["spent", "budget"],
+      steps: [{ id: "notify", title: "Avisar", decision: "allow", uses: ["spent", "budget"] }],
+      models: [],
+      proposals: [],
+      changes: [],
+    });
+    // «Flujos» and the flow's page count it.
+    const list = await s.ask("GET /api/agent/flows", { url: "/api/agent/flows" });
+    expect((list.json as { flows: unknown[] }).flows).toEqual([
+      expect.objectContaining({ id: BUDGET_FLOW, by: "preset", enabled: true, steps: 1, runs: 1 }),
+    ]);
+    const page = await s.ask("GET /api/agent/flows/:id", {
+      url: `/api/agent/flows/${BUDGET_FLOW}`,
+    });
+    expect(page.json).toMatchObject({
+      name: "Aviso del presupuesto",
+      trigger: { spending: "warn" },
+      runs: 1,
+      preset: 1,
+      inputs: [
+        { id: "spent", what: "text" },
+        { id: "budget", what: "text" },
+      ],
+      nodes: [{ id: "notify", what: "notify", title: "Avisar", deps: ["spent", "budget"] }],
+    });
   });
 
   it("off, nothing is told and nothing runs, and the cap stops background work all the same; turned on, it tells then", async () => {
@@ -529,19 +628,14 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(changed.told).toEqual(["Gasto en IA: 8.10"]);
   });
 
-  it("no recursion: the month is marked before the run starts, so a model step Juan added to it asks the budget again and starts no other; a run that stops is not tried again", async () => {
-    const withReader = {
-      version: 1,
-      steps: [
-        { id: "r", op: "read", reader: "summarize", input: { ref: "$spent" } },
-        ...BUDGET_PLAN.steps,
-      ],
-    };
+  it("no recursion: the month is marked before the run starts, so a model step Juan added to it asks the budget again and starts no other; a run that stops is not tried again, and the code tells in its place", async () => {
+    const mine = (s: ReturnType<typeof serverOf>, plan: unknown) =>
+      expect("flow" in saveUserFlow(s.store(), BUDGET_FLOW, { base: 1, plan }, [], 1000)).toBe(
+        true,
+      );
     // Under the cap: his reader is asked (its call asks the budget inside the run), then «Avisar».
     const s = serverOf();
-    expect(
-      "flow" in saveUserFlow(s.store(), BUDGET_FLOW, { base: 1, plan: withReader }, [], 1000),
-    ).toBe(true);
+    mine(s, WITH_READER);
     const asked = vi.spyOn(s.models, "overBudget");
     s.spend(9);
     expect(await s.check()).toBe(false);
@@ -554,19 +648,135 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect([s.runs().length, s.told.length]).toEqual([1, 1]);
 
     // At the cap when it fires: the run's reader is stopped by the cap like any background work (the cap is the
-    // floor), the run stops before «Avisar», and no other run is made that month.
+    // floor) and the run stops before «Avisar». The month's notice is not lost with it: the code tells, as before
+    // the flow. No other run is made that month, and nothing is told twice.
     const t = serverOf();
     vi.spyOn(console, "log").mockImplementation(() => {});
-    expect(
-      "flow" in saveUserFlow(t.store(), BUDGET_FLOW, { base: 1, plan: withReader }, [], 1000),
-    ).toBe(true);
+    mine(t, WITH_READER);
     t.spend(12); // 10.80 €: past the warning and the budget at once
     expect(await t.check()).toBe(true);
     expect(t.model.requests).toHaveLength(0);
     expect(t.runs().map((r) => r.status)).toEqual(["stopped:P13-month-budget"]);
+    expect(t.told).toEqual([
+      { text: "Los modelos llevan 10.80 € de 10 € este mes.", integrity: "own" },
+    ]);
     expect(await t.check()).toBe(true);
     expect(await t.check()).toBe(true);
-    expect([t.runs().length, t.told.length]).toEqual([1, 0]);
+    expect([t.runs().length, t.told.length]).toEqual([1, 1]);
+
+    // A run that stops after its «Avisar» has told already (his text): the code adds nothing.
+    const u = serverOf();
+    const [tell] = BUDGET_PLAN.steps;
+    const his = { fn: "concat", args: [{ lit: "Gasto en IA: " }, { ref: "$spent" }] };
+    mine(u, { version: 1, steps: [{ ...tell, args: { text: his } }, WITH_READER.steps[0]] });
+    u.spend(12);
+    expect(await u.check()).toBe(true);
+    expect(u.runs().map((r) => r.status)).toEqual(["stopped:P13-month-budget"]);
+    expect(u.told.map((n) => n.text)).toEqual(["Gasto en IA: 10.80"]);
+  });
+
+  it("a «Probar» that asks a model gets the cap's answer and starts nothing: the notice waits for the next call that is no test", async () => {
+    const s = serverOf();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(
+      "flow" in saveUserFlow(s.store(), BUDGET_FLOW, { base: 1, plan: WITH_READER }, [], 1000),
+    ).toBe(true);
+    // Past the warning, and nothing has asked the budget yet this month: it is not marked.
+    s.spend(9);
+    const tried = await s.ask("POST /api/agent/flows/:id/test");
+    await s.models.idle();
+    expect(tried).toMatchObject({
+      status: 200,
+      json: {
+        status: "done",
+        steps: {
+          r: { decision: "allow" },
+          notify: {
+            would: [{ tool: "notify", text: "Los modelos llevan 8.10 € de 10 € este mes." }],
+          },
+        },
+      },
+    });
+    // The test's reader did ask a model (a «Probar» reads for real), and that started nothing.
+    expect(s.model.requests).toHaveLength(1);
+    expect([s.told, s.runs()]).toEqual([[], []]);
+    expect(s.store().setting("models/warned")).toBeNull();
+    // At the budget a «Probar» is stopped like any background work, and still starts nothing.
+    s.spend(3); // 10.80 €
+    s.clock.now += 31_000;
+    const capped = await s.ask("POST /api/agent/flows/:id/test");
+    await s.models.idle();
+    expect(capped).toMatchObject({
+      status: 200,
+      json: { status: "stopped", error: "P13-month-budget" },
+    });
+    expect(s.model.requests).toHaveLength(1);
+    expect([s.told, s.runs()]).toEqual([[], []]);
+    // The next call that is no test starts the month's run, once.
+    expect(await s.check()).toBe(true);
+    expect(s.runs()).toHaveLength(1);
+    expect(s.told).toHaveLength(1);
+  });
+
+  it("a part of it may be tried («Probar hasta aquí» on a step before «Avisar»), though it is not saved without its «Avisar»", async () => {
+    const s = serverOf();
+    const part = { version: 1, steps: [WITH_READER.steps[0]] };
+    // As the flow, the checklist refuses it, and so does «Guardar»…
+    expect(
+      checkFlow(
+        s.store(),
+        s.host.tools,
+        { trigger: BUDGET_TRIGGER, plan: part },
+        { modules: [], mailType: null },
+      ).problems,
+    ).toEqual([{ step: null, at: "trigger", code: "budget-needs-notice" }]);
+    expect(
+      await s.ask("PUT /api/agent/flows/:id", { body: { base: 1, plan: part } }),
+    ).toMatchObject({
+      status: 400,
+      json: { error: "invalid" },
+    });
+    // …and as a part of it, it is tried: the reader reads, nothing is told.
+    const tried = await s.ask("POST /api/agent/flows/:id/test", {
+      body: { plan: part, trigger: BUDGET_TRIGGER },
+    });
+    expect(tried).toMatchObject({
+      status: 200,
+      json: { status: "done", steps: { r: { decision: "allow" } } },
+    });
+    expect(s.model.requests).toHaveLength(1);
+    expect(s.told).toEqual([]);
+    // What the run itself would refuse is refused in a test too.
+    const broken = {
+      version: 1,
+      steps: [{ id: "a", op: "call", tool: "notify", args: { text: { ref: "$nadie" } } }],
+    };
+    expect(
+      await s.ask("POST /api/agent/flows/:id/test", {
+        body: { plan: broken, trigger: BUDGET_TRIGGER },
+      }),
+    ).toMatchObject({ status: 400, json: { error: "invalid" } });
+  });
+
+  it("in a burst of calls the spending is read again every 30 s, so the warning and the cap are not looked at with an old figure", async () => {
+    const s = serverOf();
+    s.spend(5); // 4.50 €
+    expect(await s.check()).toBe(false);
+    const read = vi.spyOn(s.models, "spending");
+    // Seventy seconds of background calls five seconds apart, each costing a dollar: 5 $ more every 25 s.
+    const answers: boolean[] = [];
+    for (let i = 0; i < 14; i++) {
+      s.clock.now += 5_000;
+      s.spend(1);
+      answers.push(s.models.overBudget(1));
+      await s.models.idle();
+    }
+    // Read again at 30 s (11 $: 9.90 €, past the warning) and at 60 s (17 $: 15.30 €, past the budget): twice, not
+    // on every call and not never.
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(s.told.map((n) => n.text)).toEqual(["Los modelos llevan 9.90 € de 10 € este mes."]);
+    expect(answers.indexOf(true)).toBe(11);
+    expect(answers.slice(11)).toEqual([true, true, true]);
   });
 
   it("without models for the account there is nothing to run it: the notice is told by code as before, with no run; off, nothing", async () => {
@@ -622,32 +832,8 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
   it("«Probar» tells nothing: it says what it would tell, with the month's figures, and is no run of the flow; nor is it run by hand", async () => {
     const s = serverOf();
     s.spend(3); // 2.70 €
-    // The app's requests from a personal device, as the server answers them.
-    const ask = async (route: string, body = "{}") => {
-      const res = { status: 0, body: "" };
-      const out = {
-        writeHead: (st: number) => {
-          res.status = st;
-          return out;
-        },
-        end: (b?: string) => {
-          res.body = b ?? "";
-          return out;
-        },
-        setHeader: () => out,
-      } as unknown as ServerResponse;
-      await serveAgent(
-        s.host,
-        Readable.from([Buffer.from(body)]) as unknown as IncomingMessage,
-        out,
-        route,
-        { id: BUDGET_FLOW },
-        { account: 1, device: "portatil-ejemplo", trust: "personal" },
-      );
-      return { status: res.status, json: JSON.parse(res.body || "null") as unknown };
-    };
     // The editor's «Probar»: the saved flow, dry.
-    const tried = await ask("POST /api/agent/flows/:id/test");
+    const tried = await s.ask("POST /api/agent/flows/:id/test");
     expect(tried.status).toBe(200);
     const view = tried.json as {
       status: string;
@@ -661,15 +847,14 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
       }),
     ]);
     // Figures a request brings are not the trigger's: the month's own are what it would tell.
-    const forged = await ask(
-      "POST /api/agent/flows/:id/test",
-      JSON.stringify({ inputs: { spent: "0.01", budget: "999" } }),
-    );
+    const forged = await s.ask("POST /api/agent/flows/:id/test", {
+      body: { inputs: { spent: "0.01", budget: "999" } },
+    });
     expect((forged.json as typeof view).steps.notify?.would.map((w) => w.text)).toEqual([
       "Los modelos llevan 2.70 € de 10 € este mes.",
     ]);
     // Its spending starts it, never a hand: «Ejecutar» is refused.
-    expect(await ask("POST /api/agent/flows/:id/run")).toEqual({
+    expect(await s.ask("POST /api/agent/flows/:id/run")).toEqual({
       status: 409,
       json: { error: "not-manual" },
     });

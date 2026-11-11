@@ -522,6 +522,16 @@ function fieldsForEditor(store: UserStore, def: TypeDef): CatalogField[] {
     }));
 }
 
+/**
+ * What one of Boni's flows must have to be saved or turned on (its piece, its «Avisar»: always). A «Probar» is not
+ * asked for them: it may be of a part of the flow («Probar hasta aquí» on a step before them), and writes nothing.
+ */
+export const WHOLE_FLOW_ONLY: ReadonlySet<string> = new Set([
+  "fetch-needs-save",
+  "review-needs-steps",
+  "budget-needs-notice",
+]);
+
 /** Something the checklist says (docs/flujos.md §4.5): a step (or the flow) and what is wrong, as a code. */
 export interface Problem {
   step: string | null;
@@ -562,7 +572,9 @@ export function checkFlow(
     // A name a step of the plan has is the step's, never the trigger's (Boni's pieces are steps named as the values
     // the code bound before F7: `only`, `known`, `inv`, `prefill`).
     const own = new Set(steps.map((s) => s.id));
-    const bound = triggerNames(flow.trigger).filter((n) => !own.has(n));
+    // The figures of «Aviso del presupuesto» are bound to every run of it, so a step named like one is refused here
+    // as the run would refuse it («nombre repetido»).
+    const bound = triggerNames(flow.trigger).filter((n) => !own.has(n) || bySpending(flow.trigger));
     const v = checkPlan(flow.plan, registry, origin, bound, true);
     if (!v.ok) {
       const allowed = new Set(toolsFor(registry, origin, true).map((t) => t.name));

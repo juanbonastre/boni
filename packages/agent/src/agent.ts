@@ -320,9 +320,10 @@ export interface AgentOptions {
   origin?: OriginReader;
   /**
    * The month's spending against Juan's budget (Juan, 2026-10-24: 10 € a month): at the limit, background work
-   * calls no model (P13); his own requests go on.
+   * calls no model (P13); his own requests go on. `dry`: the run that asks is a «Probar» (the cap is the same for
+   * it; whoever answers starts nothing of its own for a test, D-43).
    */
-  overBudget?: () => boolean;
+  overBudget?: (asking: { dry: boolean }) => boolean;
   now?: () => number;
   /** Juan's zone: the civil day `today()` gives. */
   tz?: string;
@@ -1200,7 +1201,7 @@ export class Agent {
   ) {
     st.counters.modelCalls++;
     if (st.counters.modelCalls > this.limits.maxModelCalls) throw new Stop("P12-model-calls");
-    if (st.origin.kind === "background" && this.o.overBudget?.()) {
+    if (st.origin.kind === "background" && this.o.overBudget?.({ dry: !!st.dry })) {
       if (!st.notices.some((n) => n.code === "budget")) st.notices.push({ code: "budget" });
       throw new Stop("P13-month-budget");
     }
