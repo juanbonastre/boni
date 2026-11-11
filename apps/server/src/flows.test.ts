@@ -727,6 +727,27 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
         4000,
       ),
     ).toEqual({ error: "trigger" });
+    // Its setting (F7): how many decisions make it look, a whole number; the rest of the trigger stays.
+    expect(triggerOk({ learning: "mail", every: 30 })).toBe(true);
+    expect(triggerOk({ learning: "mail", every: 2.5 })).toBe(false);
+    expect(triggerOk({ learning: "mail", every: "30" })).toBe(false);
+    const changed = saveUserFlow(
+      store,
+      REVIEW_FLOW,
+      { base: 1, plan, trigger: { learning: "mail", every: 30 } },
+      [],
+      2500,
+    );
+    expect("flow" in changed && changed.flow.trigger).toEqual({ learning: "mail", every: 30 });
+    expect(
+      saveUserFlow(
+        store,
+        REVIEW_FLOW,
+        { base: 2, plan, trigger: { learning: "otro", every: 30 } },
+        [],
+        2600,
+      ),
+    ).toEqual({ error: "trigger" });
     // «Duplicar» gives a copy that starts by hand: the trigger stays Boni's flow's alone.
     expect(createFlow(store, { name: "Copia", from: REVIEW_FLOW }, 5000)?.trigger).toEqual({
       manual: true,
@@ -769,7 +790,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       { id: "spent", what: "text" },
       { id: "budget", what: "text" },
     ]);
-    expect(triggerWords(trigger, () => null)).toBe("El gasto del mes pasa del aviso");
+    expect(triggerWords(trigger, () => null)).toBe("El gasto llega al aviso");
     // Boni's own passes its checklist, and its «Avisar» may take both figures and nothing of a mail.
     const check = (t: unknown, steps: unknown[]) =>
       checkFlow(store, registry, { trigger: t, plan: { version: 1, steps } }, o);

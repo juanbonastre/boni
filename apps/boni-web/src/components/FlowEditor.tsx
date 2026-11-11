@@ -324,7 +324,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
 
 const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) {
   const t = useStore((s) => s.t);
-  // What starts it is cut to the card's width when long («El gasto del mes pasa del aviso»): whole in its tooltip.
+  // What starts it is cut to the card's width when long: whole in its tooltip.
   return (
     <div
       className={`fl-card source${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}
@@ -1157,6 +1157,12 @@ function TriggerPanel({
               </li>
             ))}
           </ul>
+          {draft.trigger.learning === "mail" && (
+            <ReviewEvery
+              every={draft.trigger.every}
+              onEvery={(every) => onTrigger({ ...draft.trigger, every })}
+            />
+          )}
         </>
       ) : (
         <>
@@ -1233,6 +1239,41 @@ function TriggerPanel({
         </>
       )}
     </aside>
+  );
+}
+
+/**
+ * «Revisar la guía»'s setting (F7): how many new decisions make it look. The server keeps it within its caps
+ * (learning.ts `REVIEW_EVERY`, 10 to 500); the field offers only those.
+ */
+function ReviewEvery({ every, onEvery }: { every: unknown; onEvery: (n: number) => void }) {
+  const t = useStore((s) => s.t);
+  const shown = typeof every === "number" ? String(every) : "20";
+  const [text, setText] = useState(shown);
+  const clamp = (v: string) => Math.min(500, Math.max(10, Math.round(Number(v))));
+  // A value set from outside (another version, «Volver al de Boni») replaces what the field shows;
+  // what is being typed stays while it already means that value.
+  useEffect(() => {
+    if (clamp(text) !== Number(shown)) setText(shown);
+  }, [shown]);
+  return (
+    <label className="flow-setting">
+      <span className="flow-setting-name">{t("flows.review.every")}</span>
+      <input
+        type="number"
+        min={10}
+        max={500}
+        step={1}
+        inputMode="numeric"
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          const n = clamp(e.target.value);
+          if (e.target.value !== "" && Number.isFinite(n)) onEvery(n);
+        }}
+        onBlur={() => setText(shown)}
+      />
+    </label>
   );
 }
 

@@ -36,8 +36,15 @@ export function triggerOk(trigger: unknown): boolean {
   const t = trigger as Record<string, unknown>;
   if (typeof t.created === "string") return t.created === "correo";
   if (t.connector !== undefined) return t.connector === "mail" && Object.keys(t).length === 1;
-  // Boni's «Revisar la guía»: Juan's decisions ask for a review (D-51).
-  if (t.learning !== undefined) return t.learning === "mail" && Object.keys(t).length === 1;
+  // Boni's «Revisar la guía»: Juan's decisions ask for a review (D-51), every so many of them (its setting, which
+  // the server keeps within its caps: learning.ts `reviewEvery`).
+  if (t.learning !== undefined)
+    return (
+      t.learning === "mail" &&
+      Object.keys(t).every((k) => k === "learning" || k === "every") &&
+      (t.every === undefined ||
+        (Number.isInteger(t.every) && (t.every as number) >= 1 && (t.every as number) <= 9999))
+    );
   // Boni's «Aviso del presupuesto»: the month's spending passes the warning (D-53).
   if (t.spending !== undefined) return t.spending === "warn" && Object.keys(t).length === 1;
   if (t.manual === true) {

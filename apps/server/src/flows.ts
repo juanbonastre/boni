@@ -1000,12 +1000,18 @@ export function saveUserFlow(
   if (latest.version !== edit.base) return { error: "conflict" };
   if (problems.length) return { error: "invalid" };
   const trigger = edit.trigger ?? latest.trigger;
-  // Boni's «Leer correo», «Traer correo», «Revisar la guía» and «Aviso del presupuesto» keep what starts them; only
+  // Boni's «Leer correo», «Traer correo», «Revisar la guía» and «Aviso del presupuesto» keep what starts them (of
+  // «Revisar la guía», all but its `every`); only
   // «Traer correo» is started by the connector, only «Revisar la guía» by Juan's decisions, only «Aviso del
   // presupuesto» by the month's spending.
+  // «Revisar la guía» may change only how many decisions make it look (its setting, F7; the code caps it).
+  const kept = (x: unknown) =>
+    JSON.stringify(
+      id === REVIEW_FLOW && x && typeof x === "object" ? { ...x, every: undefined } : x,
+    );
   if (
     (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW || id === BUDGET_FLOW) &&
-    JSON.stringify(trigger) !== JSON.stringify(latest.trigger)
+    kept(trigger) !== kept(latest.trigger)
   )
     return { error: "trigger" };
   const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown; spending?: unknown };

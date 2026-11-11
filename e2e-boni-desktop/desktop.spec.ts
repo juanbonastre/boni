@@ -432,7 +432,7 @@ test("«Flujos» over the real server is a collection (F8): «Nuevo» makes a fl
   await expect(w.getByRole("tab", { name: "Tabla" })).toBeVisible();
   // Boni's own «Aviso del presupuesto» is among the account's flows from the start (D-53): what starts it, on.
   const budget = w.locator(".db-table tbody tr", { hasText: "Aviso del presupuesto" });
-  await expect(budget).toContainText("El gasto del mes pasa del aviso");
+  await expect(budget).toContainText("El gasto llega al aviso");
   await expect(budget).toContainText("Encendido");
   await w.locator(".db-head").getByRole("button", { name: "Nuevo" }).click();
   // A new flow opens on its own page, by hand and off.
