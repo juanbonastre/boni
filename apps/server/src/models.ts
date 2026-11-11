@@ -3,8 +3,10 @@ import {
   AnthropicProvider,
   CONNECTIONS,
   type Connection,
+  codeLabel,
   DEFAULT_MODELS,
   JevProvider,
+  leaf,
   type ModelProvider,
   type ModelsConfig,
   modelsErrors,
@@ -14,13 +16,22 @@ import {
   ROLES,
   type Role,
   type RoleChoice,
+  type Val,
 } from "@boni/agent";
 import { type EvalResult, evalRole } from "@boni/agent/evals";
 import { wrappedKeysIn } from "@boni/identity";
 import { fetchText } from "@boni/net";
-import { open, type SpendRow, seal, wrappedKeyProvider } from "@boni/store";
+import {
+  type FlowRow,
+  open,
+  type SpendRow,
+  seal,
+  type UserStore,
+  wrappedKeyProvider,
+} from "@boni/store";
 import type { AgentHost, Providers } from "./agent.ts";
 import type { Db } from "./db.ts";
+import { BUDGET_FLOW, ensureFlow } from "./flows.ts";
 import { bodyOf, send } from "./reply.ts";
 import type { SecretKey } from "./secret.ts";
 
@@ -28,8 +39,9 @@ import type { SecretKey } from "./secret.ts";
  * «Modelos» (Juan, 2026-10-24): which model does each role for an account, with what key, what it spends and how
  * it treats the data. Kept in the user's store, outside the operation log: the choices as they are, the keys
  * sealed with the user's data key (never sent back to a device). Without a choice of his, a role runs as the
- * server is configured (its environment), as before. A month's spending warns once at the budget's fraction and,
- * at the budget, stops background work from calling models (the agent's `overBudget`).
+ * server is configured (its environment), as before. A month's spending warns once at the budget's fraction (Boni's
+ * flow «Aviso del presupuesto», below) and, at the budget, stops background work from calling models (the agent's
+ * `overBudget`).
  *
  * Privacy (option 1): a role through OpenRouter asks for providers that keep and collect nothing (`zdr`); only
  * then does the page say so. Anthropic's own API deletes what it receives within 30 days.
@@ -41,6 +53,54 @@ const WARNED = "models/warned";
 const EVALS = "models/evals";
 /** How recent an evaluation must be for its model to take a role. */
 const EVAL_DAYS = 30;
+
+/**
+ * Boni's «Aviso del presupuesto» (docs/sistema.md §4.2, D-53): what `overBudget` did by itself when the month's
+ * spending passed the budget's warning, as a flow Juan sees, changes and turns off. Its trigger («El gasto del mes
+ * pasa del aviso») gives the month's spending and the budget; its one step tells his devices. One run a month, with no
+ * model call. Changing or turning it off changes what is told, never the cap: `overBudget` answers the same.
+ */
+export const BUDGET_TRIGGER = { spending: "warn" };
+export const BUDGET_PLAN = {
+  version: 1,
+  steps: [
+    {
+      id: "notify",
+      op: "call",
+      tool: "notify",
+      args: {
+        text: {
+          fn: "concat",
+          args: [
+            { lit: "Los modelos llevan " },
+            { ref: "$spent" },
+            { lit: " € de " },
+            { ref: "$budget" },
+            { lit: " € este mes." },
+          ],
+        },
+      },
+    },
+  ],
+};
+/** The month's spending and the budget as the notice says them (euros; the names of flows.ts `SPENDING_INPUTS`). */
+const figuresOf = (eur: number, monthlyEur: number) => ({
+  spent: eur.toFixed(2),
+  budget: String(monthlyEur),
+});
+type Figures = ReturnType<typeof figuresOf>;
+/** What the trigger binds to the flow's plan: the code's own figures. */
+const bindOf = (f: Figures): Record<string, Val> => ({
+  spent: leaf(f.spent, codeLabel("spending")),
+  budget: leaf(f.budget, codeLabel("spending")),
+});
+/** Whether a run told: its «Avisar» ran (the journal's step of the tool `notify`, allowed). */
+const toldIn = (store: UserStore, run: string): boolean =>
+  store.journal
+    .steps(run)
+    .some(
+      (x) => x.decision === "allow" && (x.detail as { tool?: unknown } | null)?.tool === "notify",
+    );
 
 /** One evaluation kept for the page (the last few per account). */
 export interface Evaluation extends EvalResult {
@@ -94,7 +154,10 @@ export class AccountModels {
   private cached: { at: number; models: CatalogueModel[] } | null = null;
   /** The evaluation running for each account (one at a time). */
   private running = new Map<number, Pick<Evaluation, "role" | "connection" | "model" | "zdr">>();
+  /** What goes on in the background: the evaluations, and a run of «Aviso del presupuesto». */
   private jobs = new Set<Promise<void>>();
+  /** The month each account passed the warning with «Aviso del presupuesto» off (said once in the log). */
+  private silent = new Map<number, string>();
 
   constructor(o: ModelsOptions) {
     this.o = o;
@@ -259,25 +322,148 @@ export class AccountModels {
   }
 
   /**
-   * The month's budget is spent (asked before each background model call; read again every 30 s). Crossing its
-   * warning fraction tells the devices once a month.
+   * The month's budget is spent (asked before each background model call). The month's spending is read again once
+   * its figure is 30 s old, also while the calls keep coming (a burst of readings never looks at an old figure for
+   * longer). Passing the budget's warning fraction starts Boni's «Aviso del presupuesto» once a month (`warn`). The
+   * answer is the cap, and nothing of that flow changes it: on, off or changed, background work stops at the budget
+   * (D-53). A «Probar» that asks (`dry`) gets the same answer and starts nothing: the notice waits for the next call
+   * that is no test (D-43).
    */
-  overBudget(account: number): boolean {
-    const had = this.spent.get(account);
-    const eur = had && this.now() - had.at < 30_000 ? had.eur : this.spending(account).eur;
-    this.spent.set(account, { at: this.now(), eur });
+  overBudget(account: number, asking: { dry?: boolean } = {}): boolean {
+    const now = this.now();
+    let had = this.spent.get(account);
+    if (!had || now - had.at >= 30_000) {
+      had = { at: now, eur: this.spending(account).eur };
+      this.spent.set(account, had);
+    }
+    const eur = had.eur;
     const { budget } = this.config(account);
     const store = this.o.host.store(account);
     const month = this.month().label;
-    if (eur >= budget.monthlyEur * budget.warnAt && store.setting(WARNED) !== month) {
-      store.setSetting(WARNED, month);
+    // Without a budget (0) there is no warning to pass.
+    if (
+      !asking.dry &&
+      budget.monthlyEur > 0 &&
+      eur >= budget.monthlyEur * budget.warnAt &&
+      store.setting(WARNED) !== month
+    )
+      this.warn(account, store, month, figuresOf(eur, budget.monthlyEur));
+    return budget.monthlyEur > 0 && eur >= budget.monthlyEur;
+  }
+
+  /**
+   * The month's spending passed the warning and the month is not marked yet: one run of «Aviso del presupuesto», whose
+   * «Avisar» tells the devices. Turned off, nothing is told and the month stays unmarked (turned on later in the
+   * month, the next check tells). The month is marked before the run starts, so there is one run a month whatever it
+   * does, and the run's own budget check (a model step Juan added to it) starts no other. On, the month's notice is
+   * never lost to the machinery: without the flow (it could not be kept), without models for the account (nothing to
+   * run it) or when its run stops before its «Avisar» (a model step of his version stopped by the cap, a model down),
+   * the code tells as before, with its own text.
+   */
+  private warn(account: number, store: UserStore, month: string, figures: Figures): void {
+    let flow: FlowRow | null = null;
+    try {
+      flow = this.noticeFlow(store);
+    } catch (e) {
+      console.warn(`models ${account}: «Aviso del presupuesto» not kept (${(e as Error).message})`);
+    }
+    const passed = `${figures.spent} € of ${figures.budget} € this month, past the warning`;
+    if (flow && !flow.enabled) {
+      if (this.silent.get(account) !== month)
+        console.log(`models ${account}: ${passed}; «Aviso del presupuesto» is off: no notice`);
+      this.silent.set(account, month);
+      return;
+    }
+    store.setSetting(WARNED, month);
+    const byCode = (why: string) => {
       this.o.host.notify(
         account,
-        `Los modelos llevan ${eur.toFixed(2)} € de ${budget.monthlyEur} € este mes.`,
+        `Los modelos llevan ${figures.spent} € de ${figures.budget} € este mes.`,
         "own",
       );
+      console.log(`models ${account}: ${passed}: told by code (${why})`);
+    };
+    const agent = flow ? this.agentOf(account) : null;
+    if (!flow || !agent) {
+      byCode(flow ? "no models to run the flow" : "the flow could not be kept");
+      return;
     }
-    return budget.monthlyEur > 0 && eur >= budget.monthlyEur;
+    const version = flow;
+    // After this check has answered: the run is its own work, not a part of the model call that asked.
+    const job = Promise.resolve()
+      .then(() =>
+        agent.background(version.plan, bindOf(figures), [], undefined, {
+          id: BUDGET_FLOW,
+          version: version.version,
+          by: version.by,
+        }),
+      )
+      .then(
+        (r) => {
+          console.log(
+            `models ${account}: ${passed}: «Aviso del presupuesto» v${version.version} ran (${r.status}${r.error ? `, ${r.error}` : ""})`,
+          );
+          if (r.status === "stopped" && !toldIn(store, r.run))
+            byCode("its run stopped before «Avisar»");
+        },
+        (e) => {
+          console.error(
+            `models ${account}: «Aviso del presupuesto» failed (${(e as Error).message})`,
+          );
+          byCode("its run failed");
+        },
+      )
+      // Whatever goes wrong telling, the job ends: nothing here may take the server down.
+      .catch((e) =>
+        console.error(`models ${account}: the notice failed (${(e as Error).message})`),
+      );
+    this.jobs.add(job);
+    void job.finally(() => this.jobs.delete(job));
+  }
+
+  /** Boni's «Aviso del presupuesto» at its latest version: the user's when he saved one, else Boni's, saved only when
+   * it changed (as the mail's flows are kept). */
+  private noticeFlow(store: UserStore): FlowRow {
+    return ensureFlow(
+      store,
+      {
+        id: BUDGET_FLOW,
+        name: "Aviso del presupuesto",
+        trigger: BUDGET_TRIGGER,
+        plan: BUDGET_PLAN,
+        by: "preset",
+      },
+      this.now(),
+    );
+  }
+
+  /**
+   * «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with «Modelos»
+   * there (agent.ts `store`), and before «Flujos» or the map list them: on a server with no model at all too, where it
+   * never fires. Nothing without a data folder (then there is no store, no agent, and nobody asks the budget).
+   */
+  keepFlowCurrent(account: number): void {
+    if (!this.o.host.hasData) return;
+    try {
+      this.noticeFlow(this.o.host.store(account));
+    } catch (e) {
+      console.warn(`models ${account}: «Aviso del presupuesto» not kept (${(e as Error).message})`);
+    }
+  }
+
+  /** What «Aviso del presupuesto»'s trigger would bind now («Probar»): the month's spending and the budget. */
+  noticeBind(account: number): Record<string, Val> {
+    return bindOf(figuresOf(this.spending(account).eur, this.config(account).budget.monthlyEur));
+  }
+
+  /** The account's agent, or null when it has no models (then the notice is told by code, with no run). */
+  private agentOf(account: number): ReturnType<AgentHost["agent"]> | null {
+    if (!this.o.host.onFor(account)) return null;
+    try {
+      return this.o.host.agent(account);
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -378,7 +564,7 @@ export class AccountModels {
     return "started";
   }
 
-  /** Tests and shutdown: every evaluation running has ended. */
+  /** Tests and shutdown: every evaluation and every run of «Aviso del presupuesto» going on has ended. */
   async idle(): Promise<void> {
     await Promise.all([...this.jobs]);
   }
@@ -444,6 +630,8 @@ export class AccountModels {
         server: !!this.o.serverKeys[x],
       })),
       budget: c.budget,
+      // «Aviso del presupuesto» is on: passing the warning tells (off, Ajustes says the notice is off; D-53).
+      notice: this.o.host.store(account).journal.flow(BUDGET_FLOW)?.enabled ?? true,
       usdToEur: c.usdToEur,
       spending,
       over: c.budget.monthlyEur > 0 && spending.eur >= c.budget.monthlyEur,

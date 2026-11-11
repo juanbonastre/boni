@@ -1928,6 +1928,8 @@ describe("a flow a model proposes (flows.save, docs/flujos.md F5)", () => {
       [broken, undefined],
       [nested, { manual: true }],
       [weekly, { created: "correo" }],
+      // What starts Boni's «Aviso del presupuesto» is only its own (D-53).
+      [weekly, { spending: "warn" }],
     ] as const) {
       const agent = env.agent(fakePlanner([proposing(plan, trigger)]));
       const r = await agent.turn({ text: "hazme un flujo", origin: PERSONAL });
@@ -1958,6 +1960,34 @@ describe("a flow a model proposes (flows.save, docs/flujos.md F5)", () => {
         { run: "mcp-2", now: 1, label: mcp },
       ),
     ).toEqual({ errors: ["flow: not-found"] });
+    // Nor with a trigger that is one of Boni's flows' alone, nor over that flow (D-53: «Aviso del presupuesto»).
+    expect(
+      proposeFlow(
+        env.store,
+        registry,
+        { flow: null, name: "Otro aviso", trigger: { spending: "warn" }, plan: weekly },
+        { run: "mcp-2b", now: 1, label: mcp },
+      ),
+    ).toEqual({ errors: ["trigger: bad-trigger"] });
+    env.store.journal.saveFlow({
+      id: "aviso-presupuesto",
+      name: "Aviso del presupuesto",
+      trigger: { spending: "warn" },
+      inputs: [],
+      plan: weekly,
+      layout: null,
+      by: "preset",
+      enabled: true,
+      created: 1,
+    });
+    expect(
+      proposeFlow(
+        env.store,
+        registry,
+        { flow: "aviso-presupuesto", name: "Aviso", trigger: { manual: true }, plan: weekly },
+        { run: "mcp-2c", now: 1, label: mcp },
+      ),
+    ).toEqual({ errors: ["flow: started-by-a-record"] });
     // Outside content never makes one (P16).
     const outside = label("external", "personal", [{ kind: "mail", id: "m1" }]);
     expect(

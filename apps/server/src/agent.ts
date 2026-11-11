@@ -43,6 +43,7 @@ import {
   saveUserFlow,
   testView,
   triggerNames,
+  WHOLE_FLOW_ONLY,
 } from "./flows.ts";
 import { withFunctionSteps } from "./functionSteps.ts";
 import type { Runner } from "./functions.ts";
@@ -131,6 +132,8 @@ export interface AgentHostOptions {
 export class AgentHost {
   private o: AgentHostOptions;
   private stores = new Map<number, UserStore>();
+  /** The accounts whose «Aviso del presupuesto» was kept current since their store opened (`store`). */
+  private flowsKept = new Set<number>();
   private agents = new Map<number, Agent>();
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
@@ -171,8 +174,8 @@ export class AgentHost {
   readingGuideOf: ((account: number) => Val | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
   providersFor: ((account: number) => Providers | null) | null = null;
-  /** The account spent its month's budget (models.ts): background work calls no model. */
-  overBudget: ((account: number) => boolean) | null = null;
+  /** The account spent its month's budget (models.ts): background work calls no model. `dry`: a «Probar» asks. */
+  overBudget: ((account: number, asking?: { dry: boolean }) => boolean) | null = null;
   /** What Boni's pieces work with for an account (mail.ts `piecesFor`, set by the mail when it starts). */
   pieces: ((account: number) => unknown) | null = null;
   /** The box an extension's function runs in (the real one when null; a stand-in in tests). */
@@ -219,7 +222,22 @@ export class AgentHost {
       ensurePresets(s);
       this.stores.set(account, s);
     }
+    // Boni's «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with
+    // «Modelos» there (models.ts, D-53): once per account, also for a store opened before (the day's copy at start).
+    if (this.models && !this.flowsKept.has(account)) {
+      this.flowsKept.add(account);
+      this.models.keepFlowCurrent(account);
+    }
     return s;
+  }
+
+  /**
+   * Boni's own flows brought up to date for an account before «Flujos» or the map show them: the mail's (mail.ts
+   * `keepFlowCurrent`) and «Aviso del presupuesto» (models.ts).
+   */
+  boniFlowsCurrent(account: number): void {
+    this.mailFlowCurrent?.(account);
+    this.models?.keepFlowCurrent(account);
   }
 
   /** The files of the stores open now (the checkpoint worker asks every few seconds). */
@@ -241,7 +259,7 @@ export class AgentHost {
         reader: p.reader,
         ...(p.decider ? { decider: p.decider } : {}),
         ...(p.reviewer ? { reviewer: p.reviewer } : {}),
-        overBudget: () => this.overBudget?.(account) ?? false,
+        overBudget: (asking) => this.overBudget?.(account, asking) ?? false,
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
         pieces: () => this.pieces?.(account) ?? null,
@@ -354,6 +372,7 @@ export class AgentHost {
   close(): void {
     for (const s of this.stores.values()) s.close();
     this.stores.clear();
+    this.flowsKept.clear();
     this.agents.clear();
   }
 }
@@ -402,7 +421,7 @@ export async function serveAgent(
     case "GET /api/agent/map": {
       if (!host.hasData) return send(res, 503, { error: "no-store" });
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
-      host.mailFlowCurrent?.(who.account);
+      host.boniFlowsCurrent(who.account);
       const q = new URL(req.url ?? "/", "http://boni").searchParams;
       const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
       return send(
@@ -481,7 +500,7 @@ async function serveFlows(
     return send(res, 403, { error: "personal-device-only" });
   switch (route) {
     case "GET /api/agent/flows":
-      host.mailFlowCurrent?.(who.account);
+      host.boniFlowsCurrent(who.account);
       return send(res, 200, { flows: flowsView(store) });
     case "GET /api/agent/flows/catalog":
       return send(res, 200, flowCatalog(host.tools, store, forEditor().modules, { ids: true }));
@@ -579,8 +598,9 @@ async function serveFlows(
       const plan = b.plan ?? f.plan;
       const trigger = b.trigger ?? f.trigger;
       const check = checkFlow(store, host.tools, { trigger, plan }, forEditor());
-      if (check.problems.length)
-        return send(res, 400, { error: "invalid", problems: check.problems });
+      // A part of a flow may be tried («Probar hasta aquí»): what only the whole flow must have is not asked here.
+      const problems = check.problems.filter((p) => !WHOLE_FLOW_ONLY.has(p.code));
+      if (problems.length) return send(res, 400, { error: "invalid", problems });
       let bind: Record<string, Val> = {};
       let sample: { mail: string; subject: string } | null = null;
       if (typeof (trigger as { created?: unknown }).created === "string") {
@@ -595,10 +615,17 @@ async function serveFlows(
           unknown
         >;
         const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
+        // «Aviso del presupuesto» (D-53): the month's spending and the budget as they are now, the code's own, never
+        // what the request brings.
+        const figures =
+          (trigger as { spending?: unknown }).spending === "warn"
+            ? (host.models?.noticeBind(who.account) ?? {})
+            : null;
         for (const n of triggerNames(trigger)) {
           const v = given[n];
-          bind[n] =
-            typeof v === "string"
+          bind[n] = figures
+            ? (figures[n] ?? leaf("", codeLabel("spending")))
+            : typeof v === "string"
               ? leaf(v.slice(0, 2000), typed)
               : leaf(n === "today" ? host.today() : "", codeLabel("today"));
         }

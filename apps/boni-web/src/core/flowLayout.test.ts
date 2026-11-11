@@ -298,6 +298,10 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(groupOf({ ...leer, trigger: { learning: "mail" } } as MapNodeLike, "trigger")).toBe(
       "on:learning:mail",
     );
+    // «Aviso del presupuesto» is started by the month's spending.
+    expect(groupOf({ ...leer, trigger: { spending: "warn" } } as MapNodeLike, "trigger")).toBe(
+      "on:spending:warn",
+    );
     expect(groupOf(map.nodes[7] as MapNodeLike, "trigger")).toBe("on:boni");
     expect(groupOf(map.nodes[10] as MapNodeLike, "trigger")).toBeNull();
     expect(groupOf(map.nodes[2] as MapNodeLike, "collection")).toBe("in:col:trabajo");

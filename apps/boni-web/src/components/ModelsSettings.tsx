@@ -97,7 +97,8 @@ export function ModelsSettings({
             share: budget.monthlyEur > 0 ? spending.eur / budget.monthlyEur : 0,
             state: view.over
               ? "over"
-              : spending.eur >= budget.monthlyEur * budget.warnAt
+              : // Without a budget (0) there is no warning to pass.
+                budget.monthlyEur > 0 && spending.eur >= budget.monthlyEur * budget.warnAt
                 ? "warn"
                 : "ok",
           }}

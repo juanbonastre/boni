@@ -339,7 +339,11 @@ function makeMap(
     const id = `flow:${f.id}`;
     const on = (f.trigger ?? {}) as Record<string, unknown>;
     const background =
-      typeof on.created === "string" || !!on.schedule || !!on.connector || !!on.learning;
+      typeof on.created === "string" ||
+      !!on.schedule ||
+      !!on.connector ||
+      !!on.learning ||
+      !!on.spending;
     const counts = j.stepCountsOf(f.id, from, to);
     const steps = nodesOf(
       f.plan,

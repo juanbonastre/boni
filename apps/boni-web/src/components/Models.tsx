@@ -174,10 +174,16 @@ export function Spending({
         ) : (
           <p className="models-line">
             <span className="muted">
-              {t("models.budget", {
-                eur: eur(budget.monthlyEur),
-                pct: Math.round(budget.warnAt * 100),
-              })}
+              {/* Without a budget (0) there is neither a cap nor a warning; with «Aviso del presupuesto» off (one
+                  of Boni's flows), nothing is told at the warning. */}
+              {t(
+                budget.monthlyEur > 0
+                  ? view.notice
+                    ? "models.budget"
+                    : "models.budgetQuiet"
+                  : "models.budgetNone",
+                { eur: eur(budget.monthlyEur), pct: Math.round(budget.warnAt * 100) },
+              )}
             </span>
             <button
               type="button"
