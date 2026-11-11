@@ -238,6 +238,7 @@ describe("applying it", () => {
     const send: ToolDef<"send"> = {
       name: "mail.send",
       effect: "send",
+      area: "connectors",
       describe: "",
       title: "",
       args: { to: { role: "recipient", required: true, describe: "" } },
@@ -380,6 +381,7 @@ describe("the label of what a function makes, whatever it read", () => {
     const send: ToolDef<"send"> = {
       name: "mail.send",
       effect: "send",
+      area: "connectors",
       describe: "",
       title: "",
       args: { to: { role: "recipient", required: true, describe: "" } },

@@ -1,7 +1,15 @@
-import { FileText, RotateCcw, Search, X } from "lucide-react";
+import { FileText, Inbox, Plus, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
-import { closeTrash, openFind, openPage, restoreFromTrash, useStore } from "../store.ts";
+import {
+  closeTrash,
+  newPage,
+  openFind,
+  openPage,
+  restoreFromTrash,
+  showInbox,
+  useStore,
+} from "../store.ts";
 
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -20,8 +28,18 @@ function pathOf(p: PageInfo, pages: PageInfo[], untitled: string): string {
 }
 
 /**
- * Ctrl+K, as Notion's search: a box over the window, the pages that match what is typed (accents and
- * case do not matter), arrows and Enter to open one, Esc to close.
+ * The actions «Buscar» offers (docs/sistema.md §4.1, F10): each by its name in the list of actions, run as its own
+ * control runs it. Its words are `find.action.<name>`.
+ */
+export const FIND_ACTIONS: readonly { name: string; icon: typeof Plus; run: () => void }[] = [
+  { name: "pages.create", icon: Plus, run: () => void newPage() },
+  { name: "inbox.pending", icon: Inbox, run: showInbox },
+];
+type Found = { action: (typeof FIND_ACTIONS)[number] } | { page: PageInfo };
+
+/**
+ * Ctrl+K, as Notion's search: a box over the window, the actions and the pages that match what is typed (accents and
+ * case do not matter), arrows and Enter to run or open one, Esc to close.
  */
 export function QuickFind() {
   const t = useStore((s) => s.t);
@@ -32,19 +50,24 @@ export function QuickFind() {
   const found = useMemo(() => {
     const q = fold(query.trim());
     const all = [...pages].sort((a, b) => a.position - b.position);
-    return (q ? all.filter((p) => fold(p.title || t("page.untitled")).includes(q)) : all).slice(
-      0,
-      50,
-    );
+    // What can be done, while typing: the pages are what an empty box shows.
+    const actions: Found[] = q
+      ? FIND_ACTIONS.filter((a) => fold(t(`find.action.${a.name}`)).includes(q)).map((action) => ({
+          action,
+        }))
+      : [];
+    const shown = q ? all.filter((p) => fold(p.title || t("page.untitled")).includes(q)) : all;
+    return [...actions, ...shown.map((page) => ({ page }))].slice(0, 50);
   }, [query, pages, t]);
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
     list.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
-  const go = (p: PageInfo | undefined) => {
-    if (!p) return;
+  const go = (f: Found | undefined) => {
+    if (!f) return;
     openFind(false);
-    void openPage(p.id);
+    if ("action" in f) f.action.run();
+    else void openPage(f.page.id);
   };
   return (
     <div
@@ -80,7 +103,29 @@ export function QuickFind() {
         </div>
         <div className="find-list" ref={list} role="listbox" aria-label={t("nav.pages")}>
           {found.length === 0 && <p className="find-none">{t("find.none")}</p>}
-          {found.map((p, i) => {
+          {found.map((f, i) => {
+            if ("action" in f) {
+              const Icon = f.action.icon;
+              return (
+                <button
+                  key={f.action.name}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  data-i={i}
+                  data-boni-action={f.action.name}
+                  className={`find-row${i === active ? " active" : ""}`}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => go(f)}
+                >
+                  <span className="find-icon">
+                    <Icon size={15} strokeWidth={1.8} />
+                  </span>
+                  <span className="find-name">{t(`find.action.${f.action.name}`)}</span>
+                </button>
+              );
+            }
+            const p = f.page;
             const path = pathOf(p, pages, t("page.untitled"));
             return (
               <button
@@ -91,7 +136,7 @@ export function QuickFind() {
                 data-i={i}
                 className={`find-row${i === active ? " active" : ""}`}
                 onMouseEnter={() => setActive(i)}
-                onClick={() => go(p)}
+                onClick={() => go(f)}
               >
                 <span className="find-icon">
                   {p.icon || <FileText size={15} strokeWidth={1.8} />}

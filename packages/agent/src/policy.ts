@@ -157,6 +157,13 @@ export function decide(
       if (inTurn || origin.kind === "miniapp") return allow("P1");
       return deny("P0", "unforeseen");
     }
+    // Juan's touch (docs/sistema.md §4.1, F10): what only he decides, as accepting or rejecting what waits in the
+    // Bandeja. A model prepares it in his own turn, on a personal device, and he confirms it on the card the code
+    // paints; nothing from outside chooses it, and no flow, background work, mini-app or proposal does it (P21).
+    case "touch":
+      if (externalArgs || controlExternal) return deny("P21", "external-touch");
+      if (origin.kind !== "turn" || !personal) return deny("P21", "touch-outside-turn");
+      return confirm("P21");
     case "read":
       return allow("P1");
     // A piece of Boni (docs/sistema.md §4.2) is Boni's own code as a step: only in a flow, never in a plan a model

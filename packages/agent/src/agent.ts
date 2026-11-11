@@ -1,7 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
 import type { FlowRow, ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
-import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
+import {
+  type ConfirmRow,
+  type ConfirmView,
+  confirmHash,
+  confirmView,
+  marksOf,
+  originsFor,
+  stillCurrent,
+  trusted,
+} from "./confirm.ts";
 import { history, recordTurn } from "./conversations.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
 import { calibrate, levelsOf, resolve, type Thresholds } from "./decisions.ts";
@@ -49,6 +58,7 @@ import {
   EndRun,
   type FlowStarter,
   type FlowWriter,
+  type InboxDecider,
   makeCaps,
   type Net,
   type OriginReader,
@@ -316,6 +326,11 @@ export interface AgentOptions {
   pieces?: () => unknown;
   /** What the steps that run an extension's function get (the server's, task 93). */
   functions?: () => unknown;
+  /**
+   * What an action that declares a service gets (`ToolDef.service`; the server's pages, docs/sistema.md §4.1), made
+   * for its run: what it writes carries the run, its audit action and the device, so Undo takes it back.
+   */
+  services?: (name: string, run: { run: string; action?: number; device?: string }) => unknown;
   /** Where a record comes from, from the server's log and journal (`entities.origin`, docs/sistema.md §4.4). */
   origin?: OriginReader;
   /**
@@ -1688,7 +1703,18 @@ export class Agent {
           }
         : {}),
       ...(tool.functions ? { functions: this.o.functions?.() ?? null } : {}),
+      ...(tool.service
+        ? {
+            service:
+              this.o.services?.(tool.service, {
+                run: st.id,
+                ...(action !== null ? { action } : {}),
+                ...(st.origin.device ? { device: st.origin.device } : {}),
+              }) ?? null,
+          }
+        : {}),
       ...(tool.effect === "read" && this.o.origin ? { origin: this.o.origin } : {}),
+      ...(tool.effect === "touch" ? { inbox: this.inboxDecider() } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     let result: Val;
@@ -1759,15 +1785,67 @@ export class Agent {
   }
 
   /** A confirmation to run a flow names it as the user does (its id alone otherwise). */
+  /**
+   * A card names what its ids point at, by code: a flow by its name, a page by its title, and each proposal of the
+   * Bandeja on a row of its own, its title as the Bandeja shows it (a reader's words: marked as from outside) under
+   * its collection's name («acepta estas dos», F10).
+   */
   private flowNamed(view: ConfirmView, tool: ToolDef): ConfirmView {
-    if (tool.effect !== "flow") return view;
-    return {
-      ...view,
-      rows: view.rows.map((r) => {
-        if (r.arg !== "flow" || typeof r.value !== "string") return r;
+    const pageTitle = (id: string) => {
+      const e = this.o.store.get(id)?.entity;
+      const def = this.o.store.schema().types.page;
+      const t = e && def && e.type === "page" && !e.deleted ? e.values[def.titleField] : null;
+      return typeof t === "string" ? t : null;
+    };
+    const rows = view.rows.flatMap((r): ConfirmRow[] => {
+      if (tool.effect === "flow" && r.arg === "flow") {
         const f = this.o.store.journal.flow(r.value);
-        return f ? { ...r, detail: f.name } : r;
-      }),
+        return [f ? { ...r, detail: f.name } : r];
+      }
+      if (tool.args[r.arg]?.role === "page") {
+        const t = pageTitle(r.value);
+        return [t !== null ? { ...r, detail: t || "—" } : r];
+      }
+      if (tool.args[r.arg]?.role !== "proposal") return [r];
+      let ids: unknown = r.value;
+      try {
+        ids = JSON.parse(r.value);
+      } catch {
+        // One id, as it is.
+      }
+      const pending = this.o.origin?.pending() ?? [];
+      const types = this.o.store.schema().types;
+      return (Array.isArray(ids) ? ids : [ids]).map((id, i) => {
+        const p = pending.find((x) => x.id === id);
+        const def = p?.type ? types[p.type] : undefined;
+        if (!p) return { ...r, arg: `${r.arg}.${i}`, value: String(id), marks: [] };
+        return {
+          arg: `${r.arg}.${i}`,
+          role: r.role,
+          value: p.title,
+          integrity: "external",
+          sources: ["model"],
+          marks: marksOf(p.title),
+          ...(def && trusted(def.label) ? { name: def.name } : {}),
+        };
+      });
+    });
+    return { ...view, rows };
+  }
+
+  /** Juan's touch on the Bandeja (`inbox.accept`, `inbox.reject`): the same as its buttons, on his device. */
+  private inboxDecider(): InboxDecider {
+    const code = codeLabel("inbox");
+    return {
+      accept: async (id) => {
+        const r = await this.acceptProposal(id, "personal");
+        return leaf({ proposal: id, run: r.run || null, error: r.error ?? null }, code);
+      },
+      reject: (id) => {
+        const was = this.o.store.journal.proposal(id)?.status;
+        this.rejectProposal(id);
+        return leaf({ proposal: id, error: was === "pending" ? null : "no-such-proposal" }, code);
+      },
     };
   }
 

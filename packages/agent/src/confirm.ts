@@ -77,7 +77,7 @@ export function marksOf(text: string): string[] {
 const show = (v: Json): string => (typeof v === "string" ? v : JSON.stringify(v));
 
 /** Names and titles from Juan's schema and data are shown, unless they came from outside (as the planner sees). */
-const trusted = (l: { integrity: string }) =>
+export const trusted = (l: { integrity: string }) =>
   l.integrity !== "external" && l.integrity !== "ambient";
 
 /**

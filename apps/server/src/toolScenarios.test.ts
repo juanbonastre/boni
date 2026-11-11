@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coreTools, EFFECTS, READERS } from "@boni/agent";
+import { EFFECTS, READERS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
-import { withFunctionSteps } from "./functionSteps.ts";
-import { withPieces } from "./pieces.ts";
+import { serverRegistry } from "./actions.ts";
 
 /**
  * A-18 (docs/principios.md; Juan, 2026-11-05, task 64, measure E): every tool a model can call has its scenario, a test
@@ -20,7 +19,22 @@ const FUNCTIONS = "apps/server/src/functionSteps.test.ts";
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
 const REVIEW_TEST =
   "«Revisar la guía» is Boni's flow: a review is a run of its four steps, and turned off there is none (D-51)";
+/** The list of actions in the conversation (F10): pages, their blocks and views, the Bandeja's cards. */
+const ACTIONS = "apps/server/src/pageActions.test.ts";
+const PAGE_TEST =
+  "«hazme una página Gastos con el gasto por categoría» makes the page with its chart, and Undo takes it back";
+const TABLE_TEST =
+  "a table of a page: added, its view changed, the page renamed and moved, and deleted only on Juan's touch";
+const INBOX_TEST =
+  "«acepta estas dos»: the Bandeja's cards on the screen, accepted on a card that names them, and one rejected";
 const SCENARIOS: Record<string, { file: string; test: string }[]> = {
+  "pages.create": [{ file: ACTIONS, test: PAGE_TEST }],
+  "pages.add_block": [{ file: ACTIONS, test: PAGE_TEST }],
+  "pages.set_view": [{ file: ACTIONS, test: TABLE_TEST }],
+  "pages.update": [{ file: ACTIONS, test: TABLE_TEST }],
+  "pages.delete": [{ file: ACTIONS, test: TABLE_TEST }],
+  "inbox.accept": [{ file: ACTIONS, test: INBOX_TEST }],
+  "inbox.reject": [{ file: ACTIONS, test: INBOX_TEST }],
   "entities.query": [
     {
       file: AGENT,
@@ -191,8 +205,8 @@ const NO_TOOL_YET = ["write_irreversible", "egress", "send"];
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 describe("every tool a model can call has its scenario (A-18)", () => {
-  // The server's registry: the core's tools and Boni's pieces.
-  const tools = withFunctionSteps(withPieces(coreTools()))
+  // The server's registry: the list of actions (actions.ts).
+  const tools = serverRegistry()
     .all()
     .map((t) => t.name)
     .sort();
@@ -217,7 +231,7 @@ describe("every tool a model can call has its scenario (A-18)", () => {
 
   it("every effect has a tool that runs it, or is one no tool has yet", () => {
     const used = new Set(
-      withFunctionSteps(withPieces(coreTools()))
+      serverRegistry()
         .all()
         .map((t) => t.effect as string),
     );
@@ -229,8 +243,10 @@ describe("every step a flow may have says in one line what it does (I-27)", () =
   it("each tool of the registry and each reader has its `flow.desc` line, in Spanish and in English", () => {
     const words = readFileSync(join(ROOT, "apps/boni-web/src/i18n.ts"), "utf8");
     const steps = [
-      ...withFunctionSteps(withPieces(coreTools()))
+      // Juan's touch is no flow's step (P21): it is not in «Añadir paso».
+      ...serverRegistry()
         .all()
+        .filter((t) => t.effect !== "touch")
         .map((t) => t.name),
       ...READERS,
       "op.ask",

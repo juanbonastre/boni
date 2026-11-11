@@ -204,6 +204,7 @@ export function dryRun(store: UserStore, cs: ChangeSet, read: Read): DryRun {
 const APPLY: ToolDef<"write"> = {
   name: "extension.apply",
   effect: "write",
+  area: "extensions",
   describe: "Applies the change set an extension's function gave back.",
   title: "Aplicar los cambios de una extensión",
   args: { changes: { role: "content", required: true, describe: "The change set." } },

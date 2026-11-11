@@ -400,7 +400,15 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
   it("its nodes are the registry's tools and the readers, the same the planner may use (D-41)", () => {
     const store = withTypes();
     const c = flowCatalog(registry, store, o.modules);
-    expect(c.tools.map((t) => t.name).sort()).toEqual(registry.names().sort());
+    // All but Juan's touch, which is his from his turn only (P21).
+    expect(c.tools.map((t) => t.name).sort()).toEqual(
+      registry
+        .all()
+        .filter((t) => t.effect !== "touch")
+        .map((t) => t.name)
+        .sort(),
+    );
+    expect(registry.all().filter((t) => t.effect === "touch").length).toBeGreaterThan(0);
     expect(c.tools.find((t) => t.name === "entities.create")).toMatchObject({
       title: "Crear",
       args: [

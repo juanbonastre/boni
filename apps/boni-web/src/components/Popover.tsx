@@ -202,6 +202,7 @@ export function MenuRow({
   icon,
   disabled,
   onClick,
+  boniAction,
 }: {
   label: string;
   on?: boolean;
@@ -210,11 +211,14 @@ export function MenuRow({
   /** Not usable now (a flow's «Probar hasta aquí» while a test runs, say): shown greyed. */
   disabled?: boolean;
   onClick: () => void;
+  /** The action of the list (F10) this row runs: Boni over the screen and the parity test find it by it. */
+  boniAction?: string;
 }) {
   return (
     <button
       type="button"
       role="menuitemradio"
+      data-boni-action={boniAction}
       aria-checked={Boolean(on)}
       className={`menu-item${on ? " on" : ""}${danger ? " danger" : ""}`}
       disabled={disabled}

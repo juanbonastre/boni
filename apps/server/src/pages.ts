@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { label } from "@boni/entities";
-import type { UserStore } from "@boni/store";
+import { type Label, label } from "@boni/entities";
+import type { OpMeta, UserStore } from "@boni/store";
 import {
   emptyPage,
   PAGE_LIMITS,
@@ -44,8 +44,23 @@ export class PageError extends Error {
 }
 
 const CODE = label("own", "personal", [{ kind: "code", id: "pages" }]);
-const v = (value: string) => ({ value, label: CODE });
-const meta = (device?: string) => ({ actor: "system" as const, ...(device ? { device } : {}) });
+/**
+ * Who writes a page: Juan from a device (the app's routes), or an action's run (docs/sistema.md §4.1, F10: the
+ * planner's or an assistant's by the MCP), with the label of what it wrote, so Undo of the run takes it back and the
+ * audit says whose it is.
+ */
+export interface PageWriter {
+  meta: OpMeta;
+  label: Label;
+}
+type By = string | PageWriter | undefined;
+// A page is one of Boni's own records, which only code writes (the store's rule): who asked for it (the agent's run,
+// an assistant) is the operation's `by` and its run, so the audit says so and Undo of that run takes it back.
+const writerOf = (by: By): PageWriter =>
+  typeof by === "object"
+    ? { ...by, meta: { ...by.meta, actor: "system", by: by.meta.by ?? by.meta.actor } }
+    : { meta: { actor: "system", ...(by ? { device: by } : {}) }, label: CODE };
+const val = (by: PageWriter) => (value: string) => ({ value, label: by.label });
 
 function toPage(e: { id: string; values: Record<string, unknown>; updated: number }): Page {
   const x = e.values;
@@ -93,8 +108,10 @@ const title = (t: unknown) => {
 export function createPage(
   store: UserStore,
   input: { title?: unknown; parent?: unknown; spec?: unknown },
-  device?: string,
+  device?: By,
 ): Page {
+  const by = writerOf(device);
+  const v = val(by);
   const t = title(input.title ?? "");
   const parent =
     typeof input.parent === "string" && getPage(store, input.parent) ? input.parent : "";
@@ -110,7 +127,7 @@ export function createPage(
       f_position: v(String(last + 1)),
       f_spec: v(JSON.stringify(spec)),
     },
-    meta(device),
+    by.meta,
   );
   return toPage(made.entity);
 }
@@ -119,8 +136,10 @@ export function updatePage(
   store: UserStore,
   id: string,
   input: { title?: unknown; icon?: unknown; parent?: unknown; position?: unknown; spec?: unknown },
-  device?: string,
+  device?: By,
 ): Page {
+  const by = writerOf(device);
+  const v = val(by);
   if (!getPage(store, id)) throw new PageError("not-found");
   const w: Record<string, ReturnType<typeof v>> = {};
   if (input.title !== undefined) w.f_title = v(title(input.title));
@@ -145,7 +164,7 @@ export function updatePage(
     if (pageErrors(input.spec).length) throw new PageError("bad-spec");
     w.f_spec = v(JSON.stringify(input.spec));
   }
-  const e = store.update(id, w, meta(device));
+  const e = store.update(id, w, by.meta);
   return toPage(e.entity);
 }
 
@@ -162,12 +181,13 @@ function below(store: UserStore, page: string, root: string): boolean {
 }
 
 /** To the trash (Undo brings it back); its subpages move up to its parent. */
-export function removePage(store: UserStore, id: string, device?: string): void {
+export function removePage(store: UserStore, id: string, device?: By): void {
+  const by = writerOf(device);
   const p = getPage(store, id);
   if (!p) throw new PageError("not-found");
   for (const c of listPages(store).filter((x) => x.parent === id))
-    store.update(c.id, { f_parent: v(p.parent ?? "") }, meta(device));
-  store.remove(id, meta(device));
+    store.update(c.id, { f_parent: val(by)(p.parent ?? "") }, by.meta);
+  store.remove(id, by.meta);
 }
 
 /** The trash: pages removed, the latest first (Notion's Trash; restore brings one back). */
@@ -186,7 +206,7 @@ export function restorePage(store: UserStore, id: string, device?: string): Page
   const e = store.get(id);
   if (!e || e.entity.type !== "page" || e.entity.deleted === undefined)
     throw new PageError("not-found");
-  store.restore(id, meta(device));
+  store.restore(id, writerOf(device).meta);
   return getPage(store, id) as Page;
 }
 

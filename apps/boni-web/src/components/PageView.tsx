@@ -362,6 +362,7 @@ function PageTitle({ page }: { page: Page }) {
     <textarea
       ref={ref}
       className="doc-title"
+      data-boni-action="pages.update"
       rows={1}
       value={page.title}
       placeholder={t("page.untitled")}
@@ -1859,7 +1860,13 @@ function SlashMenu({
   }, [active]);
   let group = "";
   return (
-    <div ref={box} className="slash-menu pop-box" role="menu" aria-label={t("block.menuTitle")}>
+    <div
+      ref={box}
+      className="slash-menu pop-box"
+      role="menu"
+      data-boni-action="pages.add_block"
+      aria-label={t("block.menuTitle")}
+    >
       <div className="menu-list">
         {items.length === 0 && <p className="menu-head">{t("block.none")}</p>}
         {items.map((it, i) => {

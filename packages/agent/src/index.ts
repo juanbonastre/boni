@@ -124,7 +124,9 @@ export {
   weekdayOf,
 } from "./reading.ts";
 export {
+  AREAS,
   ARG_ROLES,
+  type Area,
   type Caps,
   coreTools,
   DESTINATION_ROLES,
@@ -134,18 +136,22 @@ export {
   entityVal,
   type FlowStarter,
   type FlowWriter,
+  fieldByName,
   fieldName,
+  type InboxDecider,
   makeCaps,
   type Net,
   neutralize,
   type OriginReader,
   type PendingProposal,
   pendingVal,
+  type ReadStore,
   type RecordOrigin,
   readStore,
   type ToolDef,
   ToolError,
   ToolRegistry,
+  typeByKey,
   typeName,
 } from "./tools.ts";
 export { refsOf } from "./trace.ts";
