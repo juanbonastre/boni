@@ -42,8 +42,10 @@ with the same click fixed twice, was «todo un poco liado»):
    state and the criterion of done, what Juan will see). At most one task «Ahora». What Juan asks while trying things
    goes into the queue and is prioritised, never answered with one PR per sentence.
 2. A branch from `main`; nothing is pushed to `main` directly. One PR per task, with its tests, docs and principle.
-3. `make check && git commit && git push` (a failure stops the chain), then a PR. Merge it yourself when CI is green
-   (with Android changes, also wait for the APK build). While CI runs, go on with the next thing. Before saying a
+3. `make check && git commit && git push` (a failure stops the chain), then a PR. The moment it is opened, turn on
+   auto-merge (`gh pr merge --auto --squash`) and the app's Auto-fix, without asking (Juan, 2026-11-11: he does not
+   want to wait on this): it merges when CI is green (with Android changes, also the APK build), and a failing CI
+   wakes the session to fix it on its branch; never poll CI. While CI runs, go on with the next thing. Before saying a
    check passed, read the exit code of the command that ran it (a line in the background ends with its last
    command's: on 2026-11-05 a failed `make check` was reported as passing).
 4. **«En main» is not «hecha»** (Juan, 2026-11-05, task 64, measures C and D, after phases F1–F6 were called done
