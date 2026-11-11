@@ -6,7 +6,6 @@ import {
   codeLabel,
   conversation,
   conversationByKey,
-  coreTools,
   createConversation,
   deleteConversation,
   ensureSystemTypes,
@@ -24,6 +23,7 @@ import { dayToIso, todayIn } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
+import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
@@ -45,14 +45,12 @@ import {
   triggerNames,
   WHOLE_FLOW_ONLY,
 } from "./flows.ts";
-import { withFunctionSteps } from "./functionSteps.ts";
 import type { Runner } from "./functions.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { originFacts, pendingFacts, recordOrigin } from "./origin.ts";
-import { withPieces } from "./pieces.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
@@ -138,7 +136,7 @@ export class AgentHost {
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
   // The core's tools and Boni's pieces (docs/sistema.md §4.2): a piece runs only in a flow (P20).
-  private registry: ToolRegistry = withFunctionSteps(withPieces(coreTools())).freeze();
+  private registry: ToolRegistry = serverRegistry().freeze();
   /** The tools every agent of this server has (the flow editor's catalog, docs/flujos.md). */
   get tools(): ToolRegistry {
     return this.registry;
@@ -284,6 +282,19 @@ export class AgentHost {
         // To this account's devices only: the recipient is the code's (7.9).
         notify: (text, l) => this.notify(account, text, l.integrity),
         onRequest: () => this.emit(account, "requests", {}),
+        // The services an action's area needs (F10): the pages' writer, with the run it belongs to (its Undo).
+        services: (name, run) =>
+          name === "pages"
+            ? {
+                store: this.store(account),
+                meta: {
+                  actor: "agent",
+                  run: run.run,
+                  ...(run.action !== undefined ? { action: run.action } : {}),
+                  ...(run.device ? { device: run.device } : {}),
+                },
+              }
+            : null,
       });
       this.agents.set(account, a);
       this.used.set(account, p);

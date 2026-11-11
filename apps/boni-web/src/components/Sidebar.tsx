@@ -125,6 +125,7 @@ export function Sidebar() {
                 <button
                   type="button"
                   className="icon-btn tiny"
+                  data-boni-action="pages.create"
                   onClick={() => void newPage()}
                   title={t("page.new")}
                   aria-label={t("page.new")}
@@ -354,6 +355,7 @@ export function PageTree({
             <MenuRow
               label={t("page.delete")}
               danger
+              boniAction="pages.delete"
               onClick={() => {
                 close();
                 void deletePage(p.id);

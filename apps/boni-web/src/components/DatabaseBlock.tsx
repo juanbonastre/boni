@@ -29,7 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type DataField,
@@ -664,7 +664,7 @@ function ViewOptions({
     >
       {(close) =>
         panel === "main" ? (
-          <div className="menu-list" role="menu">
+          <div className="menu-list" role="menu" data-boni-action="pages.set_view">
             {views && saved && (
               <input
                 className="input db-view-rename"

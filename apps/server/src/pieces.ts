@@ -74,6 +74,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "mail.rule",
     effect: "piece",
+    area: "boni",
     record: true,
     title: "Regla del remitente",
     describe:
@@ -90,6 +91,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "mail.known",
     effect: "piece",
+    area: "boni",
     record: true,
     title: "Ya propuesto",
     describe:
@@ -106,6 +108,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "mail.invitation",
     effect: "piece",
+    area: "boni",
     record: true,
     title: "Leer invitación",
     describe:
@@ -116,6 +119,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "mail.relations",
     effect: "piece",
+    area: "boni",
     record: true,
     title: "Buscar relaciones",
     describe:
@@ -139,6 +143,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "inbox.fold",
     effect: "piece",
+    area: "boni",
     changes: true,
     record: true,
     title: "Plegar hilo",
@@ -166,6 +171,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "inbox.accept_alone",
     effect: "piece",
+    area: "boni",
     changes: true,
     record: true,
     title: "Aceptar solas",
@@ -179,6 +185,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "mail.save",
     effect: "piece",
+    area: "boni",
     changes: true,
     title: "Guardar en Correos",
     describe:
@@ -190,6 +197,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "guide.decisions",
     effect: "piece",
+    area: "boni",
     title: "Tus decisiones",
     describe:
       "the user's decisions on the proposals that came from mail, as the reviewer reads them (someone else's text), the collections it may name, how many, and the rules the code already found",
@@ -199,6 +207,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "guide.measure",
     effect: "piece",
+    area: "boni",
     title: "Medir releyendo",
     describe:
       "the reviewer's answer, each rule checked against the decisions, measured by reading decided mail again with today's guide and with the new one; in a test, only how much it would read",
@@ -220,6 +229,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "guide.suggest",
     effect: "piece",
+    area: "boni",
     changes: true,
     title: "Sugerencia",
     describe:

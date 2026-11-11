@@ -79,6 +79,7 @@ export function InboxPanel({ under = false }: { under?: boolean }) {
   return (
     <aside
       className="side-panel inbox-panel"
+      data-boni-action="inbox.pending"
       aria-label={t("inbox.title")}
       style={under ? { display: "none" } : undefined}
     >
@@ -875,6 +876,7 @@ function DecideButtons({
         disabled={!!busy || !!failed?.gone}
         aria-busy={busy === "accept"}
         aria-label={busy === "accept" ? t("inbox.accepting") : undefined}
+        data-boni-action="inbox.accept"
         onClick={accept}
       >
         <span className="decide-label">{acceptLabel ?? t("inbox.accept")}</span>
@@ -900,6 +902,7 @@ function DecideButtons({
         disabled={!!busy || !!failed?.gone}
         aria-busy={busy === "reject"}
         aria-label={busy === "reject" ? t("inbox.rejecting") : undefined}
+        data-boni-action="inbox.reject"
         onClick={reject}
       >
         <span className="decide-label">{t("inbox.reject")}</span>

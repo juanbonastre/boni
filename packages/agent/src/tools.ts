@@ -56,8 +56,28 @@ export const EFFECTS = [
   // A piece of Boni (docs/sistema.md §4.2): Boni's own code as a step of a flow (the guide's rules, a mail's
   // invitation, folding a thread…). It runs only in a flow (P20); the server gives it what it works with.
   "piece",
+  // Juan's touch (docs/sistema.md §4.1, F10): what only he decides, prepared by a model and confirmed by him on a card
+  // the code paints from the real arguments (accepting or rejecting what waits in the Bandeja). Only from his own
+  // turn on a personal device, never from outside (P21).
+  "touch",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
+/**
+ * The areas of the list of actions (docs/sistema.md §4.1, F10): one list for the app, «Añadir paso», Boni over the
+ * screen and the MCP, by what each action works on. `boni` is Boni's own work (its pieces, a notification) and
+ * `extensions` an extension's functions.
+ */
+export const AREAS = [
+  "data",
+  "pages",
+  "inbox",
+  "flows",
+  "calendars",
+  "connectors",
+  "extensions",
+  "boni",
+] as const;
+export type Area = (typeof AREAS)[number];
 export const ARG_ROLES = [
   "destination",
   "url",
@@ -71,6 +91,10 @@ export const ARG_ROLES = [
   "value",
   "option",
   "limit",
+  // A proposal waiting in the Bandeja, by its id (`inbox.accept`): the card names it by its title.
+  "proposal",
+  // One of the user's pages, by its id (`pages.*`): the card names it by its title.
+  "page",
   // A JSON object given as it is (a flow's trigger and plan, `flows.save`): the plan language lets {"lit": {...}}
   // only here, and the tool checks it whole.
   "definition",
@@ -110,6 +134,12 @@ export interface MemoryWriter {
 /** Saves a flow the user accepted (`flows.save`, docs/flujos.md F5): its id and version. */
 export interface FlowWriter {
   save(def: { flow: string | null; name: string; trigger: unknown; plan: unknown }): Val;
+}
+/** Accepts or rejects what waits in the Bandeja (`inbox.accept`, `inbox.reject`): the agent's own, as the Bandeja's
+ * buttons do; what came of each. */
+export interface InboxDecider {
+  accept(proposal: string): Promise<Val>;
+  reject(proposal: string): Val;
 }
 /** Runs one of the user's flows from a turn (`flows.run`, docs/flujos.md F4): what came of it. */
 export interface FlowStarter {
@@ -165,9 +195,16 @@ export interface Net {
 
 export interface Caps {
   /** `origin`: where a record comes from (`entities.origin`), when the server gives it. */
-  read: { store: ReadStore; origin?: OriginReader; now?: () => number; functions?: unknown };
-  write: { store: ReadStore; writer: Writer; functions?: unknown };
-  write_irreversible: { store: ReadStore; writer: Writer };
+  /** `service`: what the server gives an action that declares one (`ToolDef.service`), for this run. */
+  read: {
+    store: ReadStore;
+    origin?: OriginReader;
+    now?: () => number;
+    functions?: unknown;
+    service?: unknown;
+  };
+  write: { store: ReadStore; writer: Writer; functions?: unknown; service?: unknown };
+  write_irreversible: { store: ReadStore; writer: Writer; service?: unknown };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
   send: { store: ReadStore; net: Pick<Net, "send"> };
   schema: { store: ReadStore; schema: SchemaWriter };
@@ -178,11 +215,19 @@ export interface Caps {
   /** What the server gives Boni's pieces for this account (opaque here: the core knows no app, A-02), and the
    * proposals this run has made so far. */
   piece: { pieces: unknown; proposals: () => readonly string[]; dry: boolean };
+  touch: { store: ReadStore; inbox: InboxDecider };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
   name: string;
   effect: E;
+  /** What it works on, in the list of actions (docs/sistema.md §4.1). */
+  area: Area;
+  /**
+   * The server's service it runs on (pages, docs/sistema.md §4.1), opaque to the core (A-02): the caps of its effect
+   * carry it as `service`, made for the run (so what it writes is the run's, and Undo takes it back).
+   */
+  service?: string;
   /** One line, for the planner's index. */
   describe: string;
   args: Readonly<Record<string, ArgSpec>>;
@@ -243,6 +288,10 @@ export class ToolRegistry {
     if (this.tools.has(def.name)) throw new Error(`tool ${def.name} twice`);
     if (!(EFFECTS as readonly string[]).includes(def.effect))
       throw new Error(`tool ${def.name}: unclassified effect`);
+    if (!(AREAS as readonly string[]).includes(def.area))
+      throw new Error(`tool ${def.name}: no area`);
+    if (def.service && !["read", "write", "write_irreversible"].includes(def.effect))
+      throw new Error(`tool ${def.name}: a service in a ${def.effect} tool`);
     if (!def.describe || !def.title) throw new Error(`tool ${def.name}: no description`);
     for (const [name, a] of Object.entries(def.args)) {
       if (!/^[a-z][a-z_]{0,30}$/.test(name))
@@ -371,7 +420,7 @@ const byName = <T>(all: T[], name: string, nameOf: (x: T) => string, key: (x: T)
   all.find((x) => nameOf(x) === name) ??
   all.find((x) => nameOf(x) === key(x) && key(x) === asKey(name));
 /** A field by its name; "title" is the type's title field when no field is called that (models write it). */
-const fieldByName = (def: TypeDef, name: string) =>
+export const fieldByName = (def: TypeDef, name: string) =>
   byName(
     def.fields.filter((f) => !f.archived && !f.hidden),
     name,
@@ -386,7 +435,8 @@ const optionFor = (f: FieldDef, v: unknown): unknown => {
   return f.options?.find((o) => asKey(o.name) === asKey(v))?.id ?? v;
 };
 
-const typeByKey = (store: ReadStore, key: string): TypeDef => {
+/** A collection the models may see, by the name they know it by (its key, or `type_<id>`). */
+export const typeByKey = (store: ReadStore, key: string): TypeDef => {
   const def = byName(
     Object.values(store.schema().types).filter((t) => !t.system && !t.archived),
     key,
@@ -527,6 +577,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.query",
     effect: "read",
+    area: "data",
     title: "Consultar",
     describe:
       "Entities of a type, optionally where a field equals a value or a text field contains a text",
@@ -551,6 +602,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.get",
     effect: "read",
+    area: "data",
     title: "Leer",
     describe: "One entity by id",
     args: { id: { role: "entity", required: true, describe: "entity id" } },
@@ -563,6 +615,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.origin",
     effect: "read",
+    area: "data",
     title: "De dónde viene",
     describe:
       "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it, in a word (who: the flow's name, the assistant's or the device's; when null, say by in words: chat is the conversation, user is Juan himself, boni is Boni on its own, import an import, connector the mail's connector; never show by's code), when (at), the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own), and its run (a reply «run» draws it)",
@@ -613,6 +666,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "inbox.pending",
     effect: "read",
+    area: "inbox",
     title: "En la Bandeja",
     describe:
       "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it in a word (who: the flow's name; when null, by in words: chat is the conversation, boni is Boni on its own; never show by's code), the record that started it (input: the mail, as entities.get gives it) and its run (a reply «run» draws it). text: only those whose title has these words. Juan accepts or rejects them himself",
@@ -640,9 +694,54 @@ export function coreTools(): ToolRegistry {
       return list(out, code);
     },
   });
+  // Juan's touch (P21): accepting or rejecting what waits in the Bandeja, as its buttons do. The model prepares it;
+  // Juan confirms it on a card that names each proposal by its title (painted by the code).
+  const proposals = {
+    role: "proposal" as const,
+    required: true,
+    describe:
+      'the proposals, by their ids as "inbox.pending" gives them: one id, or list(id, id, ...)',
+  };
+  const each = (v: Val | undefined): string[] => {
+    const x = v ? plain(v) : null;
+    const ids = (Array.isArray(x) ? x : [x]).filter((y): y is string => typeof y === "string");
+    if (!ids.length || ids.length > 50 || ids.length !== (Array.isArray(x) ? x.length : 1))
+      throw new ToolError("bad-argument");
+    return [...new Set(ids)];
+  };
+  r.register({
+    name: "inbox.accept",
+    effect: "touch",
+    area: "inbox",
+    title: "Aceptar",
+    describe:
+      "Accept proposals waiting in Juan's inbox (Bandeja), as its «Aceptar» does: each is made as it was proposed. Juan confirms it on a card",
+    args: { proposals },
+    async run({ inbox }, a) {
+      const out: Val[] = [];
+      for (const id of each(a.proposals)) out.push(await inbox.accept(id));
+      return list(out, codeLabel("inbox"));
+    },
+  });
+  r.register({
+    name: "inbox.reject",
+    effect: "touch",
+    area: "inbox",
+    title: "Rechazar",
+    describe:
+      "Reject proposals waiting in Juan's inbox (Bandeja), as its «Rechazar» does: nothing is made. Juan confirms it on a card",
+    args: { proposals },
+    run({ inbox }, a) {
+      return list(
+        each(a.proposals).map((id) => inbox.reject(id)),
+        codeLabel("inbox"),
+      );
+    },
+  });
   r.register({
     name: "entities.aggregate",
     effect: "read",
+    area: "data",
     title: "Calcular",
     describe:
       "Count of entities of a type, or the sum of a number or money field, optionally where a field equals a value",
@@ -687,6 +786,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.search",
     effect: "read",
+    area: "data",
     title: "Buscar",
     describe:
       "Entities whose text has these words anywhere (a mention is not what it is about); with since, only those that came in the last that many days, newest first",
@@ -735,6 +835,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "schema.describe",
     effect: "read",
+    area: "data",
     title: "Ver tipos",
     describe: "The types and their fields",
     args: {},
@@ -779,6 +880,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.create",
     effect: "write",
+    area: "data",
     title: "Crear",
     describe: "A new entity of a type; values is obj(field key, value, ...)",
     args: {
@@ -792,6 +894,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.update",
     effect: "write",
+    area: "data",
     title: "Cambiar",
     describe: "Change some fields of an entity; values is obj(field key, value, ...)",
     args: {
@@ -805,6 +908,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "entities.delete",
     effect: "write",
+    area: "data",
     alwaysConfirm: true,
     title: "Borrar",
     describe: "Move an entity to the trash (Juan confirms)",
@@ -817,6 +921,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "schema.create_type",
     effect: "schema",
+    area: "data",
     title: "Crear tipo",
     describe:
       'A new type; it already has its title field "titulo" (add the others with schema.add_field)',
@@ -835,6 +940,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "schema.add_field",
     effect: "schema",
+    area: "data",
     title: "Añadir campo",
     describe: `A new field of a type; kind is one of ${FIELD_KINDS.join(", ")}`,
     args: {
@@ -864,6 +970,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "memory.save",
     effect: "memory",
+    area: "data",
     title: "Recordar",
     describe: "Remember something for later turns",
     args: { text: { role: "content", required: true, describe: "what to remember" } },
@@ -874,6 +981,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "flows.run",
     effect: "flow",
+    area: "flows",
     title: "Ejecutar flujo",
     describe:
       'Run one of the user\'s flows (input "flows": its id and the names its form asks for); the user confirms it',
@@ -891,6 +999,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "flows.save",
     effect: "flow_save",
+    area: "flows",
     title: "Proponer flujo",
     describe:
       'Propose a flow for the user, a plan that runs on its own trigger: it waits in his inbox until he accepts it. trigger: {"lit": {"manual": true, "inputs": [{"name": "..."}]}} (by hand, with a form) or {"lit": {"schedule": {"every": "day" | "week" | "hour", "at": "HH:MM", "day": 0-6}}}; plan: {"lit": {"version": 1, "steps": [...]}} in this same plan language, its form\'s names and $today (on a schedule) as refs; flow: the id of one of "flows" to change',
@@ -915,6 +1024,7 @@ export function coreTools(): ToolRegistry {
   r.register({
     name: "notify",
     effect: "notify",
+    area: "boni",
     title: "Avisar",
     describe: "A notification on Juan's own devices",
     args: { text: { role: "content", required: true, describe: "the text" } },
@@ -967,6 +1077,10 @@ export interface CapsContext {
   dry?: boolean;
   /** Where a record comes from (the server's, docs/sistema.md §4.4). */
   origin?: OriginReader;
+  /** How Juan's touch accepts or rejects what waits in the Bandeja (the agent's, P21). */
+  inbox?: InboxDecider;
+  /** What the server gives an action that declares a service (`ToolDef.service`), for this run. */
+  service?: unknown;
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -1245,9 +1359,19 @@ export function makeCaps(c: CapsContext): Caps {
       now: c.now,
       ...(c.origin ? { origin: c.origin } : {}),
       ...(c.functions !== undefined ? { functions: c.functions } : {}),
+      ...(c.service !== undefined ? { service: c.service } : {}),
     },
-    write: { store: ro, writer, ...(c.functions !== undefined ? { functions: c.functions } : {}) },
-    write_irreversible: { store: ro, writer },
+    write: {
+      store: ro,
+      writer,
+      ...(c.functions !== undefined ? { functions: c.functions } : {}),
+      ...(c.service !== undefined ? { service: c.service } : {}),
+    },
+    write_irreversible: {
+      store: ro,
+      writer,
+      ...(c.service !== undefined ? { service: c.service } : {}),
+    },
     egress: {
       store: ro,
       net: {
@@ -1296,6 +1420,15 @@ export function makeCaps(c: CapsContext): Caps {
       },
     },
     piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []), dry: !!c.dry },
+    touch: {
+      store: ro,
+      inbox: c.inbox ?? {
+        accept: () => Promise.reject(new ToolError("not-available")),
+        reject: () => {
+          throw new ToolError("not-available");
+        },
+      },
+    },
   };
 }
 

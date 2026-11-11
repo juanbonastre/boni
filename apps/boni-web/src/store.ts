@@ -1487,7 +1487,9 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
         : {}),
     });
     if (r.pending?.kind === "confirm") set((s) => ({ confirmFlip: !s.confirmFlip }));
-    if (r.proposals.length) void loadInbox();
+    // A turn that changed something may have made or changed a page, or decided cards of the Bandeja (F10).
+    if (r.proposals.length || r.changed) void loadInbox();
+    if (r.changed) void pagesAfterRun();
     // Once per turn: an answer or a confirmation repeats the run's replies, its «open» already done.
     if (!entry?.result?.replies.some((x) => x.component === "open")) openFromReplies(r.replies);
   } catch (e) {
@@ -2141,7 +2143,15 @@ export async function undoRun(id: string) {
   } catch (e) {
     toast(e instanceof ApiError && e.status === 409 ? t("log.cannotUndo") : errorText(t, e));
   }
-  await loadRuns();
+  await Promise.all([loadRuns(), pagesAfterRun()]);
+}
+
+/** After a run or its Undo: the pages again, and the start if the open page is no longer there. */
+async function pagesAfterRun() {
+  const pages = await loadPages();
+  const v = get().view;
+  if (pages && v.kind === "page" && !pages.some((p) => p.id === v.id)) await openStart();
+  else if (pages && v.kind === "page") await openPage(v.id);
 }
 
 /** What the models may see of each collection, or null when the agent is off or unreachable. */

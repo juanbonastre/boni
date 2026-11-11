@@ -15,6 +15,7 @@ import { Feeds } from "./feeds.ts";
 import { flowProposalView } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
+import { getPage } from "./pages.ts";
 import { seed } from "./seed.test-util.ts";
 
 /** Invented notes (never real ones): the instructions, two projects, a journal entry kept from the AI. */
@@ -141,6 +142,10 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "extensions_run",
       "flows_describe",
       "flows_propose",
+      "pages_create",
+      "pages_add_block",
+      "pages_set_view",
+      "pages_update",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);
@@ -339,6 +344,48 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect((await tool("undo", { run: made.json.run })).json.undone).toBe(1);
     expect((await tool("read", { id: made.json.id })).error).toBe(true);
     expect((await tool("undo", { run: "import-1" })).error).toBe(true);
+  });
+
+  it("makes a page with a table of a collection by its name, as the planner's actions do, each call undone apart (F10)", async () => {
+    const made = await tool("pages_create", { title: "Proyectos en marcha" });
+    expect(made.error).toBe(false);
+    const id = made.json.id as string;
+    const added = await tool("pages_add_block", {
+      page: id,
+      block: {
+        type: "database",
+        collection: "Proyecto",
+        view: { layout: "list", sort: { field: "status" } },
+      },
+    });
+    expect(added.error).toBe(false);
+    const store = host.store(1);
+    const page = getPage(store, id);
+    const def = Object.values(store.schema().types).find((t) => t.key === "proyecto");
+    expect(page?.spec.blocks[0]).toMatchObject({
+      type: "database",
+      source: def?.id,
+      view: { layout: "list", sort: { field: def?.fields.find((f) => f.name === "status")?.id } },
+    });
+    // An assistant's words, as a model's; a collection kept from the models is not there.
+    expect(store.get(id)?.labels.f_title).toMatchObject({ integrity: "model" });
+    expect(
+      (
+        await tool("pages_add_block", {
+          page: id,
+          block: { type: "database", collection: "Diario" },
+        })
+      ).text,
+    ).toBe("unknown-type");
+    const icon = await tool("pages_update", { page: id, icon: "🚧" });
+    expect(getPage(store, id)?.icon).toBe("🚧");
+    // Newest first: a change made after it keeps a call from being undone under it.
+    expect((await tool("undo", { run: added.json.run })).error).toBe(true);
+    expect((await tool("undo", { run: icon.json.run })).json.undone).toBe(1);
+    expect((await tool("undo", { run: added.json.run })).json.undone).toBe(1);
+    expect(getPage(store, id)?.spec.blocks).toEqual([]);
+    expect((await tool("undo", { run: made.json.run })).json.undone).toBe(1);
+    expect(getPage(store, id)).toBeNull();
   });
 
   it("leaves every call in the audit: what went back to the model (fields, the text or not) and what it wrote", async () => {

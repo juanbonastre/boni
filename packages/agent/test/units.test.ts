@@ -297,11 +297,33 @@ describe("the policy engine", () => {
       decide(call("flows.run", run(user)), { kind: "turn", trust: "shared" }, counters),
     ).toMatchObject({ kind: "deny", rule: "P8" });
   });
+  it("Juan's touch is only his: from his turn on a personal device, confirmed on a card, never chosen from outside (P21; docs/sistema.md §4.1)", () => {
+    for (const tool of ["inbox.accept", "inbox.reject"]) {
+      const ids = (l: typeof user) => ({ proposals: leaf(["p1", "p2"], l) });
+      expect(decide(call(tool, ids(model)), turn, counters)).toEqual({
+        kind: "confirm",
+        rule: "P21",
+      });
+      expect(decide(call(tool, ids(ext)), turn, counters)).toMatchObject({
+        kind: "deny",
+        rule: "P21",
+      });
+      for (const kind of ["background", "miniapp", "accepted"] as const)
+        expect(decide(call(tool, ids(user)), { kind, trust: "personal" }, counters)).toMatchObject({
+          kind: "deny",
+          rule: "P21",
+        });
+      expect(
+        decide(call(tool, ids(user)), { kind: "turn", trust: "shared" }, counters),
+      ).toMatchObject({ kind: "deny", rule: "P21" });
+    }
+  });
   it("a piece of Boni runs only in a flow; one that changes the inbox only in the flow's own background run, or tried (P20)", () => {
     // docs/sistema.md §4.2: Boni's own code as a step of a flow, never in a plan a model writes for a turn.
     const piece = (changes: boolean): ToolDef<"piece"> => ({
       name: changes ? "inbox.fold" : "mail.rule",
       effect: "piece",
+      area: "boni",
       title: "Pieza",
       describe: "a piece of Boni",
       args: { mail: { role: "entity", describe: "the mail" } },
@@ -412,6 +434,7 @@ describe("the tool registry fails closed", () => {
   const base = {
     name: "x.y",
     effect: "read" as const,
+    area: "data" as const,
     title: "X",
     describe: "x",
     args: {},

@@ -119,6 +119,7 @@ export function withFunctionSteps(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "function.run",
     effect: "read",
+    area: "extensions",
     functions: true,
     title: "Función",
     describe:
@@ -160,6 +161,7 @@ export function withFunctionSteps(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "function.apply",
     effect: "write",
+    area: "extensions",
     functions: true,
     title: "Aplicar cambios",
     describe:

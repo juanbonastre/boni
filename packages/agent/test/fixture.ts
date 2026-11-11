@@ -62,6 +62,7 @@ export function testRegistry(): ToolRegistry {
   r.register({
     name: "mail.send",
     effect: "send",
+    area: "connectors",
     title: "Enviar correo",
     describe: "Send an e-mail",
     args: {
@@ -81,6 +82,7 @@ export function testRegistry(): ToolRegistry {
   r.register({
     name: "web.fetch",
     effect: "egress",
+    area: "connectors",
     title: "Descargar",
     describe: "Download a web page",
     args: { url: { role: "url", required: true, describe: "address" } },

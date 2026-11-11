@@ -5,6 +5,7 @@
  * the run on the map; nothing here is a model's word.
  */
 import type { PendingProposal, RecordOrigin } from "@boni/agent";
+import type { TypeDef } from "@boni/entities";
 import type { ProposalRow, RunRow, UserStore } from "@boni/store";
 import { aloneRuns } from "./autoAccept.ts";
 import { mapOwnerOf } from "./flowMap.ts";
@@ -38,10 +39,14 @@ export interface Origin {
 const text = (v: unknown, max = 120): string =>
   typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
 
-/** A proposal's title as the Bandeja showed it (its view's title row), as text. */
-function proposedTitle(p: ProposalRow): string {
+/** A proposal's title as the Bandeja shows it (its view's title row, or its collection's title field's), as text. */
+function proposedTitle(p: ProposalRow, def?: TypeDef): string {
   const v = (p.view ?? {}) as { rows?: { arg?: unknown; value?: unknown }[]; title?: unknown };
-  const row = Array.isArray(v.rows) ? v.rows.find((r) => r.arg === "values.title") : undefined;
+  const rows = Array.isArray(v.rows) ? v.rows : [];
+  const key = def?.fields.find((f) => f.id === def.titleField)?.key;
+  const row =
+    rows.find((r) => r.arg === "values.title") ??
+    (key ? rows.find((r) => r.arg === `values.${key}`) : undefined);
   return text(row?.value ?? v.title);
 }
 
@@ -179,7 +184,7 @@ export function pendingFacts(
       const flow = ran?.flow ? j.flow(ran.flow) : null;
       return {
         id: p.id,
-        title: proposedTitle(p),
+        title: proposedTitle(p, type),
         type: type?.id ?? null,
         created: p.created,
         by: ran?.by ?? "boni",

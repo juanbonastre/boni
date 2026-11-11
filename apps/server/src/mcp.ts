@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { coreTools, proposeFlow, readStore } from "@boni/agent";
+import { leaf, plain, proposeFlow, readStore, ToolError, type Val } from "@boni/agent";
 import {
   type FieldDef,
   type FieldType,
@@ -25,16 +25,15 @@ import {
   type Writes,
 } from "@boni/store";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
+import { serverRegistry } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
 import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
-import { withFunctionSteps } from "./functionSteps.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { originFacts, pendingFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
-import { withPieces } from "./pieces.ts";
 import { proposals, propose } from "./proposals.ts";
 import { codeHash } from "./sandbox.ts";
 
@@ -332,9 +331,8 @@ const READS = new Set([
   "extensions_describe",
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
-/** The tools a flow may use: the same registry the server's agents have (docs/flujos.md, D-41). */
-// The core's tools and Boni's pieces (docs/sistema.md §4.2), as the server's agents have them.
-const REGISTRY = withFunctionSteps(withPieces(coreTools())).freeze();
+/** The list of actions (docs/sistema.md §4.1, D-41): what a flow may use, and the actions an assistant runs here. */
+const REGISTRY = serverRegistry().freeze();
 const scopeOf = (name: string): Scope =>
   READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
 const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));
@@ -349,6 +347,84 @@ const REF = {
   collection: { type: "string", description: "With `title`: the collection the note is in" },
   title: { type: "string", description: "With `collection`: the note's exact title" },
 };
+
+/**
+ * The actions of «Páginas y vistas» (F10) for an assistant: the planner's own (pageActions.ts), run with this call's
+ * run (`undo` takes them back) and its words as a model's. What it names (a collection, its fields) is found as the
+ * models see them: a collection closed to them is not there.
+ */
+const PAGE_TOOLS: readonly {
+  name: string;
+  action: string;
+  description: string;
+  required: string[];
+}[] = [
+  {
+    name: "pages_create",
+    action: "pages.create",
+    description:
+      "Makes one of Juan's pages (in Boni's sidebar), empty, with its title (parent: a page id to put it under); then add its blocks with pages_add_block. Returns its id.",
+    required: ["title"],
+  },
+  {
+    name: "pages_add_block",
+    action: "pages.add_block",
+    description:
+      'Adds a block at the end of a page, as Juan does with «/». block: a text {"type": "heading" | "text" | "bullet" | "todo" | "quote" | "callout", "text"} or {"type": "divider"}; or what reads a collection, by its name and its properties\' names: a number {"type": "number", "collection", "measure": "count" | "sum" | "avg", "field"}, a bar list {"type": "bars", ..., "groupBy": property}, a chart {"type": "graph", ..., "groupBy": property or "@month" | "@week" | "@day", "shape": "bar" | "hbar" | "line" | "area" | "donut"} (each with "period": "month" | "30d" | "12m" | "year" | "all", "title", "filterField", "filterValue"), or a table {"type": "database", "collection", "view": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}]}}.',
+    required: ["page", "block"],
+  },
+  {
+    name: "pages_set_view",
+    action: "pages.set_view",
+    description:
+      "Changes how a table of a page shows its collection (block: the table's block id; view: as in pages_add_block).",
+    required: ["page", "block", "view"],
+  },
+  {
+    name: "pages_update",
+    action: "pages.update",
+    description:
+      "Renames a page, changes its icon (one emoji) or moves it under another page (parent: its id; null: to the top).",
+    required: ["page"],
+  },
+];
+function pageTool(t: (typeof PAGE_TOOLS)[number]): Tool {
+  const def = REGISTRY.get(t.action);
+  if (!def) throw new Error(`no action ${t.action}`);
+  const props = Object.fromEntries(
+    Object.entries(def.args).map(([k, a]) => [
+      k,
+      a.role === "definition"
+        ? { type: "object" }
+        : a.role === "page"
+          ? { type: ["string", "null"] }
+          : { type: "string" },
+    ]),
+  );
+  return {
+    name: t.name,
+    description: t.description,
+    inputSchema: obj(props, t.required),
+    async call(c, a) {
+      const said = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
+      const args: Record<string, Val> = {};
+      for (const k of Object.keys(def.args))
+        if (a[k] !== undefined) args[k] = leaf(a[k] as never, said);
+      const meta = { actor: "agent" as const, run: c.run, device: c.device, by: `mcp:${c.device}` };
+      try {
+        const out = await def.run(
+          { store: readStore(c.store, c.now), service: { store: c.store, meta } } as never,
+          args,
+          said,
+        );
+        return { ...(plain(out) as Record<string, unknown>), run: c.run };
+      } catch (e) {
+        if (e instanceof ToolError) throw new ToolFail(e.message);
+        throw e;
+      }
+    },
+  };
+}
 
 /** The record the user keeps as instructions for assistants: the one the setting names. */
 function instructionsOf(c: Ctx, v: ReturnType<typeof view>): StoredEntity | null {
@@ -1207,6 +1283,7 @@ const TOOLS: Tool[] = [
       return { proposed: true, proposal: r.proposal, waitsFor: "Juan, in Boni's inbox" };
     },
   },
+  ...PAGE_TOOLS.map(pageTool),
   {
     name: "undo",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
@@ -1221,6 +1298,9 @@ const TOOLS: Tool[] = [
     },
   },
 ];
+
+/** The MCP's tools by name (the list of actions says which action each one is, actions.ts). */
+export const mcpToolNames = (): string[] => TOOLS.map((t) => t.name);
 
 // ------------------------------------------------------------------ JSON-RPC
 

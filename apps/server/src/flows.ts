@@ -6,12 +6,11 @@
  * from earlier ones (`checkFlow`), and the changes the user makes (save, turn on or off, go back to a version,
  * duplicate, delete). Each run says its flow and version (D-42).
  */
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
   checkPlan,
   manualInputs,
   newFlowId,
-  type Origin,
   originOf,
   planVocabulary,
   readStore,
@@ -469,18 +468,22 @@ export function flowCatalog(
       out: paths(readerShape(kind, modules), 2).map((p) => p.path),
     };
   return {
-    tools: registry.all().map((t) => ({
-      name: t.name,
-      title: t.title,
-      effect: t.effect,
-      args: Object.entries(t.args).map(([name, a]) => ({
-        name,
-        role: a.role,
-        required: !!a.required,
+    // Juan's touch (accepting a card of the Bandeja) is only his, from his turn (P21): no flow step decides for him.
+    tools: registry
+      .all()
+      .filter((t) => t.effect !== "touch")
+      .map((t) => ({
+        name: t.name,
+        title: t.title,
+        effect: t.effect,
+        args: Object.entries(t.args).map(([name, a]) => ({
+          name,
+          role: a.role,
+          required: !!a.required,
+        })),
+        ...(t.record ? { record: true } : {}),
+        ...(t.changes ? { changes: true } : {}),
       })),
-      ...(t.record ? { record: true } : {}),
-      ...(t.changes ? { changes: true } : {}),
-    })),
     readers,
     asks: v.asks,
     // «Abrir» is the conversation's (F9): a flow on its own has no screen to open it on.

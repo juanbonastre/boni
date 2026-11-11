@@ -550,7 +550,7 @@ contraseña ni un código aquí» under a question.
   block moves, is dragged and deleted with what is nested under it. Markdown also "1. ", "> " (toggle), `" ` (quote)
   and "```" (code). **Ctrl+Z / Ctrl+Shift+Z** undo and redo the page's changes (typing in one block for a moment is
   one step). **Ctrl+K** (and "Buscar" at the top of the sidebar) opens Notion's search: a box over the window, pages
-  matching the words with their path, arrows and Enter. **Papelera** at the bottom of the sidebar lists deleted pages
+  matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja»: `FIND_ACTIONS`, each with its `find.action.*` words); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
