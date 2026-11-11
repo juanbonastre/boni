@@ -154,7 +154,12 @@ export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
 }
 
 /** A conversation's turns as a device shows them (the replies painted). */
-export function turnViews(store: UserStore, id: string): TurnView[] {
+/** `undoable`: a run's changes outside the store's log (AgentOptions.undoable). */
+export function turnViews(
+  store: UserStore,
+  id: string,
+  undoable?: (run: string) => boolean,
+): TurnView[] {
   return turnsOf(store, id).map((s) => {
     const status = text(s, "status");
     return {
@@ -170,7 +175,9 @@ export function turnViews(store: UserStore, id: string): TurnView[] {
       })),
       pending: json<Pending | null>(s.entity.values.f_pending, null),
       error: text(s, "error") || null,
-      changed: text(s, "run") !== "" && store.runUndoable(text(s, "run")),
+      changed:
+        text(s, "run") !== "" &&
+        (store.runUndoable(text(s, "run")) || !!undoable?.(text(s, "run"))),
       at: Number(text(s, "at")) || 0,
     };
   });

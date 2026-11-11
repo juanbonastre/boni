@@ -99,6 +99,7 @@ export function ColumnMenu({
               <input
                 ref={nameRef}
                 className="menu-input"
+                data-boni-action="schema.update_field"
                 aria-label={t("db.col.name")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -137,6 +138,7 @@ export function ColumnMenu({
               <MenuRow
                 label={t("db.col.delete")}
                 danger
+                boniAction="schema.remove_field"
                 onClick={() => {
                   void removeColumn(type.id, field.id, field.name);
                   close();
@@ -257,6 +259,7 @@ export function AddColumn({ type }: { type: DataType }) {
                 <MenuRow
                   key={k}
                   label={t(`db.col.kinds.${k}`)}
+                  boniAction="schema.add_field"
                   onClick={() =>
                     void addColumn(type.id, name.trim() || t(`db.col.kinds.${k}`), k).then(
                       (ok) => ok && close(),

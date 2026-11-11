@@ -134,6 +134,7 @@ export {
   EndRun,
   ensureSystemTypes,
   entityVal,
+  FIELD_KINDS,
   type FlowStarter,
   type FlowWriter,
   fieldByName,

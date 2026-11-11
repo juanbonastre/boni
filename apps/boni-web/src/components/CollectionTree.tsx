@@ -169,6 +169,7 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
       <MenuRow
         label={t("tree.delete")}
         danger
+        boniAction="schema.delete_type"
         onClick={() => {
           close();
           void deleteCollection(c.id);
@@ -210,6 +211,7 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
           <RenameInput
             name={c.name}
             label={`${t("tree.rename")}: ${c.name}`}
+            boniAction="schema.rename_type"
             onDone={(name) => {
               setRenaming(false);
               if (name) void renameCollection(c.id, name);
@@ -250,7 +252,7 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
         </PointMenu>
       )}
       {open && (
-        <ul className="nav-list">
+        <ul className="nav-list" data-boni-action="schema.describe">
           {adding && (
             <li>
               <NewCollectionInput
@@ -337,6 +339,7 @@ export function NewCollectionInput({
         value={name}
         // Read only while it is made (disabled would lose the focus, and with it Enter and Escape).
         readOnly={busy}
+        data-boni-action="schema.create_type"
         placeholder={t("tree.namePlaceholder")}
         aria-label={t("tree.namePlaceholder")}
         onChange={(e) => setName(e.target.value)}
@@ -362,10 +365,13 @@ export function NewCollectionInput({
 export function RenameInput({
   name,
   label,
+  boniAction,
   onDone,
 }: {
   name: string;
   label: string;
+  /** The action it runs (F10), for Boni over the screen. */
+  boniAction?: string;
   onDone: (name: string | null) => void;
 }) {
   const [value, setValue] = useState(name);
@@ -386,6 +392,7 @@ export function RenameInput({
     <input
       ref={ref}
       className="tree-rename"
+      data-boni-action={boniAction}
       value={value}
       aria-label={label}
       onChange={(e) => setValue(e.target.value)}

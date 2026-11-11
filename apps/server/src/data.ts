@@ -3,6 +3,7 @@ import {
   type Entity,
   type FieldDef,
   type FieldType,
+  join,
   type Label,
   label,
   type SchemaOp,
@@ -15,6 +16,7 @@ import {
   type AiLevel,
   BODY,
   closedToAi,
+  type OpMeta,
   StoreError,
   type UserStore,
   type Zone,
@@ -511,7 +513,23 @@ const writesOf = (
   return out;
 };
 
-const meta = (device?: string) => ({ actor: "user" as const, ...(device ? { device } : {}) });
+/**
+ * Who changes the collections: Juan from a device (its id, from a route), or an action's run (docs/sistema.md §4.1:
+ * the planner, a flow, an assistant), with its meta (Undo of the run takes it back) and the label of what it was
+ * given. The routes and the actions run this same code.
+ */
+export interface DataWho {
+  meta: OpMeta;
+  label: Label;
+}
+type Who = string | DataWho | undefined;
+const meta = (who?: Who): OpMeta =>
+  typeof who === "object" ? who.meta : { actor: "user" as const, ...(who ? { device: who } : {}) };
+/** What a change to a collection is labelled with: Juan's edit, or what the run was given (at least as sensitive). */
+const editLabel = (who: Who, sensitivity: TypeDef["sensitivity"]): Label =>
+  typeof who === "object"
+    ? join(who.label, label("user", sensitivity, []))
+    : label("user", sensitivity, [{ kind: "user-edit", id: who ?? "?" }]);
 
 export function createRow(store: UserStore, type: string, values: unknown, device?: string) {
   try {
@@ -894,14 +912,14 @@ export function changeColumn(
   type: string,
   field: string,
   body: unknown,
-  device?: string,
+  device?: Who,
 ): void {
   const def = columnOwner(store, type);
   const f = columnOf(def, field);
   // A mother's field is changed at the mother (her daughters follow).
   if (f.from) throw new DataError("bad-body");
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
+  const l = editLabel(device, def.sensitivity);
   const ops: SchemaOp[] = [];
   if (b.name !== undefined) {
     const name = nameOf(b.name);
@@ -948,7 +966,7 @@ export function changeColumn(
 }
 
 /** A column out (Notion's «Eliminar»): archived, its values kept, back with `restoreColumn` (Undo). */
-export function removeColumn(store: UserStore, type: string, field: string, device?: string): void {
+export function removeColumn(store: UserStore, type: string, field: string, device?: Who): void {
   const def = columnOwner(store, type);
   const f = columnOf(def, field);
   if (f.id === def.titleField || f.from) throw new DataError("bad-body");
@@ -969,7 +987,7 @@ export function restoreColumn(
 }
 
 /** A collection out of the tree (archived, undone like any change): only when nothing is left in its branch. */
-export function deleteCollection(store: UserStore, type: string, device?: string): void {
+export function deleteCollection(store: UserStore, type: string, device?: Who): void {
   if (!userTypes(store).some((t) => t.id === type)) throw new DataError("not-found");
   const schema = store.schema();
   const live = branch(schema, type).filter((id) => !schema.types[id]?.archived);
@@ -985,12 +1003,7 @@ export function restoreCollection(store: UserStore, type: string, device?: strin
 }
 
 /** A collection moved under another (`parent: null`: to the root), with its whole branch. */
-export function moveCollection(
-  store: UserStore,
-  type: string,
-  body: unknown,
-  device?: string,
-): void {
+export function moveCollection(store: UserStore, type: string, body: unknown, device?: Who): void {
   const parent = (body as { parent?: unknown } | null)?.parent;
   const mine = userTypes(store);
   if (!mine.some((t) => t.id === type)) throw new DataError("not-found");
@@ -1011,7 +1024,7 @@ export function renameCollection(
   store: UserStore,
   type: string,
   body: unknown,
-  device?: string,
+  device?: Who,
 ): void {
   const mine = userTypes(store);
   const def = mine.find((t) => t.id === type);
@@ -1022,12 +1035,12 @@ export function renameCollection(
   if (name === def.name) return;
   if (mine.some((t) => t.id !== type && t.name.toLowerCase() === name.toLowerCase()))
     throw new DataError("taken");
-  const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
+  const l = editLabel(device, def.sensitivity);
   store.applySchema({ op: "rename_type", type, key: def.key, name, label: l }, meta(device));
 }
 
 /** A record moved to another collection, keeping its id and its history (docs/clases.md §2.5). */
-export function moveRow(store: UserStore, id: string, body: unknown, device?: string): void {
+export function moveRow(store: UserStore, id: string, body: unknown, device?: Who): void {
   const type = (body as { type?: unknown } | null)?.type;
   const mine = userTypes(store);
   const e = store.get(id);

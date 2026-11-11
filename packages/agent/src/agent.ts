@@ -330,7 +330,15 @@ export interface AgentOptions {
    * What an action that declares a service gets (`ToolDef.service`; the server's pages, docs/sistema.md §4.1), made
    * for its run: what it writes carries the run, its audit action and the device, so Undo takes it back.
    */
-  services?: (name: string, run: { run: string; action?: number; device?: string }) => unknown;
+  services?: (
+    name: string,
+    run: { run: string; action?: number; device?: string; inFlow?: boolean },
+  ) => unknown;
+  /**
+   * Whether a run changed something its Undo takes back outside the store's log (a service's own record): the turn
+   * offers «Deshacer» then too.
+   */
+  undoable?: (run: string) => boolean;
   /** Where a record comes from, from the server's log and journal (`entities.origin`, docs/sistema.md §4.4). */
   origin?: OriginReader;
   /**
@@ -1710,6 +1718,8 @@ export class Agent {
                 run: st.id,
                 ...(action !== null ? { action } : {}),
                 ...(st.origin.device ? { device: st.origin.device } : {}),
+                // A flow's run or its «Probar» (trying a flow from inside one is refused: no loop).
+                ...(st.flowRun || st.dry ? { inFlow: true } : {}),
               }) ?? null,
           }
         : {}),
@@ -1798,7 +1808,8 @@ export class Agent {
       return typeof t === "string" ? t : null;
     };
     const rows = view.rows.flatMap((r): ConfirmRow[] => {
-      if (tool.effect === "flow" && r.arg === "flow") {
+      // A flow's actions name it (running, switching on, deleting, trying it).
+      if (tool.area === "flows" && r.arg === "flow") {
         const f = this.o.store.journal.flow(r.value);
         return [f ? { ...r, detail: f.name } : r];
       }
@@ -2431,7 +2442,7 @@ export class Agent {
         ? [...st.notices, { code: "proposals", n: st.proposals.length }]
         : st.notices,
       error,
-      changed: this.o.store.runUndoable(st.id),
+      changed: this.o.store.runUndoable(st.id) || !!this.o.undoable?.(st.id),
     };
   }
 

@@ -1568,6 +1568,7 @@ export function FlowEditor({
           <input
             type="checkbox"
             className="switch"
+            data-boni-action="flows.enable"
             checked={detail.enabled}
             disabled={busy}
             aria-label={detail.enabled ? t("flows.enabled") : t("flows.disabled")}
@@ -1603,6 +1604,7 @@ export function FlowEditor({
         <button
           type="button"
           className={`btn small${testing ? " busy" : ""}`}
+          data-boni-action="flows.test"
           disabled={busy || testing || problems.length > 0 || !draft.plan.steps.length}
           aria-busy={testing}
           onClick={() => startTest(null)}
@@ -1620,6 +1622,7 @@ export function FlowEditor({
           <button
             type="button"
             className="btn small"
+            data-boni-action="flows.run"
             disabled={busy}
             onClick={() => {
               const names = formNames(draft.trigger);
@@ -1647,6 +1650,7 @@ export function FlowEditor({
           <button
             type="button"
             className="btn primary small"
+            data-boni-action="flows.save"
             disabled={!dirty || busy || problems.length > 0}
             onClick={() => void save()}
           >
@@ -1716,6 +1720,7 @@ export function FlowEditor({
                   {detail.preset === null && (
                     <MenuRow
                       danger
+                      boniAction="flows.delete"
                       label={confirmDelete ? t("flows.deleteSure") : t("flows.delete")}
                       onClick={() => {
                         if (!confirmDelete) return setConfirmDelete(true);

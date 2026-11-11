@@ -50,6 +50,7 @@ import {
   editCell,
   loadDataTypes,
   loadRows,
+  moveRowTo,
   openFile,
   openProposal,
   openRow,
@@ -267,7 +268,12 @@ export function DatabaseBlock({
           )}
         </div>
         {canAdd && (
-          <button type="button" className="btn primary small" onClick={() => void add()}>
+          <button
+            type="button"
+            className="btn primary small"
+            data-boni-action="entities.create"
+            onClick={() => void add()}
+          >
             <Plus size={14} strokeWidth={2} />
             {t("db.new")}
           </button>
@@ -1193,6 +1199,7 @@ function TableView({
     <div className="db-table-wrap">
       <table
         ref={table}
+        data-boni-action="entities.query"
         className={`db-table fixed${some ? " has-picked" : ""}`}
         style={{ width: total }}
       >
@@ -1325,7 +1332,12 @@ function TableView({
                   </td>
                 )}
                 {ordered.map((f) => (
-                  <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
+                  <td
+                    key={f.id}
+                    className={f.id === type.titleField ? "is-title" : undefined}
+                    // Where a record's values are written (F10): what Boni over the screen points at.
+                    data-boni-action="entities.update"
+                  >
                     {/* Boni's records: text; in «Mis datos» a title opens what it is, the rest as Cell says. */}
                     {type.system && (!type.editable || lookOnly) && f.id !== type.titleField ? (
                       <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
@@ -1434,67 +1446,97 @@ function RowMenu({
   onClose: () => void;
 }) {
   const t = useStore((s) => s.t);
+  const types = useStore((s) => s.dataTypes);
+  const [moving, setMoving] = useState(false);
+  // Where a record may go (F10, `entities.move`): Juan's other collections, never Boni's own.
+  const from = row.type ?? type.id;
+  const targets = (types ?? []).filter((x) => !x.system && !x.readOnly && x.id !== from);
   return (
     <PointMenu x={at.x} y={at.y} label={t("db.rowMenu")} onClose={onClose}>
-      {(close) => (
-        <div className="menu-list" role="menu">
-          {many <= 1 && (
-            <>
+      {(close) =>
+        moving ? (
+          <div className="menu-list" role="menu" aria-label={t("db.moveTo")}>
+            {targets.map((x) => (
               <MenuRow
-                label={t("db.open")}
+                key={x.id}
+                label={x.name}
                 onClick={() => {
                   close();
-                  void openRow(row.type ?? type.id, row.id);
+                  void moveRowTo(from, row.id, x.id);
                 }}
               />
-              <MenuRow
-                label={t("map.show")}
-                onClick={() => {
-                  close();
-                  showMapOf(row.type ?? type.id, row.id);
-                }}
-              />
-              {/* Where a record comes from (docs/sistema.md §4.4): Boni's own records come from nowhere. */}
-              {!type.system && (
+            ))}
+          </div>
+        ) : (
+          <div className="menu-list" role="menu">
+            {many <= 1 && (
+              <>
                 <MenuRow
-                  label={t("origin.ask")}
+                  label={t("db.open")}
+                  boniAction="entities.get"
                   onClick={() => {
                     close();
-                    const title = row.values[type.titleField];
-                    void showOrigin(row.id, typeof title === "string" ? title : "");
+                    void openRow(row.type ?? type.id, row.id);
                   }}
                 />
-              )}
-              <MenuRow
-                label={t("db.rename")}
-                onClick={() => {
-                  close();
-                  onRename();
-                }}
-              />
-              <MenuRow
-                label={t("db.copyLink")}
-                onClick={() => {
-                  close();
-                  void navigator.clipboard
-                    ?.writeText(`boni://note?id=${row.id}`)
-                    .then(() => toast(t("db.linkCopied")))
-                    .catch(() => {});
-                }}
-              />
-              <MenuSep />
-            </>
-          )}
-          <MenuRow
-            label={many > 1 ? t("db.deleteN", { n: many }) : t("db.delete")}
-            danger
-            onClick={() => {
-              close();
-              onDelete();
-            }}
-          />
-        </div>
-      )}
+                <MenuRow
+                  label={t("map.show")}
+                  onClick={() => {
+                    close();
+                    showMapOf(row.type ?? type.id, row.id);
+                  }}
+                />
+                {/* Where a record comes from (docs/sistema.md §4.4): Boni's own records come from nowhere. */}
+                {!type.system && (
+                  <MenuRow
+                    label={t("origin.ask")}
+                    boniAction="entities.origin"
+                    onClick={() => {
+                      close();
+                      const title = row.values[type.titleField];
+                      void showOrigin(row.id, typeof title === "string" ? title : "");
+                    }}
+                  />
+                )}
+                <MenuRow
+                  label={t("db.rename")}
+                  onClick={() => {
+                    close();
+                    onRename();
+                  }}
+                />
+                {!type.system && targets.length > 0 && (
+                  <MenuRow
+                    label={`${t("db.moveTo")}…`}
+                    boniAction="entities.move"
+                    onClick={() => setMoving(true)}
+                  />
+                )}
+                <MenuRow
+                  label={t("db.copyLink")}
+                  onClick={() => {
+                    close();
+                    void navigator.clipboard
+                      ?.writeText(`boni://note?id=${row.id}`)
+                      .then(() => toast(t("db.linkCopied")))
+                      .catch(() => {});
+                  }}
+                />
+                <MenuSep />
+              </>
+            )}
+            <MenuRow
+              label={many > 1 ? t("db.deleteN", { n: many }) : t("db.delete")}
+              danger
+              boniAction="entities.delete"
+              onClick={() => {
+                close();
+                onDelete();
+              }}
+            />
+          </div>
+        )
+      }
     </PointMenu>
   );
 }
