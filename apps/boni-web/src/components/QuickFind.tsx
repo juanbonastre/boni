@@ -7,7 +7,7 @@ import {
   openFind,
   openPage,
   restoreFromTrash,
-  showInbox,
+  toggleInbox,
   useStore,
 } from "../store.ts";
 
@@ -33,7 +33,7 @@ function pathOf(p: PageInfo, pages: PageInfo[], untitled: string): string {
  */
 export const FIND_ACTIONS: readonly { name: string; icon: typeof Plus; run: () => void }[] = [
   { name: "pages.create", icon: Plus, run: () => void newPage() },
-  { name: "inbox.pending", icon: Inbox, run: showInbox },
+  { name: "inbox.pending", icon: Inbox, run: () => toggleInbox(true) },
 ];
 type Found = { action: (typeof FIND_ACTIONS)[number] } | { page: PageInfo };
 

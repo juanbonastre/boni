@@ -373,6 +373,30 @@ test("Notion's blocks: lists, toggles, code; Tab nests, a closed toggle folds, C
   await expect(lines).toHaveCount(before);
 });
 
+test("Ctrl+K offers actions first, each run as its control runs it (F10)", async ({ page }) => {
+  await openApp(page, "/?still", {
+    pages: [{ id: "gastos", title: "Gastos", spec: { version: 1, blocks: [] } }],
+  });
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("bandeja", { delay: 15 });
+  await expect(page.locator(".find-row").first()).toHaveAttribute(
+    "data-boni-action",
+    "inbox.pending",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".inbox-panel")).toBeVisible();
+  await page.keyboard.press("Control+k");
+  await page.keyboard.type("nueva pág", { delay: 15 });
+  await expect(page.locator(".find-row").first()).toHaveAttribute(
+    "data-boni-action",
+    "pages.create",
+  );
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".find-box")).toHaveCount(0);
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
+});
+
 test('Ctrl+K finds a page; duplicate, subpage from "/", the trash restores', async ({ page }) => {
   await openApp(page, "/?still", {
     pages: [

@@ -210,11 +210,14 @@ con Deshacer.
 - **Bandeja:** `inbox.pending`, y `inbox.accept` / `inbox.reject`, que son **su toque** (efecto `touch`, regla P21):
   la IA las prepara, en un turno de Juan desde un dispositivo personal, y la tarjeta las pinta con el título de cada
   propuesta y su colección; nunca en un flujo ni por el MCP, y con argumentos que vienen de fuera no se piden.
-  «Acepta estas dos» señala las tarjetas de la pantalla (`$screen.inbox`).
+  «Acepta estas dos» señala las tarjetas de la pantalla (`$screen.inbox`). Corregir una propuesta (título, colección,
+  «Enlazar», «Es el mismo») sigue yendo con la ruta de aceptar; no es aún una acción.
 - **Rutas:** cada ruta de la API que cambia algo dice su acción, su Deshacer, que es solo de Juan (con su porqué) o
-  que no es una acción (preguntar, confirmar, calcular). Las que aún no están en una acción van en `NOT_YET`, una
+  que no es una acción (preguntar, confirmar, calcular). Las rutas de páginas y de la Bandeja llaman al mismo módulo
+  que su acción (`pages.ts`, la aceptación del agente); la prueba comprueba la tabla, no la llamada. Las que aún no están en una acción van en `NOT_YET`, una
   lista que solo puede encoger (60 hoy).
-- **App:** cada control dice su acción (`data-boni-action`), lo que Boni sobre la pantalla también señala; «Buscar»
+- **App:** cada control dice su acción (`data-boni-action`): el nombre por el que Boni sobre la pantalla lo señalará
+  (hoy solo se escribe; leerlo es de §4.7); «Buscar»
   (`Ctrl+K`) ofrece las acciones que no tienen otro sitio («Nueva página», «Abrir la Bandeja»). Tras un turno que
   cambió algo, y tras Deshacer, la app vuelve a leer las páginas y la Bandeja. Las acciones aún sin control
   (`NO_CONTROL_YET`, 14: las de datos, colecciones, flujos y la guía) también solo pueden encoger.
@@ -223,9 +226,12 @@ con Deshacer.
   un flujo (A-19).
 - **«Añadir paso»:** las acciones de su toque no son pasos (P21 las rechaza en un flujo); el resto, sí.
 
-Queda (la 86, siguientes partes): flujos y datos (filas, colecciones, campos, `flows_test` en el MCP), y después
-calendarios, conectores, conversaciones, preferencias y extensiones, hasta que `NOT_YET` y `NO_CONTROL_YET` queden
-vacías.
+Queda (la 86, siguientes partes): flujos y datos (filas, colecciones, campos, corregir una propuesta, `flows_test` en
+el MCP), y después calendarios, conectores, conversaciones, preferencias y extensiones, hasta que `NOT_YET` y
+`NO_CONTROL_YET` queden vacías. Las acciones de pantalla (abrir, desplazarse, resaltar, filtrar la vista abierta) y
+leer `data-boni-action` van con Boni sobre la pantalla (§4.7, tras la 86). Lo que cada acción declara de sí (cómo se
+deshace, cómo se confirma, su icono) va hoy en tablas (`UNDO_ROUTES`, el efecto y `alwaysConfirm`, `FIND_ACTIONS`);
+pasarlo a la definición de la acción, cuando se use en «Añadir paso» y en los pasos de un turno.
 
 ### 4.2 Todo lo que Boni hace solo es un flujo
 
