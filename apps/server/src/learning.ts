@@ -16,6 +16,20 @@ export function setLearning(store: UserStore, on: boolean): void {
   store.setSetting(SETTING, on ? null : "off");
 }
 
+/**
+ * How many new decisions of Juan's make «Revisar la guía» look on its own: its trigger's setting (`every`, F7), else
+ * the extension's; always within the code's caps, whatever the flow says (changing a Boni flow changes what it does,
+ * never what it is allowed). Never below 10, the fewest decisions a review works on (mailReview.ts), so it cannot be
+ * made to look more often than that; never above 500.
+ */
+export const REVIEW_EVERY = { min: 10, max: 500 } as const;
+
+export function reviewEvery(setting: unknown, fallback: number): number {
+  const n =
+    typeof setting === "number" && Number.isFinite(setting) ? Math.round(setting) : fallback;
+  return Math.min(REVIEW_EVERY.max, Math.max(REVIEW_EVERY.min, n));
+}
+
 /** A candidate tried and dropped (it measured no better) is not tried again for this long. */
 export const TRIED_FOR = 7 * DAY;
 

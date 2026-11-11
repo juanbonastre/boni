@@ -790,7 +790,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return `Cada día a las ${at}`;
         }
         // Boni's «Aviso del presupuesto» (the server's `triggerWords`).
-        if (on.spending === "warn") return "El gasto del mes pasa del aviso";
+        if (on.spending === "warn") return "El gasto llega al aviso";
         return "Disparado por el usuario";
       };
       const wordId = (w: string) => `o_disp_${w.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;

@@ -1,7 +1,8 @@
 // The learners' pace and switch (docs/fiabilidad.md F4, docs/preferencias.md §5; A-14): at most one suggestion a day not asked for, none with «Aprender» off.
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
-import { DAY, learningOn, mayReview, setLearning } from "./learning.ts";
+import { DAY, learningOn, mayReview, REVIEW_EVERY, reviewEvery, setLearning } from "./learning.ts";
+import { MIN_DECISIONS } from "./mailReview.ts";
 
 describe("what a learner may do on its own (A-14)", () => {
   const base = {
@@ -19,6 +20,22 @@ describe("what a learner may do on its own (A-14)", () => {
     expect(mayReview({ ...base, fresh: () => 20 })).toBe(true);
     expect(mayReview({ ...base, fresh: () => 19 })).toBe(false);
     expect(mayReview({ ...base, candidates: () => 1 })).toBe(true);
+  });
+  it("how many decisions make it look is the flow's setting, with a hard cap: never below 10, never above 500 (F7)", () => {
+    expect(reviewEvery(30, 20)).toBe(30);
+    expect(reviewEvery(undefined, 20)).toBe(20);
+    expect(reviewEvery("5", 20)).toBe(20);
+    expect(reviewEvery(Number.NaN, 20)).toBe(20);
+    // A setting past the cap is clamped: changing a Boni flow changes what it does, never what it is allowed.
+    expect(reviewEvery(1, 20)).toBe(REVIEW_EVERY.min);
+    expect(reviewEvery(0, 20)).toBe(10);
+    expect(reviewEvery(-3, 20)).toBe(10);
+    expect(reviewEvery(10_000, 20)).toBe(REVIEW_EVERY.max);
+    expect(reviewEvery(1, 1)).toBe(10); // an extension's default is clamped the same
+    // The floor is the fewest decisions a review works on: it cannot be made to look more often than that.
+    expect(REVIEW_EVERY.min).toBe(MIN_DECISIONS);
+    expect(mayReview({ ...base, every: reviewEvery(1, 20), fresh: () => 9 })).toBe(false);
+    expect(mayReview({ ...base, every: reviewEvery(1, 20), fresh: () => 10 })).toBe(true);
   });
   it("never with «Aprender» off, while a suggestion waits for him, or within a day of the last one", () => {
     const ready = { ...base, fresh: () => 20, candidates: () => 1 };

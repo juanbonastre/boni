@@ -2675,6 +2675,22 @@ export const FLOW_CATALOG = {
   modules: ["tasks", "events"],
 };
 /** The catalog with an active extension's function (task 93): «Funciones» in «Añadir paso», its code and tests. */
+/** With «Revisar la guía»'s «Medir releyendo» and its setting (F7): how many mails it reads again. */
+export const FLOW_CATALOG_REVIEW = {
+  ...FLOW_CATALOG,
+  tools: [
+    ...FLOW_CATALOG.tools,
+    {
+      name: "guide.measure",
+      title: "Medir releyendo",
+      effect: "piece",
+      args: [
+        { name: "reading", role: "value", required: false },
+        { name: "mails", role: "value", required: false },
+      ],
+    },
+  ],
+};
 export const FLOW_CATALOG_FUNCTIONS = {
   ...FLOW_CATALOG,
   functions: [
@@ -2890,6 +2906,59 @@ export const FLOW_BUDGET = {
   preset: 1,
   mailKey: null,
 };
+/** Boni's «Revisar la guía» (D-51), with its settings (F7): every 20 decisions, 20 mails read again. */
+const REVIEW_ROW = {
+  id: "revisar-guia",
+  name: "Revisar la guía",
+  version: 1,
+  trigger: { learning: "mail", every: 20 },
+  by: "preset",
+  enabled: true,
+  steps: 4,
+  runs: 0,
+  last: null,
+};
+export const FLOWS_WITH_REVIEW = { flows: [...FLOWS.flows, REVIEW_ROW] };
+export const FLOW_REVIEW = {
+  ...REVIEW_ROW,
+  inputs: [],
+  nodes: [
+    flowStep("d", "call", "guide.decisions", { title: "Tus decisiones" }),
+    flowStep("r", "read", "review_reading", { title: "Revisora", deps: ["d"] }),
+    flowStep("m", "call", "guide.measure", {
+      title: "Medir releyendo",
+      args: ["reading: $r", "mails: 20"],
+      deps: ["r"],
+    }),
+    flowStep("s", "call", "guide.suggest", { title: "Sugerencia", deps: ["m"] }),
+  ],
+  days: 7,
+  versions: [{ version: 1, by: "preset", created: Date.UTC(2026, 9, 12, 8, 0) }],
+  plan: {
+    version: 1,
+    steps: [
+      { id: "d", op: "call", tool: "guide.decisions", args: {} },
+      {
+        id: "r",
+        op: "read",
+        reader: "review_reading",
+        input: { ref: "$d.lines" },
+        params: { options: { ref: "$d.options" } },
+        when: { ref: "$d.lines" },
+      },
+      {
+        id: "m",
+        op: "call",
+        tool: "guide.measure",
+        args: { reading: { ref: "$r" }, mails: { lit: 20 } },
+      },
+      { id: "s", op: "call", tool: "guide.suggest", args: {} },
+    ],
+  },
+  preset: 1,
+  mailKey: null,
+};
+export const FLOW_REVIEW_CHECK = { problems: [], refs: {}, outs: {} };
 /** His own version of it, whose text takes neither figure (the server lists as inputs only what the plan takes). */
 export const FLOW_BUDGET_MINE = {
   ...FLOW_BUDGET,

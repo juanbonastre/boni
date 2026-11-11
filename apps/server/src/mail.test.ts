@@ -1673,6 +1673,105 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     sdb.close();
     rmSync(d, { recursive: true, force: true });
   });
+  it("when it looks on its own is a setting of «Revisar la guía», within the code's caps (F7)", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-review-every-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (/decisions a user made/.test(req.system)) return { rules: [], examples: [] };
+      // One task per mail, each its own (the same one again would fold into the thread's).
+      const n = /acta (\d+)/i.exec(String((req.input as { content: string }).content))?.[1];
+      const title = `Revisar el acta ${n}`;
+      return { items: [{ quote: "…", actor: "recipient", kind: "task", title, due: null }] };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_docencia",
+          key: "docencia",
+          name: "Docencia",
+          fields: [{ id: "t_docencia_t", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "t_docencia_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    let now = NOW;
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => now,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 14;
+    const acta = (i: number) =>
+      mail(60 + i, `Acta ${i}`, `¿Revisas el acta ${i}?`, `secretaria${i}@example.com`);
+    box.mails = new Map(Array.from({ length: 12 }, (_, i) => [i + 1, acta(i)]));
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    await m.check(1);
+    // Juan accepts the 12 proposals as they came: nothing for the code to find, only his decisions count.
+    const decide = (at: number) => {
+      for (const p of store.journal.proposals("pending"))
+        store.journal.setProposal(p.id, "accepted", at);
+    };
+    decide(NOW);
+    expect(store.journal.proposals().filter((p) => p.decided !== null)).toHaveLength(12);
+    const runs = () => store.journal.runs().filter((r) => r.flow === REVIEW_FLOW).length;
+    // Boni's version says 20, as the code did, and «Medir releyendo» reads again 20 mails.
+    const flow = store.journal.flow(REVIEW_FLOW);
+    expect(flow?.trigger).toEqual({ learning: "mail", every: 20 });
+    const plan = flow?.plan as { version: number; steps: { id: string; args?: object }[] };
+    expect(plan.steps.find((x) => x.id === "m")?.args).toMatchObject({ mails: { lit: 20 } });
+    expect(await m.reviewNow(1, true)).toBeNull();
+    expect(runs()).toBe(0);
+    // Juan sets 12 in its editor: his 12 decisions make it look.
+    const save = (every: number) => {
+      const latest = store.journal.flow(REVIEW_FLOW);
+      const r = saveUserFlow(
+        store,
+        REVIEW_FLOW,
+        { base: latest?.version ?? 0, plan, trigger: { learning: "mail", every } },
+        [],
+        now,
+      );
+      expect("flow" in r).toBe(true);
+    };
+    save(12);
+    expect(await m.reviewNow(1, true)).toBeNull(); // looked, nothing better to suggest
+    expect(runs()).toBe(1);
+    // A day later, 6 new decisions; set to 1, it is clamped to 10: it does not look until there are 10.
+    now = NOW + 2 * 24 * 60 * 60 * 1000;
+    for (let i = 12; i < 18; i++) box.mails.set(i + 1, acta(i));
+    await m.check(1);
+    decide(now);
+    save(1);
+    expect(await m.reviewNow(1, true)).toBeNull();
+    expect(runs()).toBe(1);
+    // Four more, and it looks.
+    for (let i = 18; i < 22; i++) box.mails.set(i + 1, acta(i));
+    await m.check(1);
+    decide(now + 1);
+    const since = store.journal.proposals().filter((p) => p.decided !== null && p.decided >= now);
+    expect(since).toHaveLength(10);
+    expect(await m.reviewNow(1, true)).toBeNull();
+    expect(runs()).toBe(2);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
 });
 
 describe("mail as an extension (docs/extensiones.md 3)", () => {

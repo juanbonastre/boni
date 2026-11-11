@@ -988,8 +988,12 @@ contraseña ni un código aquí» under a question.
   and a reading's Recorrido lights that way too. Boni's «Revisar la guía» (D-51) starts with «Cuando tus decisiones
   lo piden», fixed in the same way, and reads «Tus decisiones» → «Revisora» → «Medir releyendo» → «Sugerencia», the
   last card saying «De Boni · deja una sugerencia»; on the map it replaces the reviewer's own box, learning from the
-  Bandeja and improving «Leer correo». Boni's «Aviso del presupuesto» (D-53) starts with «El gasto del mes pasa del
-  aviso», fixed in the same way and never run by hand; its trigger's card lists what it gives by a person's names,
+  Bandeja and improving «Leer correo». When and how much it learns are its settings (D-54): its trigger's panel has
+  «Decisiones nuevas», a number field (20 from Boni) that offers 10 to 500 and, left out of range, shows the nearest
+  it takes on leaving it; «Medir releyendo» has «Correos», an ordinary value of the step (20). The server clamps both
+  whatever comes; the field states no limit in words (§5: no explanations on screen). Boni's «Aviso del presupuesto»
+  (D-53) starts with «El gasto llega al aviso» (it was «El gasto del mes pasa del aviso», cut on its card: a
+  trigger's name fits its card), fixed in the same way and never run by hand; its trigger's card lists what it gives by a person's names,
   «Gasto del mes» and «Presupuesto» (both always, on the card and in the trigger's panel, whatever its text takes),
   and its one step is an ordinary «Avisar» whose text is the flow's, made of parts
   (texts and those two figures) that are changed like any step's. What starts a flow is cut to its card's width when
@@ -1000,7 +1004,7 @@ contraseña ni un código aquí» under a question.
   tus dispositivos» (so does any run that told; in the conversation its drawn way ends in «Dispositivos»). Of a flow
   with several «Avisar», a run lights only the arrows of those that told in it; a run from before the period gets
   its arrow all the same, with no number; the «Recorrido» of a «Probar» never reaches «Dispositivos» (it told nothing).
-  «Agrupar por disparador» names its frame «El gasto del mes pasa del aviso». «Función» (task 93, D-52), offered in «Añadir paso» under «Funciones» with
+  «Agrupar por disparador» names its frame «El gasto llega al aviso». «Función» (task 93, D-52), offered in «Añadir paso» under «Funciones» with
   «Aplicar cambios» only while an extension's function is active, chooses among them in a select («Banco ·
   importar»), with «Código» under it (a `<details>`, the code in a scroll of at most 240 px, to read, never to edit)
   and «Pruebas (n)», its tests' names; «Aplicar cambios» takes its result whole, and in the Bandeja its card is

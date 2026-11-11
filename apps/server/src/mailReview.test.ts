@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { MailGuide } from "./mail.ts";
-import { checkRule, type Decision, ruleCandidates, sameThing, score } from "./mailReview.ts";
+import {
+  checkRule,
+  type Decision,
+  MEASURE,
+  measureCandidate,
+  measuredMail,
+  measureMails,
+  ruleCandidates,
+  sameThing,
+  score,
+} from "./mailReview.ts";
 
 const d = (id: string, sender: string, accepted: boolean, mail = id, title = "Revisar el acta") =>
   ({
@@ -134,5 +144,37 @@ describe("what the reviewer may suggest (docs/nucleo.md 7.4b)", () => {
         ]),
       ),
     ).toBe(0);
+  });
+});
+
+describe("«Medir releyendo» reads again as much as its setting says, never past its cap (F7)", () => {
+  const ds = Array.from({ length: 60 }, (_, i) => d(`d${i}`, `p${i}@example.com`, true, `m${i}`));
+  const c = { rules: [], examples: [{ id: "d:m59", text: "", want: [] }], guide: empty };
+  it("clamps the setting to 1 to 20, 20 when not given", () => {
+    expect(measureMails(undefined)).toBe(MEASURE);
+    expect(measureMails(5)).toBe(5);
+    expect(measureMails(0)).toBe(1);
+    expect(measureMails(500)).toBe(20);
+    expect(measureMails("50")).toBe(20);
+    // The latest decided mail, never its example's, as many as the setting.
+    expect(measuredMail(ds, c as never, 5)).toEqual(["m58", "m57", "m56", "m55", "m54"]);
+    expect(measuredMail(ds, c as never, 500)).toHaveLength(20);
+    expect(measuredMail(ds, c as never)).toHaveLength(20);
+  });
+  it("a setting past the cap still reads at most 20 mails with each guide: 40 readings of a model at most", async () => {
+    let reads = 0;
+    const h = {
+      ds,
+      guide: empty,
+      read: async () => {
+        reads++;
+        return [];
+      },
+    };
+    await measureCandidate(h as never, c as never, 10_000);
+    expect(reads).toBe(2 * MEASURE);
+    reads = 0;
+    await measureCandidate(h as never, c as never, 3);
+    expect(reads).toBe(6);
   });
 });

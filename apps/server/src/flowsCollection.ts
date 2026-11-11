@@ -39,7 +39,7 @@ export function triggerWords(trigger: unknown, typeName: (key: string) => string
   // Boni's «Revisar la guía» (`flows.on.learning.mail`).
   if (on.learning === "mail") return "Cuando tus decisiones lo piden";
   // Boni's «Aviso del presupuesto» (`flows.on.spending.warn`).
-  if (on.spending === "warn") return "El gasto del mes pasa del aviso";
+  if (on.spending === "warn") return "El gasto llega al aviso";
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";

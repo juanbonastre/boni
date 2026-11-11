@@ -42,10 +42,18 @@ import {
   stepsOf,
 } from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
-import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
+import {
+  GUIDE_AREA,
+  GUIDE_COST,
+  learningOn,
+  mayReview,
+  reviewEvery,
+  TRIED_FOR,
+} from "./learning.ts";
 import {
   type Decision,
   decisions,
+  MEASURE,
   measureCandidate,
   measuredMail,
   type ReviewCandidate,
@@ -824,6 +832,9 @@ interface ReviewCtx {
   chosen?: boolean;
 }
 
+/** How many new decisions make Boni's «Revisar la guía» look, as its trigger comes (F7: a setting of the flow). */
+const REVIEW_EVERY_DEFAULT = MAIL_EXTENSION.learning?.every ?? 20;
+
 /**
  * Boni's «Revisar la guía» (docs/sistema.md §4.2, D-51): «Tus decisiones» → «Revisora» (the reviewer's model) →
  * «Medir releyendo» → «Sugerencia». What it learns from and what it suggests are the pieces' (mail.ts `piecesFor`).
@@ -840,7 +851,12 @@ const REVIEW_PLAN = {
       params: { options: { ref: "$d.options" } },
       when: { ref: "$d.lines" },
     },
-    { id: "m", op: "call", tool: "guide.measure", args: { reading: { ref: "$r" } } },
+    {
+      id: "m",
+      op: "call",
+      tool: "guide.measure",
+      args: { reading: { ref: "$r" }, mails: { lit: MEASURE } },
+    },
     { id: "s", op: "call", tool: "guide.suggest", args: {} },
   ],
 };
@@ -935,7 +951,7 @@ export class Mails {
           CODE,
         );
       },
-      reviewMeasure: async (reading, dry) => {
+      reviewMeasure: async (reading, dry, mails) => {
         const ctx = dry ? this.reviewTry(account) : this.reviewCtx.get(account);
         if (!ctx) return leaf(null, CODE);
         // A malformed answer (a user's version feeding it something else) is no answer: the code's rules only.
@@ -954,11 +970,11 @@ export class Mails {
               {
                 rules: n(c.rules.length),
                 examples: n(c.examples.length),
-                would: n(measuredMail(ctx.host.ds, c).length),
+                would: n(measuredMail(ctx.host.ds, c, mails).length),
               },
               CODE,
             );
-          const m = await measureCandidate(ctx.host, c);
+          const m = await measureCandidate(ctx.host, c, mails);
           // The candidate and its measure together: what «Sugerencia» chooses is what was measured.
           ctx.measured = { candidate: c, ...m };
           return rec(
@@ -1270,8 +1286,16 @@ export class Mails {
       const theDs = () => (ds ??= decisions(store, type, (v) => userIn(s.user, v.f_para, v.f_cc)));
       let found: MailRule[] | null = null;
       const candidates = () => (found ??= ruleCandidates(theDs(), targets, guide, excluded));
+      // «Revisar la guía» (docs/sistema.md §4.2, D-51): Boni's flow, its steps the pieces over this review; off, or
+      // without models, the reviewer does not look. With too few decisions there is nothing to review (no run).
+      const flow = this.reviewFlow(store);
       if (auto) {
-        const every = this.manifest(account).learning?.every;
+        // How many new decisions make it look: the flow's trigger says it (F7), within the code's caps.
+        const own = this.manifest(account).learning?.every;
+        const every =
+          own === undefined
+            ? undefined
+            : reviewEvery((flow?.trigger as { every?: unknown } | null)?.every, own);
         if (
           every === undefined ||
           !mayReview({
@@ -1287,7 +1311,7 @@ export class Mails {
         )
           return null;
         console.log(
-          `mail ${account}: the reviewer looks on its own (${candidates().length} found by code)`,
+          `mail ${account}: the reviewer looks on its own (every ${every} decisions; ${candidates().length} found by code)`,
         );
       }
       const host = {
@@ -1300,9 +1324,6 @@ export class Mails {
         excluded,
         candidates: candidates(),
       };
-      // «Revisar la guía» (docs/sistema.md §4.2, D-51): Boni's flow, its steps the pieces over this review; off, or
-      // without models, the reviewer does not look. With too few decisions there is nothing to review (no run).
-      const flow = this.reviewFlow(store);
       const agent = this.agentOf(account);
       let suggestion: Suggestion | null = null;
       // What the code found is parked for a week only when it was measured (a review whose «Revisora» stopped
@@ -1984,7 +2005,7 @@ export class Mails {
         {
           id: REVIEW_FLOW,
           name: "Revisar la guía",
-          trigger: { learning: "mail" },
+          trigger: { learning: "mail", every: REVIEW_EVERY_DEFAULT },
           plan: REVIEW_PLAN,
           by: "preset",
         },

@@ -46,10 +46,19 @@ export interface Suggestion {
   run?: string;
 }
 
-const MIN_DECISIONS = 10;
+/** The fewest decisions a review works on (learning.ts `REVIEW_EVERY` never asks for a look with fewer). */
+export const MIN_DECISIONS = 10;
 const MAX_DECISIONS = 60;
-/** Mail read again to measure, with each guide. */
-const MEASURE = 20;
+/**
+ * Mail read again to measure, with each guide: «Medir releyendo»'s setting (`mails`, F7), never more than 20 (two
+ * readings each, so a review fits in the day's 45 of mail.ts `MEASURE_PER_DAY`) nor fewer than 1; 20 when not given.
+ */
+export const MEASURE = 20;
+
+export function measureMails(setting: unknown): number {
+  const n = typeof setting === "number" && Number.isFinite(setting) ? Math.round(setting) : MEASURE;
+  return Math.min(MEASURE, Math.max(1, n));
+}
 
 /** The mail whose plan made a proposal (its first step reads it). */
 export function mailOfRun(store: UserStore, run: string): string | null {
@@ -354,19 +363,24 @@ export function reviewCandidate(
 }
 
 /** The mail a candidate is measured on: the latest decided, never the mail its examples come from. */
-export function measuredMail(ds: readonly Decision[], c: ReviewCandidate): string[] {
+export function measuredMail(
+  ds: readonly Decision[],
+  c: ReviewCandidate,
+  mails: unknown = MEASURE,
+): string[] {
   const shown = new Set(c.examples.map((e) => e.id.slice(2)));
   return [...new Set(ds.map((d) => d.mail).reverse())]
     .filter((m) => !shown.has(m))
-    .slice(0, MEASURE);
+    .slice(0, measureMails(mails));
 }
 
 /** «Medir releyendo»: how many of Juan's decisions today's guide and the candidate get right, reading that mail again. */
 export async function measureCandidate(
   h: Pick<ReviewHost, "ds" | "guide" | "read">,
   c: ReviewCandidate,
+  mails: unknown = MEASURE,
 ): Promise<{ before: number; after: number; total: number }> {
-  const measured = measuredMail(h.ds, c);
+  const measured = measuredMail(h.ds, c, mails);
   const on = h.ds.filter((d) => measured.includes(d.mail));
   const produce = async (g: MailGuide) => {
     const p = new Map<string, string[]>();

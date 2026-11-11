@@ -35,7 +35,7 @@ export interface MailPieces {
    * collections it may name, how many, and the rules the code found. */
   reviewDecisions(dry: boolean): Val;
   /** «Medir releyendo»: the reviewer's answer checked and measured by reading mail again (in «Probar», only how much). */
-  reviewMeasure(reading: unknown, dry: boolean): Promise<Val>;
+  reviewMeasure(reading: unknown, dry: boolean, mails?: unknown): Promise<Val>;
   /** «Sugerencia»: whether the measured candidate gets more right, and so waits for Juan (never in «Probar»). */
   reviewSuggest(dry: boolean): Val;
 }
@@ -202,8 +202,20 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     title: "Medir releyendo",
     describe:
       "the reviewer's answer, each rule checked against the decisions, measured by reading decided mail again with today's guide and with the new one; in a test, only how much it would read",
-    args: { reading: { role: "value", describe: "the reviewer's answer: rules and decision ids" } },
-    run: (c, a) => host(c.pieces).reviewMeasure(a.reading ? plain(a.reading) : null, !!c.dry),
+    args: {
+      reading: { role: "value", describe: "the reviewer's answer: rules and decision ids" },
+      mails: {
+        role: "value",
+        describe:
+          "how many decided mails it reads again with each guide (1 to 20; 20 when not given)",
+      },
+    },
+    run: (c, a) =>
+      host(c.pieces).reviewMeasure(
+        a.reading ? plain(a.reading) : null,
+        !!c.dry,
+        a.mails !== undefined ? plain(a.mails) : undefined,
+      ),
   });
   r.register({
     name: "guide.suggest",

@@ -12,16 +12,20 @@ import {
   FLOW_BUDGET_TEST,
   FLOW_CATALOG,
   FLOW_CATALOG_FUNCTIONS,
+  FLOW_CATALOG_REVIEW,
   FLOW_CHANGE,
   FLOW_CHECK,
   FLOW_DETAIL,
   FLOW_DETAIL_CHOSEN,
   FLOW_DETAIL_SAVED,
   FLOW_PROPOSAL,
+  FLOW_REVIEW,
+  FLOW_REVIEW_CHECK,
   FLOW_SUMMARY,
   FLOW_TEST,
   FLOWS,
   FLOWS_WITH_BUDGET,
+  FLOWS_WITH_REVIEW,
   FLOWS_WITH_SUMMARY,
   GUIDE_RULES,
   MAP,
@@ -1706,17 +1710,18 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
   // «Flujos»: its row says what starts it, that it is on and that it is Boni's.
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
   const row = page.locator(".db-table tbody tr", { hasText: "Aviso del presupuesto" });
-  for (const text of ["El gasto del mes pasa del aviso", "Encendido", "Boni"])
+  for (const text of ["El gasto llega al aviso", "Encendido", "Boni"])
     await expect(row).toContainText(text);
   await openFlow(page, "Aviso del presupuesto");
   const canvas = page.locator(".flow-editor .flow-canvas");
   // What starts it and what that gives, by a person's names (I-08); then its one step.
   const trigger = canvas.locator(".fl-node.source");
-  await expect(trigger.locator(".fl-name")).toHaveText("El gasto del mes pasa del aviso");
+  await expect(trigger.locator(".fl-name")).toHaveText("El gasto llega al aviso");
   // Cut to the card's width: whole in its tooltip.
-  await expect(trigger.locator(".fl-card")).toHaveAttribute(
-    "title",
-    "El gasto del mes pasa del aviso",
+  await expect(trigger.locator(".fl-card")).toHaveAttribute("title", "El gasto llega al aviso");
+  // It fits on the card, uncut (it did not as «El gasto del mes pasa del aviso»).
+  expect(await trigger.locator(".fl-name").evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+    true,
   );
   await expect(trigger.locator(".fl-input")).toHaveText(["Gasto del mes", "Presupuesto"]);
   await expect(trigger).not.toContainText("$");
@@ -1731,7 +1736,7 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
   // The trigger's panel says it and what it gives; there is nothing to choose.
   await trigger.locator(".fl-name").click();
   const panel = page.locator(".flow-step-panel");
-  await expect(panel).toContainText("El gasto del mes pasa del aviso");
+  await expect(panel).toContainText("El gasto llega al aviso");
   await expect(panel.locator(".flow-args li")).toHaveText([
     /^Gasto del mes\s*texto$/,
     /^Presupuesto\s*texto$/,
@@ -1766,6 +1771,58 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
   await expect(page.getByRole("button", { name: "Probar", exact: true })).toBeDisabled();
 });
 
+test("«Revisar la guía» has its settings (F7): how many new decisions make it look, in its trigger, and how many mails «Medir releyendo» reads again; the field offers only what the code allows", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_REVIEW],
+      "GET api/agent/flows/:id": [FLOW_REVIEW],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG_REVIEW],
+      "POST api/agent/flows/check": [FLOW_REVIEW_CHECK],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await openFlow(page, "Revisar la guía");
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const trigger = canvas.locator(".fl-node.source");
+  await expect(trigger.locator(".fl-name")).toHaveText("Cuando tus decisiones lo piden");
+  // What starts it is not changed (no «Disparador» to choose), but when it looks is his.
+  await trigger.locator(".fl-name").click();
+  const panel = page.locator(".flow-step-panel");
+  await expect(panel.locator("select")).toHaveCount(0);
+  const every = panel.getByRole("spinbutton", { name: "Decisiones nuevas" });
+  await expect(every).toHaveValue("20");
+  await expect(every).toHaveAttribute("min", "10");
+  await expect(every).toHaveAttribute("max", "500");
+  await page.screenshot({ path: `${SHOTS}/flow-review-every.png` });
+  // Below the cap, the flow gets the cap (the server clamps it again whatever comes).
+  await every.fill("3");
+  await every.blur();
+  await expect(every).toHaveValue("10");
+  await every.fill("30");
+  // «Medir releyendo» shows how many mails it reads again, its setting.
+  await canvas
+    .locator(".fl-node", { has: page.locator(".fl-name", { hasText: "Medir releyendo" }) })
+    .locator(".fl-name")
+    .click();
+  await expect(panel).toContainText("Correos");
+  await page.screenshot({ path: `${SHOTS}/flow-review-measure.png` });
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  const body = await page.waitForFunction(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("PUT api/agent/flows/revisar-guia "),
+    ),
+  );
+  const sent = JSON.parse(String(await body.jsonValue()).replace(/^PUT \S+ /, "")) as {
+    trigger: unknown;
+    plan: { steps: { id: string; args?: Record<string, unknown> }[] };
+  };
+  expect(sent.trigger).toEqual({ learning: "mail", every: 30 });
+  expect(sent.plan.steps.find((x) => x.id === "m")?.args?.mails).toEqual({ lit: 20 });
+});
+
 test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger through «Avisar» to «Dispositivos»; the whole map draws what it tells («avisa»); turned off, Ajustes → Modelos says so (D-53)", async ({
   page,
 }) => {
@@ -1797,7 +1854,7 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
     stage.locator(".mp-card", {
       has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
     });
-  await expect(stage.locator(".mp-trig .mp-name")).toHaveText("El gasto del mes pasa del aviso");
+  await expect(stage.locator(".mp-trig .mp-name")).toHaveText("El gasto llega al aviso");
   await expect(stage.locator(".mp-trig")).toContainText("Gasto del mes · Presupuesto");
   await expect(stage.locator(".mp-trig")).toHaveClass(/run-ran/);
   const steps = stage.locator(".mp-step:not(.mp-trig)");
@@ -1858,7 +1915,7 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Aviso del presupuesto");
   await expect(panel.locator("h3")).toHaveText("Aviso del presupuesto");
-  for (const text of ["Flujo · De Boni", "El gasto del mes pasa del aviso", "1 ejecución"])
+  for (const text of ["Flujo · De Boni", "El gasto llega al aviso", "1 ejecución"])
     await expect(panel).toContainText(text);
   await expect(panel.getByRole("region", { name: "Sale" })).toContainText(
     "Dispositivos · avisa · 1",
@@ -1866,7 +1923,7 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   // «Agrupar por disparador» names what starts it; the devices are in no frame.
   await page.getByRole("combobox", { name: "Agrupar" }).selectOption("trigger");
   await expect(
-    stage.locator(".mp-frame.group", { hasText: "El gasto del mes pasa del aviso" }),
+    stage.locator(".mp-frame.group", { hasText: "El gasto llega al aviso" }),
   ).toBeVisible();
   // Off: Ajustes → Modelos says the notice is off, by the budget.
   await openModels(page);
