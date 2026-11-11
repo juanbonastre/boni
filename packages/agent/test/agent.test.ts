@@ -4,7 +4,7 @@ import { ProviderError } from "../src/anthropic.ts";
 import { fakePlanner } from "../src/providers.ts";
 import { guideValue } from "../src/reading.ts";
 import { makeCaps, ToolError } from "../src/tools.ts";
-import { codeLabel, leaf, plain, rec } from "../src/values.ts";
+import { codeLabel, leaf, list, plain, rec } from "../src/values.ts";
 import { type Env, makeEnv, PERSONAL } from "./fixture.ts";
 
 let env: Env;
@@ -1735,6 +1735,62 @@ describe("a flow tried dry («Probar», docs/flujos.md F3)", () => {
       flow: "probar",
       flowVersion: 2,
     });
+  });
+});
+
+describe("what a run told the devices (docs/sistema.md §4.4)", () => {
+  it("a run's detail says what it told, by the step that did: each notice that left, none the tool refused; a «Probar» told nothing", async () => {
+    env = makeEnv();
+    const agent = env.agent(fakePlanner([]));
+    const code = codeLabel("test");
+    const texts = (...xs: string[]) => ({
+      textos: list(
+        xs.map((x) => leaf(x, code)),
+        code,
+      ),
+    });
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "a", op: "call", tool: "notify", args: { text: lit("Empieza") } },
+        { id: "n", op: "call", tool: "notify", each: ref("$textos"), args: { text: ref("$item") } },
+        { id: "z", op: "call", tool: "notify", args: { text: lit("Acaba") } },
+      ],
+    };
+    const flow = { id: "avisos", version: 1, by: "user" };
+    // Every text is one: four notices, each at its step.
+    const all = await agent.background(plan, texts("Uno", "Dos"), [], undefined, flow);
+    expect(all.status).toBe("done");
+    expect(agent.runDetail(all.run)?.told).toEqual([
+      { step: "a", n: 1 },
+      { step: "n", n: 2 },
+      { step: "z", n: 1 },
+    ]);
+    // The third text is empty: the tool refuses it after the policy allowed it. The two before it left; the run
+    // stopped there (the step's last line says so), and the last «Avisar» never ran.
+    const some = await agent.background(plan, texts("Tres", "Cuatro", ""), [], undefined, flow);
+    expect([some.status, some.error]).toEqual(["stopped", "tool-bad-argument"]);
+    const d = agent.runDetail(some.run);
+    expect(d?.steps.map((s) => [s.id, s.decision])).toEqual([
+      ["a", "allow"],
+      ["n", "stopped"],
+      ["z", null],
+    ]);
+    expect(d?.told).toEqual([
+      { step: "a", n: 1 },
+      { step: "n", n: 2 },
+    ]);
+    expect(env.notified).toEqual(["Empieza", "Uno", "Dos", "Acaba", "Empieza", "Tres", "Cuatro"]);
+    // «Probar» logs each «Avisar» as allowed (it says what it would tell) and tells nothing.
+    const dry = await agent.dryRun(plan, texts("Cinco"), {
+      origin: { kind: "background", trust: "personal" },
+      flow,
+    });
+    expect(dry.status).toBe("done");
+    const tried = agent.runDetail(dry.run);
+    expect(tried?.steps.map((s) => s.decision)).toEqual(["allow", "allow", "allow"]);
+    expect(tried?.told).toEqual([]);
+    expect(env.notified.length).toBe(7);
   });
 });
 

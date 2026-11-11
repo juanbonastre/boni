@@ -240,4 +240,84 @@ describe("flows (docs/flujos.md, F1)", () => {
       { step: "r", decision: "deny", n: 1 },
     ]);
   });
+
+  it("counts the calls of an effect that went through, by run and step: allowed and not refused by its tool, whatever the step is called; none of a «Probar»", () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    const j = store.journal;
+    const run = (id: string, started: number, origin = "background") =>
+      j.startRun({ id, turn: null, origin, device: null, started, flow: "avisos", flowVersion: 1 });
+    // A line as the agent logs it: the tool's effect is in the line itself.
+    const line = (r: string, step: string, decision: string, effect: string, more: object = {}) =>
+      j.step({
+        run: r,
+        step,
+        kind: "call",
+        decision,
+        rule: "P1",
+        detail: { effect, ...more },
+        at: 1,
+      });
+    const error = (r: string, step: string, code: string) =>
+      j.step({
+        run: r,
+        step,
+        kind: "error",
+        decision: "stopped",
+        rule: null,
+        detail: { code },
+        at: 1,
+      });
+    // A step named after nothing: a read, then a notice.
+    run("a", 1000);
+    line("a", "s1", "allow", "read");
+    line("a", "s2", "allow", "notify");
+    // The same name for the notice in another run, three times (a loop): the tool refused the last one.
+    run("b", 2000);
+    line("b", "s1", "allow", "notify");
+    line("b", "s1", "allow", "notify");
+    line("b", "s1", "allow", "notify");
+    error("b", "s1", "tool-bad-argument");
+    // Stopped after its notice left (too much read), or at another step: the notice went through.
+    run("c", 3000);
+    line("c", "x", "allow", "notify");
+    error("c", "x", "P12-bytes");
+    run("d", 4000);
+    line("d", "x", "allow", "notify");
+    error("d", "y", "tool-bad-argument");
+    // Refused by the policy, skipped, and what a «Probar» would have told: nothing left.
+    run("e", 5000);
+    line("e", "x", "deny", "notify");
+    j.step({
+      run: "e",
+      step: "z",
+      kind: "skip",
+      decision: "skip",
+      rule: null,
+      detail: null,
+      at: 1,
+    });
+    // (Either says it alone: the run is a test, or the line says it was only tried.)
+    run("f", 6000, "test");
+    line("f", "x", "allow", "notify");
+    run("g", 7000);
+    line("g", "x", "allow", "notify", { dry: true });
+    // A change the user confirmed went through too; one still waiting for him did not.
+    run("h", 8000);
+    line("h", "w", "confirmed", "write");
+    line("h", "w2", "confirm", "write");
+    expect(j.callsDone("notify", { from: 0, to: 10_000 })).toEqual([
+      { run: "a", step: "s2", n: 1 },
+      { run: "b", step: "s1", n: 2 },
+      { run: "c", step: "x", n: 1 },
+      { run: "d", step: "x", n: 1 },
+    ]);
+    // The period is when the run started; one run alone by its id.
+    expect(j.callsDone("notify", { from: 2000, to: 3000 })).toEqual([
+      { run: "b", step: "s1", n: 2 },
+    ]);
+    expect(j.callsDone("notify", { run: "b" })).toEqual([{ run: "b", step: "s1", n: 2 }]);
+    expect(j.callsDone("notify", { run: "f" })).toEqual([]);
+    expect(j.callsDone("write", { from: 0, to: 10_000 })).toEqual([{ run: "h", step: "w", n: 1 }]);
+  });
 });

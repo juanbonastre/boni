@@ -124,7 +124,8 @@ const DAY = 24 * 60 * 60_000;
 const INBOX = "boni:inbox";
 /** The account's devices: where what Boni tells arrives (its phone and its computers, A-17). */
 const DEVICES = "dev:all";
-/** A step that tells the devices: the tool «Avisar». */
+/** The effect of a tool that tells the devices, and a step that does: the tool «Avisar». */
+const TELLS = "notify";
 const tellsStep = (s: Record<string, unknown>) => s.op === "call" && s.tool === "notify";
 const READS = new Set(["entities.query", "entities.search", "entities.aggregate", "entities.get"]);
 const WRITES = new Set(["entities.create", "entities.update", "entities.delete"]);
@@ -255,6 +256,14 @@ function makeMap(
   };
   const owner = new Map<string, string | null>();
   for (const r of runs) owner.set(r.id, ownerOf(r));
+  // What the period's runs told the devices, by whose run it was: the journal's own lines (each says its tool's
+  // effect: neither the name of an «Avisar» nor the version of its flow matters), in one query for the whole map. What
+  // the tool refused afterwards and what a «Probar» would have told are no notices.
+  const told = new Map<string, number>();
+  for (const c of j.callsDone(TELLS, { from, to })) {
+    const who = owner.get(c.run);
+    if (who) told.set(who, (told.get(who) ?? 0) + c.n);
+  }
   const stats = new Map<
     string,
     { runs: number; last: number | null; calls: number; cost: number; models: Set<string> }
@@ -363,7 +372,6 @@ function makeMap(
       !!on.learning ||
       !!on.spending;
     const counts = j.stepCountsOf(f.id, from, to);
-    const versions = j.flowVersions(f.id);
     const steps = nodesOf(
       f.plan,
       f.trigger,
@@ -398,7 +406,7 @@ function makeMap(
       trigger: f.trigger,
       on: f.enabled,
       by: f.by,
-      boni: versions.some((v) => v.by === "preset"),
+      boni: j.flowVersions(f.id).some((v) => v.by === "preset"),
       plan: f.plan,
       steps,
       pack:
@@ -458,28 +466,12 @@ function makeMap(
     }
     // What a flow a mail starts writes carries the mail's words.
     const outside = !!starts && starts === mailCol;
-    // What its «Avisar» steps tell goes to the devices: the arrow from its plan, its number from how often those
-    // steps ran in the period (the counts above: nothing more is read). An earlier version may have named its
-    // «Avisar» otherwise: what that told in the period counts too, and draws the arrow when this version tells no
-    // more. A name this version gives to another kind of step is never counted (those runs told nothing).
+    // What its «Avisar» steps tell goes to the devices: the arrow from its plan, its number what its runs told in the
+    // period, whichever version each ran. A flow that tells no more keeps the arrow while notices of its are left.
     const telling = stepsOf(f.plan)
       .filter(tellsStep)
       .map((s) => s.id);
-    const others = new Set(
-      stepsOf(f.plan)
-        .filter((s) => !tellsStep(s))
-        .map((s) => s.id),
-    );
-    const everTold = new Set(
-      versions.flatMap((v) =>
-        stepsOf(v.plan)
-          .filter((s) => tellsStep(s) && !others.has(s.id))
-          .map((s) => s.id),
-      ),
-    );
-    const toldN = counts
-      .filter((c) => c.decision === "allow" && everTold.has(c.step))
-      .reduce((n, c) => n + c.n, 0);
+    const toldN = told.get(id) ?? 0;
     if (telling.length || toldN > 0) tells(id, toldN, telling.length ? telling : null, outside);
     // Each proposing step once: one that chooses among collections is named once for each («Crear en la elegida»).
     const proposing = new Set<string>();
@@ -552,19 +544,8 @@ function makeMap(
     const [who, type] = k.split("|") as [string, string];
     edge({ from: who, to: colId(type), kind: "writes", n, outside: false });
   }
-  // What the conversation's turns told the devices (the planner's «Avisar»): the steps of a turn are read only when
-  // its plan has one.
-  let chatTold = 0;
-  for (const r of runs) {
-    if (!r.turn || owner.get(r.id) !== "boni:chat") continue;
-    const telling = new Set(
-      stepsOf(r.plan)
-        .filter(tellsStep)
-        .map((s) => s.id),
-    );
-    if (!telling.size) continue;
-    chatTold += j.steps(r.id).filter((s) => s.decision === "allow" && telling.has(s.step)).length;
-  }
+  // What the conversation's turns told the devices (the planner's «Avisar»).
+  const chatTold = told.get("boni:chat") ?? 0;
   if (chatTold) tells("boni:chat", chatTold, null, false);
   // The Bandeja (docs/sistema.md §4.4: «Leer correo → Bandeja → Juan acepta → Tarea y Evento»): what is proposed
   // waits in it; out of it, what was accepted into each collection; the user's decisions in it teach the reviewer.

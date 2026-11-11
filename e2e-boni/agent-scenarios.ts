@@ -3041,10 +3041,205 @@ export const RUN_BUDGET = {
   read: [],
   changes: [],
   proposals: [],
+  // What it told, as the server counts it: the app never works it out from the step's decision.
+  told: [{ step: "notify", n: 1 }],
   input: null,
   decisions: [],
   models: [],
   owner: "flow:aviso-presupuesto",
+  drawn: null,
+};
+/** A «Probar» of it: its «Avisar» is logged as allowed (it says what it would tell) and nothing was told. */
+export const RUN_BUDGET_TEST = {
+  ...RUN_BUDGET,
+  id: "run-b0",
+  origin: "test",
+  told: [],
+  owner: null,
+};
+
+/**
+ * Who tells, on the whole map (docs/sistema.md §4.4): Boni's flow with the month's notice, a flow of the user's with
+ * two «Avisar» that told nothing in the period (its arrow has no number) and the conversation (two notices).
+ */
+const DAILY = "flow:resumen-diario-a1";
+const DAILY_PLAN = {
+  version: 1,
+  steps: [
+    {
+      id: "n",
+      op: "call",
+      tool: "entities.aggregate",
+      args: { type: { lit: "tarea" }, op: { lit: "count" } },
+    },
+    {
+      id: "a",
+      op: "call",
+      tool: "notify",
+      when: { fn: "gt", args: [{ ref: "$n" }, { lit: 0 }] },
+      args: { text: { lit: "Hay tareas para hoy" } },
+    },
+    {
+      id: "b",
+      op: "call",
+      tool: "notify",
+      when: { fn: "eq", args: [{ ref: "$n" }, { lit: 0 }] },
+      args: { text: { lit: "Nada para hoy" } },
+    },
+  ],
+};
+export const MAP_TELLS = {
+  ...MAP_BUDGET,
+  nodes: [
+    ...MAP_BUDGET.nodes.map((n) => (n.id === "dev:all" ? { ...n, notices: 3 } : n)),
+    mapNode({
+      id: DAILY,
+      kind: "flow",
+      name: "Resumen diario",
+      trigger: { schedule: { every: "day", at: "08:00" } },
+      on: true,
+      by: "user",
+      plan: DAILY_PLAN,
+      steps: [
+        flowStep("n", "call", "entities.aggregate", { title: "Contar", detail: "Tarea" }),
+        flowStep("a", "call", "notify", { title: "Avisar", when: true, deps: ["n"] }),
+        flowStep("b", "call", "notify", { title: "Avisar", when: true, deps: ["n"] }),
+      ],
+    }),
+  ],
+  edges: [
+    ...MAP_BUDGET.edges,
+    mapEdge("col:t_01tarea", DAILY, "reads", null, { steps: ["n"] }),
+    mapEdge(DAILY, "dev:all", "tells", 0, { steps: ["a", "b"] }),
+    mapEdge("boni:chat", "dev:all", "tells", 2),
+  ],
+};
+const dailyStep = (id: string, what: string, title: string, decision: string) => ({
+  id,
+  op: "call",
+  what,
+  args: DAILY_PLAN.steps.find((x) => x.id === id)?.args,
+  decision,
+  rule: decision === "allow" ? "P1" : null,
+  error: null,
+  deps: id === "n" ? [] : ["n"],
+  uses: [],
+  title,
+  answers: [],
+  calls: 0,
+  cost: 0,
+  output: null,
+});
+const dailyRun = (id: string) => ({
+  runs: [
+    {
+      id,
+      origin: id === "run-d0" ? "test" : "background",
+      device: null,
+      status: "done",
+      started: BUDGET_ROW.last,
+      finished: BUDGET_ROW.last,
+      what: { kind: id === "run-d0" ? "test" : "flow", flow: "Resumen diario" },
+      proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+      changes: [],
+      changed: 0,
+    },
+  ],
+});
+/** A run of it that told through its first «Avisar» and skipped the other. */
+export const RUNS_DAILY = dailyRun("run-d1");
+export const RUN_DAILY = {
+  id: "run-d1",
+  status: "done",
+  origin: "background",
+  started: BUDGET_ROW.last,
+  finished: BUDGET_ROW.last,
+  request: null,
+  flow: "resumen-diario-a1",
+  flowVersion: 1,
+  inputs: [],
+  steps: [
+    dailyStep("n", "entities.aggregate", "Contar", "allow"),
+    dailyStep("a", "notify", "Avisar", "allow"),
+    dailyStep("b", "notify", "Avisar", "skip"),
+  ],
+  read: [],
+  changes: [],
+  proposals: [],
+  told: [{ step: "a", n: 1 }],
+  input: null,
+  decisions: [],
+  models: [],
+  owner: DAILY,
+  drawn: null,
+};
+/** A «Probar» of it: every step logged as allowed, nothing told; the server gives a try no owner. */
+export const RUNS_DAILY_TEST = dailyRun("run-d0");
+export const RUN_DAILY_TEST = {
+  ...RUN_DAILY,
+  id: "run-d0",
+  origin: "test",
+  steps: [
+    dailyStep("n", "entities.aggregate", "Contar", "allow"),
+    dailyStep("a", "notify", "Avisar", "allow"),
+    dailyStep("b", "notify", "Avisar", "allow"),
+  ],
+  told: [],
+  owner: null,
+};
+/** A turn of the conversation that told, from before the map's period: `MAP` has no notice and no devices. */
+export const RUNS_TURN_TOLD = {
+  runs: [
+    {
+      id: "run-t9",
+      origin: "turn",
+      device: "portatil",
+      status: "done",
+      started: Date.UTC(2026, 9, 2, 9, 15),
+      finished: Date.UTC(2026, 9, 2, 9, 15),
+      what: { kind: "request", text: "Avísame cuando acabes" },
+      proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+      changes: [],
+      changed: 0,
+    },
+  ],
+};
+export const RUN_TURN_TOLD = {
+  id: "run-t9",
+  status: "done",
+  origin: "turn",
+  started: Date.UTC(2026, 9, 2, 9, 15),
+  finished: Date.UTC(2026, 9, 2, 9, 15),
+  request: "Avísame cuando acabes",
+  flow: null,
+  flowVersion: null,
+  inputs: [],
+  steps: [
+    {
+      id: "n",
+      op: "call",
+      what: "notify",
+      args: { text: { lit: "Hecho" } },
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      deps: [],
+      uses: [],
+      title: "Avisar",
+      answers: [],
+      calls: 0,
+      cost: 0,
+      output: null,
+    },
+  ],
+  read: [],
+  changes: [],
+  proposals: [],
+  told: [{ step: "n", n: 1 }],
+  input: null,
+  decisions: [],
+  models: [],
+  owner: "boni:chat",
   drawn: null,
 };
 

@@ -204,6 +204,17 @@ export interface Journal {
     from: number,
     to: number,
   ): { step: string; decision: string; n: number }[];
+  /**
+   * The calls of tools with one effect that went through, by run and step: in the runs a period started, or in one
+   * run. A call went through when it was allowed (or confirmed) and its tool did not refuse it afterwards (the tool's
+   * error is the step's next line). Each line says its own tool's effect, so neither a step's name nor the version of
+   * the flow matters. A «Probar» is no run of its flow (as in `stepCountsOf`): none of its calls, nor any line that
+   * says it was only tried.
+   */
+  callsDone(
+    effect: string,
+    of: { from: number; to: number } | { run: string },
+  ): { run: string; step: string; n: number }[];
   step(r: Omit<StepRow, "seq">): void;
   steps(run: string): StepRow[];
   /** Keeps a model call; gives its number (the audit's action refers to it). */
@@ -506,6 +517,28 @@ export function openJournal(db: DatabaseSync): Journal {
           )
           .all(flow, from, to) as { step: string; decision: string; n: number }[]
       ).map((r) => ({ step: r.step, decision: r.decision, n: Number(r.n) })),
+    // The runs first, then each one's own lines by their key (`CROSS JOIN` keeps that order): left to itself SQLite
+    // read the whole journal for a week's runs (55 ms against 4 with 40,000 runs and 181,000 lines, 2026-11-11).
+    callsDone: (effect, of) =>
+      (
+        db
+          .prepare(
+            `SELECT s.run AS run, s.step AS step, count(*) AS n FROM runs r CROSS JOIN run_steps s ON s.run = r.id
+             WHERE ${"run" in of ? "r.id = ?" : "r.started >= ? AND r.started < ?"} AND r.origin != 'test'
+               AND s.kind = 'call' AND s.decision IN ('allow', 'confirmed')
+               AND json_extract(s.detail, '$.effect') = ? AND json_extract(s.detail, '$.dry') IS NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM run_steps e
+                 WHERE e.run = s.run AND e.seq = s.seq + 1 AND e.step = s.step AND e.kind = 'error'
+                   AND json_extract(e.detail, '$.code') LIKE 'tool-%')
+             GROUP BY s.run, s.step ORDER BY r.started, r.rowid, min(s.seq)`,
+          )
+          .all(...("run" in of ? [of.run] : [of.from, of.to]), effect) as {
+          run: string;
+          step: string;
+          n: number;
+        }[]
+      ).map((r) => ({ run: r.run, step: r.step, n: Number(r.n) })),
     finishRun: (id, status, plan, at) =>
       void db
         .prepare("UPDATE runs SET status = ?, plan = ?, finished = ? WHERE id = ?")

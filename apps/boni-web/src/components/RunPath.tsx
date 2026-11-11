@@ -115,7 +115,7 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
   for (const [col, end] of ends)
     boxes.push({ id: col, name: name(col, ""), line: end.line, waits: end.waits });
   // What it told went to the devices, as the map draws it («avisa»).
-  if (d.steps.some((x) => x.what === "notify" && x.decision === "allow"))
+  if (d.told.length)
     boxes.push({ id: MAP_DEVICES, name: name(MAP_DEVICES, t("map.node.devices")), line: null });
   const shown = boxes.filter((b) => b.name);
   return (

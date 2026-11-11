@@ -841,13 +841,14 @@ contraseña ni un código aquí» under a question.
   Boni's own work that is not a flow yet («Conversación», «Revisar la guía», `--accent`), **the Bandeja** («Bandeja ·
   3 esperan»: what a flow in the background or the conversation proposes waits there), «Tú» («Desde tus apps»), an
   assistant («Asistente · claude-ejemplo · Por el MCP»), a page, and **«Dispositivos»** («Dispositivos · 3 avisos»,
-  dashed, two devices as its icon: where what Boni tells arrives; it is drawn only when a flow has an «Avisar» or the
-  conversation told something in the period, and nothing comes out of it). An arrow per verb, its words in a pill:
+  dashed, two devices as its icon: where what Boni tells arrives; it is drawn only when a flow has an «Avisar», when
+  a flow or the conversation told something in the period, or for a run that told; nothing comes out of it). An
+  arrow per verb, its words in a pill:
   «trae · 42»,
   «pone en marcha · 42», «lee», «escribe · 61», «propone · 12» (dashed, into the Bandeja), «aceptadas · 7» (out of it,
   to each collection), «decides · 11» (yours, in it), «tus decisiones · 11» (to the guide's reviewer), «mejora»,
   «muestra», «avisa · 3» (from a flow's «Avisar», or from the conversation, to «Dispositivos»: the notices of the
-  period; it changes no data, so «Solo lo que escribe» takes it away); one that carries a mail's words with a small mail in its words and a dotted line («Lleva texto de fuera»
+  period, «avisa» alone when there were none; it changes no data, so «Solo lo que escribe» takes it away); one that carries a mail's words with a small mail in its words and a dotted line («Lleva texto de fuera»
   on hover; a colour of its own until task 91, read as something lit), its words keeping the mark when lit; one going
   back, right to
   left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
@@ -996,7 +997,9 @@ contraseña ni un código aquí» under a question.
   llevan 8.55 € de 10 € este mes.»») and tells nothing. On the map it reads and writes no collection: its one arrow
   is «avisa», to «Dispositivos», which is what joins it to the whole map; a run of it lights its trigger's box
   («Gasto del mes · Presupuesto»), its «Avisar», that arrow and «Dispositivos», and its «Explicación» ends «Avisó a
-  tus dispositivos» (so does any run that told; in the conversation its drawn way ends in «Dispositivos»).
+  tus dispositivos» (so does any run that told; in the conversation its drawn way ends in «Dispositivos»). Of a flow
+  with several «Avisar», a run lights only the arrows of those that told in it; a run from before the period gets
+  its arrow all the same, with no number; the «Recorrido» of a «Probar» never reaches «Dispositivos» (it told nothing).
   «Agrupar por disparador» names its frame «El gasto del mes pasa del aviso». «Función» (task 93, D-52), offered in «Añadir paso» under «Funciones» with
   «Aplicar cambios» only while an extension's function is active, chooses among them in a select («Banco ·
   importar»), with «Código» under it (a `<details>`, the code in a scroll of at most 240 px, to read, never to edit)

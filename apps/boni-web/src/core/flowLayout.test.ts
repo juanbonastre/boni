@@ -13,6 +13,7 @@ import {
   mapLayout,
   segmentsOf,
   stepLayout,
+  withTold,
 } from "./flowLayout.ts";
 
 const choice = { fn: "first", args: [{ ref: "$only" }, { ref: "$c.choice" }] };
@@ -323,6 +324,69 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(groupOf(told.nodes.at(-1) as MapNodeLike, "trigger")).toBeNull();
     expect(ids(lensOf(told, { ...LENS, ai: true }))).toContain("dev:all");
     expect(ids(lensOf(told, { ...LENS, ai: true }))).not.toContain("flow:aviso");
+  });
+
+  it("a run that told is drawn to the devices («avisa»), from the steps that told in it: the arrow and the devices are added when the period's map has neither", () => {
+    const devices = n("dev:all", "device");
+    const arrow = (steps: string[]) => e("flow:apuntar", "dev:all", "tells", { n: null, steps });
+    // Nothing told in the period: no devices on the map. A run of «Apuntar» that told gets them and its arrow, with no
+    // number (the period's notices are not this run's).
+    const one = withTold(map, {
+      owner: "flow:apuntar",
+      steps: ["aviso"],
+      devices,
+      arrow: arrow(["aviso"]),
+    });
+    expect(one.nodes).toEqual([...map.nodes, devices]);
+    expect(one.edges).toEqual([
+      ...map.edges,
+      {
+        from: "flow:apuntar",
+        to: "dev:all",
+        kind: "tells",
+        n: null,
+        steps: ["aviso"],
+        outside: false,
+      },
+    ]);
+    // Centred on the flow, as «Recorrido» opens it: the devices are one arrow after it.
+    expect(ids(lensOf(one, { ...LENS, center: "flow:apuntar" }))).toContain("dev:all");
+    // The map already draws that flow's «avisa» (from today's «Avisar», with the period's number): the steps of the
+    // run that told join its ends (it ran an earlier version, whose «Avisar» was another step), nothing twice.
+    const has = {
+      nodes: [...map.nodes, devices],
+      edges: [
+        ...map.edges,
+        e("flow:apuntar", "dev:all", "tells", { n: 4, steps: ["notify"] }),
+        e("boni:chat", "dev:all", "tells", { n: 2 }),
+      ],
+    };
+    const two = withTold(has, {
+      owner: "flow:apuntar",
+      steps: ["aviso", "notify"],
+      devices,
+      arrow: arrow(["aviso", "notify"]),
+    });
+    expect(two.nodes).toEqual(has.nodes);
+    expect(two.edges.filter((x) => x.kind === "tells")).toEqual([
+      {
+        from: "flow:apuntar",
+        to: "dev:all",
+        kind: "tells",
+        n: 4,
+        steps: ["notify", "aviso"],
+        outside: false,
+      },
+      { from: "boni:chat", to: "dev:all", kind: "tells", n: 2, outside: false },
+    ]);
+    // A run that told nothing, or of something the map does not have (a flow deleted since): the map as it was.
+    const same = { nodes: map.nodes, edges: map.edges };
+    expect(withTold(map, { owner: "flow:apuntar", steps: [], devices, arrow: arrow([]) })).toEqual(
+      same,
+    );
+    expect(
+      withTold(map, { owner: "flow:borrado", steps: ["a"], devices, arrow: arrow(["a"]) }),
+    ).toEqual(same);
   });
 
   it("groups by what starts a flow, by the collection a collection is in, by package", () => {

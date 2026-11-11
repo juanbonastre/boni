@@ -341,6 +341,38 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   return { nodes, edges };
 }
 
+/**
+ * A map with what a run told drawn on it (docs/sistema.md §4.4: «Una ejecución que avisó la recorre»): the arrow
+ * «avisa» from whose run it was to the devices, leaving from the steps that told in it. The map of a period may have
+ * neither the arrow nor the devices (the run is from before it, or its flow tells no more): they are added, the arrow
+ * with no number (the period's notices are not this run's). A run of something the map does not have is drawn nowhere.
+ */
+export function withTold<N extends MapNodeLike, E extends MapEdgeLike>(
+  map: { nodes: readonly N[]; edges: readonly E[] },
+  o: {
+    /** Whose run it was (the map's node) and the steps of it that told. */
+    owner: string;
+    steps: readonly string[];
+    /** The devices' node and the arrow to them, for a map that lacks them. */
+    devices: N;
+    arrow: E;
+  },
+): { nodes: N[]; edges: E[] } {
+  if (!o.steps.length || !map.nodes.some((n) => n.id === o.owner))
+    return { nodes: [...map.nodes], edges: [...map.edges] };
+  const its = (e: MapEdgeLike) => e.from === o.owner && e.to === o.devices.id && e.kind === "tells";
+  return {
+    nodes: map.nodes.some((n) => n.id === o.devices.id)
+      ? [...map.nodes]
+      : [...map.nodes, o.devices],
+    edges: map.edges.some(its)
+      ? map.edges.map((e) =>
+          its(e) ? { ...e, steps: [...new Set([...(e.steps ?? []), ...o.steps])] } : e,
+        )
+      : [...map.edges, o.arrow],
+  };
+}
+
 /** How the map gathers its nodes into frames (docs/sistema.md §4.4): none, by what starts the flows, by flow (each
  * unfolded into its steps, its own frame), by the collection they are inside, by what came together (the package). */
 export type Grouping = "none" | "trigger" | "flow" | "collection" | "pack";

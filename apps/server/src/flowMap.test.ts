@@ -623,70 +623,123 @@ describe("Boni's map, computed (F8; A-16)", () => {
     flow("avisar-correo-b2", "Avisar del correo", { created: keyOf(w.correo) }, [tell("a")]);
     // One that never ran, off: its arrow is drawn all the same, with no number.
     flow("sin-uso-c3", "Sin uso", { manual: true }, [tell("a")], false);
-    const run = (id: string, at: number, o: { flow?: string; turn?: string; plan?: unknown }) => {
+    const run = (
+      id: string,
+      at: number,
+      o: { flow?: string; version?: number; turn?: string; plan?: unknown },
+    ) => {
       store.journal.startRun({
         id,
         turn: o.turn ?? null,
         origin: o.turn ? "turn" : "background",
         device: o.turn ? "portatil" : null,
         started: at,
-        ...(o.flow ? { flow: o.flow, flowVersion: 1 } : {}),
+        ...(o.flow ? { flow: o.flow, flowVersion: o.version ?? 1 } : {}),
       });
       if (o.plan) store.journal.setPlan(id, o.plan);
     };
-    const step = (r: string, id: string, decision: string, at: number) =>
+    // A step's line as the agent logs it: the tool it called and that tool's effect are in the line itself.
+    const step = (r: string, id: string, decision: string, at: number, tool = "notify") =>
       store.journal.step({
         run: r,
         step: id,
-        kind: "call",
+        kind: decision === "skip" ? "skip" : "call",
         decision,
         rule: decision === "allow" ? "P1" : null,
-        detail: { tool: "notify", effect: "notify" },
+        detail:
+          decision === "skip"
+            ? null
+            : {
+                tool,
+                effect: tool === "notify" ? "notify" : "read",
+                integrity: "user",
+                control: null,
+              },
         at,
       });
-    // The summary ran twice this week (3 and 2 notices: one, and one per task) and once a month ago. Its other
-    // step ran too, and tells nothing; nor does an «Avisar» that was skipped or never allowed.
+    /** The tool refused what it was given: the run stops at that step, as the agent logs it. */
+    const refused = (r: string, id: string, at: number) =>
+      store.journal.step({
+        run: r,
+        step: id,
+        kind: "error",
+        decision: "stopped",
+        rule: null,
+        detail: { code: "tool-bad-argument" },
+        at,
+      });
+    const QUERY = "entities.query";
+    // The summary ran this week: 3 and 2 notices (one, and one per task), then a run whose «Avisar» was skipped and
+    // one whose text the tool refused (allowed, and nothing left). Its other step ran too, and tells nothing. A month
+    // ago it told once.
     run("s1", NOW - DAY, { flow: "resumen-a1" });
-    for (const id of ["q", "a", "b", "b"]) step("s1", id, "allow", NOW - DAY);
+    step("s1", "q", "allow", NOW - DAY, QUERY);
+    for (const id of ["a", "b", "b"]) step("s1", id, "allow", NOW - DAY);
     run("s2", NOW - 2 * DAY, { flow: "resumen-a1" });
-    for (const id of ["q", "a", "b"]) step("s2", id, "allow", NOW - 2 * DAY);
+    step("s2", "q", "allow", NOW - 2 * DAY, QUERY);
+    for (const id of ["a", "b"]) step("s2", id, "allow", NOW - 2 * DAY);
     run("s3", NOW - 3 * DAY, { flow: "resumen-a1" });
-    step("s3", "q", "allow", NOW - 3 * DAY);
+    step("s3", "q", "allow", NOW - 3 * DAY, QUERY);
     step("s3", "a", "skip", NOW - 3 * DAY);
-    step("s3", "b", "stopped", NOW - 3 * DAY);
+    step("s3", "b", "allow", NOW - 3 * DAY);
+    refused("s3", "b", NOW - 3 * DAY);
     run("s0", NOW - 30 * DAY, { flow: "resumen-a1" });
     step("s0", "a", "allow", NOW - 30 * DAY);
     run("c1", NOW - DAY, { flow: "avisar-correo-b2" });
     step("c1", "a", "allow", NOW - DAY);
-    // Versions: one that named its «Avisar» otherwise before (both count, the arrow leaves from today's); one that
-    // tells no more (what it told this week still shows, with no step to leave from); one whose old «Avisar»'s name
-    // is another kind of step today (that step's runs told nothing: never counted).
-    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("uno")]);
-    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("dos")]);
-    run("n1", NOW - 2 * DAY, { flow: "renombrado-f6" });
-    step("n1", "uno", "allow", NOW - 2 * DAY);
-    run("n2", NOW - DAY, { flow: "renombrado-f6" });
-    step("n2", "dos", "allow", NOW - DAY);
+    // Versions. What a run told is in its own lines, whatever its steps were called and whichever version it ran:
+    // - renamed: each version's «Avisar» has its own name, and both runs told;
+    // - one that tells no more: what it told this week still shows, with no step to leave from;
+    // - the old «Avisar»'s name is another kind of step today: the old version's notice counts, today's reads do not;
+    // - numbered steps, moved: `s1` was a read and is the «Avisar» today (one notice, the old `s2`'s);
+    // - three versions: only the middle one, which told nothing, ran (its read, three times).
     const query = (id: string) => ({
       id,
       op: "call",
-      tool: "entities.query",
+      tool: QUERY,
       args: { type: { lit: keyOf(w.tarea) } },
     });
+    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("uno")]);
+    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("dos")]);
+    run("n1", NOW - 2 * DAY, { flow: "renombrado-f6", version: 1 });
+    step("n1", "uno", "allow", NOW - 2 * DAY);
+    run("n2", NOW - DAY, { flow: "renombrado-f6", version: 2 });
+    step("n2", "dos", "allow", NOW - DAY);
     flow("avisaba-g7", "Avisaba", { manual: true }, [tell("viejo")]);
     flow("avisaba-g7", "Avisaba", { manual: true }, [query("q")]);
-    run("v1", NOW - 3 * DAY, { flow: "avisaba-g7" });
+    run("v1", NOW - 3 * DAY, { flow: "avisaba-g7", version: 1 });
     step("v1", "viejo", "allow", NOW - 3 * DAY);
     flow("reusado-h8", "Reusado", { manual: true }, [tell("x")]);
     flow("reusado-h8", "Reusado", { manual: true }, [query("x"), tell("y")]);
-    run("u1", NOW - DAY, { flow: "reusado-h8" });
-    for (const id of ["x", "x", "x", "y"]) step("u1", id, "allow", NOW - DAY);
-    // The conversation: a turn that told, one that stopped before its «Avisar», one with none.
+    run("u0", NOW - 2 * DAY, { flow: "reusado-h8", version: 1 });
+    step("u0", "x", "allow", NOW - 2 * DAY);
+    run("u1", NOW - DAY, { flow: "reusado-h8", version: 2 });
+    for (const id of ["x", "x", "x"]) step("u1", id, "allow", NOW - DAY, QUERY);
+    step("u1", "y", "allow", NOW - DAY);
+    flow("numerados-j9", "Numerados", { manual: true }, [query("s1"), tell("s2")]);
+    flow("numerados-j9", "Numerados", { manual: true }, [tell("s1")]);
+    run("k1", NOW - DAY, { flow: "numerados-j9", version: 1 });
+    step("k1", "s1", "allow", NOW - DAY, QUERY);
+    step("k1", "s2", "allow", NOW - DAY);
+    flow("tres-k1", "Tres versiones", { manual: true }, [tell("viejo")]);
+    flow("tres-k1", "Tres versiones", { manual: true }, [query("viejo")]);
+    flow("tres-k1", "Tres versiones", { manual: true }, [tell("nuevo")]);
+    run("z1", NOW - DAY, { flow: "tres-k1", version: 2 });
+    for (const id of ["viejo", "viejo", "viejo"]) step("z1", id, "allow", NOW - DAY, QUERY);
+    // One he deleted since: it leaves the map with what it told, as with its runs.
+    flow("borrado-m2", "Borrado", { manual: true }, [tell("a")]);
+    run("d1", NOW - DAY, { flow: "borrado-m2" });
+    for (const id of ["a", "a"]) step("d1", id, "allow", NOW - DAY);
+    store.journal.setFlowDeleted("borrado-m2", true);
+    // The conversation: a turn that told, one whose «Avisar» the tool refused, one that stopped before it.
     const plan = { version: 1, steps: [tell("n")] };
     run("t5", NOW - DAY, { turn: "turn-5", plan });
     step("t5", "n", "allow", NOW - DAY);
     run("t6", NOW - DAY, { turn: "turn-6", plan });
-    step("t6", "n", "stopped", NOW - DAY);
+    step("t6", "n", "allow", NOW - DAY);
+    refused("t6", "n", NOW - DAY);
+    run("t7", NOW - DAY, { turn: "turn-7", plan });
+    step("t7", "n", "deny", NOW - DAY);
     const m = mapOf(7, w.correo);
     const told = (from: string) => edgeOf(m, from, "dev:all", "tells");
     expect(told("flow:resumen-a1")).toEqual({
@@ -699,7 +752,8 @@ describe("Boni's map, computed (F8; A-16)", () => {
     });
     expect(told("flow:avisar-correo-b2")).toMatchObject({ n: 1, steps: ["a"], outside: true });
     expect(told("flow:sin-uso-c3")).toMatchObject({ n: 0, steps: ["a"] });
-    // The conversation told once: what stopped before telling is not a notice. No step of its own to leave from.
+    // The conversation told once: what the tool refused or the policy stopped is not a notice. No step of its own to
+    // leave from.
     expect(told("boni:chat")).toEqual({
       from: "boni:chat",
       to: "dev:all",
@@ -715,7 +769,11 @@ describe("Boni's map, computed (F8; A-16)", () => {
       n: 1,
       outside: false,
     });
-    expect(told("flow:reusado-h8")).toMatchObject({ n: 1, steps: ["y"] });
+    expect(told("flow:reusado-h8")).toMatchObject({ n: 2, steps: ["y"] });
+    expect(told("flow:numerados-j9")).toMatchObject({ n: 1, steps: ["s1"] });
+    expect(told("flow:tres-k1")).toMatchObject({ n: 0, steps: ["nuevo"] });
+    expect(told("flow:borrado-m2")).toBeUndefined();
+    expect(m.nodes.some((n) => n.id === "flow:borrado-m2")).toBe(false);
     // «Leer correo» and his flow by hand tell nothing.
     expect(told("flow:leer-correo")).toBeUndefined();
     expect(told("flow:apuntar-k2")).toBeUndefined();
@@ -724,7 +782,8 @@ describe("Boni's map, computed (F8; A-16)", () => {
       kind: "device",
       name: null,
       code: "devices",
-      notices: 11,
+      // 5 + 1 + 0 + 1 (the conversation) + 2 + 1 + 2 + 1 + 0: the arrows drawn, without the deleted flow's two.
+      notices: 13,
     });
     // Nothing comes out of the devices.
     expect(m.edges.filter((e) => e.from === "dev:all")).toEqual([]);
@@ -732,24 +791,31 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(edgeOf(mapOf(40, w.correo), "flow:resumen-a1", "dev:all", "tells")?.n).toBe(6);
   });
 
-  it("the devices' arrows from what the agent really leaves: a flow's «Avisar» run in the background and a turn of the conversation that tells", async () => {
+  it("the devices' arrows from what the agent really leaves: a flow's «Avisar» run in the background and a turn of the conversation that tells; not what the tool refused nor what a «Probar» would tell", async () => {
     const w = world();
     const told: string[] = [];
-    const plan = {
+    const telling = (text: string) => ({
       version: 1,
-      steps: [{ id: "a", op: "call", tool: "notify", args: { text: { lit: "Aviso de ejemplo" } } }],
-    };
-    store.journal.saveFlow({
-      id: "aviso-d4",
-      name: "Aviso de ejemplo",
-      trigger: { schedule: { every: "day", at: "08:00" } },
-      inputs: [],
-      plan,
-      layout: null,
-      by: "user",
-      enabled: true,
-      created: NOW - 5 * DAY,
+      steps: [{ id: "a", op: "call", tool: "notify", args: { text: { lit: text } } }],
     });
+    const plan = telling("Aviso de ejemplo");
+    // An «Avisar» with no text: the policy allows it and the tool refuses it.
+    const empty = telling("");
+    for (const [id, p] of [
+      ["aviso-d4", plan],
+      ["aviso-vacio-e5", empty],
+    ] as const)
+      store.journal.saveFlow({
+        id,
+        name: "Aviso de ejemplo",
+        trigger: { schedule: { every: "day", at: "08:00" } },
+        inputs: [],
+        plan: p,
+        layout: null,
+        by: "user",
+        enabled: true,
+        created: NOW - 5 * DAY,
+      });
     const agent = new Agent({
       store,
       registry: coreTools().freeze(),
@@ -776,13 +842,35 @@ describe("Boni's map, computed (F8; A-16)", () => {
       text: "avísame cuando acabes",
       origin: { kind: "turn", trust: "personal", device: "portatil" },
     });
-    expect([ran.status, turn.status, told]).toEqual([
+    const refused = await agent.background(empty, {}, [], undefined, {
+      id: "aviso-vacio-e5",
+      version: 1,
+      by: "user",
+    });
+    const tried = await agent.dryRun(
+      plan,
+      {},
+      {
+        origin: { kind: "background", trust: "personal", device: "portatil" },
+        flow: { id: "aviso-d4", version: 1, by: "user" },
+      },
+    );
+    expect([ran.status, turn.status, refused.error, tried.status, told]).toEqual([
       "done",
+      "done",
+      "tool-bad-argument",
       "done",
       ["Aviso de ejemplo", "Hecho"],
     ]);
+    // Both logged their «Avisar» as allowed: the journal's lines alone do not say a notice left.
+    for (const r of [refused.run, tried.run])
+      expect(store.journal.steps(r)[0]).toMatchObject({ step: "a", decision: "allow" });
     const m = mapOf(7, w.correo);
     expect(edgeOf(m, "flow:aviso-d4", "dev:all", "tells")).toMatchObject({ n: 1, steps: ["a"] });
+    expect(edgeOf(m, "flow:aviso-vacio-e5", "dev:all", "tells")).toMatchObject({
+      n: 0,
+      steps: ["a"],
+    });
     expect(edgeOf(m, "boni:chat", "dev:all", "tells")).toMatchObject({ n: 1 });
     expect(m.nodes.find((n) => n.id === "dev:all")?.notices).toBe(2);
   });
@@ -835,6 +923,20 @@ describe("Boni's map, computed (F8; A-16)", () => {
         at,
         step: "r",
       });
+      // Its lines in the journal, as the agent logs them: a read, and a notice the run told.
+      for (const [step, tool, effect] of [
+        ["m", "entities.query", "read"],
+        ["n", "notify", "notify"],
+      ] as const)
+        store.journal.step({
+          run: `y${i}`,
+          step,
+          kind: "call",
+          decision: "allow",
+          rule: "P1",
+          detail: { tool, effect, integrity: "user", control: null },
+          at,
+        });
     }
     const t0 = performance.now();
     const m = mapOf(30, w.correo);
@@ -843,6 +945,8 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(leer?.runs).toBeGreaterThan(900);
     // Its reading's calls of the period, on its step.
     expect(leer?.steps?.find((s) => s.id === "r")?.calls).toBe(inPeriod);
+    // What the period's runs told, counted from the journal's lines in the same time.
+    expect(edgeOf(m, "flow:leer-correo", "dev:all", "tells")?.n).toBe(inPeriod);
     expect(ms).toBeLessThan(1500);
     // What is measured is the map (above); writing a year of runs first takes longer than vitest's 5 s on CI's machine.
   }, 30_000);

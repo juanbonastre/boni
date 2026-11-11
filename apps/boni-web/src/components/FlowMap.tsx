@@ -63,6 +63,7 @@ import {
   type MapEdge,
   type MapNode,
   type MapView,
+  mapDevices,
   type Origin,
   type RecordView,
   type RunDetail,
@@ -78,6 +79,7 @@ import {
   lensOf,
   mapLayout,
   stepLayout,
+  withTold,
 } from "../core/flowLayout.ts";
 import {
   mapNodeName,
@@ -905,10 +907,6 @@ function laneNames(
 /** At most this many of a run's proposals or changes are named in its card; the rest are counted. */
 const NAMED = 3;
 
-/** Whether a run told the devices something: a step of «Avisar» that ran. */
-const toldIn = (run: RunDetail) =>
-  run.steps.some((x) => x.what === "notify" && x.decision === "allow");
-
 /**
  * The way a run went, in words over the map (docs/sistema.md §4.4): what started it, who ran it and when, what it
  * proposed and what became of each, what it wrote; asked from a record («¿De dónde viene?»), that record and its
@@ -966,8 +964,8 @@ function RunWay({
         collection: c.collection,
       }),
     ),
-    // Its «Avisar» ran: what it told went to the devices.
-    ...(toldIn(run) ? [t("way.told")] : []),
+    // What it told went to the devices (the server's count: a «Probar» told nothing).
+    ...(run.told.length ? [t("way.told")] : []),
   ];
   const decided = story?.origin.proposal?.decided ?? null;
   if (decided !== null)
@@ -1049,11 +1047,12 @@ function RunWay({
 }
 
 function Canvas({
-  map,
+  map: period,
   only,
   kept,
   setKept,
 }: {
+  /** The map of the period, as the server computed it. */
   map: MapView;
   only?: Set<string>;
   kept: Kept;
@@ -1094,6 +1093,23 @@ function Canvas({
   const [byRole, setByRole] = useState<Record<string, string>>({});
   // A run on the map (§4.4, «una ejecución encima»): its flow unfolded, each step with what came of it.
   const [run, setRun] = useState<(RunDetail & { owner: string }) | null>(null);
+  // The map with what that run told on it (docs/sistema.md §4.4, «Una ejecución que avisó la recorre»): its arrow to
+  // the devices, from the steps that told, drawn also when the period has no notice of its owner's (a run from before
+  // it, a flow that tells no more).
+  const map = useMemo(() => {
+    const devices = run?.told.length ? mapDevices() : null;
+    if (!run || !devices) return period;
+    const steps = run.told.map((x) => x.step);
+    return {
+      ...period,
+      ...withTold(period, {
+        owner: run.owner,
+        steps,
+        devices,
+        arrow: { from: run.owner, to: MAP_DEVICES, kind: "tells", n: null, steps, outside: false },
+      }),
+    };
+  }, [period, run]);
   // «¿De dónde viene?» of a record: its title and where it comes from, told over the run that made it.
   const [story, setStory] = useState<{ title: string; origin: Origin } | null>(null);
   const { fitView, getNode, getViewport, setViewport } = useReactFlow();
@@ -1217,11 +1233,13 @@ function Canvas({
         add(owner, c, wroteBy);
         if (!wrote.includes(c)) wrote.push(c);
       }
-    // What it told went on to the devices (when the map draws that arrow for it).
-    const told =
-      toldIn(run) &&
-      map.edges.some((e) => e.from === owner && e.to === MAP_DEVICES && e.kind === "tells");
-    if (told) add(owner, MAP_DEVICES, "tells");
+    // What it told went on to the devices, from the steps that told (`map` above has that arrow for it).
+    const told = new Set(run.told.map((x) => x.step));
+    if (
+      told.size &&
+      map.edges.some((e) => e.from === owner && e.to === MAP_DEVICES && e.kind === "tells")
+    )
+      add(owner, MAP_DEVICES, "tells");
     // The steps that did something, in the order they ran; what was skipped or never reached is not on the way.
     const did = run.steps
       .filter((x) => x.decision !== null && x.decision !== "skip")
@@ -1377,7 +1395,7 @@ function Canvas({
     }
     for (const c of way.wrote) put(c, last + 1);
     // The devices after its end, as where it wrote.
-    if (way.told) put(MAP_DEVICES, last + 1);
+    if (way.nodes.has(MAP_DEVICES)) put(MAP_DEVICES, last + 1);
     return { pos, lit, max: Math.max(0, ...pos.values()) };
   }, [way, graph]);
 
@@ -1603,17 +1621,26 @@ function Canvas({
       const label = `${t(`map.edge.${e.kind}`)}${n !== null && n > 0 ? ` · ${n.toLocaleString(lang === "en" ? "en-GB" : "es-ES")}` : ""}`;
       const onWay = !!way && way.edges.has(`${e.from}>${e.to}>${e.kind}`);
       const hot = focus ? e.from === focus || e.to === focus : onWay;
-      const dim = focus ? !hot && !onWay : !!way && !onWay;
       // An arrow going back (right to left: what someone who acts reads, a lesson to an earlier flow) crosses the
       // boxes in between: its words only when it is lit, never over a card's name.
       const back =
         (graph.layout.at.get(e.from)?.x ?? 0) > (graph.layout.at.get(e.to)?.x ?? 0) && !hot;
+      // What a run told left from the steps that told in it: of its flow's «avisa», only those arrows are its way
+      // (another «Avisar» it skipped stays quiet), and they come first.
+      const toldFrom =
+        onWay && e.kind === "tells" && way
+          ? new Set([...way.told].map((x) => `step:${e.from}:${x}`))
+          : null;
+      const froms = ends(e.from, e.steps, e, true);
+      if (toldFrom) froms.sort((a, b) => Number(toldFrom.has(b)) - Number(toldFrom.has(a)));
       // An arrow that leaves from (or reaches) several steps says its words once, on the first of them.
       let said = false;
-      for (const from of ends(e.from, e.steps, e, true))
+      for (const from of froms)
         for (const to of ends(e.to, e.steps, e, false)) {
           const words = said || back ? "" : label;
           said = true;
+          const on = onWay && (!toldFrom || from === e.from || toldFrom.has(from));
+          const lit = focus ? hot : on;
           rfEdges.push({
             id: `${from}>${to}>${e.kind}`,
             source: from,
@@ -1625,14 +1652,14 @@ function Canvas({
               label: words,
               kind: e.kind,
               outside: e.outside,
-              hot,
-              dim,
-              ...(onWay
+              hot: lit,
+              dim: focus ? !hot && !on : !!way && !on,
+              ...(on
                 ? { way: true, wayI: wayOrder?.pos.get(to) ?? wayOrder?.pos.get(e.to) ?? 0 }
                 : {}),
             },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-            zIndex: hot ? 2 : 0,
+            zIndex: lit ? 2 : 0,
           });
         }
     }
@@ -1809,6 +1836,11 @@ function Canvas({
               onClick={() => {
                 setRun(null);
                 setStory(null);
+                // What only the run put on the map (the devices, when the period has no notice) goes with it:
+                // neither chosen nor in the centre any more.
+                const gone = (id: string | null) => !!id && !period.nodes.some((n) => n.id === id);
+                if (gone(selected)) pick(null);
+                if (gone(center)) setCenter(null);
               }}
             >
               <X size={13} strokeWidth={2} />
