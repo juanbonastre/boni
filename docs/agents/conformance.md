@@ -6,8 +6,14 @@ reason: the phase was judged against its row in the phase table and the single e
 each point of the design. The same agent had designed it, built it and judged it.
 
 So before a phase or a task is called finished (its PR, the design's phase table, the CHANGELOG), an agent that did not
-build it reviews it. In Claude Code that is a subagent started for this alone, which gets only what is below; another
-assistant does the same in a fresh conversation.
+build it reviews it. In Claude Code that is the `conformance-reviewer` agent (`.claude/agents/conformance-reviewer.md`,
+Sonnet at high effort), started for this alone with only what is below; another assistant does the same in a fresh
+conversation.
+
+One round (Juan, 2026-11-11: a day of building one task spent 40 % of the week's quota): the builder fixes what the table
+finds and tests it. A second round only for the rows the builder changed, with those rows and their diff, never the
+whole change again. The reviewer runs no `make check` and no e2e, reads each file of the diff at most once, and greps
+`docs/principios.md` instead of reading it whole.
 
 ## What the reviewer gets
 

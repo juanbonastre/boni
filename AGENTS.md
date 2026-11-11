@@ -79,6 +79,18 @@ with the same click fixed twice, was «todo un poco liado»):
    screen; here it opens windows): on 2026-11-04 four CI rounds were lost to tests not updated after a rename and a
    move, and the desktop suite runs in series, so one failure drags the twelve after it.
 
+## Sessions and models
+
+Juan, 2026-11-11: one session building one task, on the largest model, spent 40 % of the week's quota in a day (533
+calls for five messages, context near a million; the cost was re-reading, not test output).
+
+- **One session per task**: a new session in its own worktree, never a big one resumed after more than an hour's pause.
+  A session that coordinates others never reads code: it briefs them and checks their results.
+- **Model and effort per role**: Opus high to build, medium for routine changes; Haiku low to explore (the `explorer`
+  agent); Sonnet high to review (the `conformance-reviewer` agent, one round); Fable only to design a phase or for a
+  hard bug. Every subagent call names its model; every file in `.claude/agents/` declares `model` and `effort` (T-06).
+- Context compacts at 250k tokens (`autoCompactWindow`, a user setting). Don't rerun a suite whose output you have.
+
 ## Hard rules
 
 - No personal data, ever: invented samples (`ejemplo.*@example.*`), no hostnames, tokens or paths of Juan's machines,
