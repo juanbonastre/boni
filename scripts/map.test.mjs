@@ -1,10 +1,10 @@
 /**
- * The map stays true and the rules stay checkable (docs/principios.md, T-01 to T-03): every app, package and source file
- * says what it is for (`scripts/map.mjs` reads it), the instructions for agents stay short, and the principles name
- * files that exist. What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
+ * The map stays true and the rules stay checkable (docs/principios.md, T-01 to T-03, T-06): every app, package and
+ * source file says what it is for (`scripts/map.mjs` reads it), the instructions for agents stay short, the principles
+ * name files that exist, and every agent of `.claude/agents/` names its model and effort. What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
  */
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { headerOf, ROOT, trackedFiles, workspaces } from "./map.mjs";
@@ -72,4 +72,26 @@ test("principles name files that exist", () => {
     [],
     "docs/principios.md names files that do not exist",
   );
+});
+
+test("every agent names its model and effort", () => {
+  const dir = join(ROOT, ".claude/agents");
+  const agents = readdirSync(dir).filter((f) => f.endsWith(".md"));
+  assert.ok(
+    agents.length >= 2,
+    "the explorer and the conformance reviewer live in .claude/agents/",
+  );
+  for (const f of agents) {
+    const front = readFileSync(join(dir, f), "utf8").match(/^---\n([\s\S]*?)\n---\n/)?.[1] ?? "";
+    assert.match(
+      front,
+      /^model: *\S+/m,
+      `.claude/agents/${f} declares no model in its frontmatter (T-06)`,
+    );
+    assert.match(
+      front,
+      /^effort: *\S+/m,
+      `.claude/agents/${f} declares no effort in its frontmatter (T-06)`,
+    );
+  }
 });
