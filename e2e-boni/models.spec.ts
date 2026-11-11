@@ -1758,7 +1758,7 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
   await expect(page.getByRole("button", { name: "Probar", exact: true })).toBeDisabled();
 });
 
-test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger to «Avisar»; turned off, Ajustes → Modelos says the notice is off (D-53)", async ({
+test("the month's run of «Aviso del presupuesto» is that flow's in the Registro and on the map, from its trigger through «Avisar» to «Dispositivos»; the whole map draws what it tells («avisa»); turned off, Ajustes → Modelos says so (D-53)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1785,6 +1785,10 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(page.locator(".mp-centre").first()).toContainText("Aviso del presupuesto");
   await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
   const stage = page.locator(".mp-stage");
+  const card = (name: string) =>
+    stage.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
   await expect(stage.locator(".mp-trig .mp-name")).toHaveText("El gasto del mes pasa del aviso");
   await expect(stage.locator(".mp-trig")).toContainText("Gasto del mes · Presupuesto");
   await expect(stage.locator(".mp-trig")).toHaveClass(/run-ran/);
@@ -1793,29 +1797,65 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(steps.first()).toContainText("Avisar");
   await expect(steps.first()).toContainText("Hecho");
   await expect(steps.first()).toHaveClass(/run-ran/);
+  // What it told went on to the devices: the way ends there, by the arrow that leaves its «Avisar».
+  await expect(card("Dispositivos")).toHaveClass(/way/);
+  await expect(card("Dispositivos")).toContainText("1 aviso");
+  const tells = stage.locator(
+    '[data-id="step:flow:aviso-presupuesto:notify>dev:all>tells"] path.mp-edge',
+  );
+  await expect(tells).toHaveClass(/way/);
+  await expect(stage.locator(".mp-edge-label", { hasText: "avisa · 1" })).toBeVisible();
   await expect(page.locator(".mp-way ol").first().locator(":scope > li")).toHaveText([
     /^Aviso del presupuesto \(v1\) · 21 oct/,
+    "Avisó a tus dispositivos",
   ]);
   await page.screenshot({ path: `${SHOTS}/flows-map-budget.png` });
-  // Without the run, the flow stays in the centre, unfolded.
+  // Without the run and without a centre, the whole map draws it: it is joined to the devices by what it tells.
   await page.getByRole("button", { name: "Quitar la ejecución" }).click();
+  await page.getByRole("button", { name: "Quitar del centro" }).click();
   const frame = stage.locator(".mp-frame.flow", { hasText: "Aviso del presupuesto" });
   await expect(frame).toBeVisible();
-  // Alone (it reads and writes no collection), the whole map does not draw it (§4.4: «lo que no es de nadie no
-  // sale»): it is found by its name, and its panel says whose it is, what starts it and its run.
+  await expect(card("Dispositivos")).toBeVisible();
+  await expect(card("Dispositivos")).not.toHaveClass(/way/);
+  await expect(card("Leer correo")).toBeVisible();
+  // The devices' panel: what they are, the period's notices, and who tells them.
+  await card("Dispositivos").locator(".mp-name").click();
+  const panel = page.locator(".mp-panel");
+  await expect(panel.locator("h3")).toHaveText("Dispositivos");
+  await expect(panel.locator(".mp-panel-title")).toContainText("Avisos");
+  await expect(panel).toContainText("1 aviso");
+  await expect(panel.getByRole("region", { name: "Entra" })).toContainText(
+    "Aviso del presupuesto · avisa · 1",
+  );
+  await expect(panel.getByRole("region", { name: "Sale" })).toHaveCount(0);
+  // In the centre, one arrow back: who tells.
+  await panel.getByRole("button", { name: "Poner en el centro" }).click();
+  await expect(page.locator(".mp-centre")).toContainText("Dispositivos");
+  await expect(frame).toBeVisible();
+  await expect(card("Leer correo")).toHaveCount(0);
   await page.getByRole("button", { name: "Quitar del centro" }).click();
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  // Telling changes no data: «Solo lo que escribe» takes the arrow away, and with it what it alone joined.
+  await page.getByRole("button", { name: "Filtros" }).click();
+  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).check();
+  await expect(card("Dispositivos")).toHaveCount(0);
   await expect(frame).toHaveCount(0);
-  await expect(stage.locator(".mp-card", { hasText: "Aviso del presupuesto" })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).uncheck();
+  await page.keyboard.press("Escape");
+  await expect(card("Dispositivos")).toBeVisible();
+  // The flow is found by its name, and its panel says whose it is, what starts it, its run and what it tells.
   const find = page.getByRole("combobox", { name: "Buscar en el mapa" });
   await find.click();
   await page.keyboard.type("Aviso del pres", { delay: 15 });
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Aviso del presupuesto");
-  const panel = page.locator(".mp-panel");
   await expect(panel.locator("h3")).toHaveText("Aviso del presupuesto");
   for (const text of ["Flujo · De Boni", "El gasto del mes pasa del aviso", "1 ejecución"])
     await expect(panel).toContainText(text);
-  // «Agrupar por disparador» names what starts it.
+  await expect(panel.getByRole("region", { name: "Sale" })).toContainText(
+    "Dispositivos · avisa · 1",
+  );
+  // «Agrupar por disparador» names what starts it; the devices are in no frame.
   await page.getByRole("combobox", { name: "Agrupar" }).selectOption("trigger");
   await expect(
     stage.locator(".mp-frame.group", { hasText: "El gasto del mes pasa del aviso" }),
@@ -1825,6 +1865,32 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await expect(page.locator(".models-spend")).toContainText(
     "Presupuesto: 10,00 € al mes, aviso apagado",
   );
+});
+
+test("a run that told, drawn in the conversation: its way ends in «Dispositivos», as on the map (I-29)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [ORIGIN_TURN],
+      "GET api/agent/runs/:id": [RUN_BUDGET],
+      "GET api/agent/runs": [RUNS_BUDGET],
+      "GET api/agent/map": [MAP_BUDGET],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS_WITH_BUDGET],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const box = page.getByRole("textbox", { name: /Escribe/ });
+  await box.click();
+  await page.keyboard.type("¿Qué fue el aviso del presupuesto?", { delay: 5 });
+  await page.keyboard.press("Enter");
+  const way = page.getByRole("group", { name: "El recorrido de la ejecución" });
+  await expect(way.locator(".run-path-box strong")).toHaveText([
+    "Aviso del presupuesto",
+    "Dispositivos",
+  ]);
 });
 
 test("his own version of «Aviso del presupuesto», whose text takes neither figure: its trigger still gives both, on its card and in its panel (D-53)", async ({

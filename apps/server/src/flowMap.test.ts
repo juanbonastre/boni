@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ensureSystemTypes } from "@boni/agent";
+import { Agent, coreTools, ensureSystemTypes, fakePlanner } from "@boni/agent";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -521,6 +521,20 @@ describe("Boni's map, computed (F8; A-16)", () => {
       });
     run("b1", "background", NOW - 2 * DAY);
     run("b0", "test", NOW - DAY);
+    // Its «Avisar», as the agent logs it (a «Probar» logs its own too: it says what it would tell).
+    for (const [rid, at] of [
+      ["b1", NOW - 2 * DAY],
+      ["b0", NOW - DAY],
+    ] as const)
+      store.journal.step({
+        run: rid,
+        step: "notify",
+        kind: "call",
+        decision: "allow",
+        rule: "P1",
+        detail: { tool: "notify", effect: "notify", integrity: "model", control: null },
+        at,
+      });
     const m = mapOf(7, w.correo);
     expect(m.nodes.find((n) => n.id === id)).toMatchObject({
       kind: "flow",
@@ -537,8 +551,18 @@ describe("Boni's map, computed (F8; A-16)", () => {
       pack: null,
       steps: [expect.objectContaining({ id: "notify", what: "notify", deps: ["spent", "budget"] })],
     });
-    // It reads and writes no collection: no arrow of its own.
-    expect(m.edges.filter((e) => e.from === id || e.to === id)).toEqual([]);
+    // It reads and writes no collection: its one arrow is what it tells the devices, the month's notice (the test's
+    // «Avisar» told nothing and counts nowhere).
+    expect(m.edges.filter((e) => e.from === id || e.to === id)).toEqual([
+      { from: id, to: "dev:all", kind: "tells", n: 1, steps: ["notify"], outside: false },
+    ]);
+    expect(m.nodes.find((n) => n.id === "dev:all")).toEqual({
+      id: "dev:all",
+      kind: "device",
+      name: null,
+      code: "devices",
+      notices: 1,
+    });
     const owner = (rid: string) => {
       const r = store.journal.run(rid);
       if (!r) throw new Error("no run");
@@ -564,6 +588,203 @@ describe("Boni's map, computed (F8; A-16)", () => {
     });
     expect(edgeOf(mine, id, `col:${w.tarea}`, "writes")).toBeUndefined();
     expect(mine.nodes.find((n) => n.id === id)).toMatchObject({ boni: true, by: "user" });
+  });
+
+  it("what a flow's «Avisar» or a turn of the conversation told goes to the devices («avisa»): the arrow from the plan, its number from the journal (§4.4)", () => {
+    const w = world();
+    // Nothing tells yet: no devices on the map.
+    expect(mapOf(7, w.correo).nodes.some((n) => n.kind === "device")).toBe(false);
+    const tell = (id: string, more: Record<string, unknown> = {}) => ({
+      id,
+      op: "call",
+      tool: "notify",
+      args: { text: { lit: "Aviso de ejemplo" } },
+      ...more,
+    });
+    const flow = (id: string, name: string, trigger: unknown, steps: unknown[], enabled = true) =>
+      store.journal.saveFlow({
+        id,
+        name,
+        trigger,
+        inputs: [],
+        plan: { version: 1, steps },
+        layout: null,
+        by: "user",
+        enabled,
+        created: NOW - 60 * DAY,
+      });
+    // One of his on a schedule: a count, then two «Avisar» (one of them once per item).
+    flow("resumen-a1", "Resumen diario", { schedule: { every: "day", at: "08:00" } }, [
+      { id: "q", op: "call", tool: "entities.query", args: { type: { lit: keyOf(w.tarea) } } },
+      tell("a"),
+      tell("b", { each: { ref: "$q.items" } }),
+    ]);
+    // One a mail starts: what it tells may carry the mail's words.
+    flow("avisar-correo-b2", "Avisar del correo", { created: keyOf(w.correo) }, [tell("a")]);
+    // One that never ran, off: its arrow is drawn all the same, with no number.
+    flow("sin-uso-c3", "Sin uso", { manual: true }, [tell("a")], false);
+    const run = (id: string, at: number, o: { flow?: string; turn?: string; plan?: unknown }) => {
+      store.journal.startRun({
+        id,
+        turn: o.turn ?? null,
+        origin: o.turn ? "turn" : "background",
+        device: o.turn ? "portatil" : null,
+        started: at,
+        ...(o.flow ? { flow: o.flow, flowVersion: 1 } : {}),
+      });
+      if (o.plan) store.journal.setPlan(id, o.plan);
+    };
+    const step = (r: string, id: string, decision: string, at: number) =>
+      store.journal.step({
+        run: r,
+        step: id,
+        kind: "call",
+        decision,
+        rule: decision === "allow" ? "P1" : null,
+        detail: { tool: "notify", effect: "notify" },
+        at,
+      });
+    // The summary ran twice this week (3 and 2 notices: one, and one per task) and once a month ago. Its other
+    // step ran too, and tells nothing; nor does an «Avisar» that was skipped or never allowed.
+    run("s1", NOW - DAY, { flow: "resumen-a1" });
+    for (const id of ["q", "a", "b", "b"]) step("s1", id, "allow", NOW - DAY);
+    run("s2", NOW - 2 * DAY, { flow: "resumen-a1" });
+    for (const id of ["q", "a", "b"]) step("s2", id, "allow", NOW - 2 * DAY);
+    run("s3", NOW - 3 * DAY, { flow: "resumen-a1" });
+    step("s3", "q", "allow", NOW - 3 * DAY);
+    step("s3", "a", "skip", NOW - 3 * DAY);
+    step("s3", "b", "stopped", NOW - 3 * DAY);
+    run("s0", NOW - 30 * DAY, { flow: "resumen-a1" });
+    step("s0", "a", "allow", NOW - 30 * DAY);
+    run("c1", NOW - DAY, { flow: "avisar-correo-b2" });
+    step("c1", "a", "allow", NOW - DAY);
+    // Versions: one that named its «Avisar» otherwise before (both count, the arrow leaves from today's); one that
+    // tells no more (what it told this week still shows, with no step to leave from); one whose old «Avisar»'s name
+    // is another kind of step today (that step's runs told nothing: never counted).
+    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("uno")]);
+    flow("renombrado-f6", "Renombrado", { manual: true }, [tell("dos")]);
+    run("n1", NOW - 2 * DAY, { flow: "renombrado-f6" });
+    step("n1", "uno", "allow", NOW - 2 * DAY);
+    run("n2", NOW - DAY, { flow: "renombrado-f6" });
+    step("n2", "dos", "allow", NOW - DAY);
+    const query = (id: string) => ({
+      id,
+      op: "call",
+      tool: "entities.query",
+      args: { type: { lit: keyOf(w.tarea) } },
+    });
+    flow("avisaba-g7", "Avisaba", { manual: true }, [tell("viejo")]);
+    flow("avisaba-g7", "Avisaba", { manual: true }, [query("q")]);
+    run("v1", NOW - 3 * DAY, { flow: "avisaba-g7" });
+    step("v1", "viejo", "allow", NOW - 3 * DAY);
+    flow("reusado-h8", "Reusado", { manual: true }, [tell("x")]);
+    flow("reusado-h8", "Reusado", { manual: true }, [query("x"), tell("y")]);
+    run("u1", NOW - DAY, { flow: "reusado-h8" });
+    for (const id of ["x", "x", "x", "y"]) step("u1", id, "allow", NOW - DAY);
+    // The conversation: a turn that told, one that stopped before its «Avisar», one with none.
+    const plan = { version: 1, steps: [tell("n")] };
+    run("t5", NOW - DAY, { turn: "turn-5", plan });
+    step("t5", "n", "allow", NOW - DAY);
+    run("t6", NOW - DAY, { turn: "turn-6", plan });
+    step("t6", "n", "stopped", NOW - DAY);
+    const m = mapOf(7, w.correo);
+    const told = (from: string) => edgeOf(m, from, "dev:all", "tells");
+    expect(told("flow:resumen-a1")).toEqual({
+      from: "flow:resumen-a1",
+      to: "dev:all",
+      kind: "tells",
+      n: 5,
+      steps: ["a", "b"],
+      outside: false,
+    });
+    expect(told("flow:avisar-correo-b2")).toMatchObject({ n: 1, steps: ["a"], outside: true });
+    expect(told("flow:sin-uso-c3")).toMatchObject({ n: 0, steps: ["a"] });
+    // The conversation told once: what stopped before telling is not a notice. No step of its own to leave from.
+    expect(told("boni:chat")).toEqual({
+      from: "boni:chat",
+      to: "dev:all",
+      kind: "tells",
+      n: 1,
+      outside: false,
+    });
+    expect(told("flow:renombrado-f6")).toMatchObject({ n: 2, steps: ["dos"] });
+    expect(told("flow:avisaba-g7")).toEqual({
+      from: "flow:avisaba-g7",
+      to: "dev:all",
+      kind: "tells",
+      n: 1,
+      outside: false,
+    });
+    expect(told("flow:reusado-h8")).toMatchObject({ n: 1, steps: ["y"] });
+    // «Leer correo» and his flow by hand tell nothing.
+    expect(told("flow:leer-correo")).toBeUndefined();
+    expect(told("flow:apuntar-k2")).toBeUndefined();
+    expect(m.nodes.find((n) => n.id === "dev:all")).toEqual({
+      id: "dev:all",
+      kind: "device",
+      name: null,
+      code: "devices",
+      notices: 11,
+    });
+    // Nothing comes out of the devices.
+    expect(m.edges.filter((e) => e.from === "dev:all")).toEqual([]);
+    // A month back: the summary's older run counts too.
+    expect(edgeOf(mapOf(40, w.correo), "flow:resumen-a1", "dev:all", "tells")?.n).toBe(6);
+  });
+
+  it("the devices' arrows from what the agent really leaves: a flow's «Avisar» run in the background and a turn of the conversation that tells", async () => {
+    const w = world();
+    const told: string[] = [];
+    const plan = {
+      version: 1,
+      steps: [{ id: "a", op: "call", tool: "notify", args: { text: { lit: "Aviso de ejemplo" } } }],
+    };
+    store.journal.saveFlow({
+      id: "aviso-d4",
+      name: "Aviso de ejemplo",
+      trigger: { schedule: { every: "day", at: "08:00" } },
+      inputs: [],
+      plan,
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: NOW - 5 * DAY,
+    });
+    const agent = new Agent({
+      store,
+      registry: coreTools().freeze(),
+      // The conversation's planner writes a plan that tells and then answers.
+      planner: fakePlanner([
+        {
+          version: 1,
+          steps: [
+            { id: "n", op: "call", tool: "notify", args: { text: { lit: "Hecho" } } },
+            { id: "r", op: "reply", component: "text", data: { template: { lit: "Avisado" } } },
+          ],
+        },
+      ]),
+      reader: fakePlanner([]),
+      now: () => NOW - 60_000,
+      notify: (text) => told.push(text),
+    });
+    const ran = await agent.background(plan, {}, [], undefined, {
+      id: "aviso-d4",
+      version: 1,
+      by: "user",
+    });
+    const turn = await agent.turn({
+      text: "avísame cuando acabes",
+      origin: { kind: "turn", trust: "personal", device: "portatil" },
+    });
+    expect([ran.status, turn.status, told]).toEqual([
+      "done",
+      "done",
+      ["Aviso de ejemplo", "Hecho"],
+    ]);
+    const m = mapOf(7, w.correo);
+    expect(edgeOf(m, "flow:aviso-d4", "dev:all", "tells")).toMatchObject({ n: 1, steps: ["a"] });
+    expect(edgeOf(m, "boni:chat", "dev:all", "tells")).toMatchObject({ n: 1 });
+    expect(m.nodes.find((n) => n.id === "dev:all")?.notices).toBe(2);
   });
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {

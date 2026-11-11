@@ -44,6 +44,7 @@ import {
   Inbox,
   Mail,
   MessageSquare,
+  MonitorSmartphone,
   Plug,
   Search,
   SlidersHorizontal,
@@ -55,15 +56,16 @@ import {
   Zap,
 } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  FlowStep,
-  FlowStepNode,
-  MapEdge,
-  MapNode,
-  MapView,
-  Origin,
-  RecordView,
-  RunDetail,
+import {
+  type FlowStep,
+  type FlowStepNode,
+  MAP_DEVICES,
+  type MapEdge,
+  type MapNode,
+  type MapView,
+  type Origin,
+  type RecordView,
+  type RunDetail,
 } from "../core/agent.ts";
 import { deviceZone } from "../core/clock.ts";
 import { refsUsed, typeKeysOf } from "../core/flowEdit.ts";
@@ -177,6 +179,7 @@ function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: 
   if (n.kind === "collection") return <Database {...p} />;
   if (n.kind === "flow") return <Workflow {...p} />;
   if (n.kind === "page") return <FileText {...p} />;
+  if (n.kind === "device") return <MonitorSmartphone {...p} />;
   if (n.kind === "boni")
     return n.code === "review" ? (
       <Sparkles {...p} />
@@ -229,6 +232,9 @@ function lineOf(
     out.push(n.cost > 0 ? `${runs} · ${money(n.cost)}` : runs);
   }
   if (n.kind === "connector") out.push(t("map.sub.connector"));
+  // The devices: what they were told in the period.
+  if (n.kind === "device")
+    out.push(t(n.notices === 1 ? "map.notices.one" : "map.notices", { n: n.notices }));
   if (n.kind === "actor") out.push(t(`map.sub.${n.code ?? "user"}`));
   if (n.kind === "page") out.push(t("map.sub.page"));
   return out;
@@ -899,6 +905,10 @@ function laneNames(
 /** At most this many of a run's proposals or changes are named in its card; the rest are counted. */
 const NAMED = 3;
 
+/** Whether a run told the devices something: a step of «Avisar» that ran. */
+const toldIn = (run: RunDetail) =>
+  run.steps.some((x) => x.what === "notify" && x.decision === "allow");
+
 /**
  * The way a run went, in words over the map (docs/sistema.md §4.4): what started it, who ran it and when, what it
  * proposed and what became of each, what it wrote; asked from a record («¿De dónde viene?»), that record and its
@@ -956,6 +966,8 @@ function RunWay({
         collection: c.collection,
       }),
     ),
+    // Its «Avisar» ran: what it told went to the devices.
+    ...(toldIn(run) ? [t("way.told")] : []),
   ];
   const decided = story?.origin.proposal?.decided ?? null;
   if (decided !== null)
@@ -1205,12 +1217,17 @@ function Canvas({
         add(owner, c, wroteBy);
         if (!wrote.includes(c)) wrote.push(c);
       }
+    // What it told went on to the devices (when the map draws that arrow for it).
+    const told =
+      toldIn(run) &&
+      map.edges.some((e) => e.from === owner && e.to === MAP_DEVICES && e.kind === "tells");
+    if (told) add(owner, MAP_DEVICES, "tells");
     // The steps that did something, in the order they ran; what was skipped or never reached is not on the way.
     const did = run.steps
       .filter((x) => x.decision !== null && x.decision !== "skip")
       .map((x) => x.id);
     const proposed = new Set(run.steps.filter((x) => x.decision === "propose").map((x) => x.id));
-    return { nodes, edges, from, accepted, wrote, did, ran: new Set(did), proposed, owner };
+    return { nodes, edges, from, accepted, wrote, did, ran: new Set(did), proposed, owner, told };
   }, [run, map.edges]);
   // A run's flow drawn as it ran: the version it ran when that is not the flow's latest (review of task 90: a reading
   // of the version before «Crear en la elegida» lost its way after the Decisora), its boxes and its steps by its plan.
@@ -1359,6 +1376,8 @@ function Canvas({
       for (const c of way.accepted) put(c, last + 1);
     }
     for (const c of way.wrote) put(c, last + 1);
+    // The devices after its end, as where it wrote.
+    if (way.told) put(MAP_DEVICES, last + 1);
     return { pos, lit, max: Math.max(0, ...pos.values()) };
   }, [way, graph]);
 

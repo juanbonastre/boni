@@ -147,7 +147,7 @@ export function stepLayout(
 
 // ------------------------------------------------------------------ the map
 
-export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page";
+export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page" | "device";
 export type MapEdgeKind =
   | "brings"
   | "starts"
@@ -158,7 +158,9 @@ export type MapEdgeKind =
   | "decides"
   | "learns"
   | "improves"
-  | "shows";
+  | "shows"
+  /** Out to the account's devices: what a flow's «Avisar» or a turn of the conversation told them. */
+  | "tells";
 /** A node of the map as the server computes it (apps/server flowMap.ts), with what the lenses look at. */
 export interface MapNodeLike {
   id: string;

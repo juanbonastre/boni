@@ -7,7 +7,7 @@
  */
 import { Maximize2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { MapView, RunDetail } from "../core/agent.ts";
+import { MAP_DEVICES, type MapView, type RunDetail } from "../core/agent.ts";
 import { mapNodeName, runStatusLine } from "../core/runText.ts";
 import { agentApi, showRun, useStore } from "../store.ts";
 
@@ -114,6 +114,9 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
       ends.set(`col:${c.type}`, { line: `«${c.title}»`, waits: false });
   for (const [col, end] of ends)
     boxes.push({ id: col, name: name(col, ""), line: end.line, waits: end.waits });
+  // What it told went to the devices, as the map draws it («avisa»).
+  if (d.steps.some((x) => x.what === "notify" && x.decision === "allow"))
+    boxes.push({ id: MAP_DEVICES, name: name(MAP_DEVICES, t("map.node.devices")), line: null });
   const shown = boxes.filter((b) => b.name);
   return (
     <div

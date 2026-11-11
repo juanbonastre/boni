@@ -804,6 +804,8 @@ export interface MapNode extends MapNodeLike {
   plan: FlowPlan | null;
   steps: FlowStepNode[];
   pack: string | null;
+  /** The devices: how many notices they were told in the period. */
+  notices: number;
 }
 export interface MapEdge extends MapEdgeLike {
   steps: string[];
@@ -813,7 +815,15 @@ export interface MapView {
   nodes: MapNode[];
   edges: MapEdge[];
 }
-const MAP_KINDS: readonly MapKind[] = ["connector", "collection", "flow", "boni", "actor", "page"];
+const MAP_KINDS: readonly MapKind[] = [
+  "connector",
+  "collection",
+  "flow",
+  "boni",
+  "actor",
+  "page",
+  "device",
+];
 const MAP_EDGES: readonly MapEdgeKind[] = [
   "brings",
   "starts",
@@ -825,8 +835,11 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "learns",
   "improves",
   "shows",
+  "tells",
 ];
-const MAP_ID = /^(conn|col|flow|boni|actor|page):[A-Za-z0-9_.:@-]{1,120}$/;
+const MAP_ID = /^(conn|col|flow|boni|actor|page|dev):[A-Za-z0-9_.:@-]{1,120}$/;
+/** The account's devices on the map (the server's `DEVICES`): where what Boni tells arrives. */
+export const MAP_DEVICES = "dev:all";
 /** Name and value pairs, as text (a record's fields, a proposal's rows). */
 function namedValues(v: unknown): { name: string; value: string }[] {
   return Array.isArray(v)
@@ -889,6 +902,7 @@ export function parseMap(b: unknown): MapView | null {
         ? n.steps.map(parseFlowNode).filter((x): x is FlowStepNode => x !== null)
         : [],
       pack: strOf(n.pack, 40),
+      notices: numOf(n.notices),
     });
   }
   const ids = new Set(nodes.map((n) => n.id));

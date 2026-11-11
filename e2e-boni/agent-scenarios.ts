@@ -2963,7 +2963,10 @@ export const FLOW_BUDGET_TEST = {
     },
   },
 };
-/** The map with it: a flow of Boni's with its run of the month and no arrow (it reads and writes no collection). */
+/**
+ * The map with it (the server's `flowMap`): a flow of Boni's with its run of the month; it reads and writes no
+ * collection, and what its «Avisar» told goes to the account's devices («avisa»).
+ */
 export const MAP_BUDGET = {
   ...MAP,
   nodes: [
@@ -2982,6 +2985,12 @@ export const MAP_BUDGET = {
       steps: [BUDGET_STEP],
       pack: null,
     }),
+    // As the server gives it: only what the devices' node has.
+    { id: "dev:all", kind: "device", name: null, code: "devices", notices: 1 },
+  ],
+  edges: [
+    ...MAP.edges,
+    mapEdge("flow:aviso-presupuesto", "dev:all", "tells", 1, { steps: ["notify"] }),
   ],
 };
 /** The month's run of it, as the Registro lists it and as its Recorrido says it: one «Avisar», no model call. */

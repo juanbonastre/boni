@@ -442,8 +442,12 @@ test("«Flujos» over the real server is a collection (F8): «Nuevo» makes a fl
   await expect(w.locator(".db-table tbody tr", { hasText: "Nuevo flujo" })).toContainText(
     "Apagado",
   );
-  // The map from the server's journal and audit: the new flow found by name and put in the centre.
+  // The map from the server's journal and audit. What Boni tells is on the whole of it (A-16): its «Aviso del
+  // presupuesto», which reads and writes no collection, joined to «Dispositivos» by «avisa».
   await w.getByRole("tab", { name: "Mapa" }).click();
+  await expect(w.locator(".mp-card", { hasText: "Aviso del presupuesto" })).toBeVisible();
+  await expect(w.locator(".mp-card", { hasText: "Dispositivos" })).toBeVisible();
+  // The new flow, found by name and put in the centre.
   await w.getByRole("combobox", { name: "Buscar en el mapa" }).click();
   await w.keyboard.type("Nuevo flujo", { delay: 10 });
   await w.keyboard.press("Enter");
