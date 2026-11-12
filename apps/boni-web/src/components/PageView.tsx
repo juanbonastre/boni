@@ -32,6 +32,7 @@ import {
 } from "react";
 import type { Page } from "../core/agent.ts";
 import { catalogueOf, isDataBlock } from "../core/blocks.ts";
+import { focusAtEnd } from "../core/caret.ts";
 import { isCategoryKind, newSpec } from "../core/chartBuilder.ts";
 import { emptyState } from "../core/charts.ts";
 import {
@@ -372,7 +373,7 @@ function PageTitle({ page }: { page: Page }) {
   useAutosize(ref, page.title);
   useEffect(() => {
     if (focus && "title" in focus) {
-      ref.current?.focus();
+      focusAtEnd(ref.current);
       setPageFocus(null);
     }
   }, [focus]);

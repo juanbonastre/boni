@@ -20,6 +20,7 @@ import {
   useRef,
 } from "react";
 import { clampPlace, type Place } from "../core/boniWindow.ts";
+import { focusAtEnd } from "../core/caret.ts";
 import {
   closeBoniWindow,
   openBoniWindow,
@@ -135,7 +136,7 @@ export function BoniWindow() {
   }, [open]);
   // Opened, what Juan types goes to it.
   useEffect(() => {
-    if (open) box.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
+    if (open) focusAtEnd(box.current?.querySelector<HTMLTextAreaElement>("textarea"));
   }, [open]);
   if (!open) return null;
   return (

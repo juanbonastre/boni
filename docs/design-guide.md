@@ -670,7 +670,9 @@ contraseña ni un código aquí» under a question.
     conversation and each one's draft, kept on the device (`boni-window.json`), never in the account. A conversation
     that cannot be read back (deleted meanwhile, the server out of reach) starts a new one, silently, with what was
     being written to it. Apple HIG, «Windows»: restore windows to their previous state when an
-    app relaunches.
+    app relaunches. The caret goes after the draft, so typing goes on where it stopped; the same in every field
+    that opens with text in it (a sent message being corrected, a conversation being renamed; `core/caret.ts`,
+    task 97: Chromium puts it at the start).
   - **Dropping files on it** (task 85, seventh part; `Chat.tsx`, `core/uploads.ts`, `store.ts` `dropFiles`;
     docs/sistema.md §4.7; A-24, I-36): files dragged over the conversation outline it with a 2 px dashed `--accent`
     border, 6 px in, and one word in the middle, «Soltar» (it takes no clicks). Each file dropped goes up at once,

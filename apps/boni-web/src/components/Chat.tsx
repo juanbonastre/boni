@@ -38,6 +38,7 @@ import {
   type StepWords,
   textOf,
 } from "../core/agent.ts";
+import { focusAtEnd } from "../core/caret.ts";
 import { deviceZone, today } from "../core/clock.ts";
 import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
@@ -440,7 +441,7 @@ function ConversationList({
                     value={name}
                     maxLength={120}
                     aria-label={t("chats.rename")}
-                    ref={(el) => el?.focus()}
+                    ref={(el) => focusAtEnd(el)}
                     onChange={(e) => setName(e.target.value)}
                     onBlur={() => setEditing(null)}
                     onKeyDown={(e) => {
@@ -940,7 +941,7 @@ function Turn({ entry }: { entry: ChatEntry }) {
             maxLength={8000}
             rows={Math.min(8, Math.max(2, edit.text.split("\n").length))}
             aria-label={t("chat.edit")}
-            ref={(el) => el?.focus({ preventScroll: true })}
+            ref={(el) => focusAtEnd(el, { preventScroll: true })}
             onChange={(e) => setEdit({ text: e.target.value, state: null })}
             onKeyDown={(e) => {
               if (e.key === "Escape") setEdit(null);
@@ -1540,7 +1541,7 @@ function AskBox({
                 maxLength={out.kind === "other" ? 500 : 200}
                 aria-label={out.kind === "other" ? t("ask.other") : t("ask.new")}
                 placeholder={out.kind === "new" ? kind?.name : undefined}
-                ref={(el) => el?.focus({ preventScroll: true })}
+                ref={(el) => focusAtEnd(el, { preventScroll: true })}
                 onChange={(e) => setOut({ ...out, text: e.target.value })}
                 onKeyDown={(e) => {
                   if (e.key === "Escape") setOut(null);

@@ -8,6 +8,7 @@
  * click right after it (a double click) reaches what is under it.
  */
 import { useEffect } from "react";
+import { focusAtEnd } from "../core/caret.ts";
 import {
   type Box,
   inBox,
@@ -205,9 +206,11 @@ export function ScreenPointer() {
       pointAt(pointed);
       // What Juan types next is the message about it.
       requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLTextAreaElement>(".boni-window textarea, .boni-docked textarea")
-          ?.focus(),
+        focusAtEnd(
+          document.querySelector<HTMLTextAreaElement>(
+            ".boni-window textarea, .boni-docked textarea",
+          ),
+        ),
       );
     };
     const swallow = (e: Event) => {
