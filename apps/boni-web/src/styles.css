@@ -10661,6 +10661,15 @@ tr[data-boni-pointed] > td {
   font-size: 12.5px;
   line-height: 1.5;
 }
+/* A sent message's chips, over it on its side: what it was about, without a «×». */
+.turn-pointed {
+  align-self: flex-end;
+  justify-content: flex-end;
+  max-width: 80%;
+}
+.chat-chip.sent {
+  padding: 1px 8px;
+}
 .chat-chip-text {
   min-width: 0;
   overflow: hidden;

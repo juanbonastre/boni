@@ -70,6 +70,7 @@ import {
   typeKeysOf,
 } from "../core/flowEdit.ts";
 import { choiceOf, segmentsOf, stepLayout } from "../core/flowLayout.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { moneyText, stepDesc, whyText } from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
 import { agentApi, errorText, runFlowInChat, showMap, toast, useStore } from "../store.ts";
@@ -267,6 +268,8 @@ export function testLine(t: T, x: TestStepView): string {
 
 const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
   const t = useStore((s) => s.t);
+  // The flow open in the editor: a step of it is pointed at by its flow and its id (`Ctrl+Shift+E`).
+  const flow = useStore((s) => (s.view.kind === "flows" ? (s.view.flow ?? null) : null));
   const { step } = data;
   // «end» follows the step's own «allow» (a piece ended the run there): the same run, not another.
   const ran = Object.entries(data.ran).reduce((a, [k, b]) => (k === "end" ? a : a + b), 0);
@@ -282,6 +285,12 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
     );
   return (
     <div
+      {...(flow
+        ? pointAttrs(
+            { kind: "step", flow, step: step.id },
+            chipTitle(t("point.kind.step"), data.name),
+          )
+        : {})}
       className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}${data.test === null ? " idle" : ""}${data.feeds ? " feeds" : ""}`}
       title={data.desc ? `${data.name} — ${data.desc}` : data.name}
     >

@@ -779,6 +779,16 @@ function Turn({ entry }: { entry: ChatEntry }) {
   const r = entry.result;
   return (
     <div className="turn">
+      {/* What was pointed at for this message (I-33): its chips, as they were sent, painted as text. */}
+      {entry.pointed && entry.pointed.length > 0 && (
+        <ul className="chat-pointed turn-pointed" aria-label={t("point.sent")}>
+          {entry.pointed.map((p) => (
+            <li key={pointKey(p.ref)} className="chat-chip sent">
+              <span className="chat-chip-text">{p.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="turn-request">{entry.request}</div>
       <div className="turn-answer">
         {!live && <Steps steps={entry.steps ?? []} thinking={false} going={false} />}

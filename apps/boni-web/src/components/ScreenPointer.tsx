@@ -12,15 +12,15 @@ import {
   type Box,
   inBox,
   MAX_POINTED,
+  OWN,
   type Pointed,
   readRef,
   type Target,
+  watchFocus,
 } from "../core/pointing.ts";
 import { pointAt, setPointing, useStore } from "../store.ts";
 
 const REF = "[data-boni-ref]";
-/** Boni's own window, its circle and the app's notices: the pointer works there as always. */
-const OWN = ".boni-window, .boni-docked, .boni-circle, .toast";
 /** A press that moves this far is a drag (the rectangle); less is a click. */
 const DRAG_PX = 6;
 /** Where a thing is looked for under the rectangle, across the part of it the rectangle crosses. */
@@ -105,8 +105,11 @@ export function ScreenPointer() {
       setPointing(false);
     };
     window.addEventListener("keydown", esc, true);
+    // What he was on before writing is the screen's focus (§4.7): followed from here on.
+    const unwatch = watchFocus();
     return () => {
       window.removeEventListener("keydown", esc, true);
+      unwatch();
       // The pointer goes away with the desktop's layout (a window made narrow): pointing does not wait for it.
       setPointing(false);
     };

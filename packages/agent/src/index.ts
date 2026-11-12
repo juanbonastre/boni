@@ -31,6 +31,7 @@ export {
   createConversation,
   deleteConversation,
   listConversations,
+  type TurnChip,
   type TurnView,
   turnViews,
   updateConversation,

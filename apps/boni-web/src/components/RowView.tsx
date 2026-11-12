@@ -1,11 +1,12 @@
 import { ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HistoryMark } from "../core/blame.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { editRowValue, setPropHidden, setRowHistory, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { HistoryPanel, historyColor, whoLabel } from "./History.tsx";
 import { MailView } from "./MailView.tsx";
-import { BottomSheet } from "./MobileParts.tsx";
+import { BottomSheet, titleOf } from "./MobileParts.tsx";
 import { DocEditor } from "./PageView.tsx";
 import { RelatedSection } from "./Related.tsx";
 
@@ -133,7 +134,11 @@ export function RowView({ mobile = false }: { mobile?: boolean }) {
     <div className="models-view">
       <div className="content page-doc">
         <div className="doc row-doc">
-          <div className="row-kind">
+          {/* Its collection's line stands for the record when it is pointed at (F9): its paragraphs, for themselves. */}
+          <div
+            className="row-kind"
+            {...pointAttrs({ kind: "row", id: row.id }, chipTitle(type.name, titleOf(type, row)))}
+          >
             {type.icon && <span>{type.icon}</span>}
             {type.name}
             <button

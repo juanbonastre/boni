@@ -29,6 +29,8 @@ let base: string;
 let pub: string;
 let offBase: string;
 const plans: unknown[] = [];
+/** What the planner was asked, turn by turn. */
+const asked: unknown[] = [];
 
 async function listen(s: Server): Promise<string> {
   servers.push(s);
@@ -55,11 +57,14 @@ beforeAll(async () => {
   addUser(db, "juan", PASSWORD);
   addUser(db, "otra", PASSWORD);
   const planner = fakePlanner([]);
-  planner.complete = async () => ({
-    json: plans.shift(),
-    usage: { input: 1, output: 1 },
-    model: "fake",
-  });
+  planner.complete = async (req) => {
+    asked.push(req);
+    return {
+      json: plans.shift(),
+      usage: { input: 1, output: 1 },
+      model: "fake",
+    };
+  };
   host = new AgentHost({ dataDir: dir, providers: { planner, reader: planner } });
   const opts = {
     db,
@@ -398,6 +403,91 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
       },
     ],
   };
+
+  it("a sent message keeps its chips: the conversation shows them after a reload, and the planner never gets their words (I-33)", async () => {
+    const token = await login(base, "juan");
+    const made = (await (await post(base, token, "/api/agent/conversations")).json()) as {
+      conversation: { id: string };
+    };
+    const id = made.conversation.id;
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    host
+      .store(1)
+      .create(
+        "t_tarea",
+        { f_titulo: { value: "Regar las plantas", label: own } },
+        { actor: "user" },
+        "e_regar",
+      );
+    plans.length = 0;
+    plans.push({
+      version: 1,
+      steps: [
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("{a} · {b}"),
+            a: { ref: "$screen.pointed[0].title" },
+            b: { ref: "$screen.open.view.layout" },
+          },
+        },
+      ],
+    });
+    asked.length = 0;
+    const chips = [
+      { ref: { kind: "row", id: "e_regar" }, title: "Fila · Lo que la app pinta" },
+      { ref: { kind: "node", id: "conn:mail" }, title: "Nodo · Correo" },
+    ];
+    const r = await post(base, token, "/api/agent/turn", {
+      text: "¿qué es esto?",
+      conversation: id,
+      screen: {
+        open: { kind: "collection", id: "t_tarea" },
+        inbox: [],
+        chosen: [],
+        pointed: chips.map((c) => c.ref),
+        visible: [{ kind: "row", id: "e_regar" }],
+        focus: { kind: "row", id: "e_regar" },
+        panel: { kind: "screen" },
+      },
+      chips,
+    });
+    expect(r.status).toBe(200);
+    const said = JSON.stringify(await r.json());
+    // The row's title and the open collection's view, as the store has them.
+    expect(said).toContain('"value":"Regar las plantas"');
+    expect(said).toContain('"value":"table"');
+    const sent = JSON.stringify(asked);
+    expect(sent).not.toContain("Lo que la app pinta");
+    expect(sent).not.toContain("Nodo · Correo");
+    const shown = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      turns: { request: string; pointed: unknown[] }[];
+    };
+    expect(shown.turns[0]?.pointed).toEqual(chips);
+    // Chips that are not references are left out; the turn still runs.
+    plans.push({
+      version: 1,
+      steps: [{ id: "r", op: "reply", component: "text", data: { template: lit("ok") } }],
+    });
+    const odd = await post(base, token, "/api/agent/turn", {
+      text: "¿y esto?",
+      conversation: id,
+      chips: [
+        { ref: { kind: "otra" }, title: "x" },
+        "e_regar",
+        { ref: { kind: "row", id: "e_regar" } },
+      ],
+    });
+    expect(odd.status).toBe(200);
+    const again = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      turns: { request: string; pointed: unknown[] }[];
+    };
+    expect(again.turns.find((t) => t.request === "¿y esto?")?.pointed).toEqual([
+      { ref: { kind: "row", id: "e_regar" }, title: "" },
+    ]);
+  });
 
   it("are listed, kept turn by turn with a title, watched live, renamed and sent to the trash", async () => {
     const token = await login(base, "juan");

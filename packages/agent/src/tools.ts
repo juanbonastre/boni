@@ -1448,6 +1448,7 @@ export function ensureSystemTypes(store: UserStore): void {
     "previous",
     "replies",
     "pending",
+    "pointed",
   ]);
   const fieldOf = (k: string): FieldDef => ({
     id: `f_${k}`,
@@ -1516,5 +1517,6 @@ export function ensureSystemTypes(store: UserStore): void {
     "pending",
     "error",
     "at",
+    "pointed",
   ]);
 }
