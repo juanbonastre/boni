@@ -662,9 +662,9 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
     const wrong = (store.get(note)?.entity.body ?? "")
       .replace(
         "![[Notion/personas/attachments/Untitled 4.png]]",
-        `![Untitled 4.png](boni:${other})`,
+        () => `![Untitled 4.png](boni:${other})`,
       )
-      .replace("![[fotos/antonio.png|200]]", `![antonio.png|200](boni:${photo})`);
+      .replace("![[fotos/antonio.png|200]]", () => `![antonio.png|200](boni:${photo})`);
     store.update(note, { [BODY]: { value: wrong, label: L } }, { actor: "user", run: past });
     const plan: ReshapePlan = { repairFiles: past };
     expect(planErrors(plan)).toEqual([]);

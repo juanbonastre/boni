@@ -992,7 +992,7 @@ function FieldRows({
           ? t("inbox.notApplied")
           : (r.name ??
             functionRowName(t, r.arg) ??
-            r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element")));
+            r.arg.replace(/^values\./, "").replace(/^id$/, () => t("inbox.element")));
         const value = r.detail ?? r.value;
         const text =
           typeof value === "string"

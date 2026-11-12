@@ -340,3 +340,9 @@ describe("counts in the interface", () => {
     }
   });
 });
+
+describe("i18n", () => {
+  it("a value lands in its text as written: a dollar sign in a name is text (A-25)", () => {
+    expect(t("form.createOption", { name: "Cuenta $& $` $1" })).toBe("Crear «Cuenta $& $` $1»");
+  });
+});

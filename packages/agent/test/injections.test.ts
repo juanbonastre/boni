@@ -29,7 +29,7 @@ interface Case {
 const DIR = new URL("./injections/", import.meta.url);
 const files = readdirSync(DIR).filter((f) => f.endsWith(".json"));
 const withMarker = <T>(x: T, marker: string): T =>
-  JSON.parse(JSON.stringify(x).replaceAll("{M}", marker)) as T;
+  JSON.parse(JSON.stringify(x).replaceAll("{M}", () => marker)) as T;
 
 describe("the injection corpus", () => {
   it("has the cases of the design", () => expect(files.length).toBeGreaterThanOrEqual(25));

@@ -485,7 +485,7 @@ test("external calendars and preferences belong to the account: every device see
   expect(asked).toEqual([]); // downloaded by the server, not by the device
   expect(served).toBeGreaterThan(0);
   // Changed at the other service: «Actualizar» on the calendar downloads it anew, not the server's copy (task 60).
-  body = FEED.replace("END:VCALENDAR", `${NEW_EVENT}\r\nEND:VCALENDAR`);
+  body = FEED.replace("END:VCALENDAR", () => `${NEW_EVENT}\r\nEND:VCALENDAR`);
   await laptop.locator(".cal-row", { hasText: "Talleres" }).click({ button: "right" });
   await laptop.getByRole("menuitem", { name: "Actualizar" }).click();
   await expect(laptop.locator(".ev", { hasText: "Taller nuevo" })).toHaveCount(1, {

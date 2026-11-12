@@ -984,7 +984,9 @@ const TOOLS: Tool[] = [
         const old = str(a.old_text, "old_text", MAX_TEXT);
         const n = now.split(old).length - 1;
         if (n !== 1) throw new ToolFail(n ? `old_text appears ${n} times` : "old_text not found");
-        next = now.replace(old, String(a.new_text ?? ""));
+        // A function as the replacement: a string one gives "$`", "$&", "$'", "$$" and "$1" a meaning (A-25).
+        const neu = String(a.new_text ?? "");
+        next = now.replace(old, () => neu);
       }
       const w = writer(c);
       c.store.update(

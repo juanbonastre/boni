@@ -1,0 +1,17 @@
+// A replacement given to replace/replaceAll is a string literal or a function, never text: in text a dollar sign
+// followed by a backtick, an ampersand, a quote, another dollar or a digit is a pattern (docs/principios.md A-25).
+language js
+
+or {
+  `$s.replace($p, $r)`,
+  `$s.replaceAll($p, $r)`,
+  `$s?.replace($p, $r)`,
+  `$s?.replaceAll($p, $r)`
+} where {
+  $r <: not or {
+    JsStringLiteralExpression(),
+    JsArrowFunctionExpression(),
+    JsFunctionExpression()
+  },
+  register_diagnostic(span=$r, message="The replacement of replace/replaceAll is text, where a dollar sign is a pattern: pass a function, () => text (A-25).")
+}
