@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -105,6 +105,31 @@ test("a killed run frees the queue: nothing is left to delete", async () => {
 test("the command's exit code is the run's", async () => {
   const r = await start(main, "process.exit(3)").done;
   assert.equal(r.status, 3);
+});
+
+test("without xvfb a desktop run fails saying what to install, and opens nothing", async () => {
+  const bin = join(tmp, "bin");
+  mkdirSync(bin);
+  for (const b of ["sh", "git", "flock"])
+    symlinkSync(
+      execFileSync("sh", ["-c", `command -v ${b}`], { encoding: "utf8" }).trim(),
+      join(bin, b),
+    );
+  const child = spawn(
+    process.execPath,
+    [QUEUE, "--screen", "--", process.execPath, "-e", "console.log('ran')"],
+    {
+      cwd: main,
+      env: { ...env, PATH: bin, E2E_SCREEN: "" },
+    },
+  );
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  child.stderr.on("data", (d) => (out += d));
+  const status = await new Promise((r) => child.on("exit", r));
+  assert.equal(status, 1);
+  assert.match(out, /xvfb-run is missing.*sudo apt install xvfb.*E2E_SCREEN=real/s);
+  assert.doesNotMatch(out, /ran/);
 });
 
 test("the virtual screen's environment cannot reach Wayland: no WAYLAND_DISPLAY, an X11 session", () => {
