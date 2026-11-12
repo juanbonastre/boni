@@ -72,6 +72,8 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/agent/flows/:id/enabled": ["flows.enable"],
   "DELETE /api/agent/flows/:id": ["flows.delete"],
   "POST /api/agent/flows/:id/run": ["flows.run"],
+  // A page's button (buttons.ts, D-60): the action it names, or its flow by hand, as a turn of Juan's.
+  "POST /api/agent/press": ["entities.create", "entities.update", "entities.delete", "flows.run"],
   // Boni Calendar: a record moved, made or deleted in the grid; a calendar of the list (calendarActions.ts).
   "POST /api/apply": ["entities.create", "entities.update", "entities.delete"],
   "POST /api/collections/add": ["calendars.add"],

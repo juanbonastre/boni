@@ -2813,6 +2813,16 @@ export class AgentApi {
     id: string,
     body: { plan: FlowPlan; trigger: unknown; mail?: string; inputs?: Record<string, string> },
   ) => parseFlowTest(await this.call("POST", `flows/${encodeURIComponent(id)}/test`, body));
+  /** A page's button (D-60): the server runs what the saved page's button names, with what it passes. */
+  press = async (page: string, block: string, conversation?: string, live?: string) =>
+    parseTurn(
+      await this.call("POST", "press", {
+        page,
+        block,
+        ...(conversation ? { conversation } : {}),
+        ...(live ? { live } : {}),
+      }),
+    );
   /** A flow by hand, as a turn of the conversation (its replies, questions and confirmations there). */
   runFlow = async (
     id: string,

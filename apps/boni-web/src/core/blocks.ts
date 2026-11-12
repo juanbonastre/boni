@@ -1,5 +1,28 @@
-import type { BlockProblem, CatalogueControl, CatalogueData, PageBlock } from "@boni/views";
+import type {
+  BlockProblem,
+  CatalogueControl,
+  CatalogueData,
+  CatalogueFlow,
+  PageBlock,
+} from "@boni/views";
 import type { ChartData } from "./contract.ts";
+
+/** The flows a button may start (D-60): the ones run by hand with a form, each with its form's names. */
+export function buttonFlows(
+  flows: readonly { id: string; name: string; trigger: Record<string, unknown> | null }[],
+): CatalogueFlow[] {
+  return flows
+    .filter((f) => f.trigger?.manual === true)
+    .map((f) => ({
+      value: f.id,
+      label: f.name,
+      inputs: (Array.isArray(f.trigger?.inputs) ? f.trigger.inputs : []).flatMap((i: unknown) =>
+        i && typeof i === "object" && typeof (i as { name?: unknown }).name === "string"
+          ? [(i as { name: string }).name]
+          : [],
+      ),
+    }));
+}
 
 /**
  * A page's data blocks (the block catalogue's number, bar list and chart) as the server computes them
@@ -47,6 +70,7 @@ export function catalogueOf(
           name: string;
           type: string;
           options?: { id: string; name: string }[];
+          relation?: { target: string };
         }[];
         roles?: Readonly<Record<string, string>>;
       }[]
@@ -54,6 +78,8 @@ export function catalogueOf(
   pages: readonly { id: string; title: string }[] | null = [],
   /** The page's controls: what its blocks may name (D-59). */
   controls: readonly CatalogueControl[] = [],
+  /** The flows a button may start (D-60): those run by hand, with their form's names. */
+  flows: readonly CatalogueFlow[] | null = null,
 ): CatalogueData {
   // The roles the catalogue uses (D-20), when their fields are among the shown.
   const rolesOf = (t: {
@@ -77,6 +103,7 @@ export function catalogueOf(
   };
   return {
     pages: (pages ?? []).map((p) => ({ value: p.id, label: p.title })),
+    ...(flows ? { flows: [...flows] } : {}),
     ...(controls.length
       ? {
           controls: controls.map(({ id, name, kind, collection, field }) => ({
@@ -97,6 +124,7 @@ export function catalogueOf(
         name: f.name,
         type: f.type as FieldType,
         ...(f.options ? { options: f.options.map((o) => ({ id: o.id, name: o.name })) } : {}),
+        ...(f.relation ? { target: f.relation.target } : {}),
       })),
     })),
   };

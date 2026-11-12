@@ -185,6 +185,12 @@ sus argumentos a su vez con el selector. Nunca texto libre que se evalúe.
 Un flujo nunca se dispara a sí mismo ni crea trabajos (regla dura de §7.12), y una ejecución tiene los límites de
 P12 (pasos, llamadas, coste).
 
+**Un botón en una página (F11, D-60).** El disparador «Botón» es `manual`: un bloque «Botón» con «Hace: Flujo» nombra un
+flujo con disparador a mano y, por cada entrada de su formulario, un control de la página o un valor fijo guardado con
+ella. Pulsarlo es «Ejecutar» con el formulario relleno: el servidor lee el botón y lo que pasa de la página guardada
+(`apps/server/src/buttons.ts`), nunca de lo que diga la app, y la ejecución es una más (Registro, el mapa, su Deshacer).
+Lo que pasa lleva la etiqueta de quien escribió la página por última vez (`sistema.md` §4.6, punto 5).
+
 **Cómo se programa (F4).** `{ schedule: { every: "day" | "week" | "hour", at: "HH:MM", day: 0-6 } }` en la zona del
 servidor (`BONI_TZ`): cada día a una hora, un día de la semana a una hora, o cada hora en unos minutos. Una vez por
 minuto `apps/server/src/flowScheduler.ts` mira los flujos encendidos de cada cuenta y ejecuta el que tiene su hora

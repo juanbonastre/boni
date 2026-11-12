@@ -403,6 +403,17 @@ contraseña ni un código aquí» under a question.
   at once; its notice says ««Café» apuntado» with «Deshacer», which takes it out again (the same device, within 10
   minutes); without a connection it waits in the queue for its Undo as before. Buttons one after another share a row,
   each only as wide as it needs. Opening a form puts the caret in the first field still to fill (the amount).
+  «Hace» (task 87, F11, D-60; `components/PageView.tsx` `ActionButton`, `RunButton`, `components/BlockPanel.tsx`
+  `ArgsControl`; `docs/sistema.md` §4.6 point 5) picks what it does: «Formulario» (all of the above, the default, so
+  the first pages' buttons stay as they were), «Acción» («Acción»: Crear / Cambiar / Borrar; «Colección»; «Registro»,
+  an option control of the page over a relation to that collection; «Con valores»), «Flujo» («Flujo», those run by
+  hand; «Con valores», one row per input of its form) or «Página» («Lleva a», «Con valores» as a link's). Each row of
+  «Con valores» is a field or an input with a select: «—», the page's controls by name, or «Valor», which shows a box
+  for a value saved with the page. The panel shows only what fits what the button does. Pressed, an «Acción» or a
+  «Flujo» button is dimmed with a small spinner in its place until the server answers (I-15), and while Boni is busy
+  with another turn it is disabled («Boni está con otra cosa»); a flow's button has a small play icon, a page's an
+  arrow. Done at once, the notice says ««Café» hecho» with «Deshacer»; a confirmation (deleting), a question, a reply
+  or an error opens Boni's floating window on it, a new conversation named after the button.
 - **A page's values** (task 87, F11, D-59; `components/ControlView.tsx`, `components/DataBlockView.tsx`,
   `components/BoniBlocks.tsx` `LinkBlock`, `components/BlockPanel.tsx` `PassControl`, `components/DatabaseBlock.tsx`
   `PageControls`; `docs/sistema.md` §4.6): a «Control» block (in «Cifras y gráficas» of «/» and «+») is one value of

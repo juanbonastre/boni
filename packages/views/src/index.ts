@@ -6,6 +6,7 @@ export {
   catalogueData,
   computeBlock,
 } from "./blockData.ts";
+export * from "./buttons.ts";
 export * from "./catalogue.ts";
 export * from "./chart.ts";
 export * from "./chartStyle.ts";

@@ -1,3 +1,4 @@
+import type { ButtonAction, ButtonArgs, ButtonDoes } from "./buttons.ts";
 import { catalogueErrors, type Place } from "./catalogue.ts";
 import { filterErrors } from "./filter.ts";
 import { type ControlBlock, valueRefErrors } from "./pageValues.ts";
@@ -76,13 +77,30 @@ export type PageBlock = (
   | {
       id: string;
       type: "action";
-      screen: string;
       label: string;
+      /**
+       * What it does when pressed (buttons.ts, docs/sistema.md §4.6, D-60): opens a screen's form (the first buttons,
+       * and what one without it does), runs an action of the list, starts a flow, or opens a page with values.
+       */
+      does?: ButtonDoes;
+      /** «Formulario»: the screen it opens. */
+      screen?: string;
       /** A saved shortcut the button runs (the first pages); new buttons keep their own data instead. */
       shortcut?: string;
       mode?: "empty" | "open" | "save";
       values?: Record<string, string | number | boolean | string[]>;
       color?: string;
+      /** «Acción»: the action of the list, the collection it works on, the record (a control's) and the values. */
+      action?: ButtonAction;
+      collection?: string;
+      record?: string;
+      set?: ButtonArgs;
+      /** «Flujo»: the flow it starts and what its form gets. */
+      flow?: string;
+      inputs?: ButtonArgs;
+      /** «Página»: the page it opens and the values it carries there, as a link's. */
+      to?: string;
+      pass?: Record<string, string | number>;
     }
   | DataBlock
   /** One value of the page, shown as a control (pageValues.ts, docs/sistema.md §4.6). */
@@ -512,8 +530,14 @@ export function pageErrors(spec: unknown): string[] {
             !ID.test(b.shortcut)
           )
             errors.push(`${w}: an action names a screen and has a label`);
-        } else if (catalogueErrors(b).length)
-          errors.push(`${w}: an action names a screen and has a label`);
+        } else if (b.does === undefined || b.does === "screen") {
+          if (catalogueErrors(b).length)
+            errors.push(`${w}: an action names a screen and has a label`);
+        } else
+          for (const p of catalogueErrors(b))
+            errors.push(
+              `${w}: ${p.key ? `${p.key} ` : ""}${p.code === "missing" ? "is missing" : p.code === "not-allowed" ? "is not allowed here" : "is not valid"}`,
+            );
         break;
       case "number":
       case "bars":

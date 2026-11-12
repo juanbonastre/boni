@@ -171,6 +171,21 @@ export function valueRefErrors(blocks: readonly PageBlock[]): string[] {
         const r = refOf(v);
         if (r && !controls.has(r)) errors.push(`${w}: pass names no control of the page`);
       }
+    if (b.type === "action") {
+      // A button's record is what an option control holds; its other values may name any control (buttons.ts).
+      const rec = refOf(b.record);
+      if (b.record !== undefined && (!rec || controls.get(rec)?.kind !== "option"))
+        errors.push(`${w}: record names no option control of the page`);
+      for (const [key, args] of [
+        ["set", b.set],
+        ["inputs", b.inputs],
+        ["pass", b.pass],
+      ] as const)
+        for (const v of Object.values(args ?? {})) {
+          const r = refOf(v);
+          if (r && !controls.has(r)) errors.push(`${w}: ${key} names no control of the page`);
+        }
+    }
   });
   return errors;
 }

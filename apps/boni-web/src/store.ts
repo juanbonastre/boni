@@ -295,6 +295,8 @@ interface State {
   /** The open conversation's turns (docs/conversacion.md 3.1). */
   chat: ChatEntry[];
   chatBusy: boolean;
+  /** The page's button being pressed (`page:block`), shown waiting in place until its turn answers (D-60, I-15). */
+  pressing: string | null;
   /** Juan's conversations, the latest first; null until they come. */
   conversations: ConversationSummary[] | null;
   /** The conversation open in the chat; null: a new one, made with its first message. */
@@ -492,6 +494,7 @@ export const useStore = create<State>(() => ({
   toast: null,
   chat: [],
   chatBusy: false,
+  pressing: null,
   conversations: null,
   conversationId: null,
   chatDrafts: {},
@@ -1981,6 +1984,55 @@ export async function runFlowInChat(id: string, name: string, inputs: Record<str
     panel: null,
   });
   await agentCall(entry, (live) => agent.runFlow(id, inputs, conversation, live));
+}
+/**
+ * A page's button that runs an action or a flow (docs/sistema.md §4.6, D-60): the page is saved first (the server
+ * reads the button and what it passes from the saved page), then its turn runs in a new conversation, as a flow run
+ * by hand does. An action done at once says so where Juan is, with «Deshacer»; a turn that waits on him (a
+ * confirmation, a question), answers or fails opens Boni's window on it.
+ */
+export async function pressButton(page: string, block: string, name: string) {
+  if (get().chatBusy || get().pressing) return;
+  set({ pressing: `${page}:${block}` });
+  try {
+    await pressed(page, block, name);
+  } finally {
+    set({ pressing: null });
+  }
+}
+async function pressed(page: string, block: string, name: string) {
+  const t = get().t;
+  await flushPage();
+  const request = `«${name}»`;
+  const entry = newId();
+  let conversation: string | undefined;
+  try {
+    const made = await agent.newConversation();
+    conversation = made.id;
+    set((s) => ({ conversations: [{ ...made, title: request }, ...(s.conversations ?? [])] }));
+  } catch {
+    conversation = undefined;
+  }
+  set({
+    conversationId: conversation ?? null,
+    chat: [{ id: entry, request, result: null, error: null }],
+  });
+  await agentCall(entry, (live) => agent.press(page, block, conversation, live));
+  const done = get().chat.find((e) => e.id === entry);
+  const r = done?.result;
+  if (r?.changed) {
+    charts.invalidate();
+    refresh();
+  }
+  if (r && !done?.error && r.status === "done" && !r.pending && !r.replies.length) {
+    if (r.changed)
+      toast(t("button.done", { label: name }), {
+        label: t("toast.undo"),
+        run: () => void undoRun(r.run),
+      });
+    return;
+  }
+  openBoniWindow("float");
 }
 /** «Parar» (docs/conversacion.md 3.5): the turn stops before its next step, or where it waits. */
 export function stopTurn() {
