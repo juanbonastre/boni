@@ -2,6 +2,7 @@ import {
   type ControlBlock,
   type DatabaseFilter,
   emptyPage,
+  type FilterItem,
   filterErrors,
   isPageTemplate,
   type PageSpec,
@@ -2166,6 +2167,15 @@ function parsePage(b: unknown): Page | null {
 }
 
 /** Rows as a collection's table lists them: each checked, the titles relations point to, the system columns. */
+/** A collection's proposals, as ghost rows (its `ghosts`). */
+function ghostList(b: unknown): DataRow[] {
+  if (!isObj(b) || !Array.isArray(b.ghosts)) return [];
+  return b.ghosts.flatMap((g): DataRow[] => {
+    const r = parseRow(g);
+    return r && isObj(g) && typeof g.proposal === "string" ? [{ ...r, ghost: g.proposal }] : [];
+  });
+}
+
 function rowList(b: unknown) {
   const rows =
     isObj(b) && Array.isArray(b.rows) ? b.rows.map(parseRow).filter((x): x is DataRow => !!x) : [];
@@ -3185,6 +3195,33 @@ export class AgentApi {
     if (isObj(b) && Array.isArray(b.problems)) return { problems: b.problems };
     return { ...rowList(b), total: isObj(b) && typeof b.total === "number" ? b.total : 0 };
   };
+  /**
+   * A page's table's rows, picked by the server with its rules and the page's values (docs/sistema.md §4.6, point 3;
+   * task 102): the latest first, `total` how many match, its collection's proposals as ghost rows.
+   */
+  tableRows = async (
+    block: { id: string; source: string; filter: readonly FilterItem[] },
+    controls: readonly ControlBlock[] = [],
+  ) => {
+    const b = await this.call(
+      "POST",
+      "",
+      {
+        block: {
+          id: block.id,
+          type: "database",
+          source: block.source,
+          view: { filter: block.filter },
+        },
+        ...(controls.length ? { controls: controls.map(bare) } : {}),
+      },
+      "api/data/blocks/rows",
+    );
+    const { rows, titles, columns } = rowList(b);
+    const ghosts = ghostList(b);
+    const total = isObj(b) && typeof b.total === "number" ? b.total : rows.length;
+    return { rows, titles, ghosts, columns, total };
+  };
   /** The tree (docs/clases.md §2.7): every collection with its mother, and the records with a note it shows. */
   tree = async (): Promise<Tree> => {
     const b = await this.call("GET", "", undefined, "api/data/tree");
@@ -3375,15 +3412,7 @@ export class AgentApi {
       "api/data/types",
     );
     const { rows, titles, columns } = rowList(b);
-    const ghosts =
-      isObj(b) && Array.isArray(b.ghosts)
-        ? b.ghosts.flatMap((g): DataRow[] => {
-            const r = parseRow(g);
-            return r && isObj(g) && typeof g.proposal === "string"
-              ? [{ ...r, ghost: g.proposal }]
-              : [];
-          })
-        : [];
+    const ghosts = ghostList(b);
     return { rows, titles, ghosts, columns };
   };
   createRow = async (type: string, values: Record<string, DataValue>) =>

@@ -12,7 +12,7 @@ export * from "./chart.ts";
 export * from "./chartStyle.ts";
 export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
-export { filterErrors, matchesFilters } from "./filter.ts";
+export { filterErrors, liveRules, matchesFilters } from "./filter.ts";
 export {
   blocksToMarkdown,
   findPart,
@@ -58,6 +58,7 @@ export {
 } from "./page.ts";
 export * from "./pageValues.ts";
 export { pyRound, pySum } from "./pyround.ts";
+export * from "./tableRows.ts";
 export {
   dataLevel,
   dataRowFixed,

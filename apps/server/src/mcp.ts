@@ -435,7 +435,7 @@ const ACTION_TOOLS: readonly {
     name: "pages_set_value",
     action: "pages.set_value",
     description:
-      "Changes what one of a page's controls holds (control: its block id or its name; value: an option's name, a record's title for a relation, YYYY-MM, a number or a text; null: none). The page's numbers, charts and tables follow it.",
+      "Changes what one of a page's controls holds (control: its block id or its name; value: an option's name, a record's title for a relation, YYYY-MM, YYYY-MM-DD/YYYY-MM-DD for a period, a number or a text; null: none). The page's numbers, charts and tables follow it.",
     required: ["page", "control", "value"],
     nullable: ["value"],
   },

@@ -1,5 +1,6 @@
 import {
   blocksToMarkdown,
+  type ControlBlock,
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
@@ -11,6 +12,7 @@ import {
   resolveTemplateLinks,
   type SavedView,
   SYS,
+  tableRules,
   templatePage,
   withPassed,
 } from "@boni/views";
@@ -373,6 +375,11 @@ interface State {
       columns?: Record<string, SystemColumns>;
     }
   >;
+  /**
+   * A page's tables (by «page/block»), each with the rows the server picked with its rules and the page's values
+   * (docs/sistema.md §4.6, point 3; task 102): what it asked (`ask`), and while it asks again, `loading`.
+   */
+  tables: Record<string, PageTable>;
   /** The record opened from another app (its id), for the peek's "Abrir en Boni". */
   openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
@@ -528,6 +535,7 @@ export const useStore = create<State>(() => ({
   recent: [],
   fold: { sections: [], branches: [] },
   rows: {},
+  tables: {},
   activeViews: readActiveViews(),
   openedNote: null,
   row: null,
@@ -3555,11 +3563,7 @@ export async function moveRowTo(from: string, id: string, to: string) {
   } catch {
     return toast(t("tree.failed"));
   }
-  const now = get().rows[from];
-  if (now)
-    set({
-      rows: { ...get().rows, [from]: { ...now, rows: now.rows.filter((r) => r.id !== id) } },
-    });
+  dropRows(from, [id]);
   void loadTree();
   toast(t("db.movedTo", { name }), {
     label: t("toast.undo"),
@@ -4120,20 +4124,121 @@ export async function loadRows(type: string) {
   } catch {
     toast(get().t("db.loadError"));
   }
+  // A page's tables of the collection are asked again too (a proposal accepted, an Undo, a column copied).
+  reloadTables(type);
 }
 
-const putRow = (type: string, row: DataRow) => {
-  const cur = get().rows[type];
-  if (!cur) return;
-  const has = cur.rows.some((r) => r.id === row.id);
+/** A page's table: its rows as the server picked them, and what it asked to get them (task 102). */
+export interface PageTable {
+  type: string;
+  ask: string;
+  filter: readonly FilterItem[];
+  controls: readonly ControlBlock[];
+  rows: DataRow[];
+  titles: Record<string, string>;
+  ghosts: DataRow[];
+  columns: Record<string, SystemColumns>;
+  total: number;
+  /** Asking the server now; `got`, it has answered once (its rows are the table's, not «Cargando…»). */
+  loading: boolean;
+  got: boolean;
+}
+
+/** What a page's table asks: its collection and its rules as they filter now (the page's values in them). */
+export const tableAsk = (
+  source: string,
+  filter: readonly FilterItem[] | undefined,
+  controls: readonly ControlBlock[],
+) => JSON.stringify([source, tableRules(filter, controls)]);
+
+const putTable = (key: string, next: PageTable | ((t: PageTable) => PageTable)) => {
+  const cur = get().tables[key];
+  const t = typeof next === "function" ? (cur ? next(cur) : null) : next;
+  if (t) set({ tables: { ...get().tables, [key]: t } });
+};
+
+/**
+ * A page's table's rows, asked to the server with its rules and what the page's controls hold (it filters every
+ * record of the collection, never the app: A-15). Asked again only when what it asks changes; while it does, the
+ * rows it had stay, said as waiting (I-15). An answer to an older ask is dropped.
+ */
+export async function loadTableRows(
+  key: string,
+  source: string,
+  filter: readonly FilterItem[] | undefined,
+  controls: readonly ControlBlock[],
+  again = false,
+) {
+  const ask = tableAsk(source, filter, controls);
+  const cur = get().tables[key];
+  if (cur?.ask === ask && !again) return;
+  putTable(key, {
+    ...(cur ?? { rows: [], titles: {}, ghosts: [], columns: {}, total: 0, got: false }),
+    type: source,
+    ask,
+    filter: filter ?? [],
+    controls,
+    loading: true,
+  } as PageTable);
+  try {
+    const r = await agent.tableRows({ id: key, source, filter: filter ?? [] }, controls);
+    putTable(key, (t) => (t.ask === ask ? { ...t, ...r, loading: false, got: true } : t));
+  } catch {
+    putTable(key, (t) => (t.ask === ask ? { ...t, loading: false } : t));
+    toast(get().t("db.loadError"));
+  }
+}
+
+/** Every page's table of a collection asked again, as it asked last. */
+function reloadTables(type: string) {
+  for (const [key, t] of Object.entries(get().tables))
+    if (t.type === type) void loadTableRows(key, t.type, t.filter, t.controls, true);
+}
+
+/** A row of a collection, from its loaded rows or a page's table that has it. */
+const rowOf = (type: string, id: string): DataRow | undefined =>
+  get().rows[type]?.rows.find((r) => r.id === id) ??
+  Object.values(get().tables)
+    .find((t) => t.type === type && t.rows.some((r) => r.id === id))
+    ?.rows.find((r) => r.id === id);
+
+/** Rows gone from a collection: out of its loaded rows and of every page's table of it. */
+const dropRows = (type: string, gone: readonly string[]) => {
+  const now = get().rows[type];
+  const tables = Object.fromEntries(
+    Object.entries(get().tables).map(([k, t]) =>
+      t.type === type ? [k, { ...t, rows: t.rows.filter((r) => !gone.includes(r.id)) }] : [k, t],
+    ),
+  );
   set({
-    rows: {
-      ...get().rows,
-      [type]: {
-        ...cur,
-        rows: has ? cur.rows.map((r) => (r.id === row.id ? row : r)) : [row, ...cur.rows],
-      },
-    },
+    tables,
+    ...(now
+      ? {
+          rows: {
+            ...get().rows,
+            [type]: { ...now, rows: now.rows.filter((r) => !gone.includes(r.id)) },
+          },
+        }
+      : {}),
+  });
+};
+
+const putRow = (type: string, row: DataRow) => {
+  // A page's table of the collection takes it too: a new row first; the table's rules, read in the app over what
+  // it holds, leave out one that does not match (as before, with the rows of the whole collection).
+  const put = (rows: DataRow[]) =>
+    rows.some((r) => r.id === row.id)
+      ? rows.map((r) => (r.id === row.id ? row : r))
+      : [row, ...rows];
+  const tables = Object.fromEntries(
+    Object.entries(get().tables).map(([k, t]) =>
+      t.type === type ? [k, { ...t, rows: put(t.rows) }] : [k, t],
+    ),
+  );
+  const cur = get().rows[type];
+  set({
+    tables,
+    ...(cur ? { rows: { ...get().rows, [type]: { ...cur, rows: put(cur.rows) } } } : {}),
   });
 };
 
@@ -4176,7 +4281,7 @@ const myDataError = (e: unknown) => {
 export async function editCell(type: string, id: string, field: string, value: DataValue) {
   const def = get().dataTypes?.find((x) => x.id === type);
   if (readOnly(type) || (def && !fieldEditable(def, field))) return;
-  const before = get().rows[type]?.rows.find((r) => r.id === id);
+  const before = rowOf(type, id);
   if (!before) return;
   putRow(type, { ...before, values: { ...before.values, [field]: value } });
   try {
@@ -4253,14 +4358,7 @@ export async function deleteRows(type: string, ids: string[]) {
     for (const id of gone) forgetRecent(dataRowTarget(id) ?? id);
     void afterMyData();
   }
-  const now = get().rows[type];
-  if (now)
-    set({
-      rows: {
-        ...get().rows,
-        [type]: { ...now, rows: now.rows.filter((r) => !gone.includes(r.id)) },
-      },
-    });
+  dropRows(type, gone);
   void loadTree();
   toast(gone.length === 1 ? t("db.deleted") : t("db.deletedN", { n: gone.length }), {
     label: t("toast.undo"),
@@ -4419,7 +4517,7 @@ export function setPropHidden(type: string, field: string, hidden: boolean) {
 export async function editRowValue(type: string, id: string, field: string, value: DataValue) {
   const row = get().row;
   if (row?.id === id) set({ row: { ...row, values: { ...row.values, [field]: value } } });
-  if (get().rows[type]) await editCell(type, id, field, value);
+  if (rowOf(type, id)) await editCell(type, id, field, value);
   else {
     try {
       await agent.updateRow(id, { [field]: value });

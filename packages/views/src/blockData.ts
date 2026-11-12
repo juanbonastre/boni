@@ -13,9 +13,10 @@ import {
   type Period,
   SpecError,
 } from "./chart.ts";
+import { spanOf } from "./dates.ts";
 import { entityMonths, entityProfile } from "./entities.ts";
 import type { DataBlock } from "./page.ts";
-import { type ControlBlock, heldValue, monthRange, refOf } from "./pageValues.ts";
+import { type ControlBlock, heldValue, refOf } from "./pageValues.ts";
 
 /**
  * A data block of a page (a number, a bar list or a chart; catalogue.ts) computed from one of the user's
@@ -33,7 +34,7 @@ const GRANULARITY = { "@day": "day", "@week": "week", "@month": "month" } as con
 
 /**
  * The engine's chart for a data block, with the page's values where it names its controls (pageValues.ts): a
- * filter by what an option control holds, a period of a month control's month; an empty control, no filter and
+ * filter by what an option control holds, a period of a month or a period control's days; an empty control, no filter and
  * every date.
  */
 export function blockChartSpec(b: DataBlock, controls: readonly ControlBlock[] = []): ChartSpec {
@@ -42,10 +43,11 @@ export function blockChartSpec(b: DataBlock, controls: readonly ControlBlock[] =
     return ref ? heldValue(controls.find((c) => c.id === ref)) : v;
   };
   const filterValue = held(b.filterValue);
-  const month = refOf(b.period) ? held(b.period) : undefined;
+  // A month or a period control's days; an empty one, every date.
+  const span = refOf(b.period) ? spanOf(held(b.period)) : null;
   const period: Period = refOf(b.period)
-    ? typeof month === "string"
-      ? { kind: "range", ...monthRange(month) }
+    ? span
+      ? { kind: "range", ...span }
       : PERIOD.all
     : PERIOD[(b.period ?? "all") as keyof typeof PERIOD];
   const measure =

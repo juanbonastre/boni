@@ -59,3 +59,26 @@ export function monthsBetween(start: Day, end: Day): [number, number][] {
   }
   return out;
 }
+
+const DAY = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/** Whether a text is a civil day that exists ("2026-02-30" is not one). */
+export function isDay(d: unknown): d is Day {
+  const m = typeof d === "string" ? DAY.exec(d) : null;
+  return !!m && Number(m[3]) <= daysInMonth(Number(m[1]), Number(m[2]));
+}
+
+/**
+ * The days a month ("YYYY-MM") or a period ("YYYY-MM-DD/YYYY-MM-DD", ISO 8601's interval, its first day not after
+ * its last) spans, both included; null for anything else. A page's month and period values (pageValues.ts) and the
+ * table rules that read them (filter.ts) take their days from here.
+ */
+export function spanOf(v: unknown): { start: Day; end: Day } | null {
+  if (typeof v !== "string") return null;
+  const m = MONTH.exec(v);
+  if (m) return { start: `${v}-01`, end: lastDay(Number(m[1]), Number(m[2])) };
+  const [start, end, rest] = v.split("/");
+  if (rest !== undefined || !isDay(start) || !isDay(end) || start > end) return null;
+  return { start, end };
+}

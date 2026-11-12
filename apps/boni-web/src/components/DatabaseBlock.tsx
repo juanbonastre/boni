@@ -7,8 +7,10 @@ import {
   type FilterItem,
   flowRowTarget,
   isFilterGroup,
+  liveRules,
   matchesFilters,
   rulesWithValues,
+  SPAN_KINDS,
   SYS,
   SYSTEM_COLUMNS,
   type SystemColumn,
@@ -67,6 +69,7 @@ import {
   editCell,
   loadDataTypes,
   loadRows,
+  loadTableRows,
   moveRowTo,
   openFile,
   openProposal,
@@ -78,10 +81,12 @@ import {
   showFlow,
   showMapOf,
   showOrigin,
+  tableAsk,
   toast,
   useStore,
 } from "../store.ts";
 import { AddColumn, ColumnMenu, columnsEditable } from "./ColumnMenu.tsx";
+import { useRecordChoices } from "./ControlView.tsx";
 import { bytes, whoName } from "./Dash.tsx";
 import {
   type BarFocus,
@@ -149,12 +154,19 @@ export function DatabaseBlock({
   named = true,
   views,
   controls,
+  table,
 }: {
   source: string;
   view: DatabaseView;
   onView: (v: DatabaseView) => void;
   /** The page's controls, when it is a page's table: its rules may read them. */
   controls?: readonly ControlBlock[];
+  /**
+   * A page's table («page/block»): its rows are the server's, picked with its rules and the page's values, never the
+   * whole collection read to filter it here (docs/sistema.md §4.6, point 3; A-15). Boni's own collections, small,
+   * are read whole as before.
+   */
+  table?: string;
   /** Its name and protection in its head (not on the collection's own page, whose title has them). */
   named?: boolean;
   /** Its saved views as tabs (a collection's own page and «Mis datos»; task 69). */
@@ -162,7 +174,12 @@ export function DatabaseBlock({
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
-  const data = useStore((s) => s.rows[source]);
+  const type = types?.find((x) => x.id === source);
+  const server = !!table && !!type && !type.system;
+  const asked = useStore((s) => (server && table ? s.tables[table] : undefined));
+  const whole = useStore((s) => s.rows[source]);
+  // Until the server's first answer, «Cargando…», as for a collection read whole.
+  const data = server ? (asked?.got ? asked : undefined) : whole;
   const allRows = useStore((s) => s.rows);
   // As Notion: the first rows, more on demand (a collection can hold thousands).
   const [limit, setLimit] = useState(50);
@@ -183,12 +200,19 @@ export function DatabaseBlock({
   const boni = useStore((s) => (s.boniFilter?.type === source ? s.boniFilter : null));
   useEffect(() => {
     if (!types) void loadDataTypes();
-    void loadRows(source);
+    if (!table) void loadRows(source);
   }, [source]);
+  // A page's table waits for the collections to know whether its rows are the server's; asked again when what
+  // its rules ask changes (a control set, a rule edited).
+  const ask = server ? tableAsk(source, view.filter, controls ?? NO_CONTROLS) : "";
+  useEffect(() => {
+    if (!table || !types) return;
+    if (server) void loadTableRows(table, source, view.filter, controls ?? NO_CONTROLS);
+    else void loadRows(source);
+  }, [table, source, !!types, server, ask]);
   useEffect(() => {
     for (const a of also) if (!allRows[a]) void loadRows(a);
   }, [also.join(",")]);
-  const type = types?.find((x) => x.id === source);
   if (types && !type) return <p className="doc-gone">{t("db.gone")}</p>;
   const q = (query ?? "").trim().toLocaleLowerCase();
   const found = (data?.rows ?? []).filter(
@@ -235,7 +259,12 @@ export function DatabaseBlock({
   };
   return (
     <PageControls.Provider value={controls ?? NO_CONTROLS}>
-      <section className="db" aria-label={type?.name ?? t("db.title")}>
+      <section
+        className="db"
+        aria-label={type?.name ?? t("db.title")}
+        // The rows it had stay while the server picks the new ones (I-15).
+        aria-busy={server && asked?.loading ? true : undefined}
+      >
         <header
           className="db-head"
           // Its options stay with rows chosen; a click on one of them lets go of them (Juan, 2026-10-30).
@@ -462,13 +491,7 @@ export function filterRows(
   rules: FilterItem[] | undefined,
 ): DataRow[] {
   // A rule still waiting for its value filters nothing, as in Notion (one just added from the bar), in a group too.
-  const waiting = (r: DatabaseFilter) =>
-    !NO_VALUE.has(r.op) && (r.value === undefined || r.value === "");
-  const live = (rules ?? []).flatMap((r): FilterItem[] => {
-    if (!isFilterGroup(r)) return waiting(r) ? [] : [r];
-    const kept = r.rules.filter((x) => !waiting(x));
-    return kept.length ? [{ ...r, rules: kept }] : [];
-  });
+  const live = liveRules(rules ?? []);
   if (!type || !live.length) return rows;
   const today = ymd(new Date());
   const typeOf = (id: string) => type.fields.find((x) => x.id === id)?.type;
@@ -492,6 +515,8 @@ export function opsFor(f: DataField): DatabaseFilter["op"][] {
     case "datetime":
       return ["is", "before", "after", "empty", "not_empty"];
     case "relation":
+      // The record it points to (one of those, for a list): a fixed one, or what a page's control holds (task 102).
+      return ["is", "is_not", "empty", "not_empty"];
     case "file":
     case "dates":
       return ["empty", "not_empty"];
@@ -500,6 +525,42 @@ export function opsFor(f: DataField): DatabaseFilter["op"][] {
   }
 }
 const NO_VALUE = new Set(["empty", "not_empty", "checked", "unchecked"]);
+
+/**
+ * Whether a page's control can be a rule's value on a field (its «Valor de»): a relation, an option control over a
+ * relation to the same collection; a select, an option control of that field; a date, a month or a period (its
+ * days); a number, a number control; any other, a text control.
+ */
+export function controlFits(
+  c: ControlBlock,
+  f: DataField,
+  type: DataType,
+  types: readonly DataType[] | null,
+): boolean {
+  switch (f.type) {
+    case "relation": {
+      const of = types?.find((d) => d.id === c.collection)?.fields.find((x) => x.id === c.field);
+      return (
+        c.kind === "option" &&
+        of?.type === "relation" &&
+        !!f.relation &&
+        of.relation?.target === f.relation.target
+      );
+    }
+    case "select":
+    case "multiselect":
+      return c.kind === "option" && c.collection === type.id && c.field === f.id;
+    case "date":
+    case "datetime":
+      return SPAN_KINDS.includes(c.kind);
+    case "number":
+    case "money":
+    case "duration":
+      return c.kind === "number";
+    default:
+      return c.kind === "text";
+  }
+}
 
 /** Notion's filter rules, edited: a field, an operator that fits it, a value; add and remove. */
 export function FilterEditor({
@@ -518,6 +579,7 @@ export function FilterEditor({
   lead?: (i: number) => ReactNode;
 }) {
   const t = useStore((s) => s.t);
+  const types = useStore((s) => s.dataTypes);
   const controls = useContext(PageControls);
   const put = onChange;
   const fields = type.fields;
@@ -529,6 +591,10 @@ export function FilterEditor({
         const ops = f ? opsFor(f) : [];
         const set = (patch: Partial<DatabaseFilter>) =>
           put(rules.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        // The page's controls that can be its value; the one it reads stays offered even if it no longer fits.
+        const fit = f
+          ? controls.filter((c) => c.id === r.from || controlFits(c, f, type, types))
+          : [];
         return (
           <div key={`${r.field}-${i}`} className="db-filter-row">
             {lead?.(i)}
@@ -559,7 +625,7 @@ export function FilterEditor({
                 </option>
               ))}
             </select>
-            {!NO_VALUE.has(r.op) && f && controls.length > 0 && (
+            {!NO_VALUE.has(r.op) && f && fit.length > 0 && (
               <select
                 className="input"
                 aria-label={t("db.filterFrom")}
@@ -571,7 +637,7 @@ export function FilterEditor({
                 }}
               >
                 <option value="">{t("db.filterOwn")}</option>
-                {controls.map((c) => (
+                {fit.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
@@ -732,6 +798,14 @@ export function itemText(
     : filterText(type, x, t, controls);
 }
 
+/** A record's title, from its collection's rows when the app has them; «un registro» when it does not. */
+function recordTitle(target: string, id: string, t: T): string {
+  const s = useStore.getState();
+  const tf = s.dataTypes?.find((d) => d.id === target)?.titleField ?? "";
+  const v = s.rows[target]?.rows.find((r) => r.id === id)?.values[tf];
+  return typeof v === "string" && v ? v : t("db.aRecord");
+}
+
 /** A filter rule in words: "Categoría es Salud", "Fecha antes de hoy". */
 export function filterText(
   type: DataType,
@@ -750,7 +824,9 @@ export function filterText(
       ? ""
       : r.value === "today"
         ? t("db.today")
-        : (f.options?.find((o) => o.id === r.value)?.name ?? String(r.value));
+        : f.type === "relation"
+          ? recordTitle(f.relation?.target ?? "", String(r.value), t)
+          : (f.options?.find((o) => o.id === r.value)?.name ?? String(r.value));
   return [f.name, t(`db.ops.${r.op}`), value].filter(Boolean).join(" ");
 }
 
@@ -764,6 +840,8 @@ function FilterValue({
   onChange: (v: string | number | undefined) => void;
 }) {
   const t = useStore((s) => s.t);
+  if (field.type === "relation")
+    return <RecordValue target={field.relation?.target ?? ""} value={value} onChange={onChange} />;
   if (field.type === "select" || field.type === "multiselect")
     return (
       <select
@@ -820,6 +898,39 @@ function FilterValue({
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
       }}
     />
+  );
+}
+
+/** A relation's rule's record: one of its collection's, by title. */
+function RecordValue({
+  target,
+  value,
+  onChange,
+}: {
+  target: string;
+  value: string | number | undefined;
+  onChange: (v: string | undefined) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const { choices, loading } = useRecordChoices(target);
+  const v = typeof value === "string" ? value : "";
+  const known = !v || choices.some((c) => c.id === v);
+  return (
+    <select
+      className="input"
+      aria-label={t("db.filterValue")}
+      aria-busy={loading || undefined}
+      value={v}
+      onChange={(e) => onChange(e.target.value || undefined)}
+    >
+      <option value="">—</option>
+      {!known && <option value={v}>{loading ? t("chart.loading") : t("control.unknown")}</option>}
+      {choices.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
   );
 }
 

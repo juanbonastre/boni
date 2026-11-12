@@ -180,6 +180,75 @@ describe("a page's values on the server (F11, D-59)", () => {
     });
   });
 
+  it("a page's table is filtered by the server: a relation is the record a control holds, a date in a period's days (task 102)", () => {
+    const { store, mov, field, cafe, superId } = setUp();
+    const { control } = page(mov, field);
+    const period = { id: "b_per", type: "control", name: "Periodo", kind: "period" };
+    const table = (filter: unknown[]) => ({
+      id: "b_tabla",
+      type: "database",
+      source: mov.id,
+      view: { layout: "table", filter },
+    });
+    const merchants = (filter: unknown[], controls: unknown[]) => {
+      const r = blockRowsOf(store, { block: table(filter), controls }, o) as {
+        rows: { values: Record<string, unknown> }[];
+        total: number;
+      };
+      expect(r.total).toBe(r.rows.length);
+      return r.rows.map((x) => x.values[field("merchant")]).sort();
+    };
+    const byCat = [{ field: field("category"), op: "is", from: "b_cat" }];
+    // An empty control filters nothing; one holding «bebida/cafe» leaves its two movements; «no es», the other.
+    expect(merchants(byCat, [control])).toHaveLength(3);
+    expect(merchants(byCat, [{ ...control, value: cafe }])).toEqual([
+      "Bar Ejemplo",
+      "Cafetería Ejemplo",
+    ]);
+    expect(
+      merchants(
+        [{ field: field("category"), op: "is_not", from: "b_cat" }],
+        [{ ...control, value: cafe }],
+      ),
+    ).toEqual(["Mercado Ejemplo"]);
+    // A record fixed in the rule, with no control.
+    expect(merchants([{ field: field("category"), op: "is", value: superId }], [])).toEqual([
+      "Mercado Ejemplo",
+    ]);
+    // A period: its two days included, with the category's rule too.
+    const inPeriod = [{ field: field("date"), op: "is", from: "b_per" }, ...byCat];
+    expect(
+      merchants(inPeriod, [
+        { ...period, value: "2026-11-01/2026-11-03" },
+        { ...control, value: cafe },
+      ]),
+    ).toEqual(["Cafetería Ejemplo"]);
+    expect(merchants(inPeriod, [{ ...period, value: "2026-11-03/2026-11-05" }, control])).toEqual([
+      "Cafetería Ejemplo",
+      "Mercado Ejemplo",
+    ]);
+    // The same period as a number's: what the table lists is what the number sums.
+    const total = { ...page(mov, field).total, period: "$b_per" };
+    const sum = computeBlocks(
+      store,
+      { blocks: [total], controls: [{ ...period, value: "2026-11-01/2026-11-05" }, control] },
+      o,
+    ).results as Results;
+    expect(sum.b_total?.data?.total).toBeCloseTo(-62.4);
+    // A period whose first day is after its last, or a day that does not exist, is refused like any bad value.
+    for (const value of ["2026-11-05/2026-11-01", "2026-02-30/2026-03-01", "2026-11"])
+      expect(() =>
+        blockRowsOf(store, { block: table(inPeriod), controls: [{ ...period, value }] }, o),
+      ).toThrow(BlocksError);
+    // Boni's own collections and a rule of another shape are not tables the server filters here.
+    expect(() =>
+      blockRowsOf(store, { block: { ...table([]), source: "t_sys_flujos" } }, o),
+    ).toThrow(BlocksError);
+    expect(() => blockRowsOf(store, { block: table([{ field: "x", op: "nope" }]) }, o)).toThrow(
+      BlocksError,
+    );
+  });
+
   it("A-15: a page's blocks with its values over a year of thousands of movements answer in time", () => {
     const { store, mov, field, cafe } = setUp();
     const cats = Array.from(
@@ -236,6 +305,32 @@ describe("a page's values on the server (F11, D-59)", () => {
       `A-15 page values: 4 blocks over ${N + 3} movements, median ${median.toFixed(1)} ms`,
     );
     expect(median).toBeLessThan(1500);
+
+    // The page's table, filtered by the server with the category's control (task 102): what the app asks each time
+    // a control changes, over every movement, never the app's copy.
+    const tabla = {
+      block: {
+        id: "b_tabla",
+        type: "database",
+        source: mov.id,
+        view: { filter: [{ field: field("category"), op: "is", from: "b_cat" }] },
+      },
+      controls: [{ ...control, value: cafe }],
+    };
+    const rowTimes: number[] = [];
+    for (let k = 0; k < 5; k++) {
+      const t0 = performance.now();
+      const r = blockRowsOf(store, tabla, o) as { rows: unknown[]; total: number };
+      rowTimes.push(performance.now() - t0);
+      expect(r.total).toBe(N / 5 + 2);
+      expect(r.rows).toHaveLength(N / 5 + 2);
+    }
+    rowTimes.sort((a, b) => a - b);
+    const rowMedian = rowTimes[2] as number;
+    console.log(
+      `A-15 page table: ${N / 5 + 2} of ${N + 3} movements, median ${rowMedian.toFixed(1)} ms`,
+    );
+    expect(rowMedian).toBeLessThan(1500);
   }, 60_000);
 });
 

@@ -1549,6 +1549,17 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return [200, JSON.stringify(await spend("list", spent[1]))];
         if (p === "api/data/blocks/rows") {
           const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };
+          // A page's table (task 102): the movements counted in Node with its rules and the page's values; any other
+          // collection's rows whole (the app reads the same rules over them).
+          if (b.block?.type === "database") {
+            const src = String(b.block.source ?? "");
+            if (moneyIds.has(src)) return [200, JSON.stringify(await spend("rows", b))];
+            const get = `api/data/types/${src}/rows`;
+            const all = (await engine("GET", get)) ?? answer("GET", get);
+            if (!all || all[0] !== 200) return all;
+            const got = JSON.parse(all[1]) as { rows?: unknown[] };
+            return [200, JSON.stringify({ ...got, type: src, total: got.rows?.length ?? 0 })];
+          }
           if (isSys(b.block)) return [200, JSON.stringify(await call("rows", b))];
           if (isMoney(b.block)) return [200, JSON.stringify(await spend("rows", b))];
           const x = b.block ?? {};

@@ -1,3 +1,4 @@
+import { spanOf } from "./dates.ts";
 import { type DatabaseFilter, FILTER_OPS, type FilterItem, isFilterGroup } from "./page.ts";
 
 /**
@@ -106,9 +107,45 @@ export function matchesFilters(
   return true;
 }
 
+/** The operators that need no value: a rule with one of them never waits for its value. */
+const NO_VALUE: ReadonlySet<string> = new Set(["empty", "not_empty", "checked", "unchecked"]);
+
+/**
+ * The rules that filter now: a rule still waiting for its value filters nothing, as in Notion (one just added from
+ * the bar), in a group too; a group left with none is left out. The app and the server read a table's rules with it.
+ */
+export function liveRules(items: readonly FilterItem[] | undefined): FilterItem[] {
+  const waiting = (r: DatabaseFilter) =>
+    !NO_VALUE.has(r.op) && r.from === undefined && (r.value === undefined || r.value === "");
+  return (items ?? []).flatMap((r): FilterItem[] => {
+    if (!isFilterGroup(r)) return waiting(r) ? [] : [r];
+    const kept = r.rules.filter((x) => !waiting(x));
+    return kept.length ? [{ ...r, rules: kept }] : [];
+  });
+}
+
+/** The records a relation points to (one or many), by id. */
+const pointed = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map(String) : v == null || v === "" ? [] : [String(v)];
+
 function matchesRule(v: unknown, type: string, r: DatabaseFilter, today: string): boolean {
   const want = r.value === "today" ? today : r.value;
   const empty = v == null || v === "" || (Array.isArray(v) && v.length === 0);
+  // A relation is or is not a record (the value a page's control holds: docs/sistema.md §4.6): one of those it points
+  // to, folded as any «is» (the MCP compares the titles it shows, an id folds to itself).
+  if (type === "relation" && (r.op === "is" || r.op === "is_not"))
+    return pointed(v).map(fold).includes(fold(want)) === (r.op === "is");
+  // A date against a month or a period (a page's value): in its days, before its first, after its last.
+  const span = type === "date" || type === "datetime" ? spanOf(want) : null;
+  if (span && (r.op === "is" || r.op === "before" || r.op === "after")) {
+    if (typeof v !== "string") return false;
+    const d = v.slice(0, 10);
+    return r.op === "is"
+      ? d >= span.start && d <= span.end
+      : r.op === "before"
+        ? d < span.start
+        : d > span.end;
+  }
   const num =
     typeof v === "number" ? v : isObj(v) && typeof v.amount === "number" ? v.amount : Number.NaN;
   switch (r.op) {
