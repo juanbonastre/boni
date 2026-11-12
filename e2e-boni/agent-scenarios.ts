@@ -3387,3 +3387,56 @@ export const FLOW_CHANGE = {
     ],
   },
 };
+
+/** The screen acts of a turn (F9, docs/sistema.md §4.7): what `screen.filter`, `screen.highlight` and `screen.open` give. */
+const screenTurn = (run: string, replies: unknown[]) => ({
+  run,
+  status: "done",
+  replies,
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+});
+/** «Enséñame los libros leídos»: Libros filtered by Boni, by the ids the server made from the store, and it says so. */
+export const FILTER_REPLY = screenTurn("r40", [
+  { component: "text", data: { template: v("Te enseño los leídos.", "model") } },
+  {
+    component: "filter",
+    data: {
+      collection: v("libros", "model"),
+      rules: v([{ field: "f_estado", op: "is", value: "o_leido" }], "own"),
+      caption: v("Leídos", "model"),
+    },
+  },
+]);
+/** «Ábreme Libros, lo pendiente»: Libros opened, the row the query found lit by the key the server gave it. */
+export const LIGHT_REPLY = screenTurn("r41", [
+  { component: "open", data: { collection: v("libros", "model") } },
+  {
+    component: "highlight",
+    data: {
+      at: { t: "list", items: [v("row:r3", "own")] },
+      names: { t: "list", items: [v("Pedro Páramo", "own")] },
+    },
+  },
+]);
+/** A run of «Leer correo» that a rule stopped at its reader («¿por qué paró…?», F9 with F8). */
+export const RUN_STOPPED = {
+  ...RUN_MAIL,
+  id: "run-4",
+  status: "stopped",
+  proposals: [],
+  steps: RUN_MAIL.steps.map((s) =>
+    s.id === "r"
+      ? { ...s, decision: "deny", rule: "P7" }
+      : s.id === "m"
+        ? s
+        : { ...s, decision: null },
+  ),
+};
+/** «¿Por qué paró el flujo de ayer?»: the run as `flows.runs` gave it, opened over the map. */
+export const RUN_STOPPED_REPLY = screenTurn("r42", [
+  { component: "text", data: { template: v("Lo paró una regla al leer el correo.", "model") } },
+  { component: "open", data: { run: v("run-4", "own"), map: v(true, "own") } },
+]);

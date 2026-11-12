@@ -30,6 +30,7 @@ import { serverRegistry } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
 import { calendarDefs } from "./calendarStore.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
+import { MAX_RUNS, runFacts } from "./flowActions.ts";
 import { checkFlow, flowCatalog, stepsOf, type TestView, testFacts } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type InboxCard, type InboxContext, inboxCard, inboxContext } from "./inboxCard.ts";
@@ -82,6 +83,8 @@ interface Ctx {
   tryFlow?: FlowTry;
   /** What the Bandeja's cards are checked against now (task 73): the clock, the zone and the external calendars. */
   inbox?: () => InboxContext;
+  /** The zone the account's days are in (the server's). */
+  tz: string;
 }
 /** Tries a saved flow dry with its form's values (`said`: whose they are); the route's status and answer. */
 export type FlowTry = (
@@ -344,6 +347,7 @@ const READS = new Set([
   "recent_changes",
   "extensions_describe",
   "flows_test",
+  "flows_runs",
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
 /** The list of actions (docs/sistema.md §4.1, D-41): what a flow may use, and the actions an assistant runs here. */
@@ -1447,6 +1451,20 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "flows_runs",
+    description: `The runs of one of Juan's flows (flow: its id, from flows_describe; without it, every flow's), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did (codes, no texts).`,
+    inputSchema: obj({ flow: { type: "string" }, limit: { type: "number" } }, []),
+    call(c, a) {
+      const flow = a.flow === undefined ? null : str(a.flow, "flow", 80);
+      if (flow !== null && !c.store.journal.flow(flow)) throw new ToolFail("unknown flow");
+      const n = typeof a.limit === "number" ? Math.floor(a.limit) : 10;
+      const runs = c.store.journal
+        .runsOfFlow(flow, Math.min(MAX_RUNS, Math.max(1, n)))
+        .map((r) => runFacts(c.store, r, c.tz));
+      return { runs };
+    },
+  },
+  {
     name: "undo",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
     inputSchema: obj({ run: { type: "string" } }, ["run"]),
@@ -1554,9 +1572,11 @@ export async function mcpAnswer(
   mailAccount: string | null = null,
   tryFlow?: FlowTry,
   inbox?: () => InboxContext,
+  tz = "Europe/Madrid",
 ): Promise<unknown | null> {
   const c: Ctx = {
     ...(inbox ? { inbox } : {}),
+    tz,
     store,
     device,
     now,

@@ -30,7 +30,7 @@ import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
-import type { FlowsService } from "./flowActions.ts";
+import { type FlowsService, runFacts } from "./flowActions.ts";
 import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
   checkFlow,
@@ -393,6 +393,10 @@ export class AgentHost {
         if (r.status !== 200) throw new ToolError(`flow-${(r.body as { error: string }).error}`);
         // The model reads the decisions and counts, never the sample's or the steps' texts.
         return testFacts(r.body as TestView);
+      },
+      runs: (flow, limit) => {
+        if (flow !== null && !store.journal.flow(flow)) throw new ToolError("unknown-flow");
+        return store.journal.runsOfFlow(flow, limit).map((r) => runFacts(store, r, this.tz));
       },
     } satisfies FlowsService;
   }

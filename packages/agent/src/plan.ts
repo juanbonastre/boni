@@ -25,17 +25,15 @@ export const READERS = [
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
-export const REPLY_COMPONENTS = [
-  "text",
-  "number",
-  "list",
-  "table",
-  "chart",
-  "run",
-  "open",
-] as const;
-/** The places of the app an «open» reply may name (F9): the Bandeja, «Flujos», the Registro, «Mis datos». */
+export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart", "run"] as const;
+/** The places of the app `screen.open` may name (F9): the Bandeja, «Flujos», the Registro, «Mis datos». */
 export const OPEN_PLACES = ["inbox", "flows", "log", "data"] as const;
+/** What names a thing on the screen (screen.ts): a value a tool or the screen gave, never a model's own. */
+const SCREEN_REFS: Readonly<Record<string, readonly string[]>> = {
+  "screen.open": ["record", "run"],
+  "screen.scroll": ["target"],
+  "screen.highlight": ["target"],
+};
 
 /**
  * A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool.
@@ -106,8 +104,6 @@ const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> 
   chart: ["labels", "values", "kind", "unit", "caption"],
   // A run drawn in the conversation (task 92): its way from what started it to where it ended, «Ampliar» to the map.
   run: ["run", "caption"],
-  // Boni over the screen (F9): what to open on the user's screen, one of the three; the app opens it once, lit.
-  open: ["collection", "record", "place", "caption"],
 };
 
 /**
@@ -160,6 +156,16 @@ export function isWholeSpan(text: string, quote: string): boolean {
     if (before && after) return true;
   }
   return false;
+}
+
+/**
+ * The «open» reply of before (I-30) is the action `screen.open` now (F9, task 85): a plan written then (a saved flow's,
+ * a test's) opens the same.
+ */
+function legacyOpen(s: unknown): unknown {
+  if (!isObj(s) || s.op !== "reply" || s.component !== "open") return s;
+  const { component: _, data, ...rest } = s;
+  return { ...rest, op: "call", tool: "screen.open", args: data ?? {} };
 }
 
 export type PlanResult = { ok: true; plan: Plan } | { ok: false; errors: string[] };
@@ -219,8 +225,9 @@ export function validatePlan(
   const seen = new Set<string>(bound);
   // Whether the step being checked walks a second list along its `each` (`$zip`).
   let zipped = false;
-  // «Open» replies so far (F9): one per plan.
+  // What a plan opens and filters on the screen (F9): one of each per plan.
   let opens = 0;
+  let filters = 0;
 
   const checkAtom = (where: string, a: unknown, inEach: boolean) => {
     if (!isObj(a) || Object.keys(a).length !== 1) return errors.push(`${where}: bad-expression`);
@@ -293,7 +300,48 @@ export function validatePlan(
     }
   };
 
-  for (const [i, s] of (raw.steps as unknown[]).entries()) {
+  /**
+   * What Boni does on the screen (F9): never once per item (what the conversation says it did is what it did), one
+   * opening and one filter per plan, what it names on the screen as a tool or the screen gave it, a place of the app
+   * by its fixed name.
+   */
+  const checkScreen = (
+    where: string,
+    tool: string,
+    a: Record<string, unknown>,
+    inEach: boolean,
+  ) => {
+    if (inEach) errors.push(`${where}: screen-in-each`);
+    if (tool === "screen.open") {
+      if (opens++ > 0) errors.push(`${where}: open-once`);
+      const named = ["collection", "record", "place", "run", "flow"].filter((k) => k in a);
+      if (named.length !== 1) errors.push(`${where}.args: open-one-thing`);
+      const place = a.place;
+      if (
+        place !== undefined &&
+        !(
+          isObj(place) &&
+          typeof place.lit === "string" &&
+          (OPEN_PLACES as readonly string[]).includes(place.lit)
+        )
+      )
+        errors.push(`${where}.args: unknown-place`);
+    }
+    if (tool === "screen.filter" && filters++ > 0) errors.push(`${where}: filter-once`);
+    const isRef = (e: unknown) => isObj(e) && typeof e.ref === "string";
+    for (const k of SCREEN_REFS[tool] ?? []) {
+      const e = a[k];
+      if (e === undefined) continue;
+      // A list of them (to light several at once) is a list of references too.
+      const ok =
+        isRef(e) || (isObj(e) && e.fn === "list" && Array.isArray(e.args) && e.args.every(isRef));
+      if (!ok) errors.push(`${where}.args: ${k}-not-from-a-tool`);
+    }
+  };
+
+  for (const [i, given] of (raw.steps as unknown[]).entries()) {
+    const s = legacyOpen(given);
+    if (s !== given) (raw.steps as unknown[])[i] = s;
     const where = `step ${i + 1}`;
     if (!isObj(s)) {
       errors.push(`${where}: not-a-step`);
@@ -336,6 +384,8 @@ export function validatePlan(
             inEach,
             spec.objects ?? [],
           );
+        if (typeof s.tool === "string" && s.tool.startsWith("screen.") && spec)
+          checkScreen(where, s.tool, isObj(s.args) ? s.args : {}, inEach);
         break;
       }
       case "read": {
@@ -385,28 +435,6 @@ export function validatePlan(
           const run = isObj(s.data) ? s.data.run : undefined;
           if (s.component === "run" && !(isObj(run) && typeof run.ref === "string"))
             errors.push(`${where}.data: run-not-from-a-tool`);
-          // What an «open» opens (F9): one thing; a record a tool or the screen gave (a reference, never a model's
-          // own id), a place of the app by its fixed name.
-          if (s.component === "open") {
-            const d = isObj(s.data) ? s.data : {};
-            const named = ["collection", "record", "place"].filter((k) => k in d);
-            if (named.length !== 1) errors.push(`${where}.data: open-one-thing`);
-            // One opening per answer, never once per item: what the conversation says it opened is what it opened.
-            if (inEach || opens++ > 0) errors.push(`${where}: open-once`);
-            const record = d.record;
-            if (record !== undefined && !(isObj(record) && typeof record.ref === "string"))
-              errors.push(`${where}.data: record-not-from-a-tool`);
-            const place = d.place;
-            if (
-              place !== undefined &&
-              !(
-                isObj(place) &&
-                typeof place.lit === "string" &&
-                (OPEN_PLACES as readonly string[]).includes(place.lit)
-              )
-            )
-              errors.push(`${where}.data: unknown-place`);
-          }
         }
         break;
       }

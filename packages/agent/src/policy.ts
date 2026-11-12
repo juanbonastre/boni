@@ -53,6 +53,21 @@ const propose = (rule: string): Decision => ({ kind: "propose", rule });
 
 const low = (l: Label) => !atLeast(l, "imported"); // external, model or ambient
 const isExternal = (l: Label) => l.integrity === "external";
+/**
+ * What chooses a screen act's target (P22): the value's own label and its keys' (`at`, `id`), never its other
+ * fields'. A row a mail made is still his row to light; which row comes from the code, not from the mail's words.
+ */
+const choosing = (v: Val): Label => {
+  const one = (x: Val): Label[] =>
+    x.t === "rec"
+      ? [
+          x.label,
+          ...(["at", "id"] as const).flatMap((k) => (x.fields[k] ? [deepLabel(x.fields[k])] : [])),
+        ]
+      : [deepLabel(x)];
+  const ls = v.t === "list" ? [v.label, ...v.items.flatMap(one)] : one(v);
+  return join(ls[0] as Label, ...ls.slice(1));
+};
 const isPrivate = (l: Label) => l.sensitivity !== "public";
 
 export function decide(
@@ -164,6 +179,19 @@ export function decide(
       if (externalArgs || controlExternal) return deny("P21", "external-touch");
       if (origin.kind !== "turn" || !personal) return deny("P21", "touch-outside-turn");
       return confirm("P21");
+    // Boni over the screen (docs/sistema.md §4.7, F9): opening, scrolling to, lighting or filtering on Juan's own
+    // screen writes nothing, so it is not confirmed; but only his own turn moves his screen, and nothing from outside
+    // chooses what it shows (a mail that says «abre esto»), nor any work of its own (P22). A flow he runs by hand is his
+    // turn, and may open (§4.7), though the editor does not offer it.
+    case "screen": {
+      // A target is judged by what chose it (its keys), every other argument whole.
+      const chosen = entries.map(([k, v]) =>
+        tool.args[k]?.role === "target" ? choosing(v) : deepLabel(v),
+      );
+      if (chosen.some(isExternal) || controlExternal) return deny("P22", "external-screen");
+      if (origin.kind !== "turn") return deny("P22", "screen-outside-turn");
+      return allow("P22");
+    }
     case "read":
       return allow("P1");
     // A piece of Boni (docs/sistema.md §4.2) is Boni's own code as a step: only in a flow, never in a plan a model

@@ -222,6 +222,9 @@ describe("flows (docs/flujos.md, F1)", () => {
     expect(j.run("run-3")).toMatchObject({ flow: null, flowVersion: null, input: null });
     expect(j.flowRuns("leer-correo")).toEqual({ runs: 2, last: 3000 });
     expect(j.flowRuns("nadie")).toEqual({ runs: 0, last: null });
+    expect(j.runsOfFlow("leer-correo", 10).map((r) => r.id)).toEqual(["run-2", "run-1"]);
+    expect(j.runsOfFlow("leer-correo", 1).map((r) => r.id)).toEqual(["run-2"]);
+    expect(j.runsOfFlow(null, 10).map((r) => r.id)).toEqual(["run-2", "run-1"]);
     for (const [run, step, decision] of [
       ["run-1", "m", "allow"],
       ["run-1", "r", "allow"],

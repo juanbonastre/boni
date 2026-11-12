@@ -146,15 +146,17 @@ one "op":
 - {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user, only when a
   later step needs the answer (the plan waits for it; an offer at the end of an answer goes in the text, never here);
   choice options must be a list. Never ask for passwords or codes.
-- {"id", "op": "reply", "component": "text" | "number" | "list" | "table" | "chart" | "run" | "open", "data": {...}}: what the
+- {"id", "op": "reply", "component": "text" | "number" | "list" | "table" | "chart" | "run", "data": {...}}: what the
   user sees. text: template, a, b, c, d; number: value, unit, caption; list: items, fields, caption, group (a field of
   the items: one section per value, in the items' order; items with an id and a type open their record); table: rows,
   fields, caption; chart: labels (a list of names), values (a list of numbers from tools, one per label), kind ("bar"
   or "line"), unit, caption; run: run (a run's id, as entities.origin or inbox.pending give it), caption: draws where
-  it came from and where it went, after the text that says it (when the user asks where something comes from); open:
-  ONE of collection (a key from "schema"), record (a record a tool or "screen" gave, whole, as {"ref": ...}) or place
-  ("inbox", "flows", "log" or "data": the inbox, the flows, the log of what Boni did, the user's collections), and a
-  caption: opens it on the user's screen, lit (when he asks to open, show or go to something).
+  it came from and where it went, after the text that says it (when the user asks where something comes from).
+On the user's screen (the "screen.*" tools; once each, never in "each"): screen.open when he asks to open, show or go
+to something (ONE of a collection, a record, a place, a run or a flow; map: true on the map of «Flujos»: a run that
+stopped, with its step lit, or "where is this"); screen.filter when he asks to see some of a collection's records
+(«enséñame los de…»: it opens the collection filtered); screen.highlight and screen.scroll to show him what an answer
+is about on his screen, by what "screen" or a tool gave, whole.
 Any step may have "when": expr (it runs only if the value is not empty: anything but null, false, 0, "" or an empty
 list; a path that does not exist counts as empty, so "when": {"ref": "$s1.items[1]"} asks "is there a second one?")
 and "each": {"ref": "$step"} (once per item of that list, the item is "$item"; at most 50). "when" is checked once,
@@ -657,7 +659,7 @@ const DAY_MS = 24 * 60 * 60_000;
 export function toolsFor(registry: ToolRegistry, origin: Origin, inFlow = false): ToolDef[] {
   const blocked =
     origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
-      ? new Set(["egress", "send", "flow", "flow_save"])
+      ? new Set(["egress", "send", "flow", "flow_save", "screen"])
       : new Set<string>();
   if (!inFlow) blocked.add("piece");
   return registry.all().filter((t) => !blocked.has(t.effect));
@@ -1536,20 +1538,21 @@ export class Agent {
       case "reply": {
         const data: Record<string, Val> = {};
         for (const [k, e] of Object.entries(step.data)) data[k] = this.evalExpr(st, e);
-        // What Boni opens on the screen (F9) carries what decided its step: the app opens nothing that something from
-        // outside chose (a `when` or an `each` over a mail's values).
-        if (step.component === "open" && control)
-          for (const [k, v] of Object.entries(data)) data[k] = taint(v, control);
-        st.replyVals.push({ component: step.component, data });
-        const reply: Reply = {
-          component: step.component,
-          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, paint(v)])),
-        };
-        st.replies.push(reply);
-        this.emit(st, { type: "reply", reply });
+        this.reply(st, step.component, data);
         return leaf(null, codeLabel("reply"));
       }
     }
+  }
+
+  /** A reply of the run: kept with its values, painted for the app and told as it comes. */
+  private reply(st: RunState, component: string, data: Record<string, Val>) {
+    st.replyVals.push({ component, data });
+    const reply: Reply = {
+      component,
+      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, paint(v)])),
+    };
+    st.replies.push(reply);
+    this.emit(st, { type: "reply", reply });
   }
 
   private async execCall(
@@ -1717,7 +1720,9 @@ export class Agent {
     // A change is made in its own audit action (its operations name it); a read is recorded with what it read. A
     // piece of Boni changes something only when it says so (it folds or accepts proposals).
     const writes =
-      tool.effect === "piece" ? !!tool.changes : tool.effect !== "read" && tool.effect !== "notify";
+      tool.effect === "piece"
+        ? !!tool.changes
+        : tool.effect !== "read" && tool.effect !== "notify" && tool.effect !== "screen";
     const action = writes
       ? this.audit(st, { by: "agent", tool: tool.name, decision: "allow", result: null })
       : null;
@@ -1782,6 +1787,10 @@ export class Agent {
     }
     if (tool.effect === "read" && deepLabel(result).sensitivity === "sensitive")
       st.counters.sensitiveReads++;
+    // What Boni does on the screen (F9) reaches the app as a reply of its own («open», «scroll», «highlight»,
+    // «filter»): the app does it once, when the turn comes, and the conversation says it.
+    if (tool.effect === "screen" && result.t === "rec")
+      this.reply(st, tool.name.slice(7), result.fields);
     st.counters.bytes += sizeOf(result);
     if (st.counters.bytes > this.limits.maxBytes) throw new Stop("P12-bytes");
     return control ? taint(result, control) : result;

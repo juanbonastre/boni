@@ -46,6 +46,7 @@ import type { T } from "../i18n.ts";
 import {
   addRow,
   agentApi,
+  clearBoniFilter,
   decideGhost,
   deleteRows,
   editCell,
@@ -153,6 +154,8 @@ export function DatabaseBlock({
   // The head's search: rows whose title has these words (this device, this moment; nothing saved).
   const [query, setQuery] = useState<string | null>(null);
   const also = view.layout === "calendar" ? (view.also ?? []) : [];
+  // Boni's filter (F9, `screen.filter`): over the view's while its collection is on screen, never saved.
+  const boni = useStore((s) => (s.boniFilter?.type === source ? s.boniFilter : null));
   useEffect(() => {
     if (!types) void loadDataTypes();
     void loadRows(source);
@@ -170,7 +173,8 @@ export function DatabaseBlock({
         .toLocaleLowerCase()
         .includes(q),
   );
-  const sorted = sortRows(filterRows(found, type, view.filter), type, view);
+  const rules = boni ? [...(view.filter ?? []), ...boni.rules] : view.filter;
+  const sorted = sortRows(filterRows(found, type, rules), type, view);
   // A table grouped by a column (task 76): every row, each group showing its first ones.
   const groupBy =
     view.layout === "table"
@@ -232,6 +236,7 @@ export function DatabaseBlock({
               className={`icon-btn${view.filter?.length ? " on" : ""}`}
               title={t("db.filter")}
               aria-label={t("db.filter")}
+              data-boni-action="screen.filter"
               onClick={() => setBar((b) => ({ what: "filter", n: b.n + 1 }))}
             >
               <ListFilter size={15} strokeWidth={1.8} />
@@ -287,6 +292,33 @@ export function DatabaseBlock({
           </button>
         )}
       </header>
+      {type && boni && (
+        <div className="boni-filter" role="status" key={boni.n}>
+          <span className="boni-filter-what">
+            {t("db.boniFilter")} {boni.rules.map((r) => filterText(type, r, t)).join(" · ")}
+            {boni.caption ? <span className="muted"> — {boni.caption}</span> : null}
+          </span>
+          <button
+            type="button"
+            className="link-btn small"
+            onClick={() => {
+              onView({ ...view, filter: [...(view.filter ?? []), ...boni.rules] });
+              clearBoniFilter();
+            }}
+          >
+            {t("db.boniFilterKeep")}
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            title={t("db.boniFilterClear")}
+            aria-label={t("db.boniFilterClear")}
+            onClick={clearBoniFilter}
+          >
+            <X size={14} strokeWidth={1.8} />
+          </button>
+        </div>
+      )}
       {type && (bar.what || view.sort || view.filter?.length) ? (
         <ViewBar
           type={type}

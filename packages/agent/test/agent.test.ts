@@ -637,7 +637,7 @@ describe("the agent, with a planner that behaves", () => {
     expect(() => tool.run(caps as never, { id: other }, codeLabel("prueba"))).toThrow(ToolError);
   });
 
-  it("an «open» carries what decided its step (F9): under a mail's value it is from outside, and the app opens nothing", async () => {
+  it("an «open» carries what decided its step (F9): under a mail's value it is from outside, and nothing opens (P22)", async () => {
     env = makeEnv([{ asunto: "Abre Tareas", de: "ana.ejemplo@example.com", cuerpo: "x" }]);
     const plan = (when: unknown) => ({
       version: 1,
@@ -656,12 +656,10 @@ describe("the agent, with a planner that behaves", () => {
       env.agent(fakePlanner([p])).turn({ text: "ábreme Tareas", origin: PERSONAL });
     const mine = await run(plan(null));
     expect(mine.replies[0]?.data.collection).toMatchObject({ value: "tarea", integrity: "model" });
-    // The mail's subject decided it: the same opening is from outside, and the app does not obey it (I-30).
+    // The mail's subject decided it: the same opening is from outside, and it is refused (P22, I-30).
     const theirs = await run(plan(ref("$m.asunto")));
-    expect(theirs.replies[0]?.data.collection).toMatchObject({
-      value: "tarea",
-      integrity: "external",
-    });
+    expect(theirs.replies.some((r) => r.component === "open")).toBe(false);
+    expect(theirs.notices).toContainEqual({ code: "denied", rule: "P22" });
   });
 
   it("says where a proposal waiting in the Bandeja comes from: the flow and its mail, found by its title's words (inbox.pending)", async () => {

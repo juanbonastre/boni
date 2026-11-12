@@ -129,6 +129,22 @@ const id80 = (x: unknown): string | null =>
 const isObj = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === "object" && !Array.isArray(x);
 
+/** A flow's trigger on its canvas and on the map, pointed at as one of its steps. */
+const TRIGGER = "trigger";
+
+/**
+ * Where a thing is on the screen, as the app finds it (`data-boni-ref`, apps/boni-web `pointKey`): what Boni's screen
+ * actions name to scroll to it or light it (`screen.scroll`, `screen.highlight`), the code's own key.
+ */
+export const screenAt = (r: PointedRef): string =>
+  r.kind === "block"
+    ? `block:${r.page}/${r.block}`
+    : r.kind === "step"
+      ? `step:${r.flow}/${r.step}`
+      : r.kind === "part"
+        ? `part:${r.id}/${r.part}/${r.n}`
+        : `${r.kind}:${r.id}`;
+
 export function pointedRef(x: unknown): PointedRef | null {
   if (!isObj(x)) return null;
   if (x.kind === "block") {
@@ -364,9 +380,18 @@ export function screenOf(
         ? "closed"
         : "gone";
   };
+  /** With where it is on the screen (`at`), for Boni's screen actions; what is closed or gone has none. */
+  const placed = (p: PointedRef): Val | Missing => {
+    const v = resolve(p);
+    // A node's id past its code is outside text (an MCP client's name): such a node is said without its place.
+    const outside = p.kind === "node" && p.id.split(":").length > 2;
+    return typeof v !== "string" && v.t === "rec" && !outside
+      ? rec({ ...v.fields, at: leaf(screenAt(p), code) }, v.label)
+      : v;
+  };
   /** What is on the screen without pointing: only what the models may see and is there. */
   const quiet = (p: PointedRef): Val | null => {
-    const v = resolve(p);
+    const v = placed(p);
     return typeof v === "string" ? null : v;
   };
   const fields: Record<string, Val> = {};
@@ -405,18 +430,28 @@ export function screenOf(
   }
   const cards = refs.inbox.flatMap((c) => {
     const v = c.kind === "question" ? question(c.id) : card(c.id);
-    return v ? [v] : [];
+    return v?.t === "rec"
+      ? [
+          rec(
+            {
+              ...v.fields,
+              at: leaf(`${c.kind === "question" ? "question" : "proposal"}:${c.id}`, code),
+            },
+            v.label,
+          ),
+        ]
+      : [];
   });
   if (cards.length) fields.inbox = list(cards, code);
   const chosen = refs.chosen.flatMap((id) => {
     const r = record(id);
-    return r ? [r] : [];
+    return r?.t === "rec" ? [rec({ ...r.fields, at: leaf(`row:${id}`, code) }, r.label)] : [];
   });
   if (chosen.length) fields.chosen = list(chosen, code);
   if (refs.pointed?.length)
     fields.pointed = list(
       refs.pointed.map((p) => {
-        const v = resolve(p);
+        const v = placed(p);
         return typeof v === "string" ? said(v) : v;
       }),
       code,
@@ -962,9 +997,21 @@ function screenReader(
       code,
     );
   };
-  /** A step of a flow pointed at on its canvas or on the map: the step, with its flow by id and name. */
+  /**
+   * A step of a flow pointed at on its canvas or on the map: the step, with its flow by id and name. Its trigger
+   * (`trigger`, the first node of its canvas) is what starts it.
+   */
   const step = (flowId: string, stepId: string): Val | Missing => {
     const f = flowRow(flowId);
+    if (f && stepId === TRIGGER)
+      return rec(
+        {
+          kind: leaf("trigger", code),
+          flow: rec({ id: leaf(f.id, code), name: leaf(f.name, flowLabel(f.id)) }, code),
+          trigger: triggerOf(f.trigger),
+        },
+        code,
+      );
     const v = f ? stepVal(f, stepId) : null;
     if (!f || !v) return "gone";
     return rec(

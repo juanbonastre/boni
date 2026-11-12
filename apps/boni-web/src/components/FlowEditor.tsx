@@ -349,9 +349,17 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
 
 const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) {
   const t = useStore((s) => s.t);
+  // Pointed at as its steps are (`Ctrl+Shift+E`): the server says what starts the flow (docs/sistema.md §4.7).
+  const flow = useStore((s) => (s.view.kind === "flows" ? (s.view.flow ?? null) : null));
   // What starts it is cut to the card's width when long: whole in its tooltip.
   return (
     <div
+      {...(flow
+        ? pointAttrs(
+            { kind: "step", flow, step: "trigger" },
+            chipTitle(t("point.kind.trigger"), data.text),
+          )
+        : {})}
       className={`fl-card source${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}
       title={data.text}
     >

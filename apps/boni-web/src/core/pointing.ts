@@ -86,7 +86,7 @@ export function readRef(raw: string | null | undefined): PointedRef | null {
 
 /**
  * What a node of «Flujos» → «Mapa» stands for, from its id (FlowMap's): a collection, a flow, a page as a row, a
- * flow's step (`step:flow:<id>:<step>`, and its trigger as the flow) and any other as a node; null for none.
+ * flow's step (`step:flow:<id>:<step>`, its trigger as the step «trigger», which the server tells as what starts it) and any other as a node; null for none.
  */
 export function mapRef(nodeId: string): PointedRef | null {
   const [head, ...rest] = nodeId.split(":");
@@ -98,7 +98,7 @@ export function mapRef(nodeId: string): PointedRef | null {
     const step = rest[rest.length - 1] ?? "";
     const flow = rest.slice(1, -1).join(":");
     if (!id(flow) || !id(step)) return null;
-    return step === "trigger" ? { kind: "flow", id: flow } : { kind: "step", flow, step };
+    return { kind: "step", flow, step };
   }
   return MAP_NODE.test(nodeId) ? { kind: "node", id: nodeId } : null;
 }

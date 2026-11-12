@@ -88,6 +88,7 @@ import {
   visibleRefs,
 } from "./core/pointing.ts";
 import { isPending, OfflineQueue, type QueuedAction } from "./core/queue.ts";
+import { filterOf, litKeys, typeOfKey } from "./core/screenReplies.ts";
 import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
@@ -363,6 +364,16 @@ interface State {
   chosenRows: Record<string, string[]>;
   /** When Boni last opened something on the screen (F9): the main area lights for a moment. */
   lit: number;
+  /**
+   * What Boni lit or scrolled to on the screen (F9, `screen.highlight`, `screen.scroll`): the things by their keys
+   * (`pointKey`), lit for a moment wherever they are drawn; `n` again each time.
+   */
+  screenLight: { keys: string[]; scroll: boolean; n: number } | null;
+  /**
+   * A collection Boni opened filtered (F9, `screen.filter`): its rules on top of the view's while it is on screen,
+   * never saved; × takes it away, «Guardar» keeps it in the view (Juan's own change to the view).
+   */
+  boniFilter: { type: string; rules: DatabaseFilter[]; caption: string | null; n: number } | null;
   runs: RunSummary[];
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
@@ -493,6 +504,8 @@ export const useStore = create<State>(() => ({
   boniWindow: "closed",
   chosenRows: {},
   lit: 0,
+  screenLight: null,
+  boniFilter: null,
   runs: [],
   accuracy: [],
   learning: true,
@@ -1497,8 +1510,8 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
     // A turn that changed something may have made or changed a page, or decided cards of the Bandeja (F10).
     if (r.proposals.length || r.changed) void loadInbox();
     if (r.changed) void pagesAfterRun();
-    // Once per turn: an answer or a confirmation repeats the run's replies, its «open» already done.
-    if (!entry?.result?.replies.some((x) => x.component === "open")) openFromReplies(r.replies);
+    // Once per turn: an answer or a confirmation repeats the run's replies, what they did on the screen already done.
+    if (!entry?.result?.replies.some((x) => SCREEN_REPLIES.has(x.component))) screenActs(r.replies);
   } catch (e) {
     const code = e instanceof ApiError ? e.code : null;
     patchEntry(id, {
@@ -1639,10 +1652,16 @@ export function screenNow(pointed: readonly PointedRef[] = []): ScreenRefs {
 }
 
 /** What Boni's «open» reply opens (F9), when it may: never what something from outside chose. */
-export type OpenTarget =
+export type OpenTarget = (
   | { kind: "place"; place: "inbox" | "flows" | "log" | "data" }
   | { kind: "collection"; type: DataType }
-  | { kind: "record"; id: string; title: string | null };
+  | { kind: "record"; id: string; title: string | null; type: string | null }
+  | { kind: "run"; run: string }
+  | { kind: "flow"; flow: string }
+) & {
+  /** «Ver en el mapa» (F8 with F9): on the map of «Flujos», a run drawn on it with the step that stopped it lit. */
+  map: boolean;
+};
 
 /**
  * An «open» reply's target (F9; I-30), the same for opening it and for saying it: a place of the app by its fixed
@@ -1655,17 +1674,26 @@ export function openTarget(r: Reply, types: readonly DataType[] | null): OpenTar
   const d = r.data;
   const text = (p: Painted | undefined) =>
     p?.t === "v" && typeof p.value === "string" ? p.value : null;
+  const map = d.map?.t === "v" && d.map.value === true && !outside(d.map);
   if (d.place) {
     const place = text(d.place);
     return !outside(d.place) &&
       (place === "inbox" || place === "flows" || place === "log" || place === "data")
-      ? { kind: "place", place }
+      ? { kind: "place", place, map: false }
       : null;
   }
   if (d.collection) {
-    const key = text(d.collection);
-    const type = key ? types?.find((x) => x.key === key || `type_${x.id}` === key) : undefined;
-    return type && !outside(d.collection) ? { kind: "collection", type } : null;
+    const type = typeOfKey(text(d.collection), types);
+    return type && !outside(d.collection) ? { kind: "collection", type, map } : null;
+  }
+  // A run only as a tool gave it (the code's own id, I-29), always on the map.
+  if (d.run) {
+    const run = text(d.run);
+    return run && d.run.integrity === "own" ? { kind: "run", run, map: true } : null;
+  }
+  if (d.flow) {
+    const flow = text(d.flow);
+    return flow && !outside(d.flow) ? { kind: "flow", flow, map } : null;
   }
   const rec = d.record?.t === "rec" && !outside(d.record) ? d.record : null;
   const id = rec?.fields.id;
@@ -1677,26 +1705,68 @@ export function openTarget(r: Reply, types: readonly DataType[] | null): OpenTar
     : undefined;
   const titleKey = def?.fields.find((f) => f.id === def.titleField)?.key;
   const title = text(rec.fields.title) ?? (titleKey ? text(rec.fields[titleKey]) : null);
-  return { kind: "record", id: id.value, title };
+  return { kind: "record", id: id.value, title, type: def?.id ?? null, map };
+}
+let filterAsks = 0;
+let lightAsks = 0;
+/** Lights things on the screen by their keys (F9): Boni's highlight, and the conversation's «Ver» again. */
+export function lightKeys(keys: readonly string[], scroll = false) {
+  if (keys.length) set({ screenLight: { keys: [...keys], scroll, n: ++lightAsks } });
+}
+/** × of Boni's filter: the view as it was. */
+export const clearBoniFilter = () => set({ boniFilter: null });
+
+/** The replies that act on the screen (F9): done once, when the turn comes. */
+const SCREEN_REPLIES = new Set(["open", "filter", "highlight", "scroll"]);
+/**
+ * Boni over the screen (F9): what a turn that just came asks to open, filter, light or scroll to, done once; never
+ * when a conversation is read again, nor when its run goes on (an answer, a confirmation repeat its replies). On the
+ * phone, in the tab that shows it. From the Conversación screen the conversation goes on in the window, over it.
+ */
+function screenActs(replies: readonly Reply[]) {
+  const s = get();
+  const open = replies.find((x) => x.component === "open");
+  const filter = replies.find((x) => x.component === "filter");
+  const lights = replies.filter((x) => x.component === "highlight" || x.component === "scroll");
+  const target = open ? openTarget(open, s.dataTypes) : null;
+  const filtered = filter ? filterOf(filter, s.dataTypes) : null;
+  // What it lights instead of the whole area: the things it names, or the run's step (the map lights it).
+  const own = lights.some((r) => litKeys(r).length > 0) || target?.kind === "run";
+  if (target) openOnScreen(target, !own);
+  // Filtered: its collection opened, with the rules over its view while it is there (§4.7, part five).
+  if (filtered) {
+    if (target?.kind !== "collection" || target.type.id !== filtered.type.id || target.map)
+      openOnScreen({ kind: "collection", type: filtered.type, map: false }, !own);
+    set({
+      boniFilter: {
+        type: filtered.type.id,
+        rules: filtered.rules,
+        caption: filtered.caption,
+        n: ++filterAsks,
+      },
+    });
+  }
+  for (const r of lights) lightKeys(litKeys(r), r.component === "scroll");
 }
 
 /**
- * Boni over the screen (F9): what a turn that just came asks to open, opened once and lit; never when a conversation
- * is read again, nor when its run goes on (an answer, a confirmation repeat its replies). On the phone, in the tab
- * that shows it. From the Conversación screen the conversation goes on in the window, over what it opened.
+ * What an «open» reply opens, once (F9): a place, a collection, a record, a flow or a run, on the map if asked; the
+ * whole area lit only when nothing in it is (`area`).
  */
-function openFromReplies(replies: readonly Reply[]) {
-  const r = replies.find((x) => x.component === "open");
+function openOnScreen(target: OpenTarget, area = true) {
   const s = get();
-  const target = r ? openTarget(r, s.dataTypes) : null;
-  if (!target) return;
   const fromChat = s.view.kind === "chat";
   if (target.kind === "place") {
     if (target.place === "inbox") showInbox();
     else if (target.place === "flows") showFlows();
     else if (target.place === "log") showLog();
     else showAllPages();
-  } else if (target.kind === "collection") openCollection(target.type.id);
+  } else if (target.kind === "run") showRun(target.run);
+  else if (target.kind === "flow")
+    target.map ? showMap(`flow:${target.flow}`) : showFlow(target.flow);
+  else if (target.kind === "collection")
+    target.map ? showMap(`col:${target.type.id}`) : openCollection(target.type.id);
+  else if (target.map && target.type) showMapOf(target.type, target.id);
   else void openRowById(target.id);
   const tab: Tab =
     target.kind === "place" && target.place === "inbox"
@@ -1705,7 +1775,7 @@ function openFromReplies(replies: readonly Reply[]) {
         ? "boni"
         : "pages";
   set({
-    lit: Date.now(),
+    ...(area ? { lit: Date.now() } : {}),
     ...(fromChat ? { boniWindow: "float" as const } : {}),
     ...(phoneLayout() ? { tab } : {}),
   });
@@ -3347,6 +3417,10 @@ function revealInTree() {
 useStore.subscribe((s, prev) => {
   if (openKey(s.view) !== openKey(prev.view) || (s.tree && !prev.tree) || (s.pages && !prev.pages))
     revealInTree();
+  // Boni's filter lasts while its collection is on screen: going elsewhere takes it away.
+  const f = s.boniFilter;
+  if (f && s.view !== prev.view && !(s.view.kind === "collection" && s.view.type === f.type))
+    set({ boniFilter: null });
 });
 
 /** Something gone out of «Recientes». */

@@ -40,6 +40,14 @@ const CORRECT_TEST =
   "«corrígela: Pedir cita en el taller el lunes, en Notas»: a proposal accepted corrected on Juan's touch";
 /** «Calendarios», a collection's tabs and tree, «Conectores» and «Extensiones» (F10, part 3). */
 const CAL_ACTIONS = "apps/server/src/calendarActions.test.ts";
+const SCREEN = "apps/server/src/screenActions.test.ts";
+const FILTER_TEST =
+  "«enséñame los movimientos de restaurantes de octubre»: the collection opened filtered, by ids, and nothing written";
+const OPEN_TEST = "«ábreme Agenda»: opened, with today's lit by the rows a tool gave";
+const LIT_TEST =
+  "what is lit or scrolled to is what the screen or a tool gave, never a model's own key";
+const RUN_TEST =
+  "«¿por qué paró el flujo de ayer?»: its runs read, and the one that stopped opened over the map";
 const CAL_TEST =
   "«pon Viajes como calendario, sepáralo por Tipo, en verde y con aviso un día antes»: done in his turn, taking it away is his card, and Undo of the run takes each back";
 const CAL_MCP_TEST =
@@ -97,6 +105,17 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "flows.enable": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
   "flows.delete": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
   "flows.test": [{ file: DATA_ACTIONS, test: FLOW_TEST }],
+  "flows.runs": [{ file: SCREEN, test: RUN_TEST }],
+  "screen.open": [
+    { file: SCREEN, test: OPEN_TEST },
+    { file: SCREEN, test: RUN_TEST },
+  ],
+  "screen.filter": [{ file: SCREEN, test: FILTER_TEST }],
+  "screen.highlight": [
+    { file: SCREEN, test: OPEN_TEST },
+    { file: SCREEN, test: LIT_TEST },
+  ],
+  "screen.scroll": [{ file: SCREEN, test: LIT_TEST }],
   "inbox.correct": [{ file: DATA_ACTIONS, test: CORRECT_TEST }],
   "pages.create": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.add_block": [{ file: ACTIONS, test: PAGE_TEST }],

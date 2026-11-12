@@ -219,6 +219,8 @@ export interface Journal {
   deleteFlowDraft(id: string): void;
   /** How many runs a flow had, and when the last started. */
   flowRuns(id: string): { runs: number; last: number | null };
+  /** A flow's runs, the newest first, its tries («Probar») left out; every flow's when `id` is null. */
+  runsOfFlow(id: string | null, limit: number): RunRow[];
   /** The steps of a flow's runs in a period, counted by step and decision. */
   stepCountsOf(
     flow: string,
@@ -552,6 +554,19 @@ export function openJournal(db: DatabaseSync): Journal {
         .get(id) as { n: number; last: number | null };
       return { runs: Number(r.n), last: r.last === null ? null : Number(r.last) };
     },
+    runsOfFlow: (id, limit) =>
+      (id === null
+        ? db
+            .prepare(
+              "SELECT * FROM runs WHERE flow IS NOT NULL AND origin != 'test' ORDER BY started DESC, rowid DESC LIMIT ?",
+            )
+            .all(limit)
+        : db
+            .prepare(
+              "SELECT * FROM runs WHERE flow = ? AND origin != 'test' ORDER BY started DESC, rowid DESC LIMIT ?",
+            )
+            .all(id, limit)
+      ).map(runOf),
     stepCountsOf: (flow, from, to) =>
       (
         db

@@ -161,6 +161,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "calendars_color",
       "calendars_reminders",
       "flows_test",
+      "flows_runs",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);
