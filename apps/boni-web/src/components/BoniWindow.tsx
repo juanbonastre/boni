@@ -2,7 +2,8 @@
  * Boni over the screen (docs/sistema.md §4.7, F9; task 85; C4 of docs/conversacion.md): the circle at the bottom
  * right of every screen and `Ctrl+E` open the conversation over what is open, the same one as always; it docks to the
  * right in the Bandeja's place («Llevar a la derecha»), widens to the Conversación screen («Ampliar») and closes with
- * `Esc`. What is on the screen goes with each message, by reference (`screenNow`).
+ * `Esc`. What is on the screen goes with each message, by reference (`screenNow`). Floating, it is dragged by its bar
+ * to where it covers nothing Juan looks at, and stays there (I-35: on every screen and after a restart).
  */
 import {
   Maximize2,
@@ -12,10 +13,12 @@ import {
   PictureInPicture2,
   X,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
+import { clampPlace, type Place } from "../core/boniWindow.ts";
 import {
   closeBoniWindow,
   openBoniWindow,
+  placeBoniWindow,
   setPointing,
   useStore,
   widenBoniWindow,
@@ -69,9 +72,44 @@ export function BoniWindow() {
   const mode = useStore((s) => s.boniWindow);
   const onChat = useStore((s) => s.view.kind === "chat");
   const otherRight = useStore((s) => s.panel != null || s.inboxOpen);
+  const place = useStore((s) => s.boniPlace);
   const box = useRef<HTMLElement | null>(null);
   const open = mode !== "closed" && !onChat;
   const docked = mode === "right" && !otherRight;
+  // Dragged by its bar (not by its buttons): it follows the pointer inside the app's window, and where it is let go
+  // is kept. The node moves while dragging; the store hears once, at the end.
+  const drag = (e: ReactPointerEvent<HTMLElement>) => {
+    const node = box.current;
+    if (docked || !node || e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    const head = e.currentTarget;
+    head.setPointerCapture(e.pointerId);
+    const r = node.getBoundingClientRect();
+    const from = { x: e.clientX, y: e.clientY };
+    const start = { right: window.innerWidth - r.right, bottom: window.innerHeight - r.bottom };
+    const size = { width: r.width, height: r.height };
+    let at: Place | null = null;
+    node.classList.add("dragging");
+    const move = (m: PointerEvent) => {
+      at = clampPlace(
+        { right: start.right - (m.clientX - from.x), bottom: start.bottom - (m.clientY - from.y) },
+        size,
+        { width: window.innerWidth, height: window.innerHeight },
+      );
+      node.style.setProperty("--boni-right", `${at.right}px`);
+      node.style.setProperty("--boni-bottom", `${at.bottom}px`);
+    };
+    const end = () => {
+      head.removeEventListener("pointermove", move);
+      head.removeEventListener("pointerup", end);
+      head.removeEventListener("pointercancel", end);
+      node.classList.remove("dragging");
+      if (at) placeBoniWindow(at);
+    };
+    head.addEventListener("pointermove", move);
+    head.addEventListener("pointerup", end);
+    head.addEventListener("pointercancel", end);
+  };
   // `Esc` with the focus in it closes it before anything under it (in the capture: the page's own `Esc` does not go
   // back); a menu of its own closes first. With the focus elsewhere `Esc` is that place's.
   useEffect(() => {
@@ -103,8 +141,16 @@ export function BoniWindow() {
       className={docked ? "side-panel boni-docked" : "boni-window"}
       role={docked ? "complementary" : "dialog"}
       aria-label={t("boni.title")}
+      style={
+        !docked && place
+          ? ({
+              "--boni-right": `${place.right}px`,
+              "--boni-bottom": `${place.bottom}px`,
+            } as CSSProperties)
+          : undefined
+      }
     >
-      <header className="panel-head boni-window-head">
+      <header className="panel-head boni-window-head" onPointerDown={drag}>
         <h2>{t("boni.title")}</h2>
         <button
           type="button"

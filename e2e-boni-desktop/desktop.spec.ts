@@ -140,9 +140,14 @@ test.beforeAll(async () => {
   });
   // The desktop app as it runs on Juan's computer, with a profile of its own (never his).
   // BONI_DESKTOP_BIN: the packaged app (release/linux-unpacked/boni) instead of the source.
-  const bin = process.env.BONI_DESKTOP_BIN;
   mkdirSync(join(dir, "tmp"));
-  app = await electron.launch({
+  app = await launch();
+});
+
+/** The desktop app as it runs on Juan's computer, with a profile of its own (never his). */
+function launch() {
+  const bin = process.env.BONI_DESKTOP_BIN;
+  return electron.launch({
     cwd: join(ROOT, "apps", "boni-desktop"),
     ...(bin ? { executablePath: bin } : {}),
     args: [...(bin ? [] : ["."]), `--user-data-dir=${join(dir, "electron")}`],
@@ -154,7 +159,7 @@ test.beforeAll(async () => {
       BONI_TEST_FILES: "1", // an attachment is saved, not opened in a viewer
     },
   });
-});
+}
 
 test.afterAll(async () => {
   await app?.close();
@@ -824,4 +829,60 @@ test("Apariencia › Tamaño and Ctrl+0: the windows' zoom, kept in this compute
   await expect.poll(() => w.evaluate(() => window.innerWidth)).toBe(width);
   await expect(w.getByTitle("Tamaño normal (Ctrl+0)")).toHaveText("100 %");
   await w.keyboard.press("Escape");
+});
+
+test("Boni's window after a restart (F9, task 85, I-35): where Juan dragged it, floating, with the last conversation and its draft", async () => {
+  let w = await (app as ElectronApplication).firstWindow();
+  const win = (p: Page) => p.getByRole("dialog", { name: "Boni" });
+  if (!(await win(w).isVisible())) await w.keyboard.press("Control+e");
+  const box = (p: Page) => win(p).getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box(w)).toBeFocused();
+  // A conversation of its own: its first message makes it (there is no model here).
+  await box(w).fill("¿qué hay hoy?");
+  await box(w).press("Enter");
+  await expect(win(w).locator(".turn-request").last()).toHaveText("¿qué hay hoy?");
+  await expect(win(w).getByRole("button", { name: "Enviar" })).toBeVisible();
+  // Dragged by its bar to the left and up, then a message begun.
+  const placed = async (p: Page) => {
+    await expect.poll(async () => Math.round((await win(p).boundingBox())?.width ?? 0)).toBe(400);
+    const b = await win(p).boundingBox();
+    const view = await p.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+    // From the bottom right, as it is kept: the app's window may start at another size.
+    return {
+      right: Math.round(view.width - (b?.x ?? 0) - (b?.width ?? 0)),
+      bottom: Math.round(view.height - (b?.y ?? 0) - (b?.height ?? 0)),
+    };
+  };
+  const from = await placed(w);
+  const title = await win(w).locator(".boni-window-head h2").boundingBox();
+  if (!title) throw new Error("no bar");
+  await w.mouse.move(title.x + 10, title.y + title.height / 2);
+  await w.mouse.down();
+  await w.mouse.move(title.x - 290, title.y + title.height / 2 - 120, { steps: 12 });
+  await w.mouse.up();
+  const here = await placed(w);
+  expect(here).toEqual({ right: from.right + 300, bottom: from.bottom + 120 });
+  await box(w).fill("y lo de mañana");
+  // On this computer's own files (a preference of the device, never the account's), a moment after the last key.
+  const file = join(dir, "data", "boni", "store", "boni-window.json");
+  await expect
+    .poll(() => (existsSync(file) ? readFileSync(file, "utf8") : ""))
+    .toContain("y lo de mañana");
+  // Kept under the conversation its first message made (the server keeps no turn without a model: e2e-boni shows
+  // the turns coming back).
+  const kept = JSON.parse(readFileSync(file, "utf8"));
+  expect(kept).toMatchObject({ mode: "float", place: here, conversation: expect.any(String) });
+  expect(kept.drafts[kept.conversation].text).toBe("y lo de mañana");
+  // The app quit and started again.
+  await (app as ElectronApplication).close();
+  app = await launch();
+  w = await app.firstWindow();
+  await expect(win(w)).toBeVisible({ timeout: 20_000 });
+  expect(await placed(w)).toEqual(here);
+  // The same conversation: its draft is the one shown (each conversation has its own).
+  await expect(box(w)).toHaveValue("y lo de mañana");
+  await shot(w, "window-restarted");
+  // As it was found by the next test: closed.
+  await box(w).press("Escape");
+  await expect(win(w)).toHaveCount(0);
 });

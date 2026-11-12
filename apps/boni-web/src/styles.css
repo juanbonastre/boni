@@ -10629,12 +10629,17 @@ button.rows-panel-row:hover {
   filter: brightness(1.08);
 }
 .boni-window {
+  /* Where Juan dragged it (I-35), from the bottom right, and always inside the app's window, 8 px from each side
+     however the window is resized. */
+  --boni-w: min(400px, calc(100vw - 40px));
+  --boni-h: min(600px, calc(100vh - 100px));
+  --boni-right-min: 8px;
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: clamp(var(--boni-right-min), var(--boni-right, 20px), calc(100vw - var(--boni-w) - 8px));
+  bottom: clamp(8px, var(--boni-bottom, 20px), calc(100vh - var(--boni-h) - 8px));
   z-index: 95;
-  width: min(400px, calc(100vw - 40px));
-  height: min(600px, calc(100vh - 100px));
+  width: var(--boni-w);
+  height: var(--boni-h);
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -10664,6 +10669,16 @@ button.rows-panel-row:hover {
   height: 48px;
   padding: 0 8px 0 16px;
 }
+/* Floating, its bar moves it: the open hand over it, the closed one while dragging, and no text is selected. */
+.boni-window > .boni-window-head {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.boni-window.dragging,
+.boni-window.dragging > .boni-window-head {
+  cursor: grabbing;
+}
 .boni-window-body {
   flex: 1;
   min-height: 0;
@@ -10675,9 +10690,11 @@ button.rows-panel-row:hover {
   min-height: 0;
 }
 /* With a panel on the right (the Bandeja, a record), the circle and the window stay beside it, never over its cards. */
-.app:has(> .side-panel:not(.boni-docked)) .boni-window,
 .app:has(> .side-panel:not(.boni-docked)) .boni-circle {
   right: calc(min(380px, 60vw) + 20px);
+}
+.app:has(> .side-panel:not(.boni-docked)) .boni-window {
+  --boni-right-min: calc(min(380px, 60vw) + 20px);
 }
 /* What Boni just opened (F9): the main area outlined in the accent for a moment, never in the way of a click. */
 .main {
