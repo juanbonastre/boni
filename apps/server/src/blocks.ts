@@ -4,6 +4,8 @@ import {
   blockDateField,
   blockRows,
   type ChartData,
+  type ControlBlock,
+  catalogueErrors,
   computeBlock,
   DATA_BLOCKS,
   type DataBlock,
@@ -57,6 +59,26 @@ function sources(store: UserStore, blocks: readonly unknown[], getSys: Sys | und
   return { types, rowsOf, titleOf };
 }
 
+/**
+ * The page's controls a request brings with its blocks (docs/sistema.md §4.6, D-59): what the blocks' `$<id>` stand
+ * for. The app sends them as the page holds them; the server checks their shape and computes with them, so the
+ * numbers are the store's, never the app's.
+ */
+function controlsIn(body: unknown, code: string): ControlBlock[] {
+  const cs = (body as { controls?: unknown } | null)?.controls;
+  if (cs === undefined) return [];
+  if (
+    !Array.isArray(cs) ||
+    cs.length > MAX_BLOCKS ||
+    !cs.every(
+      (c) =>
+        (c as { type?: unknown } | null)?.type === "control" && catalogueErrors(c).length === 0,
+    )
+  )
+    throw new BlocksError(code);
+  return cs as ControlBlock[];
+}
+
 const fieldsUsed = (
   block: DataBlock,
   def: Parameters<typeof blockDateField>[1],
@@ -73,6 +95,7 @@ export function computeBlocks(
 ): { results: Record<string, BlockResult | { data: ChartData & { computed_at: string } }> } {
   const blocks = (body as { blocks?: unknown } | null)?.blocks;
   if (!Array.isArray(blocks) || blocks.length > MAX_BLOCKS) throw new BlocksError("bad-blocks");
+  const controls = controlsIn(body, "bad-blocks");
   const { types, rowsOf, titleOf } = sources(store, blocks, o.sys);
   const results: Record<string, BlockResult | { data: ChartData & { computed_at: string } }> = {};
   const used = new Map<string, Set<string>>();
@@ -82,7 +105,7 @@ export function computeBlocks(
       throw new BlocksError("bad-blocks");
     const block = b as DataBlock;
     // Boni's own types (pages, proposals…) are not collections the catalogue offers: such a block is refused.
-    const out = computeBlock(block, types, rowsOf, { today: o.today, titleOf });
+    const out = computeBlock(block, types, rowsOf, { today: o.today, titleOf, controls });
     // When it was computed, as every chart the app shows says.
     results[id] =
       "data" in out ? { data: { ...out.data, computed_at: new Date(o.now).toISOString() } } : out;
@@ -127,8 +150,14 @@ export function blockRowsOf(
     !(DATA_BLOCKS as readonly unknown[]).includes(block.type)
   )
     throw new BlocksError("bad-block");
+  const controls = controlsIn(body, "bad-block");
   const { types, rowsOf, titleOf } = sources(store, [block], o.sys);
-  const out = blockRows(block, types, rowsOf, { today: o.today, titleOf, drill: drill ?? null });
+  const out = blockRows(block, types, rowsOf, {
+    today: o.today,
+    titleOf,
+    drill: drill ?? null,
+    controls,
+  });
   if ("problems" in out) return { problems: out.problems };
   const def = types[block.collection ?? ""];
   if (!def) throw new BlocksError("bad-block");

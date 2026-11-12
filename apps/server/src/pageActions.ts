@@ -15,11 +15,14 @@ import {
 import { join, type Label, type TypeDef } from "@boni/entities";
 import type { OpMeta, UserStore } from "@boni/store";
 import {
+  type ControlBlock,
+  controlValueOk,
   DATA_BLOCKS,
   databaseViewOk,
   type PageBlock,
   type PageSpec,
   pageErrors,
+  refTo,
 } from "@boni/views";
 import {
   createPage,
@@ -81,9 +84,9 @@ const isObj = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === "object" && !Array.isArray(x);
 
 /**
- * A block as a model writes it, as the page keeps it: a fresh id, its collection and fields by id. Only texts and
- * what reads a collection (a number, a bar list, a chart, a table); a link to a screen, a file or a button is the
- * app's.
+ * A block as a model writes it, as the page keeps it: a fresh id, its collection and fields by id. Only texts, a
+ * page's value (a «Control», D-59) and what reads a collection (a number, a bar list, a chart, a table); a link to a
+ * screen, a file or a button is the app's. A data block names a control of the page as `$<its block id>`.
  */
 export function blockFrom(ro: ReadStore, raw: unknown): PageBlock {
   if (!isObj(raw) || typeof raw.type !== "string") throw new ToolError("bad-block");
@@ -119,9 +122,116 @@ export function blockFrom(ro: ReadStore, raw: unknown): PageBlock {
   }
   if (type === "database") {
     const d = def();
-    return { id, type, source: d.id, view: viewFrom(d, raw.view ?? { layout: "table" }, field) };
+    return {
+      id,
+      type,
+      source: d.id,
+      view: viewFrom(d, raw.view ?? { layout: "table" }, field, true),
+    };
+  }
+  if (type === "control") {
+    const out: Record<string, unknown> = { id, type, name: raw.name, kind: raw.kind };
+    if (raw.kind === "option") {
+      const d = def();
+      out.collection = d.id;
+      const f = field(d, raw.field);
+      if (!f) throw new ToolError("bad-block");
+      out.field = f;
+    }
+    const c = out as unknown as ControlBlock;
+    if (raw.value !== undefined && raw.value !== null) {
+      const v = valueFor(ro, c, raw.value);
+      if (v !== undefined) out.value = v;
+    }
+    return out as PageBlock;
   }
   throw new ToolError("bad-block");
+}
+
+const fold = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+/**
+ * A value as a model writes it, as the control keeps it: an option by its id or its name, a record a relation points
+ * to by its id or its title (one the models may see), a month as YYYY-MM, a number, a text. One that is none of
+ * them is refused, never another in its place.
+ */
+export function valueFor(ro: ReadStore, c: ControlBlock, raw: unknown): string | number {
+  if (c.kind === "number" && typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw)))
+    raw = Number(raw);
+  if (c.kind === "option" && typeof raw === "string") {
+    const def = c.collection ? ro.schema().types[c.collection] : undefined;
+    const f = def?.fields.find((x) => x.id === c.field);
+    if (!f) throw new ToolError("unknown-field");
+    if (f.type === "relation") {
+      const target = f.relation?.target ?? "";
+      const byId = ro.get(raw);
+      if (byId && byId.entity.type === target) return byId.entity.id;
+      const tdef = ro.schema().types[target];
+      const hits = tdef
+        ? ro
+            .list(target, { deep: true })
+            .filter((e) => fold(String(e.entity.values[tdef.titleField] ?? "")) === fold(raw))
+        : [];
+      if (hits.length !== 1) throw new ToolError(hits.length ? "ambiguous-value" : "no-such-value");
+      return (hits[0] as (typeof hits)[number]).entity.id;
+    }
+    const o =
+      f.options?.find((x) => x.id === raw) ?? f.options?.find((x) => fold(x.name) === fold(raw));
+    if (!o) throw new ToolError("no-such-value");
+    return o.id;
+  }
+  if (!controlValueOk(c.kind, raw)) throw new ToolError("bad-value");
+  return raw as string | number;
+}
+
+/**
+ * A block as a model writes it may name a control of the page by its name (`"$Categoría"`, a rule's `from`), as it
+ * cannot know the id the control was given: the name becomes that id. A name that is no control is left as it is,
+ * and the page's check refuses it.
+ */
+export function namedRefs(raw: unknown, p: Page): unknown {
+  if (!isObj(raw)) return raw;
+  const cs = p.spec.blocks.filter((b): b is PageBlock & ControlBlock => b.type === "control");
+  const idOf = (name: string) =>
+    (cs.find((c) => c.id === name) ?? cs.find((c) => fold(c.name) === fold(name)))?.id;
+  const ref = (v: unknown) => {
+    if (typeof v !== "string" || !v.startsWith("$")) return v;
+    const id = idOf(v.slice(1));
+    return id ? refTo(id) : v;
+  };
+  const out: Record<string, unknown> = { ...raw };
+  for (const k of ["filterValue", "period"] as const) if (k in out) out[k] = ref(out[k]);
+  const rule = (r: unknown) =>
+    isObj(r) && typeof r.from === "string" ? { ...r, from: idOf(r.from) ?? r.from } : r;
+  if (isObj(out.view) && Array.isArray(out.view.filter))
+    out.view = {
+      ...out.view,
+      filter: out.view.filter.map((r) =>
+        isObj(r) && Array.isArray(r.rules) ? { ...r, rules: r.rules.map(rule) } : rule(r),
+      ),
+    };
+  return out;
+}
+
+/** The page with one control holding another value (none: `null`), found by its block id or its name. */
+export function withValue(p: Page, ro: ReadStore, control: string, raw: unknown): PageSpec {
+  const cs = p.spec.blocks.filter((b): b is PageBlock & ControlBlock => b.type === "control");
+  const c = cs.find((b) => b.id === control) ?? cs.find((b) => fold(b.name) === fold(control));
+  if (!c) throw new ToolError("no-such-block");
+  const value = raw === null || raw === "" ? undefined : valueFor(ro, c, raw);
+  const { value: _old, ...rest } = c;
+  const next = (value === undefined ? rest : { ...rest, value }) as PageBlock;
+  const spec: PageSpec = {
+    ...p.spec,
+    blocks: p.spec.blocks.map((x) => (x.id === c.id ? next : x)),
+  };
+  if (pageErrors(spec).length) throw new ToolError("bad-value");
+  return spec;
 }
 
 /** A table's view as a model writes it (its fields by name), as the page keeps it (by id). */
@@ -129,6 +239,7 @@ function viewFrom(
   d: TypeDef,
   raw: unknown,
   field: (d: TypeDef, name: unknown) => string | undefined,
+  refs = false,
 ): Extract<PageBlock, { type: "database" }>["view"] {
   if (!isObj(raw)) throw new ToolError("bad-view");
   const out: Record<string, unknown> = { layout: raw.layout };
@@ -154,7 +265,8 @@ function viewFrom(
     out.filter = raw.filter.map((r) =>
       isObj(r) && Array.isArray(r.rules) ? { ...r, rules: r.rules.map(rule) } : rule(r),
     );
-  if (!databaseViewOk(out)) throw new ToolError("bad-view");
+  // A page's table may take a rule's value `from` one of the page's controls (D-59).
+  if (!databaseViewOk(out, refs)) throw new ToolError("bad-view");
   return out as Extract<PageBlock, { type: "database" }>["view"];
 }
 
@@ -174,7 +286,8 @@ const viewField = (d: TypeDef, name: unknown) => {
 };
 
 /** A view of a collection as a model writes it (its fields by name), as a table or a saved view keeps it (by id). */
-export const viewOf = (def: TypeDef, raw: unknown) => viewFrom(def, raw, viewField);
+export const viewOf = (def: TypeDef, raw: unknown, refs = false) =>
+  viewFrom(def, raw, viewField, refs);
 
 /** A table's block with its view changed. */
 export function withView(p: Page, ro: ReadStore, blockId: string, raw: unknown): PageSpec {
@@ -184,7 +297,9 @@ export function withView(p: Page, ro: ReadStore, blockId: string, raw: unknown):
   if (!def) throw new ToolError("unknown-type");
   const spec: PageSpec = {
     ...p.spec,
-    blocks: p.spec.blocks.map((x) => (x.id === blockId ? { ...b, view: viewOf(def, raw) } : x)),
+    blocks: p.spec.blocks.map((x) =>
+      x.id === blockId ? { ...b, view: viewOf(def, raw, true) } : x,
+    ),
   };
   if (pageErrors(spec).length) throw new ToolError("bad-view");
   return spec;
@@ -240,7 +355,7 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
     service: "pages",
     title: "Añadir bloque",
     describe:
-      'Add a block at the end of one of Juan\'s pages, as he would with «/»: block {"lit": {...}} is a text ({"type": "heading" | "text" | "bullet" | "todo" | "quote" | "callout", "text": "..."}, or {"type": "divider"}), or reads a collection by its key and fields by theirs: a number {"type": "number", "collection", "measure": "count" | "sum" | "avg", "field"}, a bar list {"type": "bars", ..., "groupBy": field}, a chart {"type": "graph", ..., "groupBy": field or "@month" | "@week" | "@day", "shape": "bar" | "hbar" | "line" | "area" | "donut"} (each with "period": "month" | "30d" | "12m" | "year" | "all", "title", "filterField" and "filterValue"), or a table {"type": "database", "collection", "view": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [fields], "filter": [{"field", "op", "value"}]}}',
+      'Add a block at the end of one of Juan\'s pages, as he would with «/»: block {"lit": {...}} is a text ({"type": "heading" | "text" | "bullet" | "todo" | "quote" | "callout", "text": "..."}, or {"type": "divider"}), or reads a collection by its key and fields by theirs: a number {"type": "number", "collection", "measure": "count" | "sum" | "avg", "field"}, a bar list {"type": "bars", ..., "groupBy": field}, a chart {"type": "graph", ..., "groupBy": field or "@month" | "@week" | "@day", "shape": "bar" | "hbar" | "line" | "area" | "donut"} (each with "period": "month" | "30d" | "12m" | "year" | "all", "title", "filterField" and "filterValue"), a table {"type": "database", "collection", "view": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [fields], "filter": [{"field", "op", "value"}]}}, or a value of the page shown as a control {"type": "control", "name", "kind": "option" | "month" | "number" | "text", "collection" and "field" (an option\'s: a select or a relation), "value"}; a number, bar list or chart then names it as "filterValue": "$<its name>" (an option control over its filterField) or "period": "$<its name>" (a month control), and a table\'s rule as {"field", "op", "from": "<its name>"}',
     args: {
       page,
       block: { role: "definition", required: true, describe: "the block" },
@@ -248,7 +363,7 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
     run(c, a, extra) {
       const s = serviceOf(c.service);
       const p = pageOf(s.store, a.page);
-      const block = blockFrom(c.store, a.block ? plain(a.block) : null);
+      const block = blockFrom(c.store, namedRefs(a.block ? plain(a.block) : null, p));
       const next = wrap(() =>
         updatePage(s.store, p.id, { spec: withBlock(p, block) }, writer(s, [a.block], extra)),
       );
@@ -273,6 +388,27 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
       const p = pageOf(s.store, a.page);
       const spec = withView(p, c.store, text(a.block), a.view ? plain(a.view) : null);
       return pageVal(wrap(() => updatePage(s.store, p.id, { spec }, writer(s, [a.view], extra))));
+    },
+  });
+  r.register({
+    name: "pages.set_value",
+    effect: "write",
+    area: "pages",
+    service: "pages",
+    title: "Cambiar valor",
+    describe:
+      "Change what one of a page's controls holds (its block id or its name), as Juan does on the control: the page's numbers, charts and tables follow it. value: an option's name, a record's title (for a relation), YYYY-MM, a number or a text; null: none (every row)",
+    args: {
+      page,
+      control: { role: "option", required: true, describe: "the control's block id or its name" },
+      value: { role: "value", required: true, describe: "what it holds now; null: none" },
+    },
+    run(c, a, extra) {
+      const s = serviceOf(c.service);
+      const p = pageOf(s.store, a.page);
+      const raw = a.value ? plain(a.value) : null;
+      const spec = withValue(p, c.store, text(a.control), raw);
+      return pageVal(wrap(() => updatePage(s.store, p.id, { spec }, writer(s, [a.value], extra))));
     },
   });
   r.register({

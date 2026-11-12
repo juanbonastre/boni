@@ -38,14 +38,19 @@ import {
   blockDateField,
   type ChartData,
   type ChartSpec,
+  type ControlBlock,
   computeBlock,
+  controlsOf,
   type DataBlock,
   type DatabaseFilter,
   type DatabaseView,
   findPart,
+  heldValue,
   isFilterGroup,
   markdownToBlocks,
   type PageBlock,
+  refOf,
+  rulesWithValues,
 } from "@boni/views";
 import { rowUiOf } from "./data.ts";
 import { collectionKeysOf, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
@@ -528,6 +533,11 @@ function screenReader(
 ) {
   const today = o.today ?? new Date().toISOString().slice(0, 10);
   const levels = store.aiAccess();
+  /** A record's title as the models may read it (a page's value, a filter by a relation), or none. */
+  const recordTitle = (id: string): Val | undefined => {
+    const r = record(id);
+    return r?.t === "rec" ? r.fields.title : undefined;
+  };
   /** A collection the models read whole values of: there, not Boni's own, and neither closed nor opaque. */
   const open = (id: string): TypeDef | null => {
     const def = visible[id];
@@ -609,15 +619,28 @@ function screenReader(
   };
 
   /** A number, a bar list or a chart over a collection: what it counts, and its numbers. */
-  const dataBlock = (b: DataBlock, by: Label): Record<string, Val> | null => {
+  const dataBlock = (
+    b: DataBlock,
+    by: Label,
+    controls: readonly ControlBlock[] = [],
+  ): Record<string, Val> | null => {
     const def = open(b.collection);
     if (!def) return null;
     // As the engine reads it (`blockChartSpec`): a sum or an average needs its field, else it counts.
     const of = key(def, b.measure && b.measure !== "count" ? b.field : undefined);
+    // A page's values (D-59): what the controls it names hold now, as the server computes it.
+    const held = (v: string | undefined) => {
+      const ref = refOf(v);
+      if (!ref) return v;
+      const x = heldValue(controls.find((c) => c.id === ref));
+      return x === undefined ? undefined : String(x);
+    };
+    const filterValue = held(b.filterValue);
+    const period = refOf(b.period) ? (held(b.period) ?? "all") : (b.period ?? "all");
     const out: Record<string, Val> = {
       collection: leaf(typeName(def), code),
       measure: leaf(of ? (b.measure ?? "count") : "count", code),
-      period: leaf(b.period ?? "all", code),
+      period: leaf(period, refOf(b.period) ? by : code),
     };
     if (of) out.field = leaf(fieldName(of), code);
     const group = b.type === "number" ? undefined : b.groupBy;
@@ -626,13 +649,17 @@ function screenReader(
     else if (groupField) out.group = leaf(fieldName(groupField), code);
     const dateField = key(def, blockDateField(b, def, visible));
     if (dateField) out.date = leaf(fieldName(dateField), code);
-    const filterField = key(def, b.filterValue ? b.filterField : undefined);
+    const filterField = key(def, filterValue ? b.filterField : undefined);
     if (filterField) {
-      const option = filterField.options?.find((x) => x.id === b.filterValue);
+      const option = filterField.options?.find((x) => x.id === filterValue);
       out.filter = rec(
         {
           field: leaf(fieldName(filterField), code),
-          equals: option ? leaf(option.name, option.label) : leaf(b.filterValue ?? "", by),
+          equals: option
+            ? leaf(option.name, option.label)
+            : filterField.type === "relation"
+              ? (recordTitle(filterValue ?? "") ?? leaf("", code))
+              : leaf(filterValue ?? "", by),
         },
         code,
       );
@@ -656,7 +683,11 @@ function screenReader(
       if (l) read.push(l);
       return String(s.entity.values[t.titleField] ?? "");
     };
-    const result = computeBlock(b, visible, () => rows.map((s) => s.entity), { today, titleOf });
+    const result = computeBlock(b, visible, () => rows.map((s) => s.entity), {
+      today,
+      titleOf,
+      controls,
+    });
     if (!("data" in result)) return out;
     Object.assign(out, figures(result.data, joined(code, read)));
     // Rows the models may not read are not in its numbers. When that makes them other than the ones on Juan's
@@ -666,7 +697,7 @@ function screenReader(
       const whole =
         all.length === rows.length
           ? null
-          : computeBlock(b, visible, () => all.map((s) => s.entity), { today });
+          : computeBlock(b, visible, () => all.map((s) => s.entity), { today, controls });
       if (whole && "data" in whole && numbersOf(whole.data) !== numbersOf(result.data))
         out.partial = leaf(true, code);
     }
@@ -833,8 +864,9 @@ function screenReader(
         { kind: leaf(kind, code), page: leaf(pageId, code), block: leaf(blockId, code), ...more },
         code,
       );
+    const controls = controlsOf(page.blocks);
     if (b.type === "number" || b.type === "bars" || b.type === "graph") {
-      const more = dataBlock(b, by);
+      const more = dataBlock(b, by, controls);
       return more
         ? said(b.type === "graph" ? "chart" : b.type, { title: leaf(b.title ?? "", by), ...more })
         : "closed";
@@ -849,9 +881,34 @@ function screenReader(
         ? said("view", {
             collection: leaf(typeName(def), code),
             name: leaf(def.name, def.label),
-            view: viewOf(def, b.view, by),
+            // Its rules with the page's values in them (D-59).
+            view: viewOf(
+              def,
+              { ...b.view, filter: rulesWithValues(b.view.filter ?? [], controls) },
+              by,
+            ),
           })
         : "closed";
+    }
+    if (b.type === "control") {
+      // A page's value: its name, its kind, and what it holds now as Juan sees it (an option's or a record's name).
+      const v = heldValue(b);
+      const over = b.collection ? open(b.collection) : null;
+      const f = over ? key(over, b.field) : undefined;
+      const option = f?.options?.find((x) => x.id === v);
+      const shown =
+        v === undefined
+          ? undefined
+          : option
+            ? leaf(option.name, option.label)
+            : f?.type === "relation"
+              ? recordTitle(String(v))
+              : leaf(v, by);
+      return said("control", {
+        name: leaf(b.name, by),
+        type: leaf(b.kind, code),
+        ...(shown ? { value: shown } : {}),
+      });
     }
     if (TEXT_BLOCKS.has(b.type) && "text" in b)
       return said("text", { text: leaf(b.text.slice(0, MAX_TEXT), by) });

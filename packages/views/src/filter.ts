@@ -13,9 +13,14 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 /** At most this many rules in a filter, its groups' counted. */
 const MAX_RULES = 20;
 
-const ruleOk = (r: unknown): boolean =>
+/** A rule; with `refs` (a page's table), its value may come `from` a control of the page instead. */
+const ruleOk = (r: unknown, refs = false): boolean =>
   isObj(r) &&
-  Object.keys(r).every((k) => k === "field" || k === "op" || k === "value") &&
+  Object.keys(r).every(
+    (k) => k === "field" || k === "op" || k === "value" || (refs && k === "from"),
+  ) &&
+  (r.from === undefined ||
+    (typeof r.from === "string" && ID.test(r.from) && r.value === undefined)) &&
   typeof r.field === "string" &&
   ID.test(r.field) &&
   (FILTER_OPS as readonly unknown[]).includes(r.op) &&
@@ -24,16 +29,19 @@ const ruleOk = (r: unknown): boolean =>
     (typeof r.value === "number" && Number.isFinite(r.value)));
 
 /** A group: «y» or «o» and one or more rules, one level deep (no group inside a group), closed shape. */
-const groupOk = (g: unknown): boolean =>
+const groupOk = (g: unknown, refs = false): boolean =>
   isObj(g) &&
   Object.keys(g).every((k) => k === "join" || k === "rules") &&
   (g.join === "and" || g.join === "or") &&
   Array.isArray(g.rules) &&
   g.rules.length > 0 &&
-  g.rules.every(ruleOk);
+  g.rules.every((r) => ruleOk(r, refs));
 
-/** Problems with a filter: a list of rules and groups (at most 20 rules in all, closed shape); empty when fine. */
-export function filterErrors(x: unknown): string[] {
+/**
+ * Problems with a filter: a list of rules and groups (at most 20 rules in all, closed shape); empty when fine. Only a
+ * page's table (`refs`) may take a rule's value `from` a control of its page; a saved view or a protection rule never.
+ */
+export function filterErrors(x: unknown, refs = false): string[] {
   if (!Array.isArray(x)) return ["not a list"];
   const n = x.reduce<number>(
     (sum, r) => sum + (isObj(r) && Array.isArray(r.rules) ? r.rules.length : 1),
@@ -42,10 +50,10 @@ export function filterErrors(x: unknown): string[] {
   if (n > MAX_RULES) return [`more than ${MAX_RULES} rules`];
   return x.flatMap((r, i) =>
     isObj(r) && "rules" in r
-      ? groupOk(r)
+      ? groupOk(r, refs)
         ? []
         : [`group ${i}: bad shape`]
-      : ruleOk(r)
+      : ruleOk(r, refs)
         ? []
         : [`rule ${i}: bad shape`],
   );
@@ -72,6 +80,8 @@ export function matchesFilters(
 ): boolean {
   // true, false, or undefined when the rule is left out.
   const one = (r: DatabaseFilter): boolean | undefined => {
+    // A rule whose value comes from a page's control is read with it (`rulesWithValues`); alone, it filters nothing.
+    if (r.from !== undefined) return undefined;
     const type = typeOf(r.field);
     if (type === undefined)
       return unknownField === "fail" ? false : unknownField === "match" ? true : undefined;

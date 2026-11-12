@@ -12,6 +12,7 @@ import {
   type SavedView,
   SYS,
   templatePage,
+  withPassed,
 } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -2560,6 +2561,18 @@ export async function openPage(id: string) {
   } catch {
     if (!get().page) toast(get().t("page.loadError"));
   }
+}
+
+/**
+ * A page opened by a link that carries values (D-59): opened, then its controls named take them, saved with it (as
+ * a change of the person's, undoable) when one changed.
+ */
+export async function openPageWith(id: string, values: Record<string, string | number | null>) {
+  await openPage(id);
+  const page = get().page;
+  if (page?.id !== id || !Object.keys(values).length) return;
+  const { blocks, changed } = withPassed(page.spec.blocks, values);
+  if (changed) setPageBlocks(blocks);
 }
 
 /** The start screen: the last page opened here if it still exists, else the first; none, the welcome. */

@@ -399,7 +399,7 @@ const ACTION_TOOLS: readonly {
     name: "pages_add_block",
     action: "pages.add_block",
     description:
-      'Adds a block at the end of a page, as Juan does with «/». block: a text {"type": "heading" | "text" | "bullet" | "todo" | "quote" | "callout", "text"} or {"type": "divider"}; or what reads a collection, by its name and its properties\' names: a number {"type": "number", "collection", "measure": "count" | "sum" | "avg", "field"}, a bar list {"type": "bars", ..., "groupBy": property}, a chart {"type": "graph", ..., "groupBy": property or "@month" | "@week" | "@day", "shape": "bar" | "hbar" | "line" | "area" | "donut"} (each with "period": "month" | "30d" | "12m" | "year" | "all", "title", "filterField", "filterValue"), or a table {"type": "database", "collection", "view": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}]}}.',
+      'Adds a block at the end of a page, as Juan does with «/». block: a text {"type": "heading" | "text" | "bullet" | "todo" | "quote" | "callout", "text"} or {"type": "divider"}; or what reads a collection, by its name and its properties\' names: a number {"type": "number", "collection", "measure": "count" | "sum" | "avg", "field"}, a bar list {"type": "bars", ..., "groupBy": property}, a chart {"type": "graph", ..., "groupBy": property or "@month" | "@week" | "@day", "shape": "bar" | "hbar" | "line" | "area" | "donut"} (each with "period": "month" | "30d" | "12m" | "year" | "all", "title", "filterField", "filterValue"), a table {"type": "database", "collection", "view": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}]}}, or a value of the page shown as a control {"type": "control", "name", "kind": "option" | "month" | "number" | "text", "collection" and "field" for an option (a select or a relation property), "value"}: a number, bar list or chart names it as "filterValue": "$<its name>" or "period": "$<its name>" (a month control), a table\'s rule as {"field", "op", "from": "<its name>"}.',
     required: ["page", "block"],
   },
   {
@@ -408,6 +408,14 @@ const ACTION_TOOLS: readonly {
     description:
       "Changes how a table of a page shows its collection (block: the table's block id; view: as in pages_add_block).",
     required: ["page", "block", "view"],
+  },
+  {
+    name: "pages_set_value",
+    action: "pages.set_value",
+    description:
+      "Changes what one of a page's controls holds (control: its block id or its name; value: an option's name, a record's title for a relation, YYYY-MM, a number or a text; null: none). The page's numbers, charts and tables follow it.",
+    required: ["page", "control", "value"],
+    nullable: ["value"],
   },
   {
     name: "pages_update",

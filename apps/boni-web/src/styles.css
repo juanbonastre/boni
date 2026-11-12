@@ -3625,6 +3625,26 @@ th.row-tools .add-col:hover {
   border-radius: 10px;
   background: var(--surface);
 }
+/* A page's value (D-59, docs/sistema.md §4.6): its name over its control, as wide as its column. */
+.ctl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ctl-name {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.ctl-input {
+  width: 100%;
+  min-width: 0;
+}
+/* The numbers being asked again after a value changed (I-15): dimmed in place, never emptied. */
+.blk[aria-busy="true"] > :not(.blk-gutter):not(.blk-who) {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
 .data-blk-bars {
   display: flex;
   flex-direction: column;

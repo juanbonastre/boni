@@ -26,6 +26,9 @@ const PAGE_TEST =
   "«hazme una página Gastos con el gasto por categoría» makes the page with its chart, and Undo takes it back";
 const TABLE_TEST =
   "a table of a page: added, its view changed, the page renamed and moved, and deleted only on Juan's touch";
+/** A page's values (F11, task 87): a control, the blocks that read it, its value set by name. */
+const VALUE_TEST =
+  "«enséñame solo Café en Gastos del mes»: a control of the category, the number reading it, its value set by the record's title, and Undo takes it back";
 const INBOX_TEST =
   "«acepta estas dos»: the Bandeja's cards on the screen, accepted on a card that names them, and one rejected";
 /** «Datos», «Flujos» and «Corregir» (F10, part 2). */
@@ -120,6 +123,7 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "pages.create": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.add_block": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.set_view": [{ file: ACTIONS, test: TABLE_TEST }],
+  "pages.set_value": [{ file: ACTIONS, test: VALUE_TEST }],
   "pages.update": [{ file: ACTIONS, test: TABLE_TEST }],
   "pages.delete": [{ file: ACTIONS, test: TABLE_TEST }],
   "inbox.accept": [{ file: ACTIONS, test: INBOX_TEST }],
