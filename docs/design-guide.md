@@ -716,12 +716,19 @@ contraseña ni un código aquí» under a question.
   first free hour of its day: one tap puts the time on the line and sends it with the acceptance; once Boni has
   earned it the line says the time already; when a reply in the same thread of mail moved it, «Antes: jue, 29
   oct, 12:00» in `--muted` after the day: the earlier card is gone and this one says what it was, task 46; when the
-  calendar already has the same thing, «Ya en el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
+  calendar already has the same thing, «Ya está en el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
   it is an external calendar's event, the primary button reads «Enlazar» and the record is made linked to it; an
   entry at the same moment with another title may be it: «¿Es «Quedada cafe, 16:00–17:00»?» and a button «Es el
   mismo» before «Aceptar» that puts into that record what the proposal adds (nothing of it overwritten; an external
   event's: the record linked to it), task 58; another entry at the same time is «Se solapa con X» in `--muted`,
-  task 51), where it came
+  task 51). **The card is checked again each time it is seen** (task 73, D-57): its day by name and number, with
+  «Hoy», «Mañana» or «Ayer» in front when it is one of those («Docencia · Hoy, jue, 29 oct, 12:00»), and one word
+  in the text's colour when something changed since the mail: «Ya hecho: Clase IPM, 17:00–18:00» (the same task,
+  already ticked), «Ya está en el calendario: …», or «Ya pasó» (its hour ended; a task without a time, its day).
+  The words are the state, never a sentence; nothing leaves the Bandeja by itself. «Aceptar» on a card whose word
+  changed since it was drawn is not taken: «Ha cambiado» under the buttons, and the card read again shows its
+  word; pressed again, it goes. The proposal's own page says the same line under its title. The mail's line ends
+  in «· Leído» (never cut by a long sender) once Juan opened that mail in his mailbox. Where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said

@@ -74,6 +74,7 @@ import {
   updateFlowRow,
   withFlows,
 } from "./flowsCollection.ts";
+import { inboxContext } from "./inboxCard.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
 import { mcpAnswer } from "./mcp.ts";
@@ -440,6 +441,12 @@ export function makeApp(opts: ServerOptions): App {
             said,
             false,
           ),
+        () =>
+          inboxContext((opts.agent as AgentHost).store(s.user.id), {
+            external: (day) => opts.agent?.externalItems?.(s.user.id, [day]) ?? [],
+            now: (opts.now ?? Date.now)(),
+            tz: (opts.agent as AgentHost).tz,
+          }),
       );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });

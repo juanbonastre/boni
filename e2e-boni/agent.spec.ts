@@ -8,11 +8,14 @@ import {
   CARD_BOOK,
   CARD_COMPACT,
   CARD_DETAILED,
+  CARD_DONE,
   CARD_EVENT,
   CARD_FUNCTION,
   CARD_LINKED,
   CARD_MAIL,
+  CARD_PAST,
   CARD_TIME,
+  CARD_TODAY,
   CHART_REPLY,
   confirmTurn,
   DONE,
@@ -1872,7 +1875,7 @@ test("a proposal the calendar already has says so, and «Enlazar» accepts it li
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
   await expect(card.locator(".inbox-already")).toContainText(
-    "Ya en el calendario: Reconocimiento, 12:00–13:00",
+    "Ya está en el calendario: Reconocimiento, 12:00–13:00",
   );
   await expect(card.locator(".inbox-overlap")).toContainText("Se solapa con Clase FUP");
   // The primary button is «Enlazar», and it sends the event's id with the acceptance.
@@ -1977,4 +1980,90 @@ test("a task without a time: the card offers the first free hour, one tap takes 
     .toEqual([
       'POST api/agent/proposals/c6/accept {"edits":{"values":{"hora":"16:00","hora_fin":"17:00"}}}',
     ]);
+});
+
+test("a card checked again each time it is seen: «Hoy», «Leído», «Ya pasó», «Ya hecho»; nothing leaves on its own (task 73)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_TODAY, CARD_DONE] }],
+      "GET api/mail": [MAIL],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const cards = page.locator(".inbox-panel .inbox-card");
+  await expect(cards).toHaveCount(2);
+  // Proposed yesterday from «hoy a las 12», seen today: «Hoy» before its day by name and number, no word.
+  const today = cards.filter({ hasText: "Revisar actas" });
+  await expect(today.locator(".inbox-what")).toContainText("Hoy, jue, 29 oct, 12:00–13:00");
+  await expect(today.locator(".inbox-state")).toHaveCount(0);
+  await expect(today.locator(".inbox-read")).toHaveText("· Leído");
+  // Whole, never cut by a long sender.
+  expect(
+    await today.locator(".inbox-read").evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
+  ).toBe(true);
+  // The calendar has it ticked: «Ya hecho», with what it is.
+  const done = cards.filter({ hasText: "Ya hecho" });
+  await expect(done.locator(".inbox-state")).toHaveAttribute("data-state", "done");
+  await expect(done.locator(".inbox-state")).toHaveText("· Ya hecho: Reconocimiento, 12:00–13:00");
+  await expect(done.locator(".inbox-what")).toContainText("Hoy, ");
+  await page.screenshot({ path: `${SHOTS}/inbox-recheck.png` });
+});
+
+test("«Aceptar» on a card that changed since it was seen is stopped and says so, the card still there (task 73)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_TODAY] }],
+      "POST api/agent/proposals/:id/accept": [{ __status: 409, error: "changed", state: "past" }],
+      "GET api/mail": [MAIL],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  // Not taken: the card stays, saying it changed; the request carried no word (the card showed none).
+  await expect(card.locator(".decide-error")).toHaveText("Ha cambiado");
+  await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(1);
+  expect(await requests(page, "POST api/agent/proposals/c73/accept")).toEqual([
+    "POST api/agent/proposals/c73/accept",
+  ]);
+});
+
+test("a card that says «Ya pasó» is accepted only with that word, and on the phone too (task 73)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_PAST] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+      "GET api/mail": [MAIL],
+    },
+  });
+  await page
+    .locator(".m-tabs")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-card").first();
+  await expect(card.locator(".inbox-state")).toHaveText("· Ya pasó");
+  await expect(card.locator(".inbox-what")).toContainText("Hoy, ");
+  await iconsWhole(card, 44);
+  await card.screenshot({ path: `${SHOTS}/phone-inbox-past.png` });
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  await expect(page.locator(".inbox-card")).toHaveCount(0);
+  expect(await requests(page, "POST api/agent/proposals/c73/accept")).toEqual([
+    'POST api/agent/proposals/c73/accept {"seen":"past"}',
+  ]);
 });

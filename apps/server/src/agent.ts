@@ -53,7 +53,15 @@ import {
 } from "./flows.ts";
 import type { Runner } from "./functions.ts";
 import type { InboxService } from "./inboxActions.ts";
-import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
+import {
+  type CardState,
+  type InboxCard,
+  inboxCard,
+  inboxContext,
+  judgeTime,
+  recheckOnAccept,
+  timeOnAccept,
+} from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import type { Mails } from "./mail.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -477,6 +485,10 @@ export class AgentHost {
   /** The zone the account's days are in (the server's). */
   get tz(): string {
     return this.o.tz ?? "Europe/Madrid";
+  }
+  /** The server's clock (epoch ms): tests set it. */
+  now(): number {
+    return this.o.now?.() ?? Date.now();
   }
   /** Today's civil day in the server's zone (YYYY-MM-DD): a scheduled flow's `$today` (docs/flujos.md F4). */
   today(): string {
@@ -972,8 +984,11 @@ async function answerAgent(
       });
     case "GET /api/agent/proposals": {
       const store = host.store(who.account);
+      // The cards checked again now, by the request's clock (task 73).
       const ctx = inboxContext(store, {
         external: (day) => host.externalItems?.(who.account, [day]) ?? [],
+        now: host.now(),
+        tz: host.tz,
       });
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
@@ -1055,9 +1070,14 @@ async function answerAgent(
     case "POST /api/agent/requests/:id/dismiss":
       return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
     case "POST /api/agent/proposals/:id/accept": {
-      const b = ((await bodyOf(req)) ?? {}) as { edits?: unknown };
-      const r = await acceptCorrected(host, who, params.id ?? "", b.edits);
-      return "error" in r ? send(res, 400, { error: r.error }) : send(res, 200, after(r.done));
+      // `seen`: the state word the card showed (task 73), checked again before acting.
+      const b = ((await bodyOf(req)) ?? {}) as { edits?: unknown; seen?: unknown };
+      const r = await acceptCorrected(host, who, params.id ?? "", b.edits, b.seen ?? null);
+      if ("error" in r)
+        return r.error === "changed"
+          ? send(res, 409, { error: r.error, state: r.state ?? null })
+          : send(res, 400, { error: r.error });
+      return send(res, 200, after(r.done));
     }
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
@@ -1273,7 +1293,15 @@ export async function acceptCorrected(
   who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
   id: string,
   raw: unknown,
-): Promise<{ error: string } | { done: Awaited<ReturnType<Agent["acceptProposal"]>> }> {
+  /**
+   * The state word the card showed when Juan pressed it (task 73: «done», «calendar», «past», or null). Undefined
+   * (an action of the conversation, which shows no card word) counts as none.
+   */
+  seen?: unknown,
+): Promise<
+  | { error: string; state?: CardState | null }
+  | { done: Awaited<ReturnType<Agent["acceptProposal"]>> }
+> {
   const asked = (raw && typeof raw === "object" ? raw : undefined) as
     | { title?: unknown; collection?: unknown; done?: unknown; values?: unknown }
     | undefined;
@@ -1281,6 +1309,21 @@ export async function acceptCorrected(
   // Juan's corrections first (a new title, another collection), as the agent's edits.
   const store = host.store(who.account);
   const p = store.journal.proposal(id);
+  // A card is checked again before acting (docs/conversacion.md): one whose word changed since Juan saw it («Ya
+  // pasó», «Ya está en el calendario», «Ya hecho») is not accepted without his seeing it.
+  if (p?.status === "pending") {
+    const changed = recheckOnAccept(
+      store,
+      p,
+      seen,
+      inboxContext(store, {
+        external: (day) => host.externalItems?.(who.account, [day]) ?? [],
+        now: host.now(),
+        tz: host.tz,
+      }),
+    );
+    if (changed) return changed;
+  }
   const edits = asked && p ? acceptEdits(store, p, asked) : {};
   if ("error" in edits) return { error: edits.error };
   // A task's time the procedure set alone goes with it; what Juan made of a suggested time judges it.

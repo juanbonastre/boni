@@ -650,8 +650,23 @@ const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
   ["fecha", "Fecha", "datetime"],
   ["adjuntos", "Adjuntos", "text"],
   ["id_mensaje", "Id del mensaje", "text"],
+  // Opened in the mailbox (its `\Seen`), kept by the connector for the Bandeja's cards (task 73).
+  ["leido", "Leído", "checkbox"],
 ];
 
+/** The mails of the Bandeja's cards asked whether they were read in one check (task 73): one search and fetch each. */
+export const READ_PER_CHECK = 20;
+
+/**
+ * The mails one check asks about, turning: `n` from `from` on, wrapping around, so that past the first `n` each one
+ * is asked in its turn, not only the first ones (task 73). `next` is where the next check starts.
+ */
+export function readWindow<T>(items: T[], from: number, n: number): { take: T[]; next: number } {
+  if (items.length <= n) return { take: items, next: 0 };
+  const at = from % items.length;
+  const take = [...items.slice(at), ...items.slice(0, at)].slice(0, n);
+  return { take, next: (at + n) % items.length };
+}
 /** Bytes fetched of one message (its attachments included), and kept of one attachment (Juan, 2026-11-02). */
 export const FETCH_MAX = 16 * 1024 * 1024;
 export const ATTACHMENT_MAX = 8 * 1024 * 1024;
@@ -877,6 +892,8 @@ export class Mails {
   /** A review under way, for the pieces of «Revisar la guía» (D-51). */
   private reviewCtx = new Map<number, ReviewCtx>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Where each account's next look at whether mails were read starts (readWindow). */
+  private readAt = new Map<number, number>();
 
   private readonly tz: string;
 
@@ -1549,6 +1566,54 @@ export class Mails {
     }
   }
 
+  /**
+   * Whether Juan opened the mails the Bandeja's cards come from (task 73; Juan, 2026-11-05: «si he abierto el
+   * correo»): each one's `\Seen` in the mailbox, kept on the mail as «Leído», a value of the mailbox like the rest.
+   * Only the mails of pending proposals not yet read, at most READ_PER_CHECK a check, in turns (readWindow); from
+   * Gmail, in «Todos», where an archived mail still is. Read-only: only flags are fetched.
+   */
+  private async keepRead(
+    account: number,
+    r: ImapReader,
+    store: UserStore,
+    def: TypeDef,
+    folder: string,
+  ): Promise<void> {
+    const ids = new Set<string>();
+    for (const p of store.journal.proposals("pending")) {
+      const mail = p.run ? mailOfRun(store.journal, p.run) : "";
+      if (mail) ids.add(mail);
+    }
+    const unread = [...ids]
+      .sort()
+      .map((id) => store.get(id))
+      .filter(
+        (e): e is NonNullable<typeof e> =>
+          !!e &&
+          e.entity.type === def.id &&
+          e.entity.deleted === undefined &&
+          e.entity.values.f_leido !== true &&
+          typeof e.entity.values.f_id_mensaje === "string",
+      );
+    const { take: mails, next } = readWindow(unread, this.readAt.get(account) ?? 0, READ_PER_CHECK);
+    this.readAt.set(account, next);
+    if (!mails.length) return;
+    if (r.gmail) {
+      const all = await r.allMailFolder();
+      if (all && all !== folder) await r.examine(all);
+    }
+    let changed = 0;
+    for (const e of mails) {
+      const seen = await r.seenOf(e.entity.values.f_id_mensaje as string);
+      if (seen === null || seen === e.entity.values.f_leido) continue;
+      const l =
+        e.labels.f_id_mensaje ?? e.labels.f_asunto ?? label("external", "personal", [], true);
+      store.update(e.entity.id, { f_leido: { value: seen, label: l } }, { actor: "connector" });
+      changed++;
+    }
+    if (changed) console.log(`mail: ${changed} mails of the Bandeja found read`);
+  }
+
   /** One message as an entity: every value the sender's (external), the body as its text, its original a file. */
   private keep(
     store: UserStore,
@@ -1877,6 +1942,14 @@ export class Mails {
             );
           } else delete st.fetchStopped;
         } else await bring();
+      }
+      // Whether Juan opened the mails the Bandeja's cards come from (task 73), in the same session.
+      try {
+        await this.keepRead(account, r, store, def, s.folder);
+      } catch (e) {
+        console.warn(
+          `mail ${account}: whether mails were read not known (${(e as Error).message})`,
+        );
       }
       // The look back of task 34, once: done when it ran (or there was nothing to look back at).
       if (!restart && (rescanned || !rescan.length))

@@ -20,7 +20,15 @@ import { FETCH_FLOW, MAIL_FLOW, REVIEW_FLOW, revertFlow, saveUserFlow } from "./
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
-import { dueField, Mails, mailPlan, optionsValue, prefillValue, userIn } from "./mail.ts";
+import {
+  dueField,
+  Mails,
+  mailPlan,
+  optionsValue,
+  prefillValue,
+  readWindow,
+  userIn,
+} from "./mail.ts";
 import { decisions } from "./mailReview.ts";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
@@ -148,6 +156,8 @@ const box = {
   archived: new Map<number, string>(),
   /** The UID whose fetch drops the connection (0: none), as a mailbox that hangs up in the middle. */
   dropOn: 0,
+  /** The UIDs Juan opened (\Seen). */
+  seen: new Set<number>(),
 };
 /** The Gmail thread the fake gives a message (invented ids, by its UID). */
 const threadOf = (uid: number) => String(1800000000000000000n + BigInt(uid));
@@ -198,6 +208,16 @@ function fakeImap(): Promise<void> {
         else if (box.gmail && /^UID FETCH \d+ \(UID X-GM-THRID\)$/.test(cmd)) {
           const uid = Number(/UID FETCH (\d+)/.exec(cmd)?.[1]);
           s.write(`* 1 FETCH (UID ${uid} X-GM-THRID ${threadOf(uid)})\r\n${tag} OK\r\n`);
+        } else if (cmd.startsWith('UID SEARCH HEADER Message-ID "<')) {
+          // Any other server's search by Message-ID, in the folder examined.
+          const id = /"<([^>]+)>"/.exec(cmd)?.[1] ?? "";
+          const uid = uids.find((u) => (box.mails.get(u) ?? "").includes(`Message-ID: <${id}>`));
+          s.write(`* SEARCH${uid ? ` ${uid}` : ""}\r\n${tag} OK\r\n`);
+        } else if (/^UID FETCH \d+ \(UID FLAGS\)$/.test(cmd)) {
+          const uid = Number(/UID FETCH (\d+)/.exec(cmd)?.[1]);
+          s.write(
+            `* 1 FETCH (UID ${uid} FLAGS (${box.seen.has(uid) ? "\\Seen " : ""}\\Recent))\r\n${tag} OK\r\n`,
+          );
         } else if (cmd.startsWith("EXAMINE ")) {
           all = cmd === 'EXAMINE "[Gmail]/Todos"';
           s.write(
@@ -302,6 +322,19 @@ const call = (t: string, method: string, path: string, body?: unknown) =>
     headers: { authorization: `Bearer ${t}` },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+
+describe("whether the Bandeja's mails were read, asked in turns (task 73)", () => {
+  it("past the first n, every mail is asked in its turn, wrapping around", () => {
+    const items = ["a", "b", "c", "d", "e"];
+    expect(readWindow(items, 0, 2)).toEqual({ take: ["a", "b"], next: 2 });
+    expect(readWindow(items, 2, 2)).toEqual({ take: ["c", "d"], next: 4 });
+    expect(readWindow(items, 4, 2)).toEqual({ take: ["e", "a"], next: 1 });
+    // Fewer than n: all of them, from the start.
+    expect(readWindow(["a"], 3, 2)).toEqual({ take: ["a"], next: 0 });
+    // The list shrank as mails were found read: the cursor wraps, nothing is skipped for good.
+    expect(readWindow(["a", "b", "c"], 7, 2)).toEqual({ take: ["b", "c"], next: 0 });
+  });
+});
 
 describe("the mailbox", () => {
   it("is kept only after it connects, encrypted, and the password never comes back", async () => {
@@ -646,6 +679,19 @@ describe("tasks a mail asks for", () => {
     expect(first.weekday).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo)$/);
     const pending = store.journal.proposals("pending");
     expect(pending).toHaveLength(2);
+    // Whether Juan opened it (task 73): the mailbox's \Seen, kept on the mail of a waiting proposal on each
+    // check, its flags only (no STORE: the reader never marks a mail).
+    const correo = mailOfRun(store, pending[0]?.run ?? "") as string;
+    const leido = () => store.get(correo)?.entity.values.f_leido;
+    asked.length = 0;
+    await m.check(1);
+    expect(leido()).toBe(false);
+    box.seen.add(1);
+    await m.check(1);
+    expect(leido()).toBe(true);
+    expect(asked.filter((l) => / UID FETCH 1 \(UID FLAGS\)$/.test(l))).toHaveLength(2);
+    expect(asked.some((l) => /STORE|SELECT /.test(l))).toBe(false);
+    box.seen.clear();
     const rows = pending.map((p) => (p.view as { rows: { arg: string; value: string }[] }).rows);
     for (const r of rows) {
       expect(r.find((x) => x.arg === "type")?.value).toBe("gestiones");
@@ -664,8 +710,8 @@ describe("tasks a mail asks for", () => {
     expect(store.list("t_docencia")).toHaveLength(0);
     expect(store.list("t_gestiones")).toHaveLength(1);
     expect(store.list("t_diario")).toHaveLength(0);
-    const asked = reader.requests.find((r) => /choose the one option/.test(r.system));
-    expect((asked?.input as { options?: string[] } | undefined)?.options).toEqual([
+    const chose = reader.requests.find((r) => /choose the one option/.test(r.system));
+    expect((chose?.input as { options?: string[] } | undefined)?.options).toEqual([
       "Docencia",
       "Gestiones (p. ej.: Renovar el DNI)",
     ]);

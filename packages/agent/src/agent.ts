@@ -561,6 +561,19 @@ export function relativeDayIn(answer: unknown): boolean {
   ];
   return texts.some((x) => typeof x === "string" && RELATIVE_DAY.test(x));
 }
+/**
+ * Whether what a reader writes into a proposal says a relative day (task 73): a mail's reading's titles, or the note
+ * `fill` writes. A title and a note are read in the Bandeja another day, as prose is (task 72).
+ */
+export function relativeDayInProposal(answer: unknown): boolean {
+  if (!answer || typeof answer !== "object") return false;
+  const a = answer as { all?: unknown; note?: unknown };
+  const texts = [
+    a.note,
+    ...(Array.isArray(a.all) ? a.all.map((i) => (i as { title?: unknown } | null)?.title) : []),
+  ];
+  return texts.some((x) => typeof x === "string" && RELATIVE_DAY.test(x));
+}
 /** What a prose reader is told when its answer wrote a relative day, to answer again (once). */
 const RELATIVE_FIX =
   'Your previous answer wrote a relative day ("hoy", "mañana", "ayer"...): write each day by its weekday and number, counted from the message\'s own date.';
@@ -2161,7 +2174,10 @@ export class Agent {
     let fault: string | null = null;
     // A prose answer sent back for a relative day (task 72): fixed by the second answer, or kept.
     let relative: "fixed" | "kept" | null = null;
-    if (step.reader === "fill") checked = await this.fill(st, fields, flat, read, seen);
+    if (step.reader === "fill")
+      checked = await this.fill(st, fields, flat, read, seen, (r) => {
+        relative = r;
+      });
     else {
       const verdict =
         step.reader === "classify" && this.o.decider
@@ -2191,9 +2207,18 @@ export class Agent {
       }
       const decided = verdict === "unsure" ? null : verdict;
       if (decided) checked = { choice: decided };
-      else if (mods.length)
-        checked = checkReadMessage(await read(system, readMessageSchema(mods)), mods);
-      else {
+      else if (mods.length) {
+        // Its titles are read in the Bandeja another day (task 73): one with a relative day goes back once, as a
+        // prose answer does (task 72); the second stands if it is valid.
+        const schema = readMessageSchema(mods);
+        let r = checkReadMessage(await read(system, schema), mods);
+        if (r && relativeDayInProposal(r)) {
+          const again = checkReadMessage(await read(system, schema, { fix: RELATIVE_FIX }), mods);
+          if (again) r = again;
+          relative = relativeDayInProposal(r) ? "kept" : "fixed";
+        }
+        checked = r;
+      } else {
         const schema = readerSchema(step.reader, options);
         const extra = texts ? { count: texts.length } : {};
         let r = checkReader(
@@ -2330,6 +2355,8 @@ export class Agent {
     state: string,
     read: (sys: string, schema: object, extra?: Record<string, unknown>) => Promise<unknown>,
     seen: Seen[],
+    /** Its note said a relative day and went back once (task 73): fixed by the second answer, or kept. */
+    onRelative: (r: "fixed" | "kept") => void = () => {},
   ) {
     const answers = this.o.decider
       ? await this.decide(st, state, fillQuestions(fields), seen)
@@ -2356,8 +2383,7 @@ export class Agent {
       }
       let note: string | null = null;
       if (wantsNote) {
-        const out = await read(NOTE_PROMPT, NOTE_SCHEMA);
-        if (
+        const noteOf = (out: unknown): string | null | undefined =>
           typeof out !== "object" ||
           out === null ||
           Object.keys(out).join() !== "note" ||
@@ -2365,16 +2391,31 @@ export class Agent {
             (out as { note: unknown }).note === null ||
             typeof (out as { note: unknown }).note === "string"
           )
-        )
-          return null;
-        note = cleanNote((out as { note: unknown }).note);
+            ? undefined
+            : cleanNote((out as { note: unknown }).note);
+        const first = noteOf(await read(NOTE_PROMPT, NOTE_SCHEMA));
+        if (first === undefined) return null;
+        note = first;
+        // A note with a relative day goes back once (task 73); the second stands if it is valid.
+        if (relativeDayInProposal({ note })) {
+          const again = noteOf(await read(NOTE_PROMPT, NOTE_SCHEMA, { fix: RELATIVE_FIX }));
+          if (again !== undefined) note = again;
+          onRelative(relativeDayInProposal({ note }) ? "kept" : "fixed");
+        }
       }
       return { values, note };
     }
-    return checkFill(
-      await read(READER_PROMPTS.fill, fillSchema(fields), { fields: fieldsForReader(fields) }),
-      fields,
-    );
+    const extra = { fields: fieldsForReader(fields) };
+    let r = checkFill(await read(READER_PROMPTS.fill, fillSchema(fields), extra), fields);
+    if (r && relativeDayInProposal(r)) {
+      const again = checkFill(
+        await read(READER_PROMPTS.fill, fillSchema(fields), { ...extra, fix: RELATIVE_FIX }),
+        fields,
+      );
+      if (again) r = again;
+      onRelative(relativeDayInProposal(r) ? "kept" : "fixed");
+    }
+    return r;
   }
 
   private execAsk(

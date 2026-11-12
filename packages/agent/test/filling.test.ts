@@ -348,6 +348,73 @@ describe("the fill reader in a plan (agent.ts)", () => {
     expect(rows?.some((r) => r.arg === "values.body")).toBe(false);
   });
 
+  it("a title or a note that says «hoy» or «mañana» goes back to its reader once; the day by its name stands (task 73)", async () => {
+    const e = prepare();
+    const asked: ModelRequest[] = [];
+    const reader = new ScriptedProvider("fake", (req) => {
+      asked.push(req);
+      const fix = (req.input as { fix?: string }).fix;
+      if (/find what it asks of the user/.test(req.system))
+        return {
+          items: [
+            {
+              quote: "revisa el acta",
+              actor: "recipient",
+              kind: "task",
+              title: fix ? "Revisar el acta antes del viernes 23" : "Revisar el acta hoy",
+              due: null,
+            },
+          ],
+        };
+      return {
+        values: { f0: null, f1: null },
+        note: fix ? "El martes 20, en la carpeta compartida." : "Mañana, en la carpeta compartida.",
+      };
+    });
+    const res = await e.agent(fakePlanner([]), reader).background(plan, { fields: codeFields() });
+    expect(res.error).toBeNull();
+    // Each reader twice: the first answer without the fix, the second with it.
+    expect(asked.map((r) => !!(r.input as { fix?: string }).fix)).toEqual([
+      false,
+      true,
+      false,
+      true,
+    ]);
+    expect(asked[0]?.system).toContain("never a relative day");
+    expect(asked[2]?.system).toContain("never a relative day");
+    const [rows] = rowsOf(e);
+    const v = (arg: string) => rows?.find((r) => r.arg === arg)?.value;
+    expect(v("values.titulo")).toBe("Revisar el acta antes del viernes 23");
+    expect(v("values.body")).toBe("El martes 20, en la carpeta compartida.");
+    // Each step's entry says it was sent back and fixed.
+    const steps = e.store.journal.steps(res.run).filter((x) => x.step === "r" || x.step === "f");
+    expect(steps.filter((x) => JSON.stringify(x).includes('"relativeDay":"fixed"'))).toHaveLength(
+      2,
+    );
+    // A title that insists is kept, and the entry says so; «por la mañana» is a time of day, not a day.
+    const f = prepare();
+    const insists = new ScriptedProvider("fake", (req) =>
+      /find what it asks of the user/.test(req.system)
+        ? {
+            items: [
+              {
+                quote: "revisa el acta",
+                actor: "recipient",
+                kind: "task",
+                title: "Revisar el acta mañana",
+                due: null,
+              },
+            ],
+          }
+        : { values: { f0: null, f1: null }, note: "Por la mañana, en la carpeta compartida." },
+    );
+    const kept = await f.agent(fakePlanner([]), insists).background(plan, { fields: codeFields() });
+    expect(kept.error).toBeNull();
+    expect(insists.requests).toHaveLength(3);
+    const r = f.store.journal.steps(kept.run).find((x) => x.step === "r");
+    expect(JSON.stringify(r)).toContain('"relativeDay":"kept"');
+  });
+
   it("the fields must be the code's: unbound, or Juan's data passed as fields, stops it", async () => {
     const e = prepare();
     const reader = new ScriptedProvider(

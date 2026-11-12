@@ -32,6 +32,7 @@ import { calendarDefs } from "./calendarStore.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
 import { checkFlow, flowCatalog, stepsOf, type TestView, testFacts } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
+import { type InboxCard, type InboxContext, inboxCard, inboxContext } from "./inboxCard.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { originFacts, pendingFacts } from "./origin.ts";
@@ -79,6 +80,8 @@ interface Ctx {
   seen: Seen[];
   /** «Probar» a flow, as the editor's route runs it (agent.ts `tryFlow`); none without the agent. */
   tryFlow?: FlowTry;
+  /** What the Bandeja's cards are checked against now (task 73): the clock, the zone and the external calendars. */
+  inbox?: () => InboxContext;
 }
 /** Tries a saved flow dry with its form's values (`said`: whose they are); the route's status and answer. */
 export type FlowTry = (
@@ -800,7 +803,7 @@ const TOOLS: Tool[] = [
   {
     name: "inbox",
     description:
-      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed, who proposed it (by: flow or chat; who: the flow's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
+      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, its day and its state checked now (state: done, the same task already done; calendar, already in the calendar; past, its day or hour has passed; null), when it was proposed, who proposed it (by: flow or chat; who: the flow's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
     inputSchema: obj({
       text: { type: "string", description: "Words of its title" },
       limit: { type: "number", description: "At most 50 (default 20)" },
@@ -822,15 +825,26 @@ const TOOLS: Tool[] = [
         const l = v.level(t);
         return !closedToAi(l) && l !== "opaque" && !!v.ro.schema().types[t];
       };
+      // Each card checked again now, as the Bandeja shows it (task 73): its day and its state word.
+      const ctx = c.inbox?.() ?? inboxContext(c.store, { now: c.now() });
       return pendingFacts(c.store, { mailAccount: c.mailAccount })
         .filter((p) => seen(p.type) && words.every((w) => fold(p.title).includes(w)))
         .slice(0, limit)
         .map((p) => {
           const input = p.input ? v.ro.get(p.input) : null;
+          const row = c.store.journal.proposal(p.id);
+          let card: InboxCard | null = null;
+          try {
+            card = row ? inboxCard(c.store, row, { decide: false }, ctx) : null;
+          } catch {
+            // a proposal the card cannot read still shows
+          }
           return {
             id: p.id,
             title: p.title,
             collection: p.type ? (c.store.schema().types[p.type]?.name ?? null) : null,
+            day: card?.day ?? null,
+            state: card?.now.state ?? null,
             proposed: iso(p.created),
             by: p.by,
             who: p.flow?.name ?? null,
@@ -1539,8 +1553,10 @@ export async function mcpAnswer(
   scope: readonly Scope[] | null = null,
   mailAccount: string | null = null,
   tryFlow?: FlowTry,
+  inbox?: () => InboxContext,
 ): Promise<unknown | null> {
   const c: Ctx = {
+    ...(inbox ? { inbox } : {}),
     store,
     device,
     now,

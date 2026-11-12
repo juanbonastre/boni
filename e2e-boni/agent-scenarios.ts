@@ -647,6 +647,39 @@ export const CARD_LINKED = {
     },
   },
 };
+/**
+ * Task 73, a card checked again each time it is seen: from yesterday's mail («hoy a las 12»), seen today, its day is
+ * «Hoy», and Juan already opened the mail («Leído», from the mailbox).
+ */
+export const CARD_TODAY = {
+  ...CARD_MAIL,
+  id: "c73",
+  created: 9,
+  card: {
+    ...CARD_MAIL.card,
+    source: { ...CARD_MAIL.card.source, read: true },
+    now: { fromToday: 0, state: null },
+  },
+};
+/** The same card once its hour has gone by: «Ya pasó», and «Aceptar» sends the word it showed. */
+export const CARD_PAST = {
+  ...CARD_TODAY,
+  card: { ...CARD_TODAY.card, now: { fromToday: 0, state: "past" } },
+};
+/** One the calendar already has, done (the same task, ticked): «Ya hecho». */
+export const CARD_DONE = {
+  ...CARD_LINKED,
+  id: "c74",
+  created: 10,
+  card: {
+    ...CARD_LINKED.card,
+    calendar: {
+      ...CARD_LINKED.card.calendar,
+      already: { ...CARD_LINKED.card.calendar.already, done: true },
+    },
+    now: { fromToday: 0, state: "done" },
+  },
+};
 export const CARD_COMPACT = {
   ...CARD_DETAILED,
   id: "c2",

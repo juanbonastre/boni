@@ -4,6 +4,8 @@ import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dayToIso, todayIn } from "@boni/calendar";
+import { label } from "@boni/entities";
 import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentHost } from "./agent.ts";
@@ -14,6 +16,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { flowProposalView } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
+import { TIME_AREA } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
 import { getPage } from "./pages.ts";
 import { seed } from "./seed.test-util.ts";
@@ -628,6 +631,50 @@ describe("flows through Boni's MCP (docs/flujos.md F5)", () => {
     expect(d.collections.map((c) => c.key)).toContain("proyecto");
     expect(d.collections.map((c) => c.key)).not.toContain("diario");
     expect(Object.keys(d.language.readers)).toContain("summarize");
+  });
+
+  it("the inbox gives each card's day and its state checked now, as the Bandeja shows it (task 73)", async () => {
+    const store = host.store(1);
+    const L = label("user", "personal", []);
+    const yesterday = dayToIso(todayIn(host.tz, host.now()) - 1);
+    store.journal.startRun({
+      id: "run-ayer",
+      turn: null,
+      origin: "background",
+      device: null,
+      started: 1,
+    });
+    store.journal.addProposal({
+      id: "p-ayer",
+      run: "run-ayer",
+      tool: "entities.create",
+      args: {
+        values: { type: { t: "v", value: "nota", label: L, derived: false } },
+        origins: [],
+        why: { t: "v", value: "x", label: L, derived: false },
+      },
+      view: {
+        tool: "entities.create",
+        title: "Crear",
+        rows: [
+          { arg: "type", role: "type", value: "nota", detail: "Nota" },
+          { arg: "values.title", value: "Reunión de ejemplo" },
+          { arg: "values.date", value: yesterday },
+          { arg: "values.startTime", value: "12:00" },
+        ],
+      },
+      sources: [],
+      created: Date.now(),
+    });
+    const r = (await tool("inbox", { text: "reunión de ejemplo" })) as {
+      json: { id: string; day: string | null; state: string | null }[];
+    };
+    expect(r.json).toEqual([
+      expect.objectContaining({ id: "p-ayer", day: yesterday, state: "past" }),
+    ]);
+    // Reading the inbox decides nothing: no time decision was recorded for it.
+    expect(store.journal.decisions(TIME_AREA)).toEqual([]);
+    store.journal.setProposal("p-ayer", "rejected", Date.now(), null);
   });
 
   it("proposes a flow that waits in the inbox, drawn; one the checklist refuses is not proposed", async () => {
