@@ -52,6 +52,8 @@ export interface Options {
   today?: unknown[] | null;
   /** The mail's collection as the server keeps it (`t_01m6correo`, read only, opened as a mail), with one mail (`m1`). */
   mail?: boolean;
+  /** How long a dropped file takes to go up (ms; default 600), in six steps. */
+  uploadMs?: number;
   /** The desktop shell opens a note in its peek window, a window of its own (Boni desktop 0.4.65; task 30). */
   peek?: boolean;
   /**
@@ -126,6 +128,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       };
       const files = new Map<string, string>(Object.entries(opts.files ?? {}));
       const listeners = new Set<(e: unknown) => void>();
+      let uploads = 0;
       let settings = {
         serverUrl: opts.configured === false ? "" : "https://boni.example.ts.net",
         hasToken: opts.configured !== false,
@@ -1653,6 +1656,35 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         ...(opts.peek
           ? { openPeek: (screen: string) => record("__calls", `openPeek ${screen}`) }
           : {}),
+        // A file dropped on Boni's window (0.4.86, A-24): it goes up in steps and the server keeps it as a row of
+        // his files, answering as `POST api/data/files/upload` does (apps/server/src/drops.ts).
+        async uploadFile(file: File, progress: (sent: number, size: number) => void) {
+          record("__calls", `upload ${file.name} ${file.size}`);
+          const steps = 6;
+          for (let i = 1; i < steps; i++) {
+            await new Promise((r) => setTimeout(r, (opts.uploadMs ?? 600) / steps));
+            progress(Math.floor((file.size * i) / steps), file.size);
+          }
+          const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+          const state = ["pdf", "csv", "txt", "xlsx"].includes(ext)
+            ? "text"
+            : ["jpg", "jpeg", "png"].includes(ext)
+              ? "image"
+              : "unreadable";
+          uploads += 1;
+          return {
+            status: 200,
+            body: JSON.stringify({
+              id: `e_01drop${uploads}`,
+              name: file.name,
+              type: "t_01archivos",
+              mime: file.type,
+              size: file.size,
+              folder: "conversación/2026-11",
+              state,
+            }),
+          };
+        },
       };
     },
     {

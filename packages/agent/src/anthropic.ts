@@ -126,7 +126,21 @@ export class AnthropicProvider implements ModelProvider {
       model: this.o.model,
       max_tokens: req.maxTokens,
       system: req.system,
-      messages: [{ role: "user" as const, content: JSON.stringify(req.input) }],
+      // A reader shown images (a photo Juan dropped, A-24) gets them before its input, as the API's image blocks.
+      messages: [
+        {
+          role: "user" as const,
+          content: req.images?.length
+            ? [
+                ...req.images.map((i) => ({
+                  type: "image" as const,
+                  source: { type: "base64" as const, media_type: i.mime, data: i.data },
+                })),
+                { type: "text" as const, text: JSON.stringify(req.input) },
+              ]
+            : JSON.stringify(req.input),
+        },
+      ],
       ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
     };
     let res: {

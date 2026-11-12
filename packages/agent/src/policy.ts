@@ -192,8 +192,17 @@ export function decide(
       if (origin.kind !== "turn") return deny("P22", "screen-outside-turn");
       return allow("P22");
     }
-    case "read":
-      return allow("P1");
+    // A file Juan dropped, read whole for a reader, its images too (docs/sistema.md §4.7, A-24): the file is one the
+    // screen gave (its keys his), in his own turn, never in a flow, background work, a mini-app or from outside (P23).
+    case "read": {
+      if (!tool.sees) return allow("P1");
+      const chosen = entries.map(([k, v]) =>
+        tool.args[k]?.role === "target" ? choosing(v) : deepLabel(v),
+      );
+      if (chosen.some(isExternal) || controlExternal) return deny("P23", "external-file");
+      if (origin.kind !== "turn" || call.flow) return deny("P23", "file-outside-turn");
+      return allow("P23");
+    }
     // A piece of Boni (docs/sistema.md §4.2) is Boni's own code as a step: only in a flow, never in a plan a model
     // wrote; one that changes the inbox (folds a thread, accepts alone), only in the flow's own background run, or
     // said as «haría» when the flow is tried (P20).

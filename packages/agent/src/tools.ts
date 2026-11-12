@@ -260,6 +260,12 @@ export interface ToolDef<E extends Effect = Effect> {
    * code, never by a plan: what it keeps only to make the call, which says nothing to Juan (a function's data and the
    * fingerprint of its set, task 93). The policy still sees them whole. */
   hide?: readonly string[];
+  /**
+   * What it gives may be shown to a reader whole, images too (`files.read`: a file Juan dropped; A-24): only in his own
+   * turn, on a file the screen gave, never in a flow or from outside (P23). Its `{ image: ref }` are the only images
+   * a reader of the run is shown.
+   */
+  sees?: boolean;
   run(caps: Caps[E], args: Readonly<Record<string, Val>>, extra: Label): Val | Promise<Val>;
 }
 

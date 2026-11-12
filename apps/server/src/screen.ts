@@ -6,6 +6,7 @@
  * and nothing of a collection closed to the models is there. Never what the app says a thing is: only what the store
  * holds.
  */
+
 import {
   codeLabel,
   deepLabel,
@@ -53,6 +54,7 @@ import {
   rulesWithValues,
 } from "@boni/views";
 import { rowUiOf } from "./data.ts";
+import { fileFacts } from "./fileActions.ts";
 import { collectionKeysOf, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
 import type { MoneyReads } from "./money/book.ts";
 import { pendingFacts } from "./origin.ts";
@@ -302,6 +304,8 @@ export function screenOf(
         id: whole.fields.id as Val,
         type: whole.fields.type as Val,
         ...(title ? { title } : {}),
+        // A file of his (a chip he dropped): its type, size, folder and what a reader would get (A-24).
+        ...(fileFacts(store, id) ?? {}),
       },
       code,
     );

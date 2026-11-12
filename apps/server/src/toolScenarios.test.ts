@@ -119,6 +119,16 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
     { file: SCREEN, test: LIT_TEST },
   ],
   "screen.scroll": [{ file: SCREEN, test: LIT_TEST }],
+  "files.read": [
+    {
+      file: "apps/server/src/fileActions.test.ts",
+      test: "«¿cuánto es el total?» over a dropped invoice: its text reaches the reader as data, never the planner",
+    },
+    {
+      file: "apps/server/src/fileActions.test.ts",
+      test: "«¿qué pone en esta foto del tique?»: the photo reaches a reader that sees it; the journal keeps its ref, not its bytes",
+    },
+  ],
   "inbox.correct": [{ file: DATA_ACTIONS, test: CORRECT_TEST }],
   "pages.create": [{ file: ACTIONS, test: PAGE_TEST }],
   "pages.add_block": [{ file: ACTIONS, test: PAGE_TEST }],

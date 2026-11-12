@@ -56,7 +56,10 @@ function readDraft(v: unknown): Draft | null {
   for (const p of Array.isArray(d.pointed) ? d.pointed.slice(0, MAX_POINTED) : []) {
     const o = p as Record<string, unknown> | null;
     const ref = o && typeof o.title === "string" ? readRef(JSON.stringify(o.ref)) : null;
-    if (ref && o) pointed.push({ ref, title: (o.title as string).slice(0, 120) });
+    if (!ref || !o) continue;
+    const file =
+      o.file === "read" || o.file === "too-big" || o.file === "unreadable" ? o.file : null;
+    pointed.push({ ref, title: (o.title as string).slice(0, 120), ...(file ? { file } : {}) });
   }
   return text || pointed.length ? { text, pointed } : null;
 }

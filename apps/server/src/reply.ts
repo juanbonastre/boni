@@ -50,6 +50,41 @@ export function sendFile(res: ServerResponse, mime: string, data: Uint8Array): v
   res.end(data);
 }
 
+/**
+ * A file sent a part at a time, each written when the last has gone out (a dropped file may be 1 GB, A-24); stops
+ * when the device goes away.
+ */
+export async function sendFileChunks(
+  res: ServerResponse,
+  mime: string,
+  size: number,
+  chunks: Iterable<Uint8Array>,
+): Promise<void> {
+  res.writeHead(200, {
+    ...CORS,
+    ...SAFE,
+    "content-type": mime,
+    "content-disposition": "attachment",
+    "content-security-policy": "sandbox; default-src 'none'",
+    "cache-control": "private, no-store",
+    "content-length": size,
+  });
+  for (const c of chunks) {
+    if (res.destroyed) return;
+    if (!res.write(c))
+      await new Promise<void>((ok) => {
+        const go = () => {
+          res.off("drain", go);
+          res.off("close", go);
+          ok();
+        };
+        res.on("drain", go);
+        res.on("close", go);
+      });
+  }
+  res.end();
+}
+
 export async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;

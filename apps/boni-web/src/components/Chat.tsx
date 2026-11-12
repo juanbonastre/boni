@@ -39,15 +39,19 @@ import { deviceZone, today } from "../core/clock.ts";
 import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
 import { filterOf, litKeys, litNames } from "../core/screenReplies.ts";
+import { percent } from "../core/uploads.ts";
 import type { T } from "../i18n.ts";
 import {
   agentErrorText,
   answerAsk,
   type ChatEntry,
+  canDrop,
   chooseModel,
   confirmPending,
   declinePending,
   draftOf,
+  dropFiles,
+  forgetUpload,
   type LiveStep,
   lightKeys,
   loadConversations,
@@ -74,6 +78,7 @@ import {
   togglePointing,
   undoRun,
   unpoint,
+  uploadsOf,
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
@@ -96,6 +101,9 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   const setList = (open: boolean) => toggleChatList(open);
   const first = useStore((s) => s.dataTypes?.find((d) => !d.system)?.name);
   const end = useRef<HTMLDivElement | null>(null);
+  // Files can be dropped where a host sends them (the desktop app, a browser; not the phone yet).
+  const drops = canDrop();
+  const [over, setOver] = useState(false);
   useEffect(() => {
     void loadInbox();
     void loadConversations();
@@ -207,7 +215,34 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
           </div>
         </>
       )}
-      <div className={`chat${compact ? " compact" : ""}`}>
+      <div
+        className={`chat${compact ? " compact" : ""}${over ? " dropping" : ""}`}
+        {...(drops
+          ? {
+              // Files dropped here go up at once, to his files, and wait on the bar for the message (A-24).
+              onDragOver: (e: React.DragEvent) => {
+                if (!e.dataTransfer.types.includes("Files")) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+                setOver(true);
+              },
+              onDragLeave: (e: React.DragEvent) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+              },
+              onDrop: (e: React.DragEvent) => {
+                if (!e.dataTransfer.files.length) return;
+                e.preventDefault();
+                setOver(false);
+                dropFiles([...e.dataTransfer.files]);
+              },
+            }
+          : {})}
+      >
+        {over && (
+          <div className="chat-drop" aria-hidden="true">
+            {t("drop.here")}
+          </div>
+        )}
         {!compact && (
           <div className="chat-tools">
             <button type="button" className="pill" onClick={showInbox}>
@@ -462,6 +497,8 @@ function Composer({ inWindow }: { inWindow: boolean }) {
   const text = draft.text;
   const pointed = draft.pointed;
   const pointing = useStore((s) => s.pointing);
+  const uploads = useStore(uploadsOf);
+  const uploading = uploads.some((u) => u.state === "uploading");
   const area = useRef<HTMLTextAreaElement | null>(null);
   // As tall as its text, up to a few lines; then it scrolls.
   useEffect(() => {
@@ -471,7 +508,7 @@ function Composer({ inWindow }: { inWindow: boolean }) {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, [text]);
   const send = () => {
-    if (!text.trim() || busy) return;
+    if (!text.trim() || busy || uploading) return;
     void sendTurn(text);
     setDraftText("");
   };
@@ -484,11 +521,21 @@ function Composer({ inWindow }: { inWindow: boolean }) {
       }}
     >
       {/* What Juan pointed at for this message (F9): each a reference, taken off with its «×». */}
-      {pointed.length > 0 && (
+      {(pointed.length > 0 || uploads.length > 0) && (
         <ul className="chat-pointed" aria-label={t("point.list")}>
           {pointed.map((p) => (
             <li key={pointKey(p.ref)} className="chat-chip">
-              <span className="chat-chip-text">{p.title}</span>
+              {p.file ? (
+                // A dropped file is read for the message (files.read, the one list of actions).
+                <span className="chat-chip-text" data-boni-action="files.read">
+                  {p.title}
+                </span>
+              ) : (
+                <span className="chat-chip-text">{p.title}</span>
+              )}
+              {p.file && p.file !== "read" && (
+                <span className="chat-chip-word">{t(`drop.state.${p.file}`)}</span>
+              )}
               <button
                 type="button"
                 className="chat-chip-x"
@@ -499,6 +546,41 @@ function Composer({ inWindow }: { inWindow: boolean }) {
               >
                 <X size={12} strokeWidth={2} />
               </button>
+            </li>
+          ))}
+          {/* A file going up keeps the place its chip will have, with how much has gone (I-15: a percent past 5 s). */}
+          {uploads.map((u) => (
+            <li
+              key={u.key}
+              className={`chat-chip upload ${u.state}`}
+              aria-busy={u.state === "uploading"}
+            >
+              <span className="chat-chip-text">{u.name}</span>
+              <span className="chat-chip-word">
+                {u.state === "uploading" ? `${percent(u)} %` : t(`drop.state.${u.state}`)}
+              </span>
+              {u.state === "uploading" ? (
+                <span
+                  className="chat-chip-bar"
+                  role="progressbar"
+                  aria-label={u.name}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={percent(u)}
+                  style={{ width: `${percent(u)}%` }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="chat-chip-x"
+                  onPointerDown={keepFocus}
+                  onClick={() => forgetUpload(u.key)}
+                  title={t("point.remove")}
+                  aria-label={`${t("point.remove")}: ${u.name}`}
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -551,9 +633,9 @@ function Composer({ inWindow }: { inWindow: boolean }) {
             type="submit"
             className="chat-send"
             onPointerDown={keepFocus}
-            disabled={!text.trim()}
-            title={t("chat.send")}
-            aria-label={t("chat.send")}
+            disabled={!text.trim() || uploading}
+            title={uploading ? t("drop.uploading") : t("chat.send")}
+            aria-label={uploading ? t("drop.uploading") : t("chat.send")}
           >
             <ArrowUp size={16} strokeWidth={2.2} />
           </button>

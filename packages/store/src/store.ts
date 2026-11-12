@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, DatabaseSync } from "node:sqlite";
 import {
@@ -90,8 +90,31 @@ export interface StoredFile {
   size: number;
   data: Uint8Array;
 }
-/** The largest attachment the store keeps (the server reads one whole into memory to send it). */
+/** How old an upload's parts must be to be taken as cut off (a 1 GB file goes up in far less). */
+const UPLOAD_STALE_MS = 24 * 3600_000;
+/** An upload's parts are kept under its start time, zero-padded so that an older one sorts first, and its id. */
+const uploadId = (at: number, id: string) =>
+  `up-${String(Math.max(0, at)).padStart(15, "0")}-${id}`;
+
+/** The largest attachment kept whole (`putFile`, `getFile`); a bigger one is kept and read in parts. */
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/**
+ * The largest file kept in parts (a file dropped on Boni's window; Juan, 2026-11-12: «tope 1GB»), in decimal bytes
+ * as the desktop's file manager shows them; and the size of each part, all that is ever in memory of it (A-24).
+ */
+export const MAX_UPLOAD_BYTES = 1_000_000_000;
+export const FILE_PART_BYTES = 1024 * 1024;
+/** A file being kept as it arrives, a part at a time (`fileWriter`). */
+export interface FileWriter {
+  /** Adds bytes; past the writer's cap it throws (`too-big`) and keeps nothing. */
+  write(chunk: Uint8Array): void;
+  /** The bytes so far. */
+  readonly size: number;
+  /** Keeps it and gives its sha256 (the same bytes are kept once). */
+  finish(): string;
+  /** Drops what was written. */
+  abort(): void;
+}
 
 /** One operation of the log, as stored (`before` / `after` / `label` parsed). */
 export interface LogRow {
@@ -120,7 +143,7 @@ export interface StoredEntity {
 }
 
 export class StoreError extends Error {
-  code: "invalid" | "not-found" | "conflict" | "undo" | "locked";
+  code: "invalid" | "not-found" | "conflict" | "undo" | "locked" | "too-big";
   constructor(code: StoreError["code"], message: string) {
     super(message);
     this.code = code;
@@ -241,6 +264,10 @@ export interface UserStore {
   getFile(sha256: string): StoredFile | null;
   /** An attachment's type and size without its bytes (the export lists them before reading each one). */
   fileInfo(sha256: string): { mime: string; size: number } | null;
+  /** Keeps a file as it arrives, a part at a time, up to `max` bytes (A-24). */
+  fileWriter(mime: string, max?: number): FileWriter;
+  /** A file's bytes a part at a time (one part in memory at once), whole or in parts; nothing when absent. */
+  fileChunks(sha256: string): Generator<Uint8Array>;
   /**
    * A setting or working state of the user's extensions (docs/extensiones.md 4), outside the operation log
    * and out of readQuery's reach; null when absent. Writing null removes it. Secrets go in sealed by the
@@ -319,11 +346,35 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
   // changed the schema: SQLite's data_version moves when someone else commits, and then it is read again.
   const versionQuery = db.prepare("PRAGMA data_version");
   const dataVersion = () => Number((versionQuery.get() as { data_version: number }).data_version);
+  /** A file's bytes a part at a time (`fileChunks`). */
+  function* chunksOf(sha256: string): Generator<Uint8Array> {
+    if (!/^[0-9a-f]{64}$/.test(sha256)) return;
+    const r = db.prepare("SELECT data, parts FROM files WHERE sha256 = ?").get(sha256) as
+      | { data: Uint8Array; parts: number }
+      | undefined;
+    if (!r) return;
+    if (!r.parts) {
+      if (r.data.byteLength) yield r.data;
+      return;
+    }
+    const part = db.prepare("SELECT data FROM file_parts WHERE sha256 = ? AND n = ?");
+    for (let n = 0; n < r.parts; n++) {
+      const p = part.get(sha256, n) as { data: Uint8Array } | undefined;
+      if (!p) return;
+      yield p.data;
+    }
+  }
+  // An upload cut off when the server stopped leaves its parts: they are nobody's once they are a day old. Never a
+  // younger one: another connection (the CLI, while the server runs) may be opening this file mid-upload.
+  db.prepare("DELETE FROM file_parts WHERE sha256 LIKE 'up-%' AND sha256 < ?").run(
+    uploadId(now() - UPLOAD_STALE_MS, ""),
+  );
   // One statement for every file: a statement keeps its bound blob until it is garbage collected, so a new
   // one per file held every attachment of a vault import in memory at once.
   const insertFile = db.prepare(
     "INSERT INTO files (sha256, mime, size, data, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
   );
+  const insertPart = db.prepare("INSERT INTO file_parts (sha256, n, data) VALUES (?, ?, ?)");
   let seen = dataVersion();
   function fresh(): Schema {
     const v = dataVersion();
@@ -1087,10 +1138,100 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
     },
     getFile(sha256) {
       if (!/^[0-9a-f]{64}$/.test(sha256)) return null;
-      const r = db.prepare("SELECT mime, size, data FROM files WHERE sha256 = ?").get(sha256) as
-        | { mime: string; size: number; data: Uint8Array }
-        | undefined;
-      return r ? { mime: r.mime, size: Number(r.size), data: r.data } : null;
+      const r = db
+        .prepare("SELECT mime, size, data, parts FROM files WHERE sha256 = ?")
+        .get(sha256) as { mime: string; size: number; data: Uint8Array; parts: number } | undefined;
+      if (!r) return null;
+      if (!r.parts) return { mime: r.mime, size: Number(r.size), data: r.data };
+      // A file kept in parts is put together only when it is small enough to hold whole.
+      if (Number(r.size) > MAX_FILE_BYTES)
+        throw new StoreError("invalid", "file too large: read its chunks");
+      return {
+        mime: r.mime,
+        size: Number(r.size),
+        data: new Uint8Array(Buffer.concat([...chunksOf(sha256)])),
+      };
+    },
+    fileWriter(mime, max = MAX_UPLOAD_BYTES) {
+      if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) throw new StoreError("invalid", "bad type");
+      const id = uploadId(now(), randomUUID());
+      const hash = createHash("sha256");
+      // The part being filled, one buffer for the whole file: what arrives is copied in (the caller may reuse its
+      // buffer once write returns), and SQLite copies a part when it is inserted, so it is filled again after.
+      let pending: Uint8Array = new Uint8Array(0);
+      let pendingBytes = 0;
+      let parts = 0;
+      let size = 0;
+      let done = false;
+      const drop = () => {
+        done = true;
+        pending = new Uint8Array(0);
+        db.prepare("DELETE FROM file_parts WHERE sha256 = ?").run(id);
+      };
+      const flush = () => {
+        if (!pendingBytes) return;
+        insertPart.run(id, parts++, pending.subarray(0, pendingBytes));
+        pendingBytes = 0;
+      };
+      return {
+        get size() {
+          return size;
+        },
+        write(chunk) {
+          if (done) throw new StoreError("invalid", "upload closed");
+          if (size + chunk.byteLength > max) {
+            drop();
+            throw new StoreError("too-big", "file too large");
+          }
+          size += chunk.byteLength;
+          hash.update(chunk);
+          let at = 0;
+          while (at < chunk.byteLength) {
+            const take = Math.min(FILE_PART_BYTES - pendingBytes, chunk.byteLength - at);
+            if (!pending.byteLength) pending = new Uint8Array(Math.min(FILE_PART_BYTES, max));
+            pending.set(chunk.subarray(at, at + take), pendingBytes);
+            pendingBytes += take;
+            at += take;
+            if (pendingBytes === FILE_PART_BYTES) flush();
+          }
+        },
+        finish() {
+          if (done) throw new StoreError("invalid", "upload closed");
+          flush();
+          done = true;
+          const sha256 = hash.digest("hex");
+          db.exec("BEGIN");
+          try {
+            // Every part written must still be there: a file is never kept cut short under its hash.
+            const kept = db
+              .prepare("SELECT count(*) AS n FROM file_parts WHERE sha256 = ?")
+              .get(id) as {
+              n: number;
+            };
+            if (kept.n !== parts) throw new StoreError("invalid", "upload lost its parts");
+            if (db.prepare("SELECT 1 FROM files WHERE sha256 = ?").get(sha256))
+              db.prepare("DELETE FROM file_parts WHERE sha256 = ?").run(id);
+            else {
+              db.prepare("UPDATE file_parts SET sha256 = ? WHERE sha256 = ?").run(sha256, id);
+              db.prepare(
+                "INSERT INTO files (sha256, mime, size, data, at, parts) VALUES (?, ?, ?, ?, ?, ?)",
+              ).run(sha256, mime.toLowerCase(), size, new Uint8Array(), now(), parts);
+            }
+            db.exec("COMMIT");
+          } catch (e) {
+            db.exec("ROLLBACK");
+            drop();
+            throw e;
+          }
+          return sha256;
+        },
+        abort() {
+          if (!done) drop();
+        },
+      };
+    },
+    *fileChunks(sha256) {
+      yield* chunksOf(sha256);
     },
     fileInfo(sha256) {
       if (!/^[0-9a-f]{64}$/.test(sha256)) return null;

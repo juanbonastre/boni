@@ -206,7 +206,9 @@ ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a pet
   Excel adjunto»): cada adjunto que cabe (8 MB; el correo se trae hasta 16 MB) es un archivo de la cuenta, una fila
   de su colección de archivos en la carpeta `correo/<año-mes>`, con el nombre que traía (repetido, «nombre (2)»), y
   el correo apunta a ellas (campo «Archivos»); las imágenes que el HTML enseña van igual («imagen-N.png»). Lo que el
-  código sabe leer de ellos (una hoja csv, xlsx o xls como filas; un texto) queda en un campo oculto del correo que
+  código sabe leer de ellos (una hoja csv, xlsx o xls como filas; un texto; desde el 2026-11-12, el texto de un
+  PDF de los correos que llegan, con el lector de los archivos soltados en la ventana de Boni:
+  `apps/server/src/fileReading.ts`, `sistema.md` §4.7) queda en un campo oculto del correo que
   el lector de fondo recibe después del cuerpo, hasta 50 KB: una tarea que esté en la hoja se propone como las del
   texto. Un adjunto que pasa del tope no se guarda y el cuerpo lo dice. Un enlace a una hoja de Google en el texto
   no se sigue: traer algo de fuera es otra cosa (descargas por `@boni/net`, con su política), pendiente.

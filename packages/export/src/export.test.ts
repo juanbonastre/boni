@@ -349,16 +349,16 @@ describe("the export comes back", () => {
     expect(b.getFile(sha)?.mime).toBe("application/pdf");
   });
 
-  it("streams: an attachment is read only when its turn comes, and the chunks are the same zip", () => {
+  it("streams: an attachment is read only when its turn comes, a part at a time, and the chunks are the same zip", () => {
     const a = store();
     zoneFiles(a, { "uno.pdf": "%PDF-1.7 uno inventado", "dos.pdf": "%PDF-1.7 dos inventado" });
     let reads = 0;
     const counted = new Proxy(a, {
       get: (t, k) =>
-        k === "getFile"
+        k === "fileChunks"
           ? (sha: string) => {
               reads++;
-              return t.getFile(sha);
+              return t.fileChunks(sha);
             }
           : Reflect.get(t, k),
     });

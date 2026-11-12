@@ -10,7 +10,9 @@ import {
   BODY,
   closedToAi,
   entityLabel,
+  FILE_PART_BYTES,
   MAX_FILE_BYTES,
+  MAX_UPLOAD_BYTES,
   type OpMeta,
   openUserStore,
   restoreBackup,
@@ -281,6 +283,99 @@ describe("the store", () => {
     );
     expect(store.log().length).toBe(ops);
     expect(() => store.readQuery("SELECT * FROM files")).toThrow();
+  });
+
+  it("keeps a file in parts as it arrives, once by content, and reads it back a part at a time (A-24)", () => {
+    const { store, dir } = fresh();
+    const ops = store.log().length;
+    const piece = new Uint8Array(300_000).map((_, i) => i % 251);
+    const write = () => {
+      const w = store.fileWriter("application/pdf", 5_000_000);
+      for (let i = 0; i < 12; i++) w.write(piece); // 3.6 MB in pieces the size a socket gives
+      expect(w.size).toBe(3_600_000);
+      return w.finish();
+    };
+    const sha = write();
+    expect(sha).toMatch(/^[0-9a-f]{64}$/);
+    expect(store.fileInfo(sha)).toEqual({ mime: "application/pdf", size: 3_600_000 });
+    const chunks = [...store.fileChunks(sha)];
+    expect(chunks.length).toBe(Math.ceil(3_600_000 / FILE_PART_BYTES));
+    expect(Math.max(...chunks.map((c) => c.byteLength))).toBe(FILE_PART_BYTES);
+    const whole = Buffer.concat(chunks);
+    expect(whole.byteLength).toBe(3_600_000);
+    expect(whole[300_001]).toBe(piece[1]);
+    // One buffer fills every part: each part keeps its own bytes once the next is filled.
+    for (const at of [FILE_PART_BYTES - 1, FILE_PART_BYTES + 7, 3 * FILE_PART_BYTES + 3])
+      expect(whole[at]).toBe(piece[at % 300_000]);
+    // Small enough to hold, it is still put together whole.
+    expect(store.getFile(sha)?.data.byteLength).toBe(3_600_000);
+    // The same bytes again: one file, its parts kept once.
+    expect(write()).toBe(sha);
+    const db = new DatabaseSync(join(dir, "boni.db"));
+    const parts = () =>
+      (db.prepare("SELECT count(*) AS n FROM file_parts").get() as { n: number }).n;
+    expect(parts()).toBe(chunks.length);
+    // Past its cap it keeps nothing; dropped, nothing either.
+    const big = store.fileWriter("image/jpeg", 500_000);
+    big.write(piece);
+    expect(() => big.write(piece)).toThrow(StoreError);
+    const dropped = store.fileWriter("image/jpeg");
+    dropped.write(piece);
+    dropped.abort();
+    expect(parts()).toBe(chunks.length);
+    db.close();
+    expect(() => store.fileWriter("not a type")).toThrow(StoreError);
+    expect([...store.fileChunks("0".repeat(64))]).toEqual([]);
+    expect(store.log().length).toBe(ops);
+    expect(() => store.readQuery("SELECT * FROM file_parts")).toThrow();
+    expect(MAX_UPLOAD_BYTES).toBe(1_000_000_000);
+  });
+
+  it("drops an upload's parts left a day ago when the server stopped, never one going up, and never holds a big file whole", () => {
+    const { store, dir } = fresh();
+    const w = store.fileWriter("video/mp4");
+    w.write(new Uint8Array(FILE_PART_BYTES + 10));
+    const db = new DatabaseSync(join(dir, "boni.db"));
+    const parts = () =>
+      (db.prepare("SELECT count(*) AS n FROM file_parts").get() as { n: number }).n;
+    expect(parts()).toBe(1);
+    // The CLI opens his store while the server runs: the upload going up keeps its parts and ends whole.
+    stores.push(openUserStore(join(dir, "boni.db")));
+    expect(parts()).toBe(1);
+    const sha = w.finish();
+    expect(store.fileInfo(sha)?.size).toBe(FILE_PART_BYTES + 10);
+    expect([...store.fileChunks(sha)].reduce((n, c) => n + c.byteLength, 0)).toBe(
+      FILE_PART_BYTES + 10,
+    );
+    // Cut off two days ago, when the server stopped: the next opening drops it.
+    const before = openUserStore(join(dir, "boni.db"), {
+      now: () => Date.now() - 2 * 24 * 3600_000,
+    });
+    stores.push(before);
+    before.fileWriter("video/mp4").write(new Uint8Array(FILE_PART_BYTES + 10));
+    const cut = () =>
+      (
+        db.prepare("SELECT count(*) AS n FROM file_parts WHERE sha256 LIKE 'up-%'").get() as {
+          n: number;
+        }
+      ).n;
+    expect(cut()).toBe(1);
+    stores.push(openUserStore(join(dir, "boni.db")));
+    expect(cut()).toBe(0);
+    // An upload whose parts went meanwhile is refused, never kept cut short under its hash.
+    const lost = store.fileWriter("video/mp4");
+    lost.write(new Uint8Array(FILE_PART_BYTES + 20).fill(3));
+    db.prepare("DELETE FROM file_parts WHERE sha256 LIKE 'up-%'").run();
+    expect(() => lost.finish()).toThrow(StoreError);
+    // A file kept in parts and bigger than a whole one: its bytes only in parts.
+    const big = "a".repeat(64);
+    db.prepare(
+      "INSERT INTO files (sha256, mime, size, data, at, parts) VALUES (?, 'video/mp4', ?, x'', 0, 1)",
+    ).run(big, MAX_FILE_BYTES + 1);
+    db.prepare("INSERT INTO file_parts (sha256, n, data) VALUES (?, 0, x'00')").run(big);
+    db.close();
+    expect(() => store.getFile(big)).toThrow(StoreError);
+    expect([...store.fileChunks(big)].length).toBe(1);
   });
 
   it("keeps extensions' settings and state outside the log, out of read queries, across restarts", () => {

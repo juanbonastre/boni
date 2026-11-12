@@ -2313,3 +2313,132 @@ test("a card that says «Ya pasó» is accepted only with that word, and on the 
     'POST api/agent/proposals/c73/accept {"seen":"past"}',
   ]);
 });
+
+/** A turn that says one line, as a reader's answer comes back (model text, painted as text). */
+const said = (run: string, text: string) => ({
+  run,
+  status: "done",
+  replies: [
+    {
+      component: "text",
+      data: {
+        template: { t: "v", value: "{a}", integrity: "model", sensitivity: "public" },
+        a: { t: "v", value: text, integrity: "model", sensitivity: "personal" },
+      },
+    },
+  ],
+});
+/** Files dropped on an element, as the system's file manager drops them. */
+async function dropOn(
+  page: Page,
+  selector: string,
+  files: { name: string; type: string; mb?: number }[],
+) {
+  const dt = await page.evaluateHandle((files) => {
+    const d = new DataTransfer();
+    // A file of «mb» megabytes made of one megabyte many times (a Blob of references: no gigabyte in memory).
+    const mb = new Blob([new Uint8Array(1024 * 1024)]);
+    for (const f of files)
+      d.items.add(
+        new File(
+          f.mb ? Array.from({ length: f.mb }, () => mb) : ["%PDF-1.7 factura inventada"],
+          f.name,
+          {
+            type: f.type,
+          },
+        ),
+      );
+    return d;
+  }, files);
+  const target = page.locator(selector);
+  await target.dispatchEvent("dragenter", { dataTransfer: dt });
+  await target.dispatchEvent("dragover", { dataTransfer: dt });
+  await target.dispatchEvent("drop", { dataTransfer: dt });
+}
+
+test("files dropped on Boni's window (A-24, I-36): each goes up at once with its percent where its chip will be, the message waits for it, it goes by reference; over 1 GB it is refused with a word, and one a reader will not get says so", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    uploadMs: 1500,
+    agent: {
+      "POST api/agent/turn": [
+        said("r1", "El total es 1.234,56 €."),
+        said("r2", "Pone 45,20 € de gasolina."),
+      ],
+    },
+  });
+  await expect(page.getByRole("button", { name: "Boni · Ctrl+E" })).toBeVisible();
+  await page.keyboard.press("Control+e");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  const bar = win.locator(".chat-pointed:not(.turn-pointed)");
+  // The place to drop shows while files are over the conversation.
+  const dt = await page.evaluateHandle(() => {
+    const d = new DataTransfer();
+    d.items.add(new File(["x"], "x.pdf", { type: "application/pdf" }));
+    return d;
+  });
+  await win.locator(".chat").dispatchEvent("dragover", { dataTransfer: dt });
+  await expect(win.locator(".chat-drop")).toHaveText("Soltar");
+  await page.screenshot({ path: `${SHOTS}/boni-drop-over.png` });
+  await win.locator(".chat").dispatchEvent("dragleave", { dataTransfer: dt });
+  await expect(win.locator(".chat-drop")).toHaveCount(0);
+  // Dropped: it goes up now, before anything is written; its chip says how much has gone and the message waits.
+  await dropOn(page, '[role="dialog"][aria-label="Boni"] .chat', [
+    { name: "Factura FAC-2026-0142.pdf", type: "application/pdf" },
+  ]);
+  const going = bar.locator(".chat-chip.upload.uploading");
+  await expect(going.locator(".chat-chip-text")).toHaveText("Factura FAC-2026-0142.pdf");
+  await expect(going.getByRole("progressbar")).toBeVisible();
+  await expect(going.locator(".chat-chip-word")).toHaveText(/^\d{1,2} %$/);
+  await box.fill("¿cuánto es el total?");
+  const send = win.getByRole("button", { name: "Subiendo" });
+  await expect(send).toBeDisabled();
+  await page.screenshot({ path: `${SHOTS}/boni-drop-uploading.png` });
+  await box.press("Enter");
+  expect(await requests(page, "POST api/agent/turn ")).toEqual([]);
+  // Up: its chip is a row of his files, read for the message. Nothing was sent, and the file is his already.
+  const chip = bar.locator('.chat-chip:has([data-boni-action="files.read"])');
+  await expect(chip).toHaveText("Factura FAC-2026-0142.pdf");
+  await expect(going).toHaveCount(0);
+  expect((await recorded(page)).calls.filter((c) => c.startsWith("upload "))).toEqual([
+    "upload Factura FAC-2026-0142.pdf 26",
+  ]);
+  expect(await requests(page, "POST api/agent/turn ")).toEqual([]);
+  await page.screenshot({ path: `${SHOTS}/boni-drop-chip.png` });
+  // Sent: it goes by reference, as a row pointed at, and the answer is the reader's.
+  await win.getByRole("button", { name: "Enviar" }).click();
+  expect((await turnWith(page, "¿cuánto es el total?")).screen.pointed).toEqual([
+    { kind: "row", id: "e_01drop1" },
+  ]);
+  await expect(win.locator(".turn-answer").last()).toContainText("El total es 1.234,56 €.");
+  await expect(bar.locator(".chat-chip")).toHaveCount(0);
+  // A photo, the same way; over 1 GB is never sent, and says so; a file a reader will not get says it too.
+  await dropOn(page, '[role="dialog"][aria-label="Boni"] .chat', [
+    { name: "tique gasolinera.jpg", type: "image/jpeg" },
+    { name: "vídeo de las vacaciones.mp4", type: "video/mp4", mb: 1000 },
+    { name: "copia del disco.bin", type: "application/octet-stream" },
+  ]);
+  const big = bar.locator(".chat-chip.upload.too-big");
+  await expect(big).toContainText("vídeo de las vacaciones.mp4");
+  await expect(big.locator(".chat-chip-word")).toHaveText("Demasiado grande");
+  await expect(bar.locator('.chat-chip:has([data-boni-action="files.read"])')).toHaveCount(2);
+  await expect(bar.locator(".chat-chip", { hasText: "copia del disco.bin" })).toContainText(
+    "Sin leer",
+  );
+  expect((await recorded(page)).calls.filter((c) => c.startsWith("upload "))).toHaveLength(3);
+  await page.screenshot({ path: `${SHOTS}/boni-drop-states.png` });
+  // The refused one is taken off with its «×»; the rest go with the message.
+  await win.getByRole("button", { name: "Quitar: vídeo de las vacaciones.mp4" }).click();
+  await expect(big).toHaveCount(0);
+  await win.getByRole("button", { name: "Quitar: copia del disco.bin" }).click();
+  await box.fill("¿qué pone en esta foto del tique?");
+  await box.press("Enter");
+  expect((await turnWith(page, "¿qué pone en esta foto del tique?")).screen.pointed).toEqual([
+    { kind: "row", id: "e_01drop2" },
+  ]);
+  await expect(win.locator(".turn-answer").last()).toContainText("Pone 45,20 € de gasolina.");
+});
