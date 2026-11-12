@@ -5,6 +5,81 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-12 (forty-first) — server 0.8.117 · Boni desktop 0.4.85 · Boni Calendar desktop 0.8.24 · Boni Android
+
+Needs:
+- The server, 0.8.117, to deploy. Almost everything here is in it: the one list of actions, the Bandeja's cards
+  checked again, flow drafts (a new table in each store, migration 21), the column menu's collection entries, advanced
+  filters and the screen actions.
+- Boni desktop 0.4.85 (`release/boni_0.4.85_amd64.deb`), to install after the server.
+- Boni Calendar desktop 0.8.24 (`release/boni-calendar-desktop_0.8.24_amd64.deb`): only `data-boni-action` marks on
+  its controls (task 86); nothing changes on its screen, so installing it can wait.
+- Boni Android from main, through Obtainium: nothing of its own changed. A view's advanced filter applies on the phone
+  in pages and tables (the WebView), not in the collection list.
+
+What it brings (#377–#391):
+- **«Revisar la guía» learns by its own settings** (task 83, D-54): «Decisiones nuevas» (how many make it look, 20 by
+  default, 10–500) in its trigger, and «Correos» (how many decided mails it re-reads per guide, 20, at most 20) in
+  «Medir releyendo». «Aprender» in Ajustes is still the general pause. Task 83 has nothing left but «Conversación» as a
+  flow, which is F11.
+- **One list of actions** (task 86, F10, three parts, D-41): pages and views, the Bandeja, «Datos», «Flujos»,
+  calendars, a collection's tabs and tree, mail and extensions are actions of one list that the app, «Añadir paso»,
+  the conversation and the MCP share. «Hazme una página Gastos con el gasto por categoría» makes it, with «Deshacer»;
+  accepting or rejecting in the Bandeja, switching a flow or an extension on and how mail is read stay his touch. No
+  route is left outside the list: the parity test alone guards it.
+- **A flow's changes are kept as its draft** (task 80, D-55): in the editor, what is changed is kept on its own, on
+  the server, and reaches another device; the draft never runs, «Guardar» makes it the version that runs, and
+  «Descartar» goes back to it. The name changes from «Flujos» or the editor alike.
+- **Pointing at more** (task 85, fourth part; A-22, I-33): with `Ctrl+Shift+E`, the map's nodes, a flow's steps and
+  a paragraph of a note; the sent message keeps its chips, also after reopening. Without pointing, Boni knows the
+  view, what is visible, the focus and the right panel.
+- **Boni acts on the screen** (task 85, fifth part; A-23, I-34): «ábreme…», highlighting, scrolling to and filtering
+  what a turn names, through the list of actions, never by clicks. A stopped run opens over the map with its step lit.
+- **Boni's window moves by its bar and is kept** (task 85, sixth part; I-35): floating, it stays where it is let go,
+  inside the app's window; after a restart it opens as it was, with the last conversation and its draft.
+- **A column's menu as Notion's** (task 76, D-56): a click on a column's name: «Filtrar», «Ordenar», «Agrupar»,
+  «Calcular», «Fijar», «Ocultar», «Ajustar texto» (saved with the view), and «Insertar a la izquierda / derecha»,
+  «Duplicar» and «Borrar» (in the collection, with Undo).
+- **The Bandeja's cards are checked again each time they are seen** (task 73, D-57): their day from today («Hoy»,
+  «Mañana», «Ayer»), and one word if it changed: «Ya pasó», «Ya está en el calendario», «Ya hecho». «· Leído» when the
+  mail was opened in the mailbox. Accepting a card whose word changed since it was seen says «Ha cambiado» and the
+  card stays.
+- **Advanced filters in a view** (task 75, D-58): «+ Filtro» → «Filtro avanzado», a group of rules joined by «y» or
+  «o», shown as one chip «2 reglas»; read wherever a view's filter is (pages, the calendar, Boni's screen filter).
+- Fixed: `main`'s CI had been red since task 73 (#391): a calendar test accepted a past proposal without the word its
+  card showed. The code was right; the test now sends it, and the calendar's suite now runs on server changes (T-07).
+
+For Juan to look at, because they change his data or their shape is in doubt:
+- **«Leído» against his real mailbox** (task 73): it reads the mail's IMAP flags (never writes them); it was tested
+  only against the fake IMAP server, Gmail's «Todos» path included, not against real Gmail.
+- **«Insertar», «Duplicar» and «Borrar» a column** (task 76) change his collections (with Undo). Not run in the real
+  desktop app by its PR (the release's desktop suite does not click column headers) nor on a phone-sized screen.
+- **Flow drafts** (task 80) are a new table in his store (migration 21) at the first start of 0.8.117.
+- **Dropping files on Boni's window waits for his choice** (task 85, sixth part): A, the file as a reference only
+  (kept in Archivos, Boni sees its name and type); B, A plus reading text, csv, xlsx and PDF text with a size cap; C,
+  B plus images and scans sent to a model that sees images. Also when it is uploaded (at the drop or at sending) and
+  the size limit (5 MB, as on pages?).
+
+Decided by the assistant, for Juan to accept or change: an advanced filter has one level of groups (Notion nests
+them), one join word per group, at most 20 rules in a whole filter.
+
+Still missing, from each PR's review:
+- Task 86: what can call an action is decided by the policy for the planner and flows, but the MCP runs it with its
+  own level checks; Undo is in a table, not on the action; mail checks and proposals are not undone (they wait in the
+  Bandeja); the card of «Quitar calendario» shows the collection's key; icons only in «Buscar»; a real model making
+  «hazme una página…» not tried (evaluations are by hand).
+- Task 80: «Duplicar» a flow copies its saved version, not the draft; two devices editing at once, the last keep wins;
+  the last 0.8 s of changes can be lost when the window closes (no `keepalive`); a draft over a stale base.
+- Task 85: lighting what a write changed without the plan asking; the circle and window on the phone; dropping files
+  (above); a quit within 0.3 s of the last keystroke may lose it; a draft's chips after a restart tested only in a
+  unit test; the trigger pointed at tested only through the server.
+- Task 76: Undo of an insert or a duplicate archives the column and its values, as «Borrar» does.
+- Task 73: the zone is the server's, not each person's; the cost of keeping «Leído» is capped (2 IMAP commands a mail,
+  20 mails a check) but not timed.
+- Task 75: the phone's collection list applies no view (it applied none before); the e2e runs on stub ids (generated
+  ids and his volume are in the unit tests).
+- Not checked with a real model: the plans that point, act on the screen or build pages.
+
 ## 2026-11-11 (fortieth) — server 0.8.116 · Boni desktop 0.4.84 · Boni Android
 
 Needs:
