@@ -31,7 +31,7 @@ export interface Call {
   rows?: number;
   /**
    * A page's chat (D-61, chat.ts): the actions its «Agente» step gives, its page and the collections that page shows.
-   * P24 allows nothing outside them, before any other rule.
+   * P26 allows nothing outside them, before any other rule.
    */
   scope?: ChatScope;
   /** Of each `type` argument, the collection it names (its id), as the agent resolved it; null: none. */
@@ -145,18 +145,18 @@ export function decide(
   if (!tool) return deny("P0", "unregistered-tool");
   const entries = Object.entries(call.args);
   for (const [name] of entries) if (!tool.args[name]) return deny("P0", "unclassified-argument");
-  // A page's chat (P24): only the actions its step gives, only its own page, only the collections the page shows.
+  // A page's chat (P26): only the actions its step gives, only its own page, only the collections the page shows.
   // Whatever the rest says, nothing outside them runs.
   if (call.scope) {
     const scope = call.scope;
-    if (!scope.actions.includes(tool.name)) return deny("P24", "not-the-chats-action");
+    if (!scope.actions.includes(tool.name)) return deny("P26", "not-the-chats-action");
     for (const [name, v] of entries) {
       const role = tool.args[name]?.role;
       if (role === "page" && !(v.t === "v" && v.value === scope.page))
-        return deny("P24", "not-the-chats-page");
+        return deny("P26", "not-the-chats-page");
       if (role === "type") {
         const id = call.typeIds?.[name] ?? null;
-        if (!id || !scope.types.includes(id)) return deny("P24", "not-the-pages-collection");
+        if (!id || !scope.types.includes(id)) return deny("P26", "not-the-pages-collection");
       }
     }
   }

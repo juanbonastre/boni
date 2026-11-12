@@ -474,7 +474,7 @@ interface RunState {
   flowRun?: boolean;
   /**
    * A turn written in a page's chat (D-61, chat.ts): its flow, what its «Agente» step tells the planner, and where
-   * every call is decided (P24: its actions, its page, the collections the page shows).
+   * every call is decided (P26: its actions, its page, the collections the page shows).
    */
   chat?: { flow: string; instructions: string; scope: ChatScope };
   abort?: AbortController | undefined;
@@ -980,7 +980,7 @@ export class Agent {
     corrects?: string;
     /**
      * A message written in a page's chat (D-61): the chat's flow (kept with the run), what its «Agente» step says and
-     * the scope its calls are decided in (P24). The planner writes the plan with only those actions, and what it says
+     * the scope its calls are decided in (P26). The planner writes the plan with only those actions, and what it says
      * carries no number of its own (`chatPlanErrors`).
      */
     chat?: { flow: { id: string; version: number }; instructions: string; scope: ChatScope };
@@ -1304,7 +1304,7 @@ export class Agent {
     };
   }
 
-  /** The tools the planner is given: a chat's only those its step names (P24 allows no other). */
+  /** The tools the planner is given: a chat's only those its step names (P26 allows no other). */
   private plannerTools(st: RunState): ToolDef[] {
     const all = this.catalogFor(st.origin);
     const scope = st.chat?.scope;
@@ -1845,7 +1845,7 @@ export class Agent {
     }
   }
 
-  /** Of each `type` argument, the collection it names as the tool would find it (its id), for P24; null: none. */
+  /** Of each `type` argument, the collection it names as the tool would find it (its id), for P26; null: none. */
   private typeIdsOf(tool: ToolDef, args: Record<string, Val>): Record<string, string | null> {
     const out: Record<string, string | null> = {};
     for (const [k, v] of Object.entries(args)) {

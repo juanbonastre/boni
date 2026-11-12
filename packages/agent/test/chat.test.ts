@@ -1,5 +1,5 @@
 /**
- * A page's chat (D-61, docs/sistema.md §4.6 point 6): its «Chat» trigger and «Agente» step as data, the policy's P24
+ * A page's chat (D-61, docs/sistema.md §4.6 point 6): its «Chat» trigger and «Agente» step as data, the policy's P26
  * (only the step's actions, only its page, only the collections the page shows), and a turn written in it: the
  * planner gets only those actions, and a number of the model's own in what it says is refused.
  */
@@ -129,7 +129,7 @@ describe("the «Chat» trigger and the «Agente» step", () => {
   });
 });
 
-describe("P24: a chat acts only within its step, its page and the page's collections", () => {
+describe("P26: a chat acts only within its step, its page and the page's collections", () => {
   const tools = coreTools();
   const OWN = label("user", "personal", []);
   const v = (x: string) => leaf(x, OWN);
@@ -164,28 +164,28 @@ describe("P24: a chat acts only within its step, its page and the page's collect
         PERSONAL,
         counters,
       ),
-    ).toEqual({ kind: "deny", rule: "P24", reason: "not-the-pages-collection" });
+    ).toEqual({ kind: "deny", rule: "P26", reason: "not-the-pages-collection" });
     expect(
       decide(
         call("entities.aggregate", { type: v("x"), op: v("count") }, { type: null }),
         PERSONAL,
         counters,
       ),
-    ).toEqual({ kind: "deny", rule: "P24", reason: "not-the-pages-collection" });
+    ).toEqual({ kind: "deny", rule: "P26", reason: "not-the-pages-collection" });
     expect(
       decide(
         call("entities.query", { type: v("movimiento") }, { type: "t_mov" }),
         PERSONAL,
         counters,
       ),
-    ).toEqual({ kind: "deny", rule: "P24", reason: "not-the-chats-action" });
+    ).toEqual({ kind: "deny", rule: "P26", reason: "not-the-chats-action" });
     expect(
       decide(
         call("entities.create", { type: v("movimiento") }, { type: "t_mov" }),
         PERSONAL,
         counters,
       ),
-    ).toEqual({ kind: "deny", rule: "P24", reason: "not-the-chats-action" });
+    ).toEqual({ kind: "deny", rule: "P26", reason: "not-the-chats-action" });
   });
 
   it("leaves a call with no chat as it was", () => {
@@ -258,7 +258,7 @@ describe("a turn written in a page's chat", () => {
     expect(plain.status).toBe("done");
   });
 
-  it("stops a call over a collection the page does not show (P24)", async () => {
+  it("stops a call over a collection the page does not show (P26)", async () => {
     env = makeEnv();
     const count = {
       version: 1,
@@ -276,6 +276,6 @@ describe("a turn written in a page's chat", () => {
       .agent(fakePlanner([count]))
       .turn({ text: "¿cuántas tareas?", origin: PERSONAL, chat: chat() });
     expect(res.status).toBe("stopped");
-    expect(res.error).toContain("P24");
+    expect(res.error).toContain("P26");
   });
 });

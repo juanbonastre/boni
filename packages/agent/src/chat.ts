@@ -2,7 +2,7 @@
  * A page's chat (docs/sistema.md §4.6 point 6, docs/conversacion.md §3.2, D-61): a flow whose trigger is «Chat» (the
  * page it is on, its welcome and its buttons) and whose plan is one «Agente» step (its instructions and the actions it
  * may use, from a fixed list). Typing in the chat is a turn of Juan's in that mode: the planner writes its plan with
- * only those actions, over only that page and the collections it shows (P24), and what it answers carries the figures
+ * only those actions, over only that page and the collections it shows (P26), and what it answers carries the figures
  * code computed, never a number of the model's own (`chatPlanErrors`).
  */
 import type { Plan } from "./plan.ts";
@@ -10,7 +10,7 @@ import type { Plan } from "./plan.ts";
 /**
  * What a page's chat may do, at most: read the page's figures as the server computes them (with its values), read
  * and count the collections it shows, and change the page's values. A chat's step names some of these; nothing else
- * is ever offered or allowed to it (P24).
+ * is ever offered or allowed to it (P26).
  */
 export const CHAT_ACTIONS = [
   "pages.figures",
@@ -110,7 +110,7 @@ export const chatFlowOk = (trigger: unknown, plan: unknown): boolean =>
 
 /**
  * What a new chat is told (AI-facing, English): Boni's default, which Juan may change in the chat's panel. The rules
- * that matter are the code's (P24, `chatPlanErrors`); this only guides the plan.
+ * that matter are the code's (P26, `chatPlanErrors`); this only guides the plan.
  */
 export const CHAT_INSTRUCTIONS =
   "You answer in the chat of one of Juan's pages. To answer a question about what the page shows, first set the page's controls with pages.set_value (by the control's name, as the screen lists them) so the page shows what he asks, then read the figure with pages.figures (the block whose numbers answer it, by its id) and reply with that figure by ref. Never write a number yourself.";
@@ -125,7 +125,7 @@ export const chatPlan = (
 });
 
 /**
- * Where a chat's run is decided (policy P24): the actions its step gives, the page it is on and the collections that
+ * Where a chat's run is decided (policy P26): the actions its step gives, the page it is on and the collections that
  * page shows (by id). The agent resolves each `type` argument to its collection's id for the policy.
  */
 export interface ChatScope {

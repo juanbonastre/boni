@@ -369,7 +369,7 @@ describe("a page's chat (D-61)", () => {
       await call(token, "POST", "/api/agent/turn", { text: "¿cuántas tareas tengo?", conversation })
     ).body as unknown as Turn;
     expect(t2.status).toBe("stopped");
-    expect(t2.error).toContain("P24");
+    expect(t2.error).toContain("P26");
     // Another page is not the chat's either.
     const other = createPage(store, { title: "Otra" }).id;
     plans.push({
@@ -387,7 +387,7 @@ describe("a page's chat (D-61)", () => {
       await call(token, "POST", "/api/agent/turn", { text: "cambia la otra", conversation })
     ).body as unknown as Turn;
     expect(t3.status).toBe("stopped");
-    expect(t3.error).toContain("P24");
+    expect(t3.error).toContain("P26");
   });
 
   it("switched off, or its block taken off the page, it answers nothing more", async () => {

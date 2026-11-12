@@ -1,7 +1,7 @@
 /**
  * A page's chat on the server (docs/sistema.md §4.6 point 6, D-61): the flow a «Chat» block names (its «Chat»
  * trigger and its «Agente» step, @boni/agent chat.ts), made, read and changed from the block's panel, and what a
- * message written in it runs with: the step's instructions, and where the policy lets it act (P24): its actions, its
+ * message written in it runs with: the step's instructions, and where the policy lets it act (P26): its actions, its
  * page and the collections that page shows. The «Agente» step is never interpreted as a step: each message is a turn
  * of Juan's whose plan the planner writes within it.
  */
@@ -123,7 +123,7 @@ export function updateChat(
 }
 
 /**
- * The collections a page shows (P24): what its numbers, lists, charts and tables read, what its controls choose from,
+ * The collections a page shows (P26): what its numbers, lists, charts and tables read, what its controls choose from,
  * and the collection an option control's relation names (Gastos' «Categoría» names «Categorías»).
  */
 export function pageTypes(store: UserStore, blocks: readonly PageBlock[]): string[] {
