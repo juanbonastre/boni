@@ -629,6 +629,26 @@ contraseña ni un código aquí» under a question.
   draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
+  - **Moved by its bar** (sixth part; `core/boniWindow.ts`; I-35). Floating, the window is dragged by its head, never
+    by its buttons: the pointer over the head is `grab`, `grabbing` while it moves, and dragging selects no text. It
+    follows the pointer exactly and stays where it is let go, measured from the bottom right (the circle's corner):
+    on every screen, closed and opened, docked and floated back. It never leaves the app's window: 8 px from each
+    edge however far it is dragged, and when the app gets smaller it comes in with it and goes back to its place
+    when it grows again; with a panel on the right it still keeps beside it. Docked, the head does not drag. The
+    edges are macOS's own rule for windows, which never lets a window's title bar be dragged out of reach, applied
+    inside the app; the corner is the circle's, so the window grows from where it was opened (§3.2 of
+    `conversacion.md`); beside a panel, by the rule above for the circle and the window (never over its cards).
+    Apple HIG, «Windows»: people move a window by dragging its title bar, and a window keeps its size and place
+    when it is reopened; Microsoft, Windows app design, «Title bar»: the bar is the drag region, and the buttons in
+    it are excluded from it; NN/g, «Drag–and–Drop: How to Design for Ease of Use»: a cursor that changes on hover
+    and while dragging says what can be moved. Boni departs from a desktop window in one way: it cannot be resized
+    (the size is the compact conversation's; «Ampliar» is for more room).
+  - **After a restart** it opens as it was left: open or closed, floating in its place or docked, with the last
+    conversation and each one's draft, kept on the device (`boni-window.json`), never in the account. A conversation
+    that cannot be read back (deleted meanwhile, the server out of reach) starts a new one, silently, with what was
+    being written to it. Apple HIG, «Windows»: restore windows to their previous state when an
+    app relaunches.
+  - **Dropping files on it** is not built yet (docs/sistema.md §4.7, «Falta»).
 - **What Boni acts on, lit** (F9, task 85, fifth part; `App.tsx` `ScreenLight`, `store.ts` `screenActs`; docs/sistema.md
   §4.7; I-34): what `screen.highlight` or `screen.scroll` names (rows, blocks, a flow's steps, paragraphs), and the
   step that stopped a run opened over the map, get a 2 px `--accent` outline, 2 px away, held for half the time and

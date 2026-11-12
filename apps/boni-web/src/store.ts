@@ -53,6 +53,14 @@ import {
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import type { SystemColumns } from "./core/audit.ts";
 import type { HistoryMark } from "./core/blame.ts";
+import {
+  type Place,
+  readKept,
+  restored,
+  toKept,
+  WINDOW_FILE,
+  type WindowMode,
+} from "./core/boniWindow.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { deviceZone, newId, nowIso, today } from "./core/clock.ts";
@@ -73,6 +81,7 @@ import {
   type Draft,
   type Drafts,
   draftIn,
+  draftToNew,
   madeDraft,
   withDraft,
   withoutDraft,
@@ -122,6 +131,7 @@ const FILES = {
   lastPage: "last-page.json",
   recent: "recent.json",
   sidebar: "sidebar.json",
+  boniWindow: WINDOW_FILE,
 };
 /** How many recent pages the sidebar keeps. */
 const RECENT_MAX = 5;
@@ -360,7 +370,9 @@ interface State {
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   /** The conversation over the screen (docs/sistema.md §4.7, F9): a window over what is open, or docked to the right. */
-  boniWindow: "closed" | "float" | "right";
+  boniWindow: WindowMode;
+  /** Where Juan dragged the floating window (I-35); null: its corner, at the bottom right. */
+  boniPlace: Place | null;
   /** Rows chosen in each table on screen (its selection), by the table: the screen gives them to Boni (F9). */
   chosenRows: Record<string, string[]>;
   /** When Boni last opened something on the screen (F9): the main area lights for a moment. */
@@ -503,6 +515,7 @@ export const useStore = create<State>(() => ({
   decideErrors: {},
   inboxOpen: false,
   boniWindow: "closed",
+  boniPlace: null,
   chosenRows: {},
   lit: 0,
   screenLight: null,
@@ -616,7 +629,9 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     window.addEventListener("pagehide", () => {
       void flushPage();
       void flushRowBody();
+      flushBoniWindow();
     });
+    void restoreBoniWindow();
     void countQueue();
     void reloadAll();
     void h.phone?.takeLaunch().then((target) => target && navigate(target));
@@ -1799,6 +1814,8 @@ export function openBoniWindow(mode: "float" | "right" = "float") {
   set({ boniWindow: mode, ...(mode === "right" ? { inboxOpen: false } : {}) });
 }
 export const closeBoniWindow = () => set({ boniWindow: "closed" });
+/** The floating window dragged by its bar (I-35): it stays there, on every screen and after a restart. */
+export const placeBoniWindow = (place: Place) => set({ boniPlace: place });
 export const toggleBoniWindow = () =>
   get().boniWindow === "closed" ? openBoniWindow() : closeBoniWindow();
 /** «Ampliar»: the conversation on its own screen, the window closed. */
@@ -1870,6 +1887,13 @@ export async function loadPlanners() {
 export async function openConversation(id: string) {
   if (get().chatBusy) return;
   set({ conversationId: id, chat: [], pointing: false, view: { kind: "chat" } });
+  await loadTurns(id);
+}
+/**
+ * A conversation's turns, as the server keeps them, into the one open now. `quiet`: the one the device remembered
+ * (I-35), which may be gone: then a new one starts, with nothing said.
+ */
+async function loadTurns(id: string, quiet = false) {
   try {
     const r = await agent.conversation(id);
     if (get().conversationId !== id) return;
@@ -1891,7 +1915,11 @@ export async function openConversation(id: string) {
       })),
     });
   } catch (e) {
-    toast(errorText(get().t, e));
+    if (!quiet) return void toast(errorText(get().t, e));
+    // Kept after a restart but not read back (deleted on another device, or the server out of reach): a new
+    // conversation, never one whose turns are not shown; what was being written to it goes to the new one.
+    if (get().conversationId === id)
+      set((s) => ({ conversationId: null, chat: [], chatDrafts: draftToNew(s.chatDrafts, id) }));
   }
 }
 /** A new conversation: the chat starts empty; the conversation is made with its first message. */
@@ -3422,6 +3450,65 @@ useStore.subscribe((s, prev) => {
   const f = s.boniFilter;
   if (f && s.view !== prev.view && !(s.view.kind === "collection" && s.view.type === f.type))
     set({ boniFilter: null });
+});
+
+/**
+ * Boni's window as the device kept it (I-35): where it was, how (closed, floating, docked), the last conversation with
+ * its turns, and the drafts. From then on each change is kept, a moment after the last (one write for a burst of
+ * typing or a drag), and at once when the window goes.
+ */
+let keepingWindow = false;
+let windowTimer: ReturnType<typeof setTimeout> | undefined;
+async function restoreBoniWindow() {
+  const k = readKept(await readJson<unknown>(store, FILES.boniWindow));
+  const s = get();
+  const now = {
+    mode: s.boniWindow,
+    place: s.boniPlace,
+    conversation: s.conversationId,
+    drafts: s.chatDrafts,
+  };
+  const r = restored(now, k, s.view.kind === "chat");
+  set({
+    boniWindow: r.mode,
+    boniPlace: r.place,
+    conversationId: r.conversation,
+    chatDrafts: r.drafts,
+    ...(r.mode === "right" && s.boniWindow === "closed" ? { inboxOpen: false } : {}),
+  });
+  keepingWindow = true;
+  const id = get().conversationId;
+  if (id && id === k.conversation && !s.conversationId) await loadTurns(id, true);
+}
+function keepBoniWindow() {
+  windowTimer = undefined;
+  const s = get();
+  void keep(
+    FILES.boniWindow,
+    toKept({
+      mode: s.boniWindow,
+      place: s.boniPlace,
+      conversation: s.conversationId,
+      drafts: s.chatDrafts,
+    }),
+  );
+}
+function flushBoniWindow() {
+  if (!windowTimer) return;
+  clearTimeout(windowTimer);
+  keepBoniWindow();
+}
+useStore.subscribe((s, prev) => {
+  if (
+    !keepingWindow ||
+    (s.boniWindow === prev.boniWindow &&
+      s.boniPlace === prev.boniPlace &&
+      s.conversationId === prev.conversationId &&
+      s.chatDrafts === prev.chatDrafts)
+  )
+    return;
+  clearTimeout(windowTimer);
+  windowTimer = setTimeout(keepBoniWindow, 300);
 });
 
 /** Something gone out of «Recientes». */

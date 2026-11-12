@@ -165,6 +165,168 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
   });
 });
 
+/** Where Boni's floating window is on the page, to the pixel, once grown out of the circle (200 ms, 400 px wide). */
+const placeOf = async (page: Page) => {
+  const win = page.getByRole("dialog", { name: "Boni" });
+  await expect.poll(async () => Math.round((await win.boundingBox())?.width ?? 0)).toBe(400);
+  const b = await win.boundingBox();
+  if (!b) throw new Error("no window");
+  return { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width) };
+};
+/** Drags Boni's window by its bar, from its title, at a person's pace. */
+async function dragWindow(page: Page, dx: number, dy: number) {
+  const title = page.getByRole("dialog", { name: "Boni" }).locator(".boni-window-head h2");
+  const t = await title.boundingBox();
+  if (!t) throw new Error("no bar");
+  await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(t.x + t.width / 2 + dx, t.y + t.height / 2 + dy, { steps: 12 });
+  await page.mouse.up();
+}
+
+test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is let go, inside the app's window, on every screen and when it closes, docks or the app starts again with the same conversation and draft", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still");
+  await expect(page.getByRole("button", { name: "Boni · Ctrl+E" })).toBeVisible();
+  await page.keyboard.press("Control+e");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  const corner = await placeOf(page);
+  // Away from what is under it: to the left and up, where it is let go.
+  await dragWindow(page, -600, -200);
+  const moved = await placeOf(page);
+  expect(moved.x).toBe(corner.x - 600);
+  expect(moved.y).toBe(corner.y - 200);
+  // A drag never selects the bar's words.
+  expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+  // Another screen: it is where it was.
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await expect(
+    page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }),
+  ).toBeVisible();
+  expect(await placeOf(page)).toEqual(moved);
+  // Closed with Esc and opened again; docked and floated again: the same place.
+  await box.click();
+  await page.keyboard.press("Escape");
+  await expect(win).toHaveCount(0);
+  await page.keyboard.press("Control+e");
+  expect(await placeOf(page)).toEqual(moved);
+  await win.getByRole("button", { name: "Llevar a la derecha" }).click();
+  const docked = page.getByRole("complementary", { name: "Boni" });
+  await expect(docked).toBeVisible();
+  await docked.getByRole("button", { name: "Que flote sobre la pantalla" }).click();
+  expect(await placeOf(page)).toEqual(moved);
+  // Never out of the app's window, however far it is dragged: 8 px from its edges.
+  await dragWindow(page, -3000, -3000);
+  expect(await placeOf(page)).toMatchObject({ x: 8, y: 8 });
+  await dragWindow(page, 4000, 4000);
+  const last = await placeOf(page);
+  expect(last.x + last.width).toBe(1440 - 8);
+  // The app's window made smaller: it comes inside with it.
+  await page.setViewportSize({ width: 1000, height: 700 });
+  const small = await placeOf(page);
+  expect(small.x + small.width).toBeLessThanOrEqual(1000 - 8);
+  // …and back to its place when it grows again.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => placeOf(page)).toEqual(last);
+  // A panel on the right (the Bandeja): it keeps beside it, never over its cards, and goes back when it closes.
+  const bandeja = page.locator(".topbar").getByRole("button", { name: /^Bandeja/ });
+  await bandeja.click();
+  await expect(page.locator(".inbox-panel")).toBeVisible();
+  await expect.poll(async () => (await placeOf(page)).x + 400).toBeLessThanOrEqual(1440 - 380 - 20);
+  await bandeja.click();
+  await expect(page.locator(".inbox-panel")).toHaveCount(0);
+  await expect.poll(() => placeOf(page)).toEqual(last);
+  await dragWindow(page, -500, -100);
+  const here = await placeOf(page);
+  await box.fill("a medio escribir");
+  // The device keeps it (a preference of this device, never the account's): where, how, and the draft.
+  const kept = async () =>
+    page.evaluate(() =>
+      (
+        window as unknown as { boniDesktop: { storeRead: (n: string) => Promise<string | null> } }
+      ).boniDesktop.storeRead("boni-window.json"),
+    );
+  await expect
+    .poll(async () => JSON.parse((await kept()) ?? "{}").drafts?.new?.text)
+    .toBe("a medio escribir");
+  const file = JSON.parse((await kept()) as string);
+  expect(file).toMatchObject({ mode: "float", conversation: null });
+  expect(file.place.right).toBe(1440 - here.x - here.width);
+  expect(
+    (await recorded(page)).requests.filter((r) =>
+      /window|place|draft/i.test(r.split(" ")[1] ?? ""),
+    ),
+  ).toEqual([]);
+
+  // The app started again with what this device kept, the last conversation in it: as it was left.
+  const again = await context.newPage();
+  await again.setViewportSize({ width: 1440, height: 900 });
+  const turn = {
+    ...TEXT_REPLY,
+    id: "u_1",
+    request: "¿qué hay hoy?",
+    at: 1761900000000,
+    pointed: [],
+  };
+  await openApp(again, "/?still", {
+    files: {
+      "boni-window.json": JSON.stringify({
+        ...file,
+        conversation: "k_1",
+        drafts: { k_1: { text: "y lo de mañana", pointed: [] } },
+      }),
+    },
+    agent: {
+      "GET api/agent/conversations": [
+        { conversations: [{ id: "k_1", title: "Hoy", model: "", last: 1761900000000 }] },
+      ],
+      "GET api/agent/conversations/k_1": [
+        {
+          conversation: { id: "k_1", title: "Hoy", model: "", last: 1761900000000 },
+          turns: [turn],
+        },
+      ],
+    },
+  });
+  const win2 = again.getByRole("dialog", { name: "Boni" });
+  await expect(win2).toBeVisible();
+  expect(await placeOf(again)).toEqual(here);
+  await expect(win2.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue(
+    "y lo de mañana",
+  );
+  await expect(win2.locator(".turn-request").first()).toContainText("¿qué hay hoy?");
+  await again.close();
+
+  // Docked when it closed: docked again. A conversation deleted meanwhile: a new one, with nothing said.
+  const docked2 = await context.newPage();
+  await docked2.setViewportSize({ width: 1440, height: 900 });
+  await openApp(docked2, "/?still", {
+    files: {
+      "boni-window.json": JSON.stringify({
+        ...file,
+        mode: "right",
+        conversation: "k_gone",
+        drafts: { k_gone: { text: "lo que escribía", pointed: [] } },
+      }),
+    },
+    agent: { "GET api/agent/conversations/k_gone": [{ __status: 404, error: "not-found" }] },
+  });
+  const side2 = docked2.getByRole("complementary", { name: "Boni" });
+  await expect(side2).toBeVisible();
+  // What was being written is not lost: it goes to the new conversation.
+  await expect(side2.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue(
+    "lo que escribía",
+  );
+  await expect(side2.locator(".turn-request")).toHaveCount(0);
+  await expect(docked2.locator(".toast")).toHaveCount(0);
+  await docked2.close();
+});
+
 /** The message a turn was sent with (its body), found by its text. */
 const turnWith = async (page: Page, text: string) => {
   const find = async () =>
