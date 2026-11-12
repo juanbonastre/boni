@@ -35,8 +35,10 @@ export {
   createConversation,
   deleteConversation,
   listConversations,
+  markCorrected,
   type TurnChip,
   type TurnView,
+  turnOfRun,
   turnViews,
   updateConversation,
 } from "./conversations.ts";

@@ -13,9 +13,11 @@ import {
   leaf,
   listConversations,
   type ModelProvider,
+  markCorrected,
   runnableNames,
   ToolError,
   type ToolRegistry,
+  turnOfRun,
   turnViews,
   updateConversation,
   type Val,
@@ -92,7 +94,10 @@ import {
  *                            notices); `screen`: what is on the app's screen, by reference (screen.ts, F9)
  *                            `conversation`: one of the list's (else the device's own, as before the list);
  *                            `live`: an id the device made, to watch the turn as it runs (GET .../live/:id)
- *   POST /api/agent/answer   { run, ask, choice | text, live? }
+ *                            `corrects`: the run of an earlier turn of that conversation whose message Juan
+ *                            edited (docs/conversacion.md §3.1): taken back first (409 cannot-undo: nothing done)
+ *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra cosa…», the
+ *                            question ends and they are the next turn; `record`: a row made with «Nueva…»)
  *   POST /api/agent/confirm  { run, confirmation, live? }
  *   POST /api/agent/decline  { run, confirmation }
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
@@ -117,7 +122,8 @@ import {
  *   GET  /api/agent/conversations            -> { conversations } Juan's conversations, the latest first
  *   POST /api/agent/conversations            { title? } -> { conversation } a new one
  *   GET  /api/agent/conversations/:id        -> { conversation, turns } its turns as the devices show them
- *   PUT  /api/agent/conversations/:id        { title?, model? } -> { conversation } (model: one of /planners)
+ *   PUT  /api/agent/conversations/:id        { title?, model?, pinned? } -> { conversation } (model: one of
+ *                                               /planners; pinned: on top of the list, on every device)
  *   DELETE /api/agent/conversations/:id      to the trash, with its turns
  *   GET  /api/agent/planners                 -> { planners } the models a conversation may plan with
  *   GET  /api/agent/live/:id?after=n         -> { events, done } what a turn did since event n, while it runs
@@ -834,8 +840,14 @@ async function serveConversations(
       });
     }
     case "PUT /api/agent/conversations/:id": {
-      const b = ((await bodyOf(req)) ?? {}) as { title?: unknown; model?: unknown };
+      const b = ((await bodyOf(req)) ?? {}) as {
+        title?: unknown;
+        model?: unknown;
+        pinned?: unknown;
+      };
       const title = b.title === undefined ? undefined : str(b.title, 120);
+      if (b.pinned !== undefined && typeof b.pinned !== "boolean")
+        return send(res, 400, { error: "bad-request" });
       const model =
         b.model === undefined || b.model === ""
           ? (b.model as string | undefined)
@@ -847,6 +859,7 @@ async function serveConversations(
         !updateConversation(store, id, {
           ...(title !== undefined ? { title } : {}),
           ...(model !== undefined ? { model } : {}),
+          ...(typeof b.pinned === "boolean" ? { pinned: b.pinned } : {}),
           device: who.device,
         })
       )
@@ -919,6 +932,21 @@ async function answerAgent(
         : null;
       // What Juan pointed at, as its chips said it, kept with his message for him to see (I-33): never the planner's.
       const chips = chipsOf(b.chips);
+      // A correction (§3.1): the turn whose message Juan edited, of this conversation, is taken back before the new
+      // words run, as its «Deshacer» would (the store's log, then what it changed beside it); a later change of his
+      // in the way stops it with nothing done.
+      let corrects: string | undefined;
+      if (b.corrects !== undefined) {
+        const run = str(b.corrects, 80);
+        const old = run ? turnOfRun(store, c.id, run) : null;
+        if (!run || !old) return send(res, 404, { error: "not-found" });
+        const back = agent.correct(run);
+        if (back === "busy") return send(res, 409, { error: "busy" });
+        if (back === "cannot-undo") return send(res, 409, { error: "cannot-undo" });
+        host.undoKept(who.account, run);
+        markCorrected(store, old, who.device);
+        corrects = run;
+      }
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
       const r = await agent.turn({
@@ -929,6 +957,7 @@ async function answerAgent(
         ...(planner ? { planner } : {}),
         ...(screen ? { screen } : {}),
         ...(chips.length ? { chips } : {}),
+        ...(corrects ? { corrects } : {}),
       });
       return send(res, 200, after(r));
     }
@@ -942,7 +971,11 @@ async function answerAgent(
           ? { choice: b.choice }
           : str(b.text, 500)
             ? { text: b.text as string }
-            : null;
+            : str(b.words, 500)
+              ? { words: b.words as string }
+              : str(b.record, 80)
+                ? { record: b.record as string }
+                : null;
       if (!answer) return bad();
       const live = liveId(b.live);
       return send(

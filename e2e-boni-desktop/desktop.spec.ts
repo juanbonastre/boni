@@ -886,3 +886,41 @@ test("Boni's window after a restart (F9, task 85, I-35): where Juan dragged it, 
   await box(w).press("Escape");
   await expect(win(w)).toHaveCount(0);
 });
+
+test("a pinned conversation stays on top after a restart, from the server (task 27, task 63 point 7)", async () => {
+  let w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  const list = (p: Page) => p.getByRole("navigation", { name: "Conversaciones" });
+  const show = w.getByRole("button", { name: "Mostrar las conversaciones" });
+  if (await show.isVisible()) await show.click();
+  // The conversation the window's test made (its first message), named and pinned as Juan would.
+  const item = list(w).locator(".chat-item").first();
+  await expect(item).toBeVisible();
+  await item.hover();
+  await item.getByRole("button", { name: "Cambiar el nombre" }).click();
+  const name = list(w).getByRole("textbox", { name: "Cambiar el nombre" });
+  await name.fill("Viaje a Lisboa");
+  await name.press("Enter");
+  const pinned = (p: Page) => list(p).locator(".chat-group").filter({ hasText: "Fijadas" });
+  await expect(pinned(w)).toHaveCount(0);
+  const named = list(w).locator(".chat-item").filter({ hasText: "Viaje a Lisboa" });
+  await named.hover();
+  await named.getByRole("button", { name: "Fijar", exact: true }).click();
+  await expect(pinned(w).locator(".chat-item")).toHaveText(["Viaje a Lisboa"]);
+  await expect(list(w).locator(".chat-group").first()).toContainText("Fijadas");
+  // The app quit and started again: the pin is the conversation's, on the server, not this window's.
+  await (app as ElectronApplication).close();
+  app = await launch();
+  w = await app.firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  await expect(list(w).locator(".chat-group").first()).toContainText("Fijadas", {
+    timeout: 20_000,
+  });
+  await expect(pinned(w).locator(".chat-item")).toHaveText(["Viaje a Lisboa"]);
+  await shot(w, "chats-pinned");
+  // Unpinned, it goes back among the rest.
+  const again = pinned(w).locator(".chat-item").first();
+  await again.hover();
+  await again.getByRole("button", { name: "Dejar de fijar" }).click();
+  await expect(pinned(w)).toHaveCount(0);
+});

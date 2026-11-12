@@ -220,6 +220,8 @@ export interface ChatEntry {
   steps?: LiveStep[];
   /** What was pointed at for it: its chips, shown with the message (I-33). */
   pointed?: Pointed[];
+  /** Juan edited its message (§3.1): its run was taken back and a later turn redid it. */
+  corrected?: boolean;
 }
 /**
  * A step of a turn as it runs: what it is (the tool's title, or the kind of step), in Juan's words when the server
@@ -1488,7 +1490,11 @@ function applyLive(l: LiveTurn, e: LiveEvent): LiveTurn {
  * the device makes an id for it, and asks the server what it did every moment until it answers. Any device can,
  * the phone and the desktop app too, since it is only requests.
  */
-async function agentCall(id: string, call: (live: string) => Promise<TurnResult>) {
+async function agentCall(
+  id: string,
+  call: (live: string) => Promise<TurnResult>,
+): Promise<string | null> {
+  let failed: string | null = null;
   const liveId = newId();
   set({
     chatBusy: true,
@@ -1542,6 +1548,7 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
     if (!entry?.result?.replies.some((x) => SCREEN_REPLIES.has(x.component))) screenActs(r.replies);
   } catch (e) {
     const code = e instanceof ApiError ? e.code : null;
+    failed = code ?? "error";
     patchEntry(id, {
       error: code === "agent-off" ? agentErrorText(get().t, code) : errorText(get().t, e),
     });
@@ -1551,6 +1558,7 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
     set({ chatBusy: false });
     void loadConversations();
   }
+  return failed;
 }
 const LIVE_POLL_MS = 350;
 
@@ -1645,9 +1653,21 @@ export async function sendTurn(text: string) {
   if (uploadsOf(get()).some((u) => u.state === "uploading")) return;
   // What was pointed at goes with this message, once, and stays shown with it.
   const chips = draftOf(get()).pointed.slice(-MAX_POINTED);
-  const pointed = chips.map((p) => p.ref);
-  if (pointed.length) putDraft((d) => ({ ...d, pointed: [] }));
+  if (chips.length) putDraft((d) => ({ ...d, pointed: [] }));
   set({ pointing: false });
+  await turnOf(request, chips);
+}
+
+/**
+ * A turn of Juan's: a message from the bar, his words for «Otra cosa…», or an edited message (`corrects`, the run of
+ * the turn it corrects, §3.1). The error code when it failed.
+ */
+async function turnOf(
+  request: string,
+  chips: Pointed[],
+  corrects?: string,
+): Promise<string | null> {
+  const pointed = chips.map((p) => p.ref);
   const id = newId();
   set((s) => ({
     chat: [
@@ -1673,9 +1693,45 @@ export async function sendTurn(text: string) {
       // A server without the list: the device keeps a conversation of its own there, as before.
     }
   const screen = screenNow(pointed);
-  await agentCall(id, (live) =>
-    agent.turn(request, conversation ?? CONVERSATION, live, screen, chips),
+  return agentCall(id, (live) =>
+    agent.turn(request, conversation ?? CONVERSATION, live, screen, chips, corrects),
   );
+}
+
+/**
+ * Juan corrects a message he sent (docs/conversacion.md §3.1, C1): the server takes its turn back (its Undo, through
+ * the store's log) and runs the new words, with the chips it had, as a turn after it; both stay in the conversation.
+ * A later change in the way ("cannot-undo") or a turn still going ("busy") stops it with nothing done: the new turn
+ * goes, and the edit stays open with its state word.
+ */
+export async function correctTurn(entryId: string, text: string): Promise<string | null> {
+  const request = text.trim();
+  const s = get();
+  const old = s.chat.find((e) => e.id === entryId);
+  const run = old?.result?.run;
+  // A device without the list corrects in its own conversation, as its turns go there (the server finds the run).
+  if (!request || s.chatBusy || !old || !run) return "error";
+  const n = s.chat.length;
+  const failed = await turnOf(request, old.pointed ?? [], run);
+  if (failed === "cannot-undo" || failed === "busy") {
+    // Nothing was done: the turn it would have been goes away.
+    const made = get().chat[n];
+    if (made) set((x) => ({ chat: x.chat.filter((e) => e.id !== made.id) }));
+    return failed;
+  }
+  // Any other failure leaves the old turn as the server has it (its Undo still offered, and refused if done).
+  if (failed) return failed;
+  set((x) => ({
+    chat: x.chat.map((e) =>
+      e.id === entryId && e.result
+        ? { ...e, corrected: true, result: { ...e.result, changed: false, pending: null } }
+        : e,
+    ),
+  }));
+  // What its Undo took back: the pages, the log and the Bandeja (its proposals left it).
+  void loadInbox();
+  await Promise.all([loadRuns(), pagesAfterRun()]);
+  return failed;
 }
 
 /**
@@ -1925,6 +1981,34 @@ export async function answerAsk(entryId: string, a: { choice: number } | { text:
   const run = e.result.run;
   await agentCall(entryId, (live) => agent.answer(run, p.id, a, live));
 }
+/**
+ * «Otra cosa…» (docs/conversacion.md §3.4, rule 2): the question ends, kept as text, and what Juan wrote is his next
+ * turn, where the planner reads it by the question.
+ */
+export async function answerInWords(entryId: string, words: string) {
+  const text = words.trim();
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (!text || get().chatBusy || !e?.result || p?.kind !== "ask") return;
+  const run = e.result.run;
+  const failed = await agentCall(entryId, (live) => agent.answer(run, p.id, { words: text }, live));
+  if (!failed) await turnOf(text, []);
+}
+/**
+ * «Nueva…» (§3.4, rule 2): a row of the collection the options are rows of, made by Juan with what he wrote (his
+ * write, with its Undo in the log), is his answer.
+ */
+export async function answerWithNew(entryId: string, type: string, title: string) {
+  const name = title.replace(/\s+/g, " ").trim();
+  const def = get().dataTypes?.find((x) => x.id === type);
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (!name || !def || get().chatBusy || !e?.result || p?.kind !== "ask") return;
+  const row = await addRow(type, { [def.titleField]: name });
+  if (!row) return;
+  const run = e.result.run;
+  await agentCall(entryId, (live) => agent.answer(run, p.id, { record: row.id }, live));
+}
 export async function confirmPending(entryId: string) {
   const e = get().chat.find((x) => x.id === entryId);
   const p = e?.result?.pending;
@@ -1968,6 +2052,7 @@ async function loadTurns(id: string, quiet = false) {
         id: x.id,
         request: x.request,
         ...(x.pointed.length ? { pointed: x.pointed } : {}),
+        ...(x.corrected ? { corrected: true } : {}),
         result: {
           run: x.run,
           status: x.status,
@@ -1976,6 +2061,8 @@ async function loadTurns(id: string, quiet = false) {
           proposals: x.proposals,
           notices: x.notices,
           error: x.error,
+          // Whether its «Deshacer» has something left (a corrected turn's has not).
+          ...(x.changed !== undefined ? { changed: x.changed } : {}),
         },
         error: null,
       })),
@@ -2000,6 +2087,20 @@ export async function renameConversation(id: string, title: string) {
     const c = await agent.updateConversation(id, { title: t });
     if (c)
       set((s) => ({ conversations: (s.conversations ?? []).map((x) => (x.id === id ? c : x)) }));
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+/** Pinned on top of the list, or not: in the server's list, so on every device and after a restart. */
+export async function pinConversation(id: string, pinned: boolean) {
+  try {
+    const c = await agent.updateConversation(id, { pinned });
+    if (c)
+      set((s) => ({
+        conversations: (s.conversations ?? [])
+          .map((x) => (x.id === id ? c : x))
+          .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.last - a.last),
+      }));
   } catch (e) {
     toast(errorText(get().t, e));
   }

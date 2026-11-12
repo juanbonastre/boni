@@ -49,7 +49,9 @@ export interface Reply {
     | "open"
     | "filter"
     | "highlight"
-    | "scroll";
+    | "scroll"
+    /** A question Boni asked, kept as text once answered, with the answer (docs/conversacion.md §3.4, rule 3). */
+    | "asked";
   data: Record<string, Painted>;
 }
 export interface ConfirmRow {
@@ -95,6 +97,8 @@ export interface ConversationSummary {
   /** The planner model chosen for it (a planner's id), or "" for the account's. */
   model: string;
   last: number;
+  /** On top of the list, on every device (task 63, point 7). */
+  pinned: boolean;
 }
 /** A turn of a conversation as the server keeps it. */
 export interface TurnView extends TurnResult {
@@ -103,6 +107,8 @@ export interface TurnView extends TurnResult {
   at: number;
   /** What was pointed at for it, as its chips said (I-33): shown with the message, never given to the planner. */
   pointed: Pointed[];
+  /** Juan edited its message (§3.1): its run was taken back and a later turn redid it. */
+  corrected: boolean;
 }
 /** A sent message's chips as the server kept them: only references, each with its words cut to a chip's. */
 export function parsePointed(x: unknown): Pointed[] {
@@ -1747,6 +1753,7 @@ const COMPONENTS = new Set([
   "filter",
   "highlight",
   "scroll",
+  "asked",
 ]);
 
 export function parseTurn(v: unknown): TurnResult {
@@ -1795,6 +1802,7 @@ function parseConversation(v: unknown): ConversationSummary | null {
     title: typeof v.title === "string" ? v.title.slice(0, 200) : "",
     model: typeof v.model === "string" ? v.model.slice(0, 200) : "",
     last: typeof v.last === "number" ? v.last : 0,
+    pinned: v.pinned === true,
   };
 }
 
@@ -2573,6 +2581,8 @@ export class AgentApi {
     live?: string,
     screen?: ScreenRefs,
     chips?: readonly Pointed[],
+    /** The run of an earlier turn whose message Juan edited (§3.1): taken back first, or 409 «cannot-undo». */
+    corrects?: string,
   ) =>
     parseTurn(
       await this.call("POST", "turn", {
@@ -2581,12 +2591,14 @@ export class AgentApi {
         ...(live ? { live } : {}),
         ...(screen ? { screen } : {}),
         ...(chips?.length ? { chips } : {}),
+        ...(corrects ? { corrects } : {}),
       }),
     );
+  /** `words`: «Otra cosa…» (the question ends; they are the next turn); `record`: a row made with «Nueva…». */
   answer = async (
     run: string,
     ask: string,
-    a: { choice: number } | { text: string },
+    a: { choice: number } | { text: string } | { words: string } | { record: string },
     live?: string,
   ) => parseTurn(await this.call("POST", "answer", { run, ask, ...a, ...(live ? { live } : {}) }));
   confirm = async (run: string, confirmation: string, live?: string) =>
@@ -2623,11 +2635,12 @@ export class AgentApi {
         request: typeof t.request === "string" ? t.request.slice(0, 8000) : "",
         at: typeof t.at === "number" ? t.at : 0,
         pointed: parsePointed(t.pointed),
+        corrected: t.corrected === true,
       });
     }
     return { conversation: c, turns };
   }
-  async updateConversation(id: string, o: { title?: string; model?: string }) {
+  async updateConversation(id: string, o: { title?: string; model?: string; pinned?: boolean }) {
     const b = await this.call("PUT", `conversations/${encodeURIComponent(id)}`, o);
     return isObj(b) ? parseConversation(b.conversation) : null;
   }

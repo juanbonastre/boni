@@ -12,6 +12,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  Pin,
+  PinOff,
   ShieldCheck,
   Square,
   Trash2,
@@ -23,6 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type AreaAccuracy,
   type ConfirmView,
+  type DataType,
   fillTemplate,
   isProposal,
   lowest,
@@ -44,10 +47,13 @@ import type { T } from "../i18n.ts";
 import {
   agentErrorText,
   answerAsk,
+  answerInWords,
+  answerWithNew,
   type ChatEntry,
   canDrop,
   chooseModel,
   confirmPending,
+  correctTurn,
   declinePending,
   draftOf,
   dropFiles,
@@ -63,6 +69,7 @@ import {
   openRecord,
   openSettings,
   openTarget,
+  pinConversation,
   proposeFromMail,
   removeConversation,
   renameConversation,
@@ -362,7 +369,11 @@ function ConversationList({
     const q = query.trim().toLowerCase();
     const out = new Map<string, typeof shown>();
     const shown = (all ?? []).filter((c) => !q || (c.title || "").toLowerCase().includes(q));
+    // The pinned on top (task 63, point 7), then the rest by when they were last used.
+    const pinned = shown.filter((c) => c.pinned);
+    if (pinned.length) out.set("pinned", pinned);
     for (const c of shown) {
+      if (c.pinned) continue;
       const g = groupOf(c.last, now);
       out.set(g, [...(out.get(g) ?? []), c]);
     }
@@ -412,7 +423,7 @@ function ConversationList({
         {all?.length === 0 && <p className="muted small">{t("chats.none")}</p>}
         {groups.map(([g, items]) => (
           <section key={g} className="chat-group">
-            <h3>{t(`chats.when.${g}`)}</h3>
+            <h3>{g === "pinned" ? t("chats.pinned") : t(`chats.when.${g}`)}</h3>
             {items.map((c) =>
               editing === c.id ? (
                 <form
@@ -450,6 +461,20 @@ function ConversationList({
                     }}
                   >
                     {c.title || t("chats.untitled")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`icon-btn chat-pin${c.pinned ? " on" : ""}`}
+                    title={c.pinned ? t("chats.unpin") : t("chats.pin")}
+                    aria-label={c.pinned ? t("chats.unpin") : t("chats.pin")}
+                    aria-pressed={c.pinned}
+                    onClick={() => void pinConversation(c.id, !c.pinned)}
+                  >
+                    {c.pinned ? (
+                      <PinOff size={13} strokeWidth={1.8} />
+                    ) : (
+                      <Pin size={13} strokeWidth={1.8} />
+                    )}
                   </button>
                   <button
                     type="button"
@@ -877,7 +902,11 @@ function Steps({
 function Turn({ entry }: { entry: ChatEntry }) {
   const t = useStore((s) => s.t);
   const live = useStore((s) => (s.live?.entry === entry.id ? s.live : null));
+  const busy = useStore((s) => s.chatBusy);
   const r = entry.result;
+  // Editing the message to correct it (§3.1): its text, and the state word when the correction could not go.
+  const [edit, setEdit] = useState<{ text: string; state: string | null } | null>(null);
+  const canEdit = !!r?.run && !entry.corrected && !live;
   return (
     <div className="turn">
       {/* What was pointed at for this message (I-33): its chips, as they were sent, painted as text. */}
@@ -890,7 +919,73 @@ function Turn({ entry }: { entry: ChatEntry }) {
           ))}
         </ul>
       )}
-      <div className="turn-request">{entry.request}</div>
+      {edit ? (
+        <form
+          className="turn-edit"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const text = edit.text.trim();
+            if (!text || busy || text === entry.request) return;
+            void correctTurn(entry.id, text).then((failed) => {
+              if (failed === "cannot-undo") setEdit({ text, state: t("chat.cannotUndo") });
+              else if (failed === "busy") setEdit({ text, state: t("chat.busyNow") });
+              else setEdit(null);
+            });
+          }}
+        >
+          <textarea
+            className="input"
+            value={edit.text}
+            maxLength={8000}
+            rows={Math.min(8, Math.max(2, edit.text.split("\n").length))}
+            aria-label={t("chat.edit")}
+            ref={(el) => el?.focus({ preventScroll: true })}
+            onChange={(e) => setEdit({ text: e.target.value, state: null })}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setEdit(null);
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+          />
+          <div className="turn-edit-actions">
+            {edit.state && (
+              <span className="turn-state" role="status">
+                {edit.state}
+              </span>
+            )}
+            <span className="spacer" />
+            <button type="button" className="btn ghost small" onClick={() => setEdit(null)}>
+              {t("chat.editCancel")}
+            </button>
+            <button
+              type="submit"
+              className="btn primary small"
+              disabled={busy || !edit.text.trim() || edit.text.trim() === entry.request}
+            >
+              {t("chat.send")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="turn-request-row">
+          {entry.corrected && <span className="turn-state">{t("chat.corrected")}</span>}
+          {canEdit && (
+            <button
+              type="button"
+              className="icon-btn turn-edit-btn"
+              title={t("chat.edit")}
+              aria-label={t("chat.edit")}
+              disabled={busy}
+              onClick={() => setEdit({ text: entry.request, state: null })}
+            >
+              <Pencil size={13} strokeWidth={1.8} />
+            </button>
+          )}
+          <div className="turn-request">{entry.request}</div>
+        </div>
+      )}
       <div className="turn-answer">
         {!live && <Steps steps={entry.steps ?? []} thinking={false} going={false} />}
         {r?.replies.map((reply, i) => (
@@ -901,13 +996,15 @@ function Turn({ entry }: { entry: ChatEntry }) {
         {r && <Notices t={t} result={r} />}
         {r?.status === "stopped" &&
           r.error &&
+          // Answered in his words (§3.4): the question stays as text, and his words are the turn below.
+          r.error !== "answered-in-words" &&
           (r.error === "stopped-by-juan" ? (
             <p className="turn-stopped">{t("chat.stopped")}</p>
           ) : (
             <p className="turn-error">{agentErrorText(t, r.error)}</p>
           ))}
         {entry.error && <p className="turn-error">{entry.error}</p>}
-        {r?.status === "done" && r.run && r.changed !== false && (
+        {r?.status === "done" && r.run && r.changed !== false && !entry.corrected && (
           <button type="button" className="link-btn turn-undo" onClick={() => void undoRun(r.run)}>
             <Undo2 size={13} strokeWidth={1.8} />
             {t("chat.undo")}
@@ -1262,6 +1359,23 @@ function ReplyView({ reply }: { reply: Reply }) {
         </p>
       );
     }
+    case "asked":
+      // A question of the turn, answered (§3.4, rule 3): it stays as text, with what Juan chose; answered in his own
+      // words, those are the turn after it.
+      return (
+        <div className="reply-asked">
+          {d.prompt ? (
+            <span className="muted">
+              <ValueText p={d.prompt} />
+            </span>
+          ) : null}
+          {d.answer ? (
+            <span className="reply-asked-answer">
+              <ValueText p={d.answer} />
+            </span>
+          ) : null}
+        </div>
+      );
     case "run": {
       // A run drawn in the conversation, with «Ampliar» to the map (task 92): only one a tool gave (the code's own
       // value, I-29), never a model's word nor text from outside.
@@ -1344,25 +1458,97 @@ function AskBox({
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
   const [text, setText] = useState("");
+  // The free ways out of a choice (§3.4, rule 2): «Otra cosa…» answers in his words, «Nueva…» makes the row.
+  const [out, setOut] = useState<{ kind: "other" | "new"; text: string; saving: boolean } | null>(
+    null,
+  );
+  const kind = useStore((s) => newRowType(pending.options, s.dataTypes));
+  const submitOut = () => {
+    if (!out || !out.text.trim() || busy || out.saving) return;
+    if (out.kind === "other") {
+      void answerInWords(entryId, out.text);
+      return;
+    }
+    if (!kind) return;
+    setOut({ ...out, saving: true });
+    void answerWithNew(entryId, kind.id, out.text).finally(() =>
+      setOut((o) => (o ? { ...o, saving: false } : o)),
+    );
+  };
   return (
     <div className="ask">
       <p className="ask-prompt">
         <ValueText p={pending.prompt} />
       </p>
       {pending.control === "choice" ? (
-        <div className="ask-options">
-          {pending.options.map((o, i) => (
+        <>
+          <div className="ask-options">
+            {pending.options.map((o, i) => (
+              <button
+                key={i}
+                type="button"
+                className="pill"
+                disabled={busy}
+                onClick={() => void answerAsk(entryId, { choice: i })}
+              >
+                <ValueText p={o} />
+              </button>
+            ))}
+            {kind && (
+              <button
+                type="button"
+                className={`pill ask-out${out?.kind === "new" ? " on" : ""}`}
+                disabled={busy}
+                aria-expanded={out?.kind === "new"}
+                onClick={() =>
+                  setOut(out?.kind === "new" ? null : { kind: "new", text: "", saving: false })
+                }
+              >
+                {t("ask.new")}
+              </button>
+            )}
             <button
-              key={i}
               type="button"
-              className="pill"
+              className={`pill ask-out${out?.kind === "other" ? " on" : ""}`}
               disabled={busy}
-              onClick={() => void answerAsk(entryId, { choice: i })}
+              aria-expanded={out?.kind === "other"}
+              onClick={() =>
+                setOut(out?.kind === "other" ? null : { kind: "other", text: "", saving: false })
+              }
             >
-              <ValueText p={o} />
+              {t("ask.other")}
             </button>
-          ))}
-        </div>
+          </div>
+          {out && (
+            <form
+              className="ask-text"
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitOut();
+              }}
+            >
+              <input
+                type="text"
+                value={out.text}
+                maxLength={out.kind === "other" ? 500 : 200}
+                aria-label={out.kind === "other" ? t("ask.other") : t("ask.new")}
+                placeholder={out.kind === "new" ? kind?.name : undefined}
+                ref={(el) => el?.focus({ preventScroll: true })}
+                onChange={(e) => setOut({ ...out, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setOut(null);
+                }}
+              />
+              <button
+                type="submit"
+                className="btn"
+                disabled={busy || out.saving || !out.text.trim()}
+              >
+                {out.saving ? t("ask.saving") : t("ask.answer")}
+              </button>
+            </form>
+          )}
+        </>
       ) : (
         <form
           className="ask-text"
@@ -1385,6 +1571,22 @@ function AskBox({
       )}
     </div>
   );
+}
+
+/**
+ * The collection «Nueva…» makes a row of: only when every option is a row of one collection of Juan's that he can
+ * write to, read from the ids and types the code wrote (never the model's text).
+ */
+export function newRowType(
+  options: readonly Painted[],
+  types: readonly DataType[] | null,
+): DataType | null {
+  if (!options.length || !types) return null;
+  const at = options.map(recordOf);
+  const first = at[0]?.type;
+  if (!first || at.some((x) => x?.type !== first)) return null;
+  const def = types.find((x) => x.key === first || x.id === first || x.name === first);
+  return def && !def.system && !def.readOnly ? def : null;
 }
 
 /** An argument's name for Juan: by its name when it is a known one ("Asunto"), else by its role ("Para"). */
