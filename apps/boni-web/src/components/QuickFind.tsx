@@ -1,15 +1,4 @@
-import {
-  Brain,
-  FileText,
-  Inbox,
-  Mail,
-  Plus,
-  Puzzle,
-  RotateCcw,
-  Search,
-  Workflow,
-  X,
-} from "lucide-react";
+import { FileText, RotateCcw, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
 import {
@@ -24,6 +13,7 @@ import {
   toggleInbox,
   useStore,
 } from "../store.ts";
+import { ActionIcon, useActionIcons } from "./ActionIcon.tsx";
 
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -43,16 +33,16 @@ function pathOf(p: PageInfo, pages: PageInfo[], untitled: string): string {
 
 /**
  * The actions «Buscar» offers (docs/sistema.md §4.1, F10): each by its name in the list of actions, run as its own
- * control runs it. Its words are `find.action.<name>`.
+ * control runs it, with the icon its definition gives (`ActionIcon`). Its words are `find.action.<name>`.
  */
-export const FIND_ACTIONS: readonly { name: string; icon: typeof Plus; run: () => void }[] = [
-  { name: "pages.create", icon: Plus, run: () => void newPage() },
-  { name: "inbox.pending", icon: Inbox, run: () => toggleInbox(true) },
+export const FIND_ACTIONS: readonly { name: string; run: () => void }[] = [
+  { name: "pages.create", run: () => void newPage() },
+  { name: "inbox.pending", run: () => toggleInbox(true) },
   // What Boni remembers is a note of «Memoria», written where Juan writes it.
-  { name: "memory.save", icon: Brain, run: () => openCollection("memory") },
-  { name: "flows.save", icon: Workflow, run: () => showFlows() },
-  { name: "connectors.mail_view", icon: Mail, run: () => openSettings(true, "mail") },
-  { name: "extensions.enable", icon: Puzzle, run: () => openSettings(true, "extensions") },
+  { name: "memory.save", run: () => openCollection("memory") },
+  { name: "flows.save", run: () => showFlows() },
+  { name: "connectors.mail_view", run: () => openSettings(true, "mail") },
+  { name: "extensions.enable", run: () => openSettings(true, "extensions") },
 ];
 type Found = { action: (typeof FIND_ACTIONS)[number] } | { page: PageInfo };
 
@@ -63,6 +53,7 @@ type Found = { action: (typeof FIND_ACTIONS)[number] } | { page: PageInfo };
 export function QuickFind() {
   const t = useStore((s) => s.t);
   const pages = useStore((s) => s.pages) ?? [];
+  const icons = useActionIcons();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -125,7 +116,6 @@ export function QuickFind() {
           {found.length === 0 && <p className="find-none">{t("find.none")}</p>}
           {found.map((f, i) => {
             if ("action" in f) {
-              const Icon = f.action.icon;
               return (
                 <button
                   key={f.action.name}
@@ -139,7 +129,7 @@ export function QuickFind() {
                   onClick={() => go(f)}
                 >
                   <span className="find-icon">
-                    <Icon size={15} strokeWidth={1.8} />
+                    <ActionIcon name={icons[f.action.name]} size={15} />
                   </span>
                   <span className="find-name">{t(`find.action.${f.action.name}`)}</span>
                 </button>

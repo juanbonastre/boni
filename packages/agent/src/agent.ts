@@ -1841,7 +1841,7 @@ export class Agent {
             // The step that made it: the map's run shows it in that step's panel.
             step: step.id,
           },
-          view: confirmView(tool, args, readStore(this.o.store)),
+          view: this.viewOf(tool, args, st.id),
           sources: [
             ...new Set(
               Object.values(args).flatMap((v) =>
@@ -1876,7 +1876,7 @@ export class Agent {
         if (st.counters.confirmations > this.limits.maxConfirmations)
           throw new Stop("P5-too-many-confirmations");
         const id = randomUUID();
-        const view = this.flowNamed(confirmView(tool, args, readStore(this.o.store)), tool);
+        const view = this.flowNamed(this.viewOf(tool, args, st.id), tool);
         this.o.store.journal.addConfirmation({
           id,
           run: st.id,
@@ -2057,6 +2057,18 @@ export class Agent {
    * Bandeja on a row of its own, its title as the Bandeja shows it (a reader's words: marked as from outside) under
    * its collection's name («acepta estas dos», F10).
    */
+  /**
+   * A card's rows (`confirmView`), with what the action's own code names (`ToolDef.names`: a calendar by its name)
+   * read from the service it runs on.
+   */
+  private viewOf(tool: ToolDef, args: Readonly<Record<string, Val>>, run: string): ConfirmView {
+    const service =
+      tool.names && tool.service
+        ? (this.o.services?.(tool.service, { run }) ?? undefined)
+        : undefined;
+    return confirmView(tool, args, readStore(this.o.store), service);
+  }
+
   private flowNamed(view: ConfirmView, tool: ToolDef): ConfirmView {
     const pageTitle = (id: string) => {
       const e = this.o.store.get(id)?.entity;
@@ -2095,6 +2107,8 @@ export class Agent {
           sources: ["model"],
           marks: marksOf(p.title),
           ...(def && trusted(def.label) ? { name: def.name } : {}),
+          // Its day and time, as its card in the Bandeja says them: the app words the day.
+          ...(p.day ? { when: { day: p.day, ...(p.start ? { start: p.start } : {}) } } : {}),
         };
       });
     });
@@ -3199,7 +3213,7 @@ export class Agent {
     const at = this.now();
     const journal = this.o.store.journal;
     journal.startRun({ id: run, turn: null, origin: p.origin, device: null, started: at });
-    const view = confirmView(tool, p.args, readStore(this.o.store));
+    const view = this.viewOf(tool, p.args, run);
     journal.addProposal({
       id,
       run,

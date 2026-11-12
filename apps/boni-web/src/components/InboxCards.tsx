@@ -148,7 +148,7 @@ function headline(t: ReturnType<typeof useStore.getState>["t"], p: Proposal, c: 
   return p.view?.title ?? p.tool;
 }
 
-function useDayFormat() {
+export function useDayFormat() {
   const lang = useStore((s) => s.settings.language);
   return {
     long: (day: string) =>

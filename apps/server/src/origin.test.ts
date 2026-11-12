@@ -247,6 +247,35 @@ describe("«¿De dónde viene?» (F8)", () => {
     expect(await inbox({})).toEqual([]);
   });
 
+  it("what waits in the Bandeja says when it would be, as its card does: its day and its time (task 95)", () => {
+    const w = world();
+    const evento = createCollection(store, { name: "Evento" }, "portatil").id;
+    const def = store.schema().types[evento];
+    if (!def) throw new Error("Evento was made");
+    store.journal.addProposal({
+      id: "p_04",
+      run: "r_lectura_01",
+      tool: "entities.create",
+      args: { values: { type: { t: "v", value: def.key } }, origins: [] },
+      view: {
+        title: "Crear",
+        rows: [
+          { arg: "type", value: def.key },
+          { arg: "values.title", value: "Cena con Ejemplo" },
+          { arg: "values.dia", value: "2026-11-20" },
+          { arg: "values.hora", value: "21:30" },
+        ],
+      },
+      sources: [`entity:${w.mail}`],
+      created: NOW - 26 * MIN,
+    });
+    expect(pendingFacts(store, { mailAccount: null })[0]).toMatchObject({
+      id: "p_04",
+      day: "2026-11-20",
+      start: "21:30",
+    });
+  });
+
   it("a reading from before flows: «Leer correo»'s, with the mail its plan read first", () => {
     const w = world();
     const correo = store.get(w.mail)?.entity.type as string;

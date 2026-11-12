@@ -2,12 +2,22 @@ import {
   coreTools,
   type Decision,
   decide,
+  fieldName,
+  leaf,
+  plain,
+  type ReadStore,
   type ToolDef,
-  type ToolRegistry,
+  ToolError,
+  ToolRegistry,
   type Trust,
+  typeName,
   type UndoWay,
+  type Val,
 } from "@boni/agent";
+import { type Label, label } from "@boni/entities";
+import type { UserStore } from "@boni/store";
 import { withCalendarActions } from "./calendarActions.ts";
+import { calendarDefs } from "./calendarStore.ts";
 import { withConnectorActions } from "./connectorActions.ts";
 import { withDataActions } from "./dataActions.ts";
 import { withFileActions } from "./fileActions.ts";
@@ -16,6 +26,7 @@ import { withFunctionSteps } from "./functionSteps.ts";
 import { withInboxActions } from "./inboxActions.ts";
 import { withPageActions } from "./pageActions.ts";
 import { withPieces } from "./pieces.ts";
+import { withKept } from "./runUndo.ts";
 
 /**
  * The list of actions (docs/sistema.md §4.1, F10; D-41): one for the app, the planner, the flows and the MCP. The
@@ -28,7 +39,7 @@ import { withPieces } from "./pieces.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  return withConnectorActions(
+  const all = withConnectorActions(
     withCalendarActions(
       withInboxActions(
         withFlowActions(
@@ -39,6 +50,10 @@ export function serverRegistry(): ToolRegistry {
       ),
     ),
   );
+  // What each action rewrites beside the log is kept with its run by its definition (`keeps`, runUndo.ts).
+  const out = new ToolRegistry();
+  for (const t of all.all()) out.register(withKept(t));
+  return out;
 }
 
 /** A route that changes something, and the actions it runs: the same code as the action's (its area's module). */
@@ -170,6 +185,189 @@ export function routeDecision(
     if (d.kind !== "allow") return d;
   }
   return null;
+}
+
+/**
+ * The routes that run their action itself (`def.run`), through `runAction` (docs/sistema.md §4.1): the route only
+ * reads its body and words the answer. The policy decides each one there, with the real arguments, and not before
+ * routing (never twice).
+ */
+export const ROUTE_RUNS: Readonly<Record<string, string>> = {
+  "POST /api/collections/add": "calendars.add",
+  "POST /api/collections/remove": "calendars.remove",
+  "POST /api/collections/split": "calendars.split",
+  "POST /api/collections/color": "calendars.color",
+  "PUT /api/data/types/:type/tree": "schema.set_tree",
+};
+
+/**
+ * The routes that change something and still run their area's module after the policy decides their actions: why
+ * each is not its action's `def.run` yet. What is left of task 95's first point (docs/sistema.md §4.1, «Parcial»).
+ */
+export const ROUTE_MODULES: Readonly<Record<string, string>> = {
+  "POST /api/pages":
+    "it answers with the whole page the editor opens, not the action's id and name",
+  "PUT /api/pages/:id":
+    "the editor saves the whole page at once: four actions (name, blocks, a view, a value) in one write",
+  "DELETE /api/pages/:id":
+    "it answers with the page in the trash, which the editor's «Deshacer» restores",
+  "POST /api/agent/proposals/:id/accept":
+    "Juan's corrections (title, collection, «Enlazar», «Es el mismo») go with the acceptance: inbox.accept and inbox.correct in one",
+  "POST /api/agent/proposals/:id/reject": "it answers with the Bandeja's state the app repaints",
+  "POST /api/data/types":
+    "data.ts makes the collection by Juan's name and id (the action takes a model's key), with its first fields",
+  "DELETE /api/data/types/:type": "data.ts takes the collection by id and answers its HTTP code",
+  "PUT /api/data/types/:type/parent":
+    "data.ts takes both collections by id and answers its HTTP code",
+  "PUT /api/data/types/:type/name": "data.ts renames by id with Juan's icon and description too",
+  "POST /api/data/types/:type/fields":
+    "«Duplicar» a column copies its values: schema.add_field and entities.update in one",
+  "PUT /api/data/types/:type/fields/:field":
+    "data.ts changes a column by id with what only the table has (width, format, its options' colours)",
+  "DELETE /api/data/types/:type/fields/:field":
+    "data.ts takes the column by id and answers its HTTP code",
+  "PUT /api/data/rows/:id/type": "data.ts moves the row by ids and answers its HTTP code",
+  "POST /api/data/types/:type/rows":
+    "a row of «Flujos», «Mis datos» or «Páginas» is that area's own: four actions by the collection's kind",
+  "PUT /api/data/rows/:id": "a row's change is its area's own by the row's kind: four actions",
+  "DELETE /api/data/rows/:id": "a row's deletion is its area's own by the row's kind: four actions",
+  "POST /api/agent/flows":
+    "Juan's editor saves the whole flow with its draft and answers its detail",
+  "PUT /api/agent/flows/:id":
+    "Juan's editor saves the whole flow with its draft and answers its detail",
+  "PUT /api/agent/flows/:id/enabled":
+    "the flows service keeps what it switched for a run's Undo; a route has no run, and it answers the flow's detail",
+  "DELETE /api/agent/flows/:id":
+    "the flows service keeps what it deleted for a run's Undo; a route has no run",
+  "POST /api/agent/flows/:id/run":
+    "it starts a live run the app follows (its stream), not the action's answer",
+  "POST /api/agent/chats":
+    "a page's chat is saved as a flow by the chat's editor, with its own answer",
+  "PUT /api/agent/chats/:id":
+    "a page's chat is saved as a flow by the chat's editor, with its own answer",
+  "POST /api/agent/press":
+    "a page's button runs what it is set to do: one of four actions, chosen by the button",
+  "POST /api/apply":
+    "Boni Calendar's batch of changes, with its version: many creates, updates and deletes",
+  "PUT /api/collections/reminders":
+    "it also clears the reminders (null) and maps the event column, which the action does not",
+  "POST /api/v1/actions": "the money screen's movement (v1), with its own answer and Undo there",
+  "PUT /api/mail":
+    "it also sets the mailbox's server, user and password, which are only Juan's (A-05)",
+  "POST /api/mail/check": "it answers the mailbox's whole state the settings repaint",
+  "POST /api/mail/reread": "it answers what the rereading found, day by day",
+  "PUT /api/mail/guide": "it takes the guide's every part (the action, only its instructions)",
+  "POST /api/mail/review": "it answers the mailbox's whole state the settings repaint",
+  "POST /api/mail/suggestion": "it says whether Juan changed the suggestion before taking it",
+  "POST /api/mail/propose":
+    "it answers what came of it (proposals, already, decided) and may read again",
+  "PUT /api/agent/extensions/:id":
+    "by id, and switching to what it already is is fine here (the action refuses it)",
+  "PUT /api/data/types/:type/row-ui":
+    "the table saves all its tabs at once (the action, one tab by name)",
+};
+
+/**
+ * A route names a collection and a field by id; an action, by the name it has in its arguments (what the models
+ * write): the one for the other, or the id as it came (the action then answers that there is none).
+ */
+export function argNames(store: UserStore): {
+  type: (id: string) => string;
+  /** A field of that collection only: one of another, even with the same name, stays an id the action refuses. */
+  field: (type: string | undefined, id: string) => string;
+  /** The collection a calendar shows (any calendar it makes, or its definition). */
+  calendarType: (id: string) => string | undefined;
+} {
+  return {
+    calendarType: (id) =>
+      calendarDefs(store).find((p) => p.def.id === id || p.path?.some((x) => x.id === id))?.type,
+    type: (id) => {
+      const t = store.schema().types[id];
+      return t ? typeName(t) : id;
+    },
+    field: (type, id) => {
+      const f = type ? store.schema().types[type]?.fields.find((x) => x.id === id) : undefined;
+      return f ? fieldName(f) : `\u0000${id}`;
+    },
+  };
+}
+
+/**
+ * The MCP's tools that are actions and still run the MCP's own code after the policy decides them (with the real
+ * arguments, P24), not the action's `def.run`: why. The rest of task 95's first point (docs/sistema.md §4.1).
+ */
+export const MCP_MODULES: Readonly<Record<string, string>> = {
+  guide: "it answers Juan's instructions, his collections and the tools in one, for an assistant",
+  collections: "it answers each collection with what goes in it, in the MCP's own words",
+  search: "it answers notes with their snippets, cut for an assistant",
+  query: "it answers rows in the MCP's own shape, and counts and sums (two actions in one)",
+  read: "it reads a note by id or by its collection and title, with its text whole",
+  origin: "it says where a note came from in the MCP's own words",
+  inbox: "it answers the Bandeja's cards with their day, in the MCP's own words",
+  create:
+    "the MCP's writer names properties by their names, makes an option that is missing and links by title, as an assistant; the core's refuses those",
+  upload_file: "it receives the file's bytes and makes the note that keeps them",
+  edit: "it changes a note's text by replacing a piece of it, which no action does",
+  append: "it adds to a note's text at its end, which no action does",
+  set_properties:
+    "the MCP's writer names properties by their names, makes an option that is missing and links by title; the core's refuses those",
+  trash: "it takes the note by id or by its collection and title, and says what went",
+  set_description: "it changes only a collection's description, by its name",
+  create_collection:
+    "it makes a collection with its fields in one call: schema.create_type and schema.add_field",
+  finanzas_import: "the money's import: many movements read from a bank's file, with their rules",
+  finanzas_close: "the money's month closed: many movements updated at once",
+  flows_propose: "it saves a flow as a proposal Juan accepts in Boni, never on",
+  flows_test: "it tries a flow dry through Boni's own «Probar», which answers its decisions",
+  flows_runs: "it answers a flow's runs in the MCP's own words, codes and no texts",
+};
+
+/** Juan's words, typed on his device: what a route's arguments are labelled as for the policy. */
+const handLabel = (device: string): Label =>
+  label("user", "personal", [{ kind: "user-edit", id: `device:${device}` }]);
+
+/** The store as Juan's own hand reads it: all of it (the models' view hides what is closed to them). */
+export function handStore(store: UserStore): ReadStore {
+  return {
+    schema: () => store.schema(),
+    get: (id) => store.get(id),
+    list: (type, o) => store.list(type, { deep: !!o?.deep }),
+    search: (text, o) => store.search(text, o),
+  };
+}
+
+/**
+ * A route's one path to its action (`ROUTE_RUNS`, docs/sistema.md §4.1, P25): the policy decides it with the real
+ * arguments, labelled as Juan's, and then the action itself runs, writing as Juan from his device. What it answers,
+ * or the policy's refusal, or the action's error code (the route words each one as it always did).
+ */
+export async function runAction(
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+  hand: { store: UserStore; trust: Trust; device: string; registry?: ToolRegistry },
+): Promise<{ out: unknown } | { refused: string } | { error: string }> {
+  const def = (hand.registry ?? ACTIONS).get(name);
+  const typed = handLabel(hand.device);
+  const vals: Record<string, Val> = {};
+  for (const [k, v] of Object.entries(args)) if (v !== undefined) vals[k] = leaf(v as never, typed);
+  const d = decide(
+    { tool: def, args: vals, control: null },
+    { kind: "hand", trust: hand.trust, device: hand.device },
+    { writes: 0, sensitiveReads: 0 },
+  );
+  if (d.kind !== "allow" || !def) return { refused: d.rule };
+  const meta = { actor: "user" as const, device: hand.device };
+  try {
+    const out = await def.run(
+      { store: handStore(hand.store), service: { store: hand.store, meta } } as never,
+      vals,
+      typed,
+    );
+    return { out: plain(out) };
+  } catch (e) {
+    if (e instanceof ToolError) return { error: e.code };
+    throw e;
+  }
 }
 
 /**

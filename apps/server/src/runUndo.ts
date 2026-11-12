@@ -1,3 +1,4 @@
+import type { ReadStore, ToolDef } from "@boni/agent";
 import type { UserStore } from "@boni/store";
 import { extension, setEnabled } from "./extensions.ts";
 
@@ -32,26 +33,9 @@ export function keep(store: UserStore, run: string, k: Kept): void {
 
 /**
  * Runs `f`, which rewrites some of `keys` (settings of the store), and keeps for the run each one it changed. A run
- * of none (a route, a test) keeps nothing.
+ * of none (a route, a test) keeps nothing. Only `withKept` calls it: an action says its keys in its definition.
  */
-export function keepingSettings<T>(
-  store: UserStore,
-  run: string | undefined,
-  keys: readonly string[],
-  f: () => T,
-): T {
-  const before = keys.map((k) => store.setting(k));
-  const out = f();
-  if (run)
-    keys.forEach((k, i) => {
-      const after = store.setting(k);
-      if (after !== before[i]) keep(store, run, { setting: k, before: before[i] ?? null, after });
-    });
-  return out;
-}
-
-/** The same for a change that awaits (the mail's settings: its server is asked first). */
-export async function keepingSettingsAsync<T>(
+async function keepingSettingsAsync<T>(
   store: UserStore,
   run: string | undefined,
   keys: readonly string[],
@@ -65,6 +49,37 @@ export async function keepingSettingsAsync<T>(
       if (after !== before[i]) keep(store, run, { setting: k, before: before[i] ?? null, after });
     });
   return out;
+}
+
+/**
+ * The action as the server runs it (`serverRegistry`): with what it declares it rewrites beside the log
+ * (`ToolDef.keeps`), kept for its run around its own `run`. The run is the service's (`meta.run`, the mail's `run`): a
+ * route or a test runs it with none and keeps nothing.
+ */
+export function withKept(def: ToolDef): ToolDef {
+  const keeps = def.keeps;
+  if (!keeps) return def;
+  return {
+    ...def,
+    run(c, a, extra) {
+      const at = keptAt((c as { service?: unknown }).service);
+      let keys: readonly string[] = [];
+      try {
+        keys = at ? keeps({ store: (c as { store: ReadStore }).store }, a) : [];
+      } catch {
+        // What it cannot name (a collection that is not there) its own run refuses, with its own error.
+      }
+      if (!at || !keys.length) return def.run(c, a, extra);
+      return keepingSettingsAsync(at.store, at.run, keys, async () => def.run(c, a, extra));
+    },
+  };
+}
+function keptAt(s: unknown): { store: UserStore; run: string | undefined } | null {
+  if (!s || typeof s !== "object" || !("store" in s)) return null;
+  const x = s as { store: UserStore; run?: unknown; meta?: { run?: unknown } };
+  const run =
+    typeof x.meta?.run === "string" ? x.meta.run : typeof x.run === "string" ? x.run : undefined;
+  return { store: x.store, run };
 }
 
 /** Whether the run kept something its Undo has not taken back yet. */

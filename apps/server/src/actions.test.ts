@@ -7,14 +7,18 @@ import {
   ACTIONS,
   flowOnly,
   JUAN_ONLY,
+  MCP_MODULES,
   NOT_ACTIONS,
   ROUTE_ACTIONS,
+  ROUTE_MODULES,
+  ROUTE_RUNS,
   routeDecision,
+  runAction,
   serverRegistry,
   UNDO_ROUTES,
   undoWays,
 } from "./actions.ts";
-import { mcpDecision, mcpToolNames, mcpTools } from "./mcp.ts";
+import { mcpActionTools, mcpDecision, mcpToolNames, mcpTools } from "./mcp.ts";
 import { ROUTES } from "./routes.ts";
 
 /**
@@ -79,7 +83,7 @@ describe("one list of actions (D-41, F10)", () => {
       [...text.matchAll(/(?:data-boni-action|boniAction)=\{?"([a-z_.]+)"/g)].map((m) => m[1]),
     );
     const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
-    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", icon:/g)) controlled.add(m[1]);
+    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g)) controlled.add(m[1]);
     // What the app names is an action there is.
     expect([...controlled].filter((a) => a && !names.has(a))).toEqual([]);
     const lacking = registry
@@ -89,7 +93,7 @@ describe("one list of actions (D-41, F10)", () => {
     expect(lacking).toEqual([]);
     // Each «Buscar» action has its words, in Spanish and in English.
     const words = readFileSync(join(WEB, "i18n.ts"), "utf8");
-    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", icon:/g))
+    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g))
       expect((words.match(new RegExp(`"find\\.action\\.${m[1]}":`, "g")) ?? []).length).toBe(2);
   });
 
@@ -187,7 +191,76 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
     expect(UNDO_ROUTES["POST /api/pages/:id/restore"]).toEqual(["pages.delete"]);
   });
 
-  it("every action has its icon, one lucide-react has, and «Buscar» shows the one its definition says", () => {
+  it("what an action's Undo takes back beside the log is in its definition (keeps), and no action keeps it by hand", () => {
+    const SERVER = import.meta.dirname;
+    const byHand = readdirSync(SERVER)
+      .filter((f) => /\.ts$/.test(f) && !/\.test\./.test(f) && f !== "runUndo.ts")
+      .filter((f) => /keepingSettings(Async)?\(/.test(readFileSync(join(SERVER, f), "utf8")));
+    expect(byHand).toEqual([]);
+    const keeping = ACTIONS.all()
+      .filter((t) => t.keeps)
+      .map((t) => t.name)
+      .sort();
+    expect(keeping).toEqual(
+      [
+        "calendars.add",
+        "calendars.color",
+        "calendars.reminders",
+        "calendars.remove",
+        "calendars.split",
+        "connectors.mail",
+        "connectors.mail_guide",
+        "connectors.mail_suggestion",
+        "schema.set_tree",
+        "schema.set_view",
+      ].sort(),
+    );
+    // Each one is undone with its run: what it kept goes back with the run's Undo.
+    for (const t of ACTIONS.all().filter((x) => x.keeps))
+      expect(undoWays(t), t.name).toContain("run");
+  });
+
+  it("a route or a tool runs its action itself, or its table says why it keeps its module; a new one in neither does not merge", async () => {
+    const http = readFileSync(join(import.meta.dirname, "http.ts"), "utf8");
+    // Every route that changes something with actions: in one table, never both or neither.
+    for (const [route, names] of Object.entries(ROUTE_ACTIONS)) {
+      if (!names.length) continue;
+      const runs = Object.hasOwn(ROUTE_RUNS, route);
+      expect(runs !== Object.hasOwn(ROUTE_MODULES, route), route).toBe(true);
+      if (!runs) continue;
+      // The one action the route is, the same in both lists, and the route's code runs that one by name.
+      expect([ROUTE_RUNS[route]], route).toEqual(names);
+      const at = http.indexOf(`"${route}"`);
+      expect(at, route).toBeGreaterThan(-1);
+      expect(http.slice(at, at + 1500), route).toContain(`"${ROUTE_RUNS[route]}"`);
+    }
+    for (const [route, why] of Object.entries(ROUTE_MODULES)) {
+      expect(ROUTE_ACTIONS[route]?.length, `${route}: no longer a route with actions`).toBeTruthy();
+      expect(why.length, route).toBeGreaterThan(10);
+    }
+    for (const route of Object.keys(ROUTE_RUNS)) expect(ROUTE_ACTIONS[route], route).toBeTruthy();
+    // Decided once: the gate before routing leaves them to `runAction`, which decides with the real arguments.
+    expect(http).toMatch(
+      /Object\.hasOwn\(ROUTE_ACTIONS, route\) && !Object\.hasOwn\(ROUTE_RUNS, route\)[\s\S]{0,200}routeDecision\(/,
+    );
+    // Every MCP tool with actions: one of those that run their action (`actionTool`), or in MCP_MODULES.
+    const own = new Map(mcpActionTools().map((t) => [t.name, t.action]));
+    for (const t of mcpTools().filter((x) => x.actions?.length)) {
+      expect(own.has(t.name) !== Object.hasOwn(MCP_MODULES, t.name), t.name).toBe(true);
+      if (own.has(t.name)) expect(t.actions, t.name).toEqual([own.get(t.name)]);
+    }
+    for (const [tool, why] of Object.entries(MCP_MODULES)) {
+      expect(mcpTools().find((t) => t.name === tool)?.actions?.length, tool).toBeTruthy();
+      expect(why.length, tool).toBeGreaterThan(10);
+    }
+    // The one path decides with the real arguments before it runs: without the list, refused and never run.
+    const store = { schema: () => ({ types: {} }) } as never;
+    expect(
+      await runAction("calendars.add", { type: "x" }, { store, ...juan, registry: none }),
+    ).toEqual({ refused: "P0" });
+  });
+
+  it("every action has its icon, one lucide-react has and the app draws; «Buscar» keeps no icon of its own", () => {
     const dts = readFileSync(
       join(WEB, "..", "node_modules", "lucide-react", "dist", "lucide-react.d.ts"),
       "utf8",
@@ -208,9 +281,19 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
       .filter((t) => !t.icon || !exported.has(t.icon))
       .map((t) => `${t.name}: ${t.icon ?? "none"}`);
     expect(wrong).toEqual([]);
+    // The app turns a name into its drawing (ActionIcon.tsx); which icon an action has is only its definition's, so
+    // «Buscar», «Añadir paso» and a turn's steps show what the server gives (GET /api/agent/actions, the catalog,
+    // a step's words).
+    const drawn = readFileSync(join(WEB, "components", "ActionIcon.tsx"), "utf8");
+    const map = /const ICONS[^{]*\{([^}]*)\}/.exec(drawn)?.[1] ?? "";
+    const names = new Set(map.split(",").map((x) => x.trim()));
+    expect(
+      ACTIONS.all()
+        .filter((t) => !names.has(t.icon ?? ""))
+        .map((t) => t.name),
+    ).toEqual([]);
     const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
-    const shown = [...find.matchAll(/\{ name: "([a-z_.]+)", icon: ([A-Za-z0-9]+)/g)];
-    expect(shown.length).toBeGreaterThan(3);
-    for (const [, name, icon] of shown) expect(ACTIONS.get(name as string)?.icon, name).toBe(icon);
+    expect([...find.matchAll(/\{ name: "([a-z_.]+)", run:/g)].length).toBeGreaterThan(3);
+    expect(find).not.toMatch(/\{ name: "[a-z_.]+", icon:/);
   });
 });

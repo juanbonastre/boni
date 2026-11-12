@@ -32,7 +32,6 @@ import {
   TREE_UI,
 } from "./data.ts";
 import { viewOf } from "./pageActions.ts";
-import { keepingSettings } from "./runUndo.ts";
 
 /**
  * The actions of the area «Datos» that the core's tools did not have (docs/sistema.md §4.1, F10): renaming, moving
@@ -256,6 +255,7 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.set_view",
+    keeps: (c, a) => [`${ROW_UI}${typeOf(c.store, a.type).id}`],
     icon: "Eye",
     undo: ["run"],
     effect: "write",
@@ -290,15 +290,14 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
         const saved = { ...view, id, name };
         next = at < 0 ? [...views, saved] : views.map((v, i) => (i === at ? saved : v));
       }
-      const out = keepingSettings(s.store, s.meta.run, [`${ROW_UI}${def.id}`], () =>
-        setRowUi(s.store, def.id, { views: next }),
-      );
+      const out = setRowUi(s.store, def.id, { views: next });
       if ("error" in out) throw new ToolError(out.error);
       return leaf({ collection: typeName(def), views: out.views.map((v) => v.name) }, code);
     },
   });
   r.register({
     name: "schema.set_tree",
+    keeps: (c, a) => [`${TREE_UI}${typeOf(c.store, a.type).id}`],
     icon: "ListTree",
     undo: ["run"],
     effect: "write",
@@ -314,9 +313,7 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
       const v = a.on ? plain(a.on) : null;
       const on = v === true || v === "true" ? true : v === false || v === "false" ? false : null;
       if (on === null) throw new ToolError("bad-argument");
-      keepingSettings(s.store, s.meta.run, [`${TREE_UI}${def.id}`], () =>
-        wrap(() => setNotesInTree(s.store, def.id, on)),
-      );
+      wrap(() => setNotesInTree(s.store, def.id, on));
       return leaf({ collection: typeName(def), notes: on }, code);
     },
   });

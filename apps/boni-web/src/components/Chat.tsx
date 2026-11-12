@@ -94,7 +94,8 @@ import {
   uploadsOf,
   useStore,
 } from "../store.ts";
-import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
+import { ActionIcon } from "./ActionIcon.tsx";
+import { ProposalCard, RequestCard, useDayFormat, useInboxQueue } from "./InboxCards.tsx";
 import { RunPath } from "./RunPath.tsx";
 
 /**
@@ -908,6 +909,7 @@ function Steps({
             {steps.map((s) => (
               <li key={s.id} className="done">
                 <Check size={12} strokeWidth={2.2} />
+                <ActionIcon name={s.words?.icon} size={12} />
                 <span>
                   {stepText(t, s)}
                   <StepFound s={s} />
@@ -934,6 +936,7 @@ function Steps({
             ) : (
               <span className="step-dot" aria-hidden="true" />
             )}
+            <ActionIcon name={s.words?.icon} size={12} />
             <span>
               {stepText(t, s)}
               {s.done && <StepFound s={s} />}
@@ -1760,6 +1763,7 @@ function Marks({ marks }: { marks: string[] }) {
 /** The rows of a call painted from its real arguments: shared by confirmations and the inbox. */
 export function CallRows({ view }: { view: ConfirmView }) {
   const t = useStore((s) => s.t);
+  const fmt = useDayFormat();
   return (
     <dl className="confirm-rows">
       {view.rows.map((r) => (
@@ -1780,6 +1784,13 @@ export function CallRows({ view }: { view: ConfirmView }) {
                 </>
               ) : (
                 reveal(blockValue(t, r))
+              )}
+              {r.when && (
+                <span className="muted small">
+                  {" · "}
+                  {fmt.long(r.when.day)}
+                  {r.when.start ? `, ${r.when.start}` : ""}
+                </span>
               )}
             </div>
             <div className="confirm-prov muted small">{provenance(t, r.integrity, r.sources)}</div>

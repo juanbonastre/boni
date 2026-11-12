@@ -12,7 +12,7 @@ import {
 import type { UserStore } from "@boni/store";
 import { extension, installed, setEnabled } from "./extensions.ts";
 import { MAIL_GUIDE_AT, MAIL_SETTINGS_AT, MailError, type Mails } from "./mail.ts";
-import { keep, keepingSettings, keepingSettingsAsync } from "./runUndo.ts";
+import { keep } from "./runUndo.ts";
 
 /**
  * The actions of the areas «Conectores» and «Extensiones» (docs/sistema.md §4.1, F10): the mailbox Boni reads (on or
@@ -108,6 +108,7 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail",
+    keeps: () => [MAIL_SETTINGS_AT],
     icon: "MailCheck",
     undo: ["run"],
     effect: "touch",
@@ -130,13 +131,11 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
         ? [...hidden, ...typesOf(c.store, a.collections)]
         : undefined;
       if (on === undefined && !collections) throw new ToolError("bad-argument");
-      await keepingSettingsAsync(m.store, m.run, [MAIL_SETTINGS_AT], () =>
-        wrap(() =>
-          m.mails.save(m.account, {
-            ...(on !== undefined ? { on } : {}),
-            ...(collections ? { collections: [...new Set(collections)] } : {}),
-          }),
-        ),
+      await wrap(() =>
+        m.mails.save(m.account, {
+          ...(on !== undefined ? { on } : {}),
+          ...(collections ? { collections: [...new Set(collections)] } : {}),
+        }),
       );
       return leaf(mailFacts(m, c.store) as never, code);
     },
@@ -203,6 +202,7 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_guide",
+    keeps: () => [MAIL_GUIDE_AT],
     icon: "BookOpen",
     undo: ["run"],
     effect: "touch",
@@ -216,14 +216,12 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
       const m = mailOf(c.service);
       const text = a.instructions ? plain(a.instructions) : null;
       if (typeof text !== "string") throw new ToolError("bad-argument");
-      keepingSettings(m.store, m.run, [MAIL_GUIDE_AT], () => {
-        try {
-          m.mails.saveGuide(m.account, { instructions: text });
-        } catch (e) {
-          if (e instanceof MailError) throw new ToolError(e.code);
-          throw e;
-        }
-      });
+      try {
+        m.mails.saveGuide(m.account, { instructions: text });
+      } catch (e) {
+        if (e instanceof MailError) throw new ToolError(e.code);
+        throw e;
+      }
       return leaf({ saved: true }, code);
     },
   });
@@ -248,6 +246,7 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_suggestion",
+    keeps: () => [MAIL_GUIDE_AT],
     icon: "Lightbulb",
     undo: ["run"],
     effect: "touch",
@@ -263,14 +262,12 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
       const s = m.mails.state(m.account).suggestion;
       if (accept === undefined) throw new ToolError("bad-argument");
       if (!s) throw new ToolError("no-suggestion");
-      keepingSettings(m.store, m.run, [MAIL_GUIDE_AT], () => {
-        try {
-          m.mails.answerSuggestion(m.account, s.id, accept);
-        } catch (e) {
-          if (e instanceof MailError) throw new ToolError(e.code);
-          throw e;
-        }
-      });
+      try {
+        m.mails.answerSuggestion(m.account, s.id, accept);
+      } catch (e) {
+        if (e instanceof MailError) throw new ToolError(e.code);
+        throw e;
+      }
       return leaf({ accepted: accept }, code);
     },
   });

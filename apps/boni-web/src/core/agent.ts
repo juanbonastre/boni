@@ -93,6 +93,8 @@ export interface ConfirmRow {
   name?: string;
   /** An entity's title, next to its id. */
   detail?: string;
+  /** When a proposal of the Bandeja would be (its day and time): the card words the day in Juan's language. */
+  when?: { day: string; start?: string };
 }
 export interface ConfirmView {
   tool: string;
@@ -1122,6 +1124,8 @@ export interface FlowCatalog {
     record?: boolean;
     /** A piece that changes the inbox. */
     changes?: boolean;
+    /** Its definition's icon (a lucide-react icon's name, docs/sistema.md §4.1): «Añadir paso» shows it. */
+    icon?: string;
   }[];
   readers: Record<string, { params: string[]; required: string[]; out: string[] }>;
   asks: string[];
@@ -1316,6 +1320,7 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
               })),
               ...(t.record === true ? { record: true } : {}),
               ...(t.changes === true ? { changes: true } : {}),
+              ...(iconOf(t.icon) ? { icon: iconOf(t.icon) as string } : {}),
             },
           ]
         : [],
@@ -1791,10 +1796,19 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
       marks: strs(r.marks),
       ...(str(r.name, 80) ? { name: str(r.name, 80) as string } : {}),
       ...(str(r.detail, 300) ? { detail: str(r.detail, 300) as string } : {}),
+      ...(whenOf(r.when) ? { when: whenOf(r.when) as { day: string; start?: string } } : {}),
     });
   }
   return { tool, title, rows };
 }
+
+/** A proposal's day (YYYY-MM-DD) and time (HH:MM), only in that shape. */
+const whenOf = (v: unknown): { day: string; start?: string } | null => {
+  if (!isObj(v) || typeof v.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v.day)) return null;
+  const start =
+    typeof v.start === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v.start) ? v.start : null;
+  return { day: v.day, ...(start ? { start } : {}) };
+};
 
 const COMPONENTS = new Set([
   "text",
@@ -1908,11 +1922,15 @@ export interface TodayItem {
   doneField: string | null;
 }
 
-/** A step's words: the tool's name and up to 8 arguments, each a short text. */
+/** A step's words: the tool's name and up to 8 arguments, each a short text; its action's icon. */
 export interface StepWords {
   tool: string;
   args: Record<string, string>;
+  icon?: string;
 }
+/** An action's icon as the server names it (a lucide-react icon's name, «FilePlus»): only such a name, never markup. */
+export const iconOf = (v: unknown): string | null =>
+  typeof v === "string" && /^[A-Z][A-Za-z0-9]{0,39}$/.test(v) ? v : null;
 function parseWords(v: Record<string, unknown>): StepWords | null {
   const tool = str(v.tool, 80);
   if (!tool || !isObj(v.args)) return null;
@@ -1921,7 +1939,8 @@ function parseWords(v: Record<string, unknown>): StepWords | null {
     const s = str(x, 80);
     if (s && /^[a-z_]{1,20}$/.test(k)) args[k] = s;
   }
-  return { tool, args };
+  const icon = iconOf(v.icon);
+  return { tool, args, ...(icon ? { icon } : {}) };
 }
 
 /** A live event as the server sends it: fixed codes and the code's words; a reply parsed as any reply. */
@@ -2762,6 +2781,16 @@ export class AgentApi {
   }
   deleteConversation = async (id: string) =>
     void (await this.call("DELETE", `conversations/${encodeURIComponent(id)}`));
+  /** Each action's icon by its name, from its definition (docs/sistema.md §4.1). */
+  async actionIcons(): Promise<Record<string, string>> {
+    const b = await this.call("GET", "actions");
+    const out: Record<string, string> = {};
+    for (const a of (isObj(b) && Array.isArray(b.actions) ? b.actions : []).filter(isObj)) {
+      const icon = iconOf(a.icon);
+      if (typeof a.name === "string" && a.name.length <= 80 && icon) out[a.name] = icon;
+    }
+    return out;
+  }
   async planners(): Promise<Planner[]> {
     const b = await this.call("GET", "planners");
     return (isObj(b) && Array.isArray(b.planners) ? b.planners : []).filter(isObj).flatMap((p) => {

@@ -21,6 +21,8 @@ export interface ConfirmRow {
   name?: string;
   /** What an entity id names, as Juan reads it (its title), next to the id. */
   detail?: string;
+  /** When a proposal of the Bandeja would be (its day, YYYY-MM-DD, and its time, HH:MM): the app words it. */
+  when?: { day: string; start?: string };
 }
 export interface ConfirmView {
   tool: string;
@@ -89,6 +91,8 @@ export function confirmView(
   tool: ToolDef,
   args: Readonly<Record<string, Val>>,
   store?: ReadStore,
+  /** The server's service the action runs on (`ToolDef.service`): what its own `names` reads. */
+  service?: unknown,
 ): ConfirmView {
   const types = store ? Object.values(store.schema().types) : [];
   const typeArg = args.type ? plain(args.type) : null;
@@ -189,7 +193,23 @@ export function confirmView(
       ),
     );
   }
-  return { tool: tool.name, title: tool.title, rows };
+  // What the action's own code names (a calendar by its name): beside the value, as a title is beside an id.
+  let named: Readonly<Record<string, string>> = {};
+  if (store && tool.names)
+    try {
+      named = tool.names({ store, ...(service !== undefined ? { service } : {}) }, args);
+    } catch {
+      // What it cannot name keeps its value alone.
+    }
+  return {
+    tool: tool.name,
+    title: tool.title,
+    rows: rows.map((r) =>
+      !r.detail && typeof named[r.arg] === "string" && named[r.arg]
+        ? { ...r, detail: named[r.arg] as string }
+        : r,
+    ),
+  };
 }
 
 /** The versions the arguments depend on: where they were read from, and the entities they name. */

@@ -4,6 +4,7 @@ import {
   fieldName,
   leaf,
   plain,
+  type ReadStore,
   ToolError,
   type ToolRegistry,
   typeByKey,
@@ -24,7 +25,6 @@ import {
   storedCalendarDefs,
 } from "./calendarStore.ts";
 import type { DataService } from "./dataActions.ts";
-import { keepingSettings } from "./runUndo.ts";
 
 /**
  * The actions of the area «Calendarios» (docs/sistema.md §4.1, F10): which of Juan's collections show as calendars in
@@ -73,6 +73,25 @@ function seen(s: DataService, visible: (type: string) => boolean) {
     });
 }
 
+/** Every change of a calendar rewrites Boni Calendar's definitions: its run keeps them for Undo. */
+const keeps = () => [CALENDAR_DEFS];
+
+/**
+ * A card names the calendar by its name, as Boni Calendar shows it (its id is its collection's key), from the calendars
+ * the models may see: one they may not see keeps its id alone (docs/sistema.md §4.1).
+ */
+function names(
+  c: { store: ReadStore; service?: unknown },
+  a: Readonly<Record<string, Val>>,
+): Record<string, string> {
+  const id = a.calendar ? plain(a.calendar) : null;
+  if (typeof id !== "string" || !c.service) return {};
+  const found = seen(serviceOf(c.service), (t) => !!c.store.schema().types[t]).find(
+    (x) => x.id === id,
+  );
+  return found?.name ? { calendar: found.name } : {};
+}
+
 export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "calendars.list",
@@ -100,6 +119,7 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.add",
+    keeps,
     icon: "CalendarPlus",
     undo: ["run"],
     effect: "write",
@@ -112,15 +132,15 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
     run(c, a) {
       const s = serviceOf(c.service);
       const t = typeByKey(c.store, str(a.type));
-      const made = keepingSettings(s.store, s.meta.run, [CALENDAR_DEFS], () =>
-        addCalendar(s.store, t.id),
-      );
+      const made = addCalendar(s.store, t.id);
       if (!made) throw new ToolError("not-a-candidate");
       return leaf({ id: made.id, collection: typeName(t) }, code);
     },
   });
   r.register({
     name: "calendars.remove",
+    keeps,
+    names,
     icon: "CalendarX",
     undo: ["run"],
     effect: "write",
@@ -135,14 +155,19 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
     run(c, a) {
       const s = serviceOf(c.service);
       const id = str(a.calendar);
-      if (!seen(s, (t) => !!c.store.schema().types[t]).some((x) => x.id === id))
-        throw new ToolError("no-such-calendar");
-      keepingSettings(s.store, s.meta.run, [CALENDAR_DEFS], () => removeCalendar(s.store, id));
+      // A split one by any calendar it makes or by the definition itself (Boni Calendar sends the definition's id).
+      const visible = calendarDefs(s.store).some(
+        (p) =>
+          (p.def.id === id || p.path?.some((n) => n.id === id)) && !!c.store.schema().types[p.type],
+      );
+      if (!visible || !removeCalendar(s.store, id)) throw new ToolError("no-such-calendar");
       return leaf({ removed: id }, code);
     },
   });
   r.register({
     name: "calendars.split",
+    keeps,
+    names,
     icon: "Split",
     undo: ["run"],
     effect: "write",
@@ -172,15 +197,15 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
           throw new ToolError("bad-field");
         field = f.id;
       }
-      const r = keepingSettings(s.store, s.meta.run, [CALENDAR_DEFS], () =>
-        setSplit(s.store, id, field),
-      );
+      const r = setSplit(s.store, id, field);
       if (r !== "ok") throw new ToolError(r);
       return leaf({ calendar: id, split: name === null ? null : String(name) }, code);
     },
   });
   r.register({
     name: "calendars.color",
+    keeps,
+    names,
     icon: "Palette",
     undo: ["run"],
     effect: "write",
@@ -196,15 +221,15 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
       if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new ToolError("bad-color");
       if (!seen(s, (t) => !!c.store.schema().types[t]).some((x) => x.id === id))
         throw new ToolError("no-such-calendar");
-      const ok = keepingSettings(s.store, s.meta.run, [CALENDAR_DEFS], () =>
-        setCalendarColor(s.store, id, color),
-      );
+      const ok = setCalendarColor(s.store, id, color);
       if (!ok) throw new ToolError("no-such-calendar");
       return leaf({ calendar: id, color }, code);
     },
   });
   r.register({
     name: "calendars.reminders",
+    keeps,
+    names,
     icon: "BellRing",
     undo: ["run"],
     effect: "write",
@@ -234,9 +259,7 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
           allDay: a.all_day ? String(plain(a.all_day)) : kept?.allDay,
         }),
       );
-      const r = keepingSettings(s.store, s.meta.run, [CALENDAR_DEFS], () =>
-        setCalendarReminders(s.store, id, { reminders }),
-      );
+      const r = setCalendarReminders(s.store, id, { reminders });
       if (r !== "ok") throw new ToolError("no-such-calendar");
       return leaf({ calendar: id, ...reminders }, code);
     },
