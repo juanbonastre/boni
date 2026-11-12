@@ -5,6 +5,51 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-12 (forty-third) — server 0.8.119 · Boni desktop 0.4.87 · Boni Calendar desktop 0.8.25 · Boni Android · Boni Calendar Android
+
+Needs:
+- The server, 0.8.119, to deploy first. The policy in front of every route and MCP tool, and a page's chat, are in it.
+  No store migration.
+- Boni desktop 0.4.87 (`release/boni_0.4.87_amd64.deb`), after the server: a page's chat (its block and panel) and the
+  caret after a draft read back.
+- Boni Calendar desktop 0.8.25 (`release/boni-calendar-desktop_0.8.25_amd64.deb`): the queue of unsent changes kept on
+  the device at once.
+- Boni Android and Boni Calendar Android from main, through Obtainium: each APK carries its web app, so they bring the
+  same as the desktops. `Net.kt` and `paths.cjs` did not change: the new `api/agent/chats` paths were already allowed.
+
+What it brings (#399–#402):
+- **The policy in front of everything that changes** (task 95, first part; A-26, P24, P25): every route that changes
+  something and every MCP tool reach their registered action through the policy first. Juan's own hand on a route is
+  allowed, as before. Each action says how it is undone and its icon. Juan sees nothing new.
+- **A page's chat** (task 87, third part; D-61): «/Chat» puts a «Chat de la página» block on a page, a flow with a
+  «Chat» trigger (a welcome, up to six buttons) and an «Agente» step (instructions and its actions). What is written
+  there opens a conversation in the chat's mode in Boni's window; it may read the collections the page shows and set
+  the page's values, and every figure it says is the code's, never the model's.
+- Fixed: a draft read back after a restart put the caret before it, so what was typed went in front (task 97, I-35).
+- Fixed: an event titled and closed at once in Boni Calendar could lose its title; the queue of unsent changes is now
+  kept on the device at once (task 98).
+
+For Juan to look at, because they change his data or where it goes, or their shape is new:
+- **Assistants over the MCP are their own origin** (task 95, P24): an assistant may do what a model may in Juan's turn,
+  but what would need a confirmation card is refused, because the MCP has no card. Sending a note to the trash is
+  still allowed (`undo` brings it back); a flow is only proposed. Tested against a local server only before this
+  release.
+- **A page's chat** (task 87): its shape is new, and no real model has answered in it yet (the tests use a scripted
+  planner). It sets the page's values with the model's label, undone with its run.
+
+Still missing, from each PR's review:
+- Task 95, first part: routes and the hand-written MCP tools still run their own code after the policy, which judges
+  them without their real arguments; `runUndo.ts` and the way → route table are not in the actions yet; «Buscar»
+  keeps its own icons; the `calendars.remove` card shows the calendar's id; the Inbox card does not say the date; no
+  icons in «Añadir paso» or in a turn's steps.
+- Task 87, third part: adding a block from the chat (with confirmation); a click on the chat's figure listing its rows
+  (D-08); the row count in the reply; «Ver en el mapa»; the AI and the MCP cannot add a chat block; a number written
+  in words is not caught; a real model answering is UNVERIFIED.
+- Task 97: nothing protects `make e2e-boni-desktop` on the laptop from a real key pressed on its screen (no virtual
+  screen locally); where that day's key came from is inferred, not shown.
+- Task 98: account preferences and external calendars are plain requests with no queue, so a change closed at once
+  may not arrive (as before); Boni's own last-moment writes (`pagehide`) were not examined.
+
 ## 2026-11-12 (forty-second) — server 0.8.118 · Boni desktop 0.4.86 · Boni Android
 
 Needs:
