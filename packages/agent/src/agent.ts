@@ -56,6 +56,7 @@ import {
 import {
   type Caps,
   EndRun,
+  entityVal,
   type FlowStarter,
   type FlowWriter,
   type InboxDecider,
@@ -68,6 +69,7 @@ import {
   type ToolDef,
   ToolError,
   type ToolRegistry,
+  typeName,
 } from "./tools.ts";
 import { type RunDetail, smallJson, traceOf } from "./trace.ts";
 import { newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
@@ -105,7 +107,9 @@ you have no tools: you answer with one plan in the plan language below, which Bo
 The code decides what is allowed; a step it refuses stops the plan, so plan only what the request asks.
 
 Input (JSON): "request" (the user's words), "today", "tools" (the only tools you may call, with their arguments),
-"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation), "memories", and
+"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation: a reply "asked" is
+a question you asked with the user's answer, or with none when he answered in his own words in the next turn; a turn
+"corrected" the user edited, what it did was undone and the next turn redoes it with his new words), "memories", and
 "flows" when there are some: the user's own flows, each with its id, name and the inputs its form asks for. When the
 user asks to run one of them, one call to flows.run with its id (and inputs as obj(name, value, ...)): its answers
 appear in this turn, after the user confirms it. When the user asks for something to happen on its own (every Monday,
@@ -391,6 +395,8 @@ interface PendingState {
   iter: number;
   hash?: string;
   view?: Pending;
+  /** An ask's question as a value: kept as text in the turn once it is answered (§3.4, rule 3). */
+  prompt?: Val;
 }
 
 interface RunState {
@@ -433,6 +439,8 @@ interface RunState {
   turnRecord?: string | null;
   /** What the user pointed at for this turn, as its chips said it: written with the turn when it is first kept. */
   chips?: TurnChip[];
+  /** The run of the turn this one corrects (§3.1): kept with the turn. */
+  corrects?: string;
   /** Who is watching it live (the turn's device), and the planner chosen for its conversation. */
   live?: ((e: LiveEvent) => void) | undefined;
   planner?: ModelProvider | undefined;
@@ -947,6 +955,11 @@ export class Agent {
      * the conversation, never given to the planner (it gets what the server says of each, in `screen`).
      */
     chips?: TurnChip[];
+    /**
+     * The run of an earlier turn of this conversation this one corrects (docs/conversacion.md §3.1): Juan edited its
+     * message, and its run was taken back first (`correct`). Kept with the turn; the planner sees the old one marked.
+     */
+    corrects?: string;
   }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
@@ -969,6 +982,7 @@ export class Agent {
     st.planner = req.planner;
     if (req.screen && !req.flow) st.env.set("screen", req.screen);
     if (req.chips?.length) st.chips = req.chips.slice(0, 20);
+    if (req.corrects) st.corrects = req.corrects;
     this.emit(st, { type: "start", run });
     this.active.set(run, st);
     // The turn is kept before it is planned: a device that reloads sees it, running.
@@ -1083,6 +1097,7 @@ export class Agent {
         at: this.now(),
         ...(st.origin.device ? { device: st.origin.device } : {}),
         ...(st.chips ? { chips: st.chips } : {}),
+        ...(st.corrects ? { corrects: st.corrects } : {}),
       });
     } catch {
       // A conversation that cannot be written (gone) never stops the run.
@@ -1201,6 +1216,7 @@ export class Agent {
       .slice(-10)
       .map((h, i) => ({
         request: h.request,
+        ...(h.corrected ? { corrected: true } : {}),
         replies: h.replies.map((r, j) => ({
           component: r.component,
           data: Object.fromEntries(
@@ -2274,6 +2290,7 @@ export class Agent {
           id,
           step: st.pc,
           iter: st.iter,
+          prompt: control ? taint(askPrompt, control) : askPrompt,
           view: {
             kind: "ask",
             id,
@@ -2536,7 +2553,14 @@ export class Agent {
           ? options.items.map((i) => paint(control ? taint(i, control) : i))
           : [],
     };
-    st.pending = { kind: "ask", id, step: st.pc, iter: st.iter, view };
+    st.pending = {
+      kind: "ask",
+      id,
+      step: st.pc,
+      iter: st.iter,
+      view,
+      prompt: control ? taint(prompt, control) : prompt,
+    };
     this.log(st, step, "ask", "ask", null);
     return BLOCKED;
   }
@@ -2697,11 +2721,17 @@ export class Agent {
       j.finishRun(r.run, `stopped:${status}`, j.run(r.run)?.plan, this.now());
   }
 
-  /** Juan's answer to an `ask`: what he types is his; an option he picks keeps the option's label (A2). */
+  /**
+   * Juan's answer to an `ask`: what he types is his; an option he picks keeps the option's label (A2). In a turn of
+   * the conversation a choice also has its free ways out (docs/conversacion.md §3.4, rule 2): `record`, a row he just
+   * made with «Nueva…» in the collection the options are rows of (his own write, through the store's log); `words`,
+   * «Otra cosa…»: the question ends there and what he wrote is his next turn, where the planner reads it. Answered,
+   * the question stays in the turn as text, with its answer (rule 3).
+   */
   async answer(
     run: string,
     ask: string,
-    a: { choice: number } | { text: string },
+    a: { choice: number } | { text: string } | { words: string } | { record: string },
     /** The device that answers a question of background work: what is typed there is Juan's only if personal. */
     by?: { trust: Origin["trust"] },
     live?: (e: LiveEvent) => void,
@@ -2726,8 +2756,20 @@ export class Agent {
       at.op === "read"
         ? { id: at.id, control: "choice" as const, options: at.params?.options }
         : (at as Extract<Step, { op: "ask" }>);
-    let v: Val;
     const background = st.origin.kind === "background";
+    const opts = step.options ? this.evalExpr(st, step.options) : null;
+    const items = opts && opts.t === "list" ? opts.items : [];
+    // The free ways out are the conversation's: a question of background work keeps its options (its Bandeja card).
+    if (("words" in a || "record" in a) && (background || step.control !== "choice"))
+      return this.result(st, "waiting", "wrong-answer");
+    const prompt = st.pending?.prompt;
+    if ("words" in a) {
+      // «Otra cosa…»: the question as text with its options, for the planner of the next turn to read his words by.
+      if (prompt) this.reply(st, "asked", { prompt, ...(opts ? { options: opts } : {}) });
+      st.pending = null;
+      return this.finish(st, "stopped", "answered-in-words");
+    }
+    let v: Val;
     if ("text" in a) {
       if (step.control !== "text") return this.result(st, "waiting", "wrong-answer");
       v = leaf(
@@ -2738,17 +2780,68 @@ export class Agent {
             ])
           : this.quoteLabel(st),
       );
+    } else if ("record" in a) {
+      const made = this.rowOfOptions(items, a.record);
+      if (!made) return this.result(st, "waiting", "wrong-answer");
+      v = made;
     } else {
-      const opts = step.options ? this.evalExpr(st, step.options) : null;
-      const chosen = opts && opts.t === "list" ? opts.items[a.choice] : undefined;
+      const chosen = items[a.choice];
       if (step.control !== "choice" || !chosen) return this.result(st, "waiting", "wrong-answer");
       v = chosen;
     }
     st.answers.set(step.id, v);
+    if (prompt && !background) this.reply(st, "asked", { prompt, answer: v });
     st.pending = null;
     if (background) this.o.store.journal.setRequest(ask, "answered", this.now(), a);
     if (live) st.live = live;
     return this.advance(st);
+  }
+
+  /**
+   * A row Juan made with «Nueva…» as the answer to a choice among rows (§3.4): only when every option is a row of one
+   * collection of his and the row is of that collection, read from the store as the options were (its own labels).
+   */
+  private rowOfOptions(items: Val[], id: string): Val | null {
+    const ro = readStore(this.o.store);
+    const typeOf = (x: Val) => {
+      if (x.t !== "rec") return null;
+      const t = x.fields.type;
+      return t?.t === "v" && typeof t.value === "string" ? t.value : null;
+    };
+    const kinds = new Set(items.map(typeOf));
+    const kind = kinds.size === 1 ? [...kinds][0] : null;
+    if (!kind) return null;
+    const s = this.o.store.get(id);
+    if (!s || s.entity.deleted !== undefined) return null;
+    const def = ro.schema().types[s.entity.type];
+    if (!def || def.system || def.archived || typeName(def) !== kind) return null;
+    return entityVal(s, def);
+  }
+
+  /**
+   * Juan corrects a message he sent (docs/conversacion.md §3.1, C1): its run is taken back before his new words run.
+   * What it wrote is undone through the store's log, all or nothing (a later change of his in the way stops the
+   * correction with nothing done: "cannot-undo"); then a question or confirmation it waits on ends, and its proposals
+   * still in the Bandeja leave it. A run still going is "busy". How many things it took back.
+   */
+  correct(run: string): number | "busy" | "cannot-undo" {
+    if (this.active.has(run)) return "busy";
+    let n = 0;
+    if (this.o.store.runUndoable(run))
+      try {
+        n += this.undoRun(run).length;
+      } catch {
+        return "cannot-undo";
+      }
+    const waiting = this.runs.get(run);
+    if (waiting && waiting.origin.kind !== "background")
+      this.finish(waiting, "stopped", "stopped-by-juan");
+    for (const p of this.o.store.journal.proposalsOf(run))
+      if (p.status === "pending") {
+        this.o.store.journal.setProposal(p.id, "stale", this.now());
+        n++;
+      }
+    return n;
   }
 
   /** Juan confirms on a personal device: valid once, for those exact values, before it expires. */

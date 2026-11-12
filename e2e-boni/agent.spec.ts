@@ -5,6 +5,9 @@ import {
   ACCURACY_ON,
   ANSWER_GONE,
   ASK_TURN,
+  BOOK_ASK,
+  BOOK_IN_WORDS,
+  BOOK_NEW,
   CARD_BOOK,
   CARD_COMPACT,
   CARD_DETAILED,
@@ -39,6 +42,7 @@ import {
   OPEN_THEN_CONFIRM,
   PROPOSALS,
   REQUESTS,
+  REWROTE,
   RTL,
   RUN_2,
   RUN_STOPPED,
@@ -49,6 +53,7 @@ import {
   TEXT_REPLY,
   TOP_CARD_REPLY,
   VISIBILITY,
+  WROTE,
 } from "./agent-scenarios.ts";
 import { emit, iconsWhole, openApp, recorded } from "./fixtures.ts";
 
@@ -1008,11 +1013,206 @@ test("a question: the options are buttons, the answer goes back once", async ({ 
   await expect(page.locator(".ask input[type=password]")).toHaveCount(0);
   await expect(page.locator(".ask")).not.toContainText("contraseña");
   await page.screenshot({ path: `${SHOTS}/agent-ask.png` });
+  // Options that are not rows of one collection: «Otra cosa…», never «Nueva…».
+  await expect(page.getByRole("button", { name: "Otra cosa…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Nueva…" })).toHaveCount(0);
   await page.locator(".ask-options .pill").nth(1).click();
   await expect(page.locator(".turn-answer")).toContainText("Hecho.");
   expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
     'POST api/agent/answer {"run":"r-ask","ask":"a1","choice":1}',
   ]);
+});
+
+test("a card's free way out (task 27, §3.4): «Otra cosa…» ends the question and his words are the next turn; the question stays as text", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [BOOK_ASK, DONE],
+      "POST api/agent/answer": [BOOK_IN_WORDS],
+    },
+  });
+  await ask(page, "marca como leído el de Cortázar");
+  await expect(page.locator(".ask-prompt")).toHaveText("¿Cuál de los dos?");
+  await page.getByRole("button", { name: "Otra cosa…" }).click();
+  const words = page.getByRole("textbox", { name: "Otra cosa…" });
+  await expect(words).toBeFocused();
+  await words.pressSequentially("ninguno, el de Borges que tengo en papel", { delay: 40 });
+  await words.press("Enter");
+  await expect(page.locator(".turn-request")).toHaveText([
+    "marca como leído el de Cortázar",
+    "ninguno, el de Borges que tengo en papel",
+  ]);
+  await expect(page.locator(".turn-answer").last()).toContainText("Hecho.");
+  // The question, answered in his words, stays as text with no buttons and no error.
+  await expect(page.locator(".ask")).toHaveCount(0);
+  await expect(page.locator(".reply-asked").first()).toContainText("¿Cuál de los dos?");
+  await expect(page.locator(".turn-error")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Enviar" })).toBeVisible();
+  expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
+    'POST api/agent/answer {"run":"r-libro","ask":"a-libro","words":"ninguno, el de Borges que tengo en papel"}',
+  ]);
+  const turns = await requests(page, "POST api/agent/turn ");
+  expect(turns).toHaveLength(2);
+  expect(turns[1]).toContain('"text":"ninguno, el de Borges que tengo en papel"');
+});
+
+test("«Otra cosa…» refused (task 27, §3.4): an answer the server does not take leaves the question open, and his words are not sent on their own", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [BOOK_ASK, DONE],
+      "POST api/agent/answer": [{ ...BOOK_ASK, error: "wrong-answer" }],
+    },
+  });
+  await ask(page, "marca como leído el de Cortázar");
+  await page.getByRole("button", { name: "Otra cosa…" }).click();
+  const words = page.getByRole("textbox", { name: "Otra cosa…" });
+  await words.pressSequentially("el de Borges", { delay: 40 });
+  await words.press("Enter");
+  await expect(page.getByRole("button", { name: "Enviar" })).toBeVisible();
+  await expect(page.locator(".ask-prompt")).toHaveText("¿Cuál de los dos?");
+  await expect(page.locator(".turn-request")).toHaveText(["marca como leído el de Cortázar"]);
+  expect(await requests(page, "POST api/agent/turn ")).toHaveLength(1);
+});
+
+test("«Nueva…» on a choice among rows (task 27, §3.4): the row is made in that collection with what he typed, and is the answer", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: { "POST api/agent/turn": [BOOK_ASK], "POST api/agent/answer": [BOOK_NEW] },
+  });
+  await ask(page, "marca como leído el que acabo de terminar");
+  await page.getByRole("button", { name: "Nueva…" }).click();
+  const name = page.getByRole("textbox", { name: "Nueva…" });
+  await expect(name).toHaveAttribute("placeholder", "Libros");
+  await name.pressSequentially("Cien años de soledad", { delay: 40 });
+  await name.press("Enter");
+  await expect(page.locator(".turn-answer")).toContainText("Marcado como leído.");
+  await expect(page.locator(".reply-asked")).toContainText("Cien años de soledad");
+  const made = (await recorded(page)).requests.filter((r) =>
+    r.startsWith("POST api/data/types/t_libro/rows"),
+  );
+  expect(made).toEqual([
+    'POST api/data/types/t_libro/rows {"values":{"f_titulo":"Cien años de soledad"}}',
+  ]);
+  expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
+    'POST api/agent/answer {"run":"r-libro","ask":"a-libro","record":"n1"}',
+  ]);
+});
+
+test("a sent message corrected by editing it (task 27, §3.1): what it did is undone and redone; when it cannot be, it says so and nothing is lost", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [WROTE, { __status: 409, error: "cannot-undo" }, REWROTE],
+      "GET api/agent/runs": [RUNS],
+    },
+  });
+  await ask(page, "apunta Rayuela como leído");
+  await expect(page.locator(".turn-answer")).toContainText("Apuntado.");
+  await expect(page.getByRole("button", { name: "Enviar" })).toBeVisible();
+  const first = page.locator(".turn").first();
+  await first.hover();
+  await first.getByRole("button", { name: "Editar" }).click();
+  const edit = first.getByRole("textbox", { name: "Editar" });
+  await expect(edit).toHaveValue("apunta Rayuela como leído");
+  await edit.fill("");
+  await edit.pressSequentially("apunta Ficciones como leído", { delay: 40 });
+  await edit.press("Enter");
+  // A later change in the way: nothing done, the edit stays open with his words and the state word.
+  await expect(first.locator(".turn-edit [role=status]")).toHaveText("No se puede deshacer");
+  await expect(edit).toHaveValue("apunta Ficciones como leído");
+  await expect(page.locator(".turn")).toHaveCount(1);
+  await first.getByRole("button", { name: "Enviar" }).click();
+  await expect(page.locator(".turn-request")).toHaveText([
+    "apunta Rayuela como leído",
+    "apunta Ficciones como leído",
+  ]);
+  await expect(first).toContainText("Corregido");
+  await expect(first.getByRole("button", { name: "Deshacer lo que hizo" })).toHaveCount(0);
+  await expect(first.getByRole("button", { name: "Editar" })).toHaveCount(0);
+  await expect(page.locator(".turn").last()).toContainText("Apuntado.");
+  const turns = (await requests(page, "POST api/agent/turn ")).map(withoutLive);
+  expect(turns).toHaveLength(3);
+  expect(turns[1]).toContain('"corrects":"run-e1"');
+  expect(turns[2]).toContain('"text":"apunta Ficciones como leído"');
+  expect(turns[2]).toContain('"corrects":"run-e1"');
+});
+
+test("a correction whose new words fail (task 27, §3.1): the old turn shows as the server has it, taken back", async ({
+  page,
+}) => {
+  const conversation = { id: "k_9", title: "", model: "", last: 1762900000000 };
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/conversations": [{ conversation }],
+      "POST api/agent/turn": [WROTE, { __status: 500, error: "error" }],
+      "GET api/agent/conversations/k_9": [
+        {
+          conversation,
+          turns: [
+            {
+              id: "t_1",
+              request: "apunta Rayuela como leído",
+              at: 1762900000000,
+              run: "run-e1",
+              status: "done",
+              replies: [],
+              pending: null,
+              proposals: [],
+              notices: [],
+              error: null,
+              pointed: [],
+              corrected: true,
+            },
+          ],
+        },
+      ],
+      "GET api/agent/runs": [RUNS],
+    },
+  });
+  await ask(page, "apunta Rayuela como leído");
+  await expect(page.locator(".turn-answer")).toContainText("Apuntado.");
+  await expect(page.getByRole("button", { name: "Enviar" })).toBeVisible();
+  const first = page.locator(".turn").first();
+  await first.hover();
+  await first.getByRole("button", { name: "Editar" }).click();
+  const edit = first.getByRole("textbox", { name: "Editar" });
+  await edit.fill("");
+  await edit.pressSequentially("apunta Ficciones como leído", { delay: 40 });
+  await edit.press("Enter");
+  await expect(page.locator(".turn").last().locator(".turn-error")).toBeVisible();
+  await expect(first).toContainText("Corregido");
+  await expect(first.getByRole("button", { name: "Deshacer lo que hizo" })).toHaveCount(0);
+  await expect(first.getByRole("button", { name: "Editar" })).toHaveCount(0);
+});
+
+test("a pinned conversation (task 27, task 63 point 7): «Fijar» puts it on top under «Fijadas», kept by the server", async ({
+  page,
+}) => {
+  const recent = { id: "k_2", title: "Recetas de otoño", model: "", last: 1762900000000 };
+  const old = { id: "k_1", title: "Viaje a Lisboa", model: "", last: 1761900000000 };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/conversations": [{ conversations: [recent, old] }],
+      "PUT api/agent/conversations/k_1": [{ conversation: { ...old, pinned: true } }],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const list = page.getByRole("navigation", { name: "Conversaciones" });
+  await expect(list.locator(".chat-item")).toHaveText(["Recetas de otoño", "Viaje a Lisboa"]);
+  const item = list.locator(".chat-item").filter({ hasText: "Viaje a Lisboa" });
+  await item.hover();
+  await item.getByRole("button", { name: "Fijar", exact: true }).click();
+  await expect(list.locator(".chat-group").first().locator("h3")).toHaveText("Fijadas");
+  await expect(list.locator(".chat-item")).toHaveText(["Viaje a Lisboa", "Recetas de otoño"]);
+  await expect(list.getByRole("button", { name: "Dejar de fijar" })).toBeVisible();
+  expect(
+    (await recorded(page)).requests.filter((r) => r.startsWith("PUT api/agent/conversations/")),
+  ).toEqual(['PUT api/agent/conversations/k_1 {"pinned":true}']);
 });
 
 test("what a rule stopped says so, in words, and an agent that is off too", async ({ page }) => {

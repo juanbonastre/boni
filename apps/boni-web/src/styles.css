@@ -10956,3 +10956,67 @@ tr[data-boni-pointed] > td {
     0 0 0 5px var(--accent),
     var(--shadow);
 }
+
+/* Task 27 (C1, C3): a card's free ways out, a message corrected by editing it, pinned conversations. */
+.ask-options .pill.ask-out {
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+  font-weight: 400;
+}
+.ask-options .pill.ask-out.on {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.reply-asked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.reply-asked-answer {
+  font-weight: 500;
+}
+.turn-request-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.turn-edit-btn {
+  opacity: 0;
+  transition: opacity 150ms var(--ease-out);
+}
+.turn:hover .turn-edit-btn,
+.turn-edit-btn:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .turn-edit-btn {
+    opacity: 0.6;
+  }
+}
+.turn-state {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.turn-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: stretch;
+}
+.turn-edit textarea {
+  resize: vertical;
+}
+.turn-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* A pinned conversation shows its pin, without the pointer over it. */
+.chat-item .icon-btn.chat-pin.on {
+  visibility: visible;
+  color: var(--accent);
+}

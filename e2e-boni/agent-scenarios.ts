@@ -3440,3 +3440,72 @@ export const RUN_STOPPED_REPLY = screenTurn("r42", [
   { component: "text", data: { template: v("Lo paró una regla al leer el correo.", "model") } },
   { component: "open", data: { run: v("run-4", "own"), map: v(true, "own") } },
 ]);
+
+/** A row of Libros as the code paints it: its id and collection the code's own, its title Juan's. */
+const book = (id: string, titulo: string) => ({
+  t: "rec",
+  fields: { id: v(id, "own"), type: v("libros", "own"), titulo: v(titulo, "user", "personal") },
+});
+/** «Marca como leído el de Cortázar» (task 27, §3.4): a choice among rows of Libros, with its free ways out. */
+export const BOOK_ASK = {
+  run: "r-libro",
+  status: "waiting",
+  replies: [],
+  pending: {
+    kind: "ask",
+    id: "a-libro",
+    control: "choice",
+    prompt: v("¿Cuál de los dos?", "model"),
+    options: [book("r1", "Rayuela"), book("r2", "Ficciones")],
+  },
+  proposals: [],
+  notices: [],
+  error: null,
+};
+/** Answered in his words: the question stays as text with its options, and the run ends to let them be a turn. */
+export const BOOK_IN_WORDS = {
+  run: "r-libro",
+  status: "stopped",
+  replies: [
+    {
+      component: "asked",
+      data: {
+        prompt: v("¿Cuál de los dos?", "model"),
+        options: { t: "list", items: [book("r1", "Rayuela"), book("r2", "Ficciones")] },
+      },
+    },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: "answered-in-words",
+};
+/** Answered with a row Juan made with «Nueva…»: the question as text with his answer, then what the run did. */
+export const BOOK_NEW = {
+  run: "r-libro",
+  status: "done",
+  replies: [
+    {
+      component: "asked",
+      data: { prompt: v("¿Cuál de los dos?", "model"), answer: book("n1", "Cien años de soledad") },
+    },
+    { component: "text", data: { template: v("Marcado como leído.", "model") } },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  changed: true,
+  error: null,
+};
+/** A turn that wrote something (its «Deshacer»), to be corrected by editing its message (task 27, §3.1). */
+export const WROTE = {
+  run: "run-e1",
+  status: "done",
+  replies: [{ component: "text", data: { template: v("Apuntado.", "model") } }],
+  pending: null,
+  proposals: [],
+  notices: [],
+  changed: true,
+  error: null,
+};
+export const REWROTE = { ...WROTE, run: "run-e2" };

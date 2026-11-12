@@ -23,11 +23,15 @@ export interface ConversationInfo {
   model: string;
   /** When it was last written in (epoch ms). */
   last: number;
+  /** Pinned: on top of the list, on every device (task 63, point 7). */
+  pinned: boolean;
 }
 /** A turn as the history keeps it for the planner: the request and the replies with their labels. */
 export interface HistoryTurn {
   request: string;
   replies: { component: string; data: Record<string, Val> }[];
+  /** Juan edited it (§3.1): what it did was undone, and the turn that corrects it redoes it with his new words. */
+  corrected?: boolean;
 }
 /** Something the user pointed at with a message, as its chip said it (a reference and its words; I-33). */
 export interface TurnChip {
@@ -48,6 +52,10 @@ export interface TurnView {
   at: number;
   /** What the user pointed at with it, as its chips said it. */
   pointed: TurnChip[];
+  /** Juan edited it (§3.1): its run was taken back, and a later turn redid it with the new words. */
+  corrected: boolean;
+  /** The run of the turn it corrects, when it is a correction. */
+  corrects: string | null;
 }
 
 const json = <T>(s: unknown, fallback: T): T => {
@@ -58,6 +66,9 @@ const json = <T>(s: unknown, fallback: T): T => {
   }
 };
 const alive = (s: StoredEntity) => s.entity.deleted === undefined;
+/** A field a newer Boni gives a system type (ensureSystemTypes adds it; a store not yet opened by it lacks it). */
+const hasField = (store: UserStore, type: string, key: string) =>
+  !!store.schema().types[type]?.fields.some((f) => f.id === `f_${key}`);
 const text = (s: StoredEntity, k: string) => String(s.entity.values[`f_${k}`] ?? "");
 
 const info = (s: StoredEntity): ConversationInfo => ({
@@ -65,6 +76,7 @@ const info = (s: StoredEntity): ConversationInfo => ({
   title: text(s, "title"),
   model: text(s, "model"),
   last: Number(text(s, "last")) || 0,
+  pinned: text(s, "pinned") === "1",
 });
 
 /** A title from the first request: its first words, cut at a word (the code's, never a model's). */
@@ -75,14 +87,17 @@ export function titleFrom(request: string): string {
   return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 40)).trim()}…`;
 }
 
-/** The conversations, the latest first (none deleted). */
+/** The conversations, the pinned first and then the latest (none deleted). */
 export function listConversations(store: UserStore): ConversationInfo[] {
   if (!store.schema().types[CONVERSATION]) return [];
-  return store
-    .list(CONVERSATION)
-    .filter(alive)
-    .map(info)
-    .sort((a, b) => b.last - a.last);
+  return (
+    store
+      .list(CONVERSATION)
+      .filter(alive)
+      .map(info)
+      // The pinned first, each part the latest first.
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.last - a.last)
+  );
 }
 
 export function conversation(store: UserStore, id: string): ConversationInfo | null {
@@ -122,12 +137,14 @@ export function conversationByKey(
 export function updateConversation(
   store: UserStore,
   id: string,
-  o: { title?: string; model?: string; device?: string },
+  o: { title?: string; model?: string; pinned?: boolean; device?: string },
 ): boolean {
   if (!conversation(store, id)) return false;
   const writes: Record<string, ReturnType<typeof v>> = {};
   if (o.title !== undefined) writes.f_title = v(o.title);
   if (o.model !== undefined) writes.f_model = v(o.model);
+  if (o.pinned !== undefined && hasField(store, CONVERSATION, "pinned"))
+    writes.f_pinned = v(o.pinned ? "1" : "");
   if (Object.keys(writes).length) store.update(id, writes, meta(o.device));
   return true;
 }
@@ -157,7 +174,24 @@ export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
     .map((s) => ({
       request: text(s, "request"),
       replies: json<HistoryTurn["replies"]>(s.entity.values.f_replies, []),
+      ...(text(s, "corrected") ? { corrected: true } : {}),
     }));
+}
+
+/** A conversation's turn by its run (the one a correction names), or null. */
+export function turnOfRun(
+  store: UserStore,
+  id: string,
+  run: string,
+): { id: string; corrected: boolean } | null {
+  if (!run) return null;
+  const s = turnsOf(store, id).find((x) => text(x, "run") === run);
+  return s ? { id: s.entity.id, corrected: text(s, "corrected") === "1" } : null;
+}
+
+/** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */
+export function markCorrected(store: UserStore, turn: string, device?: string): void {
+  if (hasField(store, TURN, "corrected")) store.update(turn, { f_corrected: v("1") }, meta(device));
 }
 
 /** A conversation's turns as a device shows them (the replies painted). */
@@ -187,6 +221,8 @@ export function turnViews(
         (store.runUndoable(text(s, "run")) || !!undoable?.(text(s, "run"))),
       at: Number(text(s, "at")) || 0,
       pointed: json<TurnChip[]>(s.entity.values.f_pointed, []).slice(0, 20),
+      corrected: text(s, "corrected") === "1",
+      corrects: text(s, "corrects") || null,
     };
   });
 }
@@ -211,6 +247,8 @@ export function recordTurn(
     device?: string;
     /** What the user pointed at with it: written when the turn is first kept, never changed after. */
     chips?: TurnChip[];
+    /** The run of the turn it corrects (§3.1): written when the turn is first kept. */
+    corrects?: string;
   },
 ): string | null {
   const c = conversation(store, t.conversation);
@@ -233,10 +271,10 @@ export function recordTurn(
         {
           ...writes,
           f_at: v(String(t.at)),
-          ...(t.chips?.length &&
-          store.schema().types[TURN]?.fields.some((f) => f.id === "f_pointed")
+          ...(t.chips?.length && hasField(store, TURN, "pointed")
             ? { f_pointed: v(JSON.stringify(t.chips)) }
             : {}),
+          ...(t.corrects && hasField(store, TURN, "corrects") ? { f_corrects: v(t.corrects) } : {}),
         },
         meta(t.device),
       ).entity.id;

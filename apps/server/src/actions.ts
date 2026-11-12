@@ -174,7 +174,8 @@ export const JUAN_ONLY: Readonly<Record<string, string>> = {
 
 /** A route that changes something and is no action: how an action is asked, confirmed or computed. */
 export const NOT_ACTIONS: Readonly<Record<string, string>> = {
-  "POST /api/agent/turn": "the conversation: how the planner is asked",
+  "POST /api/agent/turn":
+    "the conversation: how the planner is asked (a corrected message takes its turn back, as its «Deshacer»)",
   "POST /api/agent/answer": "the conversation: Juan answers a question of a turn",
   "POST /api/agent/confirm": "the conversation: Juan's touch on a card",
   "POST /api/agent/decline": "the conversation: Juan's touch on a card",
@@ -197,7 +198,7 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
   "POST /api/mcp": "the MCP: one more way to the actions",
   "POST /api/agent/conversations": "the conversation: a new one is where Juan asks",
   "PUT /api/agent/conversations/:id":
-    "the conversation itself: its name and the model that answers in it",
+    "the conversation itself: its name, its pin and the model that answers in it",
   "POST /api/collections/link-column":
     "made with «Enlazar» when Juan accepts a card linked to an external event (inbox.accept, task 50)",
   "PUT /api/account/prefs":

@@ -73,6 +73,26 @@ export function undoable(store: UserStore, run: string): boolean {
 }
 
 /**
+ * Whether something the run kept can no longer be taken back, a change since then standing on it: a setting rewritten
+ * again, a flow deleted since. What is already as before is not in the way. A correction (§3.1), all or nothing, asks
+ * first.
+ */
+export function keptInTheWay(
+  store: UserStore,
+  run: string,
+  flow: (k: Extract<Kept, { flow: string }>) => boolean = () => false,
+): boolean {
+  return listOf(store, run).some((k) => {
+    if ("setting" in k) {
+      const now = store.setting(k.setting) ?? null;
+      return now !== k.after && now !== k.before;
+    }
+    if ("extension" in k) return false;
+    return flow(k);
+  });
+}
+
+/**
  * Takes back what the run kept, newest first: a setting only if it is still as the run left it; a flow by `flow`
  * (the host's, which knows how to switch one back). How many came back; what did not (a change since then stands on
  * it) stays kept, so Undo of the later change first lets this one be taken back after.

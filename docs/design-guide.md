@@ -726,7 +726,10 @@ contraseña ni un código aquí» under a question.
   the button beside «Nueva conversación» to a narrow rail that shows it again; both kept on the device) with «Nueva
   conversación», a search and the conversations by when they were used («Hoy», «Ayer», «Los
   últimos 7 días», «Este mes», «Antes»); the open one is shaded, and a row shows its pencil (rename in place) and its
-  bin (to the trash) on hover. A new conversation starts empty and is made with its first message, whose first words
+  bin (to the trash) on hover, and before them a pin («Fijar»): a pinned conversation goes to a «Fijadas» group above
+  the dates and keeps its pin shown in `--accent` («Dejar de fijar» takes it back among the rest); the pin is the
+  conversation's, kept on the server, so it is the same after a restart and on the phone (task 27; ChatGPT's and
+  Slack's pinned chats, a group of their own on top). A new conversation starts empty and is made with its first message, whose first words
   are its title. On the phone the list is a drawer from the left. **A turn as it happens**
   (3.5): «Pensando…», then each step in Juan's words, worded by the app from what the server says it works on (Juan,
   2026-10-31: «los pasos serán explicativos»): «Buscando «pan» en Tareas», «Contando en Tareas · Prioridad: Alta»,
@@ -765,7 +768,18 @@ contraseña ni un código aquí» under a question.
   first, the one the plan puts first, tinted with the accent; they lift under the pointer and shrink a touch when
   pressed) and never asks for a password: there is no password field, and nothing says so (§5; the line «Boni nunca
   te pedirá una contraseña» is gone, 2026-11-02). Answering it leaves the answer as it was and adds what the run did
-  next, never the same blocks twice. A
+  next, never the same blocks twice. **Its free ways out** (task 27, §3.4 rule 2; the «Other» of Claude Code's
+  `AskUserQuestion`, which always lets the person type instead): after the options, quieter pills with a dashed border,
+  «Otra cosa…» and, when every option is a row of one collection Juan can write to, «Nueva…» before it; each opens a
+  line below with «Responder» (Esc closes it). His words end the question and are his next message, run as a turn;
+  «Nueva…» shows the collection's name as its placeholder, makes the row with what he typed («Guardando…» on its
+  button meanwhile) and answers with it. A yes or no and a confirmation have none. An answered question stays as one
+  line of text: the question in `--muted` and what he chose after it. **A sent message is corrected by editing it**
+  (task 27, §3.1; the pencil ChatGPT and Claude show on a sent message, without their «1/2» branches): a pencil
+  appears beside his bubble on hover (always a little on touch), and opens his words in a box with «Cancelar» and
+  «Enviar»; sent, what the old turn did is undone and the new words run as a turn after it, the old one keeping a
+  quiet «Corregido» and losing its «Deshacer lo que hizo» and its pencil. When a later change is in the way nothing is
+  done: the box stays open with his words and a state word, «No se puede deshacer» (or «Ocupado» while a turn runs). A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an

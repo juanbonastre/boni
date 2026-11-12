@@ -4,10 +4,13 @@ import {
   createConversation,
   deleteConversation,
   listConversations,
+  markCorrected,
+  turnOfRun,
   turnViews,
+  updateConversation,
 } from "../src/conversations.ts";
 import { fakePlanner, type ModelProvider } from "../src/providers.ts";
-import { type Env, makeEnv, PERSONAL } from "./fixture.ts";
+import { type Env, JUAN, makeEnv, PERSONAL } from "./fixture.ts";
 
 /**
  * Juan's conversations with Boni (docs/conversacion.md 3.1 and 3.5): every turn kept in its conversation, the history
@@ -239,5 +242,179 @@ describe("a conversation with Boni", () => {
     expect(deleteConversation(env.store, c)).toBe(true);
     expect(listConversations(env.store)).toEqual([]);
     expect(turnViews(env.store, c)).toEqual([]);
+  });
+});
+
+/** A choice among Juan's tasks, and a reply with the one chosen (§3.4, rule 2). */
+const PICK = {
+  version: 1,
+  steps: [
+    { id: "l", op: "call", tool: "entities.query", args: { type: lit("tarea") } },
+    { id: "q", op: "ask", control: "choice", prompt: lit("¿Cuál?"), options: ref("$l.items") },
+    {
+      id: "r",
+      op: "reply",
+      component: "text",
+      data: { template: lit("Elegida: {a}"), a: ref("$q.titulo") },
+    },
+  ],
+};
+
+describe("a card with a free way out (§3.4, C3)", () => {
+  it("«Otra cosa…»: the question ends as text with its options, and the next turn's planner reads it", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([PICK]));
+    const asked = await a.turn({ text: "marca una tarea", origin: PERSONAL, conversation: c });
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const out = await a.answer(asked.run, asked.pending.id, { words: "ninguna, una nueva" });
+    expect(out).toMatchObject({ status: "stopped", error: "answered-in-words", pending: null });
+    expect(out.replies.at(-1)?.component).toBe("asked");
+    expect(turnViews(env.store, c).at(-1)).toMatchObject({ status: "stopped", pending: null });
+
+    const next = fakePlanner([COUNT]);
+    await env.agent(next).turn({ text: "ninguna, una nueva", origin: PERSONAL, conversation: c });
+    const input = next.requests[0]?.input as {
+      history: {
+        request: string;
+        replies: { component: string; data: Record<string, unknown> }[];
+      }[];
+    };
+    const asking = input.history.at(-1)?.replies.find((r) => r.component === "asked");
+    expect(JSON.stringify(asking?.data)).toContain("¿Cuál?");
+    expect(JSON.stringify(asking?.data)).toContain("Comprar pan");
+  });
+
+  it("«Nueva…»: a row Juan made in the options' collection is his answer; one of another is refused", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([PICK]));
+    const asked = await a.turn({ text: "marca una tarea", origin: PERSONAL, conversation: c });
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const wrong = await a.answer(asked.run, asked.pending.id, { record: env.ids.ana as string });
+    expect(wrong).toMatchObject({ status: "waiting", error: "wrong-answer" });
+    const made = env.store.create(
+      "t_tarea",
+      { f_titulo: { value: "Llamar a la gestoría", label: JUAN } },
+      { actor: "user", device: "movil-ejemplo" },
+    ).entity.id;
+    const done = await a.answer(asked.run, asked.pending.id, { record: made });
+    expect(done.error).toBeNull();
+    expect(done.status).toBe("done");
+    expect(done.replies.map((r) => r.component)).toEqual(["asked", "text"]);
+    expect(JSON.stringify(done.replies[1]?.data)).toContain("Llamar a la gestoría");
+  });
+
+  it("a question of background work keeps its options: no words, no new row", async () => {
+    env = makeEnv();
+    const a = env.agent(fakePlanner([]));
+    const asked = await a.background(PICK);
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const words = await a.answer(
+      asked.run,
+      asked.pending.id,
+      { words: "otra" },
+      { trust: "personal" },
+    );
+    expect(words.error).toBe("wrong-answer");
+    const row = await a.answer(
+      asked.run,
+      asked.pending.id,
+      { record: env.ids.tarea1 as string },
+      { trust: "personal" },
+    );
+    expect(row.error).toBe("wrong-answer");
+  });
+});
+
+describe("a message corrected by editing it (§3.1, C1)", () => {
+  it("undoes what its turn wrote through the log, takes its proposals out of the Bandeja, and keeps it marked", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([ASK]));
+    const asked = await a.turn({ text: "apunta algo", origin: PERSONAL, conversation: c });
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const done = await a.answer(asked.run, asked.pending.id, { text: "Llamar a la gestora" });
+    expect(done.changed).toBe(true);
+    env.store.journal.addProposal({
+      id: "p_ejemplo",
+      run: done.run,
+      tool: "entities.create",
+      args: { values: {}, origins: [] },
+      view: { tool: "entities.create", title: "Crear", rows: [], marks: [] } as never,
+      sources: [],
+      created: now(),
+    });
+    const titles = () =>
+      env.store
+        .list("t_tarea")
+        .map((s) => s.entity.values.f_titulo)
+        .sort();
+    expect(titles()).toEqual(["Comprar pan", "Llamar a la gestora"]);
+
+    expect(a.correct(done.run)).toBe(2); // its row and its proposal
+    expect(titles()).toEqual(["Comprar pan"]);
+    expect(env.store.journal.proposal("p_ejemplo")?.status).toBe("stale");
+    const turn = turnOfRun(env.store, c, done.run);
+    if (!turn) throw new Error("expected its turn");
+    expect(turn.corrected).toBe(false);
+    markCorrected(env.store, turn.id);
+    expect(turnOfRun(env.store, c, done.run)?.corrected).toBe(true);
+
+    const redo = await env.agent(fakePlanner([COUNT])).turn({
+      text: "apunta: llamar a la gestoría",
+      origin: PERSONAL,
+      conversation: c,
+      corrects: done.run,
+    });
+    const views = turnViews(env.store, c);
+    expect(views.map((t) => [t.request, t.corrected, t.corrects])).toEqual([
+      ["apunta algo", true, null],
+      ["apunta: llamar a la gestoría", false, done.run],
+    ]);
+    expect(redo.status).toBe("done");
+  });
+
+  it('stops with nothing done when a later change of Juan\'s is in the way ("cannot-undo"), and a run still waiting ends', async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([ASK, ASK]));
+    const asked = await a.turn({ text: "apunta algo", origin: PERSONAL, conversation: c });
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const done = await a.answer(asked.run, asked.pending.id, { text: "Llamar a la gestora" });
+    const row = env.store
+      .list("t_tarea")
+      .find((s) => s.entity.values.f_titulo === "Llamar a la gestora");
+    if (!row) throw new Error("expected its row");
+    env.store.update(
+      row.entity.id,
+      { f_titulo: { value: "Llamar a la gestora el lunes", label: JUAN } },
+      { actor: "user", device: "movil-ejemplo" },
+    );
+    expect(a.correct(done.run)).toBe("cannot-undo");
+    expect(env.store.get(row.entity.id)?.entity.deleted).toBeUndefined();
+
+    const waits = await a.turn({ text: "apunta otra", origin: PERSONAL, conversation: c });
+    expect(waits.status).toBe("waiting");
+    expect(a.correct(waits.run)).toBe(0);
+    expect(turnViews(env.store, c).at(-1)).toMatchObject({ status: "stopped", pending: null });
+  });
+});
+
+describe("pinned conversations (task 63, point 7)", () => {
+  it("stay on top of the list, from the store (so after a restart and on every device)", () => {
+    env = makeEnv();
+    const old = createConversation(env.store, { now: now() - 86_400_000 });
+    const recent = createConversation(env.store, { now: now() });
+    updateConversation(env.store, old, { title: "Viaje a Lisboa" });
+    updateConversation(env.store, recent, { title: "Recetas" });
+    expect(listConversations(env.store).map((x) => x.id)).toEqual([recent, old]);
+    expect(updateConversation(env.store, old, { pinned: true })).toBe(true);
+    expect(listConversations(env.store).map((x) => [x.id, x.pinned])).toEqual([
+      [old, true],
+      [recent, false],
+    ]);
+    updateConversation(env.store, old, { pinned: false });
+    expect(listConversations(env.store).map((x) => x.id)).toEqual([recent, old]);
   });
 });

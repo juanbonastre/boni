@@ -16,6 +16,7 @@ import { ensureFlow, flowCatalog } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { createPage } from "./pages.ts";
+import { keep } from "./runUndo.ts";
 
 /** The conversation API over HTTP with a scripted planner (no model, no network). */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -592,6 +593,176 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
       error: "stopped-by-juan",
     });
     expect((await post(base, token, "/api/agent/live/no-existe-0000/stop")).status).toBe(404);
+  });
+
+  it("a pinned conversation stays on top; a message is corrected by editing it; a card takes Juan's own words (task 27)", async () => {
+    const token = await login(base, "juan");
+    const put = (id: string, body: unknown) =>
+      fetch(`${base}/api/agent/conversations/${id}`, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    const make = async () =>
+      (
+        (await (await post(base, token, "/api/agent/conversations")).json()) as {
+          conversation: { id: string };
+        }
+      ).conversation.id;
+    const pinned = await make();
+    const id = await make();
+    const set = (await (await put(pinned, { pinned: true })).json()) as {
+      conversation: { pinned: boolean };
+    };
+    expect(set.conversation.pinned).toBe(true);
+    expect((await put(pinned, { pinned: "sí" })).status).toBe(400);
+    const create = (titulo: string) => ({
+      version: 1,
+      steps: [
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), lit(titulo)] } },
+        },
+      ],
+    });
+    plans.push(create("Pan integral"));
+    const first = (await (
+      await post(base, token, "/api/agent/turn", { text: "apunta pan integral", conversation: id })
+    ).json()) as { run: string; status: string };
+    expect(first.status).toBe("done");
+    const list = (await (await get(token, "/api/agent/conversations")).json()) as {
+      conversations: { id: string; pinned: boolean }[];
+    };
+    // Pinned first, though the other one was used after it.
+    expect(list.conversations.slice(0, 2).map((c) => [c.id, c.pinned])).toEqual([
+      [pinned, true],
+      [id, false],
+    ]);
+    const titles = () =>
+      host
+        .store(1)
+        .list("t_tarea")
+        .map((x) => x.entity.values.f_titulo);
+    expect(titles()).toContain("Pan integral");
+
+    // A run that is not of this conversation is not found; one in the way of a later change is refused, nothing done.
+    expect(
+      (
+        await post(base, token, "/api/agent/turn", {
+          text: "otra",
+          conversation: id,
+          corrects: "no-existe",
+        })
+      ).status,
+    ).toBe(404);
+    plans.push(create("Pan de centeno"));
+    const fixed = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "apunta pan de centeno",
+        conversation: id,
+        corrects: first.run,
+      })
+    ).json()) as { status: string; run: string };
+    expect(fixed.status).toBe("done");
+    expect(titles()).not.toContain("Pan integral");
+    expect(titles()).toContain("Pan de centeno");
+    const shown = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      turns: { request: string; corrected: boolean; corrects: string | null }[];
+    };
+    expect(shown.turns.map((t) => [t.request, t.corrected, t.corrects])).toEqual([
+      ["apunta pan integral", true, null],
+      ["apunta pan de centeno", false, first.run],
+    ]);
+    const row = host
+      .store(1)
+      .list("t_tarea")
+      .find((x) => x.entity.values.f_titulo === "Pan de centeno");
+    if (!row) throw new Error("expected the row");
+    host
+      .store(1)
+      .update(
+        row.entity.id,
+        { f_titulo: { value: "Pan de centeno, dos", label: label("user", "personal", []) } },
+        { actor: "user" },
+      );
+    const refused = await post(base, token, "/api/agent/turn", {
+      text: "apunta pan de molde",
+      conversation: id,
+      corrects: fixed.run,
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: string }).error).toBe("cannot-undo");
+    expect(titles()).toContain("Pan de centeno, dos");
+
+    // Corrected already, on another device: its new words ran once, and are not run again.
+    const twice = await post(base, token, "/api/agent/turn", {
+      text: "apunta pan de pueblo",
+      conversation: id,
+      corrects: first.run,
+    });
+    expect(twice.status).toBe(409);
+    expect(((await twice.json()) as { error: string }).error).toBe("corrected");
+    expect(titles()).not.toContain("Pan de pueblo");
+
+    // All or nothing: a setting the run rewrote, rewritten again by Juan since, keeps its row too.
+    plans.push(create("Leche de avena"));
+    const milk = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "apunta leche de avena",
+        conversation: id,
+      })
+    ).json()) as { run: string };
+    const store = host.store(1);
+    keep(store, milk.run, { setting: "views/t_tarea", before: null, after: "[1]" });
+    store.setSetting("views/t_tarea", "[2]");
+    const kept = await post(base, token, "/api/agent/turn", {
+      text: "apunta leche de soja",
+      conversation: id,
+      corrects: milk.run,
+    });
+    expect(kept.status).toBe(409);
+    expect(((await kept.json()) as { error: string }).error).toBe("cannot-undo");
+    expect(titles()).toContain("Leche de avena");
+    expect(titles()).not.toContain("Leche de soja");
+    expect(store.setting("views/t_tarea")).toBe("[2]");
+
+    // «Otra cosa…»: the question ends, its turn says so, and an answer of the wrong kind is refused.
+    plans.push({
+      version: 1,
+      steps: [
+        { id: "l", op: "call", tool: "entities.query", args: { type: lit("tarea") } },
+        {
+          id: "q",
+          op: "ask",
+          control: "choice",
+          prompt: lit("¿Cuál?"),
+          options: { ref: "$l.items" },
+        },
+      ],
+    });
+    const asks = (await (
+      await post(base, token, "/api/agent/turn", { text: "marca una", conversation: id })
+    ).json()) as { run: string; pending: { id: string } };
+    expect(
+      (
+        await post(base, token, "/api/agent/answer", {
+          run: asks.run,
+          ask: asks.pending.id,
+          words: 3,
+        })
+      ).status,
+    ).toBe(400);
+    const words = (await (
+      await post(base, token, "/api/agent/answer", {
+        run: asks.run,
+        ask: asks.pending.id,
+        words: "ninguna de esas",
+      })
+    ).json()) as { status: string; error: string; replies: { component: string }[] };
+    expect(words).toMatchObject({ status: "stopped", error: "answered-in-words" });
+    expect(words.replies.at(-1)?.component).toBe("asked");
   });
 });
 

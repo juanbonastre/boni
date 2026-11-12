@@ -1532,7 +1532,7 @@ export function ensureSystemTypes(store: UserStore): void {
   // docs/extensiones.md 6: the user's pages (the Lienzo's blocks in `spec`, `parent` for the tree).
   make("page", "Páginas", ["title", "icon", "parent", "position", "spec"]);
   // docs/conversacion.md 3.1: Juan's conversations with Boni and their turns (conversations.ts).
-  make("conversation", "Conversaciones", ["title", "key", "model", "last"]);
+  make("conversation", "Conversaciones", ["title", "key", "model", "last", "pinned"]);
   make("turn", "Turnos", [
     "request",
     "conversation",
@@ -1543,5 +1543,7 @@ export function ensureSystemTypes(store: UserStore): void {
     "error",
     "at",
     "pointed",
+    "corrects",
+    "corrected",
   ]);
 }
