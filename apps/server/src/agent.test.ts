@@ -16,6 +16,7 @@ import { ensureFlow, flowCatalog } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { createPage } from "./pages.ts";
+import { keep } from "./runUndo.ts";
 
 /** The conversation API over HTTP with a scripted planner (no model, no network). */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -694,6 +695,38 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     expect(refused.status).toBe(409);
     expect(((await refused.json()) as { error: string }).error).toBe("cannot-undo");
     expect(titles()).toContain("Pan de centeno, dos");
+
+    // Corrected already, on another device: its new words ran once, and are not run again.
+    const twice = await post(base, token, "/api/agent/turn", {
+      text: "apunta pan de pueblo",
+      conversation: id,
+      corrects: first.run,
+    });
+    expect(twice.status).toBe(409);
+    expect(((await twice.json()) as { error: string }).error).toBe("corrected");
+    expect(titles()).not.toContain("Pan de pueblo");
+
+    // All or nothing: a setting the run rewrote, rewritten again by Juan since, keeps its row too.
+    plans.push(create("Leche de avena"));
+    const milk = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "apunta leche de avena",
+        conversation: id,
+      })
+    ).json()) as { run: string };
+    const store = host.store(1);
+    keep(store, milk.run, { setting: "views/t_tarea", before: null, after: "[1]" });
+    store.setSetting("views/t_tarea", "[2]");
+    const kept = await post(base, token, "/api/agent/turn", {
+      text: "apunta leche de soja",
+      conversation: id,
+      corrects: milk.run,
+    });
+    expect(kept.status).toBe(409);
+    expect(((await kept.json()) as { error: string }).error).toBe("cannot-undo");
+    expect(titles()).toContain("Leche de avena");
+    expect(titles()).not.toContain("Leche de soja");
+    expect(store.setting("views/t_tarea")).toBe("[2]");
 
     // «Otra cosa…»: the question ends, its turn says so, and an answer of the wrong kind is refused.
     plans.push({

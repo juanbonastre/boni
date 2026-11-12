@@ -929,6 +929,7 @@ function Turn({ entry }: { entry: ChatEntry }) {
             void correctTurn(entry.id, text).then((failed) => {
               if (failed === "cannot-undo") setEdit({ text, state: t("chat.cannotUndo") });
               else if (failed === "busy") setEdit({ text, state: t("chat.busyNow") });
+              else if (failed === "corrected") setEdit({ text, state: t("chat.corrected") });
               else setEdit(null);
             });
           }}
@@ -1004,12 +1005,18 @@ function Turn({ entry }: { entry: ChatEntry }) {
             <p className="turn-error">{agentErrorText(t, r.error)}</p>
           ))}
         {entry.error && <p className="turn-error">{entry.error}</p>}
-        {r?.status === "done" && r.run && r.changed !== false && !entry.corrected && (
-          <button type="button" className="link-btn turn-undo" onClick={() => void undoRun(r.run)}>
-            <Undo2 size={13} strokeWidth={1.8} />
-            {t("chat.undo")}
-          </button>
-        )}
+        {r?.run &&
+          (r.status === "done" ? r.changed !== false : r.status === "stopped" && r.changed) &&
+          !entry.corrected && (
+            <button
+              type="button"
+              className="link-btn turn-undo"
+              onClick={() => void undoRun(r.run)}
+            >
+              <Undo2 size={13} strokeWidth={1.8} />
+              {t("chat.undo")}
+            </button>
+          )}
         {r?.run && (
           <button type="button" className="link-btn turn-trace" onClick={() => showRun(r.run)}>
             {t("log.trace")}

@@ -74,7 +74,7 @@ import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
-import { keep as keepForRun, undoable, undoKept } from "./runUndo.ts";
+import { keep as keepForRun, keptInTheWay, undoable, undoKept } from "./runUndo.ts";
 import {
   MAX_POINTED,
   type PointedRef,
@@ -95,7 +95,8 @@ import {
  *                            `conversation`: one of the list's (else the device's own, as before the list);
  *                            `live`: an id the device made, to watch the turn as it runs (GET .../live/:id)
  *                            `corrects`: the run of an earlier turn of that conversation whose message Juan
- *                            edited (docs/conversacion.md §3.1): taken back first (409 cannot-undo: nothing done)
+ *                            edited (docs/conversacion.md §3.1): taken back first (409 cannot-undo: nothing done;
+ *                            409 corrected: it was already, on another device)
  *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra cosa…», the
  *                            question ends and they are the next turn; `record`: a row made with «Nueva…»)
  *   POST /api/agent/confirm  { run, confirmation, live? }
@@ -439,6 +440,18 @@ export class AgentHost {
       if (c.enabled) return !switchFlow(this, account, c.flow, true);
       store.journal.setFlowEnabled(c.flow, false);
       return true;
+    });
+  }
+
+  /**
+   * Whether something the run changed beside the log can no longer be taken back (runUndo.ts `keptInTheWay`): a
+   * setting rewritten since, a flow deleted since. A correction (§3.1) asks before it undoes anything.
+   */
+  keptInTheWay(account: number, run: string): boolean {
+    const store = this.store(account);
+    return keptInTheWay(store, run, (c) => {
+      const live = store.journal.flows().some((x) => x.id === c.flow);
+      return c.deleted === undefined && !live;
     });
   }
 
@@ -934,17 +947,21 @@ async function answerAgent(
       const chips = chipsOf(b.chips);
       // A correction (§3.1): the turn whose message Juan edited, of this conversation, is taken back before the new
       // words run, as its «Deshacer» would (the store's log, then what it changed beside it); a later change of his
-      // in the way stops it with nothing done.
+      // in the way of either stops it with nothing done.
       let corrects: string | undefined;
       if (b.corrects !== undefined) {
         const run = str(b.corrects, 80);
         const old = run ? turnOfRun(store, c.id, run) : null;
         if (!run || !old) return send(res, 404, { error: "not-found" });
+        // Corrected already (on another device): its words ran once; a second correction would run them again.
+        if (old.corrected) return send(res, 409, { error: "corrected" });
+        // All or nothing: what it changed beside the log is asked first, as nothing of the log is undone after.
+        if (host.keptInTheWay(who.account, run)) return send(res, 409, { error: "cannot-undo" });
         const back = agent.correct(run);
         if (back === "busy") return send(res, 409, { error: "busy" });
         if (back === "cannot-undo") return send(res, 409, { error: "cannot-undo" });
         host.undoKept(who.account, run);
-        markCorrected(store, old, who.device);
+        markCorrected(store, old.id, who.device);
         corrects = run;
       }
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;

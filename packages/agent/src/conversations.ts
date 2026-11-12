@@ -179,9 +179,14 @@ export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
 }
 
 /** A conversation's turn by its run (the one a correction names), or null. */
-export function turnOfRun(store: UserStore, id: string, run: string): string | null {
+export function turnOfRun(
+  store: UserStore,
+  id: string,
+  run: string,
+): { id: string; corrected: boolean } | null {
   if (!run) return null;
-  return turnsOf(store, id).find((s) => text(s, "run") === run)?.entity.id ?? null;
+  const s = turnsOf(store, id).find((x) => text(x, "run") === run);
+  return s ? { id: s.entity.id, corrected: text(s, "corrected") === "1" } : null;
 }
 
 /** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */

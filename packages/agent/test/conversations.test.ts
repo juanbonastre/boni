@@ -357,7 +357,9 @@ describe("a message corrected by editing it (§3.1, C1)", () => {
     expect(env.store.journal.proposal("p_ejemplo")?.status).toBe("stale");
     const turn = turnOfRun(env.store, c, done.run);
     if (!turn) throw new Error("expected its turn");
-    markCorrected(env.store, turn);
+    expect(turn.corrected).toBe(false);
+    markCorrected(env.store, turn.id);
+    expect(turnOfRun(env.store, c, done.run)?.corrected).toBe(true);
 
     const redo = await env.agent(fakePlanner([COUNT])).turn({
       text: "apunta: llamar a la gestoría",

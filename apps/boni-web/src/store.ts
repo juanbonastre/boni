@@ -1713,21 +1713,34 @@ export async function correctTurn(entryId: string, text: string): Promise<string
   if (!request || s.chatBusy || !old || !run) return "error";
   const n = s.chat.length;
   const failed = await turnOf(request, old.pointed ?? [], run);
-  if (failed === "cannot-undo" || failed === "busy") {
-    // Nothing was done: the turn it would have been goes away.
+  const markOld = () =>
+    set((x) => ({
+      chat: x.chat.map((e) =>
+        e.id === entryId && e.result
+          ? { ...e, corrected: true, result: { ...e.result, changed: false, pending: null } }
+          : e,
+      ),
+    }));
+  if (failed === "cannot-undo" || failed === "busy" || failed === "corrected") {
+    // Nothing was done: the turn it would have been goes away. Corrected already, on another device: so it shows.
     const made = get().chat[n];
     if (made) set((x) => ({ chat: x.chat.filter((e) => e.id !== made.id) }));
+    if (failed === "corrected") markOld();
     return failed;
   }
-  // Any other failure leaves the old turn as the server has it (its Undo still offered, and refused if done).
-  if (failed) return failed;
-  set((x) => ({
-    chat: x.chat.map((e) =>
-      e.id === entryId && e.result
-        ? { ...e, corrected: true, result: { ...e.result, changed: false, pending: null } }
-        : e,
-    ),
-  }));
+  // Any other failure (the new words failed, or the network): the old turn as the server has it, which may have
+  // taken it back before the new words failed.
+  if (failed) {
+    const c = get().conversationId;
+    const kept = c ? await agent.conversation(c).catch(() => null) : null;
+    if (kept?.turns.some((x) => x.run === run && x.corrected)) {
+      markOld();
+      void loadInbox();
+      await Promise.all([loadRuns(), pagesAfterRun()]);
+    }
+    return failed;
+  }
+  markOld();
   // What its Undo took back: the pages, the log and the Bandeja (its proposals left it).
   void loadInbox();
   await Promise.all([loadRuns(), pagesAfterRun()]);
@@ -1992,7 +2005,9 @@ export async function answerInWords(entryId: string, words: string) {
   if (!text || get().chatBusy || !e?.result || p?.kind !== "ask") return;
   const run = e.result.run;
   const failed = await agentCall(entryId, (live) => agent.answer(run, p.id, { words: text }, live));
-  if (!failed) await turnOf(text, []);
+  // Refused (answered already, on another device): the question stays, and the words are not sent on their own.
+  if (failed || get().chat.find((x) => x.id === entryId)?.result?.status === "waiting") return;
+  await turnOf(text, []);
 }
 /**
  * «Nueva…» (§3.4, rule 2): a row of the collection the options are rows of, made by Juan with what he wrote (his

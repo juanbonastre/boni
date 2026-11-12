@@ -371,9 +371,13 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   cambió fuera, como un flujo), termina la pregunta o la confirmación que esperaba y saca sus propuestas de la Bandeja
   (`stale`); luego corre lo nuevo como un turno después, que guarda el turno al que corrige (`corrects`). El viejo
   queda marcado («Corregido», `corrected`) y el planificador lo ve así en el historial. Si un cambio posterior de Juan
-  lo impide, no se hace nada: «No se puede deshacer», y lo editado sigue ahí.
+  lo impide (en el registro o fuera, como un ajuste que Juan volvió a cambiar), no se hace nada: «No se puede
+  deshacer», y lo editado sigue ahí. Un mensaje ya corregido en otro dispositivo no se corrige dos veces
+  («Corregido»). Si lo nuevo falla después de deshacer, el turno viejo se pinta como lo tiene el servidor.
   - **Decidido, y por qué:** deshace el código, no el planificador con `runs.undo` como decía el diseño. Deshacer es
     todo o nada y lo que se pierde se dice antes de hacer nada; dejarlo al modelo podía deshacer a medias.
+  - **Falta:** «Antes te he dicho X, pero es Y», escrito tal cual, no deshace nada: el planificador ve el turno viejo
+    en el historial, pero no tiene una herramienta para deshacer una ejecución pasada. Queda para cuando la tenga.
 - **Fijar conversaciones** (la 63, punto 7). «Fijar» en la lista; las fijadas van arriba, en «Fijadas». Se guarda en
   la conversación (`pinned`), así que sigue tras reiniciar y en otro dispositivo.
 - **C3, punto por punto:**
@@ -382,10 +386,10 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   |---|---|---|
   | 1 | La barra nunca se bloquea | Hecho (antes de la 27) |
   | 2a | «Otra cosa…» en una elección entre opciones: lo escrito termina la pregunta y es el turno siguiente | Hecho |
-  | 2b | «Nueva…» en una elección entre filas de una colección: crea la fila y es la respuesta | Hecho |
+  | 2b | «Nueva…» en una elección entre filas de una colección: crea la fila y es la respuesta | En parte: entre filas sí; entre categorías (las opciones de una propiedad), no |
   | 2c | Una regla trae «Cambiarla…», «Es esporádico» y «Más general…» | Falta (C6, con las reglas) |
   | 2d | El sí o no y la confirmación sin salida libre | Hecho |
-  | 3a | Una tarjeta vieja se vuelve a comprobar al pulsarla | En parte: las de la Bandeja sí (D-57); las preguntas de la conversación, no |
+  | 3a | Una tarjeta vieja se vuelve a comprobar al pulsarla | En parte: las de la Bandeja sí (D-57); las preguntas de la conversación, no (sin fase aún) |
   | 3b | Una pregunta contestada queda como texto con su respuesta | Hecho en la conversación (la respuesta `asked`); las de la Bandeja salen de ella |
   | 4 | Agrupar lo seguro en una tarjeta con casillas | Falta (C6: necesita el umbral que se aprende) |
   | 5 | Sin modelo, preguntas con tarjetas | Falta (C6, las preguntas de las funciones) |
