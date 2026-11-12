@@ -481,6 +481,89 @@ describe("the policy engine", () => {
       decide(call("schema.add_field", { ...field, name: leaf("n", ext) }), turn, counters),
     ).toEqual({ kind: "propose", rule: "P10" });
   });
+  it("an assistant by the MCP does what a model in Juan's turn may, but nothing that needs his card (P24; A-26)", () => {
+    const by: Origin = { kind: "assistant", trust: "personal", device: "laptop-ejemplo" };
+    const values = rec({ titulo: leaf("x", user) }, model, true);
+    expect(decide(call("entities.get", { id: leaf("e", model) }), by, counters)).toEqual({
+      kind: "allow",
+      rule: "P24",
+    });
+    expect(
+      decide(call("entities.create", { type: leaf("tarea", model), values }), by, counters),
+    ).toEqual({ kind: "allow", rule: "P24" });
+    // A note to the trash comes back with undo; anything else that deletes is his card, in his app.
+    expect(decide(call("entities.delete", { id: leaf("e", model) }), by, counters)).toEqual({
+      kind: "allow",
+      rule: "P24",
+    });
+    const gone: ToolDef<"write_irreversible"> = {
+      name: "pages.delete",
+      effect: "write_irreversible",
+      area: "pages",
+      title: "Borrar",
+      describe: "deletes a page",
+      args: { page: { role: "entity", describe: "the page" } },
+      undo: ["trash"],
+      run: () => leaf(null, model),
+    };
+    expect(decide({ tool: gone, args: {}, control: null }, by, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P5",
+    });
+    // What came from outside is only proposed; a flow is proposed, a sending or a run of a flow refused.
+    expect(
+      decide(call("entities.create", { type: leaf("tarea", ext), values }), by, counters),
+    ).toEqual({ kind: "propose", rule: "P4" });
+    expect(decide({ tool: reg.get("flows.save"), args: {}, control: null }, by, counters)).toEqual({
+      kind: "propose",
+      rule: "P19",
+    });
+    expect(decide(call("flows.run", { flow: leaf("f", user) }), by, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P8",
+    });
+    expect(
+      decide({ tool: reg.get("mail.send"), args: {}, control: null }, by, counters),
+    ).toMatchObject({ kind: "deny", rule: "P24" });
+    // Never from a device that is not Juan's own.
+    expect(
+      decide(call("entities.get", { id: leaf("e", user) }), { ...by, trust: "shared" }, counters),
+    ).toMatchObject({ kind: "deny", rule: "P24" });
+  });
+
+  it("Juan's own hand on a route runs what it touches, but never a flow's piece or his screen's act (P25; A-26)", () => {
+    const hand: Origin = { kind: "hand", trust: "personal", device: "laptop-ejemplo" };
+    for (const name of [
+      "entities.create",
+      "entities.delete",
+      "flows.run",
+      "mail.send",
+      "flows.save",
+    ])
+      expect(
+        decide({ tool: reg.get(name), args: {}, control: null }, hand, counters),
+        name,
+      ).toEqual({ kind: "allow", rule: "P25" });
+    const piece: ToolDef<"piece"> = {
+      name: "mail.rule",
+      effect: "piece",
+      area: "boni",
+      title: "Pieza",
+      describe: "a piece of Boni",
+      args: {},
+      run: () => leaf(null, model),
+    };
+    expect(decide({ tool: piece, args: {}, control: null }, hand, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P20",
+    });
+    // An action the list lacks is refused before anything (P0).
+    expect(decide({ tool: null, args: {}, control: null }, hand, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P0",
+    });
+  });
+
   it("stops a run with too many writes, and denies what it does not know (P11, P0)", () => {
     const values = rec({ titulo: leaf("x", user) }, model, true);
     expect(

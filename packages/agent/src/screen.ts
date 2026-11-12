@@ -168,6 +168,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
   const caption = { role: "content" as const, describe: "a few words for the conversation" };
   r.register({
     name: "screen.open",
+    icon: "ExternalLink",
     effect: "screen",
     area: "screen",
     title: "Abrir",
@@ -224,6 +225,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "screen.scroll",
+    icon: "ArrowDownToLine",
     effect: "screen",
     area: "screen",
     title: "Desplazar",
@@ -239,6 +241,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "screen.highlight",
+    icon: "Highlighter",
     effect: "screen",
     area: "screen",
     title: "Resaltar",
@@ -256,6 +259,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "screen.filter",
+    icon: "Funnel",
     effect: "screen",
     area: "screen",
     title: "Filtrar",

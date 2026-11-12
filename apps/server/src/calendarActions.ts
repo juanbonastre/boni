@@ -76,6 +76,7 @@ function seen(s: DataService, visible: (type: string) => boolean) {
 export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "calendars.list",
+    icon: "Calendar",
     effect: "read",
     area: "calendars",
     service: "data",
@@ -99,6 +100,8 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.add",
+    icon: "CalendarPlus",
+    undo: ["run"],
     effect: "write",
     area: "calendars",
     service: "data",
@@ -118,6 +121,8 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.remove",
+    icon: "CalendarX",
+    undo: ["run"],
     effect: "write",
     area: "calendars",
     service: "data",
@@ -138,6 +143,8 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.split",
+    icon: "Split",
+    undo: ["run"],
     effect: "write",
     area: "calendars",
     service: "data",
@@ -174,6 +181,8 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.color",
+    icon: "Palette",
+    undo: ["run"],
     effect: "write",
     area: "calendars",
     service: "data",
@@ -196,6 +205,8 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "calendars.reminders",
+    icon: "BellRing",
+    undo: ["run"],
     effect: "write",
     area: "calendars",
     service: "data",

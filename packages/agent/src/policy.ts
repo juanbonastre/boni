@@ -10,8 +10,9 @@ import { deepLabel, type Val } from "./values.ts";
 export type Trust = "personal" | "shared" | "ambient";
 export interface Origin {
   /** turn: Juan asked now; background: a job, no turn; miniapp: one of his mini-apps; accepted: he
-   * accepted a proposal in the inbox (one tap). */
-  kind: "turn" | "background" | "miniapp" | "accepted";
+   * accepted a proposal in the inbox (one tap); assistant: one of his assistants by Boni's MCP (P24); hand: Juan
+   * himself, on a control of his app (a route of the API, P25). */
+  kind: "turn" | "background" | "miniapp" | "accepted" | "assistant" | "hand";
   trust: Trust;
   device?: string;
 }
@@ -70,6 +71,62 @@ const choosing = (v: Val): Label => {
 };
 const isPrivate = (l: Label) => l.sensitivity !== "public";
 
+/**
+ * Juan's own hand (P25, docs/sistema.md §4.1: a route of the API is one more way to an action, with the origin «Juan
+ * desde este dispositivo»): what he does on a control of his app is his, his touch and his deletions included, and is
+ * not confirmed again (his tap is what the card would ask for). Boni's pieces still run only in a flow (P20) and his
+ * screen is his app's own (P22): no route reaches them.
+ */
+function byHand(tool: ToolDef): Decision {
+  if (tool.effect === "piece") return deny("P20", "piece-outside-flow");
+  if (tool.effect === "screen") return deny("P22", "screen-outside-turn");
+  return allow("P25");
+}
+
+/**
+ * One of Juan's assistants by Boni's MCP (P24, docs/sistema.md §4.1), on a personal device: it reads, and it writes on
+ * what is wholly open to the models, each call one run its `undo` takes back whole; a note it removes goes to the
+ * trash, as it always has (`trash`). A flow it writes is only proposed (P19). What only Juan decides is not its own:
+ * his touch (P21), running his flows (P8), deleting anything else (P5: his card), his screen (P22), a file he dropped
+ * (P23), Boni's pieces (P20), his memory, telling his devices and anything that goes out. What came from outside
+ * waits for him (P4).
+ */
+function byAssistant(tool: ToolDef, personal: boolean, external: boolean): Decision {
+  if (!personal) return deny("P24", "assistant-device");
+  switch (tool.effect) {
+    case "read":
+      return tool.sees ? deny("P23", "file-outside-turn") : allow("P24");
+    case "write":
+    case "write_irreversible":
+    case "schema":
+      if (external) return propose("P4");
+      // Deleting is Juan's card, but for a note to the trash (its one argument the note), which `undo` brings back.
+      if (
+        (tool.alwaysConfirm || tool.effect === "write_irreversible") &&
+        !(
+          tool.effect === "write" &&
+          Object.values(tool.args).every((a) => a.role === "entity") &&
+          Array.isArray(tool.undo) &&
+          tool.undo.includes("trash")
+        )
+      )
+        return deny("P5", "assistant-delete");
+      return allow("P24");
+    case "flow_save":
+      return external ? deny("P16", "external-in-flow") : propose("P19");
+    case "touch":
+      return deny("P21", "touch-outside-turn");
+    case "flow":
+      return deny("P8", "flow-outside-turn");
+    case "screen":
+      return deny("P22", "screen-outside-turn");
+    case "piece":
+      return deny("P20", "piece-outside-flow");
+    default:
+      return deny("P24", "not-an-assistant's");
+  }
+}
+
 export function decide(
   call: Call,
   origin: Origin,
@@ -98,6 +155,9 @@ export function decide(
   }
 
   const personal = origin.trust === "personal";
+  if (origin.kind === "hand") return byHand(tool);
+  if (origin.kind === "assistant")
+    return byAssistant(tool, personal, externalArgs || controlExternal);
   const inTurn = origin.kind === "turn" || origin.kind === "accepted";
   // A confirmation is only asked on a personal device; elsewhere it becomes a proposal (P6).
   const confirmOr = (rule: string) => (personal ? confirm(rule) : propose("P6"));

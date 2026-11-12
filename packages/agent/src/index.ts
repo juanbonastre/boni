@@ -162,6 +162,8 @@ export {
   ToolRegistry,
   typeByKey,
   typeName,
+  UNDO_WAYS,
+  type UndoWay,
 } from "./tools.ts";
 export { refsOf } from "./trace.ts";
 export { manualInputs, newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";

@@ -4,10 +4,12 @@ import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ToolRegistry } from "@boni/agent";
 import { dayToIso, todayIn } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { ACTIONS } from "./actions.ts";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { createByName } from "./byName.ts";
@@ -488,6 +490,93 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect(aiOf("AGENTS.md")).toEqual(["mcp:claude-code"]);
     expect(aiOf("proyectos/otro.md")).toEqual(["mcp:claude-code"]);
     expect(aiOf("diario/2026-10-20.md")).toEqual([]);
+  });
+});
+
+describe("each tool through its registered action and the policy (A-26, P24)", () => {
+  /** The same server, deciding against a list of actions without trashing and updating notes. */
+  async function limited(go: (call: typeof tool) => Promise<void>): Promise<void> {
+    const list = new ToolRegistry();
+    for (const t of ACTIONS.all())
+      if (t.name !== "entities.delete" && t.name !== "entities.update") list.register(t);
+    const other = makeApp({
+      db,
+      key: randomBytes(32),
+      feeds: new Feeds(async () => ""),
+      guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
+      agent: host,
+      actions: list.freeze(),
+    });
+    const server = serve(other, "tailnet");
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const at = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = await fetch(`${at}/api/mcp`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: ++seq,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      const body = (await r.json()) as {
+        result: { content: { text: string }[]; isError: boolean };
+      };
+      const text = body.result.content[0]?.text ?? "";
+      return {
+        error: body.result.isError,
+        text,
+        json: body.result.isError ? null : JSON.parse(text),
+      };
+    };
+    try {
+      await go(call);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((r) => server.close(r));
+      other.close();
+    }
+  }
+
+  it("a tool whose action the list lacks is refused before it runs, in the audit with its rule; the rest run", async () => {
+    const store = host.store(1);
+    const made = await tool("create", { collection: "Proyecto", title: "Decidido inventado" });
+    const id = made.json.id as string;
+    const before = store.audit.actions({ limit: 1 })[0]?.seq ?? 0;
+    await limited(async (call) => {
+      // Trashing and editing are entities.delete and entities.update: not on this list, so the policy says P0.
+      const trashed = await call("trash", { id });
+      expect(trashed.error).toBe(true);
+      expect(trashed.text).toContain("P0");
+      const edited = await call("set_properties", { id, properties: { status: "pausado" } });
+      expect(edited.error).toBe(true);
+      expect(store.get(id)?.entity.deleted).toBeUndefined();
+      // Reading is entities.get, on the list; undo is no action, and still takes back a whole call.
+      expect((await call("read", { id })).json.id).toBe(id);
+      expect((await call("undo", { run: made.json.run })).json.undone).toBe(1);
+    });
+    const after = store.audit
+      .actions()
+      .filter((a) => a.seq > before)
+      .reverse();
+    expect(after.map((a) => [a.tool, a.decision, a.rule ?? null])).toEqual([
+      ["mcp.trash", "deny", "P0"],
+      ["mcp.set_properties", "deny", "P0"],
+      ["mcp.read", "allow", null],
+      ["mcp.undo", "allow", null],
+    ]);
+    expect(store.audit.verify().ok).toBe(true);
+  });
+
+  it("with the whole list the same tools run: a note to the trash is an assistant's, and undo brings it back", async () => {
+    const made = await tool("create", { collection: "Proyecto", title: "Papelera inventada" });
+    const gone = await tool("trash", { id: made.json.id });
+    expect(gone.error).toBe(false);
+    expect(host.store(1).get(made.json.id)?.entity.deleted).toBeDefined();
+    expect((await tool("undo", { run: gone.json.run })).json.undone).toBeGreaterThan(0);
+    expect(host.store(1).get(made.json.id)?.entity.deleted).toBeUndefined();
   });
 });
 

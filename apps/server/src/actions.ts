@@ -1,4 +1,12 @@
-import { coreTools, type ToolDef, type ToolRegistry } from "@boni/agent";
+import {
+  coreTools,
+  type Decision,
+  decide,
+  type ToolDef,
+  type ToolRegistry,
+  type Trust,
+  type UndoWay,
+} from "@boni/agent";
 import { withCalendarActions } from "./calendarActions.ts";
 import { withConnectorActions } from "./connectorActions.ts";
 import { withDataActions } from "./dataActions.ts";
@@ -97,48 +105,69 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/data/types/:type/tree": ["schema.set_tree"],
 };
 
-/** A route that is the Undo of actions (each action says how it is undone, docs/sistema.md §4.1). */
-export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = {
+/**
+ * The routes that are an Undo, each with the way of undoing it is (`UndoWay`, docs/sistema.md §4.1). Which actions each
+ * takes back is each action's own word (`ToolDef.undo`), so a new action says it once, where it is defined. What comes
+ * back from the trash comes back by the route of what the action's arguments name: a page, a column, else a record (a
+ * note, a collection, a flow).
+ */
+const UNDO_WAY_ROUTES: Readonly<Record<string, { way: UndoWay; of?: (t: ToolDef) => boolean }>> = {
   // The run's operations, and what it changed beside the log (runUndo.ts, AgentHost.undoKept): what it switched or
   // deleted in «Flujos», a calendar's definition, a collection's tabs or tree, the mail's settings and guide.
-  "POST /api/agent/runs/:id/undo": [
-    "pages.create",
-    "pages.add_block",
-    "pages.set_view",
-    "pages.set_value",
-    "pages.update",
-    "entities.create",
-    "entities.update",
-    "entities.move",
-    "schema.create_type",
-    "schema.add_field",
-    "schema.rename_type",
-    "schema.move_type",
-    "schema.update_field",
-    "schema.delete_type",
-    "schema.remove_field",
-    "flows.enable",
-    "flows.delete",
-    "calendars.add",
-    "calendars.remove",
-    "calendars.split",
-    "calendars.color",
-    "calendars.reminders",
-    "schema.set_view",
-    "schema.set_tree",
-    "connectors.mail",
-    "connectors.mail_guide",
-    "connectors.mail_suggestion",
-    "extensions.enable",
-  ],
+  "POST /api/agent/runs/:id/undo": { way: "run" },
   // A movement of the money screen, taken back there.
-  "DELETE /api/v1/actions/:id": ["entities.create"],
-  "POST /api/pages/:id/restore": ["pages.delete"],
-  "POST /api/data/rows/:id/restore": ["entities.delete", "schema.delete_type", "flows.delete"],
-  "POST /api/data/types/:type/fields/:field/restore": ["schema.remove_field"],
-  "POST /api/agent/flows/:id/revert": ["flows.save"],
-  "POST /api/agent/proposals/:id/restore": ["inbox.accept", "inbox.reject"],
+  "DELETE /api/v1/actions/:id": { way: "screen" },
+  "POST /api/pages/:id/restore": { way: "trash", of: (t) => t.area === "pages" },
+  "POST /api/data/rows/:id/restore": {
+    way: "trash",
+    of: (t) => t.area !== "pages" && !namesAField(t),
+  },
+  "POST /api/data/types/:type/fields/:field/restore": { way: "trash", of: namesAField },
+  "POST /api/agent/flows/:id/revert": { way: "version" },
+  "POST /api/agent/proposals/:id/restore": { way: "bandeja" },
 };
+function namesAField(t: ToolDef): boolean {
+  return Object.values(t.args).some((a) => a.role === "field");
+}
+/** The ways an action says it is undone (none for one that only reads, or says why there is nothing to undo). */
+export const undoWays = (t: Pick<ToolDef, "undo">): readonly UndoWay[] =>
+  Array.isArray(t.undo) ? t.undo : [];
+
+/** The registry the routes and the MCP reach their actions by: what the server runs. */
+export const ACTIONS: ToolRegistry = serverRegistry().freeze();
+
+/** A route that is the Undo of actions, and the actions it takes back: computed from each action's `undo`. */
+export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Object.entries(UNDO_WAY_ROUTES).map(([route, w]) => [
+    route,
+    ACTIONS.all()
+      .filter((t) => undoWays(t).includes(w.way) && (!w.of || w.of(t)))
+      .map((t) => t.name),
+  ]),
+);
+
+/**
+ * Juan's hand on a route that changes something (docs/sistema.md §4.1, P25): each action the route runs
+ * (`ROUTE_ACTIONS`) is asked of the policy engine with the origin «Juan desde este dispositivo» before the route runs
+ * it. The first decision that does not allow it, or null when the route runs. A route whose action is not registered
+ * is refused (P0), so no route that changes something runs around the list.
+ */
+export function routeDecision(
+  route: string,
+  who: { trust: Trust; device: string },
+  registry: ToolRegistry = ACTIONS,
+): Exclude<Decision, { kind: "allow" }> | null {
+  const names = Object.hasOwn(ROUTE_ACTIONS, route) ? (ROUTE_ACTIONS[route] ?? []) : [];
+  for (const name of names) {
+    const d = decide(
+      { tool: registry.get(name), args: {}, control: null },
+      { kind: "hand", trust: who.trust, device: who.device },
+      { writes: 0, sensitiveReads: 0 },
+    );
+    if (d.kind !== "allow") return d;
+  }
+  return null;
+}
 
 /**
  * «Solo él, en su sitio» (docs/sistema.md §4.1): what no model may do at all, not even prepared for his touch. The

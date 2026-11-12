@@ -94,6 +94,7 @@ function mailFacts(m: MailService, ro: ReadStore) {
 export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "connectors.mail_view",
+    icon: "Mail",
     effect: "read",
     area: "connectors",
     service: "mail",
@@ -107,6 +108,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail",
+    icon: "MailCheck",
+    undo: ["run"],
     effect: "touch",
     area: "connectors",
     service: "mail",
@@ -140,6 +143,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_check",
+    icon: "RefreshCw",
+    undo: { none: "what it brings goes to the Bandeja, accepted or rejected there" },
     effect: "write",
     area: "connectors",
     service: "mail",
@@ -155,6 +160,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_propose",
+    icon: "MailPlus",
+    undo: { none: "what it brings goes to the Bandeja, accepted or rejected there" },
     effect: "write",
     area: "connectors",
     service: "mail",
@@ -175,6 +182,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_reread",
+    icon: "RotateCcw",
+    undo: { none: "what it brings goes to the Bandeja, accepted or rejected there" },
     effect: "write",
     area: "connectors",
     service: "mail",
@@ -194,6 +203,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_guide",
+    icon: "BookOpen",
+    undo: ["run"],
     effect: "touch",
     area: "connectors",
     service: "mail",
@@ -218,6 +229,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_review",
+    icon: "ClipboardCheck",
+    undo: { none: "the reviewer's suggestion waits for Juan, taken or left in Ajustes" },
     effect: "write",
     area: "connectors",
     service: "mail",
@@ -235,6 +248,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "connectors.mail_suggestion",
+    icon: "Lightbulb",
+    undo: ["run"],
     effect: "touch",
     area: "connectors",
     service: "mail",
@@ -261,6 +276,8 @@ export function withConnectorActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "extensions.enable",
+    icon: "Puzzle",
+    undo: ["run"],
     effect: "touch",
     area: "extensions",
     service: "data",

@@ -73,6 +73,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   };
   r.register({
     name: "mail.rule",
+    icon: "BookCheck",
     effect: "piece",
     area: "boni",
     record: true,
@@ -90,6 +91,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "mail.known",
+    icon: "UserCheck",
     effect: "piece",
     area: "boni",
     record: true,
@@ -107,6 +109,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "mail.invitation",
+    icon: "CalendarCheck",
     effect: "piece",
     area: "boni",
     record: true,
@@ -118,6 +121,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "mail.relations",
+    icon: "Link",
     effect: "piece",
     area: "boni",
     record: true,
@@ -142,6 +146,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "inbox.fold",
+    icon: "FoldVertical",
     effect: "piece",
     area: "boni",
     changes: true,
@@ -170,6 +175,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "inbox.accept_alone",
+    icon: "CheckCheck",
     effect: "piece",
     area: "boni",
     changes: true,
@@ -184,6 +190,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   // only in a flow's background run (P20); in «Probar» it knows the run is dry and brings nothing.
   r.register({
     name: "mail.save",
+    icon: "Save",
     effect: "piece",
     area: "boni",
     changes: true,
@@ -196,6 +203,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   // «Revisar la guía» (docs/sistema.md §4.2, D-51): what the reviewer learns from, the measure, the suggestion.
   r.register({
     name: "guide.decisions",
+    icon: "Scale",
     effect: "piece",
     area: "boni",
     title: "Tus decisiones",
@@ -206,6 +214,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "guide.measure",
+    icon: "Gauge",
     effect: "piece",
     area: "boni",
     title: "Medir releyendo",
@@ -228,6 +237,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "guide.suggest",
+    icon: "Lightbulb",
     effect: "piece",
     area: "boni",
     changes: true,
