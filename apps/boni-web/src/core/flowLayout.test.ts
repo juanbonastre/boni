@@ -223,6 +223,42 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     ]);
   });
 
+  it("«Ver en el mapa» on a block: its values, what it paints and who writes there (§4.6 point 7)", () => {
+    const withBlocks = {
+      nodes: [
+        ...map.nodes,
+        n("block:agenda:mes", "block", { page: "page:agenda" }),
+        n("block:agenda:total", "block", { page: "page:agenda" }),
+        n("block:otra:total", "block", { page: "page:otra" }),
+      ],
+      edges: [
+        ...map.edges,
+        e("block:agenda:mes", "block:agenda:total", "controls"),
+        e("col:tarea", "block:agenda:total", "shows"),
+        e("col:tarea", "block:otra:total", "shows"),
+      ],
+    };
+    // No block is drawn around anything that is not one, nor another page's around one.
+    expect(
+      ids(lensOf(withBlocks, { ...LENS, center: "col:tarea" })).some((x) => x.startsWith("block:")),
+    ).toBe(false);
+    const v = lensOf(withBlocks, { ...LENS, center: "block:agenda:total", before: 1, after: 0 });
+    expect(ids(v)).toEqual(
+      [
+        "block:agenda:mes",
+        "block:agenda:total",
+        "col:tarea",
+        // Who writes in Tarea, one step past it: the Bandeja crossed to what proposes there.
+        "actor:user",
+        "boni:chat",
+        "boni:inbox",
+        "flow:apuntar",
+        "flow:leer",
+      ].sort(),
+    );
+    expect(v.edges.some((x) => x.kind === "controls" && x.to === "block:agenda:total")).toBe(true);
+  });
+
   it("«¿Qué pasa cuando llega un correo?»: the connector in the centre, everything after it", () => {
     const v = lensOf(map, {
       ...LENS,

@@ -1,3 +1,4 @@
+import { PERIODS } from "@boni/views";
 import {
   ArrowUp,
   ArrowUpRight,
@@ -21,7 +22,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AreaAccuracy,
   type ConfirmView,
@@ -32,6 +33,7 @@ import {
   type Painted,
   type Pending,
   type Reply,
+  type RowsOf,
   type RunDetail,
   type RunSummary,
   reveal,
@@ -44,7 +46,7 @@ import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
 import { filterOf, litKeys, litNames } from "../core/screenReplies.ts";
 import { percent } from "../core/uploads.ts";
-import type { T } from "../i18n.ts";
+import { catText, type T } from "../i18n.ts";
 import {
   agentErrorText,
   answerAsk,
@@ -70,6 +72,7 @@ import {
   newConversation,
   openConversation,
   openRecord,
+  openRowsOf,
   openSettings,
   openTarget,
   pinConversation,
@@ -1276,6 +1279,24 @@ function ListItem({
   );
 }
 
+/**
+ * A figure of the answer that a block's numbers gave (D-08, docs/sistema.md §4.6 point 7): a click opens its page
+ * and the rows it is, counted with the page's values it was read with.
+ */
+function FigureRows({ of, children }: { of: RowsOf; children: ReactNode }) {
+  const t = useStore((s) => s.t);
+  return (
+    <button
+      type="button"
+      className="reply-figure-rows"
+      title={t("chat.rows")}
+      onClick={() => void openRowsOf(of)}
+    >
+      {children}
+    </button>
+  );
+}
+
 function ReplyView({ reply }: { reply: Reply }) {
   const t = useStore((s) => s.t);
   const dataTypes = useStore((s) => s.dataTypes);
@@ -1284,11 +1305,24 @@ function ReplyView({ reply }: { reply: Reply }) {
   switch (reply.component) {
     case "text": {
       const template = d.template ? textOf(d.template) : "";
+      const slots = { a: d.a, b: d.b, c: d.c, d: d.d };
+      // A slot that is a block's figure lists its rows on a click (D-08): which one, by what it holds.
+      const slotKey = (p: Painted) =>
+        (Object.keys(slots) as (keyof typeof slots)[]).find((k) => slots[k] === p);
       return (
         <p className="reply-text">
-          {fillTemplate(template, { a: d.a, b: d.b, c: d.c, d: d.d }).map((part, i) =>
-            "text" in part ? <span key={i}>{part.text}</span> : <ValueText key={i} p={part.slot} />,
-          )}
+          {fillTemplate(template, slots).map((part, i) => {
+            if ("text" in part) return <span key={i}>{part.text}</span>;
+            const k = slotKey(part.slot);
+            const of = k ? reply.rows?.[k] : undefined;
+            return of ? (
+              <FigureRows key={i} of={of}>
+                <ValueText p={part.slot} />
+              </FigureRows>
+            ) : (
+              <ValueText key={i} p={part.slot} />
+            );
+          })}
         </p>
       );
     }
@@ -1297,7 +1331,15 @@ function ReplyView({ reply }: { reply: Reply }) {
         <div className="reply-number">
           {caption}
           <span className="reply-figure">
-            {d.value ? <NumberText p={d.value} /> : "—"}
+            {d.value && reply.rows?.value ? (
+              <FigureRows of={reply.rows.value}>
+                <NumberText p={d.value} />
+              </FigureRows>
+            ) : d.value ? (
+              <NumberText p={d.value} />
+            ) : (
+              "—"
+            )}
             {d.unit ? <span className="reply-unit"> {textOf(d.unit)}</span> : null}
           </span>
         </div>
@@ -1647,6 +1689,33 @@ function argLabel(t: T, arg: string, role: string): string {
   return byRole !== `arg.${role}` ? byRole : arg;
 }
 
+/** An argument's own name when there is one («Colección» of a block to add), else null. */
+function knownArg(t: T, arg: string): string | null {
+  const k = `argname.${arg}`;
+  const v = t(k);
+  return v !== k ? v : null;
+}
+/**
+ * A block's setting as Juan reads it (pages.add_block's card): its kind («Cifra»), what it counts and its period by
+ * their names;
+ * anything else as it is.
+ */
+function blockValue(t: T, r: { arg: string; role: string; value: string }): string {
+  if (r.role !== "definition") return r.value;
+  const k =
+    r.arg === "block.type"
+      ? `block.kind.${r.value === "graph" ? "chart" : r.value}`
+      : r.arg === "block.measure"
+        ? `argname.block.measure.${r.value}`
+        : null;
+  if (r.arg === "block.period") {
+    const p = PERIODS.find((o) => o.value === r.value);
+    if (p) return catText(t, p.label);
+  }
+  const v = k ? t(k) : null;
+  return v && v !== k ? v : r.value;
+}
+
 /** "values.autor" -> "autor": a record's field without a name from the schema. */
 const fieldKey = (arg: string) => (arg.includes(".") ? arg.slice(arg.indexOf(".") + 1) : null);
 
@@ -1696,7 +1765,11 @@ export function CallRows({ view }: { view: ConfirmView }) {
       {view.rows.map((r) => (
         <div key={r.arg} className="confirm-row">
           <dt>
-            {r.name ?? functionRowName(t, r.arg) ?? fieldKey(r.arg) ?? argLabel(t, r.arg, r.role)}
+            {r.name ??
+              functionRowName(t, r.arg) ??
+              (r.role === "definition" ? knownArg(t, r.arg) : null) ??
+              fieldKey(r.arg) ??
+              argLabel(t, r.arg, r.role)}
           </dt>
           <dd>
             <div className={`confirm-value${r.integrity === "external" ? " ext" : ""}`}>
@@ -1706,7 +1779,7 @@ export function CallRows({ view }: { view: ConfirmView }) {
                   {r.role !== "type" && <span className="muted small"> {reveal(r.value)}</span>}
                 </>
               ) : (
-                reveal(r.value)
+                reveal(blockValue(t, r))
               )}
             </div>
             <div className="confirm-prov muted small">{provenance(t, r.integrity, r.sources)}</div>

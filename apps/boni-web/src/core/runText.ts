@@ -195,5 +195,7 @@ export function mapNodeName(t: T, n: Pick<MapNode, "kind" | "code" | "name">): s
   if (n.kind === "actor" && n.code === "assistant")
     return t("map.node.assistant", { name: n.name ?? "" });
   if (n.name) return n.name;
+  // A page's block with no title: its kind («Cifra», «Base de datos», «Control»).
+  if (n.kind === "block") return t(`block.kind.${n.code ?? "text"}`);
   return t(`map.node.${n.code ?? n.kind}`);
 }

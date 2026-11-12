@@ -147,7 +147,16 @@ export function stepLayout(
 
 // ------------------------------------------------------------------ the map
 
-export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page" | "device";
+export type MapKind =
+  | "connector"
+  | "collection"
+  | "flow"
+  | "boni"
+  | "actor"
+  | "page"
+  /** A block of a page that paints a collection, or a value (a «Control») one of them reads. */
+  | "block"
+  | "device";
 export type MapEdgeKind =
   | "brings"
   | "starts"
@@ -159,6 +168,8 @@ export type MapEdgeKind =
   | "learns"
   | "improves"
   | "shows"
+  /** A page's value into the blocks that read it (docs/sistema.md §4.6 point 7). */
+  | "controls"
   /** Out to the account's devices: what a flow's «Avisar» or a turn of the conversation told them. */
   | "tells";
 /** A node of the map as the server computes it (apps/server flowMap.ts), with what the lenses look at. */
@@ -173,6 +184,8 @@ export interface MapNodeLike {
   boni?: boolean;
   /** The Bandeja: what goes through it is followed to where it goes, as if it were not a step of its own. */
   through?: boolean;
+  /** A block's page (its node's id). */
+  page?: string | null;
 }
 export interface MapEdgeLike {
   from: string;
@@ -234,14 +247,21 @@ const CHANGES: ReadonlySet<MapEdgeKind> = new Set([
  * centre always stays, even alone. The Bandeja is crossed, not counted (docs/sistema.md §4.4: «Antes: 1» of Evento
  * is «Leer correo (propone)», through the Bandeja): what reaches it goes on, in the same step, to the collections its
  * arrow carries proposals to, and back from a collection only to those that propose into it.
+ *
+ * A page's blocks are drawn only around one of them (docs/sistema.md §4.6 point 7, «Ver en el mapa» on a block): the
+ * centre's page's, none of another. With a block in the centre, its values and the collection it paints are one step
+ * with it, so «Antes: 1» is what controls it, what it paints and the flows that write there.
  */
 export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   map: { nodes: readonly N[]; edges: readonly E[] },
   lens: Lens,
 ): { nodes: N[]; edges: E[] } {
+  const centre = map.nodes.find((n) => n.id === lens.center);
+  const blockPage = centre?.kind === "block" ? (centre.page ?? null) : null;
   const keep = (n: N) =>
     n.id === lens.center ||
     ((n.kind !== "page" || lens.pages) &&
+      (n.kind !== "block" || (!!blockPage && n.page === blockPage)) &&
       (!lens.on || n.kind !== "flow" || n.on !== false) &&
       (!lens.ai ||
         n.through ||
@@ -313,16 +333,16 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
         front = next;
       }
     };
-    walk("up", lens.before);
+    walk("up", blockPage ? lens.before + 1 : lens.before);
     walk("down", lens.after);
     for (const id of lens.keep ?? []) if (ids.has(id)) reach.add(id);
     nodes = nodes.filter((n) => reach.has(n.id));
     // Through the Bandeja, only the arrows of what goes where the lens reached (the conversation's proposals in
     // Libros are not on the way of Tarea's).
-    const centre = lens.center;
+    const middle = lens.center;
     const kept = edges.filter((e) => reach.has(e.from) && reach.has(e.to));
     edges = kept.filter((e) => {
-      if (e.from === centre || e.to === centre) return true;
+      if (e.from === middle || e.to === middle) return true;
       if (e.kind === "proposes" && through.has(e.to))
         return (
           (e.into ?? []).some((c) => reach.has(c)) ||

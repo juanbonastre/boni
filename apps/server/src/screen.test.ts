@@ -294,6 +294,8 @@ describe("the screen as data (F9, task 85)", () => {
       // What the block says under its name, as Juan reads it.
       span: "ene 2000 - nov 2026 - hasta hoy",
       total: 420,
+      // How many rows it sums (the two read), the code's (D-62).
+      count: 2,
     });
     expect(pointed[1]).toMatchObject({
       kind: "bars",

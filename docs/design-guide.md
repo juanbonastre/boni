@@ -437,7 +437,13 @@ contraseña ni un código aquí» under a question.
   list, one checkbox each), and «Guardar» («Guardado»; a save made elsewhere first says so). Switched off in «Flujos», it says
   «apagado» and its bar and buttons are disabled; its flow gone, the block says «Este chat ya no existe.». In
   «Flujos» it shows as any flow, its trigger «Chat» fixed and its step named «Agente». Every word of it, and of what
-  it answers, is plain text.
+  it answers, is plain text. A figure in its answer that is a block's total or count (D-62; «Gastaste 312,40 € en 14
+  movimientos») is a quiet button: dotted underline, solid on hover, tooltip «Ver las filas»; a click opens the page
+  and the rows panel with the values the figure was read with, whatever the page holds now. A block the chat would add
+  comes first as a confirmation card, «¿Añadir bloque?», its settings by their names, one row each («Bloque: Cifra»,
+  «Colección: Movimiento», «Qué cuenta: La suma», «De: Importe», «Periodo: Desde siempre»), never a text of code; «Sí,
+  añadir bloque» adds it, and the run's Undo takes it away. «Añadir bloques a la página» is one more checkbox in
+  «Lo que puede hacer» (a chat made before keeps its list until Juan ticks it).
 - **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
   `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,
@@ -1038,7 +1044,11 @@ contraseña ni un código aquí» under a question.
   on a step opens its own panel: its name, «Paso de «Leer correo»», what it does, its model and «42 llamadas · 0,21 US$
   en 7 días». The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
-  a block over a collection and a flow, opens it with that in the centre and its panel open (an Inbox card's menu has
+  a block over a collection and a flow, opens it with that in the centre and its panel open. A block (a number, bars,
+  a chart, a table, or a «Control» some block reads; §4.6 point 7) goes in the centre itself: a card with its kind's
+  icon (a hash, bars, a table, sliders), its title (or its kind, «Cifra», when it has none) and its page's name under
+  it, and before it the values that control it («controla»), the collection it paints («muestra») and who writes there;
+  blocks are drawn only around one of their page in the centre, and «Abrir» on one opens its page (an Inbox card's menu has
   «Abrir propuesta» and «Recorrido»; text chosen in the card keeps the browser's own menu); a page put in the centre shows the pages while it is there; what the map does not have
   (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. **A run's
   «Recorrido» is the map** (I-25, task 90; Juan, 2026-11-06: «teniendo el mapa, no tiene sentido tener lo del

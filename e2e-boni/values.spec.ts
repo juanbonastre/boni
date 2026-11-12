@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { FLOWS, MAP_BLOCKS, MODELS } from "./agent-scenarios.ts";
 import { type FakePage, openApp, openInTree, recorded } from "./fixtures.ts";
 import { ACCOUNTS, CATS, F, MOV, moneyEngine } from "./money-records.ts";
 
@@ -241,4 +242,43 @@ test("a control's panel names its kind and field; a link's panel says which valu
   await expect
     .poll(async () => (await saved(page, "p_gastos")).find((b) => b.id === "b_link")?.pass)
     .toBeUndefined();
+});
+
+test("«Ver en el mapa» on a block: the map shows the values that control it, the collection it paints and who writes there (§4.6 point 7)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    money: true,
+    pages: [gastos, detalle],
+    agent: {
+      "GET api/agent/map": [MAP_BLOCKS],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  const blk = page.locator('[data-block="b_total"]');
+  await expect(kpi(page, "b_total")).toHaveText(nf.format(TOTAL.all));
+  await blk.hover();
+  await blk.locator(".blk-handle button").click();
+  await page.getByRole("menuitemradio", { name: "Ver en el mapa" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await expect(page.getByRole("tab", { name: "Mapa" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".mp-centre")).toContainText("Gastado");
+  const map = page.locator(".mp-stage");
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  // Its two values, the collection it paints and who writes there: Juan, a flow of his, the Bandeja's accepted.
+  for (const name of ["Categoría", "Mes", "Gastos", "Tú", "Apuntar gasto", "Bandeja"])
+    await expect(card(name)).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "controla" })).toHaveCount(2);
+  // Another page's block over another collection is not on its map.
+  await expect(card("Pendientes")).toHaveCount(0);
+  await page.screenshot({ path: "e2e-boni/screenshots/page-block-map.png" });
+  // «Abrir» on the block goes back to its page.
+  await card("Gastado").click();
+  await page.locator(".mp-panel").getByRole("button", { name: "Abrir" }).click();
+  await expect(kpi(page, "b_total")).toBeVisible();
 });

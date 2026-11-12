@@ -134,7 +134,8 @@ one" mean what is there, what he pointed at first, else what is in view; use its
 with the path the input shows. "chat", when there is one: you answer in the chat of one of the user's pages ("page":
 its id; "screen" shows that page), as its "instructions" say. Only its "tools" are there, and only that page and the
 collections it shows may be named. In a chat there are no readers, and no number or digit of your own anywhere in a
-reply or a question: every figure is a ref to what a tool gave (pages.figures, entities.aggregate).
+reply or a question: every figure is a ref to what a tool gave (pages.figures, entities.aggregate). A block it adds
+to the page (pages.add_block) reads one of those collections, and the user confirms it on a card.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -190,7 +191,8 @@ Results:
   query by "field" with "equals" (exact) or "contains" (text inside, e.g. a first name in a full name).
 - entities.get / entities.create / entities.update: one record. entities.aggregate: a number.
 - pages.figures: one block of the page as "screen" shows it, its numbers computed now with the page's values as the
-  steps before left them: "$s3.total", "$s3.labels", "$s3.values".
+  steps before left them: "$s3.total", "$s3.labels", "$s3.values", and "$s3.count", how many rows they sum (say it
+  with the figure, by ref too).
 - readers: extract_tasks -> {"tasks": [{"title", "due", "sender", "message_id"}]} (loop with
   "each": {"ref": "$s2.tasks"}); classify -> {"choice"}; summarize, rewrite, answer_about -> {"text"}.
   A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item"} (the whole
@@ -276,6 +278,27 @@ export { type Painted, paint } from "./values.ts";
 export interface Reply {
   component: string;
   data: Record<string, Painted>;
+  /** Of a figure in it that a block's numbers gave (`pages.figures`' `rows_of`, by its data key): the rows it is, as
+   * the page, the block and the page's values when it was read, so a click lists them (D-08, docs/sistema.md §4.6
+   * point 7). Code's, never the model's. */
+  rows?: Record<string, RowsOf>;
+}
+/** What a `rows_of` says, when it is well formed. */
+function rowsOfVal(v: unknown): RowsOf | null {
+  const o = v as { page?: unknown; block?: unknown; values?: unknown } | null;
+  if (!o || typeof o !== "object" || typeof o.page !== "string" || typeof o.block !== "string")
+    return null;
+  const values: Record<string, string | number> = {};
+  if (o.values && typeof o.values === "object")
+    for (const [k, x] of Object.entries(o.values))
+      if (typeof x === "string" || typeof x === "number") values[k] = x;
+  return { page: o.page, block: o.block, values };
+}
+/** Which rows a block's figure is: its page, its block and the page's values then. */
+export interface RowsOf {
+  page: string;
+  block: string;
+  values: Record<string, string | number>;
 }
 export type Pending =
   | { kind: "ask"; id: string; control: "choice" | "text"; prompt: Painted; options: Painted[] }
@@ -1671,18 +1694,52 @@ export class Agent {
       case "reply": {
         const data: Record<string, Val> = {};
         for (const [k, e] of Object.entries(step.data)) data[k] = this.evalExpr(st, e);
-        this.reply(st, step.component, data);
+        this.reply(st, step.component, data, this.rowsOfReply(st, step.data));
         return leaf(null, codeLabel("reply"));
       }
     }
   }
 
+  /**
+   * Of each value of a reply that is a block's total or count (a ref to a `pages.figures` step, or a function of
+   * one), the rows it is: what that step's result says of them (`rows_of`, the code's). Any other value, none; nor
+   * one that mixes the figures of two blocks, whose rows are no one block's.
+   */
+  private rowsOfReply(st: RunState, data: Record<string, Expr>): Record<string, RowsOf> {
+    const out: Record<string, RowsOf> = {};
+    const refs = (e: Expr, acc: string[] = []): string[] => {
+      if ("ref" in e) acc.push(e.ref);
+      if ("fn" in e) for (const a of e.args) refs(a, acc);
+      return acc;
+    };
+    for (const [k, e] of Object.entries(data)) {
+      const found = refs(e).map((r) => {
+        const path = parseRef(r);
+        const head = path ? st.env.get(path[0] as string) : undefined;
+        const of = head?.t === "rec" ? head.fields.rows_of : undefined;
+        return of && (path?.[1] === "total" || path?.[1] === "count") && path.length === 2
+          ? rowsOfVal(plain(of))
+          : null;
+      });
+      const first = found[0];
+      if (first && found.every((x) => x && JSON.stringify(x) === JSON.stringify(first)))
+        out[k] = first;
+    }
+    return out;
+  }
+
   /** A reply of the run: kept with its values, painted for the app and told as it comes. */
-  private reply(st: RunState, component: string, data: Record<string, Val>) {
+  private reply(
+    st: RunState,
+    component: string,
+    data: Record<string, Val>,
+    rows: Record<string, RowsOf> = {},
+  ) {
     st.replyVals.push({ component, data });
     const reply: Reply = {
       component,
       data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, paint(v)])),
+      ...(Object.keys(rows).length ? { rows } : {}),
     };
     st.replies.push(reply);
     this.emit(st, { type: "reply", reply });
@@ -1848,13 +1905,21 @@ export class Agent {
   /** Of each `type` argument, the collection it names as the tool would find it (its id), for P26; null: none. */
   private typeIdsOf(tool: ToolDef, args: Record<string, Val>): Record<string, string | null> {
     const out: Record<string, string | null> = {};
-    for (const [k, v] of Object.entries(args)) {
-      if (tool.args[k]?.role !== "type") continue;
-      const name = plain(v);
+    const idOf = (name: unknown) => {
       try {
-        out[k] = typeof name === "string" ? typeByKey(readStore(this.o.store), name).id : null;
+        return typeof name === "string" ? typeByKey(readStore(this.o.store), name).id : null;
       } catch {
-        out[k] = null;
+        return null;
+      }
+    };
+    for (const [k, v] of Object.entries(args)) {
+      const role = tool.args[k]?.role;
+      if (role === "type") out[k] = idOf(plain(v));
+      // A block a chat adds names its collection by key (pages.add_block): P26 checks it is one the page shows.
+      if (role === "definition") {
+        const d = plain(v);
+        if (d && typeof d === "object" && "collection" in d)
+          out[`${k}.collection`] = idOf((d as { collection?: unknown }).collection);
       }
     }
     return out;

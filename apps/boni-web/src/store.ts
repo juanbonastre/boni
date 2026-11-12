@@ -202,7 +202,14 @@ export type Panel =
   /** A block of the open page: a control for each of its settings in the block catalogue. */
   | { kind: "block"; id: string }
   /** The rows a data block counts (a click on it: «Lo que cuenta»), or those of one of its bars or points. */
-  | { kind: "rows"; id: string; drill?: string; label?: string }
+  | {
+      kind: "rows";
+      id: string;
+      drill?: string;
+      label?: string;
+      /** The page's values these rows were counted with (a figure of the chat's answer), not the page's now. */
+      values?: Record<string, string | number>;
+    }
   /** A record opened from the conversation without leaving it (a mail, as a mail client shows it). */
   | { kind: "row"; type: string; id: string };
 /**
@@ -865,11 +872,35 @@ export async function proposeFromMail(id: string, again = false) {
   }
 }
 /** What a data block counts, in the side panel (a click on it; `drill` a bar's or a point's key). */
-export const openRowsPanel = (id: string, drill?: string, label?: string) =>
+export const openRowsPanel = (
+  id: string,
+  drill?: string,
+  label?: string,
+  values?: Record<string, string | number>,
+) =>
   set({
-    panel: { kind: "rows", id, ...(drill ? { drill } : {}), ...(label ? { label } : {}) },
+    panel: {
+      kind: "rows",
+      id,
+      ...(drill ? { drill } : {}),
+      ...(label ? { label } : {}),
+      ...(values ? { values } : {}),
+    },
     ...FRESH_PANEL,
   });
+/**
+ * A click on a figure of a page chat's answer (D-08, docs/sistema.md §4.6 point 7): its page, and the rows it is in
+ * the side panel, counted with the page's values it was read with, whatever they hold now.
+ */
+export async function openRowsOf(r: {
+  page: string;
+  block: string;
+  values: Record<string, string | number>;
+}) {
+  await openPage(r.page);
+  if (get().page?.id !== r.page) return;
+  openRowsPanel(r.block, undefined, undefined, r.values);
+}
 export const markPanelEdited = () => {
   if (get().panel && !get().panelEdited) set({ panelEdited: true });
 };

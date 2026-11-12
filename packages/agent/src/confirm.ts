@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { domainToASCII } from "node:url";
 import type { ReadStore, ToolDef } from "./tools.ts";
-import { deepLabel, type From, type Json, originsOf, plain, type Val } from "./values.ts";
+import { deepLabel, type From, type Json, leaf, originsOf, plain, type Val } from "./values.ts";
 
 /**
  * Confirmations (docs/nucleo.md, 7.5): painted by the code from the real arguments (never a model's
@@ -139,13 +139,44 @@ export function confirmView(
       }
       continue;
     }
+    // A block to add to a page (pages.add_block): one row per setting, its collection and fields by their names, so
+    // the card says what will be on the page, not a text of code (docs/sistema.md §4.6 point 7).
+    const dv = plain(v);
+    if (
+      role === "definition" &&
+      v.t === "v" &&
+      dv &&
+      typeof dv === "object" &&
+      !Array.isArray(dv) &&
+      typeof (dv as { type?: unknown }).type === "string"
+    ) {
+      const d = dv as Record<string, Json>;
+      const col = types.find((t) => t.key === d.collection);
+      const l = deepLabel(v);
+      for (const [key, x] of Object.entries(d)) {
+        if (x === null || x === undefined || x === "") continue;
+        const extra: Partial<ConfirmRow> = {};
+        if (key === "collection" && col && trusted(col.label)) extra.detail = col.name;
+        const f =
+          typeof x === "string" && key !== "collection" && key !== "type"
+            ? col?.fields.find((y) => y.key === x || y.name === x)
+            : undefined;
+        if (f && trusted(f.label) && f.name !== x) extra.detail = f.name;
+        rows.push(row(`${name}.${key}`, role, leaf(x, l), extra));
+      }
+      continue;
+    }
     // A collection by its name, Juan's own (a name that came from outside keeps the key alone).
     if (role === "type" && def && trusted(def.label) && plain(v) === def.key) {
       rows.push(row(name, role, v, { detail: def.name }));
       continue;
     }
     const id = plain(v);
-    const s = role === "entity" && typeof id === "string" && store ? store.get(id) : null;
+    // A record, or a page, by its title.
+    const s =
+      (role === "entity" || role === "page") && typeof id === "string" && store
+        ? store.get(id)
+        : null;
     const t = s ? types.find((x) => x.id === s.entity.type) : undefined;
     const title = t && s ? s.entity.values[t.titleField] : undefined;
     const titleLabel = t && s ? s.labels[t.titleField] : undefined;

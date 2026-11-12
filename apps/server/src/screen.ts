@@ -37,6 +37,7 @@ import {
 import { BODY, type StoredEntity, type UserStore } from "@boni/store";
 import {
   blockDateField,
+  blockRows,
   type ChartData,
   type ChartSpec,
   type ControlBlock,
@@ -733,6 +734,10 @@ function screenReader(
     });
     if (!("data" in result)) return out;
     Object.assign(out, figures(result.data, joined(code, read)));
+    // How many rows its numbers are, as its rows' list counts them (D-08, `blockRows`): «en 14 movimientos» comes
+    // from the code, like the figure (§4.6 point 7).
+    const listed = blockRows(b, visible, () => rows.map((s) => s.entity), { today, controls });
+    if ("rows" in listed) out.count = leaf(listed.rows.length, joined(code, read));
     // Rows the models may not read are not in its numbers. When that makes them other than the ones on Juan's
     // screen, it says so (`partial`), so Boni does not give a total he does not see; never how many, nor which.
     if (mayHide(def.id)) {

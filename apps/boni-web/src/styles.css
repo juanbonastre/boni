@@ -2526,6 +2526,21 @@ html.widget-page body {
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
+/* A figure of the answer that lists its rows on a click (D-08): the figure itself, underlined on hover. */
+.reply-figure-rows {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+.reply-figure-rows:hover,
+.reply-figure-rows:focus-visible {
+  text-decoration: underline solid;
+}
 .reply-unit {
   font-size: 14px;
   color: var(--muted);

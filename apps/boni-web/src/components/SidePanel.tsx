@@ -94,10 +94,11 @@ export function SidePanel() {
         <RowPanel key={panel.id} type={panel.type} id={panel.id} />
       ) : panel.kind === "rows" ? (
         <RowsPanel
-          key={`${panel.id}:${panel.drill ?? ""}`}
+          key={`${panel.id}:${panel.drill ?? ""}:${JSON.stringify(panel.values ?? null)}`}
           id={panel.id}
           drill={panel.drill}
           label={panel.label}
+          {...(panel.values ? { values: panel.values } : {})}
         />
       ) : screen ? (
         <ScreenPanel screen={screen} />

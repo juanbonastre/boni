@@ -70,11 +70,21 @@ async function call(token: string, method: string, path: string, body?: unknown)
   });
   return { status: r.status, body: (await r.json()) as Record<string, unknown> };
 }
+type RowsOf = { page: string; block: string; values: Record<string, string | number> };
 type Turn = {
   run: string;
   status: string;
   error: string | null;
-  replies: { component: string; data: Record<string, { value?: unknown }> }[];
+  replies: {
+    component: string;
+    data: Record<string, { value?: unknown }>;
+    rows?: Record<string, RowsOf>;
+  }[];
+  pending: {
+    kind: string;
+    id: string;
+    view?: { tool: string; rows: { arg: string; value: string; detail?: string }[] };
+  } | null;
 };
 
 const typeOf = (key: string) =>
@@ -269,7 +279,13 @@ describe("a page's chat (D-61)", () => {
     flow = chat.flow;
     expect(chat).toMatchObject({
       page,
-      actions: ["pages.figures", "entities.query", "entities.aggregate", "pages.set_value"],
+      actions: [
+        "pages.figures",
+        "entities.query",
+        "entities.aggregate",
+        "pages.set_value",
+        "pages.add_block",
+      ],
     });
     expect((await call(token, "POST", "/api/agent/chats", { page: "no-existe" })).status).toBe(404);
     // Its texts: a new version over the one Juan started from; an older base or a shape that is not a chat, refused.
@@ -341,6 +357,117 @@ describe("a page's chat (D-61)", () => {
     expect(computed("b_chart")).toBeCloseTo(sumOf({ cat: restaurantes }), 4);
     // Its run is the chat's flow's, a turn of Juan's.
     expect(store.journal.run(turn.run)).toMatchObject({ flow, origin: "turn" });
+  });
+
+  it("says how many movements its figure is, from the code, and a click on it lists those rows (§4.6 point 7, D-08)", async () => {
+    plans.push({
+      ...answer(),
+      steps: [
+        ...answer().steps.slice(0, 3),
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("Gastaste {a} en {b} movimientos"),
+            a: ref("$f.total"),
+            b: ref("$f.count"),
+          },
+        },
+      ],
+    });
+    const turn = (
+      await call(token, "POST", "/api/agent/turn", {
+        text: "¿cuánto gasté en restaurantes en octubre?",
+        conversation,
+      })
+    ).body as unknown as Turn;
+    expect([turn.status, turn.error]).toEqual(["done", null]);
+    const reply = turn.replies[0];
+    const october = made.filter((m) => m.day.startsWith("2026-10") && m.cat === restaurantes);
+    expect(october.length).toBeGreaterThan(10);
+    expect(reply?.data.b?.value).toBe(october.length);
+    expect(reply?.data.a?.value).toBeCloseTo(sumOf({ month: "2026-10", cat: restaurantes }), 6);
+    // Which rows they are: the page, the block and the values it was read with, the code's; the template has none.
+    const rows = { page, block: "b_total", values: { b_cat: restaurantes, b_mes: "2026-10" } };
+    expect(reply?.rows).toEqual({ a: rows, b: rows });
+    // The rows a click lists (the app's panel asks for them with those values): the same, however many.
+    const total = saved().find((b) => b.id === "b_total");
+    const controls = saved()
+      .filter((b) => b.type === "control")
+      .map((c) => ({ ...c, value: rows.values[c.id as keyof typeof rows.values] }));
+    const listed = await call(token, "POST", "/api/data/blocks/rows", { block: total, controls });
+    expect(listed.status).toBe(200);
+    expect(listed.body.total).toBe(october.length);
+  });
+
+  it("adds a block to its page only on Juan's confirmation, and Undo takes it back (P27)", async () => {
+    const add = (collection: string) => ({
+      version: 1,
+      steps: [
+        {
+          id: "n",
+          op: "call",
+          tool: "pages.add_block",
+          args: {
+            page: lit(page),
+            block: lit({
+              type: "number",
+              collection,
+              measure: "count",
+              period: "all",
+              title: "Movimientos",
+            }),
+          },
+        },
+        { id: "r", op: "reply", component: "text", data: { template: lit("Añadido") } },
+      ],
+    });
+    const before = saved().length;
+    plans.push(add("movimiento"));
+    const turn = (
+      await call(token, "POST", "/api/agent/turn", {
+        text: "ponme cuántos movimientos hay",
+        conversation,
+      })
+    ).body as unknown as Turn;
+    // A card first, painted by the code: the block's kind and its collection by name; nothing written yet.
+    expect(turn.status).toBe("waiting");
+    expect(turn.pending).toMatchObject({ kind: "confirm", view: { tool: "pages.add_block" } });
+    const rows = turn.pending?.view?.rows ?? [];
+    expect(rows.find((r) => r.arg === "block.type")?.value).toBe("number");
+    expect(rows.find((r) => r.arg === "block.collection")).toMatchObject({
+      value: "movimiento",
+      detail: "Movimiento",
+    });
+    expect(rows.find((r) => r.arg === "page")?.detail).toBe("Gastos");
+    expect(saved().length).toBe(before);
+    const done = (
+      await call(token, "POST", "/api/agent/confirm", {
+        run: turn.run,
+        confirmation: turn.pending?.id,
+      })
+    ).body as unknown as Turn;
+    expect([done.status, done.error]).toEqual(["done", null]);
+    const added = saved().at(-1);
+    expect(saved().length).toBe(before + 1);
+    expect(added).toMatchObject({
+      type: "number",
+      collection: typeOf("movimiento").id,
+      title: "Movimientos",
+    });
+    // Undo of its run takes it off the page.
+    const undo = await call(token, "POST", `/api/agent/runs/${turn.run}/undo`);
+    expect(undo.status).toBe(200);
+    expect(saved().length).toBe(before);
+    // Over a collection the page does not show, no card: it stops (P26).
+    plans.push(add("tarea"));
+    const other = (
+      await call(token, "POST", "/api/agent/turn", { text: "y mis tareas", conversation })
+    ).body as unknown as Turn;
+    expect(other.status).toBe("stopped");
+    expect(other.error).toContain("P26");
+    expect(saved().length).toBe(before);
   });
 
   it("refuses a number of the model's own, and a collection the page does not show", async () => {

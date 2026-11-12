@@ -1,5 +1,5 @@
 import { atLeast, join, type Label } from "@boni/entities";
-import type { ChatScope } from "./chat.ts";
+import { CHAT_UNASKED, type ChatScope } from "./chat.ts";
 import { DESTINATION_ROLES, type ToolDef } from "./tools.ts";
 import { deepLabel, type Val } from "./values.ts";
 
@@ -34,7 +34,8 @@ export interface Call {
    * P26 allows nothing outside them, before any other rule.
    */
   scope?: ChatScope;
-  /** Of each `type` argument, the collection it names (its id), as the agent resolved it; null: none. */
+  /** Of each `type` argument, the collection it names (its id), as the agent resolved it; null: none. A `definition`
+   * that names a collection (a block's), under `<arg>.collection`. */
   typeIds?: Readonly<Record<string, string | null>>;
 }
 export interface RunCounters {
@@ -158,6 +159,11 @@ export function decide(
         const id = call.typeIds?.[name] ?? null;
         if (!id || !scope.types.includes(id)) return deny("P26", "not-the-pages-collection");
       }
+      // A block the chat adds reads only a collection the page shows (its `collection`, resolved by the agent).
+      if (role === "definition" && `${name}.collection` in (call.typeIds ?? {})) {
+        const id = call.typeIds?.[`${name}.collection`] ?? null;
+        if (!id || !scope.types.includes(id)) return deny("P26", "not-the-pages-collection");
+      }
     }
   }
   const labels = entries.map(([, v]) => deepLabel(v));
@@ -248,6 +254,10 @@ export function decide(
         if (!personal) return propose("P6");
       }
       if (tool.alwaysConfirm || tool.effect === "write_irreversible") return confirmOr("P5");
+      // A page's chat changes the page's values without asking; anything else it writes (a block it adds) Juan sees
+      // on a card first (P27, D-62).
+      if (call.scope && !(CHAT_UNASKED as readonly string[]).includes(tool.name))
+        return confirmOr("P27");
       // Every row a call writes counts (a function's change set, as `decideApply` counts it); what Juan accepted in
       // the Bandeja he has seen whole, so accepting it is not asked again.
       const rows = origin.kind === "accepted" ? 0 : Math.max(0, (call.rows ?? 1) - 1);

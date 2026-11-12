@@ -875,6 +875,96 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(m.nodes.find((n) => n.id === "dev:all")?.notices).toBe(2);
   });
 
+  it("a page's blocks: each that paints a collection, with the values that control it (§4.6 point 7)", () => {
+    const w = world();
+    const blocks = [
+      { id: "c_mes", type: "control", name: "Mes", kind: "month" },
+      { id: "c_txt", type: "control", name: "Texto", kind: "text" },
+      { id: "c_otro", type: "control", name: "Nadie", kind: "month" },
+      { id: "h", type: "heading", text: "Tareas" },
+      {
+        id: "b_n",
+        type: "number",
+        title: "Este mes",
+        collection: w.tarea,
+        measure: "count",
+        period: "$c_mes",
+      },
+      {
+        id: "b_t",
+        type: "database",
+        source: w.tarea,
+        view: { layout: "table", filter: [{ field: "f_titulo", op: "contains", from: "c_txt" }] },
+      },
+    ];
+    const p = createPage(
+      store,
+      { title: "Gastos", spec: { version: 1, blocks } as never },
+      "portatil",
+    );
+    const m = mapOf(7, null);
+    const id = (b: string) => `block:${p.id}:${b}`;
+    const n = m.nodes.find((x) => x.id === id("b_n"));
+    expect(n).toMatchObject({
+      kind: "block",
+      code: "number",
+      name: "Este mes",
+      page: `page:${p.id}`,
+    });
+    expect(m.nodes.find((x) => x.id === id("b_t"))).toMatchObject({ code: "database", name: null });
+    expect(m.nodes.find((x) => x.id === id("c_mes"))).toMatchObject({
+      code: "control",
+      name: "Mes",
+    });
+    // What it paints, and the values that control it; a value no block reads, and a heading, are not drawn.
+    expect(edgeOf(m, `col:${w.tarea}`, id("b_n"), "shows")).toBeTruthy();
+    expect(edgeOf(m, `col:${w.tarea}`, id("b_t"), "shows")).toBeTruthy();
+    expect(edgeOf(m, id("c_mes"), id("b_n"), "controls")).toBeTruthy();
+    expect(edgeOf(m, id("c_txt"), id("b_t"), "controls")).toBeTruthy();
+    expect(m.nodes.some((x) => x.id === id("c_otro") || x.id === id("h"))).toBe(false);
+    // The flows that write in what it paints are those that write in its collection: one arrow away from it.
+    expect(edgeOf(m, "flow:apuntar-k2", `col:${w.tarea}`, "writes")).toBeTruthy();
+    // Only those two: one arrow from each value a block reads.
+    expect(m.edges.filter((e) => e.kind === "controls").length).toBe(2);
+  });
+
+  it("the blocks of twenty pages over a year of movements are drawn in time (A-15)", () => {
+    const w = world();
+    const L = label("own", "personal", []);
+    for (let i = 0; i < 4000; i++)
+      store.create(
+        w.tarea,
+        { f_titulo: { value: `Movimiento ${i}`, label: L } },
+        { actor: "user" },
+      );
+    for (let p = 0; p < 20; p++)
+      createPage(
+        store,
+        {
+          title: `Página ${p}`,
+          spec: {
+            version: 1,
+            blocks: [
+              { id: "c_mes", type: "control", name: "Mes", kind: "month" },
+              ...Array.from({ length: 10 }, (_, i) => ({
+                id: `b${i}`,
+                type: "number",
+                collection: w.tarea,
+                measure: "count",
+                period: "$c_mes",
+              })),
+            ],
+          } as never,
+        },
+        "portatil",
+      );
+    const t0 = performance.now();
+    const m = mapOf(30, null);
+    const ms = performance.now() - t0;
+    expect(m.nodes.filter((n) => n.kind === "block").length).toBe(1 + 20 * 11);
+    expect(ms).toBeLessThan(1500);
+  }, 30_000);
+
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {
     world();
     const m = mapOf(7, null);
