@@ -231,7 +231,10 @@ test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only
   expect(JSON.stringify(rows.rows)).not.toContain('"Revisión propuesta"');
   expect(JSON.stringify(rows.ghosts)).toContain('"Revisión propuesta"');
   const list = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
-    proposals: { id: string; card?: { canMarkDone?: boolean } }[];
+    proposals: {
+      id: string;
+      card?: { canMarkDone?: boolean; now?: { state: string | null } };
+    }[];
   };
   const p = list.proposals.find((x) => JSON.stringify(x).includes("Revisión propuesta"));
   expect(p).toBeTruthy();
@@ -240,10 +243,13 @@ test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only
   // «Ya lo hice» on the other one: it is made already done (the calendar's task column), struck through here.
   const done = list.proposals.find((x) => JSON.stringify(x).includes("Entrega hecha"));
   expect(done?.card?.canMarkDone).toBe(true);
+  // Its day is gone, so its card says «Ya pasó»; accepting sends the word the card showed, as the Bandeja does
+  // (D-57: without it the server answers 409 «changed»).
+  expect(done?.card?.now?.state).toBe("past");
   const accepted = await fetch(`${url}/api/agent/proposals/${done?.id}/accept`, {
     method: "POST",
     headers: h,
-    body: JSON.stringify({ edits: { done: true } }),
+    body: JSON.stringify({ edits: { done: true }, seen: done?.card?.now?.state }),
   });
   expect(((await accepted.json()) as { error: unknown }).error).toBeNull();
   await expect(page.locator(".ev.done", { hasText: "Entrega hecha" })).toHaveCount(1, {

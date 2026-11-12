@@ -152,6 +152,7 @@ Cómo se usa:
 | T-04 | El estado y la Cola del desarrollo son registros de Boni, no notas largas ni ficheros del repo | 2026-10-27 | Sin prueba (forma de trabajar) |
 | T-05 | Antes de diseñar algo nuevo se mira lo que ya hay que haga algo parecido, y se amplía; una propuesta empieza por «Lo que hay hoy» y dice qué amplía (Juan, 2026-11-01: «se estaba liando») | 2026-11-01 | Sin prueba (revisión de cada propuesta) |
 | T-06 | Cada agente del repo (`.claude/agents/`) dice su modelo y su esfuerzo: un modelo barato para buscar y revisar, el grande solo para construir o diseñar (Juan, 2026-11-11: una sesión de un día gastó el 40 % de la cuota de la semana, con revisores en el modelo más caro) | 2026-11-11 | `scripts/map.test.mjs` («every agent names its model and effort») |
+| T-07 | Cada suite e2e de CI corre cuando cambia el código que arranca: las del calendario que levantan el servidor real de Boni (`e2e/server.spec.ts`, `e2e/server-boni.spec.ts`) corren también con un cambio de `apps/server/` o de `packages/` (2026-11-12: #387 cambió el «Aceptar» de la Bandeja, el filtro `changes` saltó `e2e-calendar` y `main` quedó en rojo tres fusiones) | 2026-11-12 | `scripts/map.test.mjs` («every e2e suite runs on a change to the code it starts») |
 
 ## Sustituidas
 
