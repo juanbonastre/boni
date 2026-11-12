@@ -351,6 +351,68 @@ test("a new event typed and the app closed at once: the entry is on the server w
   await expect(page.locator(".ev", { hasText: "Creada y cerrada" })).toHaveCount(1);
 });
 
+test("a title typed while the new event waits for the server's answer, and the app closed at once: it is kept", async ({
+  page,
+}) => {
+  // Task 98 (main's CI, 2026-11-12): the event's first write (no title yet) waited for its answer, so its title did
+  // not leave until it came, and the device's copy of the queue was written only after IndexedDB opened; a window
+  // closed in between lost the event. Here that answer is late and IndexedDB slow, as on a busy machine.
+  await page.addInitScript(() => {
+    const open = indexedDB.open.bind(indexedDB);
+    indexedDB.open = (name: string, version?: number) => {
+      const req = open(name, version);
+      if (name !== "boni-calendar-server-outbox") return req;
+      let onsuccess: ((e: Event) => void) | null = null;
+      Object.defineProperty(req, "onsuccess", {
+        configurable: true,
+        get: () => onsuccess,
+        set: (fn: ((e: Event) => void) | null) => {
+          onsuccess = fn;
+        },
+      });
+      req.addEventListener("success", (e) => setTimeout(() => onsuccess?.call(req, e), 2000));
+      return req;
+    };
+  });
+  let first = true;
+  await page.route("**/api/apply", async (route) => {
+    if (!first) return route.continue();
+    first = false;
+    const answer = await route.fetch();
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.fulfill({ response: answer }).catch(() => {});
+  });
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(page);
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 4.5; // Friday 19
+  await page.mouse.move(x, cols.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 360, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.keyboard.type("Titulada mientras esperaba");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".ev", { hasText: "Titulada mientras esperaba" })).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Titulada mientras esperaba" })).toHaveCount(1, {
+    timeout: 10_000,
+  });
+  const made = async () => {
+    const r = await mcp.call("read", {
+      collection: "Docencia",
+      title: "Titulada mientras esperaba",
+    });
+    return r.error ? null : (JSON.parse(r.text) as { id: string }).id;
+  };
+  await expect.poll(made, { timeout: 10_000 }).not.toBeNull();
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Titulada mientras esperaba" })).toHaveCount(1);
+});
+
 test("a new event typed and moved to another calendar at once is one entry there when the app opens again", async ({
   page,
 }) => {

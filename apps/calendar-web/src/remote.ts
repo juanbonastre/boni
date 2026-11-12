@@ -297,8 +297,37 @@ export interface Outbox {
   changes: RowChange[];
 }
 const outboxes = kvStore<Outbox[]>("boni-calendar-server-outbox", "outbox");
-export const savedOutbox = async (key: string) => (await outboxes.get(key)) ?? [];
-export const saveOutbox = (key: string, o: Outbox[]) => outboxes.put(key, o);
+/**
+ * The queue is also written at once, in localStorage (synchronous): IndexedDB writes it only after its database
+ * opens, a few milliseconds later, and a change made while an earlier one waited for its answer is not sent until
+ * that answer comes, so a window closed in between lost it (task 98: an event made and titled, the app closed at
+ * once, was gone when it opened again). localStorage holds the latest queue or nothing (a write it refused takes its
+ * copy away): what it holds wins, and IndexedDB is the copy of a device that queued before this, or of a queue too
+ * big for it.
+ */
+const outboxNow = (key: string) => `boni-calendar-server-outbox:${key}`;
+export async function savedOutbox(key: string): Promise<Outbox[]> {
+  try {
+    const now = localStorage.getItem(outboxNow(key));
+    const o: unknown = now === null ? null : JSON.parse(now);
+    if (Array.isArray(o)) return o as Outbox[];
+  } catch {
+    // No localStorage here (or not a queue): the copy in IndexedDB.
+  }
+  return (await outboxes.get(key)) ?? [];
+}
+export function saveOutbox(key: string, o: Outbox[]): Promise<void> {
+  try {
+    localStorage.setItem(outboxNow(key), JSON.stringify(o));
+  } catch {
+    try {
+      localStorage.removeItem(outboxNow(key));
+    } catch {
+      // No localStorage at all: IndexedDB alone, as before.
+    }
+  }
+  return outboxes.put(key, o);
+}
 
 /** Applies a set of changes to rows: changed and new rows replace theirs, removed ones go. */
 export function applyChanges(rows: readonly Row[], c: RemoteChanges): Row[] {
