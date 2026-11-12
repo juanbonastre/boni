@@ -118,6 +118,7 @@ async function runIt(
 export function withFunctionSteps(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "function.run",
+    icon: "Code",
     effect: "read",
     area: "extensions",
     functions: true,
@@ -160,6 +161,8 @@ export function withFunctionSteps(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "function.apply",
+    icon: "CheckCheck",
+    undo: ["run"],
     effect: "write",
     area: "extensions",
     functions: true,

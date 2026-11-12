@@ -91,6 +91,8 @@ const flow = {
 export function withFlowActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "flows.enable",
+    icon: "Power",
+    undo: ["run"],
     effect: "touch",
     area: "flows",
     service: "flows",
@@ -108,6 +110,8 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "flows.delete",
+    icon: "Trash",
+    undo: ["trash", "run"],
     effect: "write",
     area: "flows",
     service: "flows",
@@ -123,6 +127,7 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "flows.test",
+    icon: "FlaskConical",
     effect: "read",
     area: "flows",
     service: "flows",
@@ -153,6 +158,7 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "flows.runs",
+    icon: "ListChecks",
     effect: "read",
     area: "flows",
     service: "flows",

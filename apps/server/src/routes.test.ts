@@ -4,6 +4,8 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ToolRegistry } from "@boni/agent";
+import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -23,6 +25,8 @@ const servers: Server[] = [];
 let tailnet: string;
 let pub: string;
 let pubWithPrivateMe: string;
+/** The same app deciding its routes' actions against a list without any (A-26). */
+let noActions: string;
 
 async function listen(s: Server): Promise<string> {
   servers.push(s);
@@ -71,6 +75,12 @@ beforeAll(async () => {
     routes: { ...ROUTES, "GET /api/me": "tailnet" },
   });
   pubWithPrivateMe = await listen(serve(strict, "public"));
+  noActions = await listen(
+    serve(
+      makeApp({ ...opts, guard: new LoginGuard(), actions: new ToolRegistry().freeze() }),
+      "tailnet",
+    ),
+  );
 });
 
 afterAll(async () => {
@@ -188,5 +198,29 @@ describe("the server's two entries", () => {
   it("shares one app: failed logins on the public entry count on the tailnet's", async () => {
     for (let i = 0; i < 3; i++) expect((await login(pub, "contraseña mala")).status).toBe(401);
     expect((await login(tailnet)).status).toBe(429);
+  });
+});
+
+describe("every route that changes something reaches its action through the policy (A-26, P25)", () => {
+  it("a route whose action the list lacks is refused before it runs; reading, and asking who you are, are not", async () => {
+    const t = issueSession(db, "juan", "portatil-ejemplo", { listener: "tailnet" })
+      ?.token as string;
+    const auth = { authorization: `Bearer ${t}`, "content-type": "application/json" };
+    const make = (base: string) =>
+      fetch(`${base}/api/pages`, {
+        method: "POST",
+        headers: auth,
+        body: JSON.stringify({ title: "Página inventada" }),
+      });
+    const refused = await make(noActions);
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toEqual({ error: "policy", rule: "P0" });
+    // The same call with the list of actions runs (P25: Juan's own hand).
+    expect((await make(tailnet)).status).toBeLessThan(300);
+    // A read has no action to decide; without a session, it is still who you are that is asked first.
+    expect((await fetch(`${noActions}/api/pages`, { headers: auth })).status).toBe(200);
+    expect((await fetch(`${noActions}/api/pages`, { method: "POST", body: "{}" })).status).toBe(
+      401,
+    );
   });
 });

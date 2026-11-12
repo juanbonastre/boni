@@ -258,8 +258,8 @@ con Deshacer.
   espera a que se deshaga eso.
 - **Rutas:** cada ruta de la API que cambia algo dice su acción, su Deshacer, que es solo de Juan (con su porqué) o
   que no es una acción (preguntar, confirmar, calcular). Las rutas de páginas y de la Bandeja llaman al mismo módulo
-  que su acción (`pages.ts`, `data.ts`, la aceptación del agente, `switchFlow` / `trashFlow` / `tryFlow`); la prueba
-  comprueba la tabla, no la llamada. Ya no hay lista de pendientes: una ruta nueva que cambia algo sin decir cuál de
+  que su acción (`pages.ts`, `data.ts`, la aceptación del agente, `switchFlow` / `trashFlow` / `tryFlow`); desde la 95
+  la política decide antes cada acción de la ruta (ver abajo). Ya no hay lista de pendientes: una ruta nueva que cambia algo sin decir cuál de
   las cuatro es no pasa el CI. No son acciones las conversaciones (una nueva es donde Juan pregunta; su nombre y su
   modelo son de la conversación misma; borrarla es solo suyo), cómo se ve Boni Calendar en cada dispositivo (de la
   pantalla, §4.7) y las primeras pantallas del dinero (v1: sus gráficas, atajos y widgets; las gráficas de la IA van
@@ -283,9 +283,38 @@ con Deshacer.
   resto, sí.
 
 Queda, fuera de F10: las acciones de pantalla (abrir, desplazarse, resaltar, filtrar la vista abierta) y
-leer `data-boni-action` van con Boni sobre la pantalla (§4.7, tras la 86). Lo que cada acción declara de sí (cómo se
-deshace, cómo se confirma, su icono) va hoy en tablas (`UNDO_ROUTES`, el efecto y `alwaysConfirm`, `FIND_ACTIONS`);
-pasarlo a la definición de la acción, cuando se use en «Añadir paso» y en los pasos de un turno.
+leer `data-boni-action` van con Boni sobre la pantalla (§4.7, tras la 86).
+
+**Lo que queda dentro (la 95, primera parte: 2026-11-12, A-26).** Juan no ve nada nuevo; cambia cómo se llega a
+cada acción:
+
+- **Hecho: el MCP pasa por la política.** Cada herramienta del MCP dice las acciones registradas que es (`actions`)
+  o por qué no es ninguna (`notAction`: `recent_changes` lee el registro, `undo` es el Deshacer, las de extensiones
+  son su catálogo y su prueba en seco, `flows_describe` el catálogo de pasos). Antes de correr, `decide` juzga cada
+  una con el origen nuevo «un asistente por el MCP» (P24, en el dispositivo personal de Juan: lo que puede un modelo
+  en su turno, pero sin tarjeta, así que lo que pide confirmación se rechaza; un flujo solo se propone). Un rechazo es
+  el error de la herramienta y queda en la auditoría con su regla. Las 16 herramientas de acciones (`pages_*`,
+  `calendars_*`…) corren después la acción misma (`def.run`) con sus argumentos etiquetados como de un modelo, que
+  `decide` también juzga.
+- **Hecho: las rutas pasan por la política.** Cada ruta de `ROUTE_ACTIONS` pasa por `decide` antes de correr, por
+  cada una de sus acciones, con el origen «Juan con su mano» (P25: todo lo suyo, salvo una pieza de flujo o un acto
+  de su pantalla). Una acción que no está en la lista es P0 y la ruta responde 403. Cuesta 0,08 ms por petición que
+  cambia algo (leer la sesión y decidir; nada del almacén, así que no crece con sus datos), y 9 µs por llamada del
+  MCP.
+- **Hecho: Deshacer e icono en cada acción.** Cada acción dice cómo se deshace (`undo`: la ejecución, la papelera, la
+  versión anterior de un flujo, la Bandeja o la primera pantalla del dinero; o `{ none }` con su porqué) y su icono
+  (un nombre de lucide-react). `UNDO_ROUTES` ya no es una tabla escrita: se calcula de las acciones (suma
+  `memory.save` y `function.apply` al Deshacer de la ejecución e `inbox.correct` a la Bandeja, que ya se deshacían
+  así). Cómo se confirma ya estaba en la definición (`alwaysConfirm`, P5; el efecto `touch`, P21; la tarjeta la pinta
+  `confirmView` con los papeles de sus argumentos): queda dicho allí. Los iconos de «Buscar» son los de cada
+  definición, y la prueba lo comprueba.
+- **Parcial:** las rutas y las herramientas del MCP escritas a mano (`create`, `edit`, `trash`…) siguen corriendo el
+  código de su área (el mismo que su acción) después de que la política decida su acción, no `def.run`: su respuesta
+  es otra que la de la acción. Que la ruta llame a la acción misma es la segunda parte. Los niveles para la IA
+  (solo «visible» se escribe) siguen en el MCP, en una función (`openToModels`), porque la política juzga etiquetas y
+  los niveles son del almacén.
+- **Falta (segunda parte):** la tarjeta de `calendars.remove` dice el id del calendario y no su nombre; la tarjeta de
+  la Bandeja no dice la fecha; los iconos en «Añadir paso» y en los pasos de un turno (hoy solo en «Buscar»).
 
 ### 4.2 Todo lo que Boni hace solo es un flujo
 

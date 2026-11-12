@@ -209,6 +209,7 @@ const rowOf = (v: Val | undefined): string => {
 export function withFileActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "files.read",
+    icon: "Paperclip",
     effect: "read",
     area: "data",
     service: "files",

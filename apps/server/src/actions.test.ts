@@ -1,16 +1,20 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ToolRegistry, UNDO_WAYS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
 import {
   ACTION_MCP,
+  ACTIONS,
   flowOnly,
   JUAN_ONLY,
   NOT_ACTIONS,
   ROUTE_ACTIONS,
+  routeDecision,
   serverRegistry,
   UNDO_ROUTES,
+  undoWays,
 } from "./actions.ts";
-import { mcpToolNames } from "./mcp.ts";
+import { mcpDecision, mcpToolNames, mcpTools } from "./mcp.ts";
 import { ROUTES } from "./routes.ts";
 
 /**
@@ -113,5 +117,100 @@ describe("one list of actions (D-41, F10)", () => {
       "inbox.correct",
       "inbox.reject",
     ]);
+  });
+});
+
+/**
+ * A-26 (docs/principios.md, docs/sistema.md §4.1): every route that changes something and every MCP tool reach their
+ * registered action through the policy engine's `decide`; how each action is undone and its icon are in its own
+ * definition, never in a table kept apart.
+ */
+describe("the actions inside: routes and tools through the policy, Undo and icon in each action (A-26)", () => {
+  /** The list without any action: what reaches an action through the policy is refused (P0, unregistered). */
+  const none = new ToolRegistry().freeze();
+  const juan = { trust: "personal" as const, device: "laptop-ejemplo" };
+
+  it("every route that runs an action is decided by the policy first: with the list, none is refused; without, all", () => {
+    const routes = Object.entries(ROUTE_ACTIONS);
+    expect(routes.filter(([route]) => routeDecision(route, juan) !== null)).toEqual([]);
+    const refused = routes
+      .filter(([, names]) => names.length)
+      .filter(([route]) => routeDecision(route, juan, none)?.rule !== "P0");
+    expect(refused).toEqual([]);
+  });
+
+  it("every MCP tool is its registered actions or says why it is none; the list agrees with it, and the policy allows each", () => {
+    const tools = mcpTools();
+    expect(tools.map((t) => t.name)).toEqual(mcpToolNames());
+    for (const t of tools) {
+      // One or the other, never both or neither.
+      expect(!!t.actions?.length !== !!t.notAction, t.name).toBe(true);
+      expect((t.notAction ?? "why it is none").length, t.name).toBeGreaterThan(10);
+      for (const a of t.actions ?? []) expect(ACTIONS.get(a), `${t.name}: ${a}`).not.toBeNull();
+    }
+    // An action the list gives a tool is one of that tool's actions.
+    for (const [action, tool] of Object.entries(ACTION_MCP))
+      if (typeof tool === "string")
+        expect(tools.find((t) => t.name === tool)?.actions, `${action} → ${tool}`).toContain(
+          action,
+        );
+    // Today every tool is allowed (P24), with the whole list; without it, every tool with actions is refused.
+    expect(tools.filter((t) => mcpDecision(t, "laptop-ejemplo") !== null)).toEqual([]);
+    const refused = tools
+      .filter((t) => t.actions?.length)
+      .filter((t) => mcpDecision(t, "laptop-ejemplo", {}, () => null)?.rule !== "P0");
+    expect(refused).toEqual([]);
+    // Only proposing a flow is a proposal (P19); nothing else may run on one.
+    expect(tools.filter((t) => t.proposes).map((t) => t.name)).toEqual(["flows_propose"]);
+  });
+
+  it("every action that changes something says how it is undone, and every Undo route is computed from them", () => {
+    const silent: string[] = [];
+    for (const t of ACTIONS.all()) {
+      // (Juan's screen's acts change only what his app shows: nothing of his to take back.)
+      if (t.effect === "read" || t.effect === "screen" || flowOnly(t)) continue;
+      if (t.undo === undefined) silent.push(t.name);
+      else if (!Array.isArray(t.undo) && (t.undo as { none: string }).none.length < 10)
+        silent.push(`${t.name}: no why`);
+    }
+    expect(silent).toEqual([]);
+    for (const t of ACTIONS.all())
+      for (const w of undoWays(t)) expect(UNDO_WAYS, t.name).toContain(w);
+    // Each way an action names has its route, and an action's route lists it.
+    const routed = new Set(Object.values(UNDO_ROUTES).flat());
+    const unrouted = ACTIONS.all()
+      .filter((t) => undoWays(t).length && !routed.has(t.name))
+      .map((t) => t.name);
+    expect(unrouted).toEqual([]);
+    expect(UNDO_ROUTES["POST /api/agent/runs/:id/undo"]).toContain("entities.update");
+    expect(UNDO_ROUTES["POST /api/data/rows/:id/restore"]).toContain("entities.delete");
+    expect(UNDO_ROUTES["POST /api/pages/:id/restore"]).toEqual(["pages.delete"]);
+  });
+
+  it("every action has its icon, one lucide-react has, and «Buscar» shows the one its definition says", () => {
+    const dts = readFileSync(
+      join(WEB, "..", "node_modules", "lucide-react", "dist", "lucide-react.d.ts"),
+      "utf8",
+    );
+    const exported = new Set(
+      [...dts.matchAll(/^export \{([^}]*)\}/gm)].flatMap((m) =>
+        (m[1] as string).split(",").map(
+          (x) =>
+            x
+              .trim()
+              .split(/\s+as\s+/)
+              .pop() as string,
+        ),
+      ),
+    );
+    expect(exported.has("Trash")).toBe(true);
+    const wrong = ACTIONS.all()
+      .filter((t) => !t.icon || !exported.has(t.icon))
+      .map((t) => `${t.name}: ${t.icon ?? "none"}`);
+    expect(wrong).toEqual([]);
+    const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
+    const shown = [...find.matchAll(/\{ name: "([a-z_.]+)", icon: ([A-Za-z0-9]+)/g)];
+    expect(shown.length).toBeGreaterThan(3);
+    for (const [, name, icon] of shown) expect(ACTIONS.get(name as string)?.icon, name).toBe(icon);
   });
 });

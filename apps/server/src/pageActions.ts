@@ -321,6 +321,8 @@ const page = {
 export function withPageActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "pages.create",
+    icon: "Plus",
+    undo: ["run"],
     effect: "write",
     area: "pages",
     service: "pages",
@@ -350,6 +352,8 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "pages.add_block",
+    icon: "SquarePlus",
+    undo: ["run"],
     effect: "write",
     area: "pages",
     service: "pages",
@@ -372,6 +376,8 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "pages.set_view",
+    icon: "Table",
+    undo: ["run"],
     effect: "write",
     area: "pages",
     service: "pages",
@@ -392,6 +398,8 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "pages.set_value",
+    icon: "SlidersHorizontal",
+    undo: ["run"],
     effect: "write",
     area: "pages",
     service: "pages",
@@ -413,6 +421,8 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "pages.update",
+    icon: "PenLine",
+    undo: ["run"],
     effect: "write",
     area: "pages",
     service: "pages",
@@ -443,6 +453,8 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "pages.delete",
+    icon: "Trash",
+    undo: ["trash"],
     effect: "write",
     area: "pages",
     service: "pages",

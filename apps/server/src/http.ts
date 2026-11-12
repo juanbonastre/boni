@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
+import type { ToolRegistry } from "@boni/agent";
 import {
   formatReminderDefaults,
   parseReminderDefaults,
@@ -11,6 +12,7 @@ import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
 import { dataRowTarget, flowRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
+import { ROUTE_ACTIONS, routeDecision } from "./actions.ts";
 import { type AgentHost, serveAgent, tryFlow } from "./agent.ts";
 import {
   auditAction,
@@ -164,6 +166,8 @@ export interface ServerOptions {
   listener?: Listener;
   /** The allow-list (tests only; ROUTES when missing). */
   routes?: Readonly<Record<string, "public" | "tailnet">>;
+  /** The list of actions the routes reach through the policy (tests only; actions.ts `ACTIONS` when missing). */
+  actions?: ToolRegistry;
   /** The server's time zone for the Boni API v1 (BONI_TZ): "today", a capture's time. */
   tz?: string;
   /** The clock (tests only). */
@@ -393,6 +397,13 @@ export function makeApp(opts: ServerOptions): App {
     const { route, params } = routeOf(req.method, url.pathname, routes);
     // Before anything else, login included: on the public entry only the allow-list exists.
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
+    // A route that changes something reaches its actions through the policy engine first, as Juan's own hand on this
+    // device (P25, docs/sistema.md §4.1); with no session, the route itself answers 401.
+    if (Object.hasOwn(ROUTE_ACTIONS, route)) {
+      const s = sessionUser(db, tokenOf(req));
+      const d = s ? routeDecision(route, s, opts.actions) : null;
+      if (d) return send(res, 403, { error: "policy", rule: d.rule });
+    }
     if (route === "GET /healthz" || url.pathname.startsWith("/api/v1/"))
       return serveV1(
         { svc: v1, db, guard, tz, hasMoney, proxies: opts.trustedProxies },
@@ -467,6 +478,7 @@ export function makeApp(opts: ServerOptions): App {
             tz: (opts.agent as AgentHost).tz,
           }),
         (opts.agent as AgentHost).tz,
+        opts.actions,
       );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });

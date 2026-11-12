@@ -109,6 +109,16 @@ export const ARG_ROLES = [
   "target",
 ] as const;
 export type ArgRole = (typeof ARG_ROLES)[number];
+/**
+ * How an action is undone (docs/sistema.md §4.1), declared by the action itself: `run`, Undo of the run that did it
+ * (its operations in the store's log, and what `runUndo.ts` keeps beside them); `trash`, what it removed comes back
+ * from the trash (the record, page or column its arguments name); `version`, its previous version comes back (a flow
+ * saved again); `bandeja`, the proposal it decided goes back to the Bandeja; `screen`, the screen that wrote it takes
+ * it back there (Boni's first money screen, v1). The server says which of its routes is each way (`actions.ts`).
+ */
+export const UNDO_WAYS = ["run", "trash", "version", "bandeja", "screen"] as const;
+export type UndoWay = (typeof UNDO_WAYS)[number];
+
 /** Roles whose value says where something goes: only a value taken as it is from Juan or his data (P2, P14). */
 export const DESTINATION_ROLES: readonly ArgRole[] = ["destination", "url", "path", "recipient"];
 
@@ -242,8 +252,22 @@ export interface ToolDef<E extends Effect = Effect> {
   /** One line, for the planner's index. */
   describe: string;
   args: Readonly<Record<string, ArgSpec>>;
-  /** P5: Juan confirms every call (deleting at the agent's request). */
+  /**
+   * How it is confirmed (docs/sistema.md §4.1): P5, Juan confirms every call (deleting at the agent's request); the
+   * policy decides the rest by its effect (Juan's touch is always his card, P21), and the card is painted by the code
+   * from the real arguments by their roles (`confirmView`).
+   */
   alwaysConfirm?: boolean;
+  /**
+   * How it is undone (`UndoWay`), or why there is nothing to undo (`none`). Every action that changes something says
+   * it; one that only reads needs not.
+   */
+  undo?: readonly UndoWay[] | { none: string };
+  /**
+   * Its icon in the app (a lucide-react icon's name, «Plus»): what «Buscar», «Añadir paso» and a turn's steps show by
+   * its name (docs/sistema.md §4.1).
+   */
+  icon?: string;
   /** How the confirmation names the action ("Borrar", "Enviar correo"). */
   title: string;
   /** A piece that changes something (the inbox): «Probar» says what it would do instead of running it. */
@@ -603,6 +627,7 @@ export function coreTools(): ToolRegistry {
   const r = new ToolRegistry();
   r.register({
     name: "entities.query",
+    icon: "ListFilter",
     effect: "read",
     area: "data",
     title: "Consultar",
@@ -628,6 +653,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.get",
+    icon: "FileText",
     effect: "read",
     area: "data",
     title: "Leer",
@@ -641,6 +667,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.origin",
+    icon: "Route",
     effect: "read",
     area: "data",
     title: "De dónde viene",
@@ -692,6 +719,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "inbox.pending",
+    icon: "Inbox",
     effect: "read",
     area: "inbox",
     title: "En la Bandeja",
@@ -738,6 +766,8 @@ export function coreTools(): ToolRegistry {
   };
   r.register({
     name: "inbox.accept",
+    icon: "Check",
+    undo: ["bandeja"],
     effect: "touch",
     area: "inbox",
     title: "Aceptar",
@@ -752,6 +782,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "inbox.reject",
+    icon: "X",
+    undo: ["bandeja"],
     effect: "touch",
     area: "inbox",
     title: "Rechazar",
@@ -767,6 +799,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.aggregate",
+    icon: "Sigma",
     effect: "read",
     area: "data",
     title: "Calcular",
@@ -812,6 +845,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.search",
+    icon: "Search",
     effect: "read",
     area: "data",
     title: "Buscar",
@@ -861,6 +895,7 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "schema.describe",
+    icon: "Database",
     effect: "read",
     area: "data",
     title: "Ver tipos",
@@ -906,6 +941,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.create",
+    icon: "FilePlus",
+    undo: ["run", "screen"],
     effect: "write",
     area: "data",
     title: "Crear",
@@ -920,6 +957,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.update",
+    icon: "Pencil",
+    undo: ["run"],
     effect: "write",
     area: "data",
     title: "Cambiar",
@@ -934,6 +973,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "entities.delete",
+    icon: "Trash",
+    undo: ["trash"],
     effect: "write",
     area: "data",
     alwaysConfirm: true,
@@ -947,6 +988,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "schema.create_type",
+    icon: "FolderPlus",
+    undo: ["run"],
     effect: "schema",
     area: "data",
     title: "Crear tipo",
@@ -966,6 +1009,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "schema.add_field",
+    icon: "Columns3",
+    undo: ["run"],
     effect: "schema",
     area: "data",
     title: "Añadir campo",
@@ -996,6 +1041,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "memory.save",
+    icon: "Brain",
+    undo: ["run"],
     effect: "memory",
     area: "data",
     title: "Recordar",
@@ -1007,6 +1054,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "flows.run",
+    icon: "Play",
+    undo: { none: "what the flow did, its own run's Undo takes back" },
     effect: "flow",
     area: "flows",
     title: "Ejecutar flujo",
@@ -1025,6 +1074,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "flows.save",
+    icon: "Workflow",
+    undo: ["version"],
     effect: "flow_save",
     area: "flows",
     title: "Proponer flujo",
@@ -1050,6 +1101,8 @@ export function coreTools(): ToolRegistry {
   });
   r.register({
     name: "notify",
+    icon: "Bell",
+    undo: { none: "a notice on his devices is not taken back" },
     effect: "notify",
     area: "boni",
     title: "Avisar",

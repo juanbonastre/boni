@@ -105,6 +105,8 @@ const type = { role: "type" as const, required: true, describe: "the collection'
 export function withDataActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "schema.rename_type",
+    icon: "Type",
+    undo: ["run"],
     effect: "schema",
     area: "data",
     service: "data",
@@ -122,6 +124,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.move_type",
+    icon: "FolderInput",
+    undo: ["run"],
     effect: "schema",
     area: "data",
     service: "data",
@@ -143,6 +147,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.delete_type",
+    icon: "FolderX",
+    undo: ["trash", "run"],
     effect: "write",
     area: "data",
     service: "data",
@@ -161,6 +167,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.update_field",
+    icon: "Settings2",
+    undo: ["run"],
     effect: "schema",
     area: "data",
     service: "data",
@@ -200,6 +208,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.remove_field",
+    icon: "Eraser",
+    undo: ["trash", "run"],
     effect: "write",
     area: "data",
     service: "data",
@@ -219,6 +229,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "entities.move",
+    icon: "ArrowRightLeft",
+    undo: ["run"],
     effect: "write",
     area: "data",
     service: "data",
@@ -244,6 +256,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.set_view",
+    icon: "Eye",
+    undo: ["run"],
     effect: "write",
     area: "data",
     service: "data",
@@ -285,6 +299,8 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
   });
   r.register({
     name: "schema.set_tree",
+    icon: "ListTree",
+    undo: ["run"],
     effect: "write",
     area: "data",
     service: "data",

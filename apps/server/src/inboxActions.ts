@@ -30,6 +30,8 @@ const serviceOf = (s: unknown): InboxService => {
 export function withInboxActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "inbox.correct",
+    icon: "PencilLine",
+    undo: ["bandeja"],
     effect: "touch",
     area: "inbox",
     service: "inbox",

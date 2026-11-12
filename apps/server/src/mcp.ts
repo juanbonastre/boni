@@ -1,5 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { leaf, plain, proposeFlow, readStore, ToolError, type Val } from "@boni/agent";
+import {
+  type Decision,
+  decide,
+  leaf,
+  plain,
+  proposeFlow,
+  readStore,
+  type ToolDef,
+  ToolError,
+  type ToolRegistry,
+  type Val,
+} from "@boni/agent";
 import {
   type FieldDef,
   type FieldType,
@@ -33,7 +44,7 @@ import {
   isFilterGroup,
   matchesFilters,
 } from "@boni/views";
-import { serverRegistry } from "./actions.ts";
+import { ACTIONS } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
 import { calendarDefs } from "./calendarStore.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
@@ -92,6 +103,8 @@ interface Ctx {
   inbox?: () => InboxContext;
   /** The zone the account's days are in (the server's). */
   tz: string;
+  /** The list of actions the policy decides this call's against (tests only; actions.ts `ACTIONS` when missing). */
+  actions?: ToolRegistry;
 }
 /** Tries a saved flow dry with its form's values (`said`: whose they are); the route's status and answer. */
 export type FlowTry = (
@@ -339,6 +352,17 @@ interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /**
+   * The registered actions this tool is (docs/sistema.md §4.1, A-26): the policy decides each one for an assistant
+   * (P24) before the tool runs, and a refusal is the tool's error. A tool that is none says why in `notAction`.
+   */
+  actions?: readonly string[];
+  /** Why this tool is no action of the list (it reads the log, it is the Undo of actions, an extension's dry run). */
+  notAction?: string;
+  /** What the policy proposes is what this tool does (flows_propose: the flow waits for Juan in the Bandeja). */
+  proposes?: boolean;
+  /** The call's arguments as its one action's, labelled as a model's: the policy judges them, not only the action. */
+  argsOf?(c: Ctx, a: Args): Record<string, Val>;
   call(c: Ctx, a: Args): unknown | Promise<unknown>;
 }
 /** The scope each tool needs (docs/extensiones.md §11, E3): reading, writing, or proposing extensions. */
@@ -357,8 +381,6 @@ const READS = new Set([
   "flows_runs",
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
-/** The list of actions (docs/sistema.md §4.1, D-41): what a flow may use, and the actions an assistant runs here. */
-const REGISTRY = serverRegistry().freeze();
 const scopeOf = (name: string): Scope =>
   READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
 const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));
@@ -504,8 +526,70 @@ const ACTION_TOOLS: readonly {
     required: ["calendar"],
   },
 ];
+/** How a model's words are labelled here: a model's, from this device's MCP (never authority for Boni's agent). */
+const saidBy = (c: Ctx): Label =>
+  label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
+
+/**
+ * What the policy says of a tool for an assistant (P24): the first of its actions it does not allow, or null. An
+ * assistant here is on Juan's own device (its token is his, `cli.ts token`): what a model in his turn may do, but no
+ * card to confirm, so a confirmation is a refusal; a proposal runs only where proposing is the tool's job.
+ */
+export function mcpDecision(
+  tool: Pick<Tool, "actions" | "proposes">,
+  device: string,
+  args: Record<string, Val> = {},
+  get: (name: string) => ToolDef | null = (n) => ACTIONS.get(n),
+): Exclude<Decision, { kind: "allow" }> | null {
+  for (const name of tool.actions ?? []) {
+    const d = decide(
+      { tool: get(name), args, control: null },
+      { kind: "assistant", trust: "personal", device },
+      { writes: 0, sensitiveReads: 0 },
+    );
+    if (d.kind === "allow" || (d.kind === "propose" && tool.proposes)) continue;
+    return d;
+  }
+  return null;
+}
+
+/**
+ * Whether what an action's arguments name is wholly open to the models (its level «visible»), as every write of this
+ * server: a collection, a calendar (its collection's, F10), a note. The policy judges labels; the levels are the
+ * store's, so this stays here, keyed on the action's own argument roles.
+ */
+function openToModels(c: Ctx, def: ToolDef, a: Args): void {
+  const v = view(c);
+  for (const [k, x] of Object.entries(def.args)) {
+    const given = a[k];
+    if (typeof given !== "string") continue;
+    if (x.role === "type") {
+      const t = Object.values(c.store.schema().types).find(
+        (d) => d.key === given || d.id === given,
+      );
+      if (t && v.level(t.id) !== "visible")
+        throw new ToolFail(`${t.name} is not writable for a model`);
+    }
+    if (k === "calendar") {
+      const p = calendarDefs(c.store).find(
+        (d) => d.def.id === given || d.path?.some((n) => n.id === given),
+      );
+      if (p && v.level(p.type) !== "visible")
+        throw new ToolFail("that calendar is not writable for a model");
+    }
+    if (x.role === "entity") {
+      const e = v.ro.get(given);
+      if (
+        e &&
+        (v.level(e.entity.type) !== "visible" || Object.values(e.labels).some((l) => l.noModel))
+      )
+        throw new ToolFail("that note is not writable for a model");
+    }
+  }
+}
+
 function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
-  const def = REGISTRY.get(t.action);
+  const def = ACTIONS.get(t.action);
   if (!def) throw new Error(`no action ${t.action}`);
   const props = Object.fromEntries(
     Object.entries(def.args).map(([k, a]) => [
@@ -517,44 +601,23 @@ function actionTool(t: (typeof ACTION_TOOLS)[number]): Tool {
           : { type: "string" },
     ]),
   );
+  const argsOf = (c: Ctx, a: Args): Record<string, Val> => {
+    const said = saidBy(c);
+    const args: Record<string, Val> = {};
+    for (const k of Object.keys(def.args))
+      if (a[k] !== undefined) args[k] = leaf(a[k] as never, said);
+    return args;
+  };
   return {
     name: t.name,
     description: t.description,
     inputSchema: obj(props, t.required),
+    actions: [t.action],
+    argsOf,
     async call(c, a) {
-      // As every write of this server: only what is wholly open to the models (its level «visible»).
-      const v = view(c);
-      for (const [k, x] of Object.entries(def.args)) {
-        const given = a[k];
-        if (typeof given !== "string") continue;
-        if (x.role === "type") {
-          const t = Object.values(c.store.schema().types).find(
-            (d) => d.key === given || d.id === given,
-          );
-          if (t && v.level(t.id) !== "visible")
-            throw new ToolFail(`${t.name} is not writable for a model`);
-        }
-        // A calendar is its collection's: writable only where the collection is wholly open (F10).
-        if (k === "calendar") {
-          const p = calendarDefs(c.store).find(
-            (d) => d.def.id === given || d.path?.some((n) => n.id === given),
-          );
-          if (p && v.level(p.type) !== "visible")
-            throw new ToolFail("that calendar is not writable for a model");
-        }
-        if (x.role === "entity") {
-          const e = v.ro.get(given);
-          if (
-            e &&
-            (v.level(e.entity.type) !== "visible" || Object.values(e.labels).some((l) => l.noModel))
-          )
-            throw new ToolFail("that note is not writable for a model");
-        }
-      }
-      const said = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
-      const args: Record<string, Val> = {};
-      for (const k of Object.keys(def.args))
-        if (a[k] !== undefined) args[k] = leaf(a[k] as never, said);
+      openToModels(c, def, a);
+      const said = saidBy(c);
+      const args = argsOf(c, a);
       const meta = { actor: "agent" as const, run: c.run, device: c.device, by: `mcp:${c.device}` };
       try {
         const out = await def.run(
@@ -625,6 +688,7 @@ const roleOf = (c: Ctx, type: string, field: string) =>
 const TOOLS: Tool[] = [
   {
     name: "guide",
+    actions: ["schema.describe"],
     description:
       "Start here: Juan's instructions for assistants, his collections with what goes in each and how many notes they have (computed now), and what each tool does.",
     inputSchema: obj({}),
@@ -664,6 +728,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "collections",
+    actions: ["schema.describe"],
     description:
       "Juan's collections a model may see: name, the collection it is inside (its mother: a mother's queries include it), what goes in it, how many notes, its level, what it can do (Calendario, Tareas, Dinero) and its properties, each with the role it plays.",
     inputSchema: obj({}),
@@ -693,6 +758,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "search",
+    actions: ["entities.search"],
     description:
       "Full-text search over the notes (titles, properties, text); optionally in one collection.",
     inputSchema: obj(
@@ -722,6 +788,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "query",
+    actions: ["entities.query", "entities.aggregate"],
     description:
       "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties as notes show them: options and related notes by their names ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates; all must hold, and {or: [rules]} or {and: [rules]} is a group of rules, one of which or all of which must hold), newest first.",
     inputSchema: obj(
@@ -797,6 +864,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "read",
+    actions: ["entities.get"],
     description: "One note with its properties and text: by id, or by collection and exact title.",
     inputSchema: obj(REF),
     call(c, a) {
@@ -806,6 +874,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "origin",
+    actions: ["entities.origin"],
     description:
       "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni; who: the flow's, the assistant's or the device's name), when, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own), and its run. By id, or by collection and exact title.",
     inputSchema: obj(REF),
@@ -834,6 +903,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "inbox",
+    actions: ["inbox.pending"],
     description:
       "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, its day and its state checked now (state: done, the same task already done; calendar, already in the calendar; past, its day or hour has passed; null), when it was proposed, who proposed it (by: flow or chat; who: the flow's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
     inputSchema: obj({
@@ -889,6 +959,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "create",
+    actions: ["entities.create"],
     description:
       "A new note in a collection: its title, properties by name, its text. It is known by its id (notes have no paths).",
     inputSchema: obj(
@@ -915,6 +986,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "upload_file",
+    actions: ["entities.create"],
     description:
       "Adds a file to Boni (collection Archivos): `path` is its folder and name, a bank statement registros/finanzas/extractos/<name>.csv, where finanzas_import reads it. content_base64: the file's bytes (at most ~6 MB). Never over another file of that folder and name.",
     inputSchema: obj({ path: { type: "string" }, content_base64: { type: "string" } }, [
@@ -959,6 +1031,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "edit",
+    actions: ["entities.update"],
     description:
       "Changes a note's text: replaces old_text (it must appear exactly once) with new_text; or the whole text with `body` and the `version` read last.",
     inputSchema: obj({
@@ -999,6 +1072,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "append",
+    actions: ["entities.update"],
     description: "Adds text at the end of a note (a log entry, a capture).",
     inputSchema: obj({ ...REF, text: { type: "string" } }, ["text"]),
     call(c, a) {
@@ -1017,6 +1091,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "set_properties",
+    actions: ["entities.update"],
     description: "Sets properties of a note by their names (null clears one).",
     inputSchema: obj({ ...REF, properties: { type: "object" } }, ["properties"]),
     call(c, a) {
@@ -1032,6 +1107,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "recent_changes",
+    notAction: "it reads the operation log, what actions did, not one of them",
     description: "The latest changes in Juan's Boni (what, when, by whom), newest first.",
     inputSchema: obj({ limit: { type: "number", description: "At most 100 (default 30)" } }),
     call(c, a) {
@@ -1065,6 +1141,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "trash",
+    actions: ["entities.delete"],
     description:
       "Sends notes to Boni's trash (they can be restored): one by its reference, or several by `ids`, all in one run that `undo` takes back together. Ask Juan first, saying exactly what goes.",
     inputSchema: obj({
@@ -1096,6 +1173,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "set_description",
+    actions: ["schema.rename_type"],
     description:
       "Says in a few words what goes in a collection (it replaces a folder's README: Juan reads it on the collection's page and `guide` gives it to every assistant). Empty text takes it away. When Juan asks, or when he agrees to your wording.",
     inputSchema: obj({ collection: { type: "string" }, description: { type: "string" } }, [
@@ -1123,6 +1201,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "create_collection",
+    actions: ["schema.create_type", "schema.add_field"],
     description: `A new collection, only when Juan asks for one: its name, what goes in it (description) and its properties ({name, type, options}; types: ${NEW_FIELD_TYPES.join(", ")}). Every note of it also has a title (title_property, «Título» unless said) and a text of its own. Inside another collection (inside): it has that one's properties too, and that one's queries include it. One run: \`undo\` takes it back while it is empty.`,
     inputSchema: obj(
       {
@@ -1207,6 +1286,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "finanzas_import",
+    actions: ["entities.create"],
     description:
       "Monthly reconciliation, step 2 (its procedure is a note: search «conciliación»): reads the bank statements (Revolut, ING) kept in Archivos in the folder registros/finanzas/extractos (added with upload_file), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies the collection Reglas. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
     inputSchema: obj({ dry_run: { type: "boolean", default: true }, reason: { type: "string" } }),
@@ -1229,6 +1309,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "finanzas_close",
+    actions: ["entities.update"],
     description:
       "Monthly reconciliation, step 5: checks a month's pending movements (category, bank line, shared expenses and their debts, refunds), marks the complete ones conciliado and says what each of the rest needs, which bank texts have no rule and who owes what. Dry run unless dry_run is false.",
     inputSchema: obj(
@@ -1256,6 +1337,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "extensions_describe",
+    notAction: "the catalogue of extensions: what there is to switch on, read from the code",
     description:
       "What Boni's extensions may be made of and what is installed: the catalogue (connectors, reading modules, plans, model roles), the limits of functions and of the box they run in, each installed extension (its version, whether it is on, its functions with their hashes and what they read and write) and the versions waiting for Juan.",
     inputSchema: obj({}),
@@ -1285,6 +1367,8 @@ const TOOLS: Tool[] = [
   },
   {
     name: "extensions_propose",
+    notAction:
+      "a proposal of an extension for Juan to see in Ajustes; switching one on is his (P16, extensions.enable)",
     description:
       "Proposes an extension or a new version of one: its manifest with its functions (code and its sha256, what each reads field by field, what it may write) and their tests. It is checked, its tests run in Boni's box and each function is tried on Juan's data without saving anything (`data`: what each function would get from its flow, by name). Only if every test passes does it wait in Boni for Juan; nothing is activated here.",
     inputSchema: obj(
@@ -1311,6 +1395,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "extensions_test",
+    notAction: "an extension's tests in the sandbox, dry: nothing of Juan's is written",
     description: "Runs a manifest's tests in Boni's box, proposing nothing.",
     inputSchema: obj({ manifest: { type: "object" } }, ["manifest"]),
     async call(_c, a) {
@@ -1325,6 +1410,8 @@ const TOOLS: Tool[] = [
   },
   {
     name: "extensions_run",
+    notAction:
+      "an extension's function, dry, and its change set decided by the policy as a step's (decideApply)",
     description:
       "Runs a function of an active extension on Juan's data: by default a dry run (what it would make, change or ask, nothing saved). With `apply`, it is applied only if Boni's policy allows it now, as one run Juan can undo; otherwise it says it waits for Juan. What `data` brings counts as from outside.",
     inputSchema: obj(
@@ -1372,11 +1459,12 @@ const TOOLS: Tool[] = [
   },
   {
     name: "flows_describe",
+    notAction: "the catalogue of steps and triggers a flow may use, read from the code",
     description:
       "What Boni's flows may be made of and Juan's flows: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the active extensions' functions a «Función» step may run, the collections a flow may read and write (by key, with their fields), the triggers, and each flow with its trigger and plan. A flow is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
     inputSchema: obj({}),
     call(c) {
-      const catalog = flowCatalog(REGISTRY, c.store, ["tasks", "events"]);
+      const catalog = flowCatalog(ACTIONS, c.store, ["tasks", "events"]);
       return {
         language: {
           steps:
@@ -1414,6 +1502,8 @@ const TOOLS: Tool[] = [
   },
   {
     name: "flows_propose",
+    actions: ["flows.save"],
+    proposes: true,
     description:
       "Proposes a flow for Juan, or a change of one of his (`flow`: its id): a name, a trigger (by hand with a form, or on a schedule) and a plan in Boni's plan language. It is checked as Boni's editor checks a flow and waits in Boni's inbox, drawn; nothing runs until Juan accepts it, which turns it on.",
     inputSchema: obj(
@@ -1431,7 +1521,7 @@ const TOOLS: Tool[] = [
       // What the editor's checklist would say too (a collection closed to the models, one that does not exist).
       const check = checkFlow(
         c.store,
-        REGISTRY,
+        ACTIONS,
         { trigger: a.trigger, plan: a.plan },
         {
           modules: ["tasks", "events"],
@@ -1442,7 +1532,7 @@ const TOOLS: Tool[] = [
       // An assistant's words: its own (`model`), never Juan's; P16 keeps anything from outside out.
       const r = proposeFlow(
         c.store,
-        REGISTRY,
+        ACTIONS,
         { flow, name, trigger: a.trigger, plan: a.plan },
         {
           run: c.run,
@@ -1457,6 +1547,7 @@ const TOOLS: Tool[] = [
   ...ACTION_TOOLS.map(actionTool),
   {
     name: "flows_test",
+    actions: ["flows.test"],
     description:
       "Tries one of Juan's flows as «Probar» does in Boni (flow: its id, from flows_describe; inputs: its form's values by name): it runs dry, changes nothing, and says what each step would decide and call (no texts). A flow started by mail is tried in Boni.",
     inputSchema: obj(
@@ -1482,6 +1573,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "flows_runs",
+    actions: ["flows.runs"],
     description: `The runs of one of Juan's flows (flow: its id, from flows_describe; without it, every flow's), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did (codes, no texts).`,
     inputSchema: obj({ flow: { type: "string" }, limit: { type: "number" } }, []),
     call(c, a) {
@@ -1496,6 +1588,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "undo",
+    notAction: "the Undo of what actions did (their run), not one of them",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
     inputSchema: obj({ run: { type: "string" } }, ["run"]),
     call(c, a) {
@@ -1512,6 +1605,14 @@ const TOOLS: Tool[] = [
 
 /** The MCP's tools by name (the list of actions says which action each one is, actions.ts). */
 export const mcpToolNames = (): string[] => TOOLS.map((t) => t.name);
+/** Each tool with the actions it is, or why it is none (actions.test.ts compares them with the list, A-26). */
+export const mcpTools = (): Pick<Tool, "name" | "actions" | "notAction" | "proposes">[] =>
+  TOOLS.map(({ name, actions, notAction, proposes }) => ({
+    name,
+    ...(actions ? { actions } : {}),
+    ...(notAction ? { notAction } : {}),
+    ...(proposes ? { proposes } : {}),
+  }));
 
 // ------------------------------------------------------------------ JSON-RPC
 
@@ -1574,6 +1675,24 @@ async function answer(c: Ctx, m: Rpc): Promise<unknown | null> {
           result,
           seen: c.seen,
         });
+      // The policy first, for each action the tool is (P24): a refusal is in the audit with its rule.
+      const list = c.actions ?? ACTIONS;
+      const refused = mcpDecision(tool, c.device, tool.argsOf?.(c, args) ?? {}, (n) => list.get(n));
+      if (refused) {
+        const why = `the policy refuses this for an assistant (${refused.rule}: ${refused.kind === "deny" ? refused.reason : refused.kind})`;
+        c.store.audit.record({
+          at: c.now(),
+          by: `mcp:${c.device}`,
+          run: c.run,
+          tool: `mcp.${tool.name}`,
+          target: auditArgs(args),
+          decision: "deny",
+          rule: refused.rule,
+          result: { error: why },
+          seen: [],
+        });
+        return reply({ content: [{ type: "text", text: why }], isError: true });
+      }
       try {
         const out = await tool.call(c, args);
         record(null);
@@ -1603,8 +1722,10 @@ export async function mcpAnswer(
   tryFlow?: FlowTry,
   inbox?: () => InboxContext,
   tz = "Europe/Madrid",
+  actions?: ToolRegistry,
 ): Promise<unknown | null> {
   const c: Ctx = {
+    ...(actions ? { actions } : {}),
     ...(inbox ? { inbox } : {}),
     tz,
     store,
