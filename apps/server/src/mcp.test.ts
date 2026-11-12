@@ -344,6 +344,18 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect((await tool("read", { id: ids[0] })).error).toBe(false);
   });
 
+  it("writes new_text exactly as given: a dollar sign means nothing to edit (task 96)", async () => {
+    const id = idOf("proyectos/boni-plan.md");
+    const before = (await tool("read", { id })).json.body as string;
+    // Each pair String.prototype.replace gives a meaning to, with a string as the replacement.
+    const pairs = ["$`", "$&", "$'", "$$", "$1", "$<x>"];
+    const text = `Precio: ${pairs.join(" ")} fin.`;
+    expect((await tool("edit", { id, old_text: "Empezado.", new_text: text })).error).toBe(false);
+    expect((await tool("read", { id })).json.body).toBe(before.replace("Empezado.", () => text));
+    expect((await tool("edit", { id, old_text: text, new_text: "Empezado." })).error).toBe(false);
+    expect((await tool("read", { id })).json.body).toBe(before);
+  });
+
   it("writes as a model, each call one run that can be undone", async () => {
     const appended = await tool("append", {
       id: idOf("proyectos/boni-plan.md"),

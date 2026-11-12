@@ -2,10 +2,12 @@
  * The map stays true and the rules stay checkable (docs/principios.md, T-01 to T-03, T-06): every app, package and
  * source file says what it is for (`scripts/map.mjs` reads it), the instructions for agents stay short, the principles
  * name files that exist, every agent of `.claude/agents/` names its model and effort, and every e2e suite runs on a
- * change to the code it starts (T-07). What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
+ * change to the code it starts (T-07), and a replacement given to replace/replaceAll is a literal or a function (A-25). What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
  */
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { headerOf, ROOT, trackedFiles, workspaces } from "./map.mjs";
@@ -115,4 +117,43 @@ test("every e2e suite runs on a change to the code it starts", () => {
       filter.test(path),
       `${starts.join(", ")} start Boni's server, but a change to ${path} skips e2e-calendar (T-07)`,
     );
+});
+
+test("a replacement that is not a literal is a function (A-25)", () => {
+  // The lint rule lint/replace-with-text.grit, run by `pnpm lint` over the repo: here, that it is on and catches.
+  assert.ok(
+    JSON.parse(readFileSync(join(ROOT, "biome.json"), "utf8")).plugins?.includes(
+      "./lint/replace-with-text.grit",
+    ),
+    "biome.json loads lint/replace-with-text.grit",
+  );
+  const dir = mkdtempSync(join(tmpdir(), "a25-"));
+  try {
+    const config = readFileSync(join(ROOT, "biome.json"), "utf8").replace("./lint/", () =>
+      join(ROOT, "lint/"),
+    );
+    writeFileSync(join(dir, "biome.json"), config);
+    writeFileSync(
+      join(dir, "probe.ts"),
+      [
+        'export const text = (y: string) => "a".replace("a", y);',
+        'export const template = (y: string) => "a".replaceAll(/a/g, `<${y}>`);',
+        'export const literal = "a".replace("a", "$1");',
+        'export const fn = (y: string) => "a".replace("a", () => y);',
+        'export const chained = (y: string, s?: string) => s?.replace("a", y);',
+        "",
+      ].join("\n"),
+    );
+    const run = spawnSync(
+      join(ROOT, "node_modules/.bin/biome"),
+      ["lint", `--config-path=${dir}`, "--vcs-enabled=false", "probe.ts"],
+      { cwd: dir, encoding: "utf8" },
+    );
+    const lines = [...`${run.stdout}${run.stderr}`.matchAll(/probe\.ts:(\d+):\d+ plugin/g)].map(
+      (m) => Number(m[1]),
+    );
+    assert.deepEqual(lines, [1, 2, 5], `${run.stdout}${run.stderr}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

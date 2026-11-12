@@ -4808,7 +4808,8 @@ export function translator(lang: Lang): T {
     // A count of exactly 1 takes the key's ".one" form when there is one ("1 elemento", not "1 elementos").
     const one = vars && Number(vars.n) === 1 ? `${key}.one` : null;
     let s = (one ? (dict[one] ?? es[one as Key]) : undefined) ?? dict[key] ?? es[key as Key] ?? key;
-    if (vars) for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, String(v));
+    if (vars)
+      for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, () => String(v));
     return s;
   };
 }

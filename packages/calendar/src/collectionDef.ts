@@ -436,5 +436,5 @@ export function liftTemplateLinks(
 export function withAreaLine(body: string, templateBody: string): string {
   const area = /^Area: \[\[[^\]]*\]\][ \t]*$/m;
   const target = area.exec(templateBody);
-  return target && area.test(body) ? body.replace(area, target[0]) : body;
+  return target && area.test(body) ? body.replace(area, () => target[0]) : body;
 }

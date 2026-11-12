@@ -202,6 +202,10 @@ describe("names of new notes", () => {
     ).toBe("Area: [[planes]]\n\n## Notas\nTexto\n");
     expect(withAreaLine("Sin línea de área\n", "Area: [[planes]]\n")).toBe("Sin línea de área\n");
     expect(withAreaLine("Area: [[docencia]]\n", "Sin área\n")).toBe("Area: [[docencia]]\n");
+    // The template's line lands as written: a dollar sign in it is text (A-25).
+    expect(withAreaLine("Area: [[docencia]]\n", "Area: [[a $& b $` c]]\n")).toBe(
+      "Area: [[a $& b $` c]]\n",
+    );
   });
 });
 

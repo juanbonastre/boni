@@ -102,7 +102,8 @@ List each thing once (the same request twice in the e-mail is one item). If the 
 
 /** The system prompt for these modules (its hash goes to the log with each call). */
 export function readMessagePrompt(mods: readonly ReadingModule[]): string {
-  return BASE.replace("{modules}", mods.map((m) => `- ${m.prompt}`).join("\n"));
+  const list = mods.map((m) => `- ${m.prompt}`).join("\n");
+  return BASE.replace("{modules}", () => list);
 }
 
 /** The answer's schema for these modules: the kinds are the modules' and "notice". */
