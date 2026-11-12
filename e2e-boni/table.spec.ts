@@ -348,6 +348,76 @@ test("a view's settings as Notion's (tasks 41 and 69): its name, a short list sa
   await expect(list.filter({ hasText: "Columnas de sistema" })).toHaveCount(0);
 });
 
+test("«Filtro avanzado» (task 75): rules joined by «y» or «o», one chip «2 reglas» beside the plain ones, kept with the view; «Quitar filtro» takes it whole", async ({
+  page,
+}) => {
+  await libros(page);
+  const head = page.locator(".db-head");
+  const titles = page.locator(".db-table tbody td.is-title");
+  const bar = page.locator(".db-bar");
+  // «+ Filtro», under the properties: «Filtro avanzado», its editor open at once with «Donde Título contiene…».
+  await head.getByRole("button", { name: "Filtro" }).click();
+  const add = page.getByRole("dialog", { name: "Añadir filtro" });
+  await expect(add.getByRole("menuitemradio").last()).toHaveText("Filtro avanzado");
+  await add.getByRole("menuitemradio", { name: "Filtro avanzado" }).click();
+  const group = page.locator(".db-filter-group");
+  const rows = group.locator(".db-filter-row");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first().locator(".db-filter-lead")).toHaveText("Donde");
+  await expect(rows.first().getByRole("combobox", { name: "Propiedad" })).toHaveValue("f_titulo");
+  await expect(rows.first().getByRole("combobox", { name: "Condición" })).toHaveValue("contains");
+  // Until a rule has its value it hides nothing.
+  await expect(titles).toHaveCount(3);
+  await rows.first().getByRole("textbox", { name: "Valor" }).fill("ray");
+  await rows.first().getByRole("textbox", { name: "Valor" }).press("Enter");
+  await expect(titles).toHaveText([/^Rayuela/]);
+  // «+ Añadir regla»: «y» first, both must hold (none does); «o», one must.
+  await group.getByRole("button", { name: "Añadir regla" }).click();
+  await expect(rows).toHaveCount(2);
+  await rows.nth(1).getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Estado" });
+  await rows.nth(1).getByRole("combobox", { name: "Valor" }).selectOption({ label: "Leído" });
+  await expect(titles).toHaveCount(0);
+  await rows.nth(1).getByRole("combobox", { name: "Unión" }).selectOption({ label: "o" });
+  await expect(titles).toHaveCount(2);
+  await expect(titles.filter({ hasText: "Rayuela" })).toHaveCount(1);
+  await expect(titles.filter({ hasText: "Ficciones" })).toHaveCount(1);
+  // A third rule says the same word, chosen on the second.
+  await group.getByRole("button", { name: "Añadir regla" }).click();
+  await expect(rows.nth(2).locator(".db-filter-lead")).toHaveText("o");
+  await page.screenshot({ path: `${SHOTS}/advanced-filter.png` });
+  await rows.nth(2).getByRole("button", { name: "Quitar regla" }).click();
+  await page.keyboard.press("Escape");
+  // One chip in the bar, its rules in words on hover; kept with the view in the account.
+  const chip = bar.locator(".db-bar-filters .db-chip.on");
+  await expect(chip).toHaveText("2 reglas");
+  await expect(chip).toHaveAttribute("title", "Título contiene ray o Estado es Leído");
+  await expect
+    .poll(() => sent(page, "PUT api/data/types/t_libro/row-ui ", '"join":"or"'))
+    .toBe(true);
+  // Beside a plain rule, all hold: read, and «ray» or read.
+  await bar.getByRole("button", { name: "Añadir filtro" }).click();
+  await page
+    .getByRole("dialog", { name: "Añadir filtro" })
+    .getByRole("menuitemradio", { name: "Estado" })
+    .click();
+  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Leído" });
+  await page.keyboard.press("Escape");
+  await expect(chip).toHaveText(["2 reglas", "Estado es Leído"]);
+  await expect(titles).toHaveText([/^Ficciones/]);
+  // The view's settings show it too, as an advanced filter, and add one.
+  await head.getByRole("button", { name: "Ajustes de la vista" }).click();
+  const settings = page.getByRole("dialog", { name: "Ajustes de la vista" });
+  await settings.getByRole("menuitem", { name: "Filtrar 2" }).click();
+  await expect(settings.locator(".db-filter-group .db-filter-row")).toHaveCount(2);
+  await expect(settings.getByRole("button", { name: "Filtro avanzado" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // «Quitar filtro» takes the advanced filter away whole, the plain rule stays.
+  await bar.getByRole("button", { name: "Título contiene ray o Estado es Leído" }).click();
+  await page.locator(".db-filter-group").getByRole("button", { name: "Quitar filtro" }).click();
+  await expect(chip).toHaveText(["Estado es Leído"]);
+  await expect(titles).toHaveText([/^Ficciones/]);
+});
+
 test("a collection's views as Notion's tabs (task 69): «+» by layout, renamed, duplicated, deleted; the bar of order and filters from their icons; kept in the account", async ({
   page,
 }) => {

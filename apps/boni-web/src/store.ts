@@ -3,6 +3,7 @@ import {
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
+  type FilterItem,
   flowRowTarget,
   MAX_VIEWS,
   markdownToBlocks,
@@ -385,7 +386,7 @@ interface State {
    * A collection Boni opened filtered (F9, `screen.filter`): its rules on top of the view's while it is on screen,
    * never saved; × takes it away, «Guardar» keeps it in the view (Juan's own change to the view).
    */
-  boniFilter: { type: string; rules: DatabaseFilter[]; caption: string | null; n: number } | null;
+  boniFilter: { type: string; rules: FilterItem[]; caption: string | null; n: number } | null;
   runs: RunSummary[];
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];

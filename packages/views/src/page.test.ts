@@ -29,6 +29,14 @@ const ok = {
         filter: [
           { field: "f_estado", op: "is", value: "o_leido" },
           { field: "f_fin", op: "not_empty" },
+          // An advanced filter (task 75), beside the plain rules.
+          {
+            join: "or",
+            rules: [
+              { field: "f_titulo", op: "contains", value: "ray" },
+              { field: "f_estado", op: "is", value: "o_leido" },
+            ],
+          },
         ],
       },
     },
@@ -91,6 +99,18 @@ describe("a page (docs/extensiones.md 6)", () => {
         type: "database",
         source: "t",
         view: { layout: "table", filter: [{ field: "f", op: "regex", value: ".*" }] },
+      })[0],
+    ).toMatch(/database/);
+    // A group inside a group: one level only (task 75).
+    expect(
+      with_({
+        id: "x",
+        type: "database",
+        source: "t",
+        view: {
+          layout: "table",
+          filter: [{ join: "or", rules: [{ join: "and", rules: [{ field: "f", op: "empty" }] }] }],
+        },
       })[0],
     ).toMatch(/database/);
     expect(with_({ id: "x", type: "callout", text: "x", icon: "<img>" })[0]).toMatch(/callout/);

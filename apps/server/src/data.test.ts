@@ -386,6 +386,10 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await bad({ ...rule, filter: [{ field: "f_nada", op: "is" }] })).status).toBe(400);
     expect((await bad({ ...rule, filter: [{ field: "f_estado", op: "drop" }] })).status).toBe(400);
     expect((await bad({ ...rule, filter: [] })).status).toBe(400);
+    // A protection rule stays a plain rule: no advanced filter (D-58).
+    expect((await bad({ ...rule, filter: [{ join: "or", rules: [rule.filter[0]] }] })).status).toBe(
+      400,
+    );
     expect((await bad({ ...rule, level: "nada" })).status).toBe(400);
     // Private: locked like a collection.
     expect(

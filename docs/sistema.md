@@ -893,7 +893,8 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
       `part:…`), y una que escribe el modelo se rechaza. Veinte como mucho;
     - `screen.filter`: filtra la colección abierta, o la abre filtrada, con reglas por los nombres de sus campos que
       el servidor convierte en las de la vista por ids (una opción por la suya, una relación por sus registros); un
-      valor que la colección no tiene se rechaza, nunca se adivina. Diez reglas como mucho, un filtro por plan;
+      valor que la colección no tiene se rechaza, nunca se adivina. `"or": [{campo: valor}, …]` da un filtro avanzado
+      (D-58): dos reglas o más, de las que basta una. Diez reglas como mucho, un filtro por plan;
   - **el filtro es temporal** y no se guarda: las acciones de pantalla no tocan datos ni pasan por el almacén (§4.1).
     Encima de la tabla, una barra dice «Filtrado por Boni:» con las reglas en las palabras de la vista; × lo quita, y
     «Guardar en la vista» lo pone en la vista con la acción de Juan (la de su menú, con Deshacer). Se va solo al

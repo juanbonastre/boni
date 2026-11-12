@@ -2,7 +2,10 @@ import {
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
+  type FilterGroup,
+  type FilterItem,
   flowRowTarget,
+  isFilterGroup,
   matchesFilters,
   SYS,
   SYSTEM_COLUMNS,
@@ -29,7 +32,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type DataField,
@@ -295,7 +298,7 @@ export function DatabaseBlock({
       {type && boni && (
         <div className="boni-filter" role="status" key={boni.n}>
           <span className="boni-filter-what">
-            {t("db.boniFilter")} {boni.rules.map((r) => filterText(type, r, t)).join(" · ")}
+            {t("db.boniFilter")} {boni.rules.map((r) => itemText(type, r, t)).join(" · ")}
             {boni.caption ? <span className="muted"> — {boni.caption}</span> : null}
           </span>
           <button
@@ -370,7 +373,7 @@ export function DatabaseBlock({
           onFilter={(f) => {
             // Its rule last, its editor open: the one it has (moved last; the rules all apply), or a new one.
             const rules = view.filter ?? [];
-            const had = rules.find((r) => r.field === f.id);
+            const had = rules.find((r) => !isFilterGroup(r) && r.field === f.id);
             const rule = had ?? { field: f.id, op: opsFor(f)[0] ?? "not_empty" };
             onView({ ...view, filter: [...rules.filter((r) => r !== had), rule] });
             setBar((b) => ({ what: "rule", n: b.n + 1 }));
@@ -417,16 +420,23 @@ export function DatabaseBlock({
   );
 }
 
-/** Notion's filter: the rows that match every rule (a rule on a field that is gone is left out). */
+/**
+ * Notion's filter: the rows that match every rule and every group of rules (a rule on a field that is gone is left
+ * out).
+ */
 export function filterRows(
   rows: DataRow[],
   type: DataType | undefined,
-  rules: DatabaseFilter[] | undefined,
+  rules: FilterItem[] | undefined,
 ): DataRow[] {
-  // A rule still waiting for its value filters nothing, as in Notion (one just added from the bar).
-  const live = (rules ?? []).filter(
-    (r) => NO_VALUE.has(r.op) || (r.value !== undefined && r.value !== ""),
-  );
+  // A rule still waiting for its value filters nothing, as in Notion (one just added from the bar), in a group too.
+  const waiting = (r: DatabaseFilter) =>
+    !NO_VALUE.has(r.op) && (r.value === undefined || r.value === "");
+  const live = (rules ?? []).flatMap((r): FilterItem[] => {
+    if (!isFilterGroup(r)) return waiting(r) ? [] : [r];
+    const kept = r.rules.filter((x) => !waiting(x));
+    return kept.length ? [{ ...r, rules: kept }] : [];
+  });
   if (!type || !live.length) return rows;
   const today = ymd(new Date());
   const typeOf = (id: string) => type.fields.find((x) => x.id === id)?.type;
@@ -465,12 +475,15 @@ export function FilterEditor({
   rules,
   onChange,
   single = false,
+  lead,
 }: {
   type: DataType;
   rules: DatabaseFilter[];
   onChange: (next: DatabaseFilter[]) => void;
   /** One rule, its chip's in the bar (task 69): no «Añadir filtro» here, the bar has its own. */
   single?: boolean;
+  /** A group's rules (task 75): what goes before each rule («Donde», «y», «o»); rules, not filters. */
+  lead?: (i: number) => ReactNode;
 }) {
   const t = useStore((s) => s.t);
   const put = onChange;
@@ -485,6 +498,7 @@ export function FilterEditor({
           put(rules.map((x, j) => (j === i ? { ...x, ...patch } : x)));
         return (
           <div key={`${r.field}-${i}`} className="db-filter-row">
+            {lead?.(i)}
             <select
               className="input"
               aria-label={t("db.filterField")}
@@ -518,8 +532,8 @@ export function FilterEditor({
             <button
               type="button"
               className="icon-btn tiny"
-              aria-label={t("db.filterRemove")}
-              title={t("db.filterRemove")}
+              aria-label={t(lead ? "db.ruleRemove" : "db.filterRemove")}
+              title={t(lead ? "db.ruleRemove" : "db.filterRemove")}
               onClick={() => put(rules.filter((_, j) => j !== i))}
             >
               <Trash2 size={13} strokeWidth={1.8} />
@@ -537,11 +551,128 @@ export function FilterEditor({
           }}
         >
           <Plus size={14} strokeWidth={1.8} />
-          {t("db.filterAdd")}
+          {t(lead ? "db.ruleAdd" : "db.filterAdd")}
         </button>
       )}
     </>
   );
+}
+
+/** A new advanced filter (task 75): one rule on the title, as Notion starts it («Donde Título contiene…»). */
+export function newGroup(type: DataType): FilterGroup | null {
+  const f = type.fields.find((x) => x.id === type.titleField) ?? type.fields[0];
+  return f ? { join: "and", rules: [{ field: f.id, op: opsFor(f)[0] ?? "contains" }] } : null;
+}
+
+/**
+ * Notion's advanced filter (task 75): its rules, «Donde» before the first, «y» or «o» before the next (chosen on
+ * the second, the same for all), «+ Añadir regla» and «Quitar filtro». The last rule removed removes the group.
+ */
+export function GroupEditor({
+  type,
+  group,
+  onChange,
+}: {
+  type: DataType;
+  group: FilterGroup;
+  onChange: (next: FilterGroup | null) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const lead = (i: number) =>
+    i === 0 ? (
+      <span className="db-filter-lead">{t("db.where")}</span>
+    ) : i === 1 ? (
+      <select
+        className="input db-filter-lead"
+        aria-label={t("db.join")}
+        value={group.join}
+        onChange={(e) => onChange({ ...group, join: e.target.value === "or" ? "or" : "and" })}
+      >
+        <option value="and">{t("db.join.and")}</option>
+        <option value="or">{t("db.join.or")}</option>
+      </select>
+    ) : (
+      <span className="db-filter-lead">{t(`db.join.${group.join}`)}</span>
+    );
+  return (
+    <div className="db-filter-group">
+      <FilterEditor
+        type={type}
+        rules={group.rules}
+        lead={lead}
+        onChange={(rules) => onChange(rules.length ? { ...group, rules } : null)}
+      />
+      <button type="button" className="btn ghost small" onClick={() => onChange(null)}>
+        <Trash2 size={14} strokeWidth={1.8} />
+        {t("db.filterRemove")}
+      </button>
+    </div>
+  );
+}
+
+/** A view's whole filter, edited (the settings' «Filtro»): each rule, each advanced filter, and the ways to add one. */
+function FilterItemsEditor({
+  type,
+  items,
+  onChange,
+}: {
+  type: DataType;
+  items: FilterItem[];
+  onChange: (next: FilterItem[]) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const put = (i: number, next: FilterItem[]) =>
+    onChange([...items.slice(0, i), ...next, ...items.slice(i + 1)]);
+  const f = type.fields[0];
+  const group = newGroup(type);
+  return (
+    <>
+      {items.length === 0 && <p className="muted small">{t("db.noFilter")}</p>}
+      {items.map((x, i) =>
+        isFilterGroup(x) ? (
+          <GroupEditor
+            key={`g-${i}`}
+            type={type}
+            group={x}
+            onChange={(g) => put(i, g ? [g] : [])}
+          />
+        ) : (
+          <FilterEditor
+            key={`${x.field}-${i}`}
+            type={type}
+            rules={[x]}
+            single
+            onChange={(one) => put(i, one)}
+          />
+        ),
+      )}
+      <div className="db-filter-adds">
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => f && onChange([...items, { field: f.id, op: opsFor(f)[0] ?? "contains" }])}
+        >
+          <Plus size={14} strokeWidth={1.8} />
+          {t("db.filterAdd")}
+        </button>
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => group && onChange([...items, group])}
+        >
+          <Plus size={14} strokeWidth={1.8} />
+          {t("db.filterAdvanced")}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/** A filter's item in words: a rule's, or a group's rules joined by «y» or «o». */
+export function itemText(type: DataType, x: FilterItem, t: T): string {
+  return isFilterGroup(x)
+    ? x.rules.map((r) => filterText(type, r, t)).join(` ${t(`db.join.${x.join}`)} `)
+    : filterText(type, x, t);
 }
 
 /** A filter rule in words: "Categoría es Salud", "Fecha antes de hoy". */
@@ -838,9 +969,9 @@ function ViewOptions({
         ) : panel === "filter" ? (
           <div className="pop-section db-filters">
             {head}
-            <FilterEditor
+            <FilterItemsEditor
               type={type}
-              rules={rules}
+              items={rules}
               onChange={(next) => onView({ ...view, filter: next.length ? next : undefined })}
             />
           </div>

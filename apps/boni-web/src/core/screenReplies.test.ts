@@ -48,6 +48,25 @@ describe("Boni's filter, as a reply gives it", () => {
     ).toBeNull();
     expect(of({ collection: v("libros", "model"), rules: v([], "own") })).toBeNull();
   });
+  it("reads a group of rules (task 75), and is none when the group is not one", () => {
+    const of = (items: unknown[]) =>
+      filterOf(reply("filter", { collection: v("libros", "model"), rules: v(items, "own") }), [
+        libros,
+      ])?.rules ?? null;
+    const group = {
+      join: "or",
+      rules: [
+        { field: "f_estado", op: "is", value: "o_leido" },
+        { field: "f_titulo", op: "contains", value: "ray" },
+      ],
+    };
+    expect(of([...rules, group])).toEqual([...rules, group]);
+    expect(of([{ ...group, join: "xor" }])).toBeNull();
+    expect(of([{ join: "or", rules: [] }])).toBeNull();
+    expect(of([{ join: "or", rules: [{ field: "f_x", op: "is" }] }])).toBeNull();
+    expect(of([{ join: "or", rules: [group] }])).toBeNull();
+    expect(of([{ join: "or", rules: Array(11).fill(rules[0]) }])).toBeNull();
+  });
 });
 
 describe("what Boni lights", () => {

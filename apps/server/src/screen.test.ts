@@ -1045,7 +1045,17 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
             name: "Leídos",
             layout: "board",
             group: estado?.id,
-            filter: [{ field: estado?.id, op: "is", value: read?.id }],
+            filter: [
+              { field: estado?.id, op: "is", value: read?.id },
+              // An advanced filter (task 75): its join and its rules, by names, as the plain rules.
+              {
+                join: "or",
+                rules: [
+                  { field: estado?.id, op: "is", value: read?.id },
+                  { field: estado?.id, op: "empty" },
+                ],
+              },
+            ],
           },
         ],
       }),
@@ -1071,7 +1081,16 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
         layout: "board",
         name: "Leídos",
         group: "estado",
-        filter: [{ field: "estado", op: "is", value: "Leído" }],
+        filter: [
+          { field: "estado", op: "is", value: "Leído" },
+          {
+            join: "or",
+            rules: [
+              { field: "estado", op: "is", value: "Leído" },
+              { field: "estado", op: "empty" },
+            ],
+          },
+        ],
       },
     });
     // What is closed or gone is left out without a word: nothing pointed at, nothing to answer about.

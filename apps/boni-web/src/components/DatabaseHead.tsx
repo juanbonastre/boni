@@ -3,13 +3,13 @@
  * views as tabs on the left with «+» (a new view by its layout), and under the head the bar of the view's order and
  * filters (the order on the left, the filters on the right, a line between them), each a chip that opens its editor.
  */
-import type { DatabaseFilter, DatabaseView, SavedView } from "@boni/views";
-import { ArrowDown, ArrowUp, Plus } from "lucide-react";
+import { type DatabaseView, type FilterItem, isFilterGroup, type SavedView } from "@boni/views";
+import { ArrowDown, ArrowUp, ListFilter, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import type { DataType } from "../core/agent.ts";
 import { useStore } from "../store.ts";
 import { RenameInput } from "./CollectionTree.tsx";
-import { FilterEditor, filterText, opsFor } from "./DatabaseBlock.tsx";
+import { FilterEditor, GroupEditor, itemText, newGroup, opsFor } from "./DatabaseBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 /** The layouts a view may take, each with its icon and, where a collection names it its own way («Mapa»), its name. */
@@ -253,7 +253,7 @@ export function ViewBar({
     if (!open) onDone();
   };
   const field = type.fields.find((f) => f.id === view.sort?.field);
-  const setRules = (next: DatabaseFilter[]) =>
+  const setRules = (next: FilterItem[]) =>
     onView({ ...view, filter: next.length ? next : undefined });
   const sortEditor = (close: () => void) => (
     <div className="menu-list scroll" role="menu">
@@ -332,31 +332,42 @@ export function ViewBar({
       <div className="db-bar-filters">
         {rules.map((r, i) => {
           const asked = focus.what === "rule" && i === rules.length - 1;
+          const put = (next: FilterItem[]) =>
+            setRules([...rules.slice(0, i), ...next, ...rules.slice(i + 1)]);
+          // An advanced filter is one chip, «2 reglas» (Notion's), its rules in words on hover.
           return (
             <PopButton
-              key={`${r.field}-${i}${fresh === i ? "-new" : ""}${asked ? `-${focus.n}` : ""}`}
+              key={`${isFilterGroup(r) ? "g" : r.field}-${i}${fresh === i ? "-new" : ""}${asked ? `-${focus.n}` : ""}`}
               className="db-chip on"
-              title={filterText(type, r, t)}
+              title={itemText(type, r, t)}
               align="start"
-              width={420}
+              width={isFilterGroup(r) ? 480 : 420}
               initialOpen={fresh === i || asked}
               onOpenChange={(open) => {
                 if (open) return;
                 setFresh(null);
                 if (asked) onDone();
               }}
-              label={<span>{filterText(type, r, t)}</span>}
+              label={
+                <span>
+                  {isFilterGroup(r) ? t("db.rules", { n: r.rules.length }) : itemText(type, r, t)}
+                </span>
+              }
             >
-              {() => (
+              {(close) => (
                 <div className="pop-section db-filters">
-                  <FilterEditor
-                    type={type}
-                    rules={[r]}
-                    single
-                    onChange={(one) =>
-                      setRules([...rules.slice(0, i), ...one, ...rules.slice(i + 1)])
-                    }
-                  />
+                  {isFilterGroup(r) ? (
+                    <GroupEditor
+                      type={type}
+                      group={r}
+                      onChange={(g) => {
+                        put(g ? [g] : []);
+                        if (!g) close();
+                      }}
+                    />
+                  ) : (
+                    <FilterEditor type={type} rules={[r]} single onChange={put} />
+                  )}
                 </div>
               )}
             </PopButton>
@@ -390,6 +401,18 @@ export function ViewBar({
                   }}
                 />
               ))}
+              <MenuSep />
+              <MenuRow
+                label={t("db.filterAdvanced")}
+                icon={<ListFilter size={14} strokeWidth={1.8} />}
+                onClick={() => {
+                  const g = newGroup(type);
+                  if (!g) return;
+                  setRules([...rules, g]);
+                  setFresh(rules.length);
+                  close();
+                }}
+              />
             </div>
           )}
         </PopButton>

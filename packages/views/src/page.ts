@@ -102,8 +102,8 @@ export interface DatabaseView {
   also?: string[];
   /** A calendar's span: a month (the default) or a week. */
   span?: "month" | "week";
-  /** Notion's filter: only the rows that match every rule. */
-  filter?: DatabaseFilter[];
+  /** Notion's filter: only the rows that match every item, a rule or a group of rules (its «Filtro avanzado»). */
+  filter?: FilterItem[];
   /** System columns shown (Juan, 2026-10-24): kept by Boni, never edited by anyone; none by default. */
   system?: SystemColumn[];
   /** A table's calculation under each column (Notion's «Calcular», task 76), by field. */
@@ -235,6 +235,19 @@ export interface DatabaseFilter {
   /** Text, a number, a date ("YYYY-MM-DD") or an option's id, as the operator needs. */
   value?: string | number;
 }
+/**
+ * Notion's advanced filter (task 75), one level deep: rules joined by «y» (all hold) or «o» (one holds), beside the
+ * view's plain rules, which all hold. A view saved before groups is a list of plain rules and reads the same.
+ */
+export interface FilterGroup {
+  join: "and" | "or";
+  rules: DatabaseFilter[];
+}
+export type FilterItem = DatabaseFilter | FilterGroup;
+export const isFilterGroup = (x: FilterItem): x is FilterGroup => "rules" in x;
+/** Every rule of a filter, its groups' included (to know which fields it reads). */
+export const filterRulesOf = (items: readonly FilterItem[]): DatabaseFilter[] =>
+  items.flatMap((x) => (isFilterGroup(x) ? x.rules : [x]));
 export const FILTER_OPS = [
   "is",
   "is_not",
