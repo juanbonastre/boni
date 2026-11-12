@@ -1,7 +1,8 @@
 /**
  * The map stays true and the rules stay checkable (docs/principios.md, T-01 to T-03, T-06): every app, package and
  * source file says what it is for (`scripts/map.mjs` reads it), the instructions for agents stay short, the principles
- * name files that exist, and every agent of `.claude/agents/` names its model and effort. What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
+ * name files that exist, every agent of `.claude/agents/` names its model and effort, and every e2e suite runs on a
+ * change to the code it starts (T-07). What still lacks a description is listed in `map-pending.json`, a list that may only shrink.
  */
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -94,4 +95,24 @@ test("every agent names its model and effort", () => {
       `.claude/agents/${f} declares no effort in its frontmatter (T-06)`,
     );
   }
+});
+
+test("every e2e suite runs on a change to the code it starts", () => {
+  const ci = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
+  // The calendar's filter in the `changes` job: the regex `has` is called with.
+  const re = ci.match(/echo "calendar=\$\(has '([^']+)'\)"/)?.[1];
+  assert.ok(re, "ci.yml's changes job has no calendar filter");
+  const filter = new RegExp(re);
+  const starts = readdirSync(join(ROOT, "e2e")).filter(
+    (f) =>
+      f.endsWith(".spec.ts") &&
+      readFileSync(join(ROOT, "e2e", f), "utf8").includes("apps/server/src/main.ts"),
+  );
+  assert.ok(starts.length > 0, "no calendar spec starts Boni's server: update this test");
+  // A spec that starts the real server runs when the server or a package it loads changes (T-07).
+  for (const path of ["apps/server/src/agent.ts", "packages/store/src/store.ts"])
+    assert.ok(
+      filter.test(path),
+      `${starts.join(", ")} start Boni's server, but a change to ${path} skips e2e-calendar (T-07)`,
+    );
 });

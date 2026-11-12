@@ -44,7 +44,10 @@ jobs:
           printf '%s\n' "$files"
           shared='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*\.json|biome\.json|\.github/)'
           has() { printf '%s\n' "$files" | grep -Eq "$1|$shared" && echo true || echo false; }
-          echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|packages/calendar/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          # Two of the calendar's specs start Boni's real server (e2e/server.spec.ts, e2e/server-boni.spec.ts): the
+          # server and the packages it loads count too (2026-11-12: #387 changed the inbox's accept, skipped this
+          # suite, and left main red; T-07).
+          echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|apps/server/|packages/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
           # The Boni e2e suite fakes the server in the page, and its fixtures import server code (boni-records.ts:
           # systemCollections over the store's audit, the views' engine): a change there runs it too (2026-11-04:
           # audit.activitySince, added for the server alone, broke every Boni e2e test unseen for a day).
