@@ -308,13 +308,43 @@ cada acción:
   así). Cómo se confirma ya estaba en la definición (`alwaysConfirm`, P5; el efecto `touch`, P21; la tarjeta la pinta
   `confirmView` con los papeles de sus argumentos): queda dicho allí. Los iconos de «Buscar» son los de cada
   definición, y la prueba lo comprueba.
-- **Parcial:** las rutas y las herramientas del MCP escritas a mano (`create`, `edit`, `trash`…) siguen corriendo el
-  código de su área (el mismo que su acción) después de que la política decida su acción, no `def.run`: su respuesta
-  es otra que la de la acción. Que la ruta llame a la acción misma es la segunda parte. Los niveles para la IA
-  (solo «visible» se escribe) siguen en el MCP, en una función (`openToModels`), porque la política juzga etiquetas y
-  los niveles son del almacén.
-- **Falta (segunda parte):** la tarjeta de `calendars.remove` dice el id del calendario y no su nombre; la tarjeta de
-  la Bandeja no dice la fecha; los iconos en «Añadir paso» y en los pasos de un turno (hoy solo en «Buscar»).
+- **Los niveles para la IA** (solo «visible» se escribe) siguen en el MCP, en una función (`openToModels`), porque
+  la política juzga etiquetas y los niveles son del almacén.
+
+**La segunda parte (la 95: 2026-11-12).** Juan ve iconos nuevos y dos tarjetas que dicen más; lo demás cambia por
+dentro:
+
+- **Parcial: la ruta llama a la acción misma.** Cinco rutas corren su acción (`def.run`) por un solo camino,
+  `runAction` (`apps/server/src/actions.ts`, `ROUTE_RUNS`): «Añadir calendario», «Separar por», el color y «Quitar»
+  de Boni Calendar (`POST /api/collections/add|split|color|remove`) y las notas en el árbol
+  (`PUT /api/data/types/:type/tree`). La ruta solo lee su cuerpo, pasa los ids a los nombres que lleva la acción
+  (`argNames`) y dice la respuesta de siempre (los mismos códigos y formas; el calendario lee el almacén al momento,
+  `changed()`). `decide` las juzga allí una vez, con los argumentos de verdad etiquetados como de Juan, y no antes de
+  enrutar (P25). Las 16 herramientas del MCP que ya corrían su acción siguen así (P24, con sus argumentos).
+  `actions.test.ts` compara cada ruta y cada herramienta con la acción que corre: o está en `ROUTE_RUNS` (y su código
+  nombra esa acción), o en `ROUTE_MODULES` / `MCP_MODULES` con su porqué; una nueva en ninguna no entra. Falta (cada
+  una dice en su tabla lo que pide): las rutas de varias acciones (las páginas, la Bandeja con sus correcciones, las
+  filas por su clase, el botón, `apply` de Boni Calendar, la v1); las rutas de colecciones y columnas de `data.ts`
+  (por id, con lo que solo tiene la tabla: ancho, formato, colores de las opciones); el correo, las extensiones, los
+  flujos y las pestañas de una colección (su ruta hace más que su acción, o la acción pide una ejecución que la ruta
+  no tiene); y en el MCP las escritas a mano: `create`, `edit`, `append`, `set_properties`, `trash`,
+  `set_description`, `create_collection`, `upload_file`, `finanzas_*` y las de leer (su escritor nombra propiedades
+  por su nombre, crea la opción que falta y enlaza por título; el del núcleo lo rechaza, así que cambiaría lo que
+  hacen). «Avisos del calendario» se queda en su módulo: su ruta también borra los avisos y marca la columna del
+  evento.
+- **Hecho: Deshacer dentro de la acción.** Lo que una acción reescribe al lado del registro (las definiciones de
+  Boni Calendar, las pestañas y el árbol de una colección, los ajustes y la guía del correo) lo dice su definición
+  (`keeps`), y el servidor lo guarda para su ejecución alrededor de `run` (`withKept`, `runUndo.ts`): ninguna acción
+  lo guarda a mano, y la prueba lo comprueba. `UNDO_ROUTES` sigue calculándose de las acciones en el servidor (el
+  núcleo no sabe de rutas, A-02).
+- **Hecho: «Buscar» lee sus iconos de las definiciones** (`GET /api/agent/actions`): no guarda iconos propios.
+- **Hecho: las tarjetas dicen más.** La de `calendars.remove` dice el nombre del calendario junto a su id (la acción
+  sabe nombrarlo, `names`, desde los calendarios que ven los modelos); la de la Bandeja dice el día y la hora de lo
+  que se acepta («jueves, 20 de noviembre, 21:30»), leídos por el código del registro propuesto.
+- **Hecho: iconos en «Añadir paso» y en los pasos de un turno,** los de cada definición.
+
+Medido con 3.000 registros: una ruta de calendario convertida tarda 2,3 ms (0,2 ms la acción), la del árbol 1,3 ms,
+`GET /api/agent/actions` 0,4 ms, y nombrar el calendario en la tarjeta 0,2 ms. Ninguna se pide cada segundo.
 
 ### 4.2 Todo lo que Boni hace solo es un flujo
 

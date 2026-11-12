@@ -657,10 +657,12 @@ const functionTitle = (name: string, summary: string): string | undefined =>
 export function whenOf(
   p: ProposalRow,
   def: { fields: readonly { key: string; id: string; type: string }[] } | undefined,
+  /** Its rows, when the caller read them already. */
+  rows: ReturnType<typeof rowsOf> = rowsOf(p),
 ): { day: string | null; times: string[] } {
   let day: string | null = null;
   const times: string[] = [];
-  for (const r of rowsOf(p)) {
+  for (const r of rows) {
     if (!r.arg.startsWith("values.")) continue;
     const key = r.arg.slice("values.".length);
     const f = def?.fields.find((x) => x.key === key || x.id === key);
@@ -693,7 +695,7 @@ export function inboxCard(
         : p.tool === "entities.delete"
           ? "delete"
           : "other";
-  const { day, times } = whenOf(p, def);
+  const { day, times } = whenOf(p, def, rows);
   const title =
     textOf(
       row("values.title")?.value ??

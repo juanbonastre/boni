@@ -1088,9 +1088,7 @@ async function answerAgent(
     // Each action's icon, from its definition (docs/sistema.md §4.1): what «Buscar» shows beside its name.
     case "GET /api/agent/actions":
       return send(res, 200, {
-        actions: host.tools
-          .all()
-          .flatMap((t) => (t.icon ? [{ name: t.name, icon: t.icon }] : [])),
+        actions: host.tools.all().flatMap((t) => (t.icon ? [{ name: t.name, icon: t.icon }] : [])),
       });
     case "GET /api/agent/planners":
       return send(res, 200, {

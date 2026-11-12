@@ -165,9 +165,11 @@ describe("a conversation with Boni", () => {
     const steps = seen.flatMap((e) => (e.type === "step" ? [e] : []));
     const at = (id: string, state: "start" | "done") =>
       steps.find((s) => s.id === id && s.state === state);
+    // With its definition's icon, which the step shows (task 95).
     expect(at("q", "start")?.words).toEqual({
       tool: "entities.query",
       args: { type: "tarea", field: "titulo", contains: "pan" },
+      icon: "ListFilter",
     });
     expect(at("q", "done")?.n).toBe(1);
     expect(at("g", "start")?.words?.args).toEqual({ id: "Comprar pan" });

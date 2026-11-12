@@ -625,7 +625,7 @@ contraseña ni un código aquí» under a question.
   block moves, is dragged and deleted with what is nested under it. Markdown also "1. ", "> " (toggle), `" ` (quote)
   and "```" (code). **Ctrl+Z / Ctrl+Shift+Z** undo and redo the page's changes (typing in one block for a moment is
   one step). **Ctrl+K** (and "Buscar" at the top of the sidebar) opens Notion's search: a box over the window, pages
-  matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nuevo flujo (Flujos)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
+  matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nuevo flujo (Flujos)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words and its action's icon, read from the definitions, `GET /api/agent/actions`, task 95); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
@@ -765,7 +765,8 @@ contraseña ni un código aquí» under a question.
   (3.5): «Pensando…», then each step in Juan's words, worded by the app from what the server says it works on (Juan,
   2026-10-31: «los pasos serán explicativos»): «Buscando «pan» en Tareas», «Contando en Tareas · Prioridad: Alta»,
   «Leyendo «Rayuela»», and once done what it found in `--muted` («· 2 resultados», «· 9»); a box's value in words
-  («Hecha: no»), never as the code writes it; a tool the app does not word (an extension's) keeps its own title. The one going on has a pulsing
+  («Hecha: no»), never as the code writes it; a tool the app does not word (an extension's) keeps its own title. Each step of an action starts with its action's
+  icon (12 px, `--muted`; its definition's, task 95: the same one «Buscar» and «Añadir paso» show). The one going on has a pulsing
   `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
   into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
@@ -812,7 +813,9 @@ contraseña ni un código aquí» under a question.
   quiet «Corregido» and losing its «Deshacer lo que hizo» and its pencil. When a later change is in the way nothing is
   done: the box stays open with his words and a state word, «No se puede deshacer» (or «Ocupado» while a turn runs). A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
-  each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
+  each argument with its real value in full (scrolling, never cut), a calendar by its name beside its id («Quitar
+  calendario»: «Viajes»; task 95), a proposal of the Bandeja with its day and time after it in `--muted`
+  («· jueves, 20 de noviembre, 21:30», the code's words from the proposed record), where it came from ("Viene de fuera · un correo")
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an
   international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
   confirmation, so nothing is accepted out of habit. **Questions from background work** (Juan, 2026-10-24, the panel of
@@ -1105,7 +1108,8 @@ contraseña ni un código aquí» under a question.
   Responder and Otros, and **«De Boni»** in a flow a mail starts (F7, `docs/sistema.md` §4.2: Boni's pieces, named as
   what they do, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», «Plegar hilo», «Aceptar
   solas» (2026-11-06; Juan did not know what «Lo pendiente», «Invitación» or «Relaciones» meant), the code that works
-  on the mail, which only such a flow has), a group with nothing to offer left out, each node named in a word; never a step
+  on the mail, which only such a flow has), a group with nothing to offer left out, each node named in a word, each action with its icon, its definition's
+  (task 95; a step that is no action, a decision or a reply, has none); never a step
   that runs or saves a flow),
   «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
   where its replies, questions and confirmations show as always; not offered over a draft), then the draft's state in
