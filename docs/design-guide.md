@@ -418,14 +418,22 @@ contraseña ni un código aquí» under a question.
   `components/BoniBlocks.tsx` `LinkBlock`, `components/BlockPanel.tsx` `PassControl`, `components/DatabaseBlock.tsx`
   `PageControls`; `docs/sistema.md` §4.6): a «Control» block (in «Cifras y gráficas» of «/» and «+») is one value of
   the page, its name over a control as wide as its column: «Opción», a list with «Todas» first (a select's options,
-  or the records a relation points to, by title); «Mes», a month picker; «Número» and «Texto», a box kept on Enter or
-  when it is left (Esc puts it back), «Cualquiera» while empty. Its panel names it and picks «Tipo», «Colección» and
+  or the records a relation points to, by title); «Mes», a month picker; «Periodo» (task 102, D-63), two date inputs
+  «Desde» – «Hasta» on one line, the second under the first when the column is narrow (a phone): set once both are
+  days (turned round, put in order), emptied when both are; «Número» and «Texto», a box kept on Enter or when it is
+  left (Esc puts it back), «Cualquiera» while empty. Its panel names it and picks «Tipo», «Colección» and
   «Campo»; its value is changed on the page, never in the panel. A number, bars or a chart name it in «Filtro» (the
   field's options and then the page's controls of that field) and a month control in «Periodo» (empty: «Desde
-  siempre»); a table's rule picks «Valor de»: «Fijo» or a control, and its chip says the control's name in
-  «comillas». A change dims the blocks that read it in place (`aria-busy`) until the server answers; it never empties
-  them. A link's panel has «Con valores»: for each control of the page it opens, a control of this page of the same
-  kind, or «—».
+  siempre») a month or period control; a table's rule picks «Valor de»: «Fijo» or a control that fits its field (a
+  relation, an option control over a relation to the same collection; a date, a month or a period; a list, that
+  field's option control; a number, a number control; the rest, a text control), and its chip says the control's name
+  in «comillas». A rule on a relation is «es» or «no es» a record, picked from its collection's records by title
+  (its chip says that title, «un registro» before they are loaded). A change dims the blocks that read it in place
+  (`aria-busy`) until the server answers; it never empties them. A page's table is the server's rows (task 102): asked
+  again when a value or a rule changes, its rows dimmed in place meanwhile, «Cargando…» only before the first
+  answer. A link's panel has «Con valores»: for each control of the page it opens, a select with «—», this page's
+  controls of the same kind and «Valor»; with «Valor», that control's own input beside it (under it for a period),
+  saved as the link's own value.
 - **A page's chat** (task 87, F11, D-61; `components/PageChatBlock.tsx`, `components/Chat.tsx` `ChatMode`;
   `docs/sistema.md` §4.6 point 6): «Chat de la página» in «/» and «+» puts a «Chat» block on the page, a quiet card as
   wide as its column: a speech-bubble icon and «Chat», its welcome (while empty, one saying it answers with the figures it

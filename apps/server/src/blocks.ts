@@ -9,9 +9,12 @@ import {
   computeBlock,
   DATA_BLOCKS,
   type DataBlock,
+  type DatabaseView,
+  filterErrors,
+  tableRows,
 } from "@boni/views";
 import { recordUserRead, systemColumns } from "./audit.ts";
-import { asShown } from "./data.ts";
+import { asShown, ghostRows, userTypes } from "./data.ts";
 import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
 /**
@@ -133,7 +136,8 @@ export function computeBlocks(
 /**
  * The rows one data block counts (`POST /api/data/blocks/rows`, a click on it: «Lo que cuenta»), narrowed to a
  * point when `drill` names one; as the collection's table shows them (the latest first, at most `ROWS_LIMIT`), with
- * the system columns. A read of those rows, recorded like the block's.
+ * the system columns. A read of those rows, recorded like the block's. A page's table (a «database» block) is
+ * answered the same way, with the rows its rules pick (`tableRowsOf`).
  */
 export function blockRowsOf(
   store: UserStore,
@@ -141,6 +145,8 @@ export function blockRowsOf(
   o: { today: string; device: string; now: number; sys?: Sys },
 ) {
   const b = (body as { block?: unknown; drill?: unknown } | null) ?? {};
+  if ((b.block as { type?: unknown } | null)?.type === "database")
+    return tableRowsOf(store, b.block as Record<string, unknown>, controlsIn(body, "bad-block"), o);
   const block = b.block as DataBlock | undefined;
   const drill = typeof b.drill === "string" && b.drill.length <= 200 ? b.drill : undefined;
   if (
@@ -185,5 +191,45 @@ export function blockRowsOf(
           store,
           rows.map((r) => r.id),
         ),
+  };
+}
+
+/**
+ * A page's table's rows, picked by the server (docs/sistema.md §4.6, point 3; task 102): its view's rules with what
+ * the page's controls hold, over every record of its collection (her daughters' too), never the app's copy; the
+ * latest first, at most `ROWS_LIMIT`, `total` how many match, with the collection's proposals (its ghost rows, as
+ * the collection's table has them) and the system columns. Only the user's collections: Boni's own are listed by
+ * their areas. A read of the rows sent, recorded as a table listed.
+ */
+function tableRowsOf(
+  store: UserStore,
+  block: Record<string, unknown>,
+  controls: readonly ControlBlock[],
+  o: { today: string; device: string; now: number },
+) {
+  const source = typeof block.source === "string" ? block.source : "";
+  const view = block.view as Partial<DatabaseView> | undefined;
+  const filter = view?.filter ?? [];
+  const def = isSystemCollection(source)
+    ? undefined
+    : userTypes(store).find((t) => t.id === source);
+  if (typeof block.id !== "string" || !def || filterErrors(filter, true).length)
+    throw new BlocksError("bad-block");
+  const picked = tableRows(store.entities(source, { deep: true }), def, filter, {
+    today: o.today,
+    controls,
+  });
+  const latest = picked.sort((x, y) => y.updated - x.updated).slice(0, ROWS_LIMIT);
+  const { rows, titles } = asShown(store, def, latest);
+  const ids = rows.map((r) => r.id);
+  recordUserRead(store, o.device, "data.rows", def.id, ids, false, o.now);
+  return {
+    type: def.id,
+    rows,
+    total: picked.length,
+    truncated: picked.length > rows.length,
+    titles,
+    ghosts: ghostRows(store, source),
+    columns: systemColumns(store, ids),
   };
 }

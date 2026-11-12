@@ -1,5 +1,5 @@
 import type { Entity, TypeDef } from "../packages/entities/src/index.ts";
-import { blockRows, computeBlock } from "../packages/views/src/index.ts";
+import { blockRows, computeBlock, tableRows } from "../packages/views/src/index.ts";
 
 /**
  * Movements and their categories shaped like Juan's (apps/server/src/seed.test-util.ts, e2e/server-data.ts): ids as
@@ -169,6 +169,27 @@ export function moneyEngine(
     };
   }
   const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };
+  // A page's table (task 102): its rules with the page's values over every record, as the server's blocks.ts.
+  if (b.block?.type === "database") {
+    const source = String(b.block.source ?? "");
+    const def = types[source];
+    if (!def) return { problems: ["bad-block"] };
+    const view = (b.block.view ?? {}) as { filter?: never };
+    const picked = tableRows(rows(source), def, view.filter, { today, controls });
+    const titles =
+      source === MOV
+        ? Object.fromEntries(CATS.map(([id, name]) => [id, name]))
+        : ({} as Record<string, string>);
+    return {
+      type: source,
+      rows: picked.map(rowOf),
+      total: picked.length,
+      truncated: false,
+      titles,
+      ghosts: [],
+      columns: {},
+    };
+  }
   const out = blockRows(b.block as never, types, rows, {
     today,
     drill: b.drill ?? null,

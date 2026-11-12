@@ -1,4 +1,4 @@
-import { lastDay } from "./dates.ts";
+import { spanOf } from "./dates.ts";
 import type { DatabaseFilter, FilterItem, PageBlock } from "./page.ts";
 
 /**
@@ -9,8 +9,11 @@ import type { DatabaseFilter, FilterItem, PageBlock } from "./page.ts";
  * filters nothing (all rows, Grafana's «All»); a name that is not a control of the page is the block's problem.
  */
 
-/** A value's kinds: an option of a list (a select's, or a record a relation points to), a month, a number, a text. */
-export const CONTROL_KINDS = ["option", "month", "number", "text"] as const;
+/**
+ * A value's kinds: an option of a list (a select's, or a record a relation points to), a month, a period (from one
+ * day to another, both included: civil days, no time zone), a number, a text.
+ */
+export const CONTROL_KINDS = ["option", "month", "period", "number", "text"] as const;
 export type ControlKind = (typeof CONTROL_KINDS)[number];
 
 /** A «Control» block: one value of the page, shown as a control. */
@@ -22,7 +25,10 @@ export interface ControlBlock {
   /** An option's: the collection and the field (a select, or a relation) its choices are the options (or records) of. */
   collection?: string;
   field?: string;
-  /** What it holds now: an option's or a record's id, "YYYY-MM", a number or a text; none, everything. */
+  /**
+   * What it holds now: an option's or a record's id, "YYYY-MM", a period "YYYY-MM-DD/YYYY-MM-DD", a number or a text;
+   * none, everything.
+   */
   value?: string | number;
 }
 
@@ -44,6 +50,8 @@ export function controlValueOk(kind: unknown, v: unknown): boolean {
       return typeof v === "string" && ID.test(v);
     case "month":
       return typeof v === "string" && MONTH.test(v);
+    case "period":
+      return typeof v === "string" && v.includes("/") && spanOf(v) !== null;
     case "number":
       return typeof v === "number" && Number.isFinite(v);
     case "text":
@@ -89,11 +97,8 @@ export function heldValue(c: ControlBlock | undefined): string | number | undefi
   return v;
 }
 
-/** A month as the dates it spans, both included. */
-export function monthRange(m: string): { start: string; end: string } {
-  const [y, mo] = m.split("-").map(Number) as [number, number];
-  return { start: `${m}-01`, end: lastDay(y, mo) };
-}
+/** The kinds of control that hold days: what a block's period and a table's rule on a date may name. */
+export const SPAN_KINDS: readonly ControlKind[] = ["month", "period"];
 
 /**
  * A table's rules with the page's values in them: a rule `from` a control takes what it holds; with nothing, the rule
@@ -183,8 +188,8 @@ export function valueRefErrors(blocks: readonly PageBlock[]): string[] {
       )
         errors.push(`${w}: filterValue names no option control of its field`);
       const p = refOf(b.period);
-      if (p && controls.get(p)?.kind !== "month")
-        errors.push(`${w}: period names no month control`);
+      if (p && !SPAN_KINDS.includes(controls.get(p)?.kind as ControlKind))
+        errors.push(`${w}: period names no month or period control`);
     }
     if (b.type === "database")
       for (const x of b.view.filter ?? [])

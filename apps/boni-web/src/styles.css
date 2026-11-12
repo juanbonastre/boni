@@ -3655,6 +3655,26 @@ th.row-tools .add-col:hover {
   width: 100%;
   min-width: 0;
 }
+/* A period's two days on one line, the second under the first when the column is narrow (a phone). */
+.ctl-period {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.ctl-period > .ctl-input {
+  flex: 1 1 130px;
+  width: auto;
+}
+.ctl-period-to {
+  color: var(--text-2);
+}
+/* A page's table while the server picks its rows again (I-15, task 102): its rows dimmed in place, never emptied. */
+.db[aria-busy="true"] > :not(.db-head) {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
 /* The numbers being asked again after a value changed (I-15): dimmed in place, never emptied. */
 .blk[aria-busy="true"] > :not(.blk-gutter):not(.blk-who) {
   opacity: 0.55;
@@ -6062,6 +6082,13 @@ body:has(.toast) .db-selinfo {
 .args-row > .input {
   flex: 1 1 0;
   min-width: 0;
+}
+/* A link's value of its own for a period: its two days under where it comes from (task 102). */
+.args-row:has(> .ctl-period) {
+  flex-wrap: wrap;
+}
+.args-row > .ctl-period {
+  flex: 1 1 100%;
 }
 .decide-btn .spinner {
   position: absolute;

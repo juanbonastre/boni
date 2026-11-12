@@ -2,7 +2,8 @@ import { type Entity, label, type TypeDef } from "@boni/entities";
 import { describe, expect, it } from "vitest";
 import { blockChartSpec, blockRows, catalogueData, computeBlock } from "./blockData.ts";
 import { catalogueErrors, catalogueForAI, fitAfter, newBlock, optionsOf } from "./catalogue.ts";
-import { matchesFilters } from "./filter.ts";
+import { spanOf } from "./dates.ts";
+import { liveRules, matchesFilters } from "./filter.ts";
 import { type DataBlock, type PageBlock, type PageSpec, pageErrors } from "./page.ts";
 import {
   type ControlBlock,
@@ -13,6 +14,7 @@ import {
   valueRefErrors,
   withPassed,
 } from "./pageValues.ts";
+import { tableRows, tableRules } from "./tableRows.ts";
 
 /**
  * A page's values (docs/sistema.md §4.6, D-59), with collections shaped like a user's (e2e/server-data.ts): movements
@@ -305,5 +307,96 @@ describe("a page's values (D-59)", () => {
     expect(catalogueErrors(link)).toEqual([]);
     expect(catalogueErrors({ ...link, pass: { "no vale": 1 } })[0]?.key).toBe("pass");
     expect(catalogueForAI(data)).toContain("$b_cat=Categoría (option over");
+  });
+});
+
+describe("a period, a table's rule over a relation, and a table's rows (task 102)", () => {
+  const period = (value?: string): ControlBlock => ({
+    id: "b_per",
+    type: "control",
+    name: "Periodo",
+    kind: "period",
+    ...(value ? { value } : {}),
+  });
+  const typeOf = (id: string) => types[MOV]?.fields.find((f) => f.id === id)?.type;
+
+  it("a period is two civil days that exist, the first not after the last; spanOf reads a month too", () => {
+    expect(controlValueOk("period", "2026-10-01/2026-11-15")).toBe(true);
+    expect(controlValueOk("period", "2026-11-15/2026-11-15")).toBe(true);
+    for (const v of ["2026-11-15/2026-10-01", "2026-02-29/2026-03-01", "2026-11", "2026-11-01", 5])
+      expect(controlValueOk("period", v)).toBe(false);
+    expect(controlValueOk("period", "2024-02-29/2024-03-01")).toBe(true);
+    expect(spanOf("2026-02")).toEqual({ start: "2026-02-01", end: "2026-02-28" });
+    expect(spanOf("2026-10-01/2026-11-15")).toEqual({ start: "2026-10-01", end: "2026-11-15" });
+    expect(spanOf("2026-10-01/2026-11-15/2026-12-01")).toBeNull();
+  });
+
+  it("a number's period names a period control: its days, both included; empty, every date", () => {
+    const spec = blockChartSpec({ ...total, period: "$b_per" } as DataBlock, [
+      period("2026-10-02/2026-11-03"),
+    ]);
+    expect(spec.period).toEqual({ kind: "range", start: "2026-10-02", end: "2026-11-03" });
+    expect(blockChartSpec({ ...total, period: "$b_per" } as DataBlock, [period()]).period).toEqual({
+      kind: "all",
+    });
+    const r = computeBlock({ ...total, period: "$b_per" } as DataBlock, types, all, {
+      today,
+      controls: [period("2026-10-02/2026-11-03"), control()],
+    });
+    expect(sum(r)).toBeCloseTo(-44);
+    // A period control is what a block's period may name, never an option or a text one.
+    const blocks = [period(), control(), { ...total, period: "$b_per" }] as PageBlock[];
+    expect(valueRefErrors(blocks)).toEqual([]);
+    expect(valueRefErrors([control(), { ...total, period: "$b_cat" }] as PageBlock[])).toEqual([
+      "blocks[1]: period names no month or period control",
+    ]);
+  });
+
+  it("a relation's rule «is» or «is not» a record (one of many too); a date's «is» a month's or a period's days", () => {
+    const is = (v: unknown, op: "is" | "is_not", value: string) =>
+      matchesFilters(
+        { f_mov_categoria: v },
+        typeOf,
+        [{ field: "f_mov_categoria", op, value }],
+        today,
+      );
+    expect(is(CAFE, "is", CAFE)).toBe(true);
+    expect(is(SUPER, "is", CAFE)).toBe(false);
+    expect(is([SUPER, CAFE], "is", CAFE)).toBe(true);
+    expect(is(null, "is", CAFE)).toBe(false);
+    expect(is(null, "is_not", CAFE)).toBe(true);
+    expect(is([SUPER, CAFE], "is_not", CAFE)).toBe(false);
+    const on = (d: string, op: "is" | "before" | "after", value: string) =>
+      matchesFilters({ f_mov_fecha: d }, typeOf, [{ field: "f_mov_fecha", op, value }], today);
+    expect(on("2026-11-30", "is", "2026-11")).toBe(true);
+    expect(on("2026-12-01", "is", "2026-11")).toBe(false);
+    expect(on("2026-10-01", "is", "2026-10-01/2026-10-31")).toBe(true);
+    expect(on("2026-10-31", "is", "2026-10-01/2026-10-31")).toBe(true);
+    expect(on("2026-09-30", "before", "2026-10-01/2026-10-31")).toBe(true);
+    expect(on("2026-10-01", "before", "2026-10-01/2026-10-31")).toBe(false);
+    expect(on("2026-11-01", "after", "2026-10-01/2026-10-31")).toBe(true);
+    // A plain day is still a day.
+    expect(on("2026-10-05", "is", "2026-10-05")).toBe(true);
+  });
+
+  it("a table's rows: the rules with the page's values, a waiting rule left out", () => {
+    const def = types[MOV] as TypeDef;
+    const filter = [
+      { field: "f_mov_categoria", op: "is" as const, from: "b_cat" },
+      { field: "f_mov_fecha", op: "is" as const, from: "b_per" },
+      // Just added from the bar, with no value yet: it filters nothing.
+      { field: "f_mov_concepto", op: "contains" as const },
+    ];
+    const ids = (controls: ControlBlock[]) =>
+      tableRows(rows, def, filter, { today, controls }).map((e) => e.values.f_mov_concepto);
+    expect(ids([control(), period()])).toHaveLength(4);
+    expect(ids([control({ value: CAFE }), period()])).toEqual(["Movimiento 1", "Movimiento 3"]);
+    expect(ids([control({ value: CAFE }), period("2026-11-01/2026-11-30")])).toEqual([
+      "Movimiento 3",
+    ]);
+    expect(tableRules(filter, [control({ value: SUPER })])).toEqual([
+      { field: "f_mov_categoria", op: "is", value: SUPER },
+    ]);
+    expect(liveRules([{ join: "or", rules: [{ field: "f_mov_concepto", op: "is" }] }])).toEqual([]);
   });
 });

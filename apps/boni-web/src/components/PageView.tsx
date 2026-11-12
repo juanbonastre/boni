@@ -678,6 +678,7 @@ export function Blocks({ page }: { page: Page }) {
           source={b.source}
           view={b.view}
           controls={controls}
+          table={`${page.id}/${b.id}`}
           onView={(view) =>
             setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? { ...b, view } : x)))
           }

@@ -161,8 +161,8 @@ const fold = (s: string) =>
 
 /**
  * A value as a model writes it, as the control keeps it: an option by its id or its name, a record a relation points
- * to by its id or its title (one the models may see), a month as YYYY-MM, a number, a text. One that is none of
- * them is refused, never another in its place.
+ * to by its id or its title (one the models may see), a month as YYYY-MM, a period as YYYY-MM-DD/YYYY-MM-DD, a
+ * number, a text. One that is none of them is refused, never another in its place.
  */
 export function valueFor(ro: ReadStore, c: ControlBlock, raw: unknown): string | number {
   if (c.kind === "number" && typeof raw === "string" && raw.trim() && Number.isFinite(Number(raw)))
@@ -409,7 +409,7 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
     service: "pages",
     title: "Cambiar valor",
     describe:
-      "Change what one of a page's controls holds (its block id or its name), as Juan does on the control: the page's numbers, charts and tables follow it. value: an option's name, a record's title (for a relation), YYYY-MM, a number or a text; null: none (every row)",
+      "Change what one of a page's controls holds (its block id or its name), as Juan does on the control: the page's numbers, charts and tables follow it. value: an option's name, a record's title (for a relation), YYYY-MM, YYYY-MM-DD/YYYY-MM-DD for a period, a number or a text; null: none (every row)",
     args: {
       page,
       control: { role: "option", required: true, describe: "the control's block id or its name" },

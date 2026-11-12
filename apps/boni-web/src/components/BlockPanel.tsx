@@ -39,6 +39,7 @@ import {
   useEditing,
   useStore,
 } from "../store.ts";
+import { ControlInput } from "./ControlView.tsx";
 import { FormView } from "./FormView.tsx";
 import { PageChatSettings } from "./PageChatBlock.tsx";
 
@@ -311,7 +312,7 @@ function SettingControl({
 
 /**
  * What a link carries to the page it opens (D-59): for each control of that page, what a control of this page of
- * the same kind holds, or nothing. A value of its own is the assistant's (`pages.add_block`); it is kept, said as is.
+ * the same kind holds, a value of its own typed here («Valor», with that control's own input: task 102), or nothing.
  */
 function PassControl({
   label,
@@ -328,8 +329,11 @@ function PassControl({
 }) {
   const t = useStore((st) => st.t);
   const [theirs, setTheirs] = useState<ControlBlock[] | null>(null);
+  // The controls whose value of its own is being typed, not yet a value (a period with one day, an empty box).
+  const [typing, setTyping] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     setTheirs(null);
+    setTyping(new Set());
     if (!to) return;
     let live = true;
     agentApi
@@ -349,32 +353,62 @@ function PassControl({
     else next[id] = v;
     set(Object.keys(next).length ? next : undefined);
   };
+  const LIT = "=";
   return (
     <div className="block-panel-values">
       <h3 className="block-panel-head">{label}</h3>
       {theirs.map((c) => {
         const now = value?.[c.id];
-        const own = now !== undefined && refOf(now) === null;
-        const options: Option[] = [
-          ...(own ? [{ value: now, label: String(now) }] : []),
-          ...controls
-            // An option passes only to a control over the same field (its value is one of that field's).
-            .filter(
-              (x) =>
-                x.kind === c.kind &&
-                (c.kind !== "option" || (x.collection === c.collection && x.field === c.field)),
-            )
-            .map((x) => ({ value: refTo(x.id), label: x.name })),
-        ];
+        const own = (now !== undefined && refOf(now) === null) || typing.has(c.id);
+        const fixed = now !== undefined && refOf(now) === null ? now : undefined;
+        // An option passes only to a control over the same field (its value is one of that field's).
+        const fit = controls.filter(
+          (x) =>
+            x.kind === c.kind &&
+            (c.kind !== "option" || (x.collection === c.collection && x.field === c.field)),
+        );
+        const ref = now !== undefined && !own ? String(now) : "";
+        const known = !ref || fit.some((x) => refTo(x.id) === ref);
         return (
-          <Choice
-            key={c.id}
-            label={c.name}
-            value={now}
-            options={options}
-            empty="—"
-            onChange={(v) => put(c.id, v)}
-          />
+          <div key={c.id} className="field">
+            <span className="field-label">{c.name}</span>
+            <div className="args-row">
+              <select
+                className={`input${known ? "" : " invalid"}`}
+                aria-label={c.name}
+                value={own ? LIT : ref}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTyping((s) => {
+                    const n = new Set(s);
+                    if (v === LIT) n.add(c.id);
+                    else n.delete(c.id);
+                    return n;
+                  });
+                  if (v !== LIT) put(c.id, v || undefined);
+                }}
+              >
+                <option value="">—</option>
+                {!known && (
+                  <option value={ref}>{t("block.problem.not-in-data", { label: ref })}</option>
+                )}
+                {fit.map((x) => (
+                  <option key={x.id} value={refTo(x.id)}>
+                    {x.name}
+                  </option>
+                ))}
+                <option value={LIT}>{t("button.args.value")}</option>
+              </select>
+              {own && (
+                <ControlInput
+                  id={`pass-${c.id}`}
+                  label={t("button.args.value")}
+                  block={{ ...c, value: fixed }}
+                  onValue={(v) => put(c.id, v ?? undefined)}
+                />
+              )}
+            </div>
+          </div>
         );
       })}
     </div>

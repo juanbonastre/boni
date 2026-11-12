@@ -1,6 +1,13 @@
 import type { FieldType } from "@boni/entities";
 import { buttonArgsOk, RECORD_ACTIONS, VALUE_ACTIONS } from "./buttons.ts";
-import { type ControlKind, controlValueOk, refOf, refTo, VALUE_MAX } from "./pageValues.ts";
+import {
+  type ControlKind,
+  controlValueOk,
+  refOf,
+  refTo,
+  SPAN_KINDS,
+  VALUE_MAX,
+} from "./pageValues.ts";
 
 /**
  * The block catalogue (docs/nucleo.md 8; Juan, 2026-10-24): ONE list of what a page may hold, each kind of block
@@ -254,7 +261,7 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
     type: "choice",
     options: "periods",
     section: "data",
-    ai: "month|30d|12m|year|all (only all for a collection without a date field), or $<id> of a month control of the page",
+    ai: "month|30d|12m|year|all (only all for a collection without a date field), or $<id> of a month or period control of the page",
   },
   {
     key: "date",
@@ -288,6 +295,7 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
 export const CONTROL_KIND_OPTIONS: readonly Option[] = [
   { value: "option", label: "Opción" },
   { value: "month", label: "Mes" },
+  { value: "period", label: "Periodo" },
   { value: "number", label: "Número" },
   { value: "text", label: "Texto" },
 ];
@@ -338,7 +346,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     name: "Control",
     group: "Cifras y gráficas",
     w: 3,
-    ai: "one value of the page shown as a control (an option of a field, a month, a number, a text); the page's numbers, bar lists and charts use it as filterValue or period, and its tables in a rule's from, by $<its id>",
+    ai: "one value of the page shown as a control (an option of a field, a month, a period from one day to another, a number, a text); the page's numbers, bar lists and charts use it as filterValue or period, and its tables in a rule's from (a relation's rule «is» a record an option control holds; a date's «is» a month's or a period's days), by $<its id>",
     settings: [
       { key: "name", label: "Nombre", type: "text", max: 60, section: "data" },
       {
@@ -371,7 +379,7 @@ export const CATALOGUE: readonly BlockKind[] = [
         type: "current",
         optional: true,
         section: "data",
-        ai: "what it holds now: an option's id (a record's, for a relation), YYYY-MM, a number or a text; left out, every row",
+        ai: "what it holds now: an option's id (a record's, for a relation), YYYY-MM, YYYY-MM-DD/YYYY-MM-DD for a period (both days included), a number or a text; left out, every row",
       },
     ],
     defaults: { name: "Valor", kind: "option" },
@@ -666,7 +674,7 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
       );
     case "periods":
       return hasDate(fs)
-        ? [...PERIODS, ...controlsFor(data, (c) => c.kind === "month")]
+        ? [...PERIODS, ...controlsFor(data, (c) => SPAN_KINDS.includes(c.kind))]
         : PERIODS.filter((p) => p.value === "all");
     case "filterFields":
       // A relation filters only by a control of the page (its records are not in the catalogue's data).
