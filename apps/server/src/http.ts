@@ -594,7 +594,7 @@ export function makeApp(opts: ServerOptions): App {
           );
           if ("refused" in r) return send(res, 403, { error: "policy", rule: r.refused });
           if ("error" in r)
-            return send(res, r.error === "unknown-type" ? 404 : 400, {
+            return send(res, r.error === "unknown-type" || r.error === "not-found" ? 404 : 400, {
               error: r.error === "unknown-type" ? "not-found" : r.error,
             });
           return send(res, 200, {});
@@ -1147,7 +1147,11 @@ export function makeApp(opts: ServerOptions): App {
         const field = b.field;
         const r = await calendarAction(user, "calendars.split", (n) => ({
           calendar: b.id,
-          ...(typeof field === "string" ? { field: n.field(field) } : {}),
+          ...(typeof field === "string"
+            ? {
+                field: n.field(n.calendarType(b.id as string), field),
+              }
+            : {}),
         }));
         return "out" in r ? send(res, 200, {}) : r.status;
       }

@@ -239,6 +239,10 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
       expect(why.length, route).toBeGreaterThan(10);
     }
     for (const route of Object.keys(ROUTE_RUNS)) expect(ROUTE_ACTIONS[route], route).toBeTruthy();
+    // Decided once: the gate before routing leaves them to `runAction`, which decides with the real arguments.
+    expect(http).toMatch(
+      /Object\.hasOwn\(ROUTE_ACTIONS, route\) && !Object\.hasOwn\(ROUTE_RUNS, route\)[\s\S]{0,200}routeDecision\(/,
+    );
     // Every MCP tool with actions: one of those that run their action (`actionTool`), or in MCP_MODULES.
     const own = new Map(mcpActionTools().map((t) => [t.name, t.action]));
     for (const t of mcpTools().filter((x) => x.actions?.length)) {

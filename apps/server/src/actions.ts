@@ -17,6 +17,7 @@ import {
 import { type Label, label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { withCalendarActions } from "./calendarActions.ts";
+import { calendarDefs } from "./calendarStore.ts";
 import { withConnectorActions } from "./connectorActions.ts";
 import { withDataActions } from "./dataActions.ts";
 import { withFileActions } from "./fileActions.ts";
@@ -272,20 +273,21 @@ export const ROUTE_MODULES: Readonly<Record<string, string>> = {
  */
 export function argNames(store: UserStore): {
   type: (id: string) => string;
-  field: (id: string) => string;
+  /** A field of that collection only: one of another, even with the same name, stays an id the action refuses. */
+  field: (type: string | undefined, id: string) => string;
+  /** The collection a calendar shows (any calendar it makes, or its definition). */
+  calendarType: (id: string) => string | undefined;
 } {
-  const types = Object.values(store.schema().types);
   return {
+    calendarType: (id) =>
+      calendarDefs(store).find((p) => p.def.id === id || p.path?.some((x) => x.id === id))?.type,
     type: (id) => {
       const t = store.schema().types[id];
       return t ? typeName(t) : id;
     },
-    field: (id) => {
-      for (const t of types) {
-        const f = t.fields.find((x) => x.id === id);
-        if (f) return fieldName(f);
-      }
-      return id;
+    field: (type, id) => {
+      const f = type ? store.schema().types[type]?.fields.find((x) => x.id === id) : undefined;
+      return f ? fieldName(f) : `\u0000${id}`;
     },
   };
 }

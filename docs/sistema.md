@@ -298,7 +298,8 @@ cada acción:
   `decide` también juzga.
 - **Hecho: las rutas pasan por la política.** Cada ruta de `ROUTE_ACTIONS` pasa por `decide` antes de correr, por
   cada una de sus acciones, con el origen «Juan con su mano» (P25: todo lo suyo, salvo una pieza de flujo o un acto
-  de su pantalla). Una acción que no está en la lista es P0 y la ruta responde 403. Cuesta 0,08 ms por petición que
+  de su pantalla). Una acción que no está en la lista es P0 y la ruta responde 403 (las cinco de `ROUTE_RUNS`, desde
+  la segunda parte, se deciden al correr su acción, abajo). Cuesta 0,08 ms por petición que
   cambia algo (leer la sesión y decidir; nada del almacén, así que no crece con sus datos), y 9 µs por llamada del
   MCP.
 - **Hecho: Deshacer e icono en cada acción.** Cada acción dice cómo se deshace (`undo`: la ejecución, la papelera, la
@@ -317,8 +318,10 @@ dentro:
 - **Parcial: la ruta llama a la acción misma.** Cinco rutas corren su acción (`def.run`) por un solo camino,
   `runAction` (`apps/server/src/actions.ts`, `ROUTE_RUNS`): «Añadir calendario», «Separar por», el color y «Quitar»
   de Boni Calendar (`POST /api/collections/add|split|color|remove`) y las notas en el árbol
-  (`PUT /api/data/types/:type/tree`). La ruta solo lee su cuerpo, pasa los ids a los nombres que lleva la acción
-  (`argNames`) y dice la respuesta de siempre (los mismos códigos y formas; el calendario lee el almacén al momento,
+  (`PUT /api/data/types/:type/tree`). Antes de la política, la ruta contesta como siempre lo que no es una decisión
+  (sin sesión 401, un cuerpo mal formado 400, un servidor que no escribe o una cuenta sin calendario 403). Después solo
+  lee su cuerpo, pasa los ids a los nombres que lleva la acción
+  (`argNames`: un campo, solo de la colección del calendario) y dice la respuesta de siempre (los mismos códigos y formas; el calendario lee el almacén al momento,
   `changed()`). `decide` las juzga allí una vez, con los argumentos de verdad etiquetados como de Juan, y no antes de
   enrutar (P25). Las 16 herramientas del MCP que ya corrían su acción siguen así (P24, con sus argumentos).
   `actions.test.ts` compara cada ruta y cada herramienta con la acción que corre: o está en `ROUTE_RUNS` (y su código
@@ -328,14 +331,18 @@ dentro:
   (por id, con lo que solo tiene la tabla: ancho, formato, colores de las opciones); el correo, las extensiones, los
   flujos y las pestañas de una colección (su ruta hace más que su acción, o la acción pide una ejecución que la ruta
   no tiene); y en el MCP las escritas a mano: `create`, `edit`, `append`, `set_properties`, `trash`,
-  `set_description`, `create_collection`, `upload_file`, `finanzas_*` y las de leer (su escritor nombra propiedades
+  `set_description`, `create_collection`, `upload_file`, `finanzas_*`, `flows_propose`, `flows_test`, `flows_runs` y
+  las de leer (`guide`, `collections`, `search`, `query`, `read`, `origin`, `inbox`: contestan con sus propias formas;
+  su escritor nombra propiedades
   por su nombre, crea la opción que falta y enlaza por título; el del núcleo lo rechaza, así que cambiaría lo que
   hacen). «Avisos del calendario» se queda en su módulo: su ruta también borra los avisos y marca la columna del
   evento.
 - **Hecho: Deshacer dentro de la acción.** Lo que una acción reescribe al lado del registro (las definiciones de
   Boni Calendar, las pestañas y el árbol de una colección, los ajustes y la guía del correo) lo dice su definición
   (`keeps`), y el servidor lo guarda para su ejecución alrededor de `run` (`withKept`, `runUndo.ts`): ninguna acción
-  lo guarda a mano, y la prueba lo comprueba. `UNDO_ROUTES` sigue calculándose de las acciones en el servidor (el
+  guarda un ajuste a mano, y la prueba lo comprueba. Lo que no es un ajuste sigue guardándolo su servicio: una
+  extensión encendida o apagada (`extensions.enable`) y un flujo encendido o borrado (el servicio de flujos), cada uno
+  con su forma de volver atrás. `UNDO_ROUTES` sigue calculándose de las acciones en el servidor (el
   núcleo no sabe de rutas, A-02).
 - **Hecho: «Buscar» lee sus iconos de las definiciones** (`GET /api/agent/actions`): no guarda iconos propios.
 - **Hecho: las tarjetas dicen más.** La de `calendars.remove` dice el nombre del calendario junto a su id (la acción

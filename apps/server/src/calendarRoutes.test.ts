@@ -26,6 +26,7 @@ const SIGN_IN = "una contraseña larga de ejemplo";
 const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
 const VIAJE = newId("t");
 const AGENDA = newId("t");
+const OTRO_TIPO = newId("f");
 const F = { titulo: newId("f"), salida: newId("f"), tipo: newId("f") };
 let dir: string;
 let db: Db;
@@ -117,6 +118,14 @@ beforeAll(() => {
         fields: [
           { id: nombre, key: "nombre", name: "Nombre", type: "text", label: own },
           { id: dia, key: "dia", name: "Día", type: "date", label: own },
+          {
+            id: OTRO_TIPO,
+            key: "tipo",
+            name: "Tipo",
+            type: "select",
+            options: [opt("Clase")],
+            label: own,
+          },
         ],
         titleField: nombre,
         sensitivity: "personal",
@@ -156,6 +165,11 @@ describe("the routes that run their action itself (ROUTE_RUNS, task 95)", () => 
 
     // By the field's id, as the calendar sends it: one calendar per «Tipo».
     expect(await call("POST", "/api/collections/split", { id, field: newId("f") })).toEqual({
+      status: 400,
+      body: { error: "bad-field" },
+    });
+    // A field of another collection, with the same name as the calendar's, is not the calendar's.
+    expect(await call("POST", "/api/collections/split", { id, field: OTRO_TIPO })).toEqual({
       status: 400,
       body: { error: "bad-field" },
     });
