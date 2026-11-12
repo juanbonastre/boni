@@ -288,9 +288,17 @@ test("a view's settings as Notion's (tasks 41 and 69): its name, a short list sa
     /^Propiedades\s*5 visibles/,
     /^Filtrar$/,
     /^Ordenar$/,
+    /^Agrupar$/,
     /^Columnas de sistema$/,
   ]);
   await page.screenshot({ path: `${SHOTS}/view-options.png` });
+  // «Agrupar» (task 76): a table groups by a column, and «Sin agrupar» takes it back.
+  await list.filter({ hasText: "Agrupar" }).click();
+  await box.getByRole("menuitemradio", { name: "Estado", exact: true }).click();
+  await expect(page.locator(".db-table .db-group-head")).toHaveCount(3);
+  await box.getByRole("menuitemradio", { name: "Sin agrupar" }).click();
+  await expect(page.locator(".db-table .db-group-head")).toHaveCount(0);
+  await box.getByRole("button", { name: "Volver: Agrupar" }).click();
   // «Ordenar»: by a column, up and then down; back on the list, it says so.
   await list.filter({ hasText: "Ordenar" }).click();
   const titles = page.locator(".db-table tbody td.is-title");
@@ -510,9 +518,19 @@ test("a column's menu, as Notion's: renamed in place, its kind, a list's values,
   const menu = page.getByRole("dialog", { name: "Columna «Páginas»" });
   await expect(menu.getByRole("textbox", { name: "Nombre" })).toBeFocused();
   await expect(menu.getByRole("menuitemradio")).toHaveText([
-    "Tipo: Número",
+    "Editar propiedad",
+    "Cambiar tipo",
+    "Filtrar",
+    "Ordenar",
+    "Agrupar",
+    "Calcular",
+    "Fijar",
     "Ocultar",
-    "Borrar columna",
+    "Ajustar texto",
+    "Insertar a la izquierda",
+    "Insertar a la derecha",
+    "Duplicar",
+    "Borrar",
   ]);
   await page.keyboard.press("Control+a");
   await page.keyboard.type("Hojas", { delay: 15 });
@@ -524,7 +542,8 @@ test("a column's menu, as Notion's: renamed in place, its kind, a list's values,
   // A list's values: one added, its name and id kept for the rest.
   await header.getByRole("button", { name: "Estado", exact: true }).click({ button: "right" });
   const estado = page.getByRole("dialog", { name: "Columna «Estado»" });
-  await estado.getByRole("menuitemradio", { name: "Valores" }).click();
+  await estado.getByRole("menuitemradio", { name: "Editar propiedad" }).click();
+  await estado.getByRole("menuitem", { name: /^Valores/ }).click();
   await estado.getByRole("textbox", { name: "Añadir un valor" }).fill("Abandonado");
   await page.keyboard.press("Enter");
   await expect(estado.getByRole("textbox", { name: "Valor «Abandonado»" })).toBeVisible();
@@ -538,7 +557,7 @@ test("a column's menu, as Notion's: renamed in place, its kind, a list's values,
   await page.keyboard.press("Escape");
   // Its kind cannot change while it holds values: said, and nothing changes.
   await header.getByRole("button", { name: "Hojas", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Tipo: Número" }).click();
+  await page.getByRole("menuitemradio", { name: "Cambiar tipo" }).click();
   await page.getByRole("menuitemradio", { name: "Texto", exact: true }).click();
   await expect(page.locator(".toast")).toContainText("No se puede: está en uso");
   // «+»: a new column, named, of a kind.
@@ -549,7 +568,7 @@ test("a column's menu, as Notion's: renamed in place, its kind, a list's values,
   await expect(header.getByRole("button", { name: "Editorial", exact: true })).toBeVisible();
   // Out with Undo, its values kept.
   await header.getByRole("button", { name: "Editorial", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: "Borrar columna" }).click();
+  await page.getByRole("menuitemradio", { name: "Borrar", exact: true }).click();
   await expect(header.getByRole("button", { name: "Editorial", exact: true })).toHaveCount(0);
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(header.getByRole("button", { name: "Editorial", exact: true })).toBeVisible();
@@ -557,9 +576,143 @@ test("a column's menu, as Notion's: renamed in place, its kind, a list's values,
   await header.getByRole("button", { name: "Editorial", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Ocultar" }).click();
   await expect(header.getByRole("button", { name: "Editorial", exact: true })).toHaveCount(0);
-  // The title column only changes its name.
+  // The title column changes its name and what the view does with it; it is not grouped by, hidden, duplicated or
+  // deleted, and nothing goes left of it (task 76).
   await header.getByRole("button", { name: "Título", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "Columna «Título»" }).getByRole("menuitemradio"),
-  ).toHaveCount(0);
+  ).toHaveText([
+    "Filtrar",
+    "Ordenar",
+    "Calcular",
+    "Fijar",
+    "Ajustar texto",
+    "Insertar a la derecha",
+  ]);
+});
+
+test("a column's menu does its thing in the view (filter, sort, group, calculate, pin, wrap), saved with it, and in the collection (insert beside, duplicate with Undo) (task 76)", async ({
+  page,
+}) => {
+  await libros(page);
+  const table = page.locator(".db-table");
+  const header = table.locator("thead");
+  const column = async (name: string, entry: string) => {
+    await header.getByRole("button", { name, exact: true }).click();
+    await page
+      .getByRole("dialog", { name: `Columna «${name}»` })
+      .getByRole("menuitemradio", { name: entry, exact: true })
+      .click();
+  };
+  const saved = (part: string) =>
+    expect.poll(() => sent(page, "PUT api/data/types/t_libro/row-ui", part)).toBe(true);
+  const titles = () => table.locator("tbody td.is-title").allInnerTexts();
+  // «Filtrar»: a rule on the column, its editor open for its value.
+  await column("Estado", "Filtrar");
+  await expect(page.locator(".db-bar .db-chip.on")).toHaveCount(1);
+  await expect(page.locator(".pop-box .db-filters")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await saved('"filter":[{"field":"f_estado","op":"is"}]');
+  // Again on the same column: the rule it has, opened, not a second one.
+  await column("Estado", "Filtrar");
+  await expect(page.locator(".pop-box .db-filters")).toBeVisible();
+  await expect(page.locator(".db-bar .db-chip.on")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  // «Ordenar»: by this column, either way.
+  await column("Título", "Ordenar");
+  await page.getByRole("menuitemradio", { name: "Descendente" }).click();
+  await expect.poll(titles).toEqual(["Rayuela", "Pedro Páramo", "Ficciones"]);
+  await saved('"sort":{"field":"f_titulo","desc":true}');
+  // «Agrupar»: the rows under each of the list's values, in its order, with how many.
+  await column("Estado", "Agrupar");
+  await expect(table.locator(".db-group-head")).toHaveText(["Pendiente1", "Leyendo1", "Leído1"]);
+  await saved('"group":"f_estado"');
+  // A group shuts and opens with a click on its head.
+  await table.locator(".db-group-head").first().click();
+  await expect.poll(titles).toEqual(["Rayuela", "Ficciones"]);
+  await table.locator(".db-group-head").first().click();
+  // Shift takes a run of the rows as they are on the screen, group by group, not in the list's order.
+  await expect.poll(titles).toEqual(["Pedro Páramo", "Rayuela", "Ficciones"]);
+  const box2 = (i: number) =>
+    table
+      .locator("tbody tr:has(td.is-title)")
+      .nth(i)
+      .getByRole("checkbox", { name: /^Seleccionar: / });
+  await box2(1).click({ force: true });
+  await box2(2).click({ modifiers: ["Shift"], force: true });
+  await expect(table.locator("tbody tr.selected td.is-title")).toHaveText(["Rayuela", "Ficciones"]);
+  await page.keyboard.press("Escape");
+  await expect(table.locator("tbody tr.selected")).toHaveCount(0);
+  // «Calcular»: the result at the table's foot, over every row the view keeps.
+  await column("Páginas", "Calcular");
+  await page.getByRole("menuitemradio", { name: "Suma", exact: true }).click();
+  await expect(table.locator("tfoot .db-calc.on")).toHaveText("Suma600");
+  await saved('"calc":{"f_paginas":"sum"}');
+  // «Fijar»: the columns up to it stay while the rest scroll sideways.
+  await column("Estado", "Fijar");
+  await expect(header.locator("th.pinned")).toHaveCount(3);
+  await expect(header.locator("th.pin-edge")).toHaveAttribute("data-key", "f_estado");
+  await saved('"pin":"f_estado"');
+  // «Ajustar texto»: its values over several lines.
+  await column("Título", "Ajustar texto");
+  await expect(table.locator("tbody td.is-title.wrap")).toHaveCount(3);
+  await saved('"wrap":["f_titulo"]');
+  // The view keeps all of it, on the server (the same on every device): its last save has every choice.
+  const last = (await recorded(page)).requests
+    .filter((r) => r.startsWith("PUT api/data/types/t_libro/row-ui"))
+    .at(-1);
+  for (const part of [
+    '"group":"f_estado"',
+    '"calc":{"f_paginas":"sum"}',
+    '"pin":"f_estado"',
+    '"wrap":["f_titulo"]',
+    '"sort":{"field":"f_titulo","desc":true}',
+  ])
+    expect(last).toContain(part);
+  // «Insertar a la derecha»: a new column right of it, its menu open to name it.
+  await column("Estado", "Insertar a la derecha");
+  const named = page.getByRole("dialog", { name: "Columna «Propiedad»" });
+  await expect(named.getByRole("textbox", { name: "Nombre" })).toBeFocused();
+  expect(
+    await sent(
+      page,
+      "POST api/data/types/t_libro/fields",
+      '"beside":{"field":"f_estado","side":"right"}',
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("Editorial", { delay: 15 });
+  await page.keyboard.press("Enter");
+  const names = () => header.locator("th[data-key] .th-name").allInnerTexts();
+  await expect
+    .poll(names)
+    .toEqual(["Título", "Estado", "Editorial", "Páginas", "Terminado", "Favorito", "Relacionado"]);
+  // «Insertar a la izquierda»: left of it.
+  await column("Páginas", "Insertar a la izquierda");
+  await expect(named.getByRole("textbox", { name: "Nombre" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(names)
+    .toEqual([
+      "Título",
+      "Estado",
+      "Editorial",
+      "Propiedad",
+      "Páginas",
+      "Terminado",
+      "Favorito",
+      "Relacionado",
+    ]);
+  // «Duplicar»: a copy right of it, with its values; the toast's «Deshacer» takes it out.
+  await column("Páginas", "Duplicar");
+  const copy = header.getByRole("button", { name: "Páginas (copia)", exact: true });
+  await expect(copy).toBeVisible();
+  await expect(table.locator("tbody tr").filter({ hasText: "Rayuela" })).toContainText("600600");
+  await page
+    .locator(".toast")
+    .filter({ hasText: "duplicada" })
+    .getByRole("button", { name: "Deshacer" })
+    .click();
+  await expect(copy).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/column-menu.png` });
 });

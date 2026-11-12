@@ -855,7 +855,32 @@ const used = (store: UserStore, type: string, field: string) =>
     return v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length);
   });
 
-/** A new column of a collection (Notion's «+»): its name, its kind and, for a list, its options. */
+/**
+ * Where a new column goes when it is put beside another (Notion's «Insertar a la izquierda / a la derecha», task 76):
+ * its place among the collection's fields, as the table shows them (the title first, then the fields in order). A
+ * daughter's own fields come after her mother's (`inherit` keeps them there), so one is never put among those.
+ */
+function besideAt(def: TypeDef, raw: unknown): number | undefined {
+  if (raw === undefined) return undefined;
+  const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const near = columnOf(def, typeof b.field === "string" ? b.field : "");
+  if (b.side !== "left" && b.side !== "right") throw new DataError("bad-body");
+  const shown = def.fields.filter((f) => !f.archived && !f.hidden);
+  const order = [
+    ...shown.filter((f) => f.id === def.titleField),
+    ...shown.filter((f) => f.id !== def.titleField),
+  ];
+  const next = b.side === "left" ? near : order[order.indexOf(near) + 1];
+  const at = next ? def.fields.indexOf(next) : def.fields.length;
+  return Math.max(at, def.fields.filter((f) => f.from).length);
+}
+
+/**
+ * A new column of a collection (Notion's «+»): its name, its kind and, for a list, its options; `beside` puts it next
+ * to another (task 76). `copy` duplicates a column (Notion's «Duplicar»): its kind, its values of a list and its
+ * relation, beside it, and every record's value copied into it, all in one transaction; the name is the one given, or
+ * that with a number when it is taken.
+ */
 export function addColumn(
   store: UserStore,
   type: string,
@@ -864,15 +889,21 @@ export function addColumn(
 ): { id: string } {
   const def = columnOwner(store, type);
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  const name = nameOf(b.name);
-  const kind = b.type as FieldType;
+  const from =
+    b.copy === undefined ? undefined : columnOf(def, typeof b.copy === "string" ? b.copy : "");
+  if (from && from.id === def.titleField) throw new DataError("bad-body");
+  let name = nameOf(b.name);
+  if (from && name) for (let n = 2; taken(def, name); n++) name = `${nameOf(b.name)} ${n}`;
+  const kind = (from?.type ?? b.type) as FieldType;
   // A relation (drawn from «Mis datos», docs/flujos.md F6): to another of the user's collections, one or many.
-  const target =
-    kind === "relation" && typeof b.target === "string"
+  const target = from?.relation
+    ? userTypes(store).find((t) => t.id === from.relation?.target)
+    : kind === "relation" && typeof b.target === "string"
       ? userTypes(store).find((t) => t.id === b.target && !t.system)
       : undefined;
   if (!name || !(COLUMN_TYPES.includes(kind) || target)) throw new DataError("bad-body");
   if (taken(def, name)) throw new DataError("taken");
+  const at = from ? besideAt(def, { field: from.id, side: "right" }) : besideAt(def, b.beside);
   const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
   // A field's id is unique in its branch and its mothers (a daughter has her mother's fields).
   const schema = store.schema();
@@ -890,12 +921,35 @@ export function addColumn(
     type: kind,
     label: l,
     ...(kind === "select" || kind === "multiselect"
-      ? { options: b.options === undefined ? [] : optionsFrom(b.options, [], l) }
+      ? {
+          options: from
+            ? (from.options ?? []).map((o) => ({ ...o, label: l }))
+            : b.options === undefined
+              ? []
+              : optionsFrom(b.options, [], l),
+        }
       : {}),
-    ...(target ? { relation: { target: target.id, many: b.many === true } } : {}),
+    ...(target
+      ? { relation: { target: target.id, many: from ? !!from.relation?.many : b.many === true } }
+      : {}),
   };
   try {
-    store.applySchema({ op: "add_field", type, field }, meta(device));
+    store.batch(() => {
+      store.applySchema(
+        { op: "add_field", type, field, ...(at === undefined ? {} : { at }) },
+        meta(device),
+      );
+      // A duplicate holds what the original holds, record by record, each value with where it came from (in the
+      // log, one change per record).
+      if (from)
+        for (const { entity: e, labels } of store.list(type, { deep: true })) {
+          const v = e.values[from.id];
+          if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length))
+            continue;
+          const was = labels[from.id];
+          store.update(e.id, { [id]: { value: v, label: was ? join(was, l) : l } }, meta(device));
+        }
+    });
   } catch {
     throw new DataError("bad-body");
   }

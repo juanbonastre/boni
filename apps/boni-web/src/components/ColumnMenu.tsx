@@ -1,9 +1,28 @@
-// A column's menu in a collection's table, and its «+» (task 40; Notion's property menu): its name, its kind, a list's options, hide and delete; a new column with its name and kind.
-import { Plus, X } from "lucide-react";
+// A column's menu in a collection's table, and its «+» (tasks 40 and 76; Notion's property menu): its name, editing it and its kind, what the view does with it (filter, sort, group, calculate, pin, hide, wrap) and what the collection does (insert beside, duplicate, delete); a new column with its name and kind.
+
+import type { Calc, DatabaseView } from "@boni/views";
+import {
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ArrowUpDown,
+  Copy,
+  EyeOff,
+  ListFilter,
+  Pencil,
+  Pin,
+  Plus,
+  Repeat,
+  Rows3,
+  Sigma,
+  Trash2,
+  WrapText,
+  X,
+} from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { DataField, DataType } from "../core/agent.ts";
-import { addColumn, changeColumn, removeColumn, useStore } from "../store.ts";
-import { MenuRow, MenuSep, PointMenu } from "./Popover.tsx";
+import { calcsFor, groupable } from "../core/tableCalc.ts";
+import { addColumn, addColumnBeside, changeColumn, removeColumn, useStore } from "../store.ts";
+import { BackRow, MenuRow, MenuSep, NextRow, PointMenu } from "./Popover.tsx";
 
 /** The kinds of column made from a table (the server's COLUMN_TYPES), in Notion's order. */
 export const COLUMN_KINDS = [
@@ -36,54 +55,100 @@ function useFocusSoon(ref: RefObject<HTMLInputElement | null>) {
 /** Whether a collection's columns can be changed from its table (not Boni's own, not one a connector fills). */
 export const columnsEditable = (type: DataType) => !type.system && !type.readOnly;
 
+const I = { size: 14, strokeWidth: 1.8 } as const;
+type Panel = "main" | "edit" | "kind" | "options" | "sort" | "calc";
+
+/** A name for a column put beside another that no other column has: «Propiedad», «Propiedad 2»… */
+const freeName = (type: DataType, base: string) => {
+  const has = (n: string) => type.fields.some((f) => f.name.toLowerCase() === n.toLowerCase());
+  let name = base;
+  for (let n = 2; has(name); n++) name = `${base} ${n}`;
+  return name;
+};
+
 /**
- * The menu of one column, where the pointer is (a click on its name, or the right button on it): its name in place,
- * its kind, a list's options, «Ocultar» (this view) and «Borrar columna» (its values kept, with Undo). The title
- * column only changes its name; a mother's column, nothing here (it is hers).
+ * The menu of one column, where the pointer is (a click on its name, or the right button on it), as Notion's (task
+ * 76): its name in place; «Editar propiedad» and «Cambiar tipo»; what this view does with it (Filtrar, Ordenar,
+ * Agrupar, Calcular, Fijar, Ocultar, Ajustar texto: saved with the view); and what the collection does
+ * (Insertar a la izquierda / a la derecha, Duplicar, Borrar: through the store, with Undo). The title column only
+ * changes its name and has no group, hide, insert left, duplicate or delete; a mother's column is hers to change.
  */
 export function ColumnMenu({
   type,
   field,
+  view,
+  onView,
+  onFilter,
+  onInserted,
+  start = "main",
   x,
   y,
-  onHide,
   onClose,
 }: {
   type: DataType;
   field: DataField;
+  view: DatabaseView;
+  onView: (v: DatabaseView) => void;
+  /** «Filtrar»: a rule on this column, its editor open in the view's bar. */
+  onFilter: (field: DataField) => void;
+  /** A column put beside this one: its menu opens, to name it (Notion's). */
+  onInserted: (field: string) => void;
+  /** The panel it opens on: its calculations, from the table's foot. */
+  start?: Panel;
   x: number;
   y: number;
-  onHide: () => void;
   onClose: () => void;
 }) {
   const t = useStore((s) => s.t);
-  const [panel, setPanel] = useState<"main" | "kind" | "options">("main");
+  const [panel, setPanel] = useState<Panel>(start);
   const [name, setName] = useState(field.name);
   const nameRef = useRef<HTMLInputElement>(null);
   useFocusSoon(nameRef);
   const title = field.id === type.titleField;
-  const mine = columnsEditable(type) && !field.inherited;
+  const editable = columnsEditable(type);
+  const mine = editable && !field.inherited;
+  const isList = field.type === "select" || field.type === "multiselect";
   const rename = async () => {
     const n = name.trim();
     if (mine && n && n !== field.name) await changeColumn(type.id, field.id, { name: n });
   };
+  const sortedBy = view.sort?.field === field.id ? view.sort : undefined;
+  const grouped = view.group === field.id;
+  const pinned = view.pin === field.id;
+  const wraps = view.wrap?.includes(field.id) ?? false;
+  const calc = view.calc?.[field.id];
+  const setCalc = (c: Calc | null) => {
+    const { [field.id]: _was, ...rest } = view.calc ?? {};
+    const next = c ? { ...rest, [field.id]: c } : rest;
+    onView({ ...view, calc: Object.keys(next).length ? next : undefined });
+  };
+  const insert = (side: "left" | "right") =>
+    void addColumnBeside(type.id, {
+      name: freeName(type, t("db.col.newName")),
+      kind: "text",
+      beside: { field: field.id, side },
+    }).then((id) => id && onInserted(id));
+  const back = (label: string) => (
+    <BackRow label={label} back={t("db.opt.back")} onClick={() => setPanel("main")} />
+  );
   return (
     <PointMenu
       x={x}
       y={y}
-      width={250}
+      width={260}
       label={t("db.col.menu", { name: field.name })}
       onClose={onClose}
     >
       {(close) =>
         panel === "kind" ? (
           <div className="menu-list scroll" role="menu">
-            <div className="menu-head">{t("db.col.kind")}</div>
+            {back(t("db.col.changeKind"))}
             {COLUMN_KINDS.map((k) => (
               <MenuRow
                 key={k}
                 label={t(`db.col.kinds.${k}`)}
                 on={field.type === k}
+                boniAction="schema.update_field"
                 onClick={() => {
                   if (k !== field.type) void changeColumn(type.id, field.id, { type: k });
                   close();
@@ -92,7 +157,100 @@ export function ColumnMenu({
             ))}
           </div>
         ) : panel === "options" ? (
-          <OptionsPanel type={type} field={field} />
+          <div className="menu-list scroll" role="menu">
+            {back(t("db.col.options"))}
+            <OptionsPanel type={type} field={field} />
+          </div>
+        ) : panel === "edit" ? (
+          <div className="menu-list scroll" role="menu">
+            {back(t("db.col.edit"))}
+            <input
+              ref={nameRef}
+              className="menu-input"
+              data-boni-action="schema.update_field"
+              aria-label={t("db.col.name")}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => void rename()}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                void rename();
+              }}
+            />
+            {!title && isKind(field.type) && (
+              <NextRow
+                label={t("db.col.kind")}
+                value={t(`db.col.kinds.${field.type}`)}
+                onClick={() => setPanel("kind")}
+              />
+            )}
+            {isList && (
+              <NextRow
+                label={t("db.col.options")}
+                value={String(field.options?.length ?? 0)}
+                onClick={() => setPanel("options")}
+              />
+            )}
+          </div>
+        ) : panel === "sort" ? (
+          <div className="menu-list" role="menu">
+            {back(t("db.col.sort"))}
+            <MenuRow
+              label={t("db.sortAsc")}
+              on={!!sortedBy && !sortedBy.desc}
+              boniAction="schema.set_view"
+              onClick={() => {
+                onView({ ...view, sort: { field: field.id } });
+                close();
+              }}
+            />
+            <MenuRow
+              label={t("db.sortDesc")}
+              on={!!sortedBy?.desc}
+              boniAction="schema.set_view"
+              onClick={() => {
+                onView({ ...view, sort: { field: field.id, desc: true } });
+                close();
+              }}
+            />
+            {sortedBy && (
+              <>
+                <MenuSep />
+                <MenuRow
+                  label={t("db.sortRemove")}
+                  onClick={() => {
+                    onView({ ...view, sort: undefined });
+                    close();
+                  }}
+                />
+              </>
+            )}
+          </div>
+        ) : panel === "calc" ? (
+          <div className="menu-list scroll" role="menu">
+            {back(t("db.col.calc"))}
+            <MenuRow
+              label={t("db.calc.none")}
+              on={!calc}
+              onClick={() => {
+                setCalc(null);
+                close();
+              }}
+            />
+            {calcsFor(field).map((c) => (
+              <MenuRow
+                key={c}
+                label={t(`db.calc.${c}`)}
+                on={calc === c}
+                boniAction="schema.set_view"
+                onClick={() => {
+                  setCalc(c);
+                  close();
+                }}
+              />
+            ))}
+          </div>
         ) : (
           <div className="menu-list" role="menu">
             {mine ? (
@@ -113,29 +271,129 @@ export function ColumnMenu({
             ) : (
               <div className="menu-head">{field.name}</div>
             )}
+            {mine && !title && (
+              <MenuRow
+                icon={<Pencil {...I} />}
+                label={t("db.col.edit")}
+                onClick={() => setPanel("edit")}
+              />
+            )}
             {mine && !title && isKind(field.type) && (
               <MenuRow
-                label={`${t("db.col.kind")}: ${t(`db.col.kinds.${field.type}`)}`}
+                icon={<Repeat {...I} />}
+                label={t("db.col.changeKind")}
                 onClick={() => setPanel("kind")}
               />
             )}
-            {mine && (field.type === "select" || field.type === "multiselect") && (
-              <MenuRow label={t("db.col.options")} onClick={() => setPanel("options")} />
+            {mine && !title && <MenuSep />}
+            <MenuRow
+              icon={<ListFilter {...I} />}
+              label={t("db.col.filter")}
+              boniAction="schema.set_view"
+              onClick={() => {
+                onFilter(field);
+                close();
+              }}
+            />
+            <MenuRow
+              icon={<ArrowUpDown {...I} />}
+              label={t("db.col.sort")}
+              on={!!sortedBy}
+              onClick={() => setPanel("sort")}
+            />
+            {!title && groupable(field) && (
+              <MenuRow
+                icon={<Rows3 {...I} />}
+                label={t("db.col.group")}
+                on={grouped}
+                boniAction="schema.set_view"
+                onClick={() => {
+                  onView({ ...view, group: grouped ? undefined : field.id });
+                  close();
+                }}
+              />
             )}
+            <MenuRow
+              icon={<Sigma {...I} />}
+              label={t("db.col.calc")}
+              on={!!calc}
+              onClick={() => setPanel("calc")}
+            />
+            <MenuRow
+              icon={<Pin {...I} />}
+              label={t("db.col.pin")}
+              on={pinned}
+              boniAction="schema.set_view"
+              onClick={() => {
+                onView({ ...view, pin: pinned ? undefined : field.id });
+                close();
+              }}
+            />
             {!title && (
-              <>
-                <MenuSep />
-                <MenuRow
-                  label={t("db.col.hide")}
-                  onClick={() => {
-                    onHide();
-                    close();
-                  }}
-                />
-              </>
+              <MenuRow
+                icon={<EyeOff {...I} />}
+                label={t("db.col.hide")}
+                boniAction="schema.set_view"
+                onClick={() => {
+                  onView({ ...view, hide: [...(view.hide ?? []), field.id] });
+                  close();
+                }}
+              />
+            )}
+            {field.type !== "checkbox" && (
+              <MenuRow
+                icon={<WrapText {...I} />}
+                label={t("db.col.wrap")}
+                on={wraps}
+                boniAction="schema.set_view"
+                onClick={() => {
+                  const rest = (view.wrap ?? []).filter((w) => w !== field.id);
+                  const next = wraps ? rest : [...rest, field.id];
+                  onView({ ...view, wrap: next.length ? next : undefined });
+                  close();
+                }}
+              />
+            )}
+            {editable && <MenuSep />}
+            {editable && !title && (
+              <MenuRow
+                icon={<ArrowLeftToLine {...I} />}
+                label={t("db.col.insertLeft")}
+                boniAction="schema.add_field"
+                onClick={() => {
+                  insert("left");
+                  close();
+                }}
+              />
+            )}
+            {editable && (
+              <MenuRow
+                icon={<ArrowRightToLine {...I} />}
+                label={t("db.col.insertRight")}
+                boniAction="schema.add_field"
+                onClick={() => {
+                  insert("right");
+                  close();
+                }}
+              />
+            )}
+            {editable && !title && (isKind(field.type) || !!field.relation) && (
+              <MenuRow
+                icon={<Copy {...I} />}
+                label={t("db.col.duplicate")}
+                boniAction="schema.add_field"
+                onClick={() => {
+                  void addColumnBeside(type.id, {
+                    name: t("db.col.copyOf", { name: field.name }),
+                    copy: field.id,
+                  });
+                  close();
+                }}
+              />
             )}
             {mine && !title && (
               <MenuRow
+                icon={<Trash2 {...I} />}
                 label={t("db.col.delete")}
                 danger
                 boniAction="schema.remove_field"
@@ -168,8 +426,7 @@ function OptionsPanel({ type, field }: { type: DataType; field: DataField }) {
   const kept = () =>
     options.map((o) => ({ id: o.id, name: o.name, ...(o.color ? { color: o.color } : {}) }));
   return (
-    <div className="menu-list scroll" role="menu">
-      <div className="menu-head">{t("db.col.options")}</div>
+    <>
       {options.map((o) => (
         <div key={o.id} className="menu-option">
           <input
@@ -208,7 +465,7 @@ function OptionsPanel({ type, field }: { type: DataType; field: DataField }) {
           void save([...kept(), { name: fresh.trim() }]).then((ok) => ok && setFresh(""));
         }}
       />
-    </div>
+    </>
   );
 }
 

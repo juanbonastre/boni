@@ -3030,8 +3030,19 @@ export class AgentApi {
     );
     return isObj(b) && typeof b.id === "string" ? b.id : "";
   };
-  /** A new column of a collection (Notion's «+»): its name and kind; its id. */
-  addColumn = async (type: string, col: { name: string; type: string }): Promise<string> => {
+  /**
+   * A new column of a collection (Notion's «+»): its name and kind, or beside another (task 76); with `copy`, a
+   * duplicate of that column with its values. Its id.
+   */
+  addColumn = async (
+    type: string,
+    col: {
+      name: string;
+      type?: string;
+      beside?: { field: string; side: "left" | "right" };
+      copy?: string;
+    },
+  ): Promise<string> => {
     const b = await this.call("POST", `/${encodeURIComponent(type)}/fields`, col, "api/data/types");
     return isObj(b) && typeof b.id === "string" ? b.id : "";
   };

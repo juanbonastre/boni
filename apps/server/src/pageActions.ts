@@ -143,6 +143,11 @@ function viewFrom(
       ...(raw.sort.desc !== undefined ? { desc: raw.sort.desc } : {}),
     };
   if (Array.isArray(raw.hide)) out.hide = raw.hide.map((h) => field(d, h));
+  // A table's calculations by column, the column it is pinned up to and the ones that wrap (task 76).
+  if (isObj(raw.calc))
+    out.calc = Object.fromEntries(Object.entries(raw.calc).map(([k, c]) => [field(d, k), c]));
+  if (raw.pin !== undefined) out.pin = field(d, raw.pin);
+  if (Array.isArray(raw.wrap)) out.wrap = raw.wrap.map((w) => field(d, w));
   if (Array.isArray(raw.filter))
     out.filter = raw.filter.map((r) => (isObj(r) ? { ...r, field: field(d, r.field) } : r));
   if (!databaseViewOk(out)) throw new ToolError("bad-view");

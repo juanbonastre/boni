@@ -435,7 +435,7 @@ const ACTION_TOOLS: readonly {
     name: "collection_view",
     action: "schema.set_view",
     description:
-      'Saves a view of a collection as one of its tabs, by its name (the same name changes that tab): view {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}]}; view null takes the tab out.',
+      'Saves a view of a collection as one of its tabs, by its name (the same name changes that tab): view {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [properties], "filter": [{"field", "op", "value"}], "calc": {property: "count" | "sum" | "average" | "min" | "max" | "earliest" | "latest" | "checked" | ...}, "pin": property, "wrap": [properties]}; view null takes the tab out.',
     required: ["type", "name"],
     nullable: ["view"],
   },

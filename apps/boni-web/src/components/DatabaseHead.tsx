@@ -220,8 +220,11 @@ export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Lay
   );
 }
 
-/** Which of the bar's editors opens as it appears (the head's icon that showed the bar). */
-export type BarFocus = "sort" | "filter" | null;
+/**
+ * Which of the bar's editors opens as it appears: the head's icon that showed the bar, or «rule», the last filter's,
+ * just added from a column's menu (task 76).
+ */
+export type BarFocus = "sort" | "filter" | "rule" | null;
 
 /**
  * The view's order and filters as chips (Notion's bar): the order on the left, a line, the filters on the right and
@@ -327,31 +330,38 @@ export function ViewBar({
       </div>
       <span className="db-bar-sep" aria-hidden="true" />
       <div className="db-bar-filters">
-        {rules.map((r, i) => (
-          <PopButton
-            key={`${r.field}-${i}${fresh === i ? "-new" : ""}`}
-            className="db-chip on"
-            title={filterText(type, r, t)}
-            align="start"
-            width={420}
-            initialOpen={fresh === i}
-            onOpenChange={(open) => !open && setFresh(null)}
-            label={<span>{filterText(type, r, t)}</span>}
-          >
-            {() => (
-              <div className="pop-section db-filters">
-                <FilterEditor
-                  type={type}
-                  rules={[r]}
-                  single
-                  onChange={(one) =>
-                    setRules([...rules.slice(0, i), ...one, ...rules.slice(i + 1)])
-                  }
-                />
-              </div>
-            )}
-          </PopButton>
-        ))}
+        {rules.map((r, i) => {
+          const asked = focus.what === "rule" && i === rules.length - 1;
+          return (
+            <PopButton
+              key={`${r.field}-${i}${fresh === i ? "-new" : ""}${asked ? `-${focus.n}` : ""}`}
+              className="db-chip on"
+              title={filterText(type, r, t)}
+              align="start"
+              width={420}
+              initialOpen={fresh === i || asked}
+              onOpenChange={(open) => {
+                if (open) return;
+                setFresh(null);
+                if (asked) onDone();
+              }}
+              label={<span>{filterText(type, r, t)}</span>}
+            >
+              {() => (
+                <div className="pop-section db-filters">
+                  <FilterEditor
+                    type={type}
+                    rules={[r]}
+                    single
+                    onChange={(one) =>
+                      setRules([...rules.slice(0, i), ...one, ...rules.slice(i + 1)])
+                    }
+                  />
+                </div>
+              )}
+            </PopButton>
+          );
+        })}
         <PopButton
           key={`add-${focus.what === "filter" ? focus.n : 0}`}
           className="db-chip ghost"

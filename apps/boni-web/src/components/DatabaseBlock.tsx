@@ -29,7 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type DataField,
@@ -40,6 +40,7 @@ import {
 } from "../core/agent.ts";
 import type { SystemColumns } from "../core/audit.ts";
 import { chipTitle, pointAttrs } from "../core/pointing.ts";
+import { type CalcResult, calcValue, groupable, groupRows } from "../core/tableCalc.ts";
 import { phoneLayout } from "../host.ts";
 import type { T } from "../i18n.ts";
 import {
@@ -170,8 +171,15 @@ export function DatabaseBlock({
         .includes(q),
   );
   const sorted = sortRows(filterRows(found, type, view.filter), type, view);
+  // A table grouped by a column (task 76): every row, each group showing its first ones.
+  const groupBy =
+    view.layout === "table"
+      ? type?.fields.find((f) => f.id === view.group && f.id !== type.titleField && groupable(f))
+      : undefined;
   const rows =
-    view.layout === "calendar" || view.layout === "board" ? sorted : sorted.slice(0, limit);
+    view.layout === "calendar" || view.layout === "board" || groupBy
+      ? sorted
+      : sorted.slice(0, limit);
   const more = sorted.length - rows.length;
   const shown = type?.fields.filter((f) => !view.hide?.includes(f.id)) ?? [];
   const titleField = type?.fields.find((f) => f.id === type.titleField);
@@ -323,7 +331,18 @@ export function DatabaseBlock({
           onAdd={canAdd ? () => void add() : null}
           picked={picked}
           onPick={setPicked}
-          onHide={(f) => onView({ ...view, hide: [...(view.hide ?? []), f] })}
+          kept={sorted}
+          groupBy={groupBy}
+          view={view}
+          onView={onView}
+          onFilter={(f) => {
+            // Its rule last, its editor open: the one it has (moved last; the rules all apply), or a new one.
+            const rules = view.filter ?? [];
+            const had = rules.find((r) => r.field === f.id);
+            const rule = had ?? { field: f.id, op: opsFor(f)[0] ?? "not_empty" };
+            onView({ ...view, filter: [...rules.filter((r) => r !== had), rule] });
+            setBar((b) => ({ what: "rule", n: b.n + 1 }));
+          }}
         />
       ) : view.layout === "board" ? (
         <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
@@ -633,6 +652,11 @@ function ViewOptions({
   const inTree = useStore((s) => s.tree?.collections.find((c) => c.id === type.id));
   const [panel, setPanel] = useState<OptionsPanel>("main");
   const selects = type.fields.filter((f) => f.type === "select");
+  // A table groups its rows by any column but its title and long texts (task 76); a board, by a list.
+  const groupFields =
+    view.layout === "table"
+      ? type.fields.filter((f) => f.id !== type.titleField && groupable(f))
+      : selects;
   const dates = type.fields.filter((f) => f.type === "date" || f.type === "datetime");
   const props = type.fields.filter((f) => f.id !== type.titleField);
   const others = (allTypes ?? []).filter(
@@ -706,10 +730,14 @@ function ViewOptions({
               value={sortField ? `${sortField.name} ${view.sort?.desc ? "↓" : "↑"}` : ""}
               onClick={() => setPanel("sort")}
             />
-            {view.layout === "board" && selects.length > 0 && (
+            {(view.layout === "board" || view.layout === "table") && groupFields.length > 0 && (
               <NextRow
                 label={LABEL.group}
-                value={chosen(view.group, selects)}
+                value={
+                  view.layout === "table"
+                    ? (groupFields.find((f) => f.id === view.group)?.name ?? "")
+                    : chosen(view.group, selects)
+                }
                 onClick={() => setPanel("group")}
               />
             )}
@@ -831,12 +859,19 @@ function ViewOptions({
                 ))}
               </>
             )}
+            {panel === "group" && view.layout === "table" && (
+              <MenuRow
+                label={t("db.opt.noGroup")}
+                on={!groupFields.some((f) => f.id === view.group)}
+                onClick={() => onView({ ...view, group: undefined })}
+              />
+            )}
             {panel === "group" &&
-              selects.map((f) => (
+              groupFields.map((f) => (
                 <MenuRow
                   key={f.id}
                   label={f.name}
-                  on={(view.group ?? selects[0]?.id) === f.id}
+                  on={(view.group ?? (view.layout === "table" ? "" : selects[0]?.id)) === f.id}
                   onClick={() => onView({ ...view, group: f.id })}
                 />
               ))}
@@ -960,6 +995,29 @@ function readOnlyOf(type: DataType): DataType {
   return rest;
 }
 
+/** A calculation's result as the table's foot shows it, in the user's language. */
+function calcText(res: CalcResult, field: DataField, locale: string, t: T): string | null {
+  if (!res) return null;
+  const n = (x: number, digits = 2) =>
+    new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(x);
+  switch (res.kind) {
+    case "count":
+      return n(res.n, 0);
+    case "percent":
+      return `${n(res.n, 1)} %`;
+    case "days":
+      return t("db.calc.days", { n: n(res.n, 0) });
+    case "date":
+      return showValue(field, res.value);
+    default:
+      return res.currency
+        ? showValue(field, { amount: res.n, currency: res.currency })
+        : field.type === "duration"
+          ? showValue(field, Math.round(res.n))
+          : n(res.n);
+  }
+}
+
 function TableView({
   type,
   lookOnly = false,
@@ -972,7 +1030,11 @@ function TableView({
   onAdd,
   picked,
   onPick: setPicked,
-  onHide,
+  kept,
+  groupBy,
+  view,
+  onView,
+  onFilter,
 }: {
   type: DataType;
   /** Only to look at (Boni's «Flujos» on the phone): a title opens its row, nothing is chosen, renamed or edited. */
@@ -987,8 +1049,15 @@ function TableView({
   onAdd: (() => void) | null;
   picked: Set<string>;
   onPick: React.Dispatch<React.SetStateAction<Set<string>>>;
-  /** «Ocultar» in a column's menu: this view stops showing it. */
-  onHide: (field: string) => void;
+  /** Every row the view keeps (not only those shown): what a column's calculation counts. */
+  kept: DataRow[];
+  /** The column its rows are grouped by (task 76), if any. */
+  groupBy?: DataField;
+  /** The view, changed from a column's menu (sort, group, calculate, pin, hide, wrap). */
+  view: DatabaseView;
+  onView: (v: DatabaseView) => void;
+  /** «Filtrar» in a column's menu: a rule on it, its editor open. */
+  onFilter: (field: DataField) => void;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
@@ -1023,6 +1092,67 @@ function TableView({
   // «Mis datos», a row is a collection or a page, opened and deleted as one.
   const pickable = !lookOnly && (!type.system || !!type.editable);
   const total = (pickable ? SEL + TOOLS : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
+  // «Fijar» (task 76, Notion's freeze): the columns up to the pinned one stay while the rest scroll sideways.
+  const pinAt = view.pin ? cols.findIndex((c) => c.key === view.pin) : -1;
+  const lefts: number[] = [];
+  for (let i = 0, at = pickable ? SEL : 0; i < cols.length; i++) {
+    lefts.push(at);
+    const c = cols[i] as (typeof cols)[number];
+    at += width(c.key, c.base);
+  }
+  // «Ajustar texto»: this view's columns whose values wrap over several lines.
+  const wraps = new Set(view.wrap ?? []);
+  const stick = (i: number, own?: string) => {
+    const cls = [
+      own,
+      i <= pinAt && "pinned",
+      i === pinAt && "pin-edge",
+      wraps.has(cols[i]?.key ?? "") && "wrap",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return { className: cls || undefined, style: i <= pinAt ? { left: lefts[i] } : undefined };
+  };
+  const selCls = `sel-col${pinAt >= 0 ? " pinned" : ""}`;
+  const selStick = pinAt >= 0 ? { style: { left: 0 } } : {};
+  // «Agrupar» (task 76): the rows by a column's value, each group shut or open and showing its first rows.
+  const groups = useMemo(
+    () => (groupBy ? groupRows(rows, groupBy, titles) : null),
+    [rows, groupBy, titles],
+  );
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const [shownIn, setShownIn] = useState<Record<string, number>>({});
+  const span = (pickable ? 2 : 0) + cols.length;
+  // The rows in the order they are on the screen (by group when grouped): what Shift takes a run of.
+  const onScreen = groups
+    ? groups.flatMap((g) => (closed.has(g.key) ? [] : g.rows.slice(0, shownIn[g.key] ?? 50)))
+    : rows;
+  const groupLabel = (key: string) => {
+    const f = groupBy as DataField;
+    if (f.type === "checkbox") return t(key === "true" ? "db.group.yes" : "db.group.no");
+    if (!key) return <span className="db-empty">{t("db.noValue", { field: f.name })}</span>;
+    const option = f.options?.find((o) => o.id === key);
+    if (option)
+      return (
+        <span className="db-pill" style={{ ["--c" as string]: optionColor(f, key) }}>
+          {option.name}
+        </span>
+      );
+    if (f.relation) return titles[key] ?? key;
+    const numeric = f.type === "number" || f.type === "money" || f.type === "duration";
+    return showValue(f, numeric ? Number(key) : key);
+  };
+  // «Calcular» (task 76): each column's result over every row the view keeps, at the table's foot.
+  const calcs = Object.keys(view.calc ?? {}).filter((k) => ordered.some((f) => f.id === k));
+  const results = useMemo(() => {
+    const out: Record<string, string | null> = {};
+    for (const k of calcs) {
+      const f = ordered.find((x) => x.id === k);
+      const c = view.calc?.[k];
+      if (f && c) out[k] = calcText(calcValue(c, f, kept), f, locale, t);
+    }
+    return out;
+  }, [kept, calcs.join(","), JSON.stringify(view.calc), locale]);
   const grab = (key: string, from: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -1056,11 +1186,11 @@ function TableView({
   ) =>
     setPicked((cur) => {
       if (e.shiftKey && anchor.current) {
-        const a = rows.findIndex((r) => r.id === anchor.current);
-        const b = rows.findIndex((r) => r.id === id);
+        const a = onScreen.findIndex((r) => r.id === anchor.current);
+        const b = onScreen.findIndex((r) => r.id === id);
         if (a >= 0 && b >= 0) {
           const [from, to] = a <= b ? [a, b] : [b, a];
-          return new Set([...cur, ...rows.slice(from, to + 1).map((r) => r.id)]);
+          return new Set([...cur, ...onScreen.slice(from, to + 1).map((r) => r.id)]);
         }
       }
       anchor.current = id;
@@ -1159,12 +1289,29 @@ function TableView({
   const [menu, setMenu] = useState<{ x: number; y: number; row: DataRow } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   // A column's menu (task 40): a click on its name opens it under the name, the right button where the pointer is.
-  const [colMenu, setColMenu] = useState<{ x: number; y: number; field: DataField } | null>(null);
+  const [colMenu, setColMenu] = useState<{
+    x: number;
+    y: number;
+    field: DataField;
+    panel?: "calc";
+  } | null>(null);
   const fieldOf = (key: string) => (pickable ? ordered.find((f) => f.id === key) : undefined);
-  const head = (key: string, base: number, name: string, title?: boolean) => (
+  // A column put beside another opens its own menu once it is in the table, to be named (Notion's).
+  const [named, setNamed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!named) return;
+    const field = ordered.find((f) => f.id === named);
+    const th = table.current?.querySelector<HTMLElement>(`th[data-key="${CSS.escape(named)}"]`);
+    if (!field || !th) return;
+    const r = th.getBoundingClientRect();
+    setColMenu({ x: r.left, y: r.bottom + 4, field });
+    setNamed(null);
+  });
+  const head = (key: string, base: number, name: string, i: number, title?: boolean) => (
     <th
       key={key}
-      className={title ? "is-title" : key.startsWith("_sys.") ? "sys-col" : undefined}
+      data-key={key}
+      {...stick(i, title ? "is-title" : key.startsWith("_sys.") ? "sys-col" : undefined)}
       onContextMenu={(e) => {
         const field = fieldOf(key);
         if (!field) return;
@@ -1196,6 +1343,107 @@ function TableView({
       />
     </th>
   );
+  const rowLine = (r: DataRow) => {
+    const on = picked.has(r.id);
+    const name = titleOf(type, r) || t("page.untitled");
+    return (
+      <tr
+        key={r.id}
+        data-row={r.id}
+        {...pointRow(t, type, r)}
+        className={[on && "selected", lit === r.id && "lit"].filter(Boolean).join(" ") || undefined}
+        onContextMenu={(e) => {
+          if (!pickable) return;
+          e.preventDefault();
+          if (!picked.has(r.id)) {
+            setPicked(new Set([r.id]));
+            anchor.current = r.id;
+          }
+          setMenu({ x: e.clientX, y: e.clientY, row: r });
+        }}
+      >
+        {pickable && (
+          <td
+            className={selCls}
+            {...selStick}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("input")) return;
+              choose(r.id, e);
+            }}
+          >
+            <input
+              type="checkbox"
+              className="db-check"
+              checked={on}
+              aria-label={`${t("db.select")}: ${name}`}
+              onChange={() => {}}
+              onClick={(e) => {
+                e.stopPropagation();
+                choose(r.id, e, true);
+              }}
+            />
+          </td>
+        )}
+        {ordered.map((f, i) => (
+          <td
+            key={f.id}
+            {...stick(i, f.id === type.titleField ? "is-title" : undefined)}
+            // Where a record's values are written (F10): what Boni over the screen points at.
+            data-boni-action="entities.update"
+          >
+            {/* Boni's records: text; in «Mis datos» a title opens what it is, the rest as Cell says. */}
+            {type.system && (!type.editable || lookOnly) && f.id !== type.titleField ? (
+              <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
+            ) : type.system && !type.editable ? (
+              <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
+            ) : f.id === type.titleField ? (
+              <TitleCell
+                type={lookOnly ? readOnlyOf(type) : type}
+                field={f}
+                row={r}
+                renaming={renaming === r.id}
+                onRename={(yes) => setRenaming(yes ? r.id : null)}
+                onChoose={(e) => choose(r.id, e)}
+              />
+            ) : (
+              <Cell type={type} field={f} row={r} titles={titles} />
+            )}
+          </td>
+        ))}
+        {mixed && (
+          <td>
+            <span className="db-ro">{collectionOf(r)}</span>
+          </td>
+        )}
+        {sys.map((c) => {
+          const text = systemText(t, c, columns[r.id], locale, lang);
+          return (
+            <td key={c} className="sys-col">
+              <span className="sys-cell" title={text}>
+                {text}
+              </span>
+            </td>
+          );
+        })}
+        {pickable && (
+          <td className="row-tools">
+            {/* A row that stays as it is (Boni's own, in «Mis datos») is not deleted either. */}
+            {!r.fixed?.includes(type.titleField) && (
+              <button
+                type="button"
+                className="icon-btn tiny"
+                title={t("db.delete")}
+                aria-label={`${t("db.delete")}: ${name}`}
+                onClick={() => remove([r.id])}
+              >
+                <Trash2 size={13} strokeWidth={1.8} />
+              </button>
+            )}
+          </td>
+        )}
+      </tr>
+    );
+  };
   return (
     <div className="db-table-wrap">
       <table
@@ -1214,7 +1462,7 @@ function TableView({
         <thead>
           <tr>
             {pickable && (
-              <th className="sel-col">
+              <th className={selCls} {...selStick}>
                 {rows.length > 0 && (
                   <input
                     type="checkbox"
@@ -1229,7 +1477,7 @@ function TableView({
                 )}
               </th>
             )}
-            {cols.map((c) => head(c.key, c.base, c.name, c.title))}
+            {cols.map((c, i) => head(c.key, c.base, c.name, i, c.title))}
             {pickable && (
               <th className="row-tools" aria-label={t("db.actions")}>
                 {columnsEditable(type) && <AddColumn type={type} />}
@@ -1241,9 +1489,9 @@ function TableView({
           {/* Pending proposals first, dashed: read only, accepted or rejected here (Juan, 2026-10-22). */}
           {ghosts.map((r) => (
             <tr key={r.id} className="ghost-row" {...pointRow(t, type, r)}>
-              {pickable && <td className="sel-col" />}
-              {ordered.map((f) => (
-                <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
+              {pickable && <td className={selCls} {...selStick} />}
+              {ordered.map((f, i) => (
+                <td key={f.id} {...stick(i, f.id === type.titleField ? "is-title" : undefined)}>
                   <div className="ghost-cell">
                     {f.id === type.titleField ? (
                       <button
@@ -1290,109 +1538,84 @@ function TableView({
               {pickable && <td className="row-tools" />}
             </tr>
           ))}
-          {rows.map((r) => {
-            const on = picked.has(r.id);
-            const name = titleOf(type, r) || t("page.untitled");
-            return (
-              <tr
-                key={r.id}
-                data-row={r.id}
-                {...pointRow(t, type, r)}
-                className={
-                  [on && "selected", lit === r.id && "lit"].filter(Boolean).join(" ") || undefined
-                }
-                onContextMenu={(e) => {
-                  if (!pickable) return;
-                  e.preventDefault();
-                  if (!picked.has(r.id)) {
-                    setPicked(new Set([r.id]));
-                    anchor.current = r.id;
-                  }
-                  setMenu({ x: e.clientX, y: e.clientY, row: r });
-                }}
-              >
-                {pickable && (
-                  <td
-                    className="sel-col"
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest("input")) return;
-                      choose(r.id, e);
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      className="db-check"
-                      checked={on}
-                      aria-label={`${t("db.select")}: ${name}`}
-                      onChange={() => {}}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        choose(r.id, e, true);
-                      }}
-                    />
-                  </td>
-                )}
-                {ordered.map((f) => (
-                  <td
-                    key={f.id}
-                    className={f.id === type.titleField ? "is-title" : undefined}
-                    // Where a record's values are written (F10): what Boni over the screen points at.
-                    data-boni-action="entities.update"
-                  >
-                    {/* Boni's records: text; in «Mis datos» a title opens what it is, the rest as Cell says. */}
-                    {type.system && (!type.editable || lookOnly) && f.id !== type.titleField ? (
-                      <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
-                    ) : type.system && !type.editable ? (
-                      <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
-                    ) : f.id === type.titleField ? (
-                      <TitleCell
-                        type={lookOnly ? readOnlyOf(type) : type}
-                        field={f}
-                        row={r}
-                        renaming={renaming === r.id}
-                        onRename={(yes) => setRenaming(yes ? r.id : null)}
-                        onChoose={(e) => choose(r.id, e)}
-                      />
-                    ) : (
-                      <Cell type={type} field={f} row={r} titles={titles} />
+          {groups
+            ? groups.map((g) => {
+                const shut = closed.has(g.key);
+                const max = shownIn[g.key] ?? 50;
+                return (
+                  <Fragment key={`g-${g.key}`}>
+                    <tr className="db-group-row">
+                      <td colSpan={span}>
+                        <button
+                          type="button"
+                          className="db-group-head"
+                          aria-expanded={!shut}
+                          onClick={() =>
+                            setClosed((cur) => {
+                              const next = new Set(cur);
+                              if (next.has(g.key)) next.delete(g.key);
+                              else next.add(g.key);
+                              return next;
+                            })
+                          }
+                        >
+                          <ChevronRight size={14} strokeWidth={2} className="db-group-chev" />
+                          {groupLabel(g.key)}
+                          <span className="db-group-n">{g.rows.length}</span>
+                        </button>
+                      </td>
+                    </tr>
+                    {!shut && g.rows.slice(0, max).map(rowLine)}
+                    {!shut && g.rows.length > max && (
+                      <tr className="db-group-more">
+                        <td colSpan={span}>
+                          <button
+                            type="button"
+                            className="db-add-row"
+                            onClick={() => setShownIn((m) => ({ ...m, [g.key]: max + 100 }))}
+                          >
+                            {t("db.loadMore", { n: g.rows.length - max })}
+                          </button>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                ))}
-                {mixed && (
-                  <td>
-                    <span className="db-ro">{collectionOf(r)}</span>
-                  </td>
-                )}
-                {sys.map((c) => {
-                  const text = systemText(t, c, columns[r.id], locale, lang);
-                  return (
-                    <td key={c} className="sys-col">
-                      <span className="sys-cell" title={text}>
-                        {text}
-                      </span>
-                    </td>
-                  );
-                })}
-                {pickable && (
-                  <td className="row-tools">
-                    {/* A row that stays as it is (Boni's own, in «Mis datos») is not deleted either. */}
-                    {!r.fixed?.includes(type.titleField) && (
+                  </Fragment>
+                );
+              })
+            : rows.map(rowLine)}
+        </tbody>
+        {calcs.length > 0 && (
+          <tfoot>
+            <tr className="db-calc-row">
+              {pickable && <td className={selCls} {...selStick} />}
+              {cols.map((c, i) => {
+                const f = fieldOf(c.key);
+                const calc = view.calc?.[c.key];
+                return (
+                  <td key={c.key} {...stick(i)}>
+                    {f && (
                       <button
                         type="button"
-                        className="icon-btn tiny"
-                        title={t("db.delete")}
-                        aria-label={`${t("db.delete")}: ${name}`}
-                        onClick={() => remove([r.id])}
+                        className={`db-calc${calc ? " on" : ""}`}
+                        data-boni-action="schema.set_view"
+                        onClick={(e) => {
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setColMenu({ x: r.left, y: r.bottom + 4, field: f, panel: "calc" });
+                        }}
                       >
-                        <Trash2 size={13} strokeWidth={1.8} />
+                        <span className="db-calc-name">
+                          {calc ? t(`db.calc.short.${calc}`) : t("db.col.calc")}
+                        </span>
+                        {calc && <span className="db-calc-value">{results[c.key] ?? "—"}</span>}
                       </button>
                     )}
                   </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
+                );
+              })}
+              {pickable && <td className="row-tools" />}
+            </tr>
+          </tfoot>
+        )}
       </table>
       {onAdd && (
         <button type="button" className="db-add-row" onClick={onAdd}>
@@ -1404,9 +1627,13 @@ function TableView({
         <ColumnMenu
           type={type}
           field={colMenu.field}
+          view={view}
+          onView={onView}
+          onFilter={onFilter}
+          onInserted={setNamed}
+          start={colMenu.panel}
           x={colMenu.x}
           y={colMenu.y}
-          onHide={() => onHide(colMenu.field.id)}
           onClose={() => setColMenu(null)}
         />
       )}

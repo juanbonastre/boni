@@ -64,6 +64,17 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(db(["created", "createdBy", "viewers"])).toEqual([]);
     expect(db(["password"])[0]).toMatch(/closed view/);
     expect(db("created")[0]).toMatch(/closed view/);
+    // A table's calculations, pinned columns and wrapped text (task 76): by field, from the closed lists.
+    const table = (more: Record<string, unknown>) =>
+      with_({ id: "d", type: "database", source: "t", view: { layout: "table", ...more } });
+    expect(
+      table({ calc: { f_paginas: "sum", f_fin: "latest" }, pin: "f_estado", wrap: ["f_nota"] }),
+    ).toEqual([]);
+    expect(table({ calc: { f_paginas: "eval" } })[0]).toMatch(/closed view/);
+    expect(table({ calc: { "a b": "sum" } })[0]).toMatch(/closed view/);
+    expect(table({ calc: ["sum"] })[0]).toMatch(/closed view/);
+    expect(table({ pin: ["f_estado"] })[0]).toMatch(/closed view/);
+    expect(table({ wrap: "f_nota" })[0]).toMatch(/closed view/);
     expect(with_({ id: "x", type: "todo", text: "x", done: "sí" })[0]).toMatch(/to-do/);
     expect(with_({ id: "x", type: "divider", text: "x" })[0]).toMatch(/divider/);
     expect(with_({ id: "x", type: "text", text: "x", indent: 7 })[0]).toMatch(/text block/);

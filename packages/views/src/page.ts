@@ -91,7 +91,7 @@ export type PageBlock = (
 /** How a database block shows its collection: Notion's layouts and their settings, all closed. */
 export interface DatabaseView {
   layout: "table" | "board" | "list" | "gallery" | "calendar" | "diagram";
-  /** The select field whose options are a board's columns. */
+  /** The select field whose options are a board's columns; in a table, the field its rows are grouped by (task 76). */
   group?: string;
   /** The date field a calendar places rows by. */
   date?: string;
@@ -106,7 +106,37 @@ export interface DatabaseView {
   filter?: DatabaseFilter[];
   /** System columns shown (Juan, 2026-10-24): kept by Boni, never edited by anyone; none by default. */
   system?: SystemColumn[];
+  /** A table's calculation under each column (Notion's «Calcular», task 76), by field. */
+  calc?: Record<string, Calc>;
+  /** A table's columns up to this one stay in place when it scrolls sideways (Notion's «Fijar», task 76). */
+  pin?: string;
+  /** A table's columns whose text wraps instead of being cut (Notion's «Ajustar texto», task 76). */
+  wrap?: string[];
 }
+/**
+ * The calculations a table's column can show at its bottom (Notion's «Calcular»): any column counts; a number sums
+ * and measures; a date says its first and last; a box counts what is ticked.
+ */
+export const CALCS = [
+  "count",
+  "filled",
+  "empty",
+  "unique",
+  "percentFilled",
+  "percentEmpty",
+  "sum",
+  "average",
+  "median",
+  "min",
+  "max",
+  "range",
+  "earliest",
+  "latest",
+  "checked",
+  "unchecked",
+  "percentChecked",
+] as const;
+export type Calc = (typeof CALCS)[number];
 /**
  * A view a collection keeps (task 69; Juan, 2026-11-05, Notion's views as tabs): a view with its own id and name. A
  * collection's views live in its account preferences (`rowUi.views`), the same on every device.
@@ -129,7 +159,20 @@ export function databaseViewOk(view: unknown): view is DatabaseView {
       (v.sort.desc === undefined || typeof v.sort.desc === "boolean"));
   return !(
     !v ||
-    !only(v, ["layout", "group", "date", "sort", "hide", "also", "span", "filter", "system"]) ||
+    !only(v, [
+      "layout",
+      "group",
+      "date",
+      "sort",
+      "hide",
+      "also",
+      "span",
+      "filter",
+      "system",
+      "calc",
+      "pin",
+      "wrap",
+    ]) ||
     (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
     (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
     (v.also !== undefined &&
@@ -140,6 +183,15 @@ export function databaseViewOk(view: unknown): view is DatabaseView {
     !sortOk ||
     (v.hide !== undefined &&
       (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f)))) ||
+    (v.wrap !== undefined &&
+      (!Array.isArray(v.wrap) || v.wrap.length > 100 || !v.wrap.every((f) => okField(f)))) ||
+    !okField(v.pin) ||
+    (v.calc !== undefined &&
+      (!isObj(v.calc) ||
+        Object.keys(v.calc).length > 100 ||
+        !Object.entries(v.calc).every(
+          ([f, c]) => ID.test(f) && (CALCS as readonly unknown[]).includes(c),
+        ))) ||
     (v.system !== undefined &&
       (!Array.isArray(v.system) ||
         !v.system.every((c) => (SYSTEM_COLUMNS as readonly unknown[]).includes(c))))
