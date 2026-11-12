@@ -117,17 +117,26 @@ const shaOf = (s: UserStore, sha: string) => {
   return h.digest("hex");
 };
 
-/** What is held (after a collection), heap and buffers, above where it started: the drops test's measure. */
+/**
+ * What is held, heap and buffers, above where it started: read after two collections. After one, the memory of
+ * the buffers it found dead is still counted until V8 frees it on another thread, so on a busy or small machine
+ * the 1 MB parts already sent were read as held: 56 and 63 MB on CI (task 105), 15-30 MB here on one core. A
+ * second collection starts only once that is done, so its reading is what is reachable: 6.8 MB on one core,
+ * every run.
+ */
 function meter() {
   v8.setFlagsFromString("--expose-gc");
   const gc = runInNewContext("gc") as () => void;
-  gc();
-  const base = process.memoryUsage();
+  const settle = () => {
+    gc();
+    gc();
+    return process.memoryUsage();
+  };
+  const base = settle();
   let peak = 0;
   return {
     measure() {
-      gc();
-      const m = process.memoryUsage();
+      const m = settle();
       peak = Math.max(peak, m.heapUsed - base.heapUsed + (m.arrayBuffers - base.arrayBuffers));
     },
     get peak() {
@@ -297,10 +306,9 @@ describe("a backup with big files comes back whole", () => {
       `${ids.length} records and 96 MB of files: export ${Math.round(exported)} ms (held at most ` +
         `${(exportPeak / MB).toFixed(1)} MB), import ${Math.round(imported)} ms (at most ${(m2.peak / MB).toFixed(1)} MB)`,
     );
-    // A file is never held whole, going out or coming in: less than one of the 32 MB files. Alone, the export holds
-    // 7-8 MB (the records' entries) and the import 3 MB; on a loaded machine (CI's parallel workers) the export was
-    // seen at 16 MB, so its bound leaves room for that and still fails if a whole file is held.
-    expect([exportPeak < 24 * MB, m2.peak < 12 * MB]).toEqual([true, true]);
+    // A file is never held whole, going out or coming in: far less than one of the 32 MB files (the export holds
+    // about 7 MB, the records' entries; the import about 3 MB).
+    expect([exportPeak < 12 * MB, m2.peak < 12 * MB]).toEqual([true, true]);
   }, 60_000);
 
   it("a backup made before ZIP64 (zip32, with an attachment kept in parts) still imports, its files too", () => {
