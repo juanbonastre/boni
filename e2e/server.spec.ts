@@ -356,12 +356,14 @@ test("a title typed while the new event waits for the server's answer, and the a
 }) => {
   // Task 98 (main's CI, 2026-11-12): the event's first write (no title yet) waited for its answer, so its title did
   // not leave until it came, and the device's copy of the queue was written only after IndexedDB opened; a window
-  // closed in between lost the event. Here that answer is late and IndexedDB slow, as on a busy machine.
+  // closed in between lost the event. Here that answer is late and IndexedDB slow, as on a busy machine (from the
+  // moment the app is connected, until the window goes).
   await page.addInitScript(() => {
     const open = indexedDB.open.bind(indexedDB);
     indexedDB.open = (name: string, version?: number) => {
       const req = open(name, version);
-      if (name !== "boni-calendar-server-outbox") return req;
+      const slow = (window as unknown as { slowOutbox?: boolean }).slowOutbox;
+      if (name !== "boni-calendar-server-outbox" || !slow) return req;
       let onsuccess: ((e: Event) => void) | null = null;
       Object.defineProperty(req, "onsuccess", {
         configurable: true,
@@ -370,7 +372,7 @@ test("a title typed while the new event waits for the server's answer, and the a
           onsuccess = fn;
         },
       });
-      req.addEventListener("success", (e) => setTimeout(() => onsuccess?.call(req, e), 2000));
+      req.addEventListener("success", (e) => setTimeout(() => onsuccess?.call(req, e), 5000));
       return req;
     };
   });
@@ -379,12 +381,15 @@ test("a title typed while the new event waits for the server's answer, and the a
     if (!first) return route.continue();
     first = false;
     const answer = await route.fetch();
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, 5000));
     await route.fulfill({ response: answer }).catch(() => {});
   });
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await connect(page);
   await expect(page.locator(".modal")).toContainText("En directo");
+  await page.evaluate(() => {
+    (window as unknown as { slowOutbox?: boolean }).slowOutbox = true;
+  });
   await page.keyboard.press("Escape");
   const cols = await page.locator(".cols-viewport").boundingBox();
   if (!cols) throw new Error("no grid");
