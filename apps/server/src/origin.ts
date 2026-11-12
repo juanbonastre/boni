@@ -10,6 +10,7 @@ import type { ProposalRow, RunRow, UserStore } from "@boni/store";
 import { aloneRuns } from "./autoAccept.ts";
 import { mapOwnerOf } from "./flowMap.ts";
 import { MAIL_FLOW } from "./flows.ts";
+import { whenOf } from "./inboxCard.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { whatOf } from "./runInfo.ts";
 
@@ -182,10 +183,13 @@ export function pendingFacts(
       const type =
         typeof key === "string" ? types.find((t) => t.key === key || t.id === key) : undefined;
       const flow = ran?.flow ? j.flow(ran.flow) : null;
+      const when = whenOf(p, type);
       return {
         id: p.id,
         title: proposedTitle(p, type),
         type: type?.id ?? null,
+        ...(when.day ? { day: when.day } : {}),
+        ...(when.day && when.times[0] ? { start: when.times[0] } : {}),
         created: p.created,
         by: ran?.by ?? "boni",
         flow: ran?.flow

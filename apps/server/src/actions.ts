@@ -3,7 +3,7 @@ import {
   type Decision,
   decide,
   type ToolDef,
-  type ToolRegistry,
+  ToolRegistry,
   type Trust,
   type UndoWay,
 } from "@boni/agent";
@@ -16,6 +16,7 @@ import { withFunctionSteps } from "./functionSteps.ts";
 import { withInboxActions } from "./inboxActions.ts";
 import { withPageActions } from "./pageActions.ts";
 import { withPieces } from "./pieces.ts";
+import { withKept } from "./runUndo.ts";
 
 /**
  * The list of actions (docs/sistema.md §4.1, F10; D-41): one for the app, the planner, the flows and the MCP. The
@@ -28,7 +29,7 @@ import { withPieces } from "./pieces.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  return withConnectorActions(
+  const all = withConnectorActions(
     withCalendarActions(
       withInboxActions(
         withFlowActions(
@@ -39,6 +40,10 @@ export function serverRegistry(): ToolRegistry {
       ),
     ),
   );
+  // What each action rewrites beside the log is kept with its run by its definition (`keeps`, runUndo.ts).
+  const out = new ToolRegistry();
+  for (const t of all.all()) out.register(withKept(t));
+  return out;
 }
 
 /** A route that changes something, and the actions it runs: the same code as the action's (its area's module). */

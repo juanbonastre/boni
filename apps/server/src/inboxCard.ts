@@ -650,6 +650,27 @@ export function recheckOnAccept(
 const functionTitle = (name: string, summary: string): string | undefined =>
   name ? (summary ? `${name}: ${summary}` : name) : undefined;
 
+/**
+ * When a proposal would be: the day and the times in its values, by their field's type (any collection), else by
+ * their shape. The card and the Bandeja's line in a turn (`inbox.pending`) read it here, the same way.
+ */
+export function whenOf(
+  p: ProposalRow,
+  def: { fields: readonly { key: string; id: string; type: string }[] } | undefined,
+): { day: string | null; times: string[] } {
+  let day: string | null = null;
+  const times: string[] = [];
+  for (const r of rowsOf(p)) {
+    if (!r.arg.startsWith("values.")) continue;
+    const key = r.arg.slice("values.".length);
+    const f = def?.fields.find((x) => x.key === key || x.id === key);
+    const v = textOf(r.value);
+    if (!day && (f?.type === "date" || (!f && DAY.test(v))) && DAY.test(v)) day = v;
+    else if ((f?.type === "time" || (!f && TIME.test(v))) && TIME.test(v)) times.push(v);
+  }
+  return { day, times };
+}
+
 export function inboxCard(
   store: UserStore,
   p: ProposalRow,
@@ -672,17 +693,7 @@ export function inboxCard(
         : p.tool === "entities.delete"
           ? "delete"
           : "other";
-  // Day and times from the values by their field's type (any collection), else by their shape.
-  let day: string | null = null;
-  const times: string[] = [];
-  for (const r of rows) {
-    if (!r.arg.startsWith("values.")) continue;
-    const key = r.arg.slice("values.".length);
-    const f = def?.fields.find((x) => x.key === key || x.id === key);
-    const v = textOf(r.value);
-    if (!day && (f?.type === "date" || (!f && DAY.test(v))) && DAY.test(v)) day = v;
-    else if ((f?.type === "time" || (!f && TIME.test(v))) && TIME.test(v)) times.push(v);
-  }
+  const { day, times } = whenOf(p, def);
   const title =
     textOf(
       row("values.title")?.value ??

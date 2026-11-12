@@ -86,6 +86,7 @@ import {
   toast,
   useStore,
 } from "../store.ts";
+import { ActionIcon } from "./ActionIcon.tsx";
 import {
   argName,
   FlowStepPanel,
@@ -755,6 +756,11 @@ function StepPicker({
               <MenuRow
                 key={it.name}
                 label={kindName(t, it.kind, catalog)}
+                icon={
+                  it.kind.op === "call" ? (
+                    <ActionIcon name={catalog.tools.find((x) => x.name === it.name)?.icon} />
+                  ) : undefined
+                }
                 onClick={() => onPick(it.kind)}
               />
             ))}

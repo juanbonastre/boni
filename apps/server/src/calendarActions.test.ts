@@ -227,6 +227,15 @@ describe("the list of actions: «Calendarios», a collection's tabs and tree, «
       calendar: id,
     });
     expect(away.pending?.kind).toBe("confirm");
+    // His card names the calendar as Boni Calendar shows it, its id beside (docs/sistema.md §4.1).
+    const card = host.store(1).journal.confirmation(away.pending?.id ?? "")?.view as
+      | { rows: { arg: string }[] }
+      | undefined;
+    expect(card?.rows.find((r) => r.arg === "calendar")).toMatchObject({
+      value: id,
+      detail: mine()[0]?.def.name,
+    });
+    expect(mine()[0]?.def.name).toBeTruthy();
     expect(mine()).toHaveLength(1);
     expect((await confirm(token, away)).status).toBe("done");
     expect(mine()).toHaveLength(0);
@@ -236,6 +245,55 @@ describe("the list of actions: «Calendarios», a collection's tabs and tree, «
     // With every later change taken back, the run that added it takes it away.
     expect(await undo(token, added.run)).toBe(1);
     expect(mine()).toHaveLength(0);
+  });
+
+  it("a trip waiting in the Bandeja: the card that accepts it says its day (task 95)", async () => {
+    const token = await login();
+    const [id] = (
+      await host.agent(1).background({
+        version: 1,
+        steps: [
+          {
+            id: "c",
+            op: "call",
+            tool: "entities.create",
+            args: {
+              type: lit("viajes"),
+              values: {
+                fn: "obj",
+                args: [lit("titulo"), lit("Congreso en Ejemplo"), lit("salida"), lit("2026-11-20")],
+              },
+            },
+          },
+        ],
+      })
+    ).proposals;
+    plans.push({
+      version: 1,
+      steps: [
+        {
+          id: "a",
+          op: "call",
+          tool: "inbox.accept",
+          args: { proposals: { fn: "list", args: [{ ref: "$screen.inbox[0].id" }] } },
+        },
+      ],
+    });
+    const turn = (await post(token, "/api/agent/turn", {
+      text: "acepta esta",
+      screen: { open: { kind: "inbox", id: null }, inbox: [{ kind: "proposal", id }], chosen: [] },
+    })) as unknown as Turn;
+    expect(turn.pending?.kind).toBe("confirm");
+    const card = host.store(1).journal.confirmation(turn.pending?.id ?? "")?.view as
+      | { rows: unknown[] }
+      | undefined;
+    expect(card?.rows).toEqual([
+      expect.objectContaining({
+        value: "Congreso en Ejemplo",
+        name: "Viajes",
+        when: { day: "2026-11-20" },
+      }),
+    ]);
   });
 
   it("a collection's tab and its notes in the tree, in his turn, with Undo", async () => {

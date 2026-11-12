@@ -191,6 +191,9 @@ export interface PendingProposal {
   title: string;
   /** The collection it would go to (its id), when the tool says one. */
   type: string | null;
+  /** When it would be: its day (YYYY-MM-DD) and its time (HH:MM), as its card in the Bandeja says them. */
+  day?: string;
+  start?: string;
   created: number;
   by: RecordOrigin["by"];
   flow: RecordOrigin["flow"];
@@ -264,10 +267,25 @@ export interface ToolDef<E extends Effect = Effect> {
    */
   undo?: readonly UndoWay[] | { none: string };
   /**
+   * What its Undo takes back that is not in the store's operation log: the store's settings it rewrites (by key: a
+   * calendar's definition, a collection's tabs). The server keeps each one it changed with the run, around `run`
+   * (apps/server/src/runUndo.ts), so the action's own code never does (docs/sistema.md §4.1).
+   */
+  keeps?(c: { store: ReadStore }, args: Readonly<Record<string, Val>>): readonly string[];
+  /**
    * Its icon in the app (a lucide-react icon's name, «Plus»): what «Buscar», «Añadir paso» and a turn's steps show by
    * its name (docs/sistema.md §4.1).
    */
   icon?: string;
+  /**
+   * How its card names what its arguments point at, when the core cannot read it (a calendar of Boni Calendar, by its
+   * name: its id is its collection's key): by argument, the text Juan reads next to the value. Its own code, from the
+   * store and the server's service, never a model's words (docs/sistema.md §4.1).
+   */
+  names?(
+    c: { store: ReadStore; service?: unknown },
+    args: Readonly<Record<string, Val>>,
+  ): Readonly<Record<string, string>>;
   /** How the confirmation names the action ("Borrar", "Enviar correo"). */
   title: string;
   /** A piece that changes something (the inbox): «Probar» says what it would do instead of running it. */
@@ -498,6 +516,8 @@ export const typeByKey = (store: ReadStore, key: string): TypeDef => {
 export interface StepWords {
   tool: string;
   args: Record<string, string>;
+  /** The action's icon, from its definition (`ToolDef.icon`): what the turn's step shows beside its words. */
+  icon?: string;
 }
 const WORD_MAX = 60;
 const cut = (s: string) => (s.length > WORD_MAX ? `${s.slice(0, WORD_MAX - 1)}…` : s);
@@ -553,7 +573,7 @@ export function stepWords(
     } else if (typeof x === "string" || typeof x === "number" || typeof x === "boolean")
       out[k] = cut(String(x));
   }
-  return { tool: tool.name, args: out };
+  return { tool: tool.name, args: out, ...(tool.icon ? { icon: tool.icon } : {}) };
 }
 
 const str = (v: Val | undefined, code = "bad-argument"): string => {

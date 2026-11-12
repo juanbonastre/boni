@@ -79,7 +79,7 @@ describe("one list of actions (D-41, F10)", () => {
       [...text.matchAll(/(?:data-boni-action|boniAction)=\{?"([a-z_.]+)"/g)].map((m) => m[1]),
     );
     const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
-    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", icon:/g)) controlled.add(m[1]);
+    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g)) controlled.add(m[1]);
     // What the app names is an action there is.
     expect([...controlled].filter((a) => a && !names.has(a))).toEqual([]);
     const lacking = registry
@@ -89,7 +89,7 @@ describe("one list of actions (D-41, F10)", () => {
     expect(lacking).toEqual([]);
     // Each «Buscar» action has its words, in Spanish and in English.
     const words = readFileSync(join(WEB, "i18n.ts"), "utf8");
-    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", icon:/g))
+    for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g))
       expect((words.match(new RegExp(`"find\\.action\\.${m[1]}":`, "g")) ?? []).length).toBe(2);
   });
 
@@ -187,7 +187,36 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
     expect(UNDO_ROUTES["POST /api/pages/:id/restore"]).toEqual(["pages.delete"]);
   });
 
-  it("every action has its icon, one lucide-react has, and «Buscar» shows the one its definition says", () => {
+  it("what an action's Undo takes back beside the log is in its definition (keeps), and no action keeps it by hand", () => {
+    const SERVER = import.meta.dirname;
+    const byHand = readdirSync(SERVER)
+      .filter((f) => /\.ts$/.test(f) && !/\.test\./.test(f) && f !== "runUndo.ts")
+      .filter((f) => /keepingSettings(Async)?\(/.test(readFileSync(join(SERVER, f), "utf8")));
+    expect(byHand).toEqual([]);
+    const keeping = ACTIONS.all()
+      .filter((t) => t.keeps)
+      .map((t) => t.name)
+      .sort();
+    expect(keeping).toEqual(
+      [
+        "calendars.add",
+        "calendars.color",
+        "calendars.reminders",
+        "calendars.remove",
+        "calendars.split",
+        "connectors.mail",
+        "connectors.mail_guide",
+        "connectors.mail_suggestion",
+        "schema.set_tree",
+        "schema.set_view",
+      ].sort(),
+    );
+    // Each one is undone with its run: what it kept goes back with the run's Undo.
+    for (const t of ACTIONS.all().filter((x) => x.keeps))
+      expect(undoWays(t), t.name).toContain("run");
+  });
+
+  it("every action has its icon, one lucide-react has and the app draws; «Buscar» keeps no icon of its own", () => {
     const dts = readFileSync(
       join(WEB, "..", "node_modules", "lucide-react", "dist", "lucide-react.d.ts"),
       "utf8",
@@ -208,9 +237,19 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
       .filter((t) => !t.icon || !exported.has(t.icon))
       .map((t) => `${t.name}: ${t.icon ?? "none"}`);
     expect(wrong).toEqual([]);
+    // The app turns a name into its drawing (ActionIcon.tsx); which icon an action has is only its definition's, so
+    // «Buscar», «Añadir paso» and a turn's steps show what the server gives (GET /api/agent/actions, the catalog,
+    // a step's words).
+    const drawn = readFileSync(join(WEB, "components", "ActionIcon.tsx"), "utf8");
+    const map = /const ICONS[^{]*\{([^}]*)\}/.exec(drawn)?.[1] ?? "";
+    const names = new Set(map.split(",").map((x) => x.trim()));
+    expect(
+      ACTIONS.all()
+        .filter((t) => !names.has(t.icon ?? ""))
+        .map((t) => t.name),
+    ).toEqual([]);
     const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
-    const shown = [...find.matchAll(/\{ name: "([a-z_.]+)", icon: ([A-Za-z0-9]+)/g)];
-    expect(shown.length).toBeGreaterThan(3);
-    for (const [, name, icon] of shown) expect(ACTIONS.get(name as string)?.icon, name).toBe(icon);
+    expect([...find.matchAll(/\{ name: "([a-z_.]+)", run:/g)].length).toBeGreaterThan(3);
+    expect(find).not.toMatch(/\{ name: "[a-z_.]+", icon:/);
   });
 });

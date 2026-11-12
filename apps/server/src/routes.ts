@@ -78,6 +78,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/agent/requests": "tailnet",
   "GET /api/agent/map": "tailnet",
   "GET /api/agent/flows": "tailnet",
+  "GET /api/agent/actions": "tailnet",
   "GET /api/agent/flows/catalog": "tailnet",
   "POST /api/agent/flows/check": "tailnet",
   "POST /api/agent/flows": "tailnet",

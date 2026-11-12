@@ -423,6 +423,8 @@ export interface FlowCatalog {
     record?: boolean;
     /** A piece that changes the inbox: «Probar» says what it would do. */
     changes?: boolean;
+    /** Its definition's icon (a lucide-react icon's name): «Añadir paso» shows it. */
+    icon?: string;
   }[];
   readers: Record<string, { params: string[]; required: string[]; out: string[] }>;
   asks: string[];
@@ -497,6 +499,8 @@ export function flowCatalog(
         })),
         ...(t.record ? { record: true } : {}),
         ...(t.changes ? { changes: true } : {}),
+        // «Añadir paso» shows each step by its definition's icon (docs/sistema.md §4.1).
+        ...(t.icon ? { icon: t.icon } : {}),
       })),
     readers,
     asks: v.asks,
