@@ -142,7 +142,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Ubuntu 24.04 keeps unprivileged namespaces from AppArmor-less programs; Electron's sandbox needs them.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: xvfb-run -a --server-args="-screen 0 1920x1080x24" make e2e-boni-desktop
+      # The target puts it on a virtual screen itself (xvfb-run, scripts/queue.mjs), as on Juan's computer.
+      - run: make e2e-boni-desktop
         env:
           CI: "1"
       - uses: actions/upload-artifact@v4
@@ -168,7 +169,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: xvfb-run -a --server-args="-screen 0 1920x1080x24" make e2e-calendar-desktop
+      - run: make e2e-calendar-desktop
         env:
           CI: "1"
       - uses: actions/upload-artifact@v4
