@@ -185,6 +185,38 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       })
     ).json as { id: string }[];
     expect(active.map((n) => n.id)).toEqual([idOf("proyectos/boni-plan.md")]);
+    // A group, as Notion's API writes it (task 75): «activo» or «pausado», by the names notes show.
+    const either = (
+      await tool("query", {
+        collection: "Proyecto",
+        filter: [
+          {
+            or: [
+              { property: "status", op: "is", value: "Activo" },
+              { property: "status", op: "is", value: "pausado" },
+            ],
+          },
+        ],
+      })
+    ).json as { id: string }[];
+    expect(either.map((n) => n.id).sort()).toEqual(
+      [idOf("proyectos/boni-plan.md"), idOf("proyectos/otro.md")].sort(),
+    );
+    const both = await tool("query", {
+      collection: "Proyecto",
+      filter: [
+        {
+          and: [
+            { property: "status", op: "is", value: "activo" },
+            { property: "status", op: "is", value: "pausado" },
+          ],
+        },
+      ],
+    });
+    expect(both.json).toEqual([]);
+    expect((await tool("query", { collection: "Proyecto", filter: [{ or: [] }] })).error).toBe(
+      true,
+    );
     const plan = (await tool("read", { id: idOf("proyectos/boni-plan.md") })).json;
     expect(plan).toMatchObject({ collection: "Proyecto", properties: { status: "activo" } });
     expect(plan.body).toContain("## Registro");

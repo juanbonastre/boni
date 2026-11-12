@@ -25,7 +25,14 @@ import {
   type UserStore,
   type Writes,
 } from "@boni/store";
-import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
+import {
+  type DatabaseFilter,
+  type FilterItem,
+  filterErrors,
+  filterRulesOf,
+  isFilterGroup,
+  matchesFilters,
+} from "@boni/views";
 import { serverRegistry } from "./actions.ts";
 import { relationId, relationTargets } from "./byName.ts";
 import { calendarDefs } from "./calendarStore.ts";
@@ -708,7 +715,7 @@ const TOOLS: Tool[] = [
   {
     name: "query",
     description:
-      "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties as notes show them: options and related notes by their names ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates), newest first.",
+      "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties as notes show them: options and related notes by their names ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates; all must hold, and {or: [rules]} or {and: [rules]} is a group of rules, one of which or all of which must hold), newest first.",
     inputSchema: obj(
       {
         collection: { type: "string" },
@@ -722,7 +729,7 @@ const TOOLS: Tool[] = [
       const v = view(c);
       const t = v.typeNamed(String(a.collection));
       const raw = Array.isArray(a.filter) ? (a.filter as Args[]) : [];
-      const rules: DatabaseFilter[] = raw.map((r) => {
+      const ruleOf = (r: Args): DatabaseFilter => {
         const f = v.fields(t).find((x) => x.name === r.property || x.key === r.property);
         if (!f) throw new ToolFail(`no property "${String(r.property)}" in ${t.name}`);
         return {
@@ -730,8 +737,18 @@ const TOOLS: Tool[] = [
           op: r.op as DatabaseFilter["op"],
           ...(r.value !== undefined ? { value: r.value as string } : {}),
         };
+      };
+      // A group, as Notion's API writes it: {or: [rules]} or {and: [rules]} (one level, as a view's, task 75).
+      const items: FilterItem[] = raw.map((r) => {
+        const join = Array.isArray(r.or) ? "or" : Array.isArray(r.and) ? "and" : null;
+        if (!join) return ruleOf(r);
+        const inner = (join === "or" ? r.or : r.and) as unknown[];
+        if (!inner.every((x) => x && typeof x === "object" && !Array.isArray(x)))
+          throw new ToolFail("bad filter");
+        return { join, rules: (inner as Args[]).map(ruleOf) };
       });
-      if (filterErrors(rules).length) throw new ToolFail("bad filter");
+      if (filterErrors(items).length) throw new ToolFail("bad filter");
+      const rules = filterRulesOf(items);
       const typeOf = (id: string) => t.fields.find((f) => f.id === id)?.type;
       const today = new Date(c.now()).toISOString().slice(0, 10);
       // A model names options and related notes as notes show them (never by id): compare what it sees, in any case.
@@ -755,8 +772,11 @@ const TOOLS: Tool[] = [
         }
         return out;
       };
-      const asSeen = rules.map((r) =>
-        named.has(r.field) && typeof r.value === "string" ? { ...r, value: fold(r.value) } : r,
+      const seenRule = (r: DatabaseFilter): DatabaseFilter =>
+        named.has(r.field) && typeof r.value === "string" ? { ...r, value: fold(r.value) } : r;
+      const asSeen = items.map(
+        (x): FilterItem =>
+          isFilterGroup(x) ? { ...x, rules: x.rules.map(seenRule) } : seenRule(x),
       );
       return v.ro
         .list(t.id, { deep: true })

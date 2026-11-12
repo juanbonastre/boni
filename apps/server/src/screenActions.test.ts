@@ -34,6 +34,7 @@ const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
 const MOV = newId("t");
 const F = { concepto: newId("f"), categoria: newId("f"), fecha: newId("f") };
 const RESTAURANTES = newId("o");
+const COMIDA = newId("o");
 const AGENDA = newId("t");
 const A = { titulo: newId("f"), dia: newId("f") };
 const NOW = Date.UTC(2026, 10, 12, 9, 0);
@@ -132,7 +133,7 @@ beforeAll(async () => {
             name: "Categoría",
             type: "select",
             options: [
-              { id: newId("o"), name: "Comida", label: own },
+              { id: COMIDA, name: "Comida", label: own },
               { id: RESTAURANTES, name: "Restaurantes", label: own },
             ],
             label: own,
@@ -220,6 +221,49 @@ describe("Boni over the screen: open, filter, light, scroll (docs/sistema.md §4
     // A screen act writes nothing: no operation, no «Deshacer».
     expect(host.store(1).log({ run: t.run })).toEqual([]);
     expect(t.changed).toBeFalsy();
+    // «o» (task 75): a group of rules, one of which holds, beside the rules that all hold.
+    const or = await turnOf(token, "los de comida o restaurantes de octubre", [
+      {
+        id: "f",
+        op: "call",
+        tool: "screen.filter",
+        args: {
+          collection: lit("movimientos"),
+          where: lit({
+            or: [{ categoria: "Comida" }, { categoria: "Restaurantes" }],
+            fecha: { after: "2026-09-30" },
+          }),
+        },
+      },
+    ]);
+    expect(replyOf(or, "filter")?.data).toEqual({
+      collection: "movimientos",
+      rules: [
+        {
+          join: "or",
+          rules: [
+            { field: F.categoria, op: "is", value: COMIDA },
+            { field: F.categoria, op: "is", value: RESTAURANTES },
+          ],
+        },
+        { field: F.fecha, op: "after", value: "2026-09-30" },
+      ],
+    });
+    // A group of one rule, or a rule of the group with two ops, is refused: one level, one rule each.
+    for (const where of [
+      { or: [{ categoria: "Comida" }] },
+      { or: [{ categoria: "Comida" }, { fecha: { after: "2026-09-30", before: "2026-11-01" } }] },
+    ]) {
+      const off = await turnOf(token, "los de comida", [
+        {
+          id: "f",
+          op: "call",
+          tool: "screen.filter",
+          args: { collection: lit("movimientos"), where: lit(where) },
+        },
+      ]);
+      expect(replyOf(off, "filter")).toBeUndefined();
+    }
     // A value the collection does not have is refused, never guessed.
     const bad = await turnOf(token, "los de viajes", [
       {

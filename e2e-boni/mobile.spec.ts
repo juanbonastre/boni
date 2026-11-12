@@ -169,6 +169,55 @@ test("«Páginas» on the phone: the search, the pages and the collections; a co
   await expect(page.locator(".find-box")).toBeVisible();
 });
 
+test("a page's collection on the phone shows the rows its advanced filter keeps (task 75), its chip «2 reglas» within the screen", async ({
+  page,
+}) => {
+  const view = {
+    layout: "table",
+    filter: [
+      {
+        join: "or",
+        rules: [
+          { field: "f_titulo", op: "contains", value: "ray" },
+          { field: "f_estado", op: "is", value: "o_leido" },
+        ],
+      },
+    ],
+  };
+  await openApp(page, "/?still", {
+    pages: [
+      {
+        id: "lecturas",
+        title: "Lecturas",
+        spec: { version: 1, blocks: [{ id: "db1", type: "database", source: "t_libro", view }] },
+      },
+    ],
+  });
+  await tab(page, "Páginas");
+  await page.locator(".m-item-main", { hasText: "Lecturas" }).tap();
+  const titles = page.locator(".db-table tbody td.is-title");
+  await expect(titles).toHaveCount(2);
+  await expect(titles.filter({ hasText: "Rayuela" })).toHaveCount(1);
+  await expect(titles.filter({ hasText: "Ficciones" })).toHaveCount(1);
+  const chip = page.locator(".db-bar .db-chip.on");
+  await expect(chip).toHaveText("2 reglas");
+  const box = await chip.boundingBox();
+  expect(box && box.x + box.width).toBeLessThanOrEqual(412);
+  // Its editor opens within the screen, the join chosen on its second rule.
+  await chip.tap();
+  const group = page.locator(".db-filter-group");
+  await expect(group.getByRole("combobox", { name: "Unión" })).toHaveValue("or");
+  const editor = await group.boundingBox();
+  expect(editor && editor.x >= 0 && editor.x + editor.width <= 412).toBe(true);
+  // The join reads whole in its narrow column.
+  const join = group.getByRole("combobox", { name: "Unión" });
+  expect(await join.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))),
+  );
+  await page.screenshot({ path: `${SHOTS}/phone-advanced-filter.png` });
+});
+
 test("a list for a thumb: a swipe shows delete (with Undo), a long press its menu", async ({
   page,
 }) => {

@@ -450,4 +450,45 @@ describe("a table's view as a model writes it (task 76)", () => {
     expect(() => viewOf(def, { layout: "table", calc: { Horas: "eval" } })).toThrow();
     expect(() => viewOf(def, { layout: "table", pin: "Nada" })).toThrow();
   });
+  it("names an advanced filter's rules by field, kept by id; one level only (task 75, D-58)", () => {
+    expect(
+      viewOf(def, {
+        layout: "table",
+        filter: [
+          { field: "Horas", op: "gt", value: 2 },
+          {
+            join: "or",
+            rules: [
+              { field: "Título", op: "contains", value: "informe" },
+              { field: "Día", op: "empty" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      layout: "table",
+      filter: [
+        { field: "f_01m6p4hora", op: "gt", value: 2 },
+        {
+          join: "or",
+          rules: [
+            { field: "f_01m6p4titu", op: "contains", value: "informe" },
+            { field: "f_01m6p4dia0", op: "empty" },
+          ],
+        },
+      ],
+    });
+    expect(() =>
+      viewOf(def, {
+        layout: "table",
+        filter: [{ join: "or", rules: [{ field: "Nada", op: "empty" }] }],
+      }),
+    ).toThrow();
+    expect(() =>
+      viewOf(def, {
+        layout: "table",
+        filter: [{ join: "or", rules: [{ join: "and", rules: [{ field: "Día", op: "empty" }] }] }],
+      }),
+    ).toThrow();
+  });
 });

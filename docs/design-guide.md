@@ -433,12 +433,22 @@ contraseña ni un código aquí» under a question.
   chip (the order's says its column with ↑ or ↓; a filter's says itself, «Estado es Leído»). Ordenar shows it with
   the order's chip open (its columns, Ascendente, Descendente, Quitar orden); Filtro with «+ Filtro» open (the
   properties): a property chosen adds its rule and opens its chip for the condition and the value; a rule without
-  its value yet filters nothing. The bar stays while the view has an order or a filter, and goes when they go.
+  its value yet filters nothing. Under the properties, after a line, **«Filtro avanzado»** (Notion's «Add advanced
+  filter»; task 75): a filter of several rules in one chip, «2 reglas» (its rules in words on hover and for a screen
+  reader, «Título contiene ray o Estado es Leído»). It starts with one rule on the title, open: «Donde Título
+  contiene…»; each next rule has «y» or «o» before it, chosen on the second (a select) and said on the rest, the same
+  for all, as Notion's; «+ Añadir regla» adds one, each rule's bin is «Quitar regla», and «Quitar filtro» takes the
+  whole group (so does its last rule). The plain rules and each advanced filter all hold together. One level only:
+  Notion nests groups inside a group, Boni does not yet (a group of «y» or «o» rules covers what was asked, and a
+  nested one is hard to read in a chip). The editor's rows keep a narrow first column (52 px) for «Donde», «y», «o»
+  so the three fields still fit a phone. Following Material 3's chips (a filter chip says its state in a word or a
+  count, its editing in a menu) and Nielsen Norman Group on advanced search (the and/or shown in words, next to the
+  rules it joins, never as a symbol). The bar stays while the view has an order or a filter, and goes when they go.
   **The view's settings** (its icon) are Notion's «⋯» of a view (Juan, 2026-11-03, task 41): the view's name (a field,
   on a collection's page), then a short list, each row saying what it is now on the right («Tabla», «5 visibles»,
   «Título ↓») with a chevron, and opening its panel in the same box (its head, «‹» and its name, goes back): Diseño
   (the layouts as tiles, the view's marked), Propiedades (each shown or not), Filtrar (the view's rules, as the
-  bar's), Ordenar (none, or a column up and, again, down), Agrupar (a board's list), Fecha and «También en el
+  bar's, each advanced filter with its rules, and «Añadir filtro», «Filtro avanzado»), Ordenar (none, or a column up and, again, down), Agrupar (a board's list), Fecha and «También en el
   calendario» (a calendar), Columnas de sistema (a table); under a line, the collection's notes in the sidebar (its
   eye), Duplicar vista and Eliminar vista. It opens on the list again. Table: the title column first, 34 px rows,
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;

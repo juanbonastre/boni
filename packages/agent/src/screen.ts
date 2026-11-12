@@ -1,6 +1,6 @@
 // Boni over the screen (docs/sistema.md §4.7, F9): opening, scrolling to, highlighting and filtering on the user's screen, as actions of the one list.
 import type { FieldDef } from "@boni/entities";
-import { type DatabaseFilter, FILTER_OPS } from "@boni/views";
+import { type DatabaseFilter, FILTER_OPS, type FilterItem } from "@boni/views";
 import { OPEN_PLACES } from "./plan.ts";
 import {
   fieldByName,
@@ -113,36 +113,54 @@ function fits(f: FieldDef, op: string, value: unknown): boolean {
 /**
  * A filter as the model writes it, by field names: `{"categoria": "Restaurantes", "fecha": {"after": "2026-09-30",
  * "before": "2026-11-01"}}` (a value alone is «is», «contains» for text and lists), into the view's rules, by ids.
+ * `"or": [{"categoria": "Restaurantes"}, {"categoria": "Supermercado"}]` is a group (task 75): one of its rules, each
+ * one field and one op, must hold.
  */
-export function filterRules(
-  store: ReadStore,
-  collection: string,
-  where: unknown,
-): DatabaseFilter[] {
+export function filterRules(store: ReadStore, collection: string, where: unknown): FilterItem[] {
   const def = typeByKey(store, collection);
   if (!where || typeof where !== "object" || Array.isArray(where))
     throw new ToolError("bad-argument");
-  const rules: DatabaseFilter[] = [];
+  const items: FilterItem[] = [];
   for (const [name, spec] of Object.entries(where as Record<string, unknown>)) {
-    const f = fieldByName(def, name);
-    if (!f) throw new ToolError("unknown-field");
-    const ops: [string, unknown][] =
-      spec && typeof spec === "object" && !Array.isArray(spec)
-        ? Object.entries(spec as Record<string, unknown>)
-        : [[TEXT.has(f.type) || LISTS.has(f.type) ? "contains" : "is", spec]];
-    for (const [op, value] of ops) {
-      if (!(FILTER_OPS as readonly string[]).includes(op)) throw new ToolError("unknown-op");
-      // «octubre» as a day, «before» on a text: refused, never a filter that quietly shows nothing.
-      if (!fits(f, op, value)) throw new ToolError("bad-value");
-      rules.push(
-        NO_VALUE.has(op)
-          ? { field: f.id, op: op as DatabaseFilter["op"] }
-          : { field: f.id, op: op as DatabaseFilter["op"], value: ruleValue(store, f, value) },
-      );
+    if (name === "or" && Array.isArray(spec) && !fieldByName(def, name)) {
+      const rules = spec.map((one) => {
+        const got = filterRules(store, collection, one);
+        const r = got[0];
+        if (got.length !== 1 || !r || "rules" in r) throw new ToolError("bad-argument");
+        return r;
+      });
+      if (rules.length < 2) throw new ToolError("bad-argument");
+      items.push({ join: "or", rules });
+      continue;
     }
+    items.push(...fieldRules(store, def, name, spec));
   }
-  if (!rules.length || rules.length > MAX_RULES) throw new ToolError("bad-argument");
-  return rules;
+  const n = items.reduce((sum, x) => sum + ("rules" in x ? x.rules.length : 1), 0);
+  if (!n || n > MAX_RULES) throw new ToolError("bad-argument");
+  return items;
+}
+
+/** One field's rules, as the model wrote them: a value alone, or an object of op to value. */
+function fieldRules(
+  store: ReadStore,
+  def: ReturnType<typeof typeByKey>,
+  name: string,
+  spec: unknown,
+): DatabaseFilter[] {
+  const f = fieldByName(def, name);
+  if (!f) throw new ToolError("unknown-field");
+  const ops: [string, unknown][] =
+    spec && typeof spec === "object" && !Array.isArray(spec)
+      ? Object.entries(spec as Record<string, unknown>)
+      : [[TEXT.has(f.type) || LISTS.has(f.type) ? "contains" : "is", spec]];
+  return ops.map(([op, value]): DatabaseFilter => {
+    if (!(FILTER_OPS as readonly string[]).includes(op)) throw new ToolError("unknown-op");
+    // «octubre» as a day, «before» on a text: refused, never a filter that quietly shows nothing.
+    if (!fits(f, op, value)) throw new ToolError("bad-value");
+    return NO_VALUE.has(op)
+      ? { field: f.id, op: op as DatabaseFilter["op"] }
+      : { field: f.id, op: op as DatabaseFilter["op"], value: ruleValue(store, f, value) };
+  });
 }
 
 /** The screen's actions, added to a registry (the core's, `coreTools`). */
@@ -242,7 +260,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
     area: "screen",
     title: "Filtrar",
     describe:
-      'Open a collection on the user\'s screen filtered, for as long as he looks at it (nothing is saved; he keeps it with «Guardar»). where: {"lit": {field: value, field: {"op": value}}}, by field names and option names; ops: is, is_not, contains, not_contains, before, after (dates "YYYY-MM-DD"), gt, lt, empty, not_empty, checked, unchecked',
+      'Open a collection on the user\'s screen filtered, for as long as he looks at it (nothing is saved; he keeps it with «Guardar»). where: {"lit": {field: value, field: {"op": value}, "or": [{field: value}, {field: {"op": value}}]}}, by field names and option names, all holding ("or": one of its rules holds); ops: is, is_not, contains, not_contains, before, after (dates "YYYY-MM-DD"), gt, lt, empty, not_empty, checked, unchecked',
     args: {
       collection: { role: "type", required: true, describe: "a collection's key" },
       where: {

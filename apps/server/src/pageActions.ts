@@ -148,8 +148,12 @@ function viewFrom(
     out.calc = Object.fromEntries(Object.entries(raw.calc).map(([k, c]) => [field(d, k), c]));
   if (raw.pin !== undefined) out.pin = field(d, raw.pin);
   if (Array.isArray(raw.wrap)) out.wrap = raw.wrap.map((w) => field(d, w));
+  // A rule, or an advanced filter: its join and its rules, each by field (D-58).
+  const rule = (r: unknown) => (isObj(r) ? { ...r, field: field(d, r.field) } : r);
   if (Array.isArray(raw.filter))
-    out.filter = raw.filter.map((r) => (isObj(r) ? { ...r, field: field(d, r.field) } : r));
+    out.filter = raw.filter.map((r) =>
+      isObj(r) && Array.isArray(r.rules) ? { ...r, rules: r.rules.map(rule) } : rule(r),
+    );
   if (!databaseViewOk(out)) throw new ToolError("bad-view");
   return out as Extract<PageBlock, { type: "database" }>["view"];
 }

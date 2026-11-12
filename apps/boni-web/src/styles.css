@@ -5777,6 +5777,30 @@ body:has(.toast) .db-selinfo {
   min-width: 0;
   height: 30px;
 }
+/* An advanced filter (task 75): its rules with «Donde», «y» or «o» before each, in one column. */
+.db-filter-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.db-filter-group .db-filter-row {
+  align-self: stretch;
+}
+.db-filter-row .db-filter-lead {
+  flex: 0 0 52px;
+  color: var(--muted);
+  font-size: 13px;
+}
+/* «y» or «o» chosen on the second rule: little padding, so the word reads whole beside its arrow on a phone. */
+.db-filter-row select.db-filter-lead {
+  padding: 0 2px 0 6px;
+}
+.db-filter-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
 .btn.ghost.small.on {
   color: var(--accent);
 }

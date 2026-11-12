@@ -40,8 +40,10 @@ import {
   type ChartSpec,
   computeBlock,
   type DataBlock,
+  type DatabaseFilter,
   type DatabaseView,
   findPart,
+  isFilterGroup,
   markdownToBlocks,
   type PageBlock,
 } from "@boni/views";
@@ -788,7 +790,8 @@ function screenReader(
         { field: leaf(fieldName(sort), code), desc: leaf(!!v.sort?.desc, code) },
         code,
       );
-    const rules = (v.filter ?? []).flatMap((r) => {
+    // A rule as its field's name, its op and its value; an advanced filter (task 75) as its join and its rules.
+    const ruleVal = (r: DatabaseFilter): Val[] => {
       const f = key(def, r.field);
       if (!f) return [];
       const value = (r as { value?: unknown }).value;
@@ -807,6 +810,13 @@ function screenReader(
           code,
         ),
       ];
+    };
+    const rules = (v.filter ?? []).flatMap((x): Val[] => {
+      if (!isFilterGroup(x)) return ruleVal(x);
+      const inner = x.rules.flatMap(ruleVal);
+      return inner.length
+        ? [rec({ join: leaf(x.join, code), rules: list(inner, code) }, code)]
+        : [];
     });
     if (rules.length) out.filter = list(rules, code);
     return rec(out, code);
