@@ -1,4 +1,4 @@
-import { controlsOf } from "@boni/views";
+import { controlsOf, withPassed } from "@boni/views";
 import { useEffect, useState } from "react";
 import type { DataRow, DataType } from "../core/agent.ts";
 import { isDataBlock } from "../core/blocks.ts";
@@ -18,7 +18,18 @@ import {
  * with the same engine as the number (packages/views `blockRows`), so the list always adds up to it. A row of the
  * user's opens as its page; Boni's own records are read only. The block's menu stays on its handle.
  */
-export function RowsPanel({ id, drill, label }: { id: string; drill?: string; label?: string }) {
+export function RowsPanel({
+  id,
+  drill,
+  label,
+  values,
+}: {
+  id: string;
+  drill?: string;
+  label?: string;
+  /** The page's values to count with (a figure of the chat's answer, §4.6 point 7); none, the page's now. */
+  values?: Record<string, string | number>;
+}) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const doc = useEditing();
@@ -33,7 +44,15 @@ export function RowsPanel({ id, drill, label }: { id: string; drill?: string; la
   }, []);
   // Asked again when what it counts changes (not its look).
   // The page's values are part of what it counts (D-59).
-  const controls = doc ? controlsOf(doc.spec.blocks) : [];
+  const blocks = doc?.spec.blocks ?? [];
+  const controls = controlsOf(
+    values
+      ? withPassed(
+          blocks,
+          Object.fromEntries(controlsOf(blocks).map((c) => [c.id, values[c.id] ?? null])),
+        ).blocks
+      : blocks,
+  );
   const key = data
     ? JSON.stringify([{ ...data, at: undefined, bg: undefined, color: undefined }, controls])
     : "";

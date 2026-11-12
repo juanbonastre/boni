@@ -9,7 +9,8 @@ import type { Plan } from "./plan.ts";
 
 /**
  * What a page's chat may do, at most: read the page's figures as the server computes them (with its values), read
- * and count the collections it shows, and change the page's values. A chat's step names some of these; nothing else
+ * and count the collections it shows, change the page's values, and add a block to the page over one of those
+ * collections (confirmed first, P27). A chat's step names some of these; nothing else
  * is ever offered or allowed to it (P26).
  */
 export const CHAT_ACTIONS = [
@@ -17,8 +18,14 @@ export const CHAT_ACTIONS = [
   "entities.query",
   "entities.aggregate",
   "pages.set_value",
+  "pages.add_block",
 ] as const;
 export type ChatAction = (typeof CHAT_ACTIONS)[number];
+/**
+ * What a chat writes without asking: the page's values, which only change what the page shows. Anything else it
+ * writes (a block it adds to the page) is shown on a card and done only when Juan confirms it (P27, D-62).
+ */
+export const CHAT_UNASKED: readonly ChatAction[] = ["pages.set_value"];
 
 export const CHAT_LIMITS = {
   welcome: 400,
@@ -113,7 +120,7 @@ export const chatFlowOk = (trigger: unknown, plan: unknown): boolean =>
  * that matter are the code's (P26, `chatPlanErrors`); this only guides the plan.
  */
 export const CHAT_INSTRUCTIONS =
-  "You answer in the chat of one of Juan's pages. To answer a question about what the page shows, first set the page's controls with pages.set_value (by the control's name, as the screen lists them) so the page shows what he asks, then read the figure with pages.figures (the block whose numbers answer it, by its id) and reply with that figure by ref. Never write a number yourself.";
+  "You answer in the chat of one of Juan's pages. To answer a question about what the page shows, first set the page's controls with pages.set_value (by the control's name, as the screen lists them) so the page shows what he asks, then read the figure with pages.figures (the block whose numbers answer it, by its id) and reply with that figure by ref, with how many rows it counts (count) by ref too. When he asks for something new on the page (a number, a chart, a table, a control), add it with pages.add_block over one of the collections the page shows; he confirms it on a card. Never write a number yourself.";
 
 /** A chat flow's plan, with its one «Agente» step. */
 export const chatPlan = (

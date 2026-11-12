@@ -3,7 +3,8 @@
  * graph computed from what is saved and what happened, never declared by hand (it replaces the «Modelos» canvas of
  * task 59b and its hand-made `pipeline.ts`). The nodes: the mail connector, the collections, the flows (each with its
  * steps, for the app to unfold), the Bandeja (what is proposed waits there until it is accepted), Boni's own work
- * that is not a flow yet (the conversation, the guide's reviewer), the user, the assistants by the MCP, the pages and
+ * that is not a flow yet (the conversation, the guide's reviewer), the user, the assistants by the MCP, the pages (and
+ * the blocks of each that paint a collection, with the values that control them) and
  * the account's devices (where what Boni tells arrives).
  * The arrows: what the flows' saved plans name (a step's collection is a literal: D-48; an «Avisar» tells the
  * devices), what the journal says the runs proposed, told, what was accepted and what they changed, and what the
@@ -12,6 +13,7 @@
  * collection, a flow and a page by their own names.
  */
 import type { RunRow, UserStore } from "@boni/store";
+import { controlsOf, controlsOfBlock, type PageBlock } from "@boni/views";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { userTypes } from "./data.ts";
 import {
@@ -28,7 +30,16 @@ import { timed } from "./perf.ts";
 import { whatOf } from "./runInfo.ts";
 import { recentActivity } from "./systemCollections.ts";
 
-export type MapKind = "connector" | "collection" | "flow" | "boni" | "actor" | "page" | "device";
+export type MapKind =
+  | "connector"
+  | "collection"
+  | "flow"
+  | "boni"
+  | "actor"
+  | "page"
+  /** A block of a page that paints a collection, or a value of the page (a «Control»): §4.6 point 7. */
+  | "block"
+  | "device";
 /** What an arrow says: data flows along it, from → to. */
 export type MapEdgeKind =
   | "brings"
@@ -45,6 +56,8 @@ export type MapEdgeKind =
   | "learns"
   | "improves"
   | "shows"
+  /** A page's value to a block of that page that reads it («controla», §4.6 point 7). */
+  | "controls"
   /** Out to the account's devices: what a flow's «Avisar» or a turn of the conversation told them. */
   | "tells";
 
@@ -90,6 +103,8 @@ export interface MapNode {
   pack?: string | null;
   /** The devices: how many notices they were told in the period. */
   notices?: number;
+  /** A block: the page it is on (that page's node id); its `code` is its kind («number», «control»…). */
+  page?: string;
 }
 
 export interface MapEdge {
@@ -132,6 +147,18 @@ const WRITES = new Set(["entities.create", "entities.update", "entities.delete"]
 /** The role a reader's model plays (packages/agent models.ts). */
 const roleOf = (reader: string) =>
   reader === "classify" ? "decider" : reader === "review_reading" ? "reviewer" : "reader";
+
+/** The collection one block paints: a number's, a bar list's or a chart's, a table's; null for any other. */
+function blockCollectionOf(b: PageBlock): string | null {
+  if (b.type === "number" || b.type === "bars" || b.type === "graph") return b.collection;
+  if (b.type === "database") return b.source;
+  return null;
+}
+/** A block's own name on the map (its title); null: the app names it by its kind. */
+const blockTitle = (b: PageBlock): string | null =>
+  "title" in b && typeof b.title === "string" && b.title.trim()
+    ? b.title.trim().slice(0, 120)
+    : null;
 
 /** The keys a page's blocks read: a data block's `collection`, a table's `source` (anywhere in its spec). */
 function collectionsOfSpec(spec: unknown, out = new Set<string>()): Set<string> {
@@ -670,15 +697,33 @@ function makeMap(
     }
   }
 
-  // The pages: what each of their blocks shows.
+  // The pages: what each of their blocks shows; and each block that paints a collection, with the page's values
+  // that control it (§4.6 point 7: the app shows a page's blocks only with one of them in the centre).
   for (const p of listPages(store)) {
     const page = getPage(store, p.id);
     if (!page) continue;
     const cols = [...collectionsOfSpec(page.spec)].filter((x) => known(x));
     if (!cols.length) continue;
-    node({ id: `page:${p.id}`, kind: "page", name: p.title, code: null, icon: p.icon });
+    const pageId = `page:${p.id}`;
+    node({ id: pageId, kind: "page", name: p.title, code: null, icon: p.icon });
     for (const c of cols)
-      edge({ from: colId(c), to: `page:${p.id}`, kind: "shows", n: null, outside: false });
+      edge({ from: colId(c), to: pageId, kind: "shows", n: null, outside: false });
+    const blocks = page.spec.blocks;
+    const blockId = (b: PageBlock) => `block:${p.id}:${b.id}`;
+    const blockNode = (b: PageBlock, name: string | null) =>
+      node({ id: blockId(b), kind: "block", name, code: b.type, page: pageId });
+    for (const b of blocks) {
+      const col = blockCollectionOf(b);
+      if (!col || !known(col)) continue;
+      blockNode(b, blockTitle(b));
+      edge({ from: colId(col), to: blockId(b), kind: "shows", n: null, outside: false });
+      for (const c of controlsOfBlock(b, blocks)) {
+        const control = controlsOf(blocks).find((x) => x.id === c);
+        if (!control) continue;
+        blockNode(control, control.name || null);
+        edge({ from: blockId(control), to: blockId(b), kind: "controls", n: null, outside: false });
+      }
+    }
   }
 
   // Arrows only between nodes the map has.

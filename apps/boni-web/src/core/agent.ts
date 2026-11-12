@@ -53,6 +53,34 @@ export interface Reply {
     /** A question Boni asked, kept as text once answered, with the answer (docs/conversacion.md §3.4, rule 3). */
     | "asked";
   data: Record<string, Painted>;
+  /** Of a figure in it (by its data key): the rows it is, as the server's code said (D-08, §4.6 point 7). */
+  rows?: Record<string, RowsOf>;
+}
+/** Which rows a block's figure is: its page, its block and the page's values when it was read. */
+export interface RowsOf {
+  page: string;
+  block: string;
+  values: Record<string, string | number>;
+}
+const ROWS_ID = /^[A-Za-z0-9_-]{1,80}$/;
+/** A reply's `rows`, only what is well formed (ids, and values that are a text or a number). */
+function rowsOfReply(v: unknown): Record<string, RowsOf> | null {
+  if (!isObj(v)) return null;
+  const out: Record<string, RowsOf> = {};
+  for (const [k, r] of Object.entries(v).slice(0, 8)) {
+    if (!isObj(r) || typeof r.page !== "string" || typeof r.block !== "string") continue;
+    if (!ROWS_ID.test(r.page) || !ROWS_ID.test(r.block)) continue;
+    const values: Record<string, string | number> = {};
+    if (isObj(r.values))
+      for (const [c, x] of Object.entries(r.values).slice(0, 40))
+        if (
+          ROWS_ID.test(c) &&
+          (typeof x === "number" || (typeof x === "string" && x.length <= 200))
+        )
+          values[c] = x;
+    out[k] = { page: r.page, block: r.block, values };
+  }
+  return Object.keys(out).length ? out : null;
 }
 export interface ConfirmRow {
   arg: string;
@@ -108,6 +136,7 @@ export const CHAT_ACTIONS = [
   "entities.query",
   "entities.aggregate",
   "pages.set_value",
+  "pages.add_block",
 ] as const;
 /** A page's chat (D-61): its flow, its page, what it says and what it may do. */
 export interface PageChat {
@@ -894,6 +923,7 @@ const MAP_KINDS: readonly MapKind[] = [
   "boni",
   "actor",
   "page",
+  "block",
   "device",
 ];
 const MAP_EDGES: readonly MapEdgeKind[] = [
@@ -907,9 +937,10 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "learns",
   "improves",
   "shows",
+  "controls",
   "tells",
 ];
-const MAP_ID = /^(conn|col|flow|boni|actor|page|dev):[A-Za-z0-9_.:@-]{1,120}$/;
+const MAP_ID = /^(conn|col|flow|boni|actor|page|block|dev):[A-Za-z0-9_.:@-]{1,120}$/;
 /** The account's devices on the map (the server's `DEVICES`): where what Boni tells arrives. */
 export const MAP_DEVICES = "dev:all";
 /** The devices' node as a map has it, for one whose period has no notice (a run that told before it goes to them). */
@@ -969,6 +1000,7 @@ export function parseMap(b: unknown): MapView | null {
       key: strOf(n.key, 80),
       rows: typeof n.rows === "number" ? n.rows : null,
       parent: typeof n.parent === "string" && MAP_ID.test(n.parent) ? n.parent : null,
+      page: typeof n.page === "string" && MAP_ID.test(n.page) ? n.page : null,
       trigger: isObj(n.trigger) ? n.trigger : null,
       on: n.on !== false,
       by: strOf(n.by, 20),
@@ -1788,7 +1820,8 @@ export function parseTurn(v: unknown): TurnResult {
       const p = parsePainted(d);
       if (p) data[k] = p;
     }
-    replies.push({ component: r.component as Reply["component"], data });
+    const rows = rowsOfReply(r.rows);
+    replies.push({ component: r.component as Reply["component"], data, ...(rows ? { rows } : {}) });
   }
   let pending: Pending | null = null;
   const p = v.pending;

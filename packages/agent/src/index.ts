@@ -19,6 +19,7 @@ export {
   paint,
   proposeFlow,
   type Reply,
+  type RowsOf,
   RUN_LIMITS,
   type RunDetail,
   type RunLimits,

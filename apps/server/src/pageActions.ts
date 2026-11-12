@@ -16,9 +16,11 @@ import { join, type Label, type TypeDef } from "@boni/entities";
 import type { OpMeta, UserStore } from "@boni/store";
 import {
   type ControlBlock,
+  controlsOf,
   controlValueOk,
   DATA_BLOCKS,
   databaseViewOk,
+  heldValue,
   type PageBlock,
   type PageSpec,
   pageErrors,
@@ -431,7 +433,7 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
     service: "pages",
     title: "Leer cifras",
     describe:
-      "Read one block of one of Juan's pages as the screen shows it, its numbers computed now with the page's values as they are (after pages.set_value): its title, unit, span, total, previous_total, labels and values. A reply names them by ref ($s.total)",
+      "Read one block of one of Juan's pages as the screen shows it, its numbers computed now with the page's values as they are (after pages.set_value): its title, unit, span, total, previous_total, labels and values, and count: how many rows its numbers are. A reply names them by ref ($s.total, $s.count)",
     args: {
       page,
       block: {
@@ -447,7 +449,19 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
       if (!p) throw new ToolError("no-such-page");
       const v = s.figures(p.id, text(a.block));
       if (!v) throw new ToolError("no-such-block");
-      return v;
+      if (v.t !== "rec" || !("count" in v.fields)) return v;
+      // Which rows its numbers are (D-08): the page, the block and its values as they are now, so a click on the
+      // figure in the chat's answer lists those rows even after the page's values change (§4.6 point 7).
+      const values: Record<string, Val> = {};
+      for (const c of controlsOf(p.spec.blocks)) {
+        const x = heldValue(c);
+        if (x !== undefined) values[c.id] = leaf(x, code);
+      }
+      const rowsOf = rec(
+        { page: leaf(p.id, code), block: leaf(text(a.block), code), values: rec(values, code) },
+        code,
+      );
+      return rec({ ...v.fields, rows_of: rowsOf }, v.label);
     },
   });
   r.register({

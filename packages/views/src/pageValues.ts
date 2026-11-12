@@ -57,6 +57,31 @@ export function controlValueOk(kind: unknown, v: unknown): boolean {
 export const controlsOf = (blocks: readonly PageBlock[]): ControlBlock[] =>
   blocks.filter((b): b is PageBlock & ControlBlock => b.type === "control");
 
+/**
+ * The controls a block reads (its ids, in the block's order, once each): a data block's filter and period, a table's
+ * rules, a link's or a button's values. The map draws them as the values that control it (docs/sistema.md §4.6
+ * point 7); a name that is no control of the page is the block's problem (`valueRefErrors`), not one of these.
+ */
+export function controlsOfBlock(b: PageBlock, blocks: readonly PageBlock[]): string[] {
+  const refs: unknown[] = [];
+  if (b.type === "number" || b.type === "bars" || b.type === "graph")
+    refs.push(b.filterValue, b.period);
+  if (b.type === "database")
+    for (const x of b.view.filter ?? [])
+      for (const r of "rules" in x ? x.rules : [x])
+        if (r.from !== undefined) refs.push(refTo(r.from));
+  if (b.type === "link") refs.push(...Object.values(b.pass ?? {}));
+  if (b.type === "action")
+    refs.push(
+      b.record,
+      ...Object.values(b.set ?? {}),
+      ...Object.values(b.inputs ?? {}),
+      ...Object.values(b.pass ?? {}),
+    );
+  const ids = new Set(controlsOf(blocks).map((c) => c.id));
+  return [...new Set(refs.map(refOf).filter((r): r is string => !!r && ids.has(r)))];
+}
+
 /** What a control holds now, when it holds something (an empty text is nothing). */
 export function heldValue(c: ControlBlock | undefined): string | number | undefined {
   const v = c?.value;

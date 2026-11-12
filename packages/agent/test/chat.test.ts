@@ -9,6 +9,7 @@ import {
   agentStepOf,
   CHAT_ACTIONS,
   CHAT_INSTRUCTIONS,
+  CHAT_UNASKED,
   chatFlowOk,
   chatPlan,
   chatPlanErrors,
@@ -190,6 +191,89 @@ describe("P26: a chat acts only within its step, its page and the page's collect
 
   it("leaves a call with no chat as it was", () => {
     const c = call("entities.query", { type: v("tarea") }, { type: "t_tarea" });
+    delete c.scope;
+    expect(decide(c, PERSONAL, counters)).toMatchObject({ kind: "allow" });
+  });
+});
+
+describe("P26 and P27: a block the chat adds to its page (docs/sistema.md §4.6 point 7, D-62)", () => {
+  const OWN = label("user", "personal", []);
+  const v = (x: unknown) => leaf(x as string, OWN);
+  // As the server registers them (apps/server pageActions.ts): the page and the block's definition.
+  const addBlock = {
+    name: "pages.add_block",
+    effect: "write",
+    area: "pages",
+    describe: "",
+    title: "Añadir bloque",
+    args: { page: { role: "page" }, block: { role: "definition" } },
+  } as unknown as NonNullable<Call["tool"]>;
+  const setValue = {
+    ...addBlock,
+    name: "pages.set_value",
+    args: { page: { role: "page" }, control: { role: "option" }, value: { role: "content" } },
+  } as unknown as NonNullable<Call["tool"]>;
+  const scope = { actions: [...CHAT_ACTIONS], page: "p_gastos", types: ["t_mov"] };
+  const counters = { writes: 0, sensitiveReads: 0 };
+  const number = { type: "number", collection: "movimiento", measure: "sum", field: "importe" };
+  const add = (block: unknown, typeIds: Call["typeIds"], page = "p_gastos"): Call => ({
+    tool: addBlock,
+    args: { page: v(page), block: v(block) },
+    control: null,
+    scope,
+    typeIds,
+  });
+
+  it("is on the chat's list, and the chat writes only its page's values without asking", () => {
+    expect(CHAT_ACTIONS).toContain("pages.add_block");
+    expect(CHAT_UNASKED).toEqual(["pages.set_value"]);
+    expect(chatPlan().steps[0]?.actions).toContain("pages.add_block");
+  });
+
+  it("is confirmed first (P27), over a collection the page shows, a text block too", () => {
+    expect(decide(add(number, { "block.collection": "t_mov" }), PERSONAL, counters)).toEqual({
+      kind: "confirm",
+      rule: "P27",
+    });
+    expect(decide(add({ type: "text", text: "Notas" }, {}), PERSONAL, counters)).toEqual({
+      kind: "confirm",
+      rule: "P27",
+    });
+    // The page's values: not asked.
+    expect(
+      decide(
+        {
+          tool: setValue,
+          args: { page: v("p_gastos"), control: v("Mes"), value: v("2026-10") },
+          control: null,
+          scope,
+        },
+        PERSONAL,
+        counters,
+      ),
+    ).toMatchObject({ kind: "allow" });
+  });
+
+  it("is denied over another collection, an unknown one, or another page (P26)", () => {
+    const denied = (reason: string) => ({ kind: "deny", rule: "P26", reason });
+    expect(decide(add(number, { "block.collection": "t_tarea" }), PERSONAL, counters)).toEqual(
+      denied("not-the-pages-collection"),
+    );
+    expect(decide(add(number, { "block.collection": null }), PERSONAL, counters)).toEqual(
+      denied("not-the-pages-collection"),
+    );
+    expect(
+      decide(add(number, { "block.collection": "t_mov" }, "p_otra"), PERSONAL, counters),
+    ).toEqual(denied("not-the-chats-page"));
+    // A chat whose step does not give it.
+    const c = add(number, { "block.collection": "t_mov" });
+    expect(
+      decide({ ...c, scope: { ...scope, actions: ["pages.figures"] } }, PERSONAL, counters),
+    ).toEqual(denied("not-the-chats-action"));
+  });
+
+  it("is not asked out of a chat (the MCP, Boni's own conversation), as before", () => {
+    const c = add(number, {});
     delete c.scope;
     expect(decide(c, PERSONAL, counters)).toMatchObject({ kind: "allow" });
   });

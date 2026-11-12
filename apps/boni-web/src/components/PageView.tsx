@@ -5,6 +5,7 @@ import {
   type ControlBlock,
   kindOf as catalogueKind,
   controlsOf,
+  controlsOfBlock,
   markdownToBlocks,
   newBlock,
   partOf,
@@ -1171,6 +1172,21 @@ const blockCollection = (block: Block): string | null => {
   return id && !id.startsWith("t_sys_") ? id : null;
 };
 
+/**
+ * What «Ver en el mapa» puts in the centre (docs/sistema.md §4.6 point 7): a block that paints a collection, or a value
+ * one of them reads, as the map draws it (apps/server flowMap.ts); any other block that names a collection, that
+ * collection.
+ */
+const mapCentre = (block: Block, blocks: readonly Block[], page: string): string | null => {
+  const col = blockCollection(block);
+  const painted = block.type === "number" || block.type === "bars" || block.type === "graph";
+  const read =
+    block.type === "control" && blocks.some((b) => controlsOfBlock(b, blocks).includes(block.id));
+  if (col && (painted || block.type === "database")) return `block:${page}:${block.id}`;
+  if (read) return `block:${page}:${block.id}`;
+  return col ? `col:${col}` : null;
+};
+
 function BlockMenu({ block, page, close }: { block: Block; page: Page; close: () => void }) {
   const t = useStore((s) => s.t);
   const spec = useStore((s) =>
@@ -1243,12 +1259,12 @@ function BlockMenu({ block, page, close }: { block: Block; page: Page; close: ()
           put(next);
         }}
       />
-      {blockCollection(block) && (
+      {mapCentre(block, blocks, page.id) && (
         <MenuRow
           label={t("map.show")}
           onClick={() => {
             close();
-            showMap(`col:${blockCollection(block)}`);
+            showMap(mapCentre(block, blocks, page.id) as string);
           }}
         />
       )}

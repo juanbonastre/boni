@@ -36,10 +36,12 @@ import "@xyflow/react/dist/style.css";
 import {
   Bot,
   Braces,
+  ChartColumn,
   ChevronDown,
   ChevronRight,
   Database,
   FileText,
+  Hash,
   HelpCircle,
   Inbox,
   Mail,
@@ -49,6 +51,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Table2,
   Upload,
   User,
   Workflow,
@@ -184,6 +187,16 @@ function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: 
   if (n.kind === "collection") return <Database {...p} />;
   if (n.kind === "flow") return <Workflow {...p} />;
   if (n.kind === "page") return <FileText {...p} />;
+  if (n.kind === "block")
+    return n.code === "control" ? (
+      <SlidersHorizontal {...p} />
+    ) : n.code === "number" ? (
+      <Hash {...p} />
+    ) : n.code === "database" ? (
+      <Table2 {...p} />
+    ) : (
+      <ChartColumn {...p} />
+    );
   if (n.kind === "device") return <MonitorSmartphone {...p} />;
   if (n.kind === "boni")
     return n.code === "review" ? (
@@ -217,6 +230,7 @@ function lineOf(
   n: MapNode,
   money: (usd: number) => string,
   keyName: (key: string) => string | undefined,
+  pageName: (id: string) => string | undefined,
 ): string[] {
   const out: string[] = [];
   // The Bandeja: what waits in it now.
@@ -242,6 +256,8 @@ function lineOf(
     out.push(t(n.notices === 1 ? "map.notices.one" : "map.notices", { n: n.notices }));
   if (n.kind === "actor") out.push(t(`map.sub.${n.code ?? "user"}`));
   if (n.kind === "page") out.push(t("map.sub.page"));
+  // A block: the page it is on.
+  if (n.kind === "block") out.push(pageName(n.page ?? "") ?? t("map.sub.page"));
   return out;
 }
 
@@ -1196,6 +1212,7 @@ function Canvas({
   // A collection's name by its key: what a trigger names.
   const keyName = (key: string) =>
     map.nodes.find((n) => n.kind === "collection" && n.key === key)?.name ?? undefined;
+  const pageName = (id: string) => map.nodes.find((n) => n.id === id)?.name ?? undefined;
   // What «Flujos»' filter or search leaves out is not on the map.
   const base = useMemo(() => {
     if (!only) return map;
@@ -1610,7 +1627,7 @@ function Canvas({
         data: {
           node: n,
           name: nameOf.get(n.id) ?? n.id,
-          lines: lineOf(t, n, money, keyName),
+          lines: lineOf(t, n, money, keyName, pageName),
           models,
           hot: n.id === selected,
           dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
@@ -1767,11 +1784,15 @@ function Canvas({
     if (n.kind === "flow") showFlow(n.id.slice("flow:".length));
     else if (n.kind === "collection") openCollection(n.id.slice("col:".length));
     else if (n.kind === "page") openPage(n.id.slice("page:".length));
+    else if (n.kind === "block" && n.page) openPage(n.page.slice("page:".length));
     else if (n.code === "chat") showChat();
     else if (n.code === "inbox") showInbox();
   };
   const canOpen = (n: MapNode) =>
-    ["flow", "collection", "page"].includes(n.kind) || n.code === "chat" || n.code === "inbox";
+    ["flow", "collection", "page"].includes(n.kind) ||
+    (n.kind === "block" && !!n.page) ||
+    n.code === "chat" ||
+    n.code === "inbox";
   const fold = (id: string) =>
     setOpen((o) => {
       const x = new Set(o);
@@ -1787,7 +1808,7 @@ function Canvas({
   const findable = useMemo(
     () =>
       base.nodes
-        .filter((n) => n.kind !== "page" || kept.lens.pages)
+        .filter((n) => (n.kind !== "page" || kept.lens.pages) && n.kind !== "block")
         .map((n) => ({ id: n.id, name: nameOf.get(n.id) ?? n.id, kind: n.kind })),
     [base, nameOf, kept.lens.pages],
   );
@@ -2066,7 +2087,7 @@ function Canvas({
               </dl>
             ) : (
               <dl className="mp-facts">
-                {lineOf(t, chosen, money, keyName).map((l) => (
+                {lineOf(t, chosen, money, keyName, pageName).map((l) => (
                   <dd key={l}>{l}</dd>
                 ))}
                 {chosen.kind === "flow" && (

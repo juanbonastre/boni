@@ -2432,6 +2432,53 @@ export const MAP = {
     mapEdge("actor:user", "col:t_libro", "writes", 3),
   ],
 };
+/**
+ * The map with the blocks of «Gastos del mes» (docs/sistema.md §4.6 point 7): its total paints Gastos, its two
+ * controls set it. The server sends every page's blocks; the app keeps them only around one in the centre.
+ */
+export const MAP_BLOCKS = {
+  ...MAP,
+  nodes: [
+    ...MAP.nodes,
+    mapNode({ id: "page:p_gastos", kind: "page", name: "Gastos del mes" }),
+    mapNode({
+      id: "block:p_gastos:b_cat",
+      kind: "block",
+      code: "control",
+      name: "Categoría",
+      page: "page:p_gastos",
+    }),
+    mapNode({
+      id: "block:p_gastos:b_mes",
+      kind: "block",
+      code: "control",
+      name: "Mes",
+      page: "page:p_gastos",
+    }),
+    mapNode({
+      id: "block:p_gastos:b_total",
+      kind: "block",
+      code: "number",
+      name: "Gastado",
+      page: "page:p_gastos",
+    }),
+    // Another page's block over the same collection: not on this block's map.
+    mapNode({
+      id: "block:p_01agenda:b_n",
+      kind: "block",
+      code: "number",
+      name: "Pendientes",
+      page: "page:p_01agenda",
+    }),
+  ],
+  edges: [
+    ...MAP.edges,
+    mapEdge("col:t_01gastos", "block:p_gastos:b_total", "shows", null),
+    mapEdge("block:p_gastos:b_cat", "block:p_gastos:b_total", "controls", null),
+    mapEdge("block:p_gastos:b_mes", "block:p_gastos:b_total", "controls", null),
+    mapEdge("col:t_01gastos", "block:p_01agenda:b_n", "shows", null),
+  ],
+};
 /** The map with «Leer correo» creating in the chosen collection, Tarea or Evento (task 83: the decider's panel). */
 export const MAP_CHOSEN = {
   ...MAP,
