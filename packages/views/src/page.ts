@@ -107,6 +107,11 @@ export type PageBlock = (
   | ControlBlock
   /** `pass`: values for the controls of the page it opens, by their ids (a value, or `$<a control of this page>`). */
   | { id: string; type: "link"; title?: string; to: string; pass?: Record<string, string | number> }
+  /**
+   * The page's chat (docs/sistema.md §4.6 point 6, D-61): the flow it is (a «Chat» trigger on this page and one «Agente»
+   * step), by id. Only the app adds it (a model's `pages.add_block` does not); what it says and may do is the flow's.
+   */
+  | { id: string; type: "chat"; flow: string }
 ) & {
   /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
   at?: Place;
@@ -357,6 +362,7 @@ export const PAGE_BLOCKS = [
   "action",
   ...DATA_BLOCKS,
   "control",
+  "chat",
   ...BONI_BLOCKS,
 ] as const;
 export const PAGE_LIMITS = {
@@ -499,6 +505,14 @@ export function pageErrors(spec: unknown): string[] {
           !ID.test(b.page)
         )
           errors.push(`${w}: a page link names its page`);
+        break;
+      case "chat":
+        if (
+          !only(b, ["at", "id", "type", "flow"]) ||
+          typeof b.flow !== "string" ||
+          !ID.test(b.flow)
+        )
+          errors.push(`${w}: a chat names its flow`);
         break;
       case "chart":
         if (

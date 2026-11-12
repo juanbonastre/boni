@@ -8,6 +8,8 @@
  */
 import { createHash } from "node:crypto";
 import {
+  chatFlowOk,
+  chatTrigger,
   checkPlan,
   manualInputs,
   newFlowId,
@@ -598,6 +600,13 @@ export function checkFlow(
 ): FlowCheck {
   const problems: Problem[] = [];
   const steps = stepsOf(flow.plan);
+  // A page's chat (D-61) is its «Chat» trigger and one «Agente» step, which the planner fills in each message: no
+  // step of it is interpreted, so there is nothing more of it to check here. Nothing else has either.
+  if (chatTrigger(flow.trigger) || steps.some((s) => s.op === "agent")) {
+    if (!chatFlowOk(flow.trigger, flow.plan))
+      problems.push({ step: null, at: null, code: "bad-chat" });
+    return { problems, refs: {}, outs: {} };
+  }
   if (!triggerOk(flow.trigger)) problems.push({ step: null, at: "trigger", code: "bad-trigger" });
   if (!steps.length) problems.push({ step: null, at: null, code: "no-steps" });
   else {
@@ -999,14 +1008,16 @@ export function createFlow(
     learning?: unknown;
     spending?: unknown;
   };
+  // A copy of a page's chat is no chat (its block names the one it is): an empty flow by hand.
+  const chat = !!from && !!chatTrigger(from.trigger);
   const boniOnly =
-    on.connector !== undefined || on.learning !== undefined || on.spending !== undefined;
+    chat || on.connector !== undefined || on.learning !== undefined || on.spending !== undefined;
   return store.journal.saveFlow({
     id: newFlowId(o.name),
     name: o.name,
     trigger: from && !boniOnly ? from.trigger : { manual: true },
-    inputs: from ? from.inputs : [],
-    plan: from ? from.plan : { version: 1, steps: [] },
+    inputs: from && !chat ? from.inputs : [],
+    plan: from && !chat ? from.plan : { version: 1, steps: [] },
     layout: null,
     by: "user",
     enabled: false,
@@ -1047,6 +1058,11 @@ export function saveUserFlow(
     (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW || id === BUDGET_FLOW) &&
     kept(trigger) !== kept(latest.trigger)
   )
+    return { error: "trigger" };
+  // A page's chat stays on its page (its texts are its panel's); no other flow becomes one (D-61).
+  const wasChat = chatTrigger(latest.trigger);
+  const isChat = chatTrigger(trigger);
+  if (!!wasChat !== !!isChat || (wasChat && isChat && wasChat.page !== isChat.page))
     return { error: "trigger" };
   const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown; spending?: unknown };
   if (

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
 import type { FlowRow, ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
+import { type ChatScope, chatPlanErrors } from "./chat.ts";
 import {
   type ConfirmRow,
   type ConfirmView,
@@ -69,6 +70,7 @@ import {
   type ToolDef,
   ToolError,
   type ToolRegistry,
+  typeByKey,
   typeName,
 } from "./tools.ts";
 import { type RunDetail, smallJson, traceOf } from "./trace.ts";
@@ -129,7 +131,10 @@ tools' arguments to look further) and its numbers (total, or labels and values, 
 closed to you are left out of them, so they are not the ones he sees: say so). Kind "closed" is something you may
 not see: say that it is closed to you; kind "gone" is no longer there. "This", "the one at the top", "the second
 one" mean what is there, what he pointed at first, else what is in view; use its values as {"ref": "$screen..."}
-with the path the input shows.
+with the path the input shows. "chat", when there is one: you answer in the chat of one of the user's pages ("page":
+its id; "screen" shows that page), as its "instructions" say. Only its "tools" are there, and only that page and the
+collections it shows may be named. In a chat there are no readers, and no number or digit of your own anywhere in a
+reply or a question: every figure is a ref to what a tool gave (pages.figures, entities.aggregate).
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -184,6 +189,8 @@ Results:
 - entities.query / entities.search: a list of records {id, type, <field keys>...}: "$s1.items[0].email";
   query by "field" with "equals" (exact) or "contains" (text inside, e.g. a first name in a full name).
 - entities.get / entities.create / entities.update: one record. entities.aggregate: a number.
+- pages.figures: one block of the page as "screen" shows it, its numbers computed now with the page's values as the
+  steps before left them: "$s3.total", "$s3.labels", "$s3.values".
 - readers: extract_tasks -> {"tasks": [{"title", "due", "sender", "message_id"}]} (loop with
   "each": {"ref": "$s2.tasks"}); classify -> {"choice"}; summarize, rewrite, answer_about -> {"text"}.
   A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item"} (the whole
@@ -465,6 +472,11 @@ interface RunState {
   would?: Map<string, Would[]>;
   /** The run is a flow's (by hand, on its trigger, tried, or started by `flows.run`): it starts no flow. */
   flowRun?: boolean;
+  /**
+   * A turn written in a page's chat (D-61, chat.ts): its flow, what its «Agente» step tells the planner, and where
+   * every call is decided (P24: its actions, its page, the collections the page shows).
+   */
+  chat?: { flow: string; instructions: string; scope: ChatScope };
   abort?: AbortController | undefined;
   expiresAt: number;
 }
@@ -966,6 +978,12 @@ export class Agent {
      * message, and its run was taken back first (`correct`). Kept with the turn; the planner sees the old one marked.
      */
     corrects?: string;
+    /**
+     * A message written in a page's chat (D-61): the chat's flow (kept with the run), what its «Agente» step says and
+     * the scope its calls are decided in (P24). The planner writes the plan with only those actions, and what it says
+     * carries no number of its own (`chatPlanErrors`).
+     */
+    chat?: { flow: { id: string; version: number }; instructions: string; scope: ChatScope };
   }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
@@ -976,6 +994,9 @@ export class Agent {
       device: req.origin.device ?? null,
       started: this.now(),
       ...(req.flow ? { flow: req.flow.id, flowVersion: req.flow.version } : {}),
+      ...(req.chat && !req.flow
+        ? { flow: req.chat.flow.id, flowVersion: req.chat.flow.version }
+        : {}),
     });
     const st = this.newState(
       run,
@@ -986,6 +1007,12 @@ export class Agent {
     );
     st.live = req.live;
     st.planner = req.planner;
+    if (req.chat && !req.flow && !req.button)
+      st.chat = {
+        flow: req.chat.flow.id,
+        instructions: req.chat.instructions.slice(0, 2000),
+        scope: req.chat.scope,
+      };
     if (req.screen && !req.flow && !req.button) st.env.set("screen", req.screen);
     if (req.chips?.length) st.chips = req.chips.slice(0, 20);
     if (req.corrects) st.corrects = req.corrects;
@@ -1220,7 +1247,7 @@ export class Agent {
   /** What the planner sees: the request, its tools, the schema, the history and the memories, all
    * through the planner view. */
   plannerInput(st: RunState): Record<string, unknown> {
-    const tools = this.catalogFor(st.origin).map((t) => ({
+    const tools = this.plannerTools(st).map((t) => ({
       name: t.name,
       effect: t.effect,
       describe: t.describe,
@@ -1271,7 +1298,31 @@ export class Agent {
       memories: this.memories(),
       ...(flows.length ? { flows } : {}),
       ...(screen ? { screen: toPlannerView(screen, "$screen") } : {}),
+      ...(st.chat
+        ? { chat: { page: st.chat.scope.page, instructions: st.chat.instructions } }
+        : {}),
     };
+  }
+
+  /** The tools the planner is given: a chat's only those its step names (P24 allows no other). */
+  private plannerTools(st: RunState): ToolDef[] {
+    const all = this.catalogFor(st.origin);
+    const scope = st.chat?.scope;
+    return scope ? all.filter((t) => scope.actions.includes(t.name)) : all;
+  }
+
+  /** The planner's plan checked for this run: the tools it was given and, in a chat, no number of its own. */
+  private checkPlanned(st: RunState, out: unknown, bound: readonly string[]) {
+    const allowed = new Set(this.plannerTools(st).map((t) => t.name));
+    const v = validatePlan(
+      out,
+      { args: (name: string) => (allowed.has(name) ? this.o.registry.args(name) : null) },
+      st.turn.text,
+      bound,
+    );
+    if (!v.ok || !st.chat) return v;
+    const errors = chatPlanErrors(v.plan);
+    return errors.length ? { ok: false as const, errors } : v;
   }
 
   /** Memories the planner may read: Juan's, Boni's and imported; never a model's own until Juan
@@ -1419,7 +1470,7 @@ export class Agent {
           role: "planner",
           system: this.o.plannerPrompt ?? PLANNER_PROMPT,
           input: { ...input, ...extra },
-          schema: planSchema(this.catalogFor(st.origin).flatMap((t) => Object.keys(t.args))),
+          schema: planSchema(this.plannerTools(st).flatMap((t) => Object.keys(t.args))),
           structured: false,
           // Opus thinks before it answers, and thinking counts towards this.
           maxTokens: 16000,
@@ -1434,10 +1485,10 @@ export class Agent {
     // What the code bound for this turn (the screen, F9) the plan may name.
     const bound = st.env.has("screen") ? ["screen"] : [];
     let out = await ask({});
-    let v = validatePlan(out, this.catalogView(st.origin), st.turn.text, bound);
+    let v = this.checkPlanned(st, out, bound);
     if (!v.ok) {
       out = await ask({ previous_errors: v.errors });
-      v = validatePlan(out, this.catalogView(st.origin), st.turn.text, bound);
+      v = this.checkPlanned(st, out, bound);
     }
     if (!v.ok) throw new Stop("plan-invalid");
     return v.plan;
@@ -1659,6 +1710,7 @@ export class Agent {
         flow: !!st.flowRun,
         dry: !!st.dry,
         ...(rows !== undefined ? { rows } : {}),
+        ...(st.chat && tool ? { scope: st.chat.scope, typeIds: this.typeIdsOf(tool, args) } : {}),
       },
       st.origin,
       st.counters,
@@ -1791,6 +1843,21 @@ export class Agent {
         this.log(st, step, "call", "allow", d.rule, info);
         return this.run(st, tool, args, control);
     }
+  }
+
+  /** Of each `type` argument, the collection it names as the tool would find it (its id), for P24; null: none. */
+  private typeIdsOf(tool: ToolDef, args: Record<string, Val>): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const [k, v] of Object.entries(args)) {
+      if (tool.args[k]?.role !== "type") continue;
+      const name = plain(v);
+      try {
+        out[k] = typeof name === "string" ? typeByKey(readStore(this.o.store), name).id : null;
+      } catch {
+        out[k] = null;
+      }
+    }
+    return out;
   }
 
   private async run(

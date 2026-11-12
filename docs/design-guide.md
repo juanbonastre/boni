@@ -426,6 +426,18 @@ contraseña ni un código aquí» under a question.
   «comillas». A change dims the blocks that read it in place (`aria-busy`) until the server answers; it never empties
   them. A link's panel has «Con valores»: for each control of the page it opens, a control of this page of the same
   kind, or «—».
+- **A page's chat** (task 87, F11, D-61; `components/PageChatBlock.tsx`, `components/Chat.tsx` `ChatMode`;
+  `docs/sistema.md` §4.6 point 6): «Chat de la página» in «/» and «+» puts a «Chat» block on the page, a quiet card as
+  wide as its column: a speech-bubble icon and «Chat», its welcome (while empty, one saying it answers with the figures it
+  computes), its buttons in a row (each writes its text as Juan's message; the text is its tooltip) and a bar with
+  «Escribe a este chat…» and a send arrow. Writing there opens a new conversation in Boni's floating window,
+  in the chat's mode: over the composer a chip «Chat de «Gastos»» with «×» («Salir del modo de este chat»), and the
+  conversation goes on there. Its panel has «Bienvenida», «Botones» (a name and what it writes, up to six, «Añadir
+  botón»), «Instrucciones del agente» («Restablecer las de Boni» once changed) and «Lo que puede hacer» (the fixed
+  list, one checkbox each), and «Guardar» («Guardado»; a save made elsewhere first says so). Switched off in «Flujos», it says
+  «apagado» and its bar and buttons are disabled; its flow gone, the block says «Este chat ya no existe.». In
+  «Flujos» it shows as any flow, its trigger «Chat» fixed and its step named «Agente». Every word of it, and of what
+  it answers, is plain text.
 - **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
   `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,

@@ -27,6 +27,21 @@ export {
   type Would,
 } from "./agent.ts";
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
+export {
+  type AgentStep,
+  agentStepOf,
+  CHAT_ACTIONS,
+  CHAT_INSTRUCTIONS,
+  CHAT_LIMITS,
+  type ChatAction,
+  type ChatButton,
+  type ChatScope,
+  type ChatTrigger,
+  chatFlowOk,
+  chatPlan,
+  chatPlanErrors,
+  chatTrigger,
+} from "./chat.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
 export {
   type ConversationInfo,

@@ -59,6 +59,13 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(with_({ id: "x", type: "chart", chart: "https://evil.example" })[0]).toMatch(/chart/);
     expect(with_({ id: "x", type: "action", screen: "gasto", label: " " })[0]).toMatch(/action/);
     expect(with_({ type: "heading", text: "x" })[0]).toMatch(/needs an id/);
+    // A page's chat (D-61): only the flow it names; its texts and what it may do are its flow's.
+    expect(with_({ id: "c", type: "chat", flow: "chat-gastos-0a1b2c" })).toEqual([]);
+    expect(with_({ id: "c", type: "chat", flow: "chat-gastos", welcome: "hola" })[0]).toMatch(
+      /chat/,
+    );
+    expect(with_({ id: "c", type: "chat", flow: "../x" })[0]).toMatch(/chat/);
+    expect(with_({ id: "c", type: "chat" })[0]).toMatch(/chat/);
     expect(pageErrors({ ...ok, blocks: [...ok.blocks, ok.blocks[0]] })).toContain(
       "blocks[16]: id used twice",
     );

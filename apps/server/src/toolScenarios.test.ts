@@ -135,6 +135,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "pages.set_view": [{ file: ACTIONS, test: TABLE_TEST }],
   "pages.set_value": [{ file: ACTIONS, test: VALUE_TEST }],
   "pages.update": [{ file: ACTIONS, test: TABLE_TEST }],
+  "pages.figures": [
+    {
+      file: "apps/server/src/pageChat.test.ts",
+      test: "«¿cuánto gasté en restaurantes en octubre?» sets the page's values, the chart follows, and the figure is the code's",
+    },
+  ],
   "pages.delete": [{ file: ACTIONS, test: TABLE_TEST }],
   "inbox.accept": [{ file: ACTIONS, test: INBOX_TEST }],
   "inbox.reject": [{ file: ACTIONS, test: INBOX_TEST }],

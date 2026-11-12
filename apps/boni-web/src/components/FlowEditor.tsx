@@ -133,6 +133,8 @@ export function triggerText(
   if (on.learning === "mail") return t("flows.on.learning.mail");
   // Boni's «Aviso del presupuesto» (D-53): the month's spending on models passes the budget's warning.
   if (on.spending === "warn") return t("flows.on.spending.warn");
+  // A page's chat (D-61): what Juan writes in it starts each of its turns.
+  if (on.chat && typeof on.chat === "object") return t("flows.on.chat");
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
@@ -1148,7 +1150,9 @@ function TriggerPanel({
     typeof draft.trigger.created === "string" ||
     draft.trigger.connector === "mail" ||
     draft.trigger.learning === "mail" ||
-    draft.trigger.spending === "warn";
+    draft.trigger.spending === "warn" ||
+    // A page's chat (D-61): its welcome and its buttons are its block's panel's.
+    (!!draft.trigger.chat && typeof draft.trigger.chat === "object");
   const names = formNames(draft.trigger);
   // What it gives: for «Aviso del presupuesto», both figures always, as its card says (whatever its text takes);
   // for a record's, what the saved plan takes of it.

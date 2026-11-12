@@ -47,6 +47,8 @@ import {
 export interface PagesService {
   store: UserStore;
   meta: OpMeta;
+  /** One block of a page as the screen gives it, its numbers computed now (screen.ts `blockFigures`); null: none. */
+  figures?: (page: string, block: string) => Val | null;
 }
 const serviceOf = (s: unknown): PagesService => {
   if (!s || typeof s !== "object" || !("store" in s)) throw new ToolError("not-available");
@@ -417,6 +419,35 @@ export function withPageActions(r: ToolRegistry): ToolRegistry {
       const raw = a.value ? plain(a.value) : null;
       const spec = withValue(p, c.store, text(a.control), raw);
       return pageVal(wrap(() => updatePage(s.store, p.id, { spec }, writer(s, [a.value], extra))));
+    },
+  });
+  // A page's numbers as the code computes them (D-61): what a page's chat answers with, by ref, never a number of the
+  // model's own. It reads the page as it is saved, after the values the run set.
+  r.register({
+    name: "pages.figures",
+    icon: "Calculator",
+    effect: "read",
+    area: "pages",
+    service: "pages",
+    title: "Leer cifras",
+    describe:
+      "Read one block of one of Juan's pages as the screen shows it, its numbers computed now with the page's values as they are (after pages.set_value): its title, unit, span, total, previous_total, labels and values. A reply names them by ref ($s.total)",
+    args: {
+      page,
+      block: {
+        role: "option",
+        required: true,
+        describe: "the block's id (as the screen lists it)",
+      },
+    },
+    run(c, a) {
+      const s = serviceOf(c.service);
+      if (!s.figures) throw new ToolError("not-available");
+      const p = getPage(s.store, text(a.page));
+      if (!p) throw new ToolError("no-such-page");
+      const v = s.figures(p.id, text(a.block));
+      if (!v) throw new ToolError("no-such-block");
+      return v;
     },
   });
   r.register({

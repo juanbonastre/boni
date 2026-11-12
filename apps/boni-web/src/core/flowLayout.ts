@@ -393,6 +393,8 @@ export function groupOf(n: MapNodeLike, by: Grouping): string | null {
     if (t.learning === "mail") return "on:learning:mail";
     // Boni's «Aviso del presupuesto»: the month's spending starts it.
     if (t.spending === "warn") return "on:spending:warn";
+    // A page's chat (D-61): what Juan writes in it.
+    if (t.chat) return "on:chat";
     if (t.schedule) return "on:schedule";
     return "on:manual";
   }

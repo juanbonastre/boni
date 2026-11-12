@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { chatTrigger } from "./chat.ts";
 import type { Origin } from "./policy.ts";
 
 /**
@@ -28,8 +29,9 @@ export function runnableNames(trigger: unknown): string[] | null {
  * Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, on a schedule, new mail in the
  * mailbox (`connector: "mail"`, Boni's «Traer correo», D-50: only a look that finds mail starts a run), Juan's
  * decisions calling for a review (`learning: "mail"`, Boni's «Revisar la guía», D-51), or the month's spending on
- * models passing the budget's warning (`spending: "warn"`, Boni's «Aviso del presupuesto», D-53: once a month). Only
- * one by hand or on a schedule is run by hand (`runnableNames`).
+ * models passing the budget's warning (`spending: "warn"`, Boni's «Aviso del presupuesto», D-53: once a month), or
+ * Juan writing in a page's chat (`chat`, D-61: the page, its welcome and its buttons; chat.ts). Only one by hand or on
+ * a schedule is run by hand (`runnableNames`); a chat runs only as the turns written in it.
  */
 export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) return false;
@@ -47,6 +49,8 @@ export function triggerOk(trigger: unknown): boolean {
     );
   // Boni's «Aviso del presupuesto»: the month's spending passes the warning (D-53).
   if (t.spending !== undefined) return t.spending === "warn" && Object.keys(t).length === 1;
+  // A page's chat (D-61): each message written in it is a turn of Juan's in its mode.
+  if (t.chat !== undefined) return chatTrigger(t) !== null;
   if (t.manual === true) {
     if (t.inputs === undefined) return true;
     return (
@@ -71,10 +75,13 @@ export function triggerOk(trigger: unknown): boolean {
   return false;
 }
 
-/** The origin a flow runs with (the policy's): work of its own with no turn, or a turn of the user's by hand. */
+/**
+ * The origin a flow runs with (the policy's): work of its own with no turn, or a turn of the user's (by hand, or what
+ * he writes in a page's chat).
+ */
 export function originOf(trigger: unknown, device?: string): Origin {
-  const t = trigger as { manual?: unknown } | null;
-  return t?.manual
+  const t = trigger as { manual?: unknown; chat?: unknown } | null;
+  return t?.manual || t?.chat
     ? { kind: "turn", trust: "personal", ...(device ? { device } : {}) }
     : { kind: "background", trust: "personal" };
 }

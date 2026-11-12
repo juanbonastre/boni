@@ -60,9 +60,11 @@ import {
   dropFiles,
   forgetUpload,
   type LiveStep,
+  leavePageChat,
   lightKeys,
   loadConversations,
   loadInbox,
+  loadPageChat,
   loadPlanners,
   loadRunDetail,
   newConversation,
@@ -546,6 +548,7 @@ function Composer({ inWindow }: { inWindow: boolean }) {
         send();
       }}
     >
+      <ChatMode />
       {/* What Juan pointed at for this message (F9): each a reference, taken off with its «×». */}
       {(pointed.length > 0 || uploads.length > 0) && (
         <ul className="chat-pointed" aria-label={t("point.list")}>
@@ -668,6 +671,45 @@ function Composer({ inWindow }: { inWindow: boolean }) {
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * The mode of a conversation opened in a page's chat (D-61): its label over the bar, «Chat de «Gastos»», while what
+ * is written here is answered as that chat answers; its «×» leaves the mode, and the conversation goes on as any.
+ */
+function ChatMode() {
+  const t = useStore((s) => s.t);
+  const c = useStore((s) => s.conversations?.find((x) => x.id === s.conversationId));
+  const flow = c?.flow ?? "";
+  const chat = useStore((s) => (flow ? s.pageChats[flow] : undefined));
+  const page = useStore((s) =>
+    chat ? (s.pages ?? []).find((p) => p.id === chat.page)?.title : undefined,
+  );
+  const busy = useStore((s) => s.chatBusy);
+  useEffect(() => {
+    if (flow && chat === undefined) void loadPageChat(flow);
+  }, [flow]);
+  if (!c || !flow) return null;
+  return (
+    <div className="chat-mode">
+      <span className="chat-chip chat-mode-chip">
+        <span className="chat-chip-text">
+          {page ? t("pagechat.mode", { page }) : t("pagechat.modeAny")}
+        </span>
+        <button
+          type="button"
+          className="chat-chip-x"
+          disabled={busy}
+          onPointerDown={keepFocus}
+          onClick={() => void leavePageChat(c.id)}
+          title={t("pagechat.leave")}
+          aria-label={t("pagechat.leave")}
+        >
+          <X size={12} strokeWidth={2} />
+        </button>
+      </span>
+    </div>
   );
 }
 

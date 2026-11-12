@@ -1431,6 +1431,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
             .replace(/\/live\/[^/]+$/, "/live/:id")
             .replace(/\/origin\/[^/]+$/, "/origin/:id")
+            .replace(/\/chats\/[^/]+$/, "/chats/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
             .replace(/\/flows\/[^/]+\/(enabled|revert|run|test|draft)$/, "/flows/:id/$1")
             .replace(/\/mail\/webmail\/[^/]+$/, "/mail/webmail/:id")}`;
@@ -1446,6 +1447,26 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (item && typeof item === "object" && typeof item.__status === "number") {
             const { __status, ...rest } = item;
             return [__status as number, JSON.stringify(rest)];
+          }
+          // What a turn set on a page's controls, as the server's pages.set_value would (a page's chat, D-61):
+          // `__values: { page, values: { blockId: value } }`, applied to the pages kept here, then left out.
+          if (item && typeof item === "object" && item.__values) {
+            const { __values, ...rest } = item as {
+              __values: { page: string; values: Record<string, unknown> };
+            };
+            const pg = pageList.find((x) => x.id === __values.page) as
+              | { spec: { blocks: Record<string, unknown>[] } }
+              | undefined;
+            if (pg)
+              pg.spec = {
+                ...pg.spec,
+                blocks: pg.spec.blocks.map((b) =>
+                  typeof b.id === "string" && b.id in __values.values
+                    ? { ...b, value: __values.values[b.id] }
+                    : b,
+                ),
+              };
+            return [200, JSON.stringify(rest)];
           }
           return [200, JSON.stringify(item)];
         }
