@@ -18,6 +18,7 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { WaitLine } from "./components/WaitLine.tsx";
+import { focusAtEnd } from "./core/caret.ts";
 import { chipTitle, pointAttrs, pointKey, readRef } from "./core/pointing.ts";
 import { host, PHONE_QUERY } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
@@ -225,7 +226,7 @@ function useShortcuts(mobile: boolean) {
         // Not under Ajustes, the search or the trash: what is open over everything keeps the keyboard.
         if (s.settingsOpen || s.findOpen || s.trash != null) return;
         if (s.view.kind === "chat")
-          document.querySelector<HTMLTextAreaElement>(".chat-layout textarea")?.focus();
+          focusAtEnd(document.querySelector<HTMLTextAreaElement>(".chat-layout textarea"));
         else toggleBoniWindow();
         return;
       }
