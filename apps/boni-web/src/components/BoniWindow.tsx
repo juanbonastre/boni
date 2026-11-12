@@ -13,7 +13,12 @@ import {
   PictureInPicture2,
   X,
 } from "lucide-react";
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+} from "react";
 import { clampPlace, type Place } from "../core/boniWindow.ts";
 import {
   closeBoniWindow,

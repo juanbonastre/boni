@@ -29,7 +29,8 @@ const MAX_DRAFTS = 20;
 const MAX_TEXT = 20_000;
 
 const id = (x: unknown): x is string => typeof x === "string" && x.length > 0 && x.length <= 80;
-const px = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x) && x >= 0 && x < 100_000;
+const px = (x: unknown): x is number =>
+  typeof x === "number" && Number.isFinite(x) && x >= 0 && x < 100_000;
 
 /**
  * A place kept inside the app's window: the window `box` wide and high, in a `view` of that size, at least `EDGE` from

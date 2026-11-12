@@ -205,7 +205,9 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
   expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
   // Another screen: it is where it was.
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
-  await expect(page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true })).toBeVisible();
+  await expect(
+    page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }),
+  ).toBeVisible();
   expect(await placeOf(page)).toEqual(moved);
   // Closed with Esc and opened again; docked and floated again: the same place.
   await box.click();
@@ -239,20 +241,28 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
         window as unknown as { boniDesktop: { storeRead: (n: string) => Promise<string | null> } }
       ).boniDesktop.storeRead("boni-window.json"),
     );
-  await expect.poll(async () => JSON.parse((await kept()) ?? "{}").drafts?.new?.text).toBe(
-    "a medio escribir",
-  );
+  await expect
+    .poll(async () => JSON.parse((await kept()) ?? "{}").drafts?.new?.text)
+    .toBe("a medio escribir");
   const file = JSON.parse((await kept()) as string);
   expect(file).toMatchObject({ mode: "float", conversation: null });
   expect(file.place.right).toBe(1440 - here.x - here.width);
   expect(
-    (await recorded(page)).requests.filter((r) => /window|place|draft/i.test(r.split(" ")[1] ?? "")),
+    (await recorded(page)).requests.filter((r) =>
+      /window|place|draft/i.test(r.split(" ")[1] ?? ""),
+    ),
   ).toEqual([]);
 
   // The app started again with what this device kept, the last conversation in it: as it was left.
   const again = await context.newPage();
   await again.setViewportSize({ width: 1440, height: 900 });
-  const turn = { ...TEXT_REPLY, id: "u_1", request: "¿qué hay hoy?", at: 1761900000000, pointed: [] };
+  const turn = {
+    ...TEXT_REPLY,
+    id: "u_1",
+    request: "¿qué hay hoy?",
+    at: 1761900000000,
+    pointed: [],
+  };
   await openApp(again, "/?still", {
     files: {
       "boni-window.json": JSON.stringify({
@@ -276,7 +286,9 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
   const win2 = again.getByRole("dialog", { name: "Boni" });
   await expect(win2).toBeVisible();
   expect(await placeOf(again)).toEqual(here);
-  await expect(win2.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue("y lo de mañana");
+  await expect(win2.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue(
+    "y lo de mañana",
+  );
   await expect(win2.locator(".turn-request").first()).toContainText("¿qué hay hoy?");
   await again.close();
 

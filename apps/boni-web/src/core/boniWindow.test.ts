@@ -14,7 +14,10 @@ describe("Boni's window on this device (I-35)", () => {
       bottom: 900 - 600 - EDGE,
     });
     // Past the right and the bottom.
-    expect(clampPlace({ right: -50, bottom: -3 }, box, view)).toEqual({ right: EDGE, bottom: EDGE });
+    expect(clampPlace({ right: -50, bottom: -3 }, box, view)).toEqual({
+      right: EDGE,
+      bottom: EDGE,
+    });
     // A view smaller than the window: its top left corner wins.
     expect(clampPlace({ right: 0, bottom: 0 }, box, { width: 300, height: 500 })).toEqual({
       right: EDGE,
@@ -66,7 +69,10 @@ describe("Boni's window on this device (I-35)", () => {
       place: null,
       conversation: null,
       drafts: {
-        k_1: { text: "sigue", pointed: [{ ref: { kind: "row", id: "e_2" }, title: "Fila: buena" }] },
+        k_1: {
+          text: "sigue",
+          pointed: [{ ref: { kind: "row", id: "e_2" }, title: "Fila: buena" }],
+        },
       },
     });
   });

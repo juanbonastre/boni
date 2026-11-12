@@ -52,6 +52,7 @@ import {
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import type { SystemColumns } from "./core/audit.ts";
 import type { HistoryMark } from "./core/blame.ts";
+import { type Place, readKept, toKept, WINDOW_FILE, type WindowMode } from "./core/boniWindow.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { deviceZone, newId, nowIso, today } from "./core/clock.ts";
@@ -76,7 +77,6 @@ import {
   withDraft,
   withoutDraft,
 } from "./core/drafts.ts";
-import { type Place, readKept, toKept, WINDOW_FILE, type WindowMode } from "./core/boniWindow.ts";
 import * as F from "./core/formLogic.ts";
 import {
   addPointed,
