@@ -28,8 +28,10 @@ actions for the app, the AI and the MCP, extensions as packages, pages with valu
 
 - `make setup` installs · `make check` lints, type-checks and runs the unit tests (it must pass before every commit;
   with `ANTHROPIC_BASE_URL` set in your shell, run it as `env -u ANTHROPIC_BASE_URL make check`) · `make map`
-- `make e2e` (Playwright on the system Chrome) · `make e2e-boni` (Boni's only) · `make e2e-boni-desktop` (Boni's real
-  desktop app; opens a window)
+- `make e2e` (Playwright on the system Chrome) · `make e2e-boni` (Boni's only) · `make e2e-boni-desktop` and
+  `make e2e-calendar-desktop` (the real desktop apps, on a virtual screen; `E2E_SCREEN=real` on this one). The e2e
+  targets and `make check`'s tests wait in one queue shared by every worktree, saying who holds it (T-08): run them
+  through `make`, never `playwright` by hand
 - `make package-boni` (Boni's desktop `.deb`) · `make package` (Boni Calendar's `.deb` and AppImage) · `make server`
 - `make bench-chrome` / `make bench-electron`: the calendar grid's smoothness (`docs/rendimiento.md`)
 
@@ -78,9 +80,8 @@ with the same click fixed twice, was «todo un poco liado»):
    all 2,805 of his every second). On his screen, capture only the app window and delete the captures afterwards. Say what you verified and
    what you could not. Nothing that does not run in CI counts as tested: a test outside CI rots (the calendar
    desktop's peek test did, 2026-10-23 to 2026-11-03); an unstable test is quarantined with its task, never rerun
-   and forgotten. **Before a PR that touches `apps/boni-web`, run the whole `make e2e-boni` here, not only the
-   specs you touched**, and read `e2e-boni-desktop/desktop.spec.ts` for what it clicks (it runs on CI's virtual
-   screen; here it opens windows): on 2026-11-04 four CI rounds were lost to tests not updated after a rename and a
+   and forgotten. **Before a PR that touches `apps/boni-web`, run the whole `make e2e-boni` and
+   `make e2e-boni-desktop` here, not only the specs you touched**: on 2026-11-04 four CI rounds were lost to tests not updated after a rename and a
    move, and the desktop suite runs in series, so one failure drags the twelve after it.
 
 ## Sessions and models

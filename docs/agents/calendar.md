@@ -108,4 +108,4 @@ height, popover positions are rounded, and text layers (`will-change`) exist onl
   when the look changes, a screenshot checked by eye.
 - The desktop shell loads `apps/calendar-desktop/web/` (the copy from the last `make package`) when it exists: run
   `node scripts/copy-web.mjs` there before trying the desktop app from the repo. `make e2e-calendar-desktop` drives it
-  for real (it opens windows; CI runs it on a virtual screen, I-06).
+  for real, on a virtual screen here and in CI (I-06, T-08).

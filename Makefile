@@ -14,10 +14,15 @@ dev: ## Start the UI dev server (http://localhost:5173)
 build: ## Build the web UI
 	pnpm build
 
-check: ## Lint, type-check and run unit tests
+# The e2e targets and the unit tests (timed ones among them, A-15) wait in one queue shared by every worktree; the
+# desktop ones run on a virtual screen, E2E_SCREEN=real on this one (scripts/queue.mjs, T-08).
+QUEUE := node scripts/queue.mjs --
+SCREEN := node scripts/queue.mjs --screen --
+
+check: ## Lint, type-check and run unit tests (the tests wait for another worktree's e2e)
 	pnpm lint
 	pnpm typecheck
-	pnpm test
+	$(QUEUE) pnpm test
 
 map: ## Every package and app with what it is for; P=<path> lists its files (docs/principios.md T-02)
 	@node scripts/map.mjs $(P)
@@ -26,11 +31,10 @@ conciliacion: ## Build the reconciliation's functions into the file the box runs
 	node --disable-warning=ExperimentalWarning apps/server/src/money/build.ts
 
 e2e: ## Run Playwright tests (system Chrome): Boni Calendar, then Boni
-	pnpm exec playwright test
-	pnpm exec playwright test -c playwright.boni.config.ts
+	$(QUEUE) sh -c 'pnpm exec playwright test && pnpm exec playwright test -c playwright.boni.config.ts'
 
 e2e-boni: ## Only Boni's Playwright tests (apps/boni-web)
-	pnpm exec playwright test -c playwright.boni.config.ts
+	$(QUEUE) pnpm exec playwright test -c playwright.boni.config.ts
 
 boni-desktop: ## Run Boni's desktop app (Electron) with the built web app
 	pnpm --filter @boni/boni-web build
@@ -41,16 +45,13 @@ package-boni: ## Build Boni's desktop .deb into release/
 	pnpm --filter @boni/boni-web build
 	pnpm --filter boni dist
 
-e2e-calendar-desktop: ## Boni Calendar's desktop app driven for real, its note peek included (opens windows; CI runs it on a virtual screen)
-	pnpm --filter @boni/boni-web build
-	pnpm --filter @boni/calendar-web build
-	node apps/calendar-desktop/scripts/copy-web.mjs
-	pnpm exec playwright test -c playwright.calendar-desktop.config.ts
+e2e-calendar-desktop: ## Boni Calendar's desktop app driven for real, its note peek included (virtual screen)
+	$(SCREEN) sh -c 'pnpm --filter @boni/boni-web build && pnpm --filter @boni/calendar-web build && \
+		node apps/calendar-desktop/scripts/copy-web.mjs && pnpm exec playwright test -c playwright.calendar-desktop.config.ts'
 
-e2e-boni-desktop: ## Boni's desktop app driven for real (opens a window; CI runs it on a virtual screen)
-	pnpm --filter @boni/boni-web build
-	pnpm --filter boni prepare-web
-	pnpm exec playwright test -c playwright.boni-desktop.config.ts
+e2e-boni-desktop: ## Boni's desktop app driven for real (virtual screen; E2E_SCREEN=real on this one)
+	$(SCREEN) sh -c 'pnpm --filter @boni/boni-web build && pnpm --filter boni prepare-web && \
+		pnpm exec playwright test -c playwright.boni-desktop.config.ts'
 
 bench-chrome: build ## Smoothness benchmark in a real Chrome window
 	@(pnpm --filter @boni/calendar-web exec vite preview --port 4173 --strictPort >/dev/null 2>&1 & echo $$! > .preview.pid); sleep 3; \
