@@ -1,6 +1,6 @@
 /** (test) The message being written to each conversation (F9, task 85): kept apart, never lost, never another's. */
 import { describe, expect, it } from "vitest";
-import { type Drafts, draftIn, madeDraft, withDraft, withoutDraft } from "./drafts.ts";
+import { type Drafts, draftIn, draftToNew, madeDraft, withDraft, withoutDraft } from "./drafts.ts";
 import type { Pointed } from "./pointing.ts";
 
 const chart: Pointed = {
@@ -47,5 +47,16 @@ describe("drafts (F9, task 85)", () => {
     expect(draftIn(drafts, null)).toEqual({ text: "", pointed: [] });
     // Nothing was being written: nothing to carry.
     expect(madeDraft({}, "c9")).toEqual({});
+  });
+
+  it("a kept conversation not read back gives its draft to the new one, never over the new one's own (I-35)", () => {
+    const d = {
+      k_gone: { text: "lo que escribía", pointed: [] },
+      k_2: { text: "otra", pointed: [] },
+    };
+    expect(draftToNew(d, "k_gone")).toEqual({ k_2: d.k_2, new: d.k_gone });
+    const mine = { ...d, new: { text: "mía", pointed: [] } };
+    expect(draftToNew(mine, "k_gone")).toEqual({ k_2: d.k_2, new: mine.new });
+    expect(draftToNew({}, "k_gone")).toEqual({});
   });
 });

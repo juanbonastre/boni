@@ -47,3 +47,12 @@ export function withoutDraft(drafts: Drafts, conversation: string): Drafts {
   const { [conversation]: _was, ...rest } = drafts;
   return rest;
 }
+
+/**
+ * A conversation kept on the device that could not be read back (gone, or the server out of reach): what was being
+ * written to it becomes the new conversation's draft, unless that one already has its own (I-35).
+ */
+export function draftToNew(drafts: Drafts, conversation: string): Drafts {
+  const { [conversation]: draft, ...rest } = drafts;
+  return draft && !rest[NEW_DRAFT] ? { ...rest, [NEW_DRAFT]: draft } : rest;
+}
