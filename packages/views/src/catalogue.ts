@@ -1,4 +1,5 @@
 import type { FieldType } from "@boni/entities";
+import { buttonArgsOk, RECORD_ACTIONS, VALUE_ACTIONS } from "./buttons.ts";
 import { type ControlKind, controlValueOk, refOf, refTo, VALUE_MAX } from "./pageValues.ts";
 
 /**
@@ -18,6 +19,8 @@ export interface CatalogueField {
   name: string;
   type: FieldType;
   options?: { id: string; name: string }[];
+  /** A relation's collection: what the records a control over it holds are. */
+  target?: string;
 }
 /** The roles the catalogue uses (docs/clases.md §6, D-20): the field that is its day, its amount, its category. */
 export interface CatalogueRoles {
@@ -40,6 +43,12 @@ export interface CatalogueData {
   screens?: Option[];
   /** The page's controls (pageValues.ts): what its data blocks may name in their filters and periods. */
   controls?: CatalogueControl[];
+  /** The flows a button may start (run by hand), each with its form's names, when known. */
+  flows?: CatalogueFlow[];
+}
+/** A flow a button may start: its id, its name and the names of its form (trigger.ts `manualInputs`). */
+export interface CatalogueFlow extends Option {
+  inputs: string[];
 }
 /** A control of the page, as the catalogue offers it to the page's other blocks. */
 export interface CatalogueControl {
@@ -69,7 +78,9 @@ export type DataOptions =
   | "dateFields"
   | "periods"
   | "pages"
-  | "screens";
+  | "screens"
+  | "recordControls"
+  | "flows";
 
 export interface Setting {
   key: string;
@@ -78,9 +89,10 @@ export interface Setting {
   /**
    * `values`: a form's values by field id (a button's data), edited with the form itself. `current`: what a control
    * holds now, changed on the control itself (never in the panel). `pass`: the values a link gives the page it
-   * opens, by that page's control ids.
+   * opens, by that page's control ids. `args`: what a button passes (buttons.ts), by a field's id or a form's name,
+   * each a literal or `$<a control's id>`.
    */
-  type: "text" | "choice" | "toggle" | "color" | "values" | "current" | "pass";
+  type: "text" | "choice" | "toggle" | "color" | "values" | "current" | "pass" | "args";
   options?: readonly Option[] | DataOptions;
   /** Only shown, and only allowed, when other settings have (or have not) one of these values (all of them). */
   when?: When | readonly When[];
@@ -188,6 +200,8 @@ export const COLORS = [
   "slate",
 ] as const;
 
+/** A button that opens a screen's form: the first buttons, and every button saved before `does` (D-60). */
+const SCREEN_BUTTON: When = { key: "does", is: [undefined, "screen"] };
 const TITLE: Setting = { key: "title", label: "Nombre", type: "text", max: 120, section: "data" };
 /** A data block's name may be left empty: it shows what it counts («Gasto», the collection's name). */
 const DATA_TITLE: Setting = { ...TITLE, optional: true };
@@ -401,14 +415,29 @@ export const CATALOGUE: readonly BlockKind[] = [
     name: "Botón",
     group: "Botones",
     w: 3,
-    ai: "a button that opens a screen (Apuntar gasto) empty, filled with values, or saves those values at once",
+    ai: "a button: opens a screen (Apuntar gasto) empty, filled with values, or saves those values at once; or (set by the user in its panel, never by you) runs an action on a record, starts a flow with values, or opens a page with values (buttons.ts)",
     settings: [
       { key: "label", label: "Nombre", type: "text", max: 80, section: "data" },
+      {
+        key: "does",
+        label: "Hace",
+        type: "choice",
+        options: [
+          { value: "screen", label: "Formulario" },
+          { value: "action", label: "Acción" },
+          { value: "flow", label: "Flujo" },
+          { value: "page", label: "Página" },
+        ],
+        optional: true,
+        default: "screen",
+        section: "data",
+      },
       {
         key: "screen",
         label: "Qué abre",
         type: "choice",
         options: "screens",
+        when: SCREEN_BUTTON,
         section: "data",
         ai: "capture-expense (Apuntar gasto)",
       },
@@ -423,6 +452,7 @@ export const CATALOGUE: readonly BlockKind[] = [
         ],
         optional: true,
         default: "empty",
+        when: SCREEN_BUTTON,
         section: "data",
       },
       {
@@ -441,6 +471,85 @@ export const CATALOGUE: readonly BlockKind[] = [
         optional: true,
         when: { key: "mode", is: ["open", "save"] },
         section: "look",
+      },
+      {
+        key: "action",
+        label: "Acción",
+        type: "choice",
+        options: [
+          { value: "entities.create", label: "Crear" },
+          { value: "entities.update", label: "Cambiar" },
+          { value: "entities.delete", label: "Borrar" },
+        ],
+        when: { key: "does", is: ["action"] },
+        section: "data",
+      },
+      {
+        key: "collection",
+        label: "Colección",
+        type: "choice",
+        options: "collections",
+        when: { key: "does", is: ["action"] },
+        section: "data",
+      },
+      {
+        key: "record",
+        label: "Registro",
+        type: "choice",
+        options: "recordControls",
+        when: [
+          { key: "does", is: ["action"] },
+          { key: "action", is: RECORD_ACTIONS },
+        ],
+        section: "data",
+        ai: "$<id> of an option control of the page over a relation: the record it holds",
+      },
+      {
+        key: "set",
+        label: "Con valores",
+        type: "args",
+        optional: true,
+        when: [
+          { key: "does", is: ["action"] },
+          { key: "action", is: VALUE_ACTIONS },
+        ],
+        section: "data",
+        ai: "the record's values by field id: a value, or $<id> of a control of the page",
+      },
+      {
+        key: "flow",
+        label: "Flujo",
+        type: "choice",
+        options: "flows",
+        when: { key: "does", is: ["flow"] },
+        section: "data",
+        ai: "a flow run by hand, by its id",
+      },
+      {
+        key: "inputs",
+        label: "Con valores",
+        type: "args",
+        optional: true,
+        when: { key: "does", is: ["flow"] },
+        section: "data",
+        ai: "its form's values by their names: a text, or $<id> of a control of the page",
+      },
+      {
+        key: "to",
+        label: "Lleva a",
+        type: "choice",
+        options: "pages",
+        when: { key: "does", is: ["page"] },
+        section: "data",
+      },
+      {
+        key: "pass",
+        label: "Con valores",
+        type: "pass",
+        optional: true,
+        when: { key: "does", is: ["page"] },
+        section: "data",
+        ai: "values for the controls of the page it opens, by their block ids: a value, or $<id> of a control of this page",
       },
     ],
     defaults: { label: "Apuntar gasto", screen: "capture-expense" },
@@ -544,6 +653,17 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
       return data.pages ?? [];
     case "screens":
       return data.screens ?? [{ value: "capture-expense", label: "Apuntar gasto" }];
+    case "flows":
+      return data.flows ?? [];
+    case "recordControls":
+      // An option control over a relation to the button's collection holds one of its records.
+      return controlsFor(
+        data,
+        (c) =>
+          c.kind === "option" &&
+          data.collections.find((x) => x.id === c.collection)?.fields.find((f) => f.id === c.field)
+            ?.target === block.collection,
+      );
     case "periods":
       return hasDate(fs)
         ? [...PERIODS, ...controlsFor(data, (c) => c.kind === "month")]
@@ -578,6 +698,20 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
       ];
     }
   }
+}
+
+/**
+ * The keys an `args` setting takes on this block: the fields of the button's collection, or the names of its
+ * flow's form; null when the data does not say (a flow not among the known ones).
+ */
+export function argKeys(s: Setting, block: Block, data: CatalogueData): string[] | null {
+  if (s.type !== "args") return null;
+  if (block.does === "flow") {
+    const f = (data.flows ?? []).find((x) => x.value === block.flow);
+    return f ? f.inputs : null;
+  }
+  const c = collectionOf(data, block);
+  return c ? c.fields.map((f) => f.id) : null;
 }
 
 /** The page's controls a setting may name, as `$<id>` (pageValues.ts). */
@@ -659,6 +793,17 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
       if (!isPass(v)) out.push({ block: id, key: s.key, code: "bad" });
       continue;
     }
+    if (s.type === "args") {
+      if (!buttonArgsOk(v)) out.push({ block: id, key: s.key, code: "bad" });
+      else if (data) {
+        // Its keys are the collection's fields, or the flow's form's names, as the panel offers them.
+        const keys = argKeys(s, block, data);
+        for (const k of Object.keys(v))
+          if (keys && !keys.includes(k))
+            out.push({ block: id, key: s.key, code: "not-in-data", value: k });
+      }
+      continue;
+    }
     if (s.type === "color" || typeof s.options !== "string") {
       if (!optionsOf(s, block, NO_DATA).some((o) => o.value === v))
         out.push({ block: id, key: s.key, code: "bad", value: v });
@@ -672,7 +817,9 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
           ? TIME_GROUPS
           : null;
     // A control of the page (`$<id>`) may stand for a value (pageValues.ts).
-    const ref = (s.options === "periods" || s.options === "filterValues") && refOf(v) !== null;
+    const ref =
+      (s.options === "periods" || s.options === "filterValues" || s.options === "recordControls") &&
+      refOf(v) !== null;
     if (
       typeof v !== "string" ||
       (!ref && (fixed ? !fixed.some((o) => o.value === v) : !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(v)))
@@ -712,6 +859,17 @@ export function fitAfter(
       if (changed !== "name" || !controlValueOk(b.kind, b[s.key])) delete b[s.key];
       continue;
     }
+    // A button's values keep only the keys its collection or its flow still takes.
+    if (s.type === "args") {
+      const keys = argKeys(s, b, data);
+      const v = b[s.key];
+      if (keys && buttonArgsOk(v)) {
+        const kept = Object.fromEntries(Object.entries(v).filter(([k]) => keys.includes(k)));
+        if (Object.keys(kept).length) b[s.key] = kept;
+        else delete b[s.key];
+      }
+      continue;
+    }
     if (s.type !== "choice") continue;
     const opts = optionsOf(s, b, data);
     if (opts.some((o) => o.value === b[s.key])) continue;
@@ -739,7 +897,8 @@ export function newBlock(
   const kind = kindOf(type);
   if (!kind) return null;
   const b: Record<string, unknown> = { id, type, ...kind.defaults };
-  if (kind.settings.some((s) => s.key === "collection")) {
+  const coll = kind.settings.find((s) => s.key === "collection");
+  if (coll && applies(coll, b)) {
     const c = data.collections[0];
     if (c) {
       b.collection = c.id;
@@ -779,7 +938,8 @@ export function catalogueForAI(data: CatalogueData): string {
   const values = (s: Setting) => {
     if (s.type === "text") return `text (≤${s.max ?? 200})`;
     if (s.type === "toggle") return "true|false";
-    if (s.type === "values" || s.type === "current" || s.type === "pass") return s.ai ?? s.type;
+    if (s.type === "values" || s.type === "current" || s.type === "pass" || s.type === "args")
+      return s.ai ?? s.type;
     if (s.type === "color") return COLORS.join("|");
     if (typeof s.options === "string") return s.ai ?? s.options;
     return (s.options ?? []).map((o) => o.value).join("|");

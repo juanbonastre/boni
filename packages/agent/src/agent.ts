@@ -937,6 +937,12 @@ export class Agent {
      */
     flow?: { id: string; version: number; by: string; plan: unknown; bind: Record<string, Val> };
     /**
+     * A page's button the user pressed (docs/sistema.md §4.6, D-60): its one call instead of the planner's plan, what
+     * it passes bound by name with the labels of whoever wrote the page, its literals with `lit`. Checked like any
+     * plan of a turn, so the policy decides it as that action (its confirmation, its Undo).
+     */
+    button?: { plan: unknown; bind: Record<string, Val>; lit: Label };
+    /**
      * What the user has on screen as he writes (docs/sistema.md §4.7, F9): what the server built from the app's
      * references through the models' view, each value with its label. The planner sees it and its plan may name it
      * as `$screen`; nothing of it is the user's word.
@@ -967,7 +973,7 @@ export class Agent {
     );
     st.live = req.live;
     st.planner = req.planner;
-    if (req.screen && !req.flow) st.env.set("screen", req.screen);
+    if (req.screen && !req.flow && !req.button) st.env.set("screen", req.screen);
     if (req.chips?.length) st.chips = req.chips.slice(0, 20);
     this.emit(st, { type: "start", run });
     this.active.set(run, st);
@@ -985,6 +991,21 @@ export class Agent {
       );
       if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
       for (const [k, val] of Object.entries(req.flow.bind)) st.env.set(k, val);
+      st.plan = v.plan;
+      this.o.store.journal.setPlan(run, st.plan);
+      this.emit(st, { type: "planned", steps: st.plan.steps.length });
+      return this.advance(st);
+    }
+    if (req.button) {
+      st.litLabel = req.button.lit;
+      const v = validatePlan(
+        req.button.plan,
+        this.catalogView(req.origin, false),
+        turn.text,
+        Object.keys(req.button.bind),
+      );
+      if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
+      for (const [k, val] of Object.entries(req.button.bind)) st.env.set(k, val);
       st.plan = v.plan;
       this.o.store.journal.setPlan(run, st.plan);
       this.emit(st, { type: "planned", steps: st.plan.steps.length });

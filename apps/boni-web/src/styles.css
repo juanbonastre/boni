@@ -6033,6 +6033,21 @@ body:has(.toast) .db-selinfo {
 .decide-btn.busy .decide-label {
   visibility: hidden;
 }
+/* A page's button that runs an action or a flow (D-60): its icon beside its name; waiting, a spinner in its place. */
+.blk .decide-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* What a button passes, in its panel: where it comes from, and the value typed when it is one. */
+.args-row {
+  display: flex;
+  gap: 6px;
+}
+.args-row > .input {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .decide-btn .spinner {
   position: absolute;
   inset: 0;

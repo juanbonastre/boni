@@ -1,6 +1,11 @@
 import {
   applies,
+  argKeys,
   type BlockKind,
+  type ButtonArg,
+  type ButtonArgs,
+  type CatalogueData,
+  type CatalogueFlow,
   type ControlBlock,
   controlsOf,
   fitAfter,
@@ -16,7 +21,7 @@ import {
 } from "@boni/views";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
-import { catalogueOf } from "../core/blocks.ts";
+import { buttonFlows, catalogueOf } from "../core/blocks.ts";
 import type { Shortcut } from "../core/contract.ts";
 import { setHeight, setWidth } from "../core/grid.ts";
 import { PALETTE } from "../core/palette.ts";
@@ -59,9 +64,23 @@ export function BlockPanel({ id }: { id: string }) {
     | Record<string, unknown>
     | undefined;
   const [filterOpen, setFilterOpen] = useState(Boolean(raw?.filterField));
+  // The flows a button may start, once its panel is open (D-60).
+  const [flows, setFlows] = useState<CatalogueFlow[] | null>(null);
+  const isButton = block?.type === "action";
+  useEffect(() => {
+    if (!isButton) return;
+    let live = true;
+    agentApi
+      .flows()
+      .then((fs) => live && setFlows(buttonFlows(fs)))
+      .catch(() => live && setFlows([]));
+    return () => {
+      live = false;
+    };
+  }, [isButton]);
   if (!block || !raw) return <p className="muted panel-body">{t("block.panel.gone")}</p>;
   const controls = controlsOf(blocks);
-  const data = catalogueOf(dataTypes, pages, controls);
+  const data = catalogueOf(dataTypes, pages, controls, flows);
   // A control's value is changed on the page, in the control itself.
   const settings = (kind?.settings ?? []).filter((s) => applies(s, raw) && s.type !== "current");
   const set = (key: string, value: unknown) => {
@@ -78,6 +97,15 @@ export function BlockPanel({ id }: { id: string }) {
         label={catText(t, s.label)}
         to={String(raw.to ?? "")}
         value={raw.pass as Record<string, string | number> | undefined}
+        controls={controls}
+        set={(v) => set(s.key, v)}
+      />
+    ) : s.type === "args" ? (
+      <ArgsControl
+        key={s.key}
+        s={s}
+        block={raw}
+        data={data}
         controls={controls}
         set={(v) => set(s.key, v)}
       />
@@ -341,6 +369,92 @@ function PassControl({
             empty="—"
             onChange={(v) => put(c.id, v)}
           />
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * What a button passes (D-60): for each field of its collection, or each name of its flow's form, nothing, a control
+ * of the page (what it holds when pressed) or a value typed here.
+ */
+function ArgsControl({
+  s,
+  block,
+  data,
+  controls,
+  set,
+}: {
+  s: Setting;
+  block: Record<string, unknown>;
+  data: CatalogueData;
+  controls: readonly ControlBlock[];
+  set: (v: ButtonArgs | undefined) => void;
+}) {
+  const t = useStore((st) => st.t);
+  const keys = argKeys(s, block, data) ?? [];
+  const fields = data.collections.find((c) => c.id === block.collection)?.fields ?? [];
+  const value = (block[s.key] ?? {}) as ButtonArgs;
+  const put = (k: string, v: ButtonArg | undefined) => {
+    const next = { ...value };
+    if (v === undefined) delete next[k];
+    else next[k] = v;
+    set(Object.keys(next).length ? next : undefined);
+  };
+  if (!keys.length) return null;
+  const LIT = "=";
+  return (
+    <div className="block-panel-values">
+      <h3 className="block-panel-head">{catText(t, s.label)}</h3>
+      {keys.map((k) => {
+        const f = block.does === "flow" ? undefined : fields.find((x) => x.id === k);
+        const now = value[k];
+        const lit = now !== undefined && refOf(now) === null;
+        const numeric = f && (f.type === "number" || f.type === "money" || f.type === "duration");
+        return (
+          <div key={k} className="field">
+            <span className="field-label">{f?.name ?? k}</span>
+            <div className="args-row">
+              <select
+                className="input"
+                aria-label={f?.name ?? k}
+                value={now === undefined ? "" : lit ? LIT : String(now)}
+                onChange={(e) =>
+                  put(
+                    k,
+                    e.target.value === ""
+                      ? undefined
+                      : e.target.value === LIT
+                        ? ""
+                        : e.target.value,
+                  )
+                }
+              >
+                <option value="">—</option>
+                {controls.map((c) => (
+                  <option key={c.id} value={refTo(c.id)}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value={LIT}>{t("button.args.value")}</option>
+              </select>
+              {lit && (
+                <input
+                  className="input"
+                  aria-label={t("button.args.value")}
+                  inputMode={numeric ? "decimal" : undefined}
+                  value={String(now)}
+                  maxLength={200}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const n = Number(v.replace(",", "."));
+                    put(k, numeric && v.trim() && Number.isFinite(n) ? n : v);
+                  }}
+                />
+              )}
+            </div>
+          </div>
         );
       })}
     </div>

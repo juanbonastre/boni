@@ -26,6 +26,7 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
@@ -888,6 +889,11 @@ async function answerAgent(
     return r;
   };
   switch (route) {
+    case "POST /api/agent/press": {
+      // A page's button (D-60): what it runs and passes is read from the saved page.
+      const r = await pressButton(host, who, await bodyOf(req));
+      return send(res, r.status, r.body);
+    }
     case "POST /api/agent/turn": {
       const b = await bodyOf(req);
       const text = str(b.text, 8000);

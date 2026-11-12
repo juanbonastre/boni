@@ -120,6 +120,7 @@ export function catalogueData(
             name: f.name,
             type: f.type,
             ...(f.options ? { options: f.options.map((o) => ({ id: o.id, name: o.name })) } : {}),
+            ...(f.relation ? { target: f.relation.target } : {}),
           })),
           ...(Object.keys(roles).length ? { roles } : {}),
         };

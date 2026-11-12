@@ -1,13 +1,26 @@
 import {
   blocksToMarkdown,
+  buttonDoes,
   CATALOGUE,
+  type ControlBlock,
   kindOf as catalogueKind,
   controlsOf,
   markdownToBlocks,
   newBlock,
   partOf,
+  passedValues,
 } from "@boni/views";
-import { ChevronRight, FileText, GripVertical, Paperclip, Plus, Smile, X } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  FileText,
+  GripVertical,
+  Paperclip,
+  Play,
+  Plus,
+  Smile,
+  X,
+} from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -57,8 +70,10 @@ import {
   openEditor,
   openFile,
   openPage,
+  openPageWith,
   openRowsPanel,
   openScreen,
+  pressButton,
   runShortcut,
   selectBlocks,
   setPageBlocks,
@@ -645,7 +660,7 @@ export function Blocks({ page }: { page: Page }) {
           <ChartGone />
         )
       ) : b.type === "action" ? (
-        <ActionButton block={b} />
+        <ActionButton block={b} page={page.id} controls={controls} />
       ) : b.type === "divider" ? (
         <hr className="doc-divider" />
       ) : b.type === "page" ? (
@@ -1273,9 +1288,59 @@ function ButtonLabel({
 
 /**
  * A button: opens its screen empty, filled with its own values, or saves them at once (the block catalogue's
- * «Al pulsarlo»). A button of the first pages runs its saved shortcut.
+ * «Al pulsarlo»). A button of the first pages runs its saved shortcut. One that runs an action or a flow is pressed
+ * on the server, and waits where it is (I-15); one that opens a page carries values, as a link (D-60).
  */
-function ActionButton({ block }: { block: Extract<Block, { type: "action" }> }) {
+function ActionButton({
+  block,
+  page,
+  controls,
+}: {
+  block: Extract<Block, { type: "action" }>;
+  page: string;
+  controls: readonly ControlBlock[];
+}) {
+  const does = buttonDoes(block);
+  if (does === "screen") return <FormButton block={block} />;
+  if (does === "page")
+    return (
+      <button
+        type="button"
+        className="btn"
+        onClick={() => block.to && void openPageWith(block.to, passedValues(block.pass, controls))}
+      >
+        {block.label}
+        <ArrowRight size={15} strokeWidth={2} />
+      </button>
+    );
+  return <RunButton block={block} page={page} />;
+}
+
+function RunButton({ block, page }: { block: Extract<Block, { type: "action" }>; page: string }) {
+  const t = useStore((s) => s.t);
+  // In the store, not here: the page redraws its blocks while the turn runs (D-60, I-15).
+  const pressing = useStore((s) => s.pressing === `${page}:${block.id}`);
+  const busy = useStore((s) => s.chatBusy || s.pressing !== null);
+  const press = () => pressButton(page, block.id, block.label);
+  return (
+    <button
+      type="button"
+      className={`btn decide-btn${pressing ? " busy" : ""}`}
+      aria-busy={pressing || undefined}
+      disabled={busy && !pressing}
+      title={busy && !pressing ? t("button.busy") : undefined}
+      onClick={() => void press()}
+    >
+      <span className="decide-label">
+        {block.does === "flow" ? <Play size={14} strokeWidth={2} /> : null}
+        {block.label}
+      </span>
+      {pressing && <span className="spinner" aria-hidden="true" />}
+    </button>
+  );
+}
+
+function FormButton({ block }: { block: Extract<Block, { type: "action" }> }) {
   const t = useStore((s) => s.t);
   const shortcuts = useStore((s) => s.shortcuts);
   const legacy = block.shortcut ? shortcuts.find((s) => s.id === block.shortcut) : undefined;
@@ -1289,11 +1354,12 @@ function ActionButton({ block }: { block: Extract<Block, { type: "action" }> }) 
       else toast(t("shortcut.gone"));
       return;
     }
-    if (mode === "empty") return openScreen(block.screen);
+    const screen = block.screen ?? "capture-expense";
+    if (mode === "empty") return openScreen(screen);
     void runShortcut({
       id: block.id,
       label: block.label,
-      screen: block.screen,
+      screen,
       values: block.values ?? {},
       mode: mode === "save" ? "save" : "open",
       color: hex,
