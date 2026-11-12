@@ -110,8 +110,11 @@ export interface FileWriter {
   write(chunk: Uint8Array): void;
   /** The bytes so far. */
   readonly size: number;
-  /** Keeps it and gives its sha256 (the same bytes are kept once). */
-  finish(): string;
+  /**
+   * Keeps it and gives its sha256 (the same bytes are kept once). With `expected`, only when its sha256 is that
+   * one: otherwise nothing is kept and it throws (`invalid`), as an import restores a file under the hash it had.
+   */
+  finish(expected?: string): string;
   /** Drops what was written. */
   abort(): void;
 }
@@ -1195,11 +1198,15 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
             if (pendingBytes === FILE_PART_BYTES) flush();
           }
         },
-        finish() {
+        finish(expected) {
           if (done) throw new StoreError("invalid", "upload closed");
           flush();
           done = true;
           const sha256 = hash.digest("hex");
+          if (expected !== undefined && sha256 !== expected) {
+            drop();
+            throw new StoreError("invalid", "file damaged: not the bytes it was kept as");
+          }
           db.exec("BEGIN");
           try {
             // Every part written must still be there: a file is never kept cut short under its hash.

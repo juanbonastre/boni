@@ -1046,10 +1046,25 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     (una subida a medias no se borra al abrir el almacén otra conexión: solo la que lleva un día cortada; y nunca se
     guarda un archivo al que le falten trozos), `packages/agent/test/units.test.ts` (P23),
     `apps/boni-desktop/uploads.test.cjs`, `e2e-boni/agent.spec.ts` («files dropped on Boni's window…»);
+  - **en una copia (tarea 101, A-27):** la copia (`GET /api/export`, `cli.ts export`) sale escrita a trozos, en ZIP64
+    donde un campo de 32 bits no alcanza (una copia de más de 4 GB, más de 65.535 entradas), y lo que la leía la
+    sigue leyendo: el final del zip es siempre el registro clásico (la comprobación del escritorio en `main.cjs`).
+    Al importarla (`cli.ts import-export`), el zip se lee del disco a trozos y cada archivo entra en el almacén a
+    trozos de 1 MB, guardado solo si su sha256 es el que tenía; primero los archivos, cada uno por su cuenta, y
+    luego todo lo demás en una transacción: si la importación se para (un registro dañado, el disco lleno) los
+    registros quedan como estaban. Un archivo que no vuelve (falta en el zip, dañado) no para los demás: el informe
+    lo nombra con los registros que lo usan. Medido a mano (2026-11-12, 5.305 registros, 305 archivos, cinco de
+    1 GB): exportar 5,0 GB, 11 s y 286 MB de memoria como mucho; importarla, 74 s y 172 MB; python y `unzip -t`
+    la leen. Probado: `packages/export/src/bigBackup.test.ts` (ZIP64 con los topes bajados, leído por python y
+    `unzip`; una copia de más de 5 GB en un archivo disperso; 3.000 registros y 32 MB por archivo, con la
+    memoria medida; una copia de antes de este cambio, `fixtures/backup-before-zip64.zip`; un byte dañado, un
+    archivo que falta, una línea rota y el disco lleno);
   - **lo que no hace aún:** una pregunta siguiente sobre el mismo archivo necesita su ficha otra vez (va con el
     mensaje, no con la conversación); un proveedor sin visión contesta que no pudo; un archivo del escritorio que
-    no está en el disco (arrastrado de otra app sin ruta) dice «Falló»; un archivo de más de 50 MB no vuelve al
-    importar una copia (`putFile`), y una copia de más de 4 GB en total no se puede exportar (zip32).
+    no está en el disco (arrastrado de otra app sin ruta) dice «Falló»; en una copia, una entrada de 4 GB o más se
+    rechaza (ningún archivo llega: el tope de lo soltado es 1 GB), el `.ndjson` de un tipo se lee entero (256 MB
+    como mucho), y de una importación que se para quedan los archivos que ya entraron (no se ven hasta que un
+    registro los nombra; el siguiente intento los toma como están).
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);
