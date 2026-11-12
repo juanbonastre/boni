@@ -35,6 +35,7 @@ import {
   type MailView,
   type Origin,
   type Page,
+  type PageChat,
   type PageInfo,
   type Painted,
   type Planner,
@@ -299,6 +300,8 @@ interface State {
   pressing: string | null;
   /** Juan's conversations, the latest first; null until they come. */
   conversations: ConversationSummary[] | null;
+  /** The pages' chats read so far (D-61), by flow; null: it is no chat any more. */
+  pageChats: Record<string, PageChat | null>;
   /** The conversation open in the chat; null: a new one, made with its first message. */
   conversationId: string | null;
   /**
@@ -496,6 +499,7 @@ export const useStore = create<State>(() => ({
   chatBusy: false,
   pressing: null,
   conversations: null,
+  pageChats: {},
   conversationId: null,
   chatDrafts: {},
   chatUploads: {},
@@ -3159,6 +3163,92 @@ export async function newSubpageBlock(block: string) {
     void loadPages();
   } catch {
     toast(get().t("page.error"));
+  }
+}
+
+/**
+ * «/Chat» (D-61): the page's chat, a flow made for this page, put where «/» was typed; its panel opens to say what
+ * it says and may do.
+ */
+export async function newChatBlock(block: string) {
+  const page = get().page;
+  if (!page) return;
+  try {
+    await flushPage();
+    const c = await agent.newPageChat(page.id);
+    set((s) => ({ pageChats: { ...s.pageChats, [c.flow]: c } }));
+    const now = get().page;
+    if (now?.id !== page.id) return;
+    setPageBlocks(
+      now.spec.blocks.map((b) =>
+        b.id === block
+          ? { id: block, type: "chat", flow: c.flow, ...(b.at ? { at: b.at } : {}) }
+          : b,
+      ),
+    );
+    await flushPage();
+    openBlockPanel(block);
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+/** A page's chat as the server has it now, kept by flow (null: it is no chat any more). */
+export async function loadPageChat(flow: string): Promise<PageChat | null> {
+  try {
+    const c = await agent.pageChat(flow);
+    set((s) => ({ pageChats: { ...s.pageChats, [flow]: c } }));
+    return c;
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404)
+      set((s) => ({ pageChats: { ...s.pageChats, [flow]: null } }));
+    return null;
+  }
+}
+/** The chat's panel's «Guardar»: a new version of its flow; the error code when it could not. */
+export async function savePageChat(
+  flow: string,
+  edit: Parameters<typeof agent.savePageChat>[1],
+): Promise<string | null> {
+  try {
+    const c = await agent.savePageChat(flow, edit);
+    if (c) set((s) => ({ pageChats: { ...s.pageChats, [flow]: c } }));
+    return null;
+  } catch (e) {
+    return e instanceof ApiError ? e.code : "error";
+  }
+}
+/**
+ * A message written in a page's chat (D-61): a new conversation in that chat's mode, opened in Boni's window over
+ * the page, where it goes on; the page's values and numbers change as its turn changes them.
+ */
+export async function sendInPageChat(flow: string, text: string) {
+  const request = text.trim();
+  if (!request || get().chatBusy) return;
+  let made: ConversationSummary;
+  try {
+    made = await agent.newConversation({ flow });
+  } catch (e) {
+    toast(errorText(get().t, e));
+    return;
+  }
+  const title = request.length <= 60 ? request : `${request.slice(0, 57).trimEnd()}…`;
+  set((s) => ({
+    conversationId: made.id,
+    conversations: [{ ...made, title }, ...(s.conversations ?? [])],
+    chat: [],
+    pointing: false,
+  }));
+  if (get().view.kind !== "chat") openBoniWindow();
+  await turnOf(request, []);
+}
+/** Out of a page's chat's mode («×» on its label): the conversation goes on as an ordinary one. */
+export async function leavePageChat(id: string) {
+  try {
+    const c = await agent.updateConversation(id, { flow: "" });
+    if (c)
+      set((s) => ({ conversations: (s.conversations ?? []).map((x) => (x.id === id ? c : x)) }));
+  } catch (e) {
+    toast(errorText(get().t, e));
   }
 }
 

@@ -481,6 +481,45 @@ export function screenOf(
   return Object.keys(fields).length ? rec(fields, code) : null;
 }
 
+/**
+ * One block of a page as the screen gives it (`pages.figures`, a page's chat, D-61): what it is and its numbers,
+ * computed now with the page's values as they are saved, over the rows the models may read; null when it is closed
+ * to them or gone.
+ */
+export function blockFigures(
+  store: UserStore,
+  page: string,
+  block: string,
+  o: { today?: string } = {},
+): Val | null {
+  const s = screenOf(
+    store,
+    { open: null, inbox: [], chosen: [], pointed: [{ kind: "block", page, block }] },
+    { mailAccount: null, ...(o.today ? { today: o.today } : {}) },
+  );
+  const pointed = s?.t === "rec" ? s.fields.pointed : undefined;
+  const v = pointed?.t === "list" ? pointed.items[0] : undefined;
+  if (v?.t !== "rec") return null;
+  const kind = v.fields.kind;
+  return kind?.t === "v" && (kind.value === "closed" || kind.value === "gone") ? null : v;
+}
+
+/**
+ * What a page's chat sees (D-61): the page open, and every block of it in view, from the top (at most MAX_VISIBLE),
+ * as the server reads the saved page, whatever window the message was written from.
+ */
+export function pageScreen(store: UserStore, page: string): ScreenRefs {
+  const p = getPage(store, page);
+  return {
+    open: { kind: "page", id: page },
+    inbox: [],
+    chosen: [],
+    visible: (p?.spec.blocks ?? [])
+      .slice(0, MAX_VISIBLE)
+      .map((b) => ({ kind: "block" as const, page, block: b.id })),
+  };
+}
+
 /** A value the app was painted (a question's words) back as a value with its label; null for anything else. */
 function paintedLeaf(p: unknown): Val | null {
   if (!isObj(p) || p.t !== "v") return null;

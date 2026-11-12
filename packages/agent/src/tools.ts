@@ -1585,7 +1585,8 @@ export function ensureSystemTypes(store: UserStore): void {
   // docs/extensiones.md 6: the user's pages (the Lienzo's blocks in `spec`, `parent` for the tree).
   make("page", "Páginas", ["title", "icon", "parent", "position", "spec"]);
   // docs/conversacion.md 3.1: Juan's conversations with Boni and their turns (conversations.ts).
-  make("conversation", "Conversaciones", ["title", "key", "model", "last", "pinned"]);
+  // `flow`: the page's chat it is written in (D-61), or empty.
+  make("conversation", "Conversaciones", ["title", "key", "model", "last", "pinned", "flow"]);
   make("turn", "Turnos", [
     "request",
     "conversation",

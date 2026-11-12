@@ -71,14 +71,17 @@ import type { Mails } from "./mail.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { originFacts, pendingFacts, recordOrigin } from "./origin.ts";
+import { type ChatEdit, chatTurnOf, chatView, createChat, updateChat } from "./pageChat.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 import { keep as keepForRun, keptInTheWay, undoable, undoKept } from "./runUndo.ts";
 import {
+  blockFigures,
   MAX_POINTED,
   type PointedRef,
+  pageScreen,
   pointedRef,
   type SavedChart,
   screenOf,
@@ -348,6 +351,7 @@ export class AgentHost {
     if (name === "pages" || name === "data")
       return {
         store,
+        figures: (page: string, block: string) => blockFigures(store, page, block),
         meta: {
           actor: "agent",
           run: run.run,
@@ -578,7 +582,11 @@ export async function serveAgent(
     if (!host.models) return send(res, 503, { error: "no-store" });
     return serveModels(host.models, req, res, route, params, who);
   }
-  if (route.includes(" /api/agent/conversations") || route.includes(" /api/agent/live/")) {
+  if (
+    route.includes(" /api/agent/conversations") ||
+    route.includes(" /api/agent/chats") ||
+    route.includes(" /api/agent/live/")
+  ) {
     if (!host.hasData) return send(res, 503, { error: "no-store" });
     return serveConversations(host, req, res, route, params, who);
   }
@@ -839,11 +847,42 @@ async function serveConversations(
     case "GET /api/agent/conversations":
       return send(res, 200, { conversations: listConversations(store) });
     case "POST /api/agent/conversations": {
-      const b = ((await bodyOf(req)) ?? {}) as { title?: unknown };
+      const b = ((await bodyOf(req)) ?? {}) as { title?: unknown; flow?: unknown };
       const title = b.title === undefined ? "" : str(b.title, 120);
-      if (title === null) return send(res, 400, { error: "bad-request" });
-      const made = createConversation(store, { title, device: who.device, now: Date.now() });
+      // In a page's chat (D-61): what is written in it is answered in that chat's mode.
+      const flow = b.flow === undefined ? undefined : str(b.flow, 80);
+      if (title === null || flow === null || (flow && !chatView(store, flow)))
+        return send(res, 400, { error: "bad-request" });
+      const made = createConversation(store, {
+        title,
+        device: who.device,
+        now: Date.now(),
+        ...(flow ? { flow } : {}),
+      });
       return send(res, 200, { conversation: conversation(store, made) });
+    }
+    // A page's chat (D-61): its flow made for a page («/Chat»), read, and changed in its block's panel. Changing what
+    // Boni does is done on his own devices, as in «Flujos».
+    case "POST /api/agent/chats": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const b = ((await bodyOf(req)) ?? {}) as { page?: unknown };
+      const page = str(b.page, 80);
+      if (!page) return send(res, 400, { error: "bad-request" });
+      const made = createChat(store, page, Date.now());
+      return made ? send(res, 200, { chat: made }) : send(res, 404, { error: "not-found" });
+    }
+    case "GET /api/agent/chats/:id": {
+      const c = chatView(store, id);
+      return c ? send(res, 200, { chat: c }) : send(res, 404, { error: "not-found" });
+    }
+    case "PUT /api/agent/chats/:id": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const b = ((await bodyOf(req)) ?? {}) as ChatEdit;
+      if (typeof b.base !== "number") return send(res, 400, { error: "bad-request" });
+      const r = updateChat(store, id, b, Date.now());
+      if (typeof r === "string")
+        return send(res, r === "not-found" ? 404 : r === "conflict" ? 409 : 400, { error: r });
+      return send(res, 200, { chat: r });
     }
     case "GET /api/agent/conversations/:id": {
       const c = conversation(store, id);
@@ -858,10 +897,13 @@ async function serveConversations(
         title?: unknown;
         model?: unknown;
         pinned?: unknown;
+        flow?: unknown;
       };
       const title = b.title === undefined ? undefined : str(b.title, 120);
       if (b.pinned !== undefined && typeof b.pinned !== "boolean")
         return send(res, 400, { error: "bad-request" });
+      // Out of a page's chat's mode («×» on its label): only taken off, never put on here.
+      if (b.flow !== undefined && b.flow !== "") return send(res, 400, { error: "bad-request" });
       const model =
         b.model === undefined || b.model === ""
           ? (b.model as string | undefined)
@@ -874,6 +916,7 @@ async function serveConversations(
           ...(title !== undefined ? { title } : {}),
           ...(model !== undefined ? { model } : {}),
           ...(typeof b.pinned === "boolean" ? { pinned: b.pinned } : {}),
+          ...(b.flow === "" ? { flow: "" } : {}),
           device: who.device,
         })
       )
@@ -938,9 +981,14 @@ async function answerAgent(
           }),
         );
       if (!c) return bad();
+      // A page's chat (D-61): its mode read from what is saved now; its screen is its page, whatever window it is
+      // written from.
+      const chat = c.flow ? chatTurnOf(store, c.flow) : null;
+      if (chat && "error" in chat) return send(res, 409, { error: chat.error });
       // What is on Juan's screen as he writes (F9): the app's references, made into values by the server.
-      const refs = b.screen === undefined || b.screen === null ? null : screenRefs(b.screen);
-      if (b.screen !== undefined && b.screen !== null && !refs) return bad();
+      const asSent = b.screen === undefined || b.screen === null ? null : screenRefs(b.screen);
+      if (b.screen !== undefined && b.screen !== null && !asSent) return bad();
+      const refs = chat ? pageScreen(store, chat.page) : asSent;
       const screen = refs
         ? screenOf(store, refs, {
             mailAccount: host.mailAccountOf?.(who.account) ?? null,
@@ -981,6 +1029,7 @@ async function answerAgent(
         ...(screen ? { screen } : {}),
         ...(chips.length ? { chips } : {}),
         ...(corrects ? { corrects } : {}),
+        ...(chat ? { chat } : {}),
       });
       return send(res, 200, after(r));
     }

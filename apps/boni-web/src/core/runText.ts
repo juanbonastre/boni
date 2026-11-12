@@ -22,6 +22,7 @@ export function stepName(t: T, s: { op: string; what: string; title?: string | n
   if (s.op === "call") return s.title ?? s.what;
   if (s.op === "ask") return t("flows.op.ask");
   if (s.op === "reply") return t("flows.op.reply");
+  if (s.op === "agent") return t("flows.op.agent");
   return s.what;
 }
 

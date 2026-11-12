@@ -25,6 +25,11 @@ export interface ConversationInfo {
   last: number;
   /** Pinned: on top of the list, on every device (task 63, point 7). */
   pinned: boolean;
+  /**
+   * The page's chat it is written in (D-61): that chat's flow, whose «Agente» step plans every turn of it; "" for an
+   * ordinary conversation. The writing bar shows it as a label a click removes.
+   */
+  flow: string;
 }
 /** A turn as the history keeps it for the planner: the request and the replies with their labels. */
 export interface HistoryTurn {
@@ -77,6 +82,7 @@ const info = (s: StoredEntity): ConversationInfo => ({
   model: text(s, "model"),
   last: Number(text(s, "last")) || 0,
   pinned: text(s, "pinned") === "1",
+  flow: text(s, "flow"),
 });
 
 /** A title from the first request: its first words, cut at a word (the code's, never a model's). */
@@ -108,7 +114,7 @@ export function conversation(store: UserStore, id: string): ConversationInfo | n
 /** A new conversation; its title comes with its first turn unless one is given. */
 export function createConversation(
   store: UserStore,
-  o: { title?: string; key?: string; model?: string; device?: string; now: number },
+  o: { title?: string; key?: string; model?: string; flow?: string; device?: string; now: number },
 ): string {
   return store.create(
     CONVERSATION,
@@ -117,6 +123,7 @@ export function createConversation(
       f_key: v(o.key ?? ""),
       f_model: v(o.model ?? ""),
       f_last: v(String(o.now)),
+      ...(o.flow && hasField(store, CONVERSATION, "flow") ? { f_flow: v(o.flow) } : {}),
     },
     meta(o.device),
   ).entity.id;
@@ -137,7 +144,7 @@ export function conversationByKey(
 export function updateConversation(
   store: UserStore,
   id: string,
-  o: { title?: string; model?: string; pinned?: boolean; device?: string },
+  o: { title?: string; model?: string; pinned?: boolean; flow?: string; device?: string },
 ): boolean {
   if (!conversation(store, id)) return false;
   const writes: Record<string, ReturnType<typeof v>> = {};
@@ -145,6 +152,7 @@ export function updateConversation(
   if (o.model !== undefined) writes.f_model = v(o.model);
   if (o.pinned !== undefined && hasField(store, CONVERSATION, "pinned"))
     writes.f_pinned = v(o.pinned ? "1" : "");
+  if (o.flow !== undefined && hasField(store, CONVERSATION, "flow")) writes.f_flow = v(o.flow);
   if (Object.keys(writes).length) store.update(id, writes, meta(o.device));
   return true;
 }

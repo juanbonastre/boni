@@ -40,6 +40,7 @@ import {
   useStore,
 } from "../store.ts";
 import { FormView } from "./FormView.tsx";
+import { PageChatSettings } from "./PageChatBlock.tsx";
 
 /**
  * A block's settings in the side panel («Modificar…»): a control for each setting its kind has in the block
@@ -118,6 +119,11 @@ export function BlockPanel({ id }: { id: string }) {
   return (
     <>
       <div className="panel-body form block-panel">
+        {block.type === "chat" && (
+          <div className="block-panel-sec">
+            <PageChatSettings key={block.flow} flow={block.flow} />
+          </div>
+        )}
         {section("data").length > 0 && (
           <div className="block-panel-sec">
             <h3 className="block-panel-head">{t("block.panel.data")}</h3>

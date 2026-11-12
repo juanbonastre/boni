@@ -1,4 +1,5 @@
 import { atLeast, join, type Label } from "@boni/entities";
+import type { ChatScope } from "./chat.ts";
 import { DESTINATION_ROLES, type ToolDef } from "./tools.ts";
 import { deepLabel, type Val } from "./values.ts";
 
@@ -28,6 +29,13 @@ export interface Call {
   dry?: boolean;
   /** How many rows the call writes, when more than one (an extension's change set, task 93): P11 counts each. */
   rows?: number;
+  /**
+   * A page's chat (D-61, chat.ts): the actions its «Agente» step gives, its page and the collections that page shows.
+   * P26 allows nothing outside them, before any other rule.
+   */
+  scope?: ChatScope;
+  /** Of each `type` argument, the collection it names (its id), as the agent resolved it; null: none. */
+  typeIds?: Readonly<Record<string, string | null>>;
 }
 export interface RunCounters {
   writes: number;
@@ -137,6 +145,21 @@ export function decide(
   if (!tool) return deny("P0", "unregistered-tool");
   const entries = Object.entries(call.args);
   for (const [name] of entries) if (!tool.args[name]) return deny("P0", "unclassified-argument");
+  // A page's chat (P26): only the actions its step gives, only its own page, only the collections the page shows.
+  // Whatever the rest says, nothing outside them runs.
+  if (call.scope) {
+    const scope = call.scope;
+    if (!scope.actions.includes(tool.name)) return deny("P26", "not-the-chats-action");
+    for (const [name, v] of entries) {
+      const role = tool.args[name]?.role;
+      if (role === "page" && !(v.t === "v" && v.value === scope.page))
+        return deny("P26", "not-the-chats-page");
+      if (role === "type") {
+        const id = call.typeIds?.[name] ?? null;
+        if (!id || !scope.types.includes(id)) return deny("P26", "not-the-pages-collection");
+      }
+    }
+  }
   const labels = entries.map(([, v]) => deepLabel(v));
   const all = labels.length ? join(labels[0] as Label, ...labels.slice(1)) : null;
   const externalArgs = !!all && isExternal(all);

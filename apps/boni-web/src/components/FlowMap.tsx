@@ -1459,6 +1459,7 @@ function Canvas({
       if (v === "connector:mail") return t("flows.on.connector.mail");
       if (v === "learning:mail") return t("flows.on.learning.mail");
       if (v === "spending:warn") return t("flows.on.spending.warn");
+      if (v === "chat") return t("flows.on.chat");
       if (v.startsWith("created:")) {
         const key = v.slice("created:".length);
         return t("flows.on.created", { what: keyName(key) ?? key });

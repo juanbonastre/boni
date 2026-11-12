@@ -99,6 +99,28 @@ export interface ConversationSummary {
   last: number;
   /** On top of the list, on every device (task 63, point 7). */
   pinned: boolean;
+  /** A page's chat it is answered in (D-61): its flow; "" for an ordinary conversation. */
+  flow: string;
+}
+/** The actions a page's chat may be given (the server's CHAT_ACTIONS, @boni/agent chat.ts). */
+export const CHAT_ACTIONS = [
+  "pages.figures",
+  "entities.query",
+  "entities.aggregate",
+  "pages.set_value",
+] as const;
+/** A page's chat (D-61): its flow, its page, what it says and what it may do. */
+export interface PageChat {
+  flow: string;
+  version: number;
+  name: string;
+  page: string;
+  welcome: string;
+  buttons: { label: string; text: string }[];
+  instructions: string;
+  actions: string[];
+  defaults: { instructions: string; actions: string[] };
+  enabled: boolean;
 }
 /** A turn of a conversation as the server keeps it. */
 export interface TurnView extends TurnResult {
@@ -1803,6 +1825,40 @@ function parseConversation(v: unknown): ConversationSummary | null {
     model: typeof v.model === "string" ? v.model.slice(0, 200) : "",
     last: typeof v.last === "number" ? v.last : 0,
     pinned: v.pinned === true,
+    flow: typeof v.flow === "string" ? v.flow.slice(0, 80) : "",
+  };
+}
+const texts = (v: unknown, max: number, n: number): string[] =>
+  (Array.isArray(v) ? v : [])
+    .slice(0, n)
+    .flatMap((x) => (typeof x === "string" ? [x.slice(0, max)] : []));
+/** A page's chat as the server sends it, or null. */
+function parsePageChat(v: unknown): PageChat | null {
+  if (!isObj(v)) return null;
+  const flow = str(v.flow, 80);
+  const page = str(v.page, 80);
+  if (!flow || !page || typeof v.version !== "number") return null;
+  const d = isObj(v.defaults) ? v.defaults : {};
+  return {
+    flow,
+    version: v.version,
+    name: typeof v.name === "string" ? v.name.slice(0, 80) : "",
+    page,
+    welcome: typeof v.welcome === "string" ? v.welcome.slice(0, 400) : "",
+    buttons: (Array.isArray(v.buttons) ? v.buttons : [])
+      .slice(0, 6)
+      .flatMap((b) =>
+        isObj(b) && typeof b.label === "string" && typeof b.text === "string"
+          ? [{ label: b.label.slice(0, 40), text: b.text.slice(0, 300) }]
+          : [],
+      ),
+    instructions: typeof v.instructions === "string" ? v.instructions.slice(0, 2000) : "",
+    actions: texts(v.actions, 40, 10),
+    defaults: {
+      instructions: typeof d.instructions === "string" ? d.instructions.slice(0, 2000) : "",
+      actions: texts(d.actions, 40, 10),
+    },
+    enabled: v.enabled !== false,
   };
 }
 
@@ -2612,8 +2668,8 @@ export class AgentApi {
         return s ? [s] : [];
       });
   }
-  async newConversation(): Promise<ConversationSummary> {
-    const b = await this.call("POST", "conversations", {});
+  async newConversation(o: { flow?: string } = {}): Promise<ConversationSummary> {
+    const b = await this.call("POST", "conversations", o.flow ? { flow: o.flow } : {});
     const c = isObj(b) ? parseConversation(b.conversation) : null;
     if (!c) throw new ApiError(0, "bad-answer", "bad answer");
     return c;
@@ -2640,9 +2696,36 @@ export class AgentApi {
     }
     return { conversation: c, turns };
   }
-  async updateConversation(id: string, o: { title?: string; model?: string; pinned?: boolean }) {
+  async updateConversation(
+    id: string,
+    o: { title?: string; model?: string; pinned?: boolean; flow?: "" },
+  ) {
     const b = await this.call("PUT", `conversations/${encodeURIComponent(id)}`, o);
     return isObj(b) ? parseConversation(b.conversation) : null;
+  }
+  /** A page's chat (D-61): made for a page, read, and changed in its block's panel. */
+  async newPageChat(page: string): Promise<PageChat> {
+    const b = await this.call("POST", "chats", { page });
+    const c = isObj(b) ? parsePageChat(b.chat) : null;
+    if (!c) throw new ApiError(0, "bad-answer", "bad answer");
+    return c;
+  }
+  async pageChat(flow: string): Promise<PageChat | null> {
+    const b = await this.call("GET", `chats/${encodeURIComponent(flow)}`);
+    return isObj(b) ? parsePageChat(b.chat) : null;
+  }
+  async savePageChat(
+    flow: string,
+    edit: {
+      base: number;
+      welcome?: string;
+      buttons?: { label: string; text: string }[];
+      instructions?: string;
+      actions?: string[];
+    },
+  ): Promise<PageChat | null> {
+    const b = await this.call("PUT", `chats/${encodeURIComponent(flow)}`, edit);
+    return isObj(b) ? parsePageChat(b.chat) : null;
   }
   deleteConversation = async (id: string) =>
     void (await this.call("DELETE", `conversations/${encodeURIComponent(id)}`));

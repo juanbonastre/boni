@@ -80,6 +80,9 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/agent/flows/:id/enabled": ["flows.enable"],
   "DELETE /api/agent/flows/:id": ["flows.delete"],
   "POST /api/agent/flows/:id/run": ["flows.run"],
+  // A page's chat (pageChat.ts, D-61) is a flow: made for its page and changed in its block's panel.
+  "POST /api/agent/chats": ["flows.save"],
+  "PUT /api/agent/chats/:id": ["flows.save"],
   // A page's button (buttons.ts, D-60): the action it names, or its flow by hand, as a turn of Juan's.
   "POST /api/agent/press": ["entities.create", "entities.update", "entities.delete", "flows.run"],
   // Boni Calendar: a record moved, made or deleted in the grid; a calendar of the list (calendarActions.ts).
@@ -305,6 +308,9 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "pages.add_block": "pages_add_block",
   "pages.set_view": "pages_set_view",
   "pages.set_value": "pages_set_value",
+  "pages.figures": {
+    why: "a page's numbers are its chat's to read in Juan's turn; an assistant counts the same rows with query",
+  },
   "pages.update": "pages_update",
   "pages.delete": { why: "deleting is Juan's touch: his card, in his app" },
   "calendars.list": "calendars",

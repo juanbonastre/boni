@@ -65,6 +65,7 @@ import {
   fileOfRow,
   loadDataTypes,
   newChartForPage,
+  newChatBlock,
   newPage,
   newSubpageBlock,
   openBlockPanel,
@@ -96,6 +97,7 @@ import { ControlView, withValue } from "./ControlView.tsx";
 import { DataBlockView, useBlockResults } from "./DataBlockView.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { historyColor, whoLabel } from "./History.tsx";
+import { PageChatBlock } from "./PageChatBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { TemplatePill } from "./TemplatePill.tsx";
 
@@ -654,6 +656,8 @@ export function Blocks({ page }: { page: Page }) {
         />
       ) : b.type === "link" ? (
         <LinkBlock block={b} controls={controls} />
+      ) : b.type === "chat" ? (
+        <PageChatBlock flow={b.flow} />
       ) : b.type === "chart" ? (
         specs.some((s) => s.id === b.chart) ? (
           <ChartCard chartId={b.chart} />
@@ -1736,6 +1740,7 @@ type Choice =
   | { kind: "chart"; chart: string }
   | { kind: "new-chart" }
   | { kind: "page" }
+  | { kind: "chat" }
   | { kind: "ai" }
   | { kind: "database"; source: string }
   | { kind: "action"; screen: string; label: string; shortcut?: string }
@@ -1797,6 +1802,9 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
       return;
     case "page":
       void newSubpageBlock(block.id);
+      return;
+    case "chat":
+      void newChatBlock(block.id);
       return;
     case "ai":
       // A placeholder: Boni writing on the page comes later.
@@ -1863,6 +1871,7 @@ function useBlockItems(query: string): SlashItem[] {
           choice: { kind: "data", type: k.type },
         }),
       ),
+      { group: "Boni", label: t("block.chat"), choice: { kind: "chat" } },
       { group: "Boni", label: t("block.ai"), hint: t("block.soon"), choice: { kind: "ai" } },
       ...(dataTypes ?? []).map(
         (d): SlashItem => ({

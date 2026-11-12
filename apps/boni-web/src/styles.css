@@ -11035,3 +11035,72 @@ tr[data-boni-pointed] > td {
   visibility: visible;
   color: var(--accent);
 }
+
+/* A page's chat (D-61, docs/sistema.md §4.6 point 6): its welcome, its buttons and a bar to write in; the
+   conversation it opens goes on in Boni's window. */
+.pchat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  min-width: 0;
+}
+.pchat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.pchat-welcome {
+  margin: 0;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.pchat-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pchat-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pchat-bar .input {
+  flex: 1;
+  min-width: 0;
+}
+.pchat-gone {
+  color: var(--text-2);
+}
+.pchat-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pchat-set-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.pchat-actions {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.pchat-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chat-mode {
+  display: flex;
+  padding: 0 0 6px;
+}
+.chat-mode-chip {
+  background: var(--accent-soft);
+}
