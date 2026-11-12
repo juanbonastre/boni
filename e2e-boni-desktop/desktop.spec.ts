@@ -881,6 +881,11 @@ test("Boni's window after a restart (F9, task 85, I-35): where Juan dragged it, 
   expect(await placed(w)).toEqual(here);
   // The same conversation: its draft is the one shown (each conversation has its own).
   await expect(box(w)).toHaveValue("y lo de mañana");
+  // Juan goes on writing where he left off: the caret is after the draft, not before it (task 97: with it at the
+  // start, a key pressed on this screen as the window came back made it « y lo de mañana»).
+  await expect(box(w)).toBeFocused();
+  await w.keyboard.type(" y el jueves", { delay: 40 });
+  await expect(box(w)).toHaveValue("y lo de mañana y el jueves");
   await shot(w, "window-restarted");
   // As it was found by the next test: closed.
   await box(w).press("Escape");
