@@ -1,6 +1,6 @@
 /** (test) Boni's window as the device keeps it (F9, task 85, sixth part; I-35): inside the app's window, read back safely. */
 import { describe, expect, it } from "vitest";
-import { clampPlace, EDGE, readKept, toKept } from "./boniWindow.ts";
+import { clampPlace, EDGE, readKept, restored, toKept } from "./boniWindow.ts";
 
 const box = { width: 400, height: 600 };
 const view = { width: 1440, height: 900 };
@@ -85,5 +85,38 @@ describe("Boni's window on this device (I-35)", () => {
     expect(Object.keys(out.drafts)).toHaveLength(20);
     expect(out.drafts.k_24?.text).toBe("t24");
     expect(out.drafts.k_0).toBeUndefined();
+  });
+
+  it("after a restart, what Juan did while the file was read wins over what was kept", () => {
+    const kept = {
+      mode: "right" as const,
+      place: { right: 300, bottom: 120 },
+      conversation: "k_1",
+      drafts: { k_1: { text: "guardado", pointed: [] }, new: { text: "viejo", pointed: [] } },
+    };
+    const nothing = { mode: "closed" as const, place: null, conversation: null, drafts: {} };
+    // Nothing done yet: as it was left.
+    expect(restored(nothing, kept, false)).toEqual(kept);
+    // On the Conversación screen the window stays closed under it.
+    expect(restored(nothing, kept, true).mode).toBe("closed");
+    // `Ctrl+E` at once: it stays open, in its place, with the last conversation.
+    expect(restored({ ...nothing, mode: "float" }, kept, false)).toEqual({
+      ...kept,
+      mode: "float",
+    });
+    // And something typed to a new conversation: that stays in view, the kept drafts come back.
+    const typed = {
+      ...nothing,
+      mode: "float" as const,
+      drafts: { new: { text: "nuevo", pointed: [] } },
+    };
+    expect(restored(typed, kept, false)).toEqual({
+      mode: "float",
+      place: kept.place,
+      conversation: null,
+      drafts: { k_1: kept.drafts.k_1, new: { text: "nuevo", pointed: [] } },
+    });
+    // A conversation opened meanwhile is the one shown.
+    expect(restored({ ...nothing, conversation: "k_9" }, kept, false).conversation).toBe("k_9");
   });
 });

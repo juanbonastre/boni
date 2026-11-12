@@ -624,7 +624,10 @@ contraseña ni un código aquí» under a question.
     follows the pointer exactly and stays where it is let go, measured from the bottom right (the circle's corner):
     on every screen, closed and opened, docked and floated back. It never leaves the app's window: 8 px from each
     edge however far it is dragged, and when the app gets smaller it comes in with it and goes back to its place
-    when it grows again; with a panel on the right it still keeps beside it. Docked, the head does not drag.
+    when it grows again; with a panel on the right it still keeps beside it. Docked, the head does not drag. The
+    edges are macOS's own rule for windows, which never lets a window's title bar be dragged out of reach, applied
+    inside the app; the corner is the circle's, so the window grows from where it was opened (§3.2 of
+    `conversacion.md`); beside a panel, by the rule above for the circle and the window (never over its cards).
     Apple HIG, «Windows»: people move a window by dragging its title bar, and a window keeps its size and place
     when it is reopened; Microsoft, Windows app design, «Title bar»: the bar is the drag region, and the buttons in
     it are excluded from it; NN/g, «Drag–and–Drop: How to Design for Ease of Use»: a cursor that changes on hover
@@ -632,7 +635,8 @@ contraseña ni un código aquí» under a question.
     (the size is the compact conversation's; «Ampliar» is for more room).
   - **After a restart** it opens as it was left: open or closed, floating in its place or docked, with the last
     conversation and each one's draft, kept on the device (`boni-window.json`), never in the account. A conversation
-    gone meanwhile starts a new one, silently. Apple HIG, «Windows»: restore windows to their previous state when an
+    that cannot be read back (deleted meanwhile, the server out of reach) starts a new one, silently, with what was
+    being written to it. Apple HIG, «Windows»: restore windows to their previous state when an
     app relaunches.
   - **Dropping files on it** is not built yet (docs/sistema.md §4.7, «Falta»).
 - **What Boni acts on, lit** (F9, task 85, fifth part; `App.tsx` `ScreenLight`, `store.ts` `screenActs`; docs/sistema.md

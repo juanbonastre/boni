@@ -921,18 +921,21 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     derecha, la del círculo; con un panel a la derecha sigue sin taparlo, como antes;
   - **tras reiniciar la app** se abre como se dejó: abierta o cerrada, flotando (en su sitio) o acoplada, con la última
     conversación (sus turnos, como los guarda el servidor) y lo que se estaba escribiendo a cada una (sus fichas
-    también). Si esa conversación se borró desde otro dispositivo, empieza una nueva sin decir nada. Lo que Juan haga
-    mientras se lee (`Ctrl+E` nada más abrir) gana a lo guardado;
+    también). Si esa conversación no se puede leer (se borró desde otro dispositivo, o el servidor no responde),
+    empieza una nueva sin decir nada, con lo que se le estaba escribiendo: nunca una conversación cuyos turnos no se
+    ven. Lo que Juan haga mientras se lee (`Ctrl+E` nada más abrir, algo escrito a una nueva) gana a lo guardado;
   - **dónde se guarda:** es una preferencia de este dispositivo, no un dato de Juan ni de la cuenta
     (`preferencias.md` §4: no es ninguna de sus cinco clases): el fichero `boni-window.json` del dispositivo (en el
-    escritorio, `~/.local/share/boni/store/`, como «Recientes» y la última página), escrito un momento después del
-    último cambio (una vez por ráfaga de teclas o por arrastre) y al cerrarse la ventana. Lo que dice se comprueba al
+    escritorio, `~/.local/share/boni/store/`, como «Recientes» y la última página), escrito un momento (0,3 s) después del
+    último cambio, una vez por ráfaga de teclas o por arrastre (al cerrarse la app se intenta escribir lo que faltaba,
+    sin esperar: lo de esa última fracción de segundo puede perderse). Lo que dice se comprueba al
     leerlo: un fichero roto o viejo abre la ventana como siempre (`apps/boni-web/src/core/boniWindow.ts`). Guarda los
     borradores de las últimas veinte conversaciones;
   - **soltar archivos en ella, no todavía:** necesita decidir qué puede hacer el asistente con un archivo, que el
     diseño no dice. Hoy un archivo de Boni (un adjunto de un correo, uno soltado en una página) es un registro de su
-    colección de archivos, y ninguna herramienta lee lo que tiene dentro: soltado en la ventana, Boni sabría su nombre,
-    su tipo y su carpeta, pero no podría contestar «¿qué dice este PDF?». Lo que hay que decidir, con un ejemplo de
+    colección de archivos; de un adjunto de correo, el código lee una hoja (csv, xlsx, xls) o un texto para el lector
+    de fondo (`correo.md`), pero ninguna herramienta del asistente lee lo que tiene un archivo: soltado en la ventana,
+    Boni sabría su nombre, su tipo y su carpeta, pero no podría contestar «¿qué dice este PDF?». Lo que hay que decidir, con un ejemplo de
     cada opción, está en la tarea 85.
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con

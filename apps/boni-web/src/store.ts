@@ -52,7 +52,14 @@ import {
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import type { SystemColumns } from "./core/audit.ts";
 import type { HistoryMark } from "./core/blame.ts";
-import { type Place, readKept, toKept, WINDOW_FILE, type WindowMode } from "./core/boniWindow.ts";
+import {
+  type Place,
+  readKept,
+  restored,
+  toKept,
+  WINDOW_FILE,
+  type WindowMode,
+} from "./core/boniWindow.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { deviceZone, newId, nowIso, today } from "./core/clock.ts";
@@ -73,6 +80,7 @@ import {
   type Draft,
   type Drafts,
   draftIn,
+  draftToNew,
   madeDraft,
   withDraft,
   withoutDraft,
@@ -1907,9 +1915,10 @@ async function loadTurns(id: string, quiet = false) {
     });
   } catch (e) {
     if (!quiet) return void toast(errorText(get().t, e));
-    // Gone since (deleted on another device): a new conversation, its draft with it.
-    if (e instanceof ApiError && e.status === 404 && get().conversationId === id)
-      set((s) => ({ conversationId: null, chat: [], chatDrafts: withoutDraft(s.chatDrafts, id) }));
+    // Kept after a restart but not read back (deleted on another device, or the server out of reach): a new
+    // conversation, never one whose turns are not shown; what was being written to it goes to the new one.
+    if (get().conversationId === id)
+      set((s) => ({ conversationId: null, chat: [], chatDrafts: draftToNew(s.chatDrafts, id) }));
   }
 }
 /** A new conversation: the chat starts empty; the conversation is made with its first message. */
@@ -3451,15 +3460,20 @@ let keepingWindow = false;
 let windowTimer: ReturnType<typeof setTimeout> | undefined;
 async function restoreBoniWindow() {
   const k = readKept(await readJson<unknown>(store, FILES.boniWindow));
-  // What Juan did while it was read (`Ctrl+E` at once) wins over what was kept.
   const s = get();
-  const mode = s.boniWindow !== "closed" || s.view.kind === "chat" ? s.boniWindow : k.mode;
+  const now = {
+    mode: s.boniWindow,
+    place: s.boniPlace,
+    conversation: s.conversationId,
+    drafts: s.chatDrafts,
+  };
+  const r = restored(now, k, s.view.kind === "chat");
   set({
-    boniWindow: mode,
-    boniPlace: s.boniPlace ?? k.place,
-    conversationId: s.conversationId ?? k.conversation,
-    chatDrafts: { ...k.drafts, ...s.chatDrafts },
-    ...(mode === "right" && s.boniWindow === "closed" ? { inboxOpen: false } : {}),
+    boniWindow: r.mode,
+    boniPlace: r.place,
+    conversationId: r.conversation,
+    chatDrafts: r.drafts,
+    ...(r.mode === "right" && s.boniWindow === "closed" ? { inboxOpen: false } : {}),
   });
   keepingWindow = true;
   const id = get().conversationId;

@@ -77,6 +77,21 @@ export function readKept(raw: unknown): KeptWindow {
   return { mode, place, conversation, drafts };
 }
 
+/**
+ * What the window is after a restart: what was kept, except what Juan did while the file was read (`Ctrl+E` at
+ * once, a conversation opened, something typed), which wins. `onChat`: the Conversación screen is open, so the window
+ * stays closed under it.
+ */
+export function restored(now: KeptWindow, kept: KeptWindow, onChat: boolean): KeptWindow {
+  return {
+    mode: now.mode !== "closed" || onChat ? now.mode : kept.mode,
+    place: now.place ?? kept.place,
+    // Something already typed to a new conversation stays in view: the kept one is in «Recientes».
+    conversation: now.conversation ?? (now.drafts.new ? null : kept.conversation),
+    drafts: { ...kept.drafts, ...now.drafts },
+  };
+}
+
 /** What goes to the device file: the drafts of the last conversations written to, no more. */
 export function toKept(k: KeptWindow): KeptWindow {
   const drafts = Object.fromEntries(Object.entries(k.drafts).slice(-MAX_DRAFTS));

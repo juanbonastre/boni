@@ -230,7 +230,17 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
   await page.setViewportSize({ width: 1000, height: 700 });
   const small = await placeOf(page);
   expect(small.x + small.width).toBeLessThanOrEqual(1000 - 8);
+  // …and back to its place when it grows again.
   await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => placeOf(page)).toEqual(last);
+  // A panel on the right (the Bandeja): it keeps beside it, never over its cards, and goes back when it closes.
+  const bandeja = page.locator(".topbar").getByRole("button", { name: /^Bandeja/ });
+  await bandeja.click();
+  await expect(page.locator(".inbox-panel")).toBeVisible();
+  await expect.poll(async () => (await placeOf(page)).x + 400).toBeLessThanOrEqual(1440 - 380 - 20);
+  await bandeja.click();
+  await expect(page.locator(".inbox-panel")).toHaveCount(0);
+  await expect.poll(() => placeOf(page)).toEqual(last);
   await dragWindow(page, -500, -100);
   const here = await placeOf(page);
   await box.fill("a medio escribir");
@@ -297,11 +307,22 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
   await docked2.setViewportSize({ width: 1440, height: 900 });
   await openApp(docked2, "/?still", {
     files: {
-      "boni-window.json": JSON.stringify({ ...file, mode: "right", conversation: "k_gone" }),
+      "boni-window.json": JSON.stringify({
+        ...file,
+        mode: "right",
+        conversation: "k_gone",
+        drafts: { k_gone: { text: "lo que escribía", pointed: [] } },
+      }),
     },
     agent: { "GET api/agent/conversations/k_gone": [{ __status: 404, error: "not-found" }] },
   });
-  await expect(docked2.getByRole("complementary", { name: "Boni" })).toBeVisible();
+  const side2 = docked2.getByRole("complementary", { name: "Boni" });
+  await expect(side2).toBeVisible();
+  // What was being written is not lost: it goes to the new conversation.
+  await expect(side2.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue(
+    "lo que escribía",
+  );
+  await expect(side2.locator(".turn-request")).toHaveCount(0);
   await expect(docked2.locator(".toast")).toHaveCount(0);
   await docked2.close();
 });
