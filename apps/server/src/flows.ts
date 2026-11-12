@@ -246,6 +246,10 @@ export interface FlowDetail extends FlowSummary {
   plan: unknown;
   /** Boni's own version of it, when it has one (`Volver al de Boni`). */
   preset: number | null;
+  /** What the editor changed and has not saved as a version (task 80), or null. */
+  draft: DraftView | null;
+  /** Whether its name may change: Boni's own keep the name Boni gives them. */
+  renamable: boolean;
 }
 
 const DAY = 24 * 60 * 60_000;
@@ -285,8 +289,14 @@ export function flowView(
     versions: versions.map((v) => ({ version: v.version, by: v.by, created: v.created })),
     plan: f.plan,
     preset: versions.find((v) => v.by === "preset")?.version ?? null,
+    draft: draftView(store, f.id),
+    renamable: !versions.some((v) => v.by === "preset"),
   };
 }
+
+/** Boni's own flows (one Boni saved a version of) keep the name Boni gives them, a version of the user's too. */
+export const renamable = (store: UserStore, id: string): boolean =>
+  !store.journal.flowVersions(id).some((v) => v.by === "preset");
 
 /** A plan's steps as nodes: named from the registry, their arguments as text, their arrows, their counts. */
 export function nodesOf(
@@ -1077,6 +1087,8 @@ export function revertFlow(
       ? versions.find((x) => x.by === "preset")
       : versions.find((x) => x.version === to.version);
   if (!v) return null;
+  // The editor starts again from the version gone back to: what it had changed is dropped with «Volver a esta».
+  store.journal.deleteFlowDraft(id);
   return store.journal.saveFlow({
     id,
     name: v.name,
@@ -1088,6 +1100,89 @@ export function revertFlow(
     enabled: latest.enabled,
     created: now,
   });
+}
+
+// ------------------------------------------------------------------ the draft (task 80)
+
+/** How big a draft may be (its trigger and plan as JSON): a flow has at most a few dozen steps. */
+export const DRAFT_MAX = 200_000;
+
+/** A flow's draft as the editor reads it. */
+export interface DraftView {
+  base: number;
+  trigger: unknown;
+  plan: unknown;
+  updated: number;
+}
+
+/**
+ * Keeps what the editor changed in a flow as its draft (docs/flujos.md §6, decision 6): an incomplete flow, or one
+ * that is on, too; nothing is checked but its shape, since nothing runs it. A draft that is the version it started
+ * from again is no draft: it is dropped. The flow itself, and what runs, stay as they were.
+ */
+export function keepDraft(
+  store: UserStore,
+  id: string,
+  d: { base: unknown; trigger: unknown; plan: unknown },
+  device: string | null,
+  now: number,
+): { draft: DraftView | null } | { error: "not-found" | "bad-request" } {
+  const latest = store.journal.flow(id);
+  if (!latest) return { error: "not-found" };
+  const plan = d.plan as { steps?: unknown } | null;
+  if (
+    typeof d.base !== "number" ||
+    !Number.isInteger(d.base) ||
+    d.base < 1 ||
+    d.base > latest.version ||
+    !plan ||
+    typeof plan !== "object" ||
+    !Array.isArray(plan.steps) ||
+    !d.trigger ||
+    typeof d.trigger !== "object" ||
+    Array.isArray(d.trigger) ||
+    JSON.stringify([d.trigger, d.plan]).length > DRAFT_MAX
+  )
+    return { error: "bad-request" };
+  const same =
+    d.base === latest.version &&
+    JSON.stringify(d.plan) === JSON.stringify(latest.plan) &&
+    JSON.stringify(d.trigger) === JSON.stringify(latest.trigger);
+  if (same) {
+    store.journal.deleteFlowDraft(id);
+    return { draft: null };
+  }
+  store.journal.saveFlowDraft({
+    id,
+    base: d.base,
+    trigger: d.trigger,
+    plan: d.plan,
+    device,
+    updated: now,
+  });
+  return { draft: draftView(store, id) };
+}
+
+/** A flow's draft, or null. */
+export function draftView(store: UserStore, id: string): DraftView | null {
+  const d = store.journal.flowDraft(id);
+  return d ? { base: d.base, trigger: d.trigger, plan: d.plan, updated: d.updated } : null;
+}
+
+/**
+ * A new name for a flow, from its row in «Flujos» or from its editor (the same function): a new version of the
+ * user's with the same steps, so nothing of what runs changes. A draft started from the version renamed now starts
+ * from the new one, which differs from it only in its name.
+ */
+export function renameFlow(store: UserStore, id: string, name: string, now: number): SaveResult {
+  const latest = store.journal.flow(id);
+  if (!latest) return { error: "not-found" };
+  const r = saveUserFlow(store, id, { base: latest.version, name, plan: latest.plan }, [], now);
+  if ("error" in r) return r;
+  const d = store.journal.flowDraft(id);
+  if (d && d.base === latest.version)
+    store.journal.saveFlowDraft({ ...d, base: r.flow.version, updated: now });
+  return r;
 }
 
 // ------------------------------------------------------------------ «Probar» (F3)

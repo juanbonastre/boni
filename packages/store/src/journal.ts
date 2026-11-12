@@ -43,6 +43,21 @@ export interface FlowRow {
   hash: string;
   created: number;
 }
+/**
+ * A flow's draft (docs/flujos.md §6, decision 6): what the editor changed since the version it started from, kept
+ * as he changes it so that leaving, closing the app or another device lose nothing. It is no version: no trigger,
+ * run or assistant reads it; «Guardar» makes it one, «Descartar» drops it.
+ */
+export interface FlowDraftRow {
+  id: string;
+  /** The version it started from: «Guardar» is refused when another was saved since. */
+  base: number;
+  trigger: unknown;
+  plan: unknown;
+  /** The device that wrote it last. */
+  device: string | null;
+  updated: number;
+}
 export interface StepRow {
   run: string;
   seq: number;
@@ -196,6 +211,12 @@ export interface Journal {
   setFlowEnabled(id: string, enabled: boolean): void;
   /** A flow the user deleted: out of the list, its versions kept for the runs that name them. */
   setFlowDeleted(id: string, deleted: boolean): void;
+  /** A flow's draft, or null (task 80): only the editor reads it. */
+  flowDraft(id: string): FlowDraftRow | null;
+  /** Keeps a flow's draft, over the one it had. */
+  saveFlowDraft(d: FlowDraftRow): void;
+  /** Drops a flow's draft («Guardar» made it a version, or «Descartar»). */
+  deleteFlowDraft(id: string): void;
   /** How many runs a flow had, and when the last started. */
   flowRuns(id: string): { runs: number; last: number | null };
   /** The steps of a flow's runs in a period, counted by step and decision. */
@@ -499,6 +520,30 @@ export function openJournal(db: DatabaseSync): Journal {
           "UPDATE flows SET enabled = ? WHERE id = ? AND version = (SELECT max(version) FROM flows WHERE id = ?)",
         )
         .run(enabled ? 1 : 0, id, id),
+    flowDraft: (id) => {
+      const r = db.prepare("SELECT * FROM flow_drafts WHERE id = ?").get(id) as
+        | Record<string, unknown>
+        | undefined;
+      return r
+        ? {
+            id: r.id as string,
+            base: Number(r.base),
+            trigger: p(r.trigger),
+            plan: p(r.plan),
+            device: (r.device as string | null) ?? null,
+            updated: Number(r.updated),
+          }
+        : null;
+    },
+    saveFlowDraft: (d) =>
+      void db
+        .prepare(
+          `INSERT INTO flow_drafts (id, base, trigger, plan, device, updated) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET base = excluded.base, trigger = excluded.trigger, plan = excluded.plan,
+             device = excluded.device, updated = excluded.updated`,
+        )
+        .run(d.id, d.base, j(d.trigger), j(d.plan), d.device, d.updated),
+    deleteFlowDraft: (id) => void db.prepare("DELETE FROM flow_drafts WHERE id = ?").run(id),
     flowRuns: (id) => {
       const r = db
         .prepare(

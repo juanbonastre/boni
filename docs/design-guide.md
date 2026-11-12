@@ -949,7 +949,8 @@ contraseña ni un código aquí» under a question.
 - **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
   30 días) on its right, then the editor, its canvas taking the window's height.
 - **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):
-  a flow's page. A toolbar: the name (edited in place), a pill saying whose version runs («De Boni» in `--accent`, kept
+  a flow's page. A toolbar: the name (edited in place and saved when it is left or with Enter, Escape giving the old
+  one back, never waiting for «Guardar», the list saying it at once; read-only on Boni's own flows, task 80), a pill saying whose version runs («De Boni» in `--accent`, kept
   up to date by Boni; «Tu versión», which Boni no longer changes), the «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
   a kind by its name, its group's or its tool's, Enter taking the first once something is typed, «Ningún paso se
   llama así» when none; under it the kinds in groups by what they do, Leer, Decidir, Datos, Avisar, Preguntar,
@@ -959,8 +960,12 @@ contraseña ni un código aquí» under a question.
   on the mail, which only such a flow has), a group with nothing to offer left out, each node named in a word; never a step
   that runs or saves a flow),
   «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
-  where its replies, questions and confirmations show as always), then «Descartar» and «Guardar» (primary, enabled
-  only with changes and an empty checklist) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
+  where its replies, questions and confirmations show as always; not offered over a draft), then the draft's state in
+  one word in `--muted` 12 px («Guardando…», «Borrador», «Sin guardar» in `--bad` when it could not be kept; nothing
+  without a draft; task 80: what is changed is kept on its own as the flow's draft after a pause, and it is there
+  again on leaving, closing the app or on another device, while what runs is the saved version), «Descartar» (with a
+  draft: the saved version again) and «Guardar» (primary, enabled only with changes and an empty checklist; the draft
+  made a version, «Hay una versión más nueva» when another came first) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
   it as a new version; «Volver al de Boni» on a flow Boni keeps; «Ver en el mapa»; «Duplicar»; «Eliminar» on the
   user's own, a second click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
   falta»), a click selects the step. The canvas lays itself out (I-26; 2026-11-06: «Leer correo» opened in a heap,

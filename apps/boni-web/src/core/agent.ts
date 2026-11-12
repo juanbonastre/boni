@@ -999,6 +999,21 @@ export interface FlowDetailView extends FlowSummary {
   /** The key of the collection the mail's connector brings records to (a trigger on it «viene del conector Correo»),
    * or null; servers before 0.8.114 say none. */
   mailKey?: string | null;
+  /** What the editor changed and has not saved as a version (task 80), or null; servers before it say none. */
+  draft: FlowDraftView | null;
+  /** Whether its name may change (Boni's own keep theirs); servers before task 80 say nothing: as the list did. */
+  renamable: boolean;
+}
+/** A flow's draft (docs/flujos.md §6, decision 6): the version it started from, its trigger and plan. */
+export interface FlowDraftView {
+  base: number;
+  trigger: Record<string, unknown>;
+  plan: FlowPlan;
+  updated: number;
+}
+export function parseFlowDraft(v: unknown): FlowDraftView | null {
+  if (!isObj(v) || typeof v.base !== "number" || !isObj(v.trigger)) return null;
+  return { base: v.base, trigger: v.trigger, plan: planOf(v.plan), updated: numOf(v.updated) };
 }
 /** A flow's plan as the editor holds it (docs/flujos.md: the plan language, `packages/agent` plan.ts). */
 export interface FlowPlan {
@@ -1411,6 +1426,11 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
     plan: planOf(b.plan),
     preset: typeof b.preset === "number" ? b.preset : null,
     mailKey: strOf(b.mailKey, 80),
+    draft: parseFlowDraft(b.draft),
+    renamable:
+      typeof b.renamable === "boolean"
+        ? b.renamable
+        : typeof b.preset !== "number" && s.by !== "preset",
   };
 }
 
@@ -2704,11 +2724,19 @@ export class AgentApi {
     id: string,
     body: {
       base: number;
-      name: string;
+      name?: string;
       trigger: unknown;
       plan: FlowPlan;
     },
   ) => parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}`, body));
+  /** Keeps the editor's changes as the flow's draft (task 80): the draft as the server keeps it (null: none). */
+  keepFlowDraft = async (id: string, body: { base: number; trigger: unknown; plan: FlowPlan }) => {
+    const r = await this.call("PUT", `flows/${encodeURIComponent(id)}/draft`, body);
+    return parseFlowDraft(isObj(r) ? r.draft : null);
+  };
+  /** «Descartar»: the draft dropped; the flow as it was saved. */
+  discardFlowDraft = async (id: string) =>
+    parseFlowDetail(await this.call("DELETE", `flows/${encodeURIComponent(id)}/draft`));
   setFlowEnabled = async (id: string, enabled: boolean) =>
     parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}/enabled`, { enabled }));
   revertFlow = async (id: string, to: { version: number } | { preset: true }) =>

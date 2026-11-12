@@ -56,9 +56,13 @@ import type {
   PieceSaid,
   TestStepView,
 } from "../core/agent.ts";
+import { ApiError } from "../core/api.ts";
 import {
   addStep,
+  DRAFT_PAUSE_MS,
   depsOf,
+  draftRetryMs,
+  draftState,
   duplicateStep,
   insertStep,
   type NodeKind,
@@ -73,7 +77,15 @@ import { choiceOf, segmentsOf, stepLayout } from "../core/flowLayout.ts";
 import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { moneyText, stepDesc, whyText } from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
-import { agentApi, errorText, runFlowInChat, showMap, toast, useStore } from "../store.ts";
+import {
+  agentApi,
+  errorText,
+  renameFlow,
+  runFlowInChat,
+  showMap,
+  toast,
+  useStore,
+} from "../store.ts";
 import {
   argName,
   FlowStepPanel,
@@ -88,16 +100,20 @@ const WIDTH = 200;
 const TRIGGER = "trigger";
 type T = (k: string, p?: Record<string, string | number>) => string;
 
+/** What the editor changes of a flow: what starts it and its steps (its name is changed at once, as in «Flujos»). */
 interface Draft {
-  name: string;
   trigger: Record<string, unknown>;
   plan: FlowPlan;
 }
-const draftOf = (d: FlowDetailView): Draft => ({
-  name: d.name,
-  trigger: d.trigger,
-  plan: d.plan,
-});
+/** The draft being kept of each flow, so its page asks for the flow again only once it is kept (task 80). */
+const pendingKeeps = new Map<string, Promise<void>>();
+/** Once what an editor left pending of a flow is kept: its page opened again shows it. */
+export const draftKept = (id: string): Promise<void> => pendingKeeps.get(id) ?? Promise.resolve();
+/** The saved version, as the editor holds it. */
+const savedOf = (d: FlowDetailView): Draft => ({ trigger: d.trigger, plan: d.plan });
+/** Where the editor starts: the flow's draft when it has one (task 80), else the saved version. */
+const startOf = (d: FlowDetailView): Draft =>
+  d.draft ? { trigger: d.draft.trigger, plan: d.draft.plan } : savedOf(d);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
@@ -1410,7 +1426,9 @@ export function FlowEditor({
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
-  const [draft, setDraft] = useState<Draft>(() => draftOf(detail));
+  const [draft, setDraft] = useState<Draft>(() => startOf(detail));
+  // The name, changed at once as from «Flujos» when he leaves its box (task 80), not with «Guardar».
+  const [name, setName] = useState(detail.name);
   const [check, setCheck] = useState<FlowCheck | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1426,16 +1444,104 @@ export function FlowEditor({
   // The step a test went as far as («Probar hasta aquí», task 70), or null for the whole flow.
   const [testUpTo, setTestUpTo] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
-  // A new version from the server (saved, switched, gone back): the draft starts from it.
-  const shown = useRef(detail);
+  // The draft kept on the server as he changes things (docs/flujos.md §6, decision 6): a moment after each change,
+  // on leaving the editor and when the window is hidden; one request at a time, again after a failure.
+  const [keeping, setKeeping] = useState<"idle" | "saving" | "failed">("idle");
+  const kept = useRef(JSON.stringify(startOf(detail)));
+  const latest = useRef({ draft, id: detail.id, base: detail.draft?.base ?? detail.version });
+  latest.current = { draft, id: detail.id, base: detail.draft?.base ?? detail.version };
+  const pause = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flight = useRef<Promise<void>>(Promise.resolve());
+  const failures = useRef(0);
+  const live = useRef(true);
+  const keep = useCallback((): Promise<void> => {
+    if (pause.current) clearTimeout(pause.current);
+    pause.current = null;
+    flight.current = flight.current.then(async () => {
+      const { draft: d, id, base } = latest.current;
+      const text = JSON.stringify(d);
+      if (text === kept.current) {
+        if (live.current) setKeeping("idle");
+        return;
+      }
+      if (live.current) setKeeping("saving");
+      try {
+        await agentApi.keepFlowDraft(id, { base, trigger: d.trigger, plan: d.plan });
+        kept.current = text;
+        failures.current = 0;
+        if (live.current)
+          setKeeping(JSON.stringify(latest.current.draft) === text ? "idle" : "saving");
+      } catch (e) {
+        // What he changed stays on the screen; it is kept again in a moment, longer each time. Refused (a shared
+        // device, a flow gone), it is tried again only with his next change.
+        if (!live.current) return;
+        setKeeping("failed");
+        if (e instanceof ApiError && e.status >= 400 && e.status < 500) return;
+        pause.current = setTimeout(() => void keep(), draftRetryMs(failures.current++));
+      }
+    });
+    const mine = flight.current;
+    pendingKeeps.set(latest.current.id, mine);
+    void mine.then(() => {
+      if (pendingKeeps.get(latest.current.id) === mine) pendingKeeps.delete(latest.current.id);
+    });
+    return mine;
+  }, []);
+  // A moment after each change.
   useEffect(() => {
-    if (shown.current.id !== detail.id || shown.current.version !== detail.version)
-      setSelected(null);
+    if (readOnly || JSON.stringify(draft) === kept.current) return;
+    if (pause.current) clearTimeout(pause.current);
+    pause.current = setTimeout(() => void keep(), DRAFT_PAUSE_MS);
+  }, [draft, readOnly, keep]);
+  // Leaving the editor, or the window hidden (closing the app): what is pending is kept now.
+  useEffect(() => {
+    if (readOnly) return;
+    const hidden = () => {
+      if (document.visibilityState === "hidden") void keep();
+    };
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", hidden);
+    live.current = true;
+    return () => {
+      document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pagehide", hidden);
+      live.current = false;
+      void keep();
+    };
+  }, [readOnly, keep]);
+  /** Nothing pending is kept any more: «Guardar» and «Descartar» say what the flow is. */
+  const settle = async () => {
+    if (pause.current) clearTimeout(pause.current);
+    pause.current = null;
+    await flight.current;
+  };
+  // A new version from the server (saved, switched, renamed, gone back, discarded): the draft starts from it, or
+  // from its draft. The same flow asked again for another period keeps what is on the screen. What he changed while
+  // an action was on its way (`answered`: the draft as it was when it started) stays, and is kept over the new one.
+  const shown = useRef(detail);
+  const answered = useRef<string | null>(null);
+  useEffect(() => {
+    const flow = shown.current.id !== detail.id;
+    const other = flow || shown.current.version !== detail.version;
     shown.current = detail;
-    setDraft(draftOf(detail));
+    const sent = answered.current;
+    answered.current = null;
+    if (!other && sent === null) return;
+    const start = startOf(detail);
+    kept.current = JSON.stringify(start);
+    setName(detail.name);
     setError(null);
+    if (!flow && sent !== null && JSON.stringify(latest.current.draft) !== sent) {
+      void keep();
+      return;
+    }
+    setDraft(start);
+    setSelected((s) =>
+      flow || (s && s !== TRIGGER && !start.plan.steps.some((x) => x.id === s)) ? null : s,
+    );
   }, [detail]);
-  const dirty = !same(draft, draftOf(detail));
+  const dirty = !same(draft, savedOf(detail));
+  const state = readOnly ? null : draftState(dirty, keeping);
   // The checklist and the values each step may take, asked again a moment after each change.
   useEffect(() => {
     let gone = false;
@@ -1481,27 +1587,49 @@ export function FlowEditor({
   // biome-ignore lint/correctness/useExhaustiveDependencies: on the plan and trigger only
   useEffect(() => setTest(null), [draft.plan, draft.trigger]);
   const setPlan = (plan: FlowPlan) => setDraft((d) => ({ ...d, plan }));
-  const act = async (f: () => Promise<FlowDetailView | null>) => {
+  // Every action on the flow starts once what he changed is kept, so the flow it answers with carries it.
+  const act = async (
+    f: () => Promise<FlowDetailView | null>,
+    first: () => Promise<void> = keep,
+  ) => {
     setBusy(true);
     setError(null);
+    const sent = JSON.stringify(draft);
     try {
+      await first();
       const d = await f();
+      answered.current = sent;
       if (d) onChanged(d);
     } catch (e) {
-      setError(errorText(t, e));
+      setError(
+        e instanceof ApiError && e.code === "conflict" ? t("flows.conflict") : errorText(t, e),
+      );
     } finally {
       setBusy(false);
     }
   };
+  // «Guardar»: the draft as a version, over the version it started from (another saved since is a conflict).
   const save = () =>
-    act(() =>
-      agentApi.saveFlow(detail.id, {
-        base: detail.version,
-        name: draft.name.trim() || detail.name,
-        trigger: draft.trigger,
-        plan: draft.plan,
-      }),
+    act(
+      () =>
+        agentApi.saveFlow(detail.id, {
+          base: detail.draft?.base ?? detail.version,
+          trigger: draft.trigger,
+          plan: draft.plan,
+        }),
+      settle,
     );
+  // «Descartar»: back to the saved version, the draft dropped (the flow that runs never had it).
+  const discard = () => act(() => agentApi.discardFlowDraft(detail.id), settle);
+  // A new name, as from «Flujos»: a version with the same steps; the draft stays.
+  const rename = () => {
+    const n = name.trim().slice(0, 80);
+    if (!detail.renamable || !n || n === detail.name) return setName(detail.name);
+    void act(async () => {
+      await renameFlow(detail.id, n);
+      return agentApi.flowDetail(detail.id, detail.days);
+    });
+  };
   const add = (kind: NodeKind) => {
     const step = newStep(draft.plan, kind);
     const after =
@@ -1561,9 +1689,17 @@ export function FlowEditor({
         <input
           className="flow-name"
           aria-label={t("flows.name")}
-          readOnly={readOnly}
-          value={draft.name}
-          onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value.slice(0, 80) }))}
+          readOnly={readOnly || !detail.renamable}
+          value={name}
+          onChange={(e) => setName(e.target.value.slice(0, 80))}
+          onBlur={rename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+            else if (e.key === "Escape") {
+              setName(detail.name);
+              requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
+            }
+          }}
         />
         {detail.preset !== null && (
           <span
@@ -1645,12 +1781,21 @@ export function FlowEditor({
           </button>
         )}
         <span className="spacer" />
+        {state && (
+          <span
+            className={`flow-draft-state${state === "failed" ? " failed" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            {t(`flows.draft.${state}`)}
+          </span>
+        )}
         {dirty && !readOnly && (
           <button
             type="button"
             className="btn small"
             disabled={busy}
-            onClick={() => setDraft(draftOf(detail))}
+            onClick={() => void discard()}
           >
             {t("flows.discard")}
           </button>

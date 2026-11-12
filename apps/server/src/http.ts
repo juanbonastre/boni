@@ -388,11 +388,12 @@ export function makeApp(opts: ServerOptions): App {
         req.method !== "GET" &&
         req.method !== "POST" &&
         req.method !== "PUT" &&
-        // Only a conversation is deleted here (to the trash).
+        // Only a conversation and a flow are deleted here (to the trash), and a flow's draft («Descartar»).
         !(
           req.method === "DELETE" &&
           (route === "DELETE /api/agent/conversations/:id" ||
-            route === "DELETE /api/agent/flows/:id")
+            route === "DELETE /api/agent/flows/:id" ||
+            route === "DELETE /api/agent/flows/:id/draft")
         )
       )
         return send(res, 404, { error: "not-found" });

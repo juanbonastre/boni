@@ -4,8 +4,11 @@ import type { FlowCatalog, FlowPlan } from "./agent.ts";
 import {
   addStep,
   changeCollection,
+  DRAFT_PAUSE_MS,
   decidesAmong,
   depsOf,
+  draftRetryMs,
+  draftState,
   duplicateStep,
   exprText,
   guideRulesFor,
@@ -371,5 +374,16 @@ describe("what the decider's panel says (the review of task 83)", () => {
     };
     const keyOf = (id: string) => ({ t_tarea: "tarea", t_evento: "evento" })[id] ?? null;
     expect(guideRulesFor(guide, ["tarea", "evento"], keyOf).map((r) => r.id)).toEqual(["r3", "r6"]);
+  });
+});
+
+describe("the flow's draft as the editor keeps it (task 80)", () => {
+  it("waits for a pause, tries again later and later after a failure, and says its state with a word", () => {
+    expect(DRAFT_PAUSE_MS).toBeGreaterThanOrEqual(500);
+    expect([0, 1, 2, 3, 10].map(draftRetryMs)).toEqual([2_000, 4_000, 8_000, 16_000, 60_000]);
+    expect(draftState(false, "idle")).toBeNull();
+    expect(draftState(true, "idle")).toBe("draft");
+    expect(draftState(true, "saving")).toBe("saving");
+    expect(draftState(true, "failed")).toBe("failed");
   });
 });

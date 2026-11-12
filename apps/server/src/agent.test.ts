@@ -809,4 +809,70 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
       flowCatalog(host.tools, host.store(1), ["tasks"]).collections.every((c) => !("id" in c)),
     ).toBe(true);
   });
+
+  it("keep a flow's draft apart: it never runs, a shared device cannot write it, «Guardar» and «Descartar» end it (task 80)", async () => {
+    const token = await login(base, "juan");
+    const made = (await (
+      await call(token, "POST", "/api/agent/flows", { name: "Borrador de prueba" })
+    ).json()) as { id: string };
+    const trigger = { manual: true, inputs: [{ name: "titulo" }] };
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}`, { base: 1, trigger, plan: tally }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}/enabled`, { enabled: true })).status,
+    ).toBe(200);
+    // A change that is incomplete, kept as the draft of the version it started from.
+    const half = { version: 1, steps: [...tally.steps, { id: "x", op: "call" }] };
+    const keep = (body: unknown) => call(token, "PUT", `/api/agent/flows/${made.id}/draft`, body);
+    const kept = await keep({ base: 2, trigger, plan: half });
+    expect(kept.status).toBe(200);
+    expect(await kept.json()).toMatchObject({ draft: { base: 2, plan: half } });
+    expect((await keep({ base: 9, trigger, plan: half })).status).toBe(400);
+    expect(
+      (await call(token, "PUT", "/api/agent/flows/nadie/draft", { base: 1, trigger, plan: half }))
+        .status,
+    ).toBe(404);
+    // Read back with the flow, which is still its saved version and on.
+    const detail = (await (
+      await call(token, "GET", `/api/agent/flows/${made.id}?days=7`)
+    ).json()) as Record<string, unknown>;
+    expect(detail).toMatchObject({
+      version: 2,
+      enabled: true,
+      draft: { base: 2, plan: half },
+      renamable: true,
+    });
+    // It runs the saved version: the draft's incomplete step would fail.
+    const ran = (await (
+      await call(token, "POST", `/api/agent/flows/${made.id}/run`, {
+        inputs: { titulo: "Tienes {a}" },
+      })
+    ).json()) as { status: string };
+    expect(ran.status).toBe("done");
+    // A shared device cannot write or drop it.
+    const s = sessionUser(db, token);
+    const trust = (t: string) =>
+      db.prepare("UPDATE devices SET trust = ? WHERE name = ?").run(t, s?.device ?? "");
+    trust("shared");
+    expect((await keep({ base: 2, trigger, plan: tally })).status).toBe(403);
+    expect((await call(token, "DELETE", `/api/agent/flows/${made.id}/draft`)).status).toBe(403);
+    trust("personal");
+    // «Descartar»: the flow as it was saved, no draft.
+    const dropped = await call(token, "DELETE", `/api/agent/flows/${made.id}/draft`);
+    expect(dropped.status).toBe(200);
+    expect(await dropped.json()).toMatchObject({ version: 2, draft: null, plan: tally });
+    // «Guardar» makes the draft a version and ends it.
+    const done = {
+      version: 1,
+      steps: [tally.steps[0], { ...tally.steps[1], data: { template: { lit: "Hay" } } }],
+    };
+    expect((await keep({ base: 2, trigger, plan: done })).status).toBe(200);
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}`, { base: 2, trigger, plan: done }))
+        .status,
+    ).toBe(200);
+    expect(host.store(1).journal.flowDraft(made.id)).toBeNull();
+  });
 });
