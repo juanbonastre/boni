@@ -237,6 +237,8 @@ espejo genérico, se abre en Obsidian), `csv/<tipo>.csv`, `views.json` (gráfica
 - Volver a importarlo: `node src/cli.ts import-export <archivo.zip> <cuenta> [--apply] [--trust-labels]` (sin `--apply` es un
   ensayo; lo que ya está no se toca). Por defecto la procedencia que trae el archivo queda como mucho en `imported` (un archivo
   se puede editar); `--trust-labels` la conserva tal cual, solo para una exportación propia que no ha salido de tus manos.
+- Una copia puede pasar de 4 GB (ZIP64) y llevar archivos de hasta 1 GB: se escribe y se importa a trozos. Al importar
+  dice cuántos archivos vuelven, cuántos ya estaban y cuáles faltan, con los registros que los usan (tarea 101, A-27).
 - En una hoja de cálculo, una celda que empieza como una fórmula (`=`, `+`, `-`, `@`) se guarda como texto.
 
 ## Listo para el NAS (2026-10-20)

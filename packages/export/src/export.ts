@@ -2,7 +2,7 @@ import { formatNote } from "@boni/calendar";
 import type { FieldDef, Label, TypeDef, Value } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
 import { type Links, render, safeName } from "./markdown.ts";
-import { writeZip, type ZipEntry, zipChunks } from "./zip.ts";
+import { writeZip, type ZipEntry, type ZipLimits, zipChunks } from "./zip.ts";
 
 /**
  * Export in one click (docs/nucleo.md 9.3): everything of an account in files any program reads, so
@@ -29,6 +29,8 @@ export interface ExportOptions {
   /** Adds log.ndjson. */
   log?: boolean;
   now?: number;
+  /** Where the zip's fields run out (`ZipLimits`): only a test lowers them, to take the ZIP64 path. */
+  limits?: Partial<ZipLimits>;
 }
 
 /** A record of json/<type>.ndjson. */
@@ -312,8 +314,8 @@ function* logChunks(store: UserStore): Generator<Buffer> {
 }
 
 export const exportZip = (store: UserStore, o: ExportOptions = {}): Buffer =>
-  writeZip(exportFiles(store, o), o.now ?? Date.now());
+  writeZip(exportFiles(store, o), o.now ?? Date.now(), o.limits);
 
 /** The export as chunks (`zipChunks`): what the server sends and the CLI writes, never whole in memory. */
 export const exportChunks = (store: UserStore, o: ExportOptions = {}): Generator<Buffer> =>
-  zipChunks(exportFiles(store, o), o.now ?? Date.now());
+  zipChunks(exportFiles(store, o), o.now ?? Date.now(), o.limits);

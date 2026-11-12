@@ -10,7 +10,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
-import { exportChunks, importExport, readZip, releaseSent } from "@boni/export";
+import { exportChunks, importExport, openZipFile, releaseSent } from "@boni/export";
 import {
   devicesOf,
   importAccounts,
@@ -182,17 +182,31 @@ try {
         }
         console.log(`${file}: ${bytes} bytes`);
       } else {
-        const r = importExport(readZip(readFileSync(file)), store, {
-          apply: flags.has("--apply"),
-          trustLabels: flags.has("--trust-labels"),
-          name: file.split("/").pop() ?? file,
-        });
+        // Read from disk a part at a time (a backup may pass 4 GB, a file in it 1 GB): never whole in memory.
+        const zip = openZipFile(file);
+        let r: ReturnType<typeof importExport>;
+        try {
+          r = importExport(zip, store, {
+            apply: flags.has("--apply"),
+            trustLabels: flags.has("--trust-labels"),
+            name: file.split("/").pop() ?? file,
+          });
+        } finally {
+          zip.close();
+        }
         for (const t of r.types)
           console.log(`${t.name} (${t.key})${t.created ? " (new type)" : ""}: ${t.entities}`);
         console.log(
           `${r.created} entities to create, ${r.existing.length} already here, ${r.failed.length} failed`,
         );
         for (const f of r.failed.slice(0, 20)) console.log(`  ${f.id}: ${f.error}`);
+        const { added, present, missing } = r.files;
+        const verb = r.applied ? "brought back" : "to bring back";
+        console.log(`${added} files ${verb}, ${present} already here, ${missing.length} missing`);
+        for (const m of missing)
+          console.log(
+            `  files/${m.sha256} (${m.mime}): ${m.error}; named by ${m.records.join(", ") || "no record"}`,
+          );
         console.log(r.applied ? "Imported." : "Dry run: nothing written (add --apply).");
       }
     } finally {
