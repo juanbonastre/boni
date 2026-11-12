@@ -2,6 +2,7 @@ import { type AndroidNative, androidHost } from "./android.ts";
 import type { Transport, TransportAnswer } from "./core/api.ts";
 import type { Widget } from "./core/contract.ts";
 import type { TextStore } from "./core/storage.ts";
+import { MAX_DROP_BYTES, type UploadAnswer, uploadPath } from "./core/uploads.ts";
 import type { Lang } from "./i18n.ts";
 
 /**
@@ -186,6 +187,14 @@ export interface Host {
    */
   openUrl?: (url: string) => Promise<"opened" | "error">;
   /**
+   * Sends a file dropped on Boni's window to `POST /api/data/files/upload` (A-24), saying how much has gone: the desktop
+   * app streams it from disk (its uploads.cjs), a browser with its own request. None on the phone (not yet).
+   */
+  uploadFile?: (
+    file: File,
+    progress: (sent: number, size: number) => void,
+  ) => Promise<UploadAnswer>;
+  /**
    * The page inside another app's window (Boni Calendar's note peek, Juan 2026-10-22): it says when it listens,
    * asks to be put away and to open a note in Boni. The notes to show arrive as `navigate` events.
    */
@@ -231,6 +240,10 @@ declare global {
       pageReady?(): void;
       openFile?(sha256: string, name: string): Promise<"opened" | "shown" | "offline" | "error">;
       openUrl?(url: string): Promise<"opened" | "error">;
+      uploadFile?(
+        file: File,
+        progress: (sent: number, size: number) => void,
+      ): Promise<UploadAnswer>;
     };
   }
 }
@@ -275,6 +288,13 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
       : {}),
     ...(b.openUrl
       ? { openUrl: (url: string) => b.openUrl?.(url) ?? Promise.resolve("error" as const) }
+      : {}),
+    // A shell from before 0.4.86 has none: nothing can be dropped there.
+    ...(b.uploadFile
+      ? {
+          uploadFile: (file: File, progress: (sent: number, size: number) => void) =>
+            b.uploadFile?.(file, progress) ?? Promise.resolve({ error: "offline" as const }),
+        }
       : {}),
   };
 }
@@ -371,6 +391,24 @@ export function browserHost(): Host {
           return { ok: false, offline: true, message: String((e as Error).message ?? e) };
         }
       },
+    },
+    uploadFile(file, progress) {
+      const token = safeGet(TOKEN_KEY);
+      const path = uploadPath(file.name);
+      if (!token || !path) return Promise.resolve({ error: path ? "offline" : "bad-name" });
+      if (file.size > MAX_DROP_BYTES) return Promise.resolve({ error: "too-big" });
+      // XMLHttpRequest says how much of the body has gone; fetch does not.
+      return new Promise<UploadAnswer>((resolve) => {
+        const x = new XMLHttpRequest();
+        x.open("POST", `/${path}`);
+        x.setRequestHeader("Authorization", `Bearer ${token}`);
+        x.setRequestHeader("X-Boni-Client", "boni-web");
+        x.upload.onprogress = (e) => progress(e.loaded, file.size);
+        x.onload = () => resolve({ status: x.status, body: x.responseText });
+        x.onerror = () => resolve({ error: "offline" });
+        x.onabort = () => resolve({ error: "offline" });
+        x.send(file);
+      });
     },
     async openFile(sha, name) {
       const token = safeGet(TOKEN_KEY);

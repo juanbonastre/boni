@@ -10874,6 +10874,55 @@ tr[data-boni-pointed] > td {
 .chat-chip.sent {
   padding: 1px 8px;
 }
+/* A dropped file (A-24): its word in --muted; going up, a line on its bottom edge says how much has gone (I-15). */
+.chat-chip-word {
+  flex: none;
+  margin-left: 4px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chat-chip.upload {
+  position: relative;
+  overflow: hidden;
+  padding-right: 8px;
+}
+.chat-chip.upload:not(.uploading) {
+  padding-right: 2px;
+}
+.chat-chip.upload.too-big,
+.chat-chip.upload.failed {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}
+.chat-chip-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+/* Files over the conversation: the place they go to, outlined, with one word. */
+.chat.dropping {
+  position: relative;
+}
+.chat-drop {
+  position: absolute;
+  inset: 6px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-chip-bar {
+    transition: none;
+  }
+}
 .chat-chip-text {
   min-width: 0;
   overflow: hidden;

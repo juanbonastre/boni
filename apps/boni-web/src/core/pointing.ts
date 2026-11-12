@@ -22,6 +22,11 @@ export type PointedRef =
 export interface Pointed {
   ref: PointedRef;
   title: string;
+  /**
+   * A file dropped on the window (core/uploads.ts, A-24): "read" when a reader gets what it says, or the word of why
+   * not ("too-big", "unreadable").
+   */
+  file?: "read" | "too-big" | "unreadable";
 }
 
 /** The most things one message carries (the server takes no more). */

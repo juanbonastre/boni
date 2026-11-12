@@ -396,6 +396,46 @@ describe("the policy engine", () => {
     expect(toolsFor(r, turn).map((t) => t.name)).toEqual([]);
     expect(toolsFor(r, turn, true).map((t) => t.name)).toEqual(["mail.rule", "inbox.fold"]);
   });
+  it("a dropped file is read for a reader only from Juan's own turn, chosen by his screen, never in a flow or from outside (P23; docs/sistema.md §4.7)", () => {
+    const reads: ToolDef<"read"> = {
+      name: "files.read",
+      effect: "read",
+      area: "data",
+      sees: true,
+      title: "Leer archivo",
+      describe: "a file on his screen",
+      args: { file: { role: "target", describe: "the file" } },
+      run: () => leaf(null, model),
+    };
+    // The screen's place is code's; the row's name came in a mail: what chooses the file is its place.
+    const file = (at: typeof user) =>
+      rec({ at: leaf("row:e_01", at), name: leaf("factura.pdf", ext) }, model);
+    const own = label("own", "public", [{ kind: "code", id: "screen" }]);
+    const args = { file: file(own) };
+    expect(decide({ tool: reads, args, control: null }, turn, counters)).toEqual({
+      kind: "allow",
+      rule: "P23",
+    });
+    expect(
+      decide({ tool: reads, args: { file: file(ext) }, control: null }, turn, counters),
+    ).toEqual({ kind: "deny", rule: "P23", reason: "external-file" });
+    expect(decide({ tool: reads, args, control: ext }, turn, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P23",
+    });
+    for (const kind of ["background", "miniapp", "accepted"] as const)
+      expect(
+        decide({ tool: reads, args, control: null }, { kind, trust: "personal" }, counters),
+      ).toEqual({ kind: "deny", rule: "P23", reason: "file-outside-turn" });
+    // Not even a flow he runs by hand: a flow's steps were written before the file was dropped.
+    expect(decide({ tool: reads, args, control: null, flow: true }, turn, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P23",
+    });
+    // A read that shows no model a file is the old rule.
+    const plain: ToolDef<"read"> = { ...reads, name: "entities.get", sees: undefined };
+    expect(decide({ tool: plain, args, control: null }, turn, counters).rule).toBe("P1");
+  });
   it("a flow a model writes is only proposed; saved when Juan accepts it; never from outside (P19, P16, P8)", () => {
     const def = (l: typeof user) => ({
       name: leaf("Resumen", l),

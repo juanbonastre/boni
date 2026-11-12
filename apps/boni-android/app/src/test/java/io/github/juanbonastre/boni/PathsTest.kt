@@ -30,6 +30,9 @@ class PathsTest {
         assertTrue(Paths.apiRequest("GET", "api/pages"))
         assertTrue(Paths.apiRequest("GET", "api/data/types/t_docencia/rows"))
         assertTrue(Paths.apiRequest("GET", "api/mail"))
+        // A file dropped on Boni's window (A-24, desktop and browser for now), its name escaped strictly.
+        assertTrue(Paths.apiRequest("POST", "api/data/files/upload?name=Factura%20FAC-2026-0142%20%28taller%29.pdf"))
+        assertFalse(Paths.apiRequest("POST", "api/data/files/upload?name=Factura (taller).pdf"))
         assertFalse(Paths.apiRequest("GET", "api/agent/../../healthz"))
         assertFalse(Paths.apiRequest("GET", "api/export"))
         assertFalse(Paths.apiRequest("POST", "api/apply"))

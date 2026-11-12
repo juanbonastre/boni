@@ -12,6 +12,8 @@ test("the page reaches only Boni's APIs through the shell", () => {
     "api/pages-trash",
     "api/data/types/t_nota/rows",
     "api/mail/guide",
+    // A file dropped on Boni's window (A-24), its name escaped strictly (uploads.cjs).
+    "api/data/files/upload?name=Factura%20FAC-2026-0142%20%28taller%29.pdf",
   ])
     assert.equal(allowedPath(p), true, p);
   for (const p of [
@@ -22,6 +24,7 @@ test("the page reaches only Boni's APIs through the shell", () => {
     "api/export",
     "api/datax",
     "boni/index.html",
+    "api/data/files/upload?name=Factura (taller).pdf",
     42,
   ])
     assert.equal(allowedPath(p), false, String(p));

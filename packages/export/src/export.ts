@@ -251,13 +251,13 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
         const info = store.fileInfo(sha);
         if (!info) continue;
         fileTypes[sha] = info.mime;
-        // Read when its turn comes to be written (zipChunks), one attachment at a time.
+        // Read when its turn comes to be written (zipChunks), a part at a time: a dropped file may be 1 GB (A-24).
         out.push({
           path: `files/${sha}`,
           stored: true,
-          data: () => {
-            const d = store.getFile(sha)?.data ?? new Uint8Array();
-            return Buffer.from(d.buffer, d.byteOffset, d.byteLength); // a view, not a copy
+          chunks: function* () {
+            for (const d of store.fileChunks(sha))
+              yield Buffer.from(d.buffer, d.byteOffset, d.byteLength); // a view, not a copy
           },
         });
       }

@@ -22,6 +22,11 @@ export interface ModelRequest {
    * what the API's structured output accepts); otherwise the schema is enforced by the API. */
   structured?: boolean;
   maxTokens: number;
+  /**
+   * Images the reader is shown with its input (a photo or a scan Juan dropped, A-24), base64; only a reader's, only
+   * those a tool that sees gave in the run. The journal keeps each by its ref, type and size (`data` empty).
+   */
+  images?: { ref: string; mime: string; size: number; data: string }[];
 }
 export interface ModelResponse {
   json: unknown;

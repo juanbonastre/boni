@@ -68,7 +68,19 @@ export class OpenAIProvider implements ModelProvider {
       max_tokens: req.maxTokens,
       messages: [
         { role: "system", content: system },
-        { role: "user", content: JSON.stringify(req.input) },
+        // A reader shown images (A-24): each as a data URL before its input, as OpenAI-compatible APIs take them.
+        {
+          role: "user",
+          content: req.images?.length
+            ? [
+                ...req.images.map((i) => ({
+                  type: "image_url",
+                  image_url: { url: `data:${i.mime};base64,${i.data}` },
+                })),
+                { type: "text", text: JSON.stringify(req.input) },
+              ]
+            : JSON.stringify(req.input),
+        },
       ],
       ...(format === "json_schema"
         ? {

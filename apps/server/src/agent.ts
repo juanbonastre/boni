@@ -30,6 +30,7 @@ import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
+import { filesService, imageOf } from "./fileActions.ts";
 import { type FlowsService, runFacts } from "./flowActions.ts";
 import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
@@ -313,6 +314,8 @@ export class AgentHost {
         // (its Undo); the flows' and the Bandeja's code, as their routes run it.
         services: (name, run) => this.service(account, name, run),
         undoable: (run) => this.keptUndoable(account, run),
+        // A file's images for a model that sees them, by the references `files.read` gave (A-24, P23).
+        image: (ref) => imageOf(this.store(account), ref),
       });
       this.agents.set(account, a);
       this.used.set(account, p);
@@ -365,6 +368,7 @@ export class AgentHost {
           } satisfies MailService)
         : null;
     }
+    if (name === "files") return filesService(store);
     if (name !== "flows") return null;
     // What this run switched or deleted, so that its Undo takes it back (`undoKept`).
     const keep = (flow: string, was: { enabled?: boolean; deleted?: boolean }) =>

@@ -329,6 +329,16 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
      device TEXT,
      updated INTEGER NOT NULL
    )`,
+  // 22: a file kept in parts as it arrives (a file dropped on Boni's window, up to 1 GB; docs/sistema.md §4.7, A-24):
+  // never whole in memory, and each part below SQLite's limit for one value. `files.parts` says how many it has; a
+  // file with none keeps its bytes in `files.data`, as before. An upload not finished has parts named `up-…`.
+  `CREATE TABLE file_parts (
+     sha256 TEXT NOT NULL,
+     n INTEGER NOT NULL,
+     data BLOB NOT NULL,
+     PRIMARY KEY (sha256, n)
+   );
+   ALTER TABLE files ADD COLUMN parts INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 export function migrate(db: DatabaseSync): void {

@@ -22,6 +22,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { allowedPath, timeoutFor } = require("./paths.cjs");
 const F = require("./files.cjs");
+const U = require("./uploads.cjs");
 const { linkIn, outsideLink, peekScreen, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
 const { createNotices, noticeBody } = require("./notices.cjs");
@@ -751,6 +752,28 @@ ipcMain.handle("file:open", async (_e, sha, name) => {
   } catch {
     return "offline";
   }
+});
+
+// ---------- a file dropped on Boni's window (A-24): sent from disk, a part at a time ----------
+// The path comes from the preload (webUtils.getPathForFile of a File the user dropped): a page cannot name one.
+ipcMain.handle("file:upload", async (e, id, file, name) => {
+  if (typeof id !== "string" || typeof file !== "string" || !path.isAbsolute(file))
+    return { error: "unreadable" };
+  if (!settings.serverUrl || !settings.token) return { error: "offline" };
+  let last = 0;
+  return U.uploadFile({
+    file,
+    name,
+    serverUrl: settings.serverUrl,
+    bearer: settings.token,
+    progress: (sent, size) => {
+      // A few times a second is enough for a bar.
+      const now = Date.now();
+      if (sent < size && now - last < 150) return;
+      last = now;
+      if (!e.sender.isDestroyed()) e.sender.send("file:upload-progress", id, sent, size);
+    },
+  });
 });
 
 // An outside address from the page (a mail in its webmail, task 55): the system's browser; http(s) only, checked

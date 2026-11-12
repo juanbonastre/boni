@@ -63,6 +63,7 @@ import {
   updateRow,
 } from "./data.ts";
 import type { Db } from "./db.ts";
+import { receiveDrop } from "./drops.ts";
 import { ExternalItems } from "./externalItems.ts";
 import type { Feeds } from "./feeds.ts";
 import { checkFlow } from "./flows.ts";
@@ -94,7 +95,7 @@ import {
 import { noteRequest } from "./perf.ts";
 import { relatedTo } from "./related.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
-import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
+import { bodyOf, CORS, header, SAFE, send, sendFileChunks, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
 import { isSystemCollection, SYS_DATA, systemCollections } from "./systemCollections.ts";
@@ -215,13 +216,31 @@ export function makeServer(opts: ServerOptions): Server {
 
 /** An HTTP server for one entry of `app`. */
 export function serve(app: App, listener: Listener): Server {
-  const server = createServer(app.handler(listener));
+  const handle = app.handler(listener);
   // A slow client cannot hold a connection open forever while sending its request (the live stream's
-  // answer is long, its request is not).
-  server.requestTimeout = 30_000;
+  // answer is long, its request is not): 30 s to send it whole. A file dropped on Boni's window may be 1 GB
+  // (A-24): it may take as long as it keeps arriving, and stops after a minute with nothing.
+  const server = createServer((req, res) => {
+    if (req.method === "POST" && (req.url ?? "").startsWith(UPLOAD_PATH)) {
+      req.socket.setTimeout(UPLOAD_IDLE_MS, () => req.socket.destroy());
+      res.once("close", () => req.socket.setTimeout(0));
+    } else {
+      const t = setTimeout(() => {
+        if (!req.complete) req.socket.destroy();
+      }, REQUEST_MS);
+      t.unref();
+      res.once("close", () => clearTimeout(t));
+    }
+    handle(req, res);
+  });
+  server.requestTimeout = 0;
   server.headersTimeout = 15_000;
   return server;
 }
+/** How long a request may take to arrive whole; an upload instead, how long it may stall (A-24). */
+export const REQUEST_MS = 30_000;
+export const UPLOAD_IDLE_MS = 60_000;
+const UPLOAD_PATH = "/api/data/files/upload";
 
 /**
  * The server's state and routes. The tailnet entry and the public one are two servers over the same
@@ -713,6 +732,13 @@ export function makeApp(opts: ServerOptions): App {
           );
           return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
         }
+        // A file dropped on Boni's window, streamed as it arrives (drops.ts, A-24); its name in the query.
+        if (route === "POST /api/data/files/upload") {
+          const r = await receiveDrop(store, req, url.searchParams.get("name"), s.device, now());
+          // What was not read of a refused file is not waited for: the connection closes with the answer.
+          if ("error" in r && !req.complete) res.setHeader("connection", "close");
+          return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
+        }
         // A file pasted or dropped into a page: kept as a row of a collection that holds files.
         if (route === "POST /api/data/files") {
           const r = addFile(store, await bodyOf(req), s.device);
@@ -726,10 +752,13 @@ export function makeApp(opts: ServerOptions): App {
           if (f) recordFileRead(store, s.device, params.sha ?? "", now());
           return f ? send(res, 200, f) : send(res, 404, { error: "not-found" });
         }
+        // Sent a part at a time: a dropped file may be 1 GB (A-24).
         if (route === "GET /api/data/files/:sha") {
-          const f = store.getFile(params.sha ?? "");
-          if (f) recordFileRead(store, s.device, params.sha ?? "", now());
-          return f ? sendFile(res, f.mime, f.data) : send(res, 404, { error: "not-found" });
+          const sha = params.sha ?? "";
+          const f = store.fileInfo(sha);
+          if (!f) return send(res, 404, { error: "not-found" });
+          recordFileRead(store, s.device, sha, now());
+          return sendFileChunks(res, f.mime, f.size, store.fileChunks(sha));
         }
       } catch (e) {
         if (e instanceof DataError)

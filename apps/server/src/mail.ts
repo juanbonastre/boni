@@ -32,6 +32,7 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
+import { attachmentText, TEXT_MAX } from "./fileReading.ts";
 import {
   collectionKeysOf,
   ensureFlow,
@@ -65,7 +66,6 @@ import {
   type Suggestion,
 } from "./mailReview.ts";
 import { dueField, fillFields, type Target, TargetMemo } from "./mailTargets.ts";
-import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { timed } from "./perf.ts";
 import { type MailPieces, PIECES } from "./pieces.ts";
@@ -689,8 +689,6 @@ interface Original {
   /** Its Gmail thread, from Gmail's IMAP (task 68): what opens the mail itself in Gmail. */
   gmailThread?: string | null;
 }
-/** Text read out of a mail's attachments (a sheet's rows, a text file) for the reader, at most. */
-const ATTACHMENTS_TEXT_MAX = 50_000;
 
 /**
  * The account's collection of files: the one with a file and the folder it is in (the import's «Archivos»), when
@@ -770,24 +768,6 @@ const INVITATION_FIELDS: FieldDef[] = (
     ["invitacion", "Invitación", "text"],
   ] as const
 ).map(([key, name, type]) => ({ id: `f_${key}`, key, name, type, hidden: true, label: CODE }));
-
-/** What the code reads of an attachment for the reader: a sheet's rows (csv, xlsx, xls) or a text file; else nothing. */
-export function attachmentText(a: { name: string; type: string; content?: Uint8Array }): string {
-  if (!a.content) return "";
-  const name = a.name.toLowerCase();
-  try {
-    if (/\.(csv|xlsx|xls)$/.test(name) || a.type === "text/csv")
-      return readRows(a.content, name.endsWith(".csv") || a.type === "text/csv" ? "x.csv" : name)
-        .slice(0, 2000)
-        .map((r) => r.map((c) => (c === null || c === undefined ? "" : String(c))).join("\t"))
-        .join("\n");
-    if (/\.(txt|md)$/.test(name) || a.type === "text/plain")
-      return new TextDecoder("utf-8").decode(a.content);
-  } catch {
-    // an attachment the reader cannot parse: its name is still in the mail
-  }
-  return "";
-}
 
 const fieldOf = ([k, name, type]: (typeof FIELDS)[number]): FieldDef => ({
   id: `f_${k}`,
@@ -1741,7 +1721,7 @@ export class Mails {
       .filter((x) => x.text)
       .map((x) => `[${x.a.name}]\n${x.text}`);
     if (texts.length && def.fields.some((f) => f.id === "f_adjuntos_texto"))
-      values.f_adjuntos_texto = w(texts.join("\n\n").slice(0, ATTACHMENTS_TEXT_MAX));
+      values.f_adjuntos_texto = w(texts.join("\n\n").slice(0, TEXT_MAX));
     return store.create(def.id, values, { actor: "connector" }).entity.id;
   }
 

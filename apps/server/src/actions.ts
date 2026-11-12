@@ -2,6 +2,7 @@ import { coreTools, type ToolDef, type ToolRegistry } from "@boni/agent";
 import { withCalendarActions } from "./calendarActions.ts";
 import { withConnectorActions } from "./connectorActions.ts";
 import { withDataActions } from "./dataActions.ts";
+import { withFileActions } from "./fileActions.ts";
 import { withFlowActions } from "./flowActions.ts";
 import { withFunctionSteps } from "./functionSteps.ts";
 import { withInboxActions } from "./inboxActions.ts";
@@ -23,7 +24,9 @@ export function serverRegistry(): ToolRegistry {
     withCalendarActions(
       withInboxActions(
         withFlowActions(
-          withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+          withFileActions(
+            withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+          ),
         ),
       ),
     ),
@@ -187,6 +190,7 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
   "DELETE /api/agent/flows/:id/draft":
     "«Descartar» in the flow editor: Juan's unsaved changes dropped, the flow as it was saved",
   "POST /api/data/files": "a file's bytes from Juan's device: no model has them",
+  "POST /api/data/files/upload": "a file's bytes from Juan's device: no model has them",
   "POST /api/v1/charts/preview": "computes a chart, changes nothing",
   "POST /api/data/blocks": "computes a page's numbers, changes nothing",
   "POST /api/data/blocks/rows": "computes the rows a number counts, changes nothing",
@@ -245,6 +249,9 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "flows.delete": { why: "deleting is Juan's touch: his card, in his app" },
   "flows.test": "flows_test",
   "flows.runs": "flows_runs",
+  "files.read": {
+    why: "a file Juan drops is read in his own turn, from his screen (P23): an assistant has no screen of his",
+  },
   "screen.open": {
     why: "Juan's screen is his app's: an assistant has its own chat, not his screen (P22)",
   },

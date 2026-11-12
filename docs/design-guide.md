@@ -660,7 +660,20 @@ contraseña ni un código aquí» under a question.
     that cannot be read back (deleted meanwhile, the server out of reach) starts a new one, silently, with what was
     being written to it. Apple HIG, «Windows»: restore windows to their previous state when an
     app relaunches.
-  - **Dropping files on it** is not built yet (docs/sistema.md §4.7, «Falta»).
+  - **Dropping files on it** (task 85, seventh part; `Chat.tsx`, `core/uploads.ts`, `store.ts` `dropFiles`;
+    docs/sistema.md §4.7; A-24, I-36): files dragged over the conversation outline it with a 2 px dashed `--accent`
+    border, 6 px in, and one word in the middle, «Soltar» (it takes no clicks). Each file dropped goes up at once,
+    not when the message is sent, as a chip where its chip will be (I-15): its name, «N %» in `--muted` tabular
+    numerals and a 2 px `--accent` line along the chip's bottom edge that grows as it goes (no animation with less
+    motion). Meanwhile the send button says «Subiendo» and is disabled, and `Enter` sends nothing: the message waits
+    for its files. Once the server has it, the chip is like a pointed row's, with the word of what Boni will not
+    read: «Demasiado grande» or «Sin leer», in `--muted`. A file over 1 GB never goes: its chip says «Demasiado
+    grande» on a 12 % `--bad` tint, as «Falló» does, and its «×» takes it off. A file dropped and never sent stays in
+    Archivos (`conversación/<año-mes>`). No sentence explains any of it: the chip, its percent and its word do.
+    Material Design 3, «Progress indicators»: a determinate linear indicator for a known amount, shown where the
+    thing will appear; NN/g, «Drag–and–Drop: How to Design for Ease of Use»: the drop zone is highlighted while
+    something is dragged over it; Apple HIG, «Drag and drop»: show where the item will go and accept it where it is
+    dropped.
 - **What Boni acts on, lit** (F9, task 85, fifth part; `App.tsx` `ScreenLight`, `store.ts` `screenActs`; docs/sistema.md
   §4.7; I-34): what `screen.highlight` or `screen.scroll` names (rows, blocks, a flow's steps, paragraphs), and the
   step that stopped a run opened over the map, get a 2 px `--accent` outline, 2 px away, held for half the time and

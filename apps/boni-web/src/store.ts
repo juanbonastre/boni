@@ -103,6 +103,14 @@ import { filterOf, litKeys, typeOfKey } from "./core/screenReplies.ts";
 import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
+  dropped,
+  type Upload,
+  type Uploads,
+  uploadEnd,
+  uploadsIn,
+  withUploads,
+} from "./core/uploads.ts";
+import {
   type ClientSettings,
   host as defaultHost,
   type Host,
@@ -294,6 +302,8 @@ interface State {
    * for it. The same on its screen and in its window, kept when either closes (F9).
    */
   chatDrafts: Drafts;
+  /** Files dropped on Boni's window going up, or that could not, by conversation (core/uploads.ts, A-24). */
+  chatUploads: Uploads;
   /** Pointing (`Ctrl+Shift+E`, F9): the pointer marks what the next message is about. */
   pointing: boolean;
   /** The turn running now, as it goes (3.5). */
@@ -483,6 +493,7 @@ export const useStore = create<State>(() => ({
   conversations: null,
   conversationId: null,
   chatDrafts: {},
+  chatUploads: {},
   pointing: false,
   live: null,
   planners: [],
@@ -1575,9 +1586,63 @@ export function setPointing(on: boolean) {
 }
 export const togglePointing = () => setPointing(!get().pointing);
 
+/** The open conversation's files going up, or that could not (A-24). */
+export const uploadsOf = (s: Pick<State, "conversationId" | "chatUploads">): readonly Upload[] =>
+  uploadsIn(s.chatUploads, s.conversationId);
+/** Whether files can be dropped here (a host that sends them: the desktop app and a browser). */
+export const canDrop = () => !!hostRef.uploadFile;
+let uploadKeys = 0;
+/**
+ * Files dropped on Boni's window (docs/sistema.md §4.7, A-24): each goes up now, to his files, whether or not the
+ * message is sent; once there it is a chip of this conversation's draft, as anything pointed at.
+ */
+export function dropFiles(files: readonly File[]) {
+  const up = hostRef.uploadFile;
+  if (!up) return;
+  const conversation = get().conversationId;
+  const change = (key: string, f: (u: Upload) => Upload | null) =>
+    set((s) => ({
+      chatUploads: withUploads(s.chatUploads, conversation, (l) =>
+        l.flatMap((u) => (u.key === key ? (f(u) ?? []) : [u])),
+      ),
+    }));
+  for (const file of files) {
+    const u = dropped(`u${++uploadKeys}`, file);
+    set((s) => ({ chatUploads: withUploads(s.chatUploads, conversation, (l) => [...l, u]) }));
+    if (u.state !== "uploading") continue;
+    let shown = 0;
+    void up(file, (sent) => {
+      // A redraw a few times a second is enough for a bar.
+      const now = Date.now();
+      if (now - shown < 120) return;
+      shown = now;
+      change(u.key, (x) => ({ ...x, sent }));
+    }).then((answer) => {
+      const end = uploadEnd(answer);
+      if ("state" in end) return change(u.key, (x) => ({ ...x, state: end.state }));
+      change(u.key, () => null);
+      set((s) => ({
+        chatDrafts: withDraft(s.chatDrafts, conversation, (d) => ({
+          ...d,
+          pointed: addPointed(d.pointed, [end.chip]),
+        })),
+      }));
+    });
+  }
+}
+/** Takes a file that could not go up off the bar. */
+export const forgetUpload = (key: string) =>
+  set((s) => ({
+    chatUploads: withUploads(s.chatUploads, s.conversationId, (l) =>
+      l.filter((u) => u.key !== key),
+    ),
+  }));
+
 export async function sendTurn(text: string) {
   const request = text.trim();
   if (!request || get().chatBusy) return;
+  // A file still going up is not on the bar yet: the message waits for it (the send button says so).
+  if (uploadsOf(get()).some((u) => u.state === "uploading")) return;
   // What was pointed at goes with this message, once, and stays shown with it.
   const chips = draftOf(get()).pointed.slice(-MAX_POINTED);
   const pointed = chips.map((p) => p.ref);
