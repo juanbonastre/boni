@@ -5,6 +5,59 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-12 (forty-second) — server 0.8.118 · Boni desktop 0.4.86 · Boni Android
+
+Needs:
+- The server, 0.8.118, to deploy. Everything here is in it: a page's values and buttons, files dropped on Boni's
+  window, corrections and pinned conversations, and the MCP's `edit` fix. No store migration.
+- Boni desktop 0.4.86 (`release/boni_0.4.86_amd64.deb`), to install after the server: the drop of files reads the
+  file from disk in the desktop's own process.
+- Boni Calendar desktop stays 0.8.24: nothing it ships changed (the only change in `packages/calendar` is a function
+  the calendar does not call).
+- Boni Android: no new APK. Only a test of `Net.kt`'s paths changed; the upload path was already allowed.
+
+What it brings (#393–#397):
+- **A page's values** (task 87, first part; D-59): «Control» blocks hold an option or a record, a month, a number or a
+  text, saved with the page and the same on every device. Numbers, bars and charts filter by them, computed by the
+  server; a table's rule can take its value from one. A link «Con valores» carries them to the page it opens. «Cambiar
+  valor» is in the one list (the conversation and the MCP).
+- **A page's buttons** (task 87, second part; D-60): «Hace»: Formulario (as before), Acción (Crear, Cambiar or
+  Borrar in a collection, with confirmation and Undo), Flujo (a manual flow, its form filled from the page) or Página
+  (opens a page carrying the values). The server reads the button from the saved page, never from the app. Old buttons
+  and «Apuntar gasto» are unchanged.
+- **Files dropped on Boni's window** (task 85, seventh part; A-24, I-36, P23; Juan's option C): a file goes up at the
+  drop, as a chip with its percent, and stays in Archivos (`conversación/<año-mes>`) whether the message is sent or
+  not; up to 1 GB. In Juan's own turn Boni reads its text (PDF, csv, xlsx, txt, about 50 KB) or sends its images to
+  a model that sees. Mail attachments now read PDFs too.
+- **Conversation** (task 27; C1, C3, I-37): a choice card has «Otra cosa…», and «Nueva…» when its options are rows of
+  one collection; a sent message is corrected with the pencil (its turn is undone whole first, or nothing is done and
+  it says «No se puede deshacer»); conversations can be pinned («Fijadas»).
+- Fixed: the MCP's `edit` wrote a dollar sign followed by a backtick, an ampersand, a quote, a digit or another dollar
+  as a replacement pattern and corrupted the note (task 96, A-25). Every replacement in the repo is now a literal or
+  a function, checked by a lint rule.
+
+For Juan to look at, because they change his data or where it goes:
+- **Dropped files go to external models** (task 85): his choice. Only a file on his screen, only in his own turn, only
+  from a collection open whole to the AI, never in a flow, the background or the MCP. A real model reading a file and
+  Electron's real drag and drop were not tried by the PR.
+- **Correcting a sent message undoes its turn** (task 27), in his store, with what it changed outside the log
+  (settings, flows) too. A typed «antes te he dicho X, pero es Y» does not undo anything yet.
+- **An «Acción» button writes to a collection** (task 87): create, change or delete, with Undo, from the values of the
+  page.
+
+Still missing, from each PR's review:
+- Task 87, first part: no «periodo» kind (a month only); a table is filtered in the app, not by the server, and not
+  by a control over a relation; a link's fixed value is set only by the AI or the MCP; the page's chat and «Ver en el
+  mapa».
+- Task 87, second part: an «Acción» button names only create, change and delete, not the rest of the list; the map
+  drawing a button's run is not tested; the AI cannot add buttons; Android not tried.
+- Task 85: a follow-up about the same file needs its chip again; a desktop drag with no path on disk says «Falló»; a
+  file over 50 MB does not come back when a copy is imported; a copy over 4 GB cannot be exported; dropping on the
+  phone; the slow-upload timeout has no test.
+- Task 27: questions that choose several, a number or date, a file or yes/no; «Nueva…» between a property's options;
+  conversation cards checked again; the planner prompt for a corrected turn not tried with a real model.
+- Task 96: the lint rule does not catch `replace.call`, `Reflect.apply` or `x["replace"]` (none in the repo).
+
 ## 2026-11-12 (forty-first) — server 0.8.117 · Boni desktop 0.4.85 · Boni Calendar desktop 0.8.24 · Boni Android
 
 Needs:
