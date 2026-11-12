@@ -45,7 +45,8 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "DELETE /api/data/types/:type": ["schema.delete_type"],
   "PUT /api/data/types/:type/parent": ["schema.move_type"],
   "PUT /api/data/types/:type/name": ["schema.rename_type"],
-  "POST /api/data/types/:type/fields": ["schema.add_field"],
+  // «Duplicar» a column copies its values into the new one (task 76).
+  "POST /api/data/types/:type/fields": ["schema.add_field", "entities.update"],
   "PUT /api/data/types/:type/fields/:field": ["schema.update_field"],
   "DELETE /api/data/types/:type/fields/:field": ["schema.remove_field"],
   "PUT /api/data/rows/:id/type": ["entities.move"],

@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakePlanner } from "@boni/agent";
-import { label, newId } from "@boni/entities";
+import { label, newId, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -13,6 +13,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
+import { viewOf } from "./pageActions.ts";
 import { getPage, listPages } from "./pages.ts";
 
 /**
@@ -412,5 +413,41 @@ describe("the list of actions in the conversation (docs/sistema.md §4.1, F10)",
     });
     expect(JSON.stringify(bg)).toContain("P21");
     expect(store.journal.proposal(ids[2] as string)?.status).toBe("rejected");
+  });
+});
+
+describe("a table's view as a model writes it (task 76)", () => {
+  // Generated ids, as Juan's collections have them; the model names the fields.
+  const def = {
+    id: "t_01m6p4abcd",
+    key: "tarea",
+    name: "Tarea",
+    titleField: "f_01m6p4titu",
+    sensitivity: "personal",
+    label: own,
+    fields: [
+      { id: "f_01m6p4titu", key: "titulo", name: "Título", type: "text", label: own },
+      { id: "f_01m6p4hora", key: "horas", name: "Horas", type: "number", label: own },
+      { id: "f_01m6p4dia0", key: "dia", name: "Día", type: "date", label: own },
+    ],
+  } as unknown as TypeDef;
+  it("names its calculations, pinned column and wrapped columns by field, kept by id, from the closed list", () => {
+    expect(
+      viewOf(def, {
+        layout: "table",
+        calc: { Horas: "sum", Día: "latest" },
+        pin: "Título",
+        wrap: ["Título"],
+        group: "Día",
+      }),
+    ).toEqual({
+      layout: "table",
+      group: "f_01m6p4dia0",
+      calc: { f_01m6p4hora: "sum", f_01m6p4dia0: "latest" },
+      pin: "f_01m6p4titu",
+      wrap: ["f_01m6p4titu"],
+    });
+    expect(() => viewOf(def, { layout: "table", calc: { Horas: "eval" } })).toThrow();
+    expect(() => viewOf(def, { layout: "table", pin: "Nada" })).toThrow();
   });
 });

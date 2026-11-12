@@ -253,9 +253,18 @@ describe("collections as databases (plan PR 19)", () => {
         }[]
       ).find((x) => x.id === SYS_RUNS)?.rowUi.widths,
     ).toEqual({ f_status: 120 });
-    // Its views as tabs (task 69): kept whole, the same on every device; one that is not a view refuses them all.
+    // Its views as tabs (task 69): kept whole, the same on every device; one that is not a view refuses them all. A
+    // table's calculations, pinned column and wrapped columns (task 76) are kept with it.
     const views = [
-      { id: "v_inicio", name: "Tabla", layout: "table", hide: ["f_paginas"] },
+      {
+        id: "v_inicio",
+        name: "Tabla",
+        layout: "table",
+        hide: ["f_paginas"],
+        calc: { f_paginas: "sum", f_titulo: "count" },
+        pin: "f_estado",
+        wrap: ["f_titulo"],
+      },
       {
         id: "v_m2k9ab12",
         name: "Por estado",
@@ -284,6 +293,8 @@ describe("collections as databases (plan PR 19)", () => {
       [{ id: "x", name: "Tabla", layout: "table" }],
       [{ id: "v_x", name: "  ", layout: "table" }],
       [{ id: "v_x", name: "Tabla", layout: "table", html: "<b>hola</b>" }],
+      [{ id: "v_x", name: "Tabla", layout: "table", calc: { f_paginas: "eval" } }],
+      [{ id: "v_x", name: "Tabla", layout: "table", wrap: "f_titulo" }],
       [{ id: "v_x", name: "Tabla", layout: "table", filter: [{ field: "f_estado", op: "drop" }] }],
       [views[0], views[0]],
       Array.from({ length: 21 }, (_, i) => ({ id: `v_${i}`, name: `Vista ${i}`, layout: "table" })),
@@ -864,6 +875,128 @@ describe("a collection's columns, as Notion's properties (task 40)", () => {
     ).toBe(404);
     store.remove(row.entity.id, { actor: "user" });
   });
+
+  it("a column is put beside another and duplicated with its values (task 76), in the log, and goes with Undo", async () => {
+    const r = await fetch(`${base}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ user: "ana", password: PASSWORD, device: "portatil-ejemplo" }),
+    });
+    const h = { authorization: `Bearer ${((await r.json()) as { token: string }).token}` };
+    const call = async (method: string, path: string, body?: unknown) => {
+      const res = await fetch(`${base}${path}`, {
+        method,
+        headers: h,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      return { status: res.status, body: (await res.json()) as { id?: string } };
+    };
+    const store = host.store(1);
+    // A collection shaped like Juan's tasks (generated ids), with his volume: 3,000 records.
+    const type = (await call("POST", "/api/data/types", { name: "Recados" })).body.id as string;
+    const col = async (name: string, kind: string, more: object = {}) =>
+      (await call("POST", `/api/data/types/${type}/fields`, { name, type: kind, ...more })).body
+        .id as string;
+    const estado = await col("Estado", "select", {
+      options: [{ name: "Pendiente" }, { name: "Hecho" }],
+    });
+    const dia = await col("Día", "date");
+    const order = () =>
+      (store.schema().types[type]?.fields ?? []).filter((f) => !f.archived).map((f) => f.name);
+    const title = store.schema().types[type]?.titleField as string;
+    const fromMail = label("external", "personal", [{ kind: "mail", id: "m_ejemplo" }]);
+    store.batch(() => {
+      for (let i = 0; i < 3000; i++)
+        store.create(
+          type,
+          {
+            [title]: { value: `Recado ${i}`, label: L },
+            ...(i % 3
+              ? { [estado]: { value: i % 2 ? "o_pendiente" : "o_hecho", label: fromMail } }
+              : {}),
+            [dia]: { value: `2026-11-${String((i % 28) + 1).padStart(2, "0")}`, label: L },
+          },
+          { actor: "user" },
+        );
+    });
+    // Beside: left of «Día», right of the title (the table shows the title first), right of the last.
+    expect(
+      (await col("Lugar", "text", { beside: { field: dia, side: "left" } })).length,
+    ).toBeGreaterThan(0);
+    expect(order()).toEqual([expect.any(String), "Estado", "Lugar", "Día"]);
+    await col("Nota", "longtext", { beside: { field: title, side: "right" } });
+    expect(order().slice(1)).toEqual(["Nota", "Estado", "Lugar", "Día"]);
+    await col("Fin", "date", { beside: { field: dia, side: "right" } });
+    expect(order().at(-1)).toBe("Fin");
+    expect(
+      (
+        await call("POST", `/api/data/types/${type}/fields`, {
+          name: "X",
+          type: "text",
+          beside: { field: "f_nada", side: "left" },
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await call("POST", `/api/data/types/${type}/fields`, {
+          name: "X",
+          type: "text",
+          beside: { field: dia, side: "up" },
+        })
+      ).status,
+    ).toBe(400);
+    // Duplicate: beside the original, its kind and values of a list, every value copied with where it came from,
+    // one change per record in the log; at his volume, a rare action that waits a second or two (1.6 s for 2,000
+    // values on the laptop alone, 4.4 s while make check runs every suite at once, 2026-11-12: the store's own cost
+    // per update). The bound catches a copy that grows worse than linear (minutes), not a busy machine.
+    const seq = store.version();
+    const t0 = performance.now();
+    const copy = await call("POST", `/api/data/types/${type}/fields`, {
+      name: "Estado (copia)",
+      copy: estado,
+    });
+    const ms = performance.now() - t0;
+    expect(copy.status).toBe(200);
+    expect(ms).toBeLessThan(10_000);
+    const dup = copy.body.id as string;
+    expect(order().slice(1)).toEqual(["Nota", "Estado", "Estado (copia)", "Lugar", "Día", "Fin"]);
+    const def = store.schema().types[type];
+    expect(def?.fields.find((f) => f.id === dup)).toMatchObject({
+      type: "select",
+      options: [
+        { id: "o_pendiente", name: "Pendiente" },
+        { id: "o_hecho", name: "Hecho" },
+      ],
+    });
+    const rows = store.list(type);
+    const holding = rows.filter((x) => x.entity.values[estado] !== undefined);
+    expect(holding).toHaveLength(2000);
+    for (const x of holding) {
+      expect(x.entity.values[dup]).toBe(x.entity.values[estado]);
+      expect(x.labels[dup]?.sources).toEqual(
+        expect.arrayContaining([{ kind: "mail", id: "m_ejemplo" }]),
+      );
+    }
+    expect(rows.filter((x) => x.entity.values[dup] !== undefined)).toHaveLength(2000);
+    expect(store.version() - seq).toBe(2001);
+    // Its name, again: the next number; the title is not duplicated.
+    const again = await call("POST", `/api/data/types/${type}/fields`, {
+      name: "Estado (copia)",
+      copy: estado,
+    });
+    expect(store.schema().types[type]?.fields.find((f) => f.id === again.body.id)?.name).toBe(
+      "Estado (copia) 2",
+    );
+    expect(
+      (await call("POST", `/api/data/types/${type}/fields`, { name: "T", copy: title })).status,
+    ).toBe(400);
+    // Undo: the copy goes, the original keeps its values.
+    expect((await call("DELETE", `/api/data/types/${type}/fields/${dup}`)).status).toBe(200);
+    expect(order()).not.toContain("Estado (copia)");
+    expect(store.list(type).filter((x) => x.entity.values[estado] !== undefined)).toHaveLength(
+      2000,
+    );
+  }, 30_000);
 });
 
 describe("the diagram over the API (docs/flujos.md F6)", () => {

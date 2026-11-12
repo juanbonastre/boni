@@ -464,12 +464,34 @@ contraseña ni un código aquí» under a question.
   there, out of this table, with a toast «Movida a X» and its Undo. A card of the
   board, the gallery or the list opens the same menu where the pointer is (task 42), lit while it is open; its
   «Cambiar nombre» writes the card's title in place. **A column's menu**
-  (task 40; Notion's property menu): a click on its name opens it under the name, the right button where the pointer
-  is: its name written in place (focused; Enter keeps it), «Tipo: …» with the kinds (Texto, Texto largo, Número,
-  Lista, Lista múltiple, Fecha, Fecha y hora, Casilla, Enlace, Correo, Teléfono), «Valores» for a list (each renamed
-  in place or taken out with ✕, «Añadir un valor» at the end), «Ocultar» (this view) and «Borrar columna» (its values
-  kept, «Deshacer» in the toast). The title column only renames; a mother's column, Boni's own collections and the
-  mail's show no changes. A column's kind changes freely while empty, among texts with values; otherwise, and for a
+  (tasks 40 and 76; Notion's property menu, its entries in Notion's order): a click on its name opens it under the
+  name, the right button where the pointer is. At its top the name, written in place (focused; Enter keeps it). Then,
+  each with its icon (Lucide's, as the rest of the app's menus): «Editar propiedad» (a panel with the name, «Tipo»
+  and, for a list, «Valores»: each renamed in place or taken out with ✕, «Añadir un valor» at the end) and «Cambiar
+  tipo» (the kinds: Texto, Texto largo, Número, Lista, Lista múltiple, Fecha, Fecha y hora, Casilla, Enlace, Correo,
+  Teléfono); a line; what this view does with it, saved with the view (on the server, the same on every device):
+  «Filtrar» (a rule on the column in the bar, its editor open for its value; the column's rule if it has one, moved
+  last, never a second), «Ordenar» (Ascendente, Descendente,
+  Quitar orden), «Agrupar» (the rows under each of its values, in a list's order, a ticked box first, the empty last
+  as «Sin X», each group's head with how many, shut and opened with a click, its first 50 rows and «Cargar más»; also
+  under «Agrupar» in the view's settings, with «Sin agrupar»; a view has one grouping, so a table and a board of the
+  same view share it, and Shift takes a run of the rows as they are on the screen, group by group), «Calcular» (a panel with «Ninguno» and what its kind
+  can calculate: every column counts — Contar todo, Con valor, Vacíos, Valores distintos and their percentages —;
+  numbers sum, average, median, minimum, maximum and range; dates the oldest, the latest and their range in days;
+  boxes the ticked and unticked; the result at the table's foot, over every row the view keeps, its short name in
+  grey and the value; a click on the foot opens the same panel, and an empty foot says «Calcular» under the pointer),
+  «Fijar» (the columns up to it stay while the rest scroll sideways; a line marks where they end), «Ocultar» and
+  «Ajustar texto» (its values over several lines); a line; what the collection does, through the store with Undo:
+  «Insertar a la izquierda» / «Insertar a la derecha» (a text column «Propiedad» beside it, whose menu opens to name
+  it), «Duplicar» («X (copia)» right of it, with its values and their origin; «Deshacer» in the toast; undoing an
+  insert or a duplicate archives the column with its values, as «Borrar» does, not wiped) and «Borrar»
+  (its values kept, «Deshacer» in the toast). A tick marks what is on (sorted, grouped, calculated, pinned, wrapped).
+  The title column renames and has Filtrar, Ordenar, Calcular, Fijar, Ajustar texto and «Insertar a la derecha»
+  (nothing goes left of it); a mother's column is not edited, retyped or deleted from a daughter (its view entries,
+  inserting and duplicating stay); Boni's own collections and the mail's have no column changes. The menu follows
+  Notion's property menu and the menus guideline the app keeps (Apple HIG, «Menus»; Material 3, «Menus»: an icon per
+  entry, groups split by lines, destructive last and in red; NN/g, «Contextual menus»: the same entries on a click
+  and on the right button). A column's kind changes freely while empty, among texts with values; otherwise, and for a
   list's value still in use, a toast says «No se puede: está en uso». A «+» at the head's end («Nueva columna»): a
   name and a kind (the kind's name when left empty). On a collection's
   own page, in every layout, the page is centred and as wide as what it shows (Juan, 2026-10-30): a table's columns, a

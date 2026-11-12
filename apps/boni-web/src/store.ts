@@ -2921,6 +2921,45 @@ export async function addColumn(type: string, name: string, kind: string): Promi
   }
 }
 
+/**
+ * A column put beside another (`side`) or a duplicate of one (`copy`, its values with it), from a column's menu (task
+ * 76): its id, or "" when the server said no (said in a toast). The toast's «Deshacer» takes it out again.
+ */
+export async function addColumnBeside(
+  type: string,
+  col: {
+    name: string;
+    kind?: string;
+    beside?: { field: string; side: "left" | "right" };
+    copy?: string;
+  },
+): Promise<string> {
+  try {
+    const { kind, ...rest } = col;
+    const id = await agent.addColumn(type, { ...rest, ...(kind ? { type: kind } : {}) });
+    // A copy brings its values: the rows are read again with them.
+    await Promise.all([loadDataTypes(), col.copy ? loadRows(type) : null]);
+    const made = get()
+      .dataTypes?.find((x) => x.id === type)
+      ?.fields.find((f) => f.id === id);
+    toast(
+      get().t(col.copy ? "db.col.duplicated" : "db.col.added", { name: made?.name ?? col.name }),
+      {
+        label: get().t("toast.undo"),
+        run: () =>
+          void agent
+            .removeColumn(type, id)
+            .then(() => loadDataTypes())
+            .catch((e) => toast(columnError(e))),
+      },
+    );
+    return id;
+  } catch (e) {
+    toast(columnError(e));
+    return "";
+  }
+}
+
 /** A column's name, kind or options changed; false when the server said no (said in a toast). */
 export async function changeColumn(
   type: string,

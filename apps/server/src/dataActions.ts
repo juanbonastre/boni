@@ -249,7 +249,7 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
     service: "data",
     title: "Guardar vista",
     describe:
-      'Save a view of one of Juan\'s collections as one of its tabs, by its name (the same name: that tab changed): view {"lit": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [...], "filter": [...]}} by its fields\' keys; remove true (and no view): that tab taken out',
+      'Save a view of one of Juan\'s collections as one of its tabs, by its name (the same name: that tab changed): view {"lit": {"layout": "table" | "board" | "list" | "gallery" | "calendar", "sort": {"field", "desc"}, "group", "hide": [...], "filter": [...], "calc": {field: "count" | "sum" | "average" | ...}, "pin": field, "wrap": [...]}} by its fields\' keys; remove true (and no view): that tab taken out',
     args: {
       type,
       name: { role: "content", required: true, describe: "the tab's name" },

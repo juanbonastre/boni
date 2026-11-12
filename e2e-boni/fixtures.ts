@@ -958,9 +958,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         if (p === "api/data/usage")
           return [200, JSON.stringify(opts.usage ?? { days: 30, types: {} })];
-        // A new column (task 40), or a relation drawn in a diagram (F6): on the collection, its id back.
+        // A new column (task 40), or a relation drawn in a diagram (F6): on the collection, its id back. The books'
+        // other columns are made below, as the server makes them (beside another, a copy: task 76).
         const fieldsOf = /^api\/data\/types\/([^/]+)\/fields$/.exec(p);
-        if (fieldsOf && method === "POST") {
+        const drawn = (body as { type?: string } | undefined)?.type === "relation";
+        if (fieldsOf && method === "POST" && (fieldsOf[1] !== "t_libro" || drawn)) {
           const col = userCols().find((c) => c.id === fieldsOf[1]) as
             | { fields: Record<string, unknown>[] }
             | undefined;
@@ -1011,20 +1013,37 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             name?: string;
             type?: string;
             options?: { id?: string; name: string }[];
+            beside?: { field: string; side: "left" | "right" };
+            copy?: string;
           };
           const taken = (name: string, but?: string) =>
             cols.some((c) => c.id !== but && c.name.toLowerCase() === name.toLowerCase());
           if (!colOp[1] && method === "POST") {
+            // Beside another (task 76), or a copy of one with its values, right of it.
+            const near = want.copy ?? want.beside?.field;
+            const j = near ? cols.findIndex((c) => c.id === near) : cols.length;
+            if (j < 0) return [404, '{"error":"not-found"}'];
+            const from = want.copy ? (cols[j] as Col) : undefined;
             const name = String(want.name ?? "").trim();
-            if (!name || !want.type) return [400, '{"error":"bad-body"}'];
+            const kind = from?.type ?? want.type;
+            if (!name || !kind) return [400, '{"error":"bad-body"}'];
             if (taken(name)) return [409, '{"error":"taken"}'];
-            const id = `f_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
-            cols.push({
+            const base = `f_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+            let id = base;
+            for (let n = 2; cols.some((c) => c.id === id); n++) id = `${base}_${n}`;
+            const at = want.beside?.side === "left" ? j : near ? j + 1 : j;
+            cols.splice(at, 0, {
               id,
               name,
-              type: want.type,
-              ...(want.type.endsWith("select") ? { options: [] } : {}),
+              type: kind,
+              ...(from?.options
+                ? { options: from.options.map((o) => ({ ...o })) }
+                : kind.endsWith("select")
+                  ? { options: [] }
+                  : {}),
             });
+            if (from)
+              for (const r of rows) if (r.values[from.id] != null) r.values[id] = r.values[from.id];
             return [200, JSON.stringify({ id })];
           }
           const i = cols.findIndex((c) => c.id === colOp[1]);
