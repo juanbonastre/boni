@@ -1603,6 +1603,10 @@ const TOOLS: Tool[] = [
   },
 ];
 
+/** The tools that run their action itself (`def.run`, `actionTool`): actions.test.ts holds the rest to `MCP_MODULES`. */
+export const mcpActionTools = (): { name: string; action: string }[] =>
+  ACTION_TOOLS.map(({ name, action }) => ({ name, action }));
+
 /** The MCP's tools by name (the list of actions says which action each one is, actions.ts). */
 export const mcpToolNames = (): string[] => TOOLS.map((t) => t.name);
 /** Each tool with the actions it is, or why it is none (actions.test.ts compares them with the list, A-26). */

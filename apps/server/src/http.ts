@@ -12,7 +12,7 @@ import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
 import { dataRowTarget, flowRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
-import { ROUTE_ACTIONS, routeDecision } from "./actions.ts";
+import { argNames, ROUTE_ACTIONS, ROUTE_RUNS, routeDecision, runAction } from "./actions.ts";
 import { type AgentHost, serveAgent, tryFlow } from "./agent.ts";
 import {
   auditAction,
@@ -56,7 +56,6 @@ import {
   renameCollection,
   restoreColumn,
   restoreRow,
-  setNotesInTree,
   setProtection,
   setRowUi,
   setRule,
@@ -398,8 +397,9 @@ export function makeApp(opts: ServerOptions): App {
     // Before anything else, login included: on the public entry only the allow-list exists.
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
     // A route that changes something reaches its actions through the policy engine first, as Juan's own hand on this
-    // device (P25, docs/sistema.md §4.1); with no session, the route itself answers 401.
-    if (Object.hasOwn(ROUTE_ACTIONS, route)) {
+    // device (P25, docs/sistema.md §4.1); with no session, the route itself answers 401. One that runs its action
+    // itself (`ROUTE_RUNS`) is decided there, with the real arguments: once.
+    if (Object.hasOwn(ROUTE_ACTIONS, route) && !Object.hasOwn(ROUTE_RUNS, route)) {
       const s = sessionUser(db, tokenOf(req));
       const d = s ? routeDecision(route, s, opts.actions) : null;
       if (d) return send(res, 403, { error: "policy", rule: d.rule });
@@ -582,7 +582,21 @@ export function makeApp(opts: ServerOptions): App {
         if (route === "PUT /api/data/types/:type/tree") {
           const b = await bodyOf(req);
           if (typeof b.notes !== "boolean") return send(res, 400, { error: "bad-request" });
-          setNotesInTree(store, params.type ?? "", b.notes);
+          const r = await runAction(
+            "schema.set_tree",
+            { type: argNames(store).type(params.type ?? ""), on: b.notes },
+            {
+              store,
+              trust: s.trust,
+              device: s.device,
+              ...(opts.actions ? { registry: opts.actions } : {}),
+            },
+          );
+          if ("refused" in r) return send(res, 403, { error: "policy", rule: r.refused });
+          if ("error" in r)
+            return send(res, r.error === "unknown-type" ? 404 : 400, {
+              error: r.error === "unknown-type" ? "not-found" : r.error,
+            });
           return send(res, 200, {});
         }
         if (route === "GET /api/data/types")
@@ -995,6 +1009,38 @@ export function makeApp(opts: ServerOptions): App {
     // An account that keeps no calendar has none here.
     const calendar = calendarOf(user);
     if (!calendar) return send(res, 403, { error: "no-calendar" });
+    // Boni Calendar's own routes that run their action itself (`ROUTE_RUNS`): what it answers, or the answer each
+    // refusal always had here (the calendar's codes, never the action's words).
+    const calendarAction = async (
+      who: { id: number },
+      name: string,
+      args: (n: ReturnType<typeof argNames>) => Record<string, unknown>,
+    ): Promise<{ out: unknown } | { status: void }> => {
+      const s = sessionUser(db, tokenOf(req));
+      const store = (opts.agent as NonNullable<typeof opts.agent>).store(who.id);
+      if (!s) return { status: send(res, 401, { error: "unauthorized" }) };
+      const r = await runAction(name, args(argNames(store)), {
+        store,
+        trust: s.trust,
+        device: s.device,
+        ...(opts.actions ? { registry: opts.actions } : {}),
+      });
+      if ("refused" in r) return { status: send(res, 403, { error: "policy", rule: r.refused }) };
+      if ("error" in r) {
+        // As before: a collection that is no calendar's, a field it cannot be split by, a colour that is none.
+        const [status, error] =
+          r.error === "not-a-candidate" || r.error === "unknown-type"
+            ? [409, "not-a-candidate"]
+            : r.error === "bad-field" || r.error === "unknown-field"
+              ? [400, "bad-field"]
+              : r.error === "bad-color" || r.error === "no-such-calendar"
+                ? [404, "no-such-calendar"]
+                : [400, r.error];
+        return { status: send(res, status, { error }) };
+      }
+      calendar.changed();
+      return r;
+    };
     switch (route) {
       case "POST /api/logout":
         logout(db, tokenOf(req) ?? "");
@@ -1080,26 +1126,30 @@ export function makeApp(opts: ServerOptions): App {
         if (!calendar.writable) return send(res, 403, { error: "read-only" });
         const b = await bodyOf(req);
         if (typeof b.type !== "string") return send(res, 400, { error: "bad-request" });
-        const r = await calendar.addCalendar(b.type);
-        return r ? send(res, 200, r) : send(res, 409, { error: "not-a-candidate" });
+        const r = await calendarAction(user, "calendars.add", (n) => ({
+          type: n.type(b.type as string),
+        }));
+        if (!("out" in r)) return r.status;
+        return send(res, 200, { id: (r.out as { id: string }).id });
       }
       case "POST /api/collections/remove": {
         if (!calendar.writable) return send(res, 403, { error: "read-only" });
         const b = await bodyOf(req);
         if (typeof b.id !== "string") return send(res, 400, { error: "bad-request" });
-        return (await calendar.removeCalendar(b.id))
-          ? send(res, 200, {})
-          : send(res, 404, { error: "no-such-calendar" });
+        const r = await calendarAction(user, "calendars.remove", () => ({ calendar: b.id }));
+        return "out" in r ? send(res, 200, {}) : r.status;
       }
       case "POST /api/collections/split": {
         if (!calendar.writable) return send(res, 403, { error: "read-only" });
         const b = await bodyOf(req);
         if (typeof b.id !== "string" || (b.field !== null && typeof b.field !== "string"))
           return send(res, 400, { error: "bad-request" });
-        const r = await calendar.setSplit(b.id, b.field as string | null);
-        return r === "ok"
-          ? send(res, 200, {})
-          : send(res, r === "bad-field" ? 400 : 404, { error: r });
+        const field = b.field;
+        const r = await calendarAction(user, "calendars.split", (n) => ({
+          calendar: b.id,
+          ...(typeof field === "string" ? { field: n.field(field) } : {}),
+        }));
+        return "out" in r ? send(res, 200, {}) : r.status;
       }
       case "POST /api/collections/link-column": {
         // Task 50: the column a record keeps its link to an external calendar's event in, made and mapped if missing.
@@ -1114,9 +1164,11 @@ export function makeApp(opts: ServerOptions): App {
         const b = await bodyOf(req);
         if (typeof b.id !== "string" || typeof b.color !== "string")
           return send(res, 400, { error: "bad-request" });
-        return (await calendar.setColor(b.id, b.color))
-          ? send(res, 200, {})
-          : send(res, 404, { error: "no-such-calendar" });
+        const r = await calendarAction(user, "calendars.color", () => ({
+          calendar: b.id,
+          color: b.color,
+        }));
+        return "out" in r ? send(res, 200, {}) : r.status;
       }
       case "GET /api/reminders": {
         const q = url.searchParams;

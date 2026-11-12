@@ -831,6 +831,8 @@ export interface CalendarSource {
   ensureLinkColumn(collectionId: string): Promise<string | null>;
   /** The field a record of `typeId` keeps that link in, made if missing (task 51: a card accepted with «Enlazar»). */
   ensureLinkField(typeId: string, device: string): Promise<{ key: string } | null>;
+  /** Reads the store now, after a route ran a calendar's action on it: its devices hear at once. */
+  changed(): void;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -980,6 +982,10 @@ export class StoreCalendar implements CalendarSource {
           out.push(e);
         }
     return out;
+  }
+
+  changed(): void {
+    this.poll();
   }
 
   /** Reads what changed in the store since the last look; a new version when anything did. */

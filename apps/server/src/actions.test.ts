@@ -7,14 +7,18 @@ import {
   ACTIONS,
   flowOnly,
   JUAN_ONLY,
+  MCP_MODULES,
   NOT_ACTIONS,
   ROUTE_ACTIONS,
+  ROUTE_MODULES,
+  ROUTE_RUNS,
   routeDecision,
+  runAction,
   serverRegistry,
   UNDO_ROUTES,
   undoWays,
 } from "./actions.ts";
-import { mcpDecision, mcpToolNames, mcpTools } from "./mcp.ts";
+import { mcpActionTools, mcpDecision, mcpToolNames, mcpTools } from "./mcp.ts";
 import { ROUTES } from "./routes.ts";
 
 /**
@@ -214,6 +218,42 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
     // Each one is undone with its run: what it kept goes back with the run's Undo.
     for (const t of ACTIONS.all().filter((x) => x.keeps))
       expect(undoWays(t), t.name).toContain("run");
+  });
+
+  it("a route or a tool runs its action itself, or its table says why it keeps its module; a new one in neither does not merge", async () => {
+    const http = readFileSync(join(import.meta.dirname, "http.ts"), "utf8");
+    // Every route that changes something with actions: in one table, never both or neither.
+    for (const [route, names] of Object.entries(ROUTE_ACTIONS)) {
+      if (!names.length) continue;
+      const runs = Object.hasOwn(ROUTE_RUNS, route);
+      expect(runs !== Object.hasOwn(ROUTE_MODULES, route), route).toBe(true);
+      if (!runs) continue;
+      // The one action the route is, the same in both lists, and the route's code runs that one by name.
+      expect([ROUTE_RUNS[route]], route).toEqual(names);
+      const at = http.indexOf(`"${route}"`);
+      expect(at, route).toBeGreaterThan(-1);
+      expect(http.slice(at, at + 1500), route).toContain(`"${ROUTE_RUNS[route]}"`);
+    }
+    for (const [route, why] of Object.entries(ROUTE_MODULES)) {
+      expect(ROUTE_ACTIONS[route]?.length, `${route}: no longer a route with actions`).toBeTruthy();
+      expect(why.length, route).toBeGreaterThan(10);
+    }
+    for (const route of Object.keys(ROUTE_RUNS)) expect(ROUTE_ACTIONS[route], route).toBeTruthy();
+    // Every MCP tool with actions: one of those that run their action (`actionTool`), or in MCP_MODULES.
+    const own = new Map(mcpActionTools().map((t) => [t.name, t.action]));
+    for (const t of mcpTools().filter((x) => x.actions?.length)) {
+      expect(own.has(t.name) !== Object.hasOwn(MCP_MODULES, t.name), t.name).toBe(true);
+      if (own.has(t.name)) expect(t.actions, t.name).toEqual([own.get(t.name)]);
+    }
+    for (const [tool, why] of Object.entries(MCP_MODULES)) {
+      expect(mcpTools().find((t) => t.name === tool)?.actions?.length, tool).toBeTruthy();
+      expect(why.length, tool).toBeGreaterThan(10);
+    }
+    // The one path decides with the real arguments before it runs: without the list, refused and never run.
+    const store = { schema: () => ({ types: {} }) } as never;
+    expect(
+      await runAction("calendars.add", { type: "x" }, { store, ...juan, registry: none }),
+    ).toEqual({ refused: "P0" });
   });
 
   it("every action has its icon, one lucide-react has and the app draws; «Buscar» keeps no icon of its own", () => {

@@ -155,9 +155,12 @@ export function withCalendarActions(r: ToolRegistry): ToolRegistry {
     run(c, a) {
       const s = serviceOf(c.service);
       const id = str(a.calendar);
-      if (!seen(s, (t) => !!c.store.schema().types[t]).some((x) => x.id === id))
-        throw new ToolError("no-such-calendar");
-      removeCalendar(s.store, id);
+      // A split one by any calendar it makes or by the definition itself (Boni Calendar sends the definition's id).
+      const visible = calendarDefs(s.store).some(
+        (p) =>
+          (p.def.id === id || p.path?.some((n) => n.id === id)) && !!c.store.schema().types[p.type],
+      );
+      if (!visible || !removeCalendar(s.store, id)) throw new ToolError("no-such-calendar");
       return leaf({ removed: id }, code);
     },
   });
