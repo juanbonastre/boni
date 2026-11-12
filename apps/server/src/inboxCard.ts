@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { calibrate, historyConfidence, type Json, levelsOf, resolve } from "@boni/agent";
-import { likeTitle } from "@boni/calendar";
+import { fromLocal, isoToDay, likeTitle, todayIn } from "@boni/calendar";
 import { branch, rolesOf, type Schema, type TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "./autoAccept.ts";
@@ -38,6 +38,11 @@ export interface InboxCard {
     open: { type: string; id: string };
     /** Its Message-ID (the search Gmail falls back to when even «Todos» has it no more; task 55). */
     messageId: string | null;
+    /**
+     * Juan opened it (task 73): the mailbox marks it read (its `\Seen`, kept on the mail by the connector); null
+     * when the mailbox has not said yet.
+     */
+    read: boolean | null;
   } | null;
   /**
    * Why it was made: the reader's quote of the mail (`verbatim` when the code finds those very words in it; a
@@ -89,7 +94,17 @@ export interface InboxCard {
     same: CalendarEntry | null;
     overlaps: Item[];
   } | null;
+  /**
+   * The card checked again now, each time it is served (task 73; docs/correo.md §6, decision 4): code over the
+   * store and the request's clock, never a model, never stored in the proposal. `fromToday`: its day from today
+   * where Juan lives (-1 yesterday, 0 today, 1 tomorrow; null for any other day, or none). `state`: «Ya hecho» (the
+   * same task is in the calendar marked done), «Ya está en el calendario» (the same entry is there), «Ya pasó» (its
+   * day, or its hour, has passed); null when none. Nothing leaves the Bandeja on its own: Juan decides, and
+   * accepting checks it again (`recheckOnAccept`).
+   */
+  now: { fromToday: number | null; state: CardState | null };
 }
+export type CardState = "done" | "calendar" | "past";
 /** An entry of the calendar as a card names it: a record's (`id`) or an external calendar's event (`external`). */
 export interface CalendarEntry {
   id: string | null;
@@ -98,6 +113,8 @@ export interface CalendarEntry {
   end: string | null;
   calendar: string | null;
   external: string | null;
+  /** A task of his own calendar marked done (task 73); null for an event, or an external calendar's. */
+  done: boolean | null;
 }
 export interface SuggestedTime {
   start: string;
@@ -307,6 +324,8 @@ type Item = {
   end: string | null;
   /** A record's id (an external calendar's event has `external` instead). */
   id?: string;
+  /** A task's box (task 73): its collection keeps tasks; absent for the rest. */
+  done?: boolean;
 };
 /** An entry at the same time as a proposal might be: half an hour away at most (task 58). */
 const SAME_GAP = 30;
@@ -353,6 +372,7 @@ export function crossCalendar(
     end: i.end,
     calendar: i.calendar ?? null,
     external: i.external ?? null,
+    done: i.done ?? null,
   });
   return {
     already: already ? entry(already) : null,
@@ -367,6 +387,8 @@ interface ItemSpec {
   start?: string;
   end?: string;
   title: string;
+  /** The field of a task's box (`taskDoneField`), when its collection keeps tasks. */
+  done?: string;
 }
 interface ByDay {
   version: number;
@@ -403,6 +425,7 @@ const itemOf = (
       title: textOf(values[spec.title]).slice(0, 120),
       start: spec.start ? textOf(values[spec.start]) || null : null,
       end: spec.end ? textOf(values[spec.end]) || null : null,
+      ...(spec.done ? { done: values[spec.done] === true } : {}),
     },
   };
 };
@@ -480,10 +503,12 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
     };
     for (const t of p.where ? branch({ types: schema }, p.type) : [p.type]) {
       if (m.spec.has(t)) continue;
-      m.spec.set(t, spec);
+      const done = taskDoneField(store, t);
+      m.spec.set(t, done ? { ...spec, done: done.id } : spec);
+      const own = m.spec.get(t) as ItemSpec;
       for (const s of store.list(t)) {
         if (m.items.has(s.entity.id)) continue;
-        const it = itemOf(spec, s.entity.values, s.entity.id);
+        const it = itemOf(own, s.entity.values, s.entity.id);
         if (!it) continue;
         m.items.set(s.entity.id, it);
         const list = m.byDay.get(it.day) ?? [];
@@ -508,16 +533,21 @@ export interface InboxContext {
   accepted: () => Map<string, number>;
   /** Juan's decisions on proposals like each one, oldest first (autoAccept.ts). */
   history: () => Map<string, boolean[]>;
+  /** The request's clock (epoch ms) and the zone Juan's days are in: what «now» is for the card (task 73). */
+  now: number;
+  tz: string;
 }
 export function inboxContext(
   store: UserStore,
-  o: { external?: (day: string) => ExternalItem[] } = {},
+  o: { external?: (day: string) => ExternalItem[]; now?: number; tz?: string } = {},
 ): InboxContext {
   let calendar: Map<string, Item[]> | null = null;
   let accepted: Map<string, number> | null = null;
   let history: Map<string, boolean[]> | null = null;
   const externalByDay = new Map<string, ExternalItem[]>();
   return {
+    now: o.now ?? Date.now(),
+    tz: o.tz ?? "Europe/Madrid",
     external: (day) => {
       let items = externalByDay.get(day);
       if (!items) {
@@ -565,6 +595,57 @@ export const likeKey = (p: ProposalRow) => {
     : "";
 };
 
+/**
+ * The card checked again at `now` (task 73; docs/correo.md §6, decision 4, option (a)): where its day stands from
+ * today, and whether what it proposes is already done, already in the calendar, or past. Wall-clock math through
+ * `@boni/calendar`'s time (the day and hours are civil, in `tz`). An event is past once its end has passed (an hour
+ * after its start when it has none), a task once its day has (its hour, when it has one).
+ */
+export function recheck(
+  c: Pick<InboxCard, "action" | "day" | "start" | "end" | "calendar">,
+  now: number,
+  tz: string,
+): InboxCard["now"] {
+  const day = c.day ? isoToDay(c.day) : null;
+  if (day === null) return { fromToday: null, state: null };
+  const d = day - todayIn(tz, now);
+  const fromToday = d >= -1 && d <= 1 ? d : null;
+  if (c.action !== "create") return { fromToday, state: null };
+  const already = c.calendar?.already ?? null;
+  if (already?.done) return { fromToday, state: "done" };
+  if (already) return { fromToday, state: "calendar" };
+  let ends: number;
+  if (c.start && TIME.test(c.start)) {
+    const s = minutesOf(c.start);
+    const e = c.end && TIME.test(c.end) ? minutesOf(c.end) : s + SLOT;
+    ends = fromLocal(day, Math.max(e, s + 1), tz);
+  } else ends = fromLocal(day + 1, 0, tz);
+  return { fromToday, state: now >= ends ? "past" : null };
+}
+
+/**
+ * Accepting a card checks it again first (docs/conversacion.md, «Una tarjeta vieja se vuelve a comprobar»): what
+ * Juan saw on it (`seen`, the state word it showed, or null for none) must be what it says now. A card that turned
+ * «Ya pasó» (or any other word) since it was drawn is not accepted: the answer says so with what it says now, and the
+ * card is drawn again with it for him to decide. Null when it may go on.
+ */
+export function recheckOnAccept(
+  store: UserStore,
+  p: ProposalRow,
+  seen: unknown,
+  ctx: InboxContext,
+): { error: "changed"; state: CardState | null } | null {
+  let card: InboxCard;
+  try {
+    card = inboxCard(store, p, { decide: false }, ctx);
+  } catch {
+    return null;
+  }
+  const state = card.now.state;
+  const said = seen === "done" || seen === "calendar" || seen === "past" ? seen : null;
+  return state === said ? null : { error: "changed", state };
+}
+
 /** «Banco · importar: 2 nuevos»: an extension's function by its name, with what it says it would do. */
 const functionTitle = (name: string, summary: string): string | undefined =>
   name ? (summary ? `${name}: ${summary}` : name) : undefined;
@@ -572,7 +653,8 @@ const functionTitle = (name: string, summary: string): string | undefined =>
 export function inboxCard(
   store: UserStore,
   p: ProposalRow,
-  o: { mailAccount?: string | null } = {},
+  /** `decide: false`: the suggested time is not recorded as a decision (a card only looked at: the MCP, a re-check). */
+  o: { mailAccount?: string | null; decide?: boolean } = {},
   ctx: InboxContext = inboxContext(store),
 ): InboxCard {
   const rows = rowsOf(p);
@@ -620,7 +702,7 @@ export function inboxCard(
   // A task with a day and no time, in a collection that keeps times: the first free hour, as a decision.
   let suggestedTime: SuggestedTime | null = null;
   const keys = def && action === "create" ? timeKeysOf(store.schema(), def) : null;
-  if (kind === "task" && day && keys?.startKey && p.status === "pending") {
+  if (kind === "task" && day && keys?.startKey && p.status === "pending" && o.decide !== false) {
     const slot = freeSlot(dayItems(day));
     if (slot) {
       const outcome = timeDecision(
@@ -650,6 +732,7 @@ export function inboxCard(
       excerpt: (m.entity.body ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT),
       open: { type: m.entity.type, id: m.entity.id },
       messageId: textOf(v.f_id_mensaje).slice(0, 300) || null,
+      read: typeof v.f_leido === "boolean" ? v.f_leido : null,
     };
     if (said) {
       const text = plain(`${textOf(v.f_asunto)} ${m.entity.body ?? ""}`);
@@ -660,6 +743,15 @@ export function inboxCard(
   const key = likeKey(p);
   const familiar = key ? (ctx.accepted().get(key) ?? 0) : 0;
   const complete = action !== "create" || (!!title && (kind === "item" || !!day));
+  const start = times[0] ?? alone?.start ?? null;
+  const end = times[1] ?? alone?.end ?? null;
+  const calendar =
+    action === "create" && day && title
+      ? crossCalendar({ title, start: times[0] ?? null, end: times[1] ?? null }, [
+          ...(ctx.calendar().get(day) ?? []),
+          ...ctx.external(day),
+        ])
+      : null;
   return {
     action,
     collection,
@@ -667,8 +759,8 @@ export function inboxCard(
     kind,
     title,
     day,
-    start: times[0] ?? alone?.start ?? null,
-    end: times[1] ?? alone?.end ?? null,
+    start,
+    end,
     source,
     why,
     familiar,
@@ -686,12 +778,12 @@ export function inboxCard(
     suggestedTime,
     before: p.before ? { day: p.before.day, start: p.before.start, end: p.before.end } : null,
     earlier: earlierMails(store, p, mail),
-    calendar:
-      action === "create" && day && title
-        ? crossCalendar({ title, start: times[0] ?? null, end: times[1] ?? null }, [
-            ...(ctx.calendar().get(day) ?? []),
-            ...ctx.external(day),
-          ])
-        : null,
+    calendar,
+    // The mail's own hours decide when it passes, not a time Boni suggested.
+    now: recheck(
+      { action, day, start: times[0] ?? null, end: times[1] ?? null, calendar },
+      ctx.now,
+      ctx.tz,
+    ),
   };
 }

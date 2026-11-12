@@ -1371,6 +1371,8 @@ export function agentErrorText(t: T, code: string): string {
   if (code === "agent-off") return t("agent.error.off");
   if (code === "declined") return t("agent.error.declined");
   if (code === "plan-invalid") return t("agent.error.planInvalid");
+  // A card accepted from the conversation whose state changed since it was seen (task 73).
+  if (code === "changed") return t("inbox.changed");
   if (code.startsWith("model-")) return t("agent.error.model");
   // The limits of one request (P12) are not a security rule: say which one was hit.
   if (code.startsWith("P12-")) return t(`agent.error.limit.${code.slice(4)}`);
@@ -1998,7 +2000,9 @@ export function acceptProposal(
   return decide(id, opts.done ? "done" : "accept", async () => {
     const t = get().t;
     try {
-      const r = await agent.accept(id, opts.done ? { ...edits, done: true } : edits);
+      // The word the card showed goes with it: the server checks the card again before acting (task 73).
+      const seen = get().inbox.find((p) => p.id === id)?.card?.now.state ?? null;
+      const r = await agent.accept(id, opts.done ? { ...edits, done: true } : edits, seen);
       if (r.pending?.kind === "confirm") {
         // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
         const entry: ChatEntry = {
@@ -2031,7 +2035,11 @@ export function acceptProposal(
         );
       }
     } catch (e) {
-      decideFailed(id, { text: errorText(t, e) });
+      // The card changed since Juan saw it (task 73): it says so, and the inbox read again once the queue is
+      // empty shows its word; pressed again, it is accepted.
+      if (e instanceof ApiError && e.status === 409 && e.code === "changed")
+        decideFailed(id, { text: t("inbox.changed") });
+      else decideFailed(id, { text: errorText(t, e) });
     }
   });
 }

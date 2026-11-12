@@ -5,9 +5,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakePlanner } from "@boni/agent";
+import { dayToIso, todayIn } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AgentHost } from "./agent.ts";
+import { AgentHost, acceptCorrected } from "./agent.ts";
 import { addUser, sessionUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
@@ -874,5 +875,76 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
         .status,
     ).toBe(200);
     expect(host.store(1).journal.flowDraft(made.id)).toBeNull();
+  });
+});
+
+describe("the inbox checked again when it is seen and when it is accepted (task 73)", () => {
+  it("a card whose hour passed says so, and «Aceptar» without that word is stopped, not taken", async () => {
+    const token = await login(base, "juan");
+    const h = { authorization: `Bearer ${token}` };
+    const store = host.store(1);
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_tarea",
+        field: {
+          id: "f_fecha",
+          key: "fecha",
+          name: "Fecha",
+          type: "date",
+          label: label("user", "personal", []),
+        },
+      },
+      { actor: "user" },
+    );
+    // Proposed from a mail of yesterday («hoy»): yesterday, by the server's clock and zone.
+    const yesterday = dayToIso(todayIn(host.tz, host.now()) - 1);
+    const [id] = (
+      await host.agent(1).background({
+        version: 1,
+        steps: [
+          {
+            id: "c",
+            op: "call",
+            tool: "entities.create",
+            args: {
+              type: lit("tarea"),
+              values: {
+                fn: "obj",
+                args: [lit("titulo"), lit("Entregar el acta"), lit("fecha"), lit(yesterday)],
+              },
+            },
+          },
+        ],
+      })
+    ).proposals;
+    if (!id) throw new Error("no proposal");
+    const cards = (await (await fetch(`${base}/api/agent/proposals`, { headers: h })).json()) as {
+      proposals: {
+        id: string;
+        card: { day: string | null; now: { fromToday: number | null; state: string | null } };
+      }[];
+    };
+    const card = cards.proposals.find((p) => p.id === id)?.card;
+    expect(card?.day).toBe(yesterday);
+    expect(card?.now).toEqual({ fromToday: -1, state: "past" });
+    // Pressed on a card that showed no word (seen before it passed): 409 with the word it has now, still pending.
+    const stopped = await post(base, token, `/api/agent/proposals/${id}/accept`, {});
+    expect(stopped.status).toBe(409);
+    expect(await stopped.json()).toEqual({ error: "changed", state: "past" });
+    expect(store.journal.proposal(id)?.status).toBe("pending");
+    // The conversation's «acéptala» shows no word: stopped the same way.
+    expect(
+      await acceptCorrected(
+        host,
+        { account: 1, device: "movil-ejemplo", trust: "personal" },
+        id,
+        undefined,
+      ),
+    ).toEqual({ error: "changed", state: "past" });
+    // Pressed on the card that says «Ya pasó»: his decision, taken.
+    const taken = await post(base, token, `/api/agent/proposals/${id}/accept`, { seen: "past" });
+    expect(taken.status).toBe(200);
+    expect(store.journal.proposal(id)?.status).toBe("accepted");
   });
 });

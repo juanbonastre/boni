@@ -455,18 +455,16 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
   const taken = takeTime && ask ? ask : null;
   const start = c?.start ?? taken?.start ?? null;
   const end = c?.end ?? taken?.end ?? null;
-  const when = c?.day
-    ? `${fmt.long(c.day)}${start ? `, ${start}${end ? `–${end}` : ""}` : ""}`
-    : null;
+  const when = c ? whenText(t, fmt.long, c, start, end) : null;
   // What it was before a reply in the same thread moved it (task 46): the earlier card is gone, this one says it.
   const b = c?.before;
   const before =
     b && (b.day || b.start)
       ? `${b.day ? fmt.long(b.day) : ""}${b.start ? `${b.day ? ", " : ""}${b.start}${b.end ? `–${b.end}` : ""}` : ""}`
       : null;
-  // What the calendar already has of it (task 51): said on the line; an external event's id makes «Aceptar»
-  // «Enlazar», and the record is made linked to it (task 50) instead of a second one.
-  const already = alreadyText(c);
+  // What the calendar already has of it (task 51), or that it is done or past (task 73): said on the line; an
+  // external event's id makes «Aceptar» «Enlazar», and the record is made linked to it (task 50).
+  const state = stateOf(t, c);
   const same = sameOf(c);
   const overlaps = c?.calendar?.overlaps.length
     ? c.calendar.overlaps.map((o) => o.title).join(", ")
@@ -506,8 +504,11 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
           {before && (
             <span className="muted inbox-before"> · {t("inbox.before", { when: before })}</span>
           )}
-          {already && (
-            <span className="inbox-already"> · {t("inbox.already", { what: already })}</span>
+          {state && (
+            <span className="inbox-already inbox-state" data-state={state.state}>
+              {" "}
+              · {state.text}
+            </span>
           )}
           {same && <span className="inbox-same"> · {t("inbox.same", { what: same.text })}</span>}
           {overlaps && (
@@ -824,6 +825,42 @@ function alreadyText(c: InboxCard | null): string | null {
   return a ? entryText(a) : null;
 }
 
+type T = ReturnType<typeof useStore.getState>["t"];
+/**
+ * The card's word, checked each time it is seen (task 73): «Ya hecho» (the same task, done), «Ya está en el
+ * calendario: …», «Ya pasó» (its day or hour has gone by). Nothing takes the card out: Juan decides.
+ */
+function stateOf(t: T, c: InboxCard | null): { state: string; text: string } | null {
+  const already = alreadyText(c);
+  const s = c?.now.state ?? null;
+  if (s === "done")
+    return {
+      state: "done",
+      text: already ? t("inbox.state.doneWhat", { what: already }) : t("inbox.state.done"),
+    };
+  if (s === "past") return { state: "past", text: t("inbox.state.past") };
+  return already ? { state: "calendar", text: t("inbox.already", { what: already }) } : null;
+}
+/** Its day by its name and number, with «Hoy», «Mañana» or «Ayer» in front when it is one of those (task 73). */
+function whenText(
+  t: T,
+  long: (day: string) => string,
+  c: InboxCard,
+  start: string | null,
+  end: string | null,
+): string | null {
+  if (!c.day) return null;
+  const near =
+    c.now.fromToday === 0
+      ? t("inbox.today")
+      : c.now.fromToday === 1
+        ? t("inbox.tomorrow")
+        : c.now.fromToday === -1
+          ? t("inbox.yesterday")
+          : null;
+  return `${near ? `${near}, ` : ""}${long(c.day)}${start ? `, ${start}${end ? `–${end}` : ""}` : ""}`;
+}
+
 /**
  * The entry a proposal may be («¿Es «Quedada cafe, 16:00–17:00»?», task 58) and how «Es el mismo» accepts it: linked
  * to the external event, or into the record (what the record lacks, the server decides).
@@ -1046,6 +1083,7 @@ function MailSource({
           {source.account ?? t("inbox.mail")}
           {source.from ? ` · ${source.from}` : ""}
         </span>
+        {source.read && <span className="muted inbox-read">· {t("inbox.read")}</span>}
         {earlier.length > 0 && (
           <button
             type="button"
@@ -1130,7 +1168,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         rows: p.view.rows.filter((r) => r !== body),
       }
     : null;
-  const already = alreadyText(c);
+  const state = stateOf(t, c);
   const same = sameOf(c);
   const link = c?.calendar?.already?.external ?? null;
   const decide = async (how: "accept" | "done" | "reject" | "same") => {
@@ -1168,7 +1206,17 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
             </button>
           )}
         </div>
-        {already && <p className="inbox-already">{t("inbox.already", { what: already })}</p>}
+        {(c?.day || state) && (
+          <p className="inbox-what">
+            {c && whenText(t, fmt.long, c, c.start, c.end)}
+            {state && (
+              <span className="inbox-already inbox-state" data-state={state.state}>
+                {c?.day ? " · " : ""}
+                {state.text}
+              </span>
+            )}
+          </p>
+        )}
         {same && <p className="inbox-same">{t("inbox.same", { what: same.text })}</p>}
       </header>
       {rows && rows.rows.length > 0 && (

@@ -213,7 +213,14 @@ export interface InboxCard {
     open: { type: string; id: string } | null;
     /** Its Message-ID: the webmail that opens a mail by it (Gmail; task 55). */
     messageId: string | null;
+    /** Whether Juan already opened it, from the mailbox (task 73; null: not known). */
+    read: boolean | null;
   } | null;
+  /**
+   * The card checked again now (task 73): its day from today (-1, 0, 1: «Ayer», «Hoy», «Mañana»; null: further)
+   * and its state word («Ya hecho», «Ya está en el calendario», «Ya pasó»), sent back as `seen` on «Aceptar».
+   */
+  now: { fromToday: -1 | 0 | 1 | null; state: CardState | null };
   /** Why it was made: the reader's quote of the mail (verbatim when the server found it in the mail). */
   why: { text: string; verbatim: boolean } | null;
   familiar: number;
@@ -271,6 +278,9 @@ export interface InboxCard {
     overlaps: { title: string; start: string | null; end: string | null }[];
   } | null;
 }
+/** A card's state word (task 73): the same task already done, already in the calendar, or its day or hour passed. */
+export type CardState = "done" | "calendar" | "past";
+const CARD_STATES = ["done", "calendar", "past"] as const;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const optStr = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
@@ -289,6 +299,7 @@ function parseCard(v: unknown): InboxCard | null {
           subject: optStr(src.subject, 200) ?? "",
           excerpt: optStr(src.excerpt, 1500) ?? "",
           messageId: optStr(src.messageId, 300),
+          read: typeof src.read === "boolean" ? src.read : null,
           open:
             isObj(src.open) && typeof src.open.type === "string" && typeof src.open.id === "string"
               ? { type: src.open.type.slice(0, 100), id: src.open.id.slice(0, 100) }
@@ -305,6 +316,13 @@ function parseCard(v: unknown): InboxCard | null {
     start: optMatch(v.start, TIME_RE),
     end: optMatch(v.end, TIME_RE),
     source,
+    now: {
+      fromToday:
+        isObj(v.now) && (v.now.fromToday === -1 || v.now.fromToday === 0 || v.now.fromToday === 1)
+          ? v.now.fromToday
+          : null,
+      state: (isObj(v.now) && CARD_STATES.find((x) => isObj(v.now) && x === v.now.state)) || null,
+    },
     why:
       isObj(v.why) && typeof v.why.text === "string" && v.why.text.trim()
         ? { text: v.why.text.slice(0, 300), verbatim: v.why.verbatim === true }
@@ -2661,12 +2679,17 @@ export class AgentApi {
       /** The record the proposal is the same thing as («Es el mismo», task 58): it takes what the proposal adds. */
       into?: string;
     },
+    /**
+     * The state word the card showed (task 73): the server checks the card again and answers 409 «changed» when
+     * it says another, so a card that turned «Ya pasó» is not accepted without Juan's seeing it.
+     */
+    seen: CardState | null = null,
   ) =>
     parseTurn(
       await this.call(
         "POST",
         `proposals/${encodeURIComponent(id)}/accept`,
-        edits ? { edits } : undefined,
+        edits || seen ? { ...(edits ? { edits } : {}), ...(seen ? { seen } : {}) } : undefined,
       ),
     );
   reject = async (id: string) =>

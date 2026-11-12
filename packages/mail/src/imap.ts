@@ -281,21 +281,50 @@ export class ImapReader {
   async gmailThreadOf(messageId: string): Promise<string | null> {
     const id = messageId.trim().replace(/^<|>$/g, "");
     if (!this.gmail || !id || id.length > 300 || /[\s<>"']/.test(id)) return null;
-    const found = await this.command("UID SEARCH", `X-GM-RAW ${quote(`rfc822msgid:${id}`)}`);
-    const uid = found
-      .filter((l) => /^\* SEARCH\b/i.test(l.text))
-      .flatMap((l) =>
-        l.text
-          .replace(/^\* SEARCH/i, "")
-          .trim()
-          .split(/\s+/),
-      )
-      .find((x) => /^\d+$/.test(x));
+    const uid = await this.uidOf(id);
     if (!uid) return null;
     const lines = await this.command("UID FETCH", `${uid} (UID X-GM-THRID)`);
     for (const l of lines) {
       const m = /X-GM-THRID (\d{1,20})/i.exec(l.text);
       if (m) return m[1] as string;
+    }
+    return null;
+  }
+
+  /** The UID of the message with this Message-ID (without <>) in the open folder: Gmail's own search, else HEADER. */
+  private async uidOf(id: string): Promise<string | null> {
+    const found = await this.command(
+      "UID SEARCH",
+      this.gmail
+        ? `X-GM-RAW ${quote(`rfc822msgid:${id}`)}`
+        : `HEADER Message-ID ${quote(`<${id}>`)}`,
+    );
+    return (
+      found
+        .filter((l) => /^\* SEARCH\b/i.test(l.text))
+        .flatMap((l) =>
+          l.text
+            .replace(/^\* SEARCH/i, "")
+            .trim()
+            .split(/\s+/),
+        )
+        .find((x) => /^\d+$/.test(x)) ?? null
+    );
+  }
+
+  /**
+   * Whether the message with this Message-ID in the open folder was read (its `\Seen` flag; task 73: «si he abierto
+   * el correo»), or null when it is not there. Only its flags are fetched, so nothing marks it read.
+   */
+  async seenOf(messageId: string): Promise<boolean | null> {
+    const id = messageId.trim().replace(/^<|>$/g, "");
+    if (!id || id.length > 300 || /[\s<>"']/.test(id)) return null;
+    const uid = await this.uidOf(id);
+    if (!uid) return null;
+    const lines = await this.command("UID FETCH", `${uid} (UID FLAGS)`);
+    for (const l of lines) {
+      const m = /\bFLAGS \(([^)]*)\)/i.exec(l.text);
+      if (m) return /(^|\s)\\Seen(\s|$)/i.test(m[1] as string);
     }
     return null;
   }

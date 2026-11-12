@@ -5022,6 +5022,11 @@ body:has(.toast) .db-selinfo {
 .inbox-same {
   color: var(--text);
 }
+/* Juan already opened the mail (task 73): a word on its source line, never squeezed by a long sender. */
+.inbox-source .inbox-read {
+  flex: none;
+  overflow: visible;
+}
 .inbox-time-ask {
   margin-left: 6px;
 }

@@ -9,6 +9,8 @@ import {
   inboxCard,
   inboxContext,
   judgeTime,
+  recheck,
+  recheckOnAccept,
   TIME_AREA,
   timeOnAccept,
 } from "./inboxCard.ts";
@@ -246,6 +248,7 @@ describe("the inbox's card for a proposal", () => {
         end: null,
         calendar: null,
         external: null,
+        done: null,
       },
       same: null,
       overlaps: [],
@@ -262,6 +265,7 @@ describe("the inbox's card for a proposal", () => {
         end: null,
         calendar: null,
         external: null,
+        done: null,
       },
       overlaps: [],
     });
@@ -275,6 +279,7 @@ describe("the inbox's card for a proposal", () => {
         end: "18:00",
         calendar: "UCAM",
         external: "ext:ucam:u1",
+        done: null,
       },
       same: null,
       overlaps: [],
@@ -555,5 +560,209 @@ describe("a proposal crossed with the day's entries (tasks 51 and 58)", () => {
     expect(
       crossCalendar({ title: "Tomar café", start: null, end: null }, [quedada]).same,
     ).toBeNull();
+  });
+});
+
+describe("a card checked again each time it is seen (task 73)", () => {
+  const at = (iso: string) => Date.parse(iso);
+  const L = label("user", "personal", []);
+
+  it("its day from today and whether its hour passed, by the request's clock and zone", () => {
+    const store = env();
+    const now = (p: ProposalRow, iso: string, tz = "Europe/Madrid") =>
+      inboxCard(store, p, { decide: false }, inboxContext(store, { now: at(iso), tz })).now;
+    // «hoy a las 12», read the day before: tomorrow then, today now, past once it ended (Madrid is UTC+1).
+    const r = proposalAt(store, "r", {
+      title: "Reunión",
+      day: "2026-10-29",
+      start: "12:00",
+      end: "13:00",
+    });
+    expect(now(r, "2026-10-28T19:00:00Z")).toEqual({ fromToday: 1, state: null });
+    expect(now(r, "2026-10-29T10:00:00Z")).toEqual({ fromToday: 0, state: null });
+    expect(now(r, "2026-10-29T11:59:00Z")).toEqual({ fromToday: 0, state: null });
+    expect(now(r, "2026-10-29T12:00:00Z")).toEqual({ fromToday: 0, state: "past" });
+    expect(now(r, "2026-10-30T08:00:00Z")).toEqual({ fromToday: -1, state: "past" });
+    // Further than a day either side: no word for the day, its date says it.
+    expect(now(r, "2026-11-02T08:00:00Z")).toEqual({ fromToday: null, state: "past" });
+    expect(now(r, "2026-10-20T08:00:00Z")).toEqual({ fromToday: null, state: null });
+    // The same instant is another day in another zone.
+    expect(now(r, "2026-10-28T23:30:00Z").fromToday).toBe(0);
+    expect(now(r, "2026-10-28T23:30:00Z", "America/New_York").fromToday).toBe(1);
+    // Without an end, an hour after its start.
+    const s = proposalAt(store, "s", { title: "Llamada", day: "2026-10-29", start: "12:00" });
+    expect(now(s, "2026-10-29T11:59:00Z").state).toBeNull();
+    expect(now(s, "2026-10-29T12:00:00Z").state).toBe("past");
+    // A task with a day and no hour: once its day is over, in its zone.
+    const t = proposalAt(store, "t", { title: "Entregar notas", day: "2026-10-29" });
+    expect(now(t, "2026-10-29T22:59:00Z").state).toBeNull();
+    expect(now(t, "2026-10-29T23:00:00Z")).toEqual({ fromToday: -1, state: "past" });
+    // No day, nothing to say.
+    const u = proposalAt(store, "u", { title: "Algo sin día" });
+    expect(now(u, "2026-10-29T12:00:00Z")).toEqual({ fromToday: null, state: null });
+    // A change to a record, not a new one: its day is said, never «Ya pasó».
+    expect(
+      recheck(
+        { action: "update", day: "2026-10-28", start: "10:00", end: null, calendar: null },
+        at("2026-10-29T12:00:00Z"),
+        "Europe/Madrid",
+      ),
+    ).toEqual({ fromToday: -1, state: null });
+    // Seen with decide: false, no time decision is recorded for it.
+    expect(store.journal.decisions(TIME_AREA)).toEqual([]);
+  });
+
+  it("«Ya hecho» when the calendar has it done, «Ya está en el calendario» when it has it; both before «Ya pasó»", () => {
+    const store = env();
+    const now = (p: ProposalRow, iso: string) =>
+      inboxCard(
+        store,
+        p,
+        { decide: false },
+        inboxContext(store, { now: at(iso), tz: "Europe/Madrid" }),
+      ).now.state;
+    const p = proposalAt(store, "a", {
+      title: "Clase de ejemplo",
+      day: "2026-10-28",
+      start: "10:00",
+      end: "11:00",
+    });
+    expect(now(p, "2026-10-27T08:00:00Z")).toBe("calendar");
+    expect(now(p, "2026-11-01T08:00:00Z")).toBe("calendar");
+    // Its collection gets a done box and the record is ticked: the same task, already done.
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_docencia",
+        field: { id: "f_hecha", key: "hecha", name: "Hecha", type: "checkbox", label: L },
+      },
+      { actor: "user" },
+    );
+    store.applySchema(
+      {
+        op: "set_roles",
+        type: "t_docencia",
+        roles: { date: "f_date", time: "f_starttime", done: "f_hecha" },
+      },
+      { actor: "user" },
+    );
+    expect(now(p, "2026-10-27T08:00:00Z")).toBe("calendar");
+    const clase = store
+      .list("t_docencia")
+      .find((e) => e.entity.values.f_title === "Clase de ejemplo");
+    if (!clase) throw new Error("no class");
+    store.update(clase.entity.id, { f_hecha: { value: true, label: L } }, { actor: "user" });
+    expect(now(p, "2026-10-27T08:00:00Z")).toBe("done");
+    expect(now(p, "2026-11-01T08:00:00Z")).toBe("done");
+    // Another title at the same moment is only asked about («¿Es el mismo?»), no word.
+    const q = proposalAt(store, "b", { title: "Reunión", day: "2026-10-28", start: "10:00" });
+    expect(now(q, "2026-10-27T08:00:00Z")).toBeNull();
+  });
+
+  it("the mail's source says whether Juan already opened it, from what the connector keeps", () => {
+    const store = env();
+    proposalFromMail(store, "m", "run-m", "coordinacion@example.com");
+    const card = () =>
+      inboxCard(
+        store,
+        store.journal.proposal("m") as ProposalRow,
+        { decide: false },
+        inboxContext(store, {}),
+      ).source;
+    // A connector that did not keep it yet: unknown, nothing is said.
+    expect(card()?.read).toBeNull();
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_correo",
+        field: { id: "f_leido", key: "leido", name: "Leído", type: "checkbox", label: L },
+      },
+      { actor: "connector" },
+    );
+    const mail = store.list("t_correo")[0]?.entity.id as string;
+    store.update(mail, { f_leido: { value: false, label: L } }, { actor: "connector" });
+    expect(card()?.read).toBe(false);
+    store.update(mail, { f_leido: { value: true, label: L } }, { actor: "connector" });
+    expect(card()?.read).toBe(true);
+  });
+
+  it("accepting checks again: a word Juan did not see stops it, the word he saw lets it through", () => {
+    const store = env();
+    const p = proposalAt(store, "r", {
+      title: "Reunión",
+      day: "2026-10-29",
+      start: "12:00",
+      end: "13:00",
+    });
+    const ctx = (iso: string) => inboxContext(store, { now: at(iso), tz: "Europe/Madrid" });
+    // Seen yesterday with no word; accepted after it passed: stopped, with the word it has now.
+    expect(recheckOnAccept(store, p, null, ctx("2026-10-29T13:00:00Z"))).toEqual({
+      error: "changed",
+      state: "past",
+    });
+    expect(recheckOnAccept(store, p, undefined, ctx("2026-10-29T13:00:00Z"))).toEqual({
+      error: "changed",
+      state: "past",
+    });
+    // Seen as «Ya pasó» and accepted all the same: his decision.
+    expect(recheckOnAccept(store, p, "past", ctx("2026-10-29T13:00:00Z"))).toBeNull();
+    // Nothing changed: through.
+    expect(recheckOnAccept(store, p, null, ctx("2026-10-29T08:00:00Z"))).toBeNull();
+    // A word that went away (or one the client made up) is a change too.
+    expect(recheckOnAccept(store, p, "past", ctx("2026-10-29T08:00:00Z"))).toEqual({
+      error: "changed",
+      state: null,
+    });
+    expect(recheckOnAccept(store, p, "<b>", ctx("2026-10-29T13:00:00Z"))).toEqual({
+      error: "changed",
+      state: "past",
+    });
+  });
+
+  it("dozens of cards over thousands of records and mails read the calendar once, in a time the inbox can bear (A-15)", () => {
+    const store = env();
+    const days = Array.from({ length: 365 }, (_, i) =>
+      new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10),
+    );
+    for (let i = 0; i < 3000; i++)
+      store.create(
+        "t_docencia",
+        {
+          f_title: { value: `Clase ${i}`, label: L },
+          f_date: { value: days[i % days.length] as string, label: L },
+          f_starttime: { value: `${String(8 + (i % 10)).padStart(2, "0")}:00`, label: L },
+        },
+        { actor: "user" },
+      );
+    proposalFromMail(store, "m0", "run-m0", "coordinacion@example.com");
+    for (let i = 1; i < 400; i++)
+      store.create(
+        "t_correo",
+        { f_asunto: { value: `Correo ${i}`, label: L } },
+        { actor: "connector" },
+      );
+    const cards = Array.from({ length: 60 }, (_, i) =>
+      proposalAt(store, `p${i}`, {
+        title: `Propuesta ${i}`,
+        day: days[330 + (i % 30)] as string,
+        start: "12:00",
+      }),
+    );
+    const spy = vi.spyOn(store, "list");
+    const t0 = performance.now();
+    const ctx = inboxContext(store, { now: at("2026-10-29T10:00:00Z"), tz: "Europe/Madrid" });
+    const served = cards.map((p) => inboxCard(store, p, { decide: false }, ctx));
+    const first = performance.now() - t0;
+    // Served again (the inbox polls): the calendar's day memo holds, nothing is read whole again.
+    const t1 = performance.now();
+    const ctx2 = inboxContext(store, { now: at("2026-10-29T10:01:00Z"), tz: "Europe/Madrid" });
+    for (const p of cards) inboxCard(store, p, { decide: false }, ctx2);
+    const again = performance.now() - t1;
+    const docencia = spy.mock.calls.filter((c) => c[0] === "t_docencia").length;
+    spy.mockRestore();
+    expect(served.every((c) => c.now.state === null && c.now.fromToday === null)).toBe(true);
+    expect(docencia).toBeLessThanOrEqual(1);
+    expect(first).toBeLessThan(1000);
+    expect(again).toBeLessThan(200);
   });
 });

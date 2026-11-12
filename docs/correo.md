@@ -280,7 +280,17 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
    hasta 2 MB (§4.6). Lo que se proponía: como archivo del registro (§4.6), además de los campos de hoy: vale
    para reabrirlo entero (HTML, adjuntos) y cuesta espacio en el NAS. Propuesta: sí, con un tope por correo (por
    ejemplo 2 MB; los adjuntos grandes se quedan fuera y se dice).
-4. **Una tarjeta de la Bandeja que ya no hace falta** (tarea 73; pendiente). Juan, 2026-11-05: «Boni tendría que
+4. ~~**Una tarjeta de la Bandeja que ya no hace falta**~~ Decidido: (a), y hecho en la tarea 73. Cada vez que
+   se sirve la Bandeja, el código vuelve a mirar cada tarjeta sobre el almacén, con el reloj de la petición (sin
+   modelo, sin guardarlo en la propuesta): su día con nombre y número, y delante «Hoy», «Mañana» o «Ayer»; y una
+   palabra si hace falta: «Ya hecho» (la misma tarea ya marcada), «Ya está en el calendario: …» o «Ya pasó» (su
+   hora acabó; sin hora de fin, una hora después de empezar; una tarea sin hora, cuando acaba su día). «Leído»
+   sale en la línea del correo: el conector guarda en el correo la marca `\Seen` del buzón (solo la lee, nunca
+   la cambia) de los correos con tarjetas esperando. Nada se va solo: Juan decide. «Aceptar» manda la palabra
+   que vio y el servidor vuelve a mirar; si ha cambiado, no acepta y la tarjeta dice «Ha cambiado» con su
+   palabra nueva. El título de una propuesta y su nota dicen el día por su nombre y número, nunca «hoy» ni
+   «mañana»: el código lo comprueba y, si no, se lo devuelve una vez al modelo (como la regla de la tarea 72).
+   Lo que se planteó, Juan, 2026-11-05: «Boni tendría que
    ser capaz de reprocesar las cosas de la bandeja para ver si ya se han hecho, si hay cosas en el calendario ya
    para esa fecha, si he abierto el correo». Una tarjeta se escribe al leer el correo, y lo que propone puede
    haber pasado, o estar ya hecho, cuando Juan la ve. Por ejemplo, la propuesta «Reunión el miércoles 4 a las
@@ -332,8 +342,9 @@ conversación, y en la Bandeja la tarjeta que Juan abre más tarde). Ahora:
   próximo lunes», «este viernes», «dentro de dos días» y un día de la semana sin su número; no «por la mañana», «cada
   mañana», «hoy en día» ni «hoy por hoy». Si el lector insiste (o su segunda respuesta no vale y queda la primera),
   el paso lo dice en el diario (`relativeDay: "kept"`), y en el Recorrido;
-- lo que escriben los lectores de la Bandeja (el título de una propuesta, la nota de `fill`) aún no pasa por esto: va
-  con la tarea 73, que vuelve a mirar las tarjetas al verlas.
+- lo que escriben los lectores de la Bandeja (el título de una propuesta que da `read_message`, la nota de `fill`)
+  pasa por lo mismo desde la tarea 73: vuelve al lector una vez y, si insiste, el paso lo dice en el diario. Y la
+  tarjeta se vuelve a mirar cada vez que se ve (decisión 4).
 
 El caso de la evaluación pide además el día por su nombre o su número.
 
