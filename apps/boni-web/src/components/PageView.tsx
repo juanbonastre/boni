@@ -2,6 +2,7 @@ import {
   blocksToMarkdown,
   CATALOGUE,
   kindOf as catalogueKind,
+  controlsOf,
   markdownToBlocks,
   newBlock,
   partOf,
@@ -75,6 +76,7 @@ import { kindName } from "./BlockPanel.tsx";
 import { LinkBlock } from "./BoniBlocks.tsx";
 import { ACCENT } from "./Chart.tsx";
 import { ChartCard, ChartCardContent } from "./ChartCard.tsx";
+import { ControlView, withValue } from "./ControlView.tsx";
 import { DataBlockView, useBlockResults } from "./DataBlockView.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { historyColor, whoLabel } from "./History.tsx";
@@ -451,7 +453,8 @@ export function Blocks({ page }: { page: Page }) {
   const { hidden, numbers } = useMemo(() => layoutOf(blocks), [blocks]);
   const visible = blocks.filter((b) => !hidden.has(b.id));
   const dataBlocks = useMemo(() => blocks.filter(isDataBlock), [blocks]);
-  const { results, failure } = useBlockResults(dataBlocks);
+  const controls = useMemo(() => controlsOf(blocks), [blocks]);
+  const { results, failure, pending } = useBlockResults(dataBlocks, controls);
   // Whole blocks selected (Notion's, Juan 2026-10-30): drawn here, made by a drag across blocks, Shift+click, Esc,
   // Shift+arrows at a block's edge or Ctrl+A twice; the keys then act on them (core/selection.ts).
   const sel = useStore((s) => s.blockSel);
@@ -622,11 +625,19 @@ export function Blocks({ page }: { page: Page }) {
       }
       onDrop={drop}
       onDragEnd={() => setDrag(null)}
+      busy={pending && isDataBlock(b) && results[b.id] !== undefined}
     >
       {isDataBlock(b) ? (
-        <DataBlockView block={b} result={results[b.id]} failure={failure} />
+        <DataBlockView block={b} result={results[b.id]} failure={failure} controls={controls} />
+      ) : b.type === "control" ? (
+        <ControlView
+          block={b}
+          onValue={(value) =>
+            setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? withValue(b, value) : x)))
+          }
+        />
       ) : b.type === "link" ? (
-        <LinkBlock block={b} />
+        <LinkBlock block={b} controls={controls} />
       ) : b.type === "chart" ? (
         specs.some((s) => s.id === b.chart) ? (
           <ChartCard chartId={b.chart} />
@@ -645,6 +656,7 @@ export function Blocks({ page }: { page: Page }) {
         <DatabaseBlock
           source={b.source}
           view={b.view}
+          controls={controls}
           onView={(view) =>
             setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? { ...b, view } : x)))
           }
@@ -894,11 +906,14 @@ function BlockRow({
   onDragOver,
   onDrop,
   onDragEnd,
+  busy = false,
   children,
 }: {
   block: Block;
   page: Page;
   selected: boolean;
+  /** Its numbers are being asked again (a value of the page changed; I-15): dimmed in place. */
+  busy?: boolean;
   drag: Drag;
   onDragStart: () => void;
   onDragOver: (where: Where) => void;
@@ -1011,6 +1026,7 @@ function BlockRow({
         clickRows ? " blk-clickable" : ""
       }${lit ? " by-who" : ""}`}
       data-block={block.id}
+      aria-busy={busy || undefined}
       {...pointable}
       style={
         {
@@ -1674,7 +1690,11 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
   switch (choice.kind) {
     case "data": {
       const state = useStore.getState();
-      const b = newBlock(choice.type, block.id, catalogueOf(state.dataTypes, state.pages));
+      const b = newBlock(
+        choice.type,
+        block.id,
+        catalogueOf(state.dataTypes, state.pages, controlsOf(blocks)),
+      );
       if (!b) return;
       const w = catalogueKind(choice.type)?.w ?? 12;
       // A button goes in the page's flow, where buttons one after another share a row (only what they need).

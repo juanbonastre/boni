@@ -1,5 +1,6 @@
 import { catalogueErrors, type Place } from "./catalogue.ts";
 import { filterErrors } from "./filter.ts";
+import { type ControlBlock, valueRefErrors } from "./pageValues.ts";
 
 /**
  * A page (docs/extensiones.md 6, the Lienzo; docs/nucleo.md 8): what the user puts on it, as a list of blocks
@@ -25,9 +26,11 @@ export interface DataBlock {
   measure?: "count" | "sum" | "avg";
   field?: string;
   groupBy?: string;
-  period?: "month" | "30d" | "12m" | "year" | "all";
+  /** A fixed period, or a month control of the page (`$<its id>`, pageValues.ts). */
+  period?: "month" | "30d" | "12m" | "year" | "all" | `$${string}`;
   date?: string;
   filterField?: string;
+  /** One of the field's options, or an option control of the page over that field (`$<its id>`). */
   filterValue?: string;
   shape?: "bar" | "hbar" | "line" | "area" | "donut";
   color?: string;
@@ -82,7 +85,10 @@ export type PageBlock = (
       color?: string;
     }
   | DataBlock
-  | { id: string; type: "link"; title?: string; to: string }
+  /** One value of the page, shown as a control (pageValues.ts, docs/sistema.md §4.6). */
+  | ControlBlock
+  /** `pass`: values for the controls of the page it opens, by their ids (a value, or `$<a control of this page>`). */
+  | { id: string; type: "link"; title?: string; to: string; pass?: Record<string, string | number> }
 ) & {
   /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
   at?: Place;
@@ -146,8 +152,11 @@ const VIEW_ID = /^v_[a-z0-9]{1,24}$/;
 /** At most this many views a collection keeps. */
 export const MAX_VIEWS = 20;
 
-/** Whether a value is a closed view: its layout and its settings, nothing else (a page block's, a saved one's). */
-export function databaseViewOk(view: unknown): view is DatabaseView {
+/**
+ * Whether a value is a closed view: its layout and its settings, nothing else (a page block's, a saved one's). Only a
+ * page's table (`refs`) may take a rule's value from a control of its page.
+ */
+export function databaseViewOk(view: unknown, refs = false): view is DatabaseView {
   const v = isObj(view) ? view : null;
   const okField = (f: unknown) => f === undefined || (typeof f === "string" && ID.test(f));
   const sortOk =
@@ -174,7 +183,7 @@ export function databaseViewOk(view: unknown): view is DatabaseView {
       "wrap",
     ]) ||
     (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
-    (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
+    (v.filter !== undefined && filterErrors(v.filter, refs).length > 0) ||
     (v.also !== undefined &&
       (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
     !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||
@@ -234,6 +243,8 @@ export interface DatabaseFilter {
   op: (typeof FILTER_OPS)[number];
   /** Text, a number, a date ("YYYY-MM-DD") or an option's id, as the operator needs. */
   value?: string | number;
+  /** In a page's table: the value is what this control of the page holds (pageValues.ts); empty, no rule. */
+  from?: string;
 }
 /**
  * Notion's advanced filter (task 75), one level deep: rules joined by «y» (all hold) or «o» (one holds), beside the
@@ -327,6 +338,7 @@ export const PAGE_BLOCKS = [
   "database",
   "action",
   ...DATA_BLOCKS,
+  "control",
   ...BONI_BLOCKS,
 ] as const;
 export const PAGE_LIMITS = {
@@ -483,7 +495,7 @@ export function pageErrors(spec: unknown): string[] {
           !only(b, ["at", "id", "type", "source", "view"]) ||
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
-          !databaseViewOk(b.view)
+          !databaseViewOk(b.view, true)
         )
           errors.push(`${w}: a database names its collection and a closed view`);
         break;
@@ -506,6 +518,7 @@ export function pageErrors(spec: unknown): string[] {
       case "number":
       case "bars":
       case "graph":
+      case "control":
       case "link":
         for (const p of catalogueErrors(b))
           errors.push(
@@ -520,5 +533,7 @@ export function pageErrors(spec: unknown): string[] {
     const total = [...cols.values()].reduce((a, x) => a + x, 0);
     if (total > 12) errors.push(`row ${row}: its columns are ${total} twelfths wide (at most 12)`);
   }
+  // What a block names of the page's controls is there and fits (D-59).
+  if (!errors.length) errors.push(...valueRefErrors(spec.blocks as PageBlock[]));
   return errors;
 }

@@ -309,6 +309,184 @@ describe("the list of actions in the conversation (docs/sistema.md §4.1, F10)",
     });
   });
 
+  it("«enséñame solo Café en Gastos del mes»: a control of the category, the number reading it, its value set by the record's title, and Undo takes it back", async () => {
+    const token = await login();
+    const store = host.store(1);
+    // As Juan's movements are: the category is a record of «Categorías» (a relation), with generated ids.
+    const CATS = newId("t");
+    const GASTOS = newId("t");
+    const G = { concepto: newId("f"), importe: newId("f"), fecha: newId("f"), cat: newId("f") };
+    const CAT_NOMBRE = newId("f");
+    const def = (id: string, key: string, name: string, fields: unknown[], title: string) =>
+      ({
+        id,
+        key,
+        name,
+        fields,
+        titleField: title,
+        sensitivity: "personal",
+        schemaVersion: 1,
+        label: own,
+      }) as TypeDef;
+    store.applySchema(
+      {
+        op: "create_type",
+        type: def(
+          CATS,
+          "categorias",
+          "Categorías",
+          [{ id: CAT_NOMBRE, key: "nombre", name: "Nombre", type: "text", label: own }],
+          CAT_NOMBRE,
+        ),
+      },
+      { actor: "user" },
+    );
+    store.applySchema(
+      {
+        op: "create_type",
+        type: def(
+          GASTOS,
+          "gastos",
+          "Gastos",
+          [
+            { id: G.concepto, key: "concepto", name: "Concepto", type: "text", label: own },
+            { id: G.importe, key: "importe", name: "Importe", type: "number", label: own },
+            { id: G.fecha, key: "fecha", name: "Fecha", type: "date", label: own },
+            {
+              id: G.cat,
+              key: "categoria",
+              name: "Categoría",
+              type: "relation",
+              relation: { target: CATS, many: false },
+              label: own,
+            },
+          ],
+          G.concepto,
+        ),
+      },
+      { actor: "user" },
+    );
+    const meta = { actor: "user" as const, device: "portatil-ejemplo" };
+    const v = (value: unknown) => ({ value, label: own });
+    const cafe = store.create(CATS, { [CAT_NOMBRE]: v("Café") }, meta).entity.id;
+    const superId = store.create(CATS, { [CAT_NOMBRE]: v("Supermercado") }, meta).entity.id;
+    for (const [concepto, importe, cat] of [
+      ["Bar Ejemplo", -1.6, cafe],
+      ["Cafetería Ejemplo", -2.4, cafe],
+      ["Mercado Ejemplo", -40, superId],
+    ] as const)
+      store.create(
+        GASTOS,
+        {
+          [G.concepto]: v(concepto),
+          [G.importe]: v(importe),
+          [G.fecha]: v("2026-11-03"),
+          [G.cat]: v(cat),
+        },
+        meta,
+      );
+    plans.push({
+      version: 1,
+      steps: [
+        { id: "p", op: "call", tool: "pages.create", args: { title: lit("Gastos del mes") } },
+        {
+          id: "c",
+          op: "call",
+          tool: "pages.add_block",
+          args: {
+            page: { ref: "$p.id" },
+            block: lit({
+              type: "control",
+              name: "Categoría",
+              kind: "option",
+              collection: "gastos",
+              field: "Categoría",
+            }),
+          },
+        },
+        {
+          id: "n",
+          op: "call",
+          tool: "pages.add_block",
+          args: {
+            page: { ref: "$p.id" },
+            block: lit({
+              type: "number",
+              collection: "gastos",
+              measure: "sum",
+              field: "Importe",
+              period: "all",
+              title: "Gasto",
+              filterField: "Categoría",
+              filterValue: "$Categoría",
+            }),
+          },
+        },
+        {
+          id: "s",
+          op: "call",
+          tool: "pages.set_value",
+          args: { page: { ref: "$p.id" }, control: lit("Categoría"), value: lit("café") },
+        },
+      ],
+    });
+    const turn = (await post(token, "/api/agent/turn", {
+      text: "enséñame solo Café en Gastos del mes",
+    })) as unknown as Turn;
+    expect(turn.error).toBeNull();
+    expect(turn.status).toBe("done");
+    const page = listPages(store).find((p) => p.title === "Gastos del mes");
+    if (!page) throw new Error("no page");
+    const blocks = getPage(store, page.id)?.spec.blocks ?? [];
+    const control = blocks[0] as { id: string; value?: string };
+    // As the editor keeps it: the control by id, the number naming it, the record's id as its value.
+    expect(blocks).toEqual([
+      {
+        id: control.id,
+        type: "control",
+        name: "Categoría",
+        kind: "option",
+        collection: GASTOS,
+        field: G.cat,
+        value: cafe,
+      },
+      expect.objectContaining({
+        type: "number",
+        filterField: G.cat,
+        filterValue: `$${control.id}`,
+      }),
+    ]);
+    // The server computes the number with the page's values, as the app asks for it.
+    const total = async (controls: unknown[]) =>
+      (
+        (await post(token, "/api/data/blocks", { blocks: [blocks[1]], controls }))
+          .results as Record<string, { data: { total: number } }>
+      )[(blocks[1] as { id: string }).id]?.data.total;
+    expect(await total([blocks[0]])).toBeCloseTo(-4);
+    expect(await total([{ ...blocks[0], value: superId }])).toBeCloseTo(-40);
+    expect(await total([{ ...blocks[0], value: undefined }])).toBeCloseTo(-44);
+    // A value that is no record of the list is refused, and the page keeps its own.
+    plans.push({
+      version: 1,
+      steps: [
+        {
+          id: "s",
+          op: "call",
+          tool: "pages.set_value",
+          args: { page: lit(page.id), control: lit("Categoría"), value: lit("Gasolina") },
+        },
+      ],
+    });
+    const bad = (await post(token, "/api/agent/turn", { text: "y Gasolina" })) as unknown as Turn;
+    expect(JSON.stringify(bad)).toContain("no-such-value");
+    expect((getPage(store, page.id)?.spec.blocks[0] as { value?: string } | undefined)?.value).toBe(
+      cafe,
+    );
+    // Undo of the run takes the whole request back.
+    expect(await post(token, `/api/agent/runs/${turn.run}/undo`)).toEqual({ undone: 4 });
+    expect(listPages(store).some((p) => p.id === page.id)).toBe(false);
+  });
+
   it("«acepta estas dos»: the Bandeja's cards on the screen, accepted on a card that names them, and one rejected", async () => {
     const token = await login();
     const make = (title: string) => ({

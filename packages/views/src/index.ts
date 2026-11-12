@@ -55,6 +55,7 @@ export {
   TEXT_BLOCKS,
   withoutRetired,
 } from "./page.ts";
+export * from "./pageValues.ts";
 export { pyRound, pySum } from "./pyround.ts";
 export {
   dataLevel,

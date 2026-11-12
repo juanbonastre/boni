@@ -403,6 +403,18 @@ contraseña ni un código aquí» under a question.
   at once; its notice says ««Café» apuntado» with «Deshacer», which takes it out again (the same device, within 10
   minutes); without a connection it waits in the queue for its Undo as before. Buttons one after another share a row,
   each only as wide as it needs. Opening a form puts the caret in the first field still to fill (the amount).
+- **A page's values** (task 87, F11, D-59; `components/ControlView.tsx`, `components/DataBlockView.tsx`,
+  `components/BoniBlocks.tsx` `LinkBlock`, `components/BlockPanel.tsx` `PassControl`, `components/DatabaseBlock.tsx`
+  `PageControls`; `docs/sistema.md` §4.6): a «Control» block (in «Cifras y gráficas» of «/» and «+») is one value of
+  the page, its name over a control as wide as its column: «Opción», a list with «Todas» first (a select's options,
+  or the records a relation points to, by title); «Mes», a month picker; «Número» and «Texto», a box kept on Enter or
+  when it is left (Esc puts it back), «Cualquiera» while empty. Its panel names it and picks «Tipo», «Colección» and
+  «Campo»; its value is changed on the page, never in the panel. A number, bars or a chart name it in «Filtro» (the
+  field's options and then the page's controls of that field) and a month control in «Periodo» (empty: «Desde
+  siempre»); a table's rule picks «Valor de»: «Fijo» or a control, and its chip says the control's name in
+  «comillas». A change dims the blocks that read it in place (`aria-busy`) until the server answers; it never empties
+  them. A link's panel has «Con valores»: for each control of the page it opens, a control of this page of the same
+  kind, or «—».
 - **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
   `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,

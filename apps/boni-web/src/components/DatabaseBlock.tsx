@@ -1,4 +1,5 @@
 import {
+  type ControlBlock,
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
@@ -7,6 +8,7 @@ import {
   flowRowTarget,
   isFilterGroup,
   matchesFilters,
+  rulesWithValues,
   SYS,
   SYSTEM_COLUMNS,
   type SystemColumn,
@@ -32,7 +34,17 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  Fragment,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   type DataField,
@@ -123,16 +135,26 @@ const optionColor = (f: DataField, id: string) => {
   );
 };
 
+/**
+ * The controls of the page a table is on (D-59): a rule may take its value from one of them (`from`). Only a page's
+ * table has them; a collection's own page and its saved views do not.
+ */
+const NO_CONTROLS: readonly ControlBlock[] = [];
+export const PageControls = createContext<readonly ControlBlock[]>(NO_CONTROLS);
+
 export function DatabaseBlock({
   source,
   view,
   onView,
   named = true,
   views,
+  controls,
 }: {
   source: string;
   view: DatabaseView;
   onView: (v: DatabaseView) => void;
+  /** The page's controls, when it is a page's table: its rules may read them. */
+  controls?: readonly ControlBlock[];
   /** Its name and protection in its head (not on the collection's own page, whose title has them). */
   named?: boolean;
   /** Its saved views as tabs (a collection's own page and «Mis datos»; task 69). */
@@ -176,7 +198,9 @@ export function DatabaseBlock({
         .toLocaleLowerCase()
         .includes(q),
   );
-  const rules = boni ? [...(view.filter ?? []), ...boni.rules] : view.filter;
+  // A rule from a control takes what it holds now; one holding nothing filters nothing (D-59).
+  const own = view.filter && controls ? rulesWithValues(view.filter, controls) : view.filter;
+  const rules = boni ? [...(own ?? []), ...boni.rules] : own;
   const sorted = sortRows(filterRows(found, type, rules), type, view);
   // A table grouped by a column (task 76): every row, each group showing its first ones.
   const groupBy =
@@ -210,213 +234,221 @@ export function DatabaseBlock({
     if (made) showFlow(made);
   };
   return (
-    <section className="db" aria-label={type?.name ?? t("db.title")}>
-      <header
-        className="db-head"
-        // Its options stay with rows chosen; a click on one of them lets go of them (Juan, 2026-10-30).
-        onPointerDownCapture={() => {
-          if (picked.size) setPicked(new Set());
-        }}
-      >
-        {named ? (
-          <h3 className="db-name">
-            {type?.icon && <span className="db-icon">{type.icon}</span>}
-            {type?.name ?? "…"}
-            {type?.system
-              ? !type.editable && <SystemPill />
-              : type && <ProtectionMenu type={type} />}
-          </h3>
-        ) : null}
-        {views ? (
-          <ViewTabs views={views} layouts={layouts} />
-        ) : (
-          <LayoutTab view={view} onView={onView} layouts={layouts} />
-        )}
-        <div className="db-tools">
-          {type && (
+    <PageControls.Provider value={controls ?? NO_CONTROLS}>
+      <section className="db" aria-label={type?.name ?? t("db.title")}>
+        <header
+          className="db-head"
+          // Its options stay with rows chosen; a click on one of them lets go of them (Juan, 2026-10-30).
+          onPointerDownCapture={() => {
+            if (picked.size) setPicked(new Set());
+          }}
+        >
+          {named ? (
+            <h3 className="db-name">
+              {type?.icon && <span className="db-icon">{type.icon}</span>}
+              {type?.name ?? "…"}
+              {type?.system
+                ? !type.editable && <SystemPill />
+                : type && <ProtectionMenu type={type} />}
+            </h3>
+          ) : null}
+          {views ? (
+            <ViewTabs views={views} layouts={layouts} />
+          ) : (
+            <LayoutTab view={view} onView={onView} layouts={layouts} />
+          )}
+          <div className="db-tools">
+            {type && (
+              <button
+                type="button"
+                className={`icon-btn${view.filter?.length ? " on" : ""}`}
+                title={t("db.filter")}
+                aria-label={t("db.filter")}
+                data-boni-action="screen.filter"
+                onClick={() => setBar((b) => ({ what: "filter", n: b.n + 1 }))}
+              >
+                <ListFilter size={15} strokeWidth={1.8} />
+              </button>
+            )}
+            {type && (
+              <button
+                type="button"
+                className={`icon-btn${view.sort ? " on" : ""}`}
+                title={t("db.opt.sort")}
+                aria-label={t("db.opt.sort")}
+                onClick={() => setBar((b) => ({ what: "sort", n: b.n + 1 }))}
+              >
+                <ArrowUpDown size={15} strokeWidth={1.8} />
+              </button>
+            )}
+            {query === null ? (
+              <button
+                type="button"
+                className="icon-btn"
+                title={t("db.search")}
+                aria-label={t("db.search")}
+                onClick={() => setQuery("")}
+              >
+                <Search size={15} strokeWidth={1.8} />
+              </button>
+            ) : (
+              <input
+                className="db-search"
+                // biome-ignore lint/a11y/noAutofocus: the search was just asked for
+                autoFocus
+                value={query}
+                placeholder={t("db.search")}
+                aria-label={t("db.search")}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setQuery(null)}
+                onBlur={() => !query && setQuery(null)}
+              />
+            )}
+            {type && (
+              <ViewOptions
+                type={type}
+                view={view}
+                onView={onView}
+                views={views}
+                layouts={layouts}
+              />
+            )}
+          </div>
+          {canAdd && (
             <button
               type="button"
-              className={`icon-btn${view.filter?.length ? " on" : ""}`}
-              title={t("db.filter")}
-              aria-label={t("db.filter")}
-              data-boni-action="screen.filter"
-              onClick={() => setBar((b) => ({ what: "filter", n: b.n + 1 }))}
+              className="btn primary small"
+              data-boni-action="entities.create"
+              onClick={() => void add()}
             >
-              <ListFilter size={15} strokeWidth={1.8} />
+              <Plus size={14} strokeWidth={2} />
+              {t("db.new")}
             </button>
           )}
-          {type && (
+        </header>
+        {type && boni && (
+          <div className="boni-filter" role="status" key={boni.n}>
+            <span className="boni-filter-what">
+              {t("db.boniFilter")} {boni.rules.map((r) => itemText(type, r, t)).join(" · ")}
+              {boni.caption ? <span className="muted"> — {boni.caption}</span> : null}
+            </span>
             <button
               type="button"
-              className={`icon-btn${view.sort ? " on" : ""}`}
-              title={t("db.opt.sort")}
-              aria-label={t("db.opt.sort")}
-              onClick={() => setBar((b) => ({ what: "sort", n: b.n + 1 }))}
+              className="link-btn small"
+              onClick={() => {
+                onView({ ...view, filter: [...(view.filter ?? []), ...boni.rules] });
+                clearBoniFilter();
+              }}
             >
-              <ArrowUpDown size={15} strokeWidth={1.8} />
+              {t("db.boniFilterKeep")}
             </button>
-          )}
-          {query === null ? (
             <button
               type="button"
               className="icon-btn"
-              title={t("db.search")}
-              aria-label={t("db.search")}
-              onClick={() => setQuery("")}
+              title={t("db.boniFilterClear")}
+              aria-label={t("db.boniFilterClear")}
+              onClick={clearBoniFilter}
             >
-              <Search size={15} strokeWidth={1.8} />
+              <X size={14} strokeWidth={1.8} />
             </button>
-          ) : (
-            <input
-              className="db-search"
-              // biome-ignore lint/a11y/noAutofocus: the search was just asked for
-              autoFocus
-              value={query}
-              placeholder={t("db.search")}
-              aria-label={t("db.search")}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Escape" && setQuery(null)}
-              onBlur={() => !query && setQuery(null)}
-            />
-          )}
-          {type && (
-            <ViewOptions type={type} view={view} onView={onView} views={views} layouts={layouts} />
-          )}
-        </div>
-        {canAdd && (
-          <button
-            type="button"
-            className="btn primary small"
-            data-boni-action="entities.create"
-            onClick={() => void add()}
-          >
-            <Plus size={14} strokeWidth={2} />
-            {t("db.new")}
-          </button>
+          </div>
         )}
-      </header>
-      {type && boni && (
-        <div className="boni-filter" role="status" key={boni.n}>
-          <span className="boni-filter-what">
-            {t("db.boniFilter")} {boni.rules.map((r) => itemText(type, r, t)).join(" · ")}
-            {boni.caption ? <span className="muted"> — {boni.caption}</span> : null}
-          </span>
-          <button
-            type="button"
-            className="link-btn small"
-            onClick={() => {
-              onView({ ...view, filter: [...(view.filter ?? []), ...boni.rules] });
-              clearBoniFilter();
+        {type && (bar.what || view.sort || view.filter?.length) ? (
+          <ViewBar
+            type={type}
+            view={view}
+            onView={onView}
+            focus={bar}
+            onDone={() => setBar((b) => ({ what: null, n: b.n }))}
+          />
+        ) : null}
+        {view.layout === "diagram" && flows ? (
+          // «Flujos»: Boni's map; the flows its filter or its search leaves out are not on it.
+          <FlowMap
+            only={
+              data && (view.filter?.length || q)
+                ? new Set(sorted.flatMap((r) => flowRowTarget(r.id) ?? []))
+                : undefined
+            }
+          />
+        ) : view.layout === "diagram" && type?.id === SYS.data.id ? (
+          // «Mis datos»: every collection, the ones its filter leaves out dimmed (docs/flujos.md §4.7, F6b).
+          <DataDiagram
+            only={
+              data && view.filter?.length
+                ? new Set(sorted.flatMap((r) => dataRowTarget(r.id) ?? []))
+                : undefined
+            }
+          />
+        ) : view.layout === "diagram" && type ? (
+          <DataDiagram root={type.id} />
+        ) : !type || !data ? (
+          <div className="db-loading">{t("chart.loading")}</div>
+        ) : view.layout === "table" ? (
+          <TableView
+            type={type}
+            lookOnly={lookOnly}
+            rows={rows}
+            ghosts={data.ghosts ?? []}
+            fields={shown}
+            titles={data.titles}
+            system={view.system ?? []}
+            columns={data.columns ?? {}}
+            onAdd={canAdd ? () => void add() : null}
+            picked={picked}
+            onPick={setPicked}
+            kept={sorted}
+            groupBy={groupBy}
+            view={view}
+            onView={onView}
+            onFilter={(f) => {
+              // Its rule last, its editor open: the one it has (moved last; the rules all apply), or a new one.
+              const rules = view.filter ?? [];
+              const had = rules.find((r) => !isFilterGroup(r) && r.field === f.id);
+              const rule = had ?? { field: f.id, op: opsFor(f)[0] ?? "not_empty" };
+              onView({ ...view, filter: [...rules.filter((r) => r !== had), rule] });
+              setBar((b) => ({ what: "rule", n: b.n + 1 }));
             }}
-          >
-            {t("db.boniFilterKeep")}
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            title={t("db.boniFilterClear")}
-            aria-label={t("db.boniFilterClear")}
-            onClick={clearBoniFilter}
-          >
-            <X size={14} strokeWidth={1.8} />
-          </button>
-        </div>
-      )}
-      {type && (bar.what || view.sort || view.filter?.length) ? (
-        <ViewBar
-          type={type}
-          view={view}
-          onView={onView}
-          focus={bar}
-          onDone={() => setBar((b) => ({ what: null, n: b.n }))}
-        />
-      ) : null}
-      {view.layout === "diagram" && flows ? (
-        // «Flujos»: Boni's map; the flows its filter or its search leaves out are not on it.
-        <FlowMap
-          only={
-            data && (view.filter?.length || q)
-              ? new Set(sorted.flatMap((r) => flowRowTarget(r.id) ?? []))
-              : undefined
-          }
-        />
-      ) : view.layout === "diagram" && type?.id === SYS.data.id ? (
-        // «Mis datos»: every collection, the ones its filter leaves out dimmed (docs/flujos.md §4.7, F6b).
-        <DataDiagram
-          only={
-            data && view.filter?.length
-              ? new Set(sorted.flatMap((r) => dataRowTarget(r.id) ?? []))
-              : undefined
-          }
-        />
-      ) : view.layout === "diagram" && type ? (
-        <DataDiagram root={type.id} />
-      ) : !type || !data ? (
-        <div className="db-loading">{t("chart.loading")}</div>
-      ) : view.layout === "table" ? (
-        <TableView
-          type={type}
-          lookOnly={lookOnly}
-          rows={rows}
-          ghosts={data.ghosts ?? []}
-          fields={shown}
-          titles={data.titles}
-          system={view.system ?? []}
-          columns={data.columns ?? {}}
-          onAdd={canAdd ? () => void add() : null}
-          picked={picked}
-          onPick={setPicked}
-          kept={sorted}
-          groupBy={groupBy}
-          view={view}
-          onView={onView}
-          onFilter={(f) => {
-            // Its rule last, its editor open: the one it has (moved last; the rules all apply), or a new one.
-            const rules = view.filter ?? [];
-            const had = rules.find((r) => !isFilterGroup(r) && r.field === f.id);
-            const rule = had ?? { field: f.id, op: opsFor(f)[0] ?? "not_empty" };
-            onView({ ...view, filter: [...rules.filter((r) => r !== had), rule] });
-            setBar((b) => ({ what: "rule", n: b.n + 1 }));
-          }}
-        />
-      ) : view.layout === "board" ? (
-        <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
-      ) : view.layout === "calendar" ? (
-        <CalendarView
-          span={view.span ?? "month"}
-          onSpan={(span) => onView({ ...view, span })}
-          sources={[
-            { type, rows: [...(data.ghosts ?? []), ...rows], date: view.date },
-            ...also.flatMap((a) => {
-              const at = types?.find((x) => x.id === a);
-              return at ? [{ type: at, rows: allRows[a]?.rows ?? [] }] : [];
-            }),
-          ]}
-          onAdd={add}
-        />
-      ) : (
-        <CardsView
-          type={type}
-          rows={rows}
-          fields={shown.filter((f) => f.id !== titleField?.id)}
-          titles={data.titles}
-          gallery={view.layout === "gallery"}
-        />
-      )}
-      {more > 0 && (
-        <button type="button" className="db-add-row" onClick={() => setLimit((l) => l + 100)}>
-          {t("db.loadMore", { n: more })}
-        </button>
-      )}
-      {/* Over the page's bottom, so nothing above or in the table moves when rows are chosen. */}
-      {type &&
-        view.layout === "table" &&
-        picked.size > 0 &&
-        createPortal(
-          <SelectionInfo type={type} rows={rows} picked={picked} onPick={setPicked} />,
-          document.body,
+          />
+        ) : view.layout === "board" ? (
+          <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
+        ) : view.layout === "calendar" ? (
+          <CalendarView
+            span={view.span ?? "month"}
+            onSpan={(span) => onView({ ...view, span })}
+            sources={[
+              { type, rows: [...(data.ghosts ?? []), ...rows], date: view.date },
+              ...also.flatMap((a) => {
+                const at = types?.find((x) => x.id === a);
+                return at ? [{ type: at, rows: allRows[a]?.rows ?? [] }] : [];
+              }),
+            ]}
+            onAdd={add}
+          />
+        ) : (
+          <CardsView
+            type={type}
+            rows={rows}
+            fields={shown.filter((f) => f.id !== titleField?.id)}
+            titles={data.titles}
+            gallery={view.layout === "gallery"}
+          />
         )}
-    </section>
+        {more > 0 && (
+          <button type="button" className="db-add-row" onClick={() => setLimit((l) => l + 100)}>
+            {t("db.loadMore", { n: more })}
+          </button>
+        )}
+        {/* Over the page's bottom, so nothing above or in the table moves when rows are chosen. */}
+        {type &&
+          view.layout === "table" &&
+          picked.size > 0 &&
+          createPortal(
+            <SelectionInfo type={type} rows={rows} picked={picked} onPick={setPicked} />,
+            document.body,
+          )}
+      </section>
+    </PageControls.Provider>
   );
 }
 
@@ -486,6 +518,7 @@ export function FilterEditor({
   lead?: (i: number) => ReactNode;
 }) {
   const t = useStore((s) => s.t);
+  const controls = useContext(PageControls);
   const put = onChange;
   const fields = type.fields;
   return (
@@ -526,7 +559,26 @@ export function FilterEditor({
                 </option>
               ))}
             </select>
-            {!NO_VALUE.has(r.op) && f && (
+            {!NO_VALUE.has(r.op) && f && controls.length > 0 && (
+              <select
+                className="input"
+                aria-label={t("db.filterFrom")}
+                value={r.from ?? ""}
+                onChange={(e) => {
+                  const { from: _f, value: _v, ...rest } = r;
+                  const from = e.target.value;
+                  put(rules.map((x, j) => (j === i ? (from ? { ...rest, from } : rest) : x)));
+                }}
+              >
+                <option value="">{t("db.filterOwn")}</option>
+                {controls.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {!NO_VALUE.has(r.op) && f && r.from === undefined && (
               <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
             )}
             <button
@@ -669,16 +721,30 @@ function FilterItemsEditor({
 }
 
 /** A filter's item in words: a rule's, or a group's rules joined by «y» or «o». */
-export function itemText(type: DataType, x: FilterItem, t: T): string {
+export function itemText(
+  type: DataType,
+  x: FilterItem,
+  t: T,
+  controls: readonly ControlBlock[] = [],
+): string {
   return isFilterGroup(x)
-    ? x.rules.map((r) => filterText(type, r, t)).join(` ${t(`db.join.${x.join}`)} `)
-    : filterText(type, x, t);
+    ? x.rules.map((r) => filterText(type, r, t, controls)).join(` ${t(`db.join.${x.join}`)} `)
+    : filterText(type, x, t, controls);
 }
 
 /** A filter rule in words: "Categoría es Salud", "Fecha antes de hoy". */
-export function filterText(type: DataType, r: DatabaseFilter, t: T): string {
+export function filterText(
+  type: DataType,
+  r: DatabaseFilter,
+  t: T,
+  controls: readonly ControlBlock[] = [],
+): string {
   const f = type.fields.find((x) => x.id === r.field);
   if (!f) return t("db.gone");
+  // A rule from a control is said by the control's name, «Categoría es «Categoría»».
+  const from = r.from !== undefined ? controls.find((c) => c.id === r.from) : undefined;
+  if (r.from !== undefined)
+    return [f.name, t(`db.ops.${r.op}`), `«${from?.name ?? t("db.gone")}»`].join(" ");
   const value =
     NO_VALUE.has(r.op) || r.value === undefined
       ? ""

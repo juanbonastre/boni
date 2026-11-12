@@ -186,7 +186,7 @@ function tryBlock(r: Rng, id: string, data: CatalogueData): Record<string, unkno
     const opts = optionsOf(s, b, data);
     if (!opts.length) {
       // Nothing to choose from (a collection without a number field): the block counts rows instead.
-      if (s.key === "field") {
+      if (s.key === "field" && kind.settings.some((x) => x.key === "measure")) {
         b.measure = "count";
         continue;
       }

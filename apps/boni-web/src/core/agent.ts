@@ -1,4 +1,5 @@
 import {
+  type ControlBlock,
   type DatabaseFilter,
   emptyPage,
   filterErrors,
@@ -1667,6 +1668,12 @@ function runChanges(v: unknown): RunChange[] | undefined {
     });
 }
 
+/** A control as the server reads it: what it is and holds, not its place on the page. */
+const bare = (c: ControlBlock): ControlBlock => {
+  const { at: _a, ...rest } = c as ControlBlock & { at?: unknown };
+  return rest;
+};
+
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown, max = 200): string | null =>
@@ -2970,14 +2977,24 @@ export class AgentApi {
   storage = async () =>
     parseStorage(await this.call("GET", "storage", undefined, "api/data/audit/"));
   /** A page's data blocks computed from the user's collections: each one's numbers or its problems. */
-  blocks = async (blocks: Omit<DataBlock, "at">[]): Promise<Record<string, BlockResult>> => {
-    const b = await this.call("POST", "", { blocks }, "api/data/blocks");
+  blocks = async (
+    blocks: Omit<DataBlock, "at">[],
+    controls: readonly ControlBlock[] = [],
+  ): Promise<Record<string, BlockResult>> => {
+    // The page's values go with its blocks: the server reads them into the filters (D-59).
+    const b = await this.call(
+      "POST",
+      "",
+      { blocks, ...(controls.length ? { controls: controls.map(bare) } : {}) },
+      "api/data/blocks",
+    );
     return parseBlockResults(b);
   };
   /** The rows a data block counts (or one of its bars or points: `drill`), as its collection's table lists them. */
   blockRows = async (
     block: Omit<DataBlock, "at">,
     drill?: string,
+    controls: readonly ControlBlock[] = [],
   ): Promise<
     | {
         rows: DataRow[];
@@ -2990,7 +3007,11 @@ export class AgentApi {
     const b = await this.call(
       "POST",
       "",
-      { block, ...(drill ? { drill } : {}) },
+      {
+        block,
+        ...(drill ? { drill } : {}),
+        ...(controls.length ? { controls: controls.map(bare) } : {}),
+      },
       "api/data/blocks/rows",
     );
     if (isObj(b) && Array.isArray(b.problems)) return { problems: b.problems };

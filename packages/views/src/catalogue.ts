@@ -1,4 +1,5 @@
 import type { FieldType } from "@boni/entities";
+import { type ControlKind, controlValueOk, refOf, refTo, VALUE_MAX } from "./pageValues.ts";
 
 /**
  * The block catalogue (docs/nucleo.md 8; Juan, 2026-10-24): ONE list of what a page may hold, each kind of block
@@ -37,6 +38,16 @@ export interface CatalogueData {
   pages?: Option[];
   /** The screens a button may open (the server's forms), when known; else Boni's capture. */
   screens?: Option[];
+  /** The page's controls (pageValues.ts): what its data blocks may name in their filters and periods. */
+  controls?: CatalogueControl[];
+}
+/** A control of the page, as the catalogue offers it to the page's other blocks. */
+export interface CatalogueControl {
+  id: string;
+  name: string;
+  kind: ControlKind;
+  collection?: string;
+  field?: string;
 }
 
 export interface Option {
@@ -54,6 +65,7 @@ export type DataOptions =
   | "timeOrGroupFields"
   | "filterFields"
   | "filterValues"
+  | "controlFields"
   | "dateFields"
   | "periods"
   | "pages"
@@ -63,8 +75,12 @@ export interface Setting {
   key: string;
   /** Spanish: the control's label. Short (docs/design-guide.md; wiki §9: no AI-sounding names). */
   label: string;
-  /** `values`: a form's values by field id (a button's data), edited with the form itself. */
-  type: "text" | "choice" | "toggle" | "color" | "values";
+  /**
+   * `values`: a form's values by field id (a button's data), edited with the form itself. `current`: what a control
+   * holds now, changed on the control itself (never in the panel). `pass`: the values a link gives the page it
+   * opens, by that page's control ids.
+   */
+  type: "text" | "choice" | "toggle" | "color" | "values" | "current" | "pass";
   options?: readonly Option[] | DataOptions;
   /** Only shown, and only allowed, when other settings have (or have not) one of these values (all of them). */
   when?: When | readonly When[];
@@ -224,7 +240,7 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
     type: "choice",
     options: "periods",
     section: "data",
-    ai: "month|30d|12m|year|all (only all for a collection without a date field)",
+    ai: "month|30d|12m|year|all (only all for a collection without a date field), or $<id> of a month control of the page",
   },
   {
     key: "date",
@@ -242,7 +258,7 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
     options: "filterFields",
     optional: true,
     section: "filter",
-    ai: "a select field of the collection; all rows when left out",
+    ai: "a select field of the collection (or a relation field an option control of the page is over); all rows when left out",
   },
   {
     key: "filterValue",
@@ -251,8 +267,15 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
     options: "filterValues",
     when: { key: "filterField", not: [undefined, ""] },
     section: "filter",
-    ai: "one of that field's options, by its id as listed in Data",
+    ai: "one of that field's options, by its id as listed in Data, or $<id> of an option control of the page over that field",
   },
+];
+/** A control's kinds (pageValues.ts), as the panel names them. */
+export const CONTROL_KIND_OPTIONS: readonly Option[] = [
+  { value: "option", label: "Opción" },
+  { value: "month", label: "Mes" },
+  { value: "number", label: "Número" },
+  { value: "text", label: "Texto" },
 ];
 export const CATALOGUE: readonly BlockKind[] = [
   {
@@ -295,6 +318,49 @@ export const CATALOGUE: readonly BlockKind[] = [
       period: "12m",
       bg: true,
     },
+  },
+  {
+    type: "control",
+    name: "Control",
+    group: "Cifras y gráficas",
+    w: 3,
+    ai: "one value of the page shown as a control (an option of a field, a month, a number, a text); the page's numbers, bar lists and charts use it as filterValue or period, and its tables in a rule's from, by $<its id>",
+    settings: [
+      { key: "name", label: "Nombre", type: "text", max: 60, section: "data" },
+      {
+        key: "kind",
+        label: "Tipo",
+        type: "choice",
+        options: CONTROL_KIND_OPTIONS,
+        section: "data",
+      },
+      {
+        key: "collection",
+        label: "Colección",
+        type: "choice",
+        options: "collections",
+        when: { key: "kind", is: ["option"] },
+        section: "data",
+      },
+      {
+        key: "field",
+        label: "Campo",
+        type: "choice",
+        options: "controlFields",
+        when: { key: "kind", is: ["option"] },
+        section: "data",
+        ai: "a select or relation field of the collection: its options, or the records it points to, are the control's",
+      },
+      {
+        key: "value",
+        label: "Valor",
+        type: "current",
+        optional: true,
+        section: "data",
+        ai: "what it holds now: an option's id (a record's, for a relation), YYYY-MM, a number or a text; left out, every row",
+      },
+    ],
+    defaults: { name: "Valor", kind: "option" },
   },
   {
     type: "heading",
@@ -394,6 +460,14 @@ export const CATALOGUE: readonly BlockKind[] = [
         options: "pages",
         section: "data",
       },
+      {
+        key: "pass",
+        label: "Con valores",
+        type: "pass",
+        optional: true,
+        section: "data",
+        ai: "values for the controls of the page it opens, by their block ids: a value, or $<id> of a control of this page",
+      },
     ],
     defaults: {},
   },
@@ -471,17 +545,54 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
     case "screens":
       return data.screens ?? [{ value: "capture-expense", label: "Apuntar gasto" }];
     case "periods":
-      return hasDate(fs) ? PERIODS : PERIODS.filter((p) => p.value === "all");
+      return hasDate(fs)
+        ? [...PERIODS, ...controlsFor(data, (c) => c.kind === "month")]
+        : PERIODS.filter((p) => p.value === "all");
     case "filterFields":
-      return byField(fs, ["select", "multiselect"]);
+      // A relation filters only by a control of the page (its records are not in the catalogue's data).
+      return byField(
+        fs.filter(
+          (f) =>
+            f.type !== "relation" ||
+            (data.controls ?? []).some(
+              (c) => c.kind === "option" && c.collection === block.collection && c.field === f.id,
+            ),
+        ),
+        ["select", "multiselect", "relation"],
+      );
+    case "controlFields":
+      return first(byField(fs, ["select", "multiselect", "relation"]), roles.category);
     case "dateFields":
       return first(byField(fs, DATES), roles.date);
     case "filterValues": {
       const f = fs.find((x) => x.id === block.filterField);
-      return (f?.options ?? []).map((o) => ({ value: o.id, label: o.name }));
+      return [
+        ...(f?.options ?? []).map((o) => ({ value: o.id, label: o.name })),
+        ...controlsFor(
+          data,
+          (c) =>
+            c.kind === "option" &&
+            c.collection === block.collection &&
+            c.field === block.filterField,
+        ),
+      ];
     }
   }
 }
+
+/** The page's controls a setting may name, as `$<id>` (pageValues.ts). */
+const controlsFor = (data: CatalogueData, ok: (c: CatalogueControl) => boolean): Option[] =>
+  (data.controls ?? []).filter(ok).map((c) => ({ value: refTo(c.id), label: c.name }));
+
+const isPass = (v: unknown): boolean =>
+  isRecord(v) &&
+  Object.keys(v).length <= 20 &&
+  Object.entries(v).every(
+    ([k, x]) =>
+      /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(k) &&
+      ((typeof x === "string" && x.length <= VALUE_MAX) ||
+        (typeof x === "number" && Number.isFinite(x))),
+  );
 
 /** A problem of one block, for the block itself (in Spanish, by the app) and for an AI that made it. */
 export interface BlockProblem {
@@ -533,6 +644,21 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
       if (!formValuesOk(v)) out.push({ block: id, key: s.key, code: "bad" });
       continue;
     }
+    if (s.type === "current") {
+      if (!controlValueOk(block.kind, v))
+        out.push({ block: id, key: s.key, code: "bad", value: v });
+      else if (data && block.kind === "option") {
+        // A select's value must be one of its options; a relation's record is checked where it is read.
+        const f = fieldsOf(data, block).find((x) => x.id === block.field);
+        if (f && f.type !== "relation" && !(f.options ?? []).some((o) => o.id === v))
+          out.push({ block: id, key: s.key, code: "not-in-data", value: v });
+      }
+      continue;
+    }
+    if (s.type === "pass") {
+      if (!isPass(v)) out.push({ block: id, key: s.key, code: "bad" });
+      continue;
+    }
     if (s.type === "color" || typeof s.options !== "string") {
       if (!optionsOf(s, block, NO_DATA).some((o) => o.value === v))
         out.push({ block: id, key: s.key, code: "bad", value: v });
@@ -545,9 +671,11 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
         : typeof v === "string" && v.startsWith("@")
           ? TIME_GROUPS
           : null;
+    // A control of the page (`$<id>`) may stand for a value (pageValues.ts).
+    const ref = (s.options === "periods" || s.options === "filterValues") && refOf(v) !== null;
     if (
       typeof v !== "string" ||
-      (fixed ? !fixed.some((o) => o.value === v) : !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(v))
+      (!ref && (fixed ? !fixed.some((o) => o.value === v) : !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(v)))
     ) {
       out.push({ block: id, key: s.key, code: "bad", value: v });
       continue;
@@ -579,11 +707,16 @@ export function fitAfter(
       delete b[s.key];
       continue;
     }
+    // What a control holds belongs to its kind and its field: another one empties it (its name does not).
+    if (s.type === "current") {
+      if (changed !== "name" || !controlValueOk(b.kind, b[s.key])) delete b[s.key];
+      continue;
+    }
     if (s.type !== "choice") continue;
     const opts = optionsOf(s, b, data);
     if (opts.some((o) => o.value === b[s.key])) continue;
     // A sum or an average of a collection with no number field cannot be: it counts rows.
-    if (s.key === "field" && !opts[0]) {
+    if (s.key === "field" && !opts[0] && kind.settings.some((x) => x.key === "measure")) {
       b.measure = "count";
       delete b.field;
       continue;
@@ -619,6 +752,8 @@ export function newBlock(
         b.measure = "sum";
         b.field = c.roles.amount;
       }
+      // A control goes over the collection's category (D-20), or its first list.
+      if (type === "control") return fitAfter(b, "collection", data);
     }
   }
   if (type === "link") b.to = data.pages?.[0]?.value;
@@ -644,7 +779,7 @@ export function catalogueForAI(data: CatalogueData): string {
   const values = (s: Setting) => {
     if (s.type === "text") return `text (≤${s.max ?? 200})`;
     if (s.type === "toggle") return "true|false";
-    if (s.type === "values") return s.ai ?? "form values";
+    if (s.type === "values" || s.type === "current" || s.type === "pass") return s.ai ?? s.type;
     if (s.type === "color") return COLORS.join("|");
     if (typeof s.options === "string") return s.ai ?? s.options;
     return (s.options ?? []).map((o) => o.value).join("|");
@@ -672,5 +807,10 @@ export function catalogueForAI(data: CatalogueData): string {
     return `  ${c.id} (${c.name})\n${fields.join("\n")}`;
   });
   const pages = (data.pages ?? []).map((p) => `${p.value}=${p.label}`).join(", ");
-  return `${layout}\n\nBlocks:\n${kinds.join("\n")}\n\nData (collections, their fields and options):\n${collections.join("\n")}\n\nPages (ids a link may open):\n${pages}`;
+  const controls = (data.controls ?? [])
+    .map(
+      (c) => `$${c.id}=${c.name} (${c.kind}${c.field ? ` over ${c.collection}.${c.field}` : ""})`,
+    )
+    .join(", ");
+  return `${layout}\n\nBlocks:\n${kinds.join("\n")}\n\nData (collections, their fields and options):\n${collections.join("\n")}\n\nPages (ids a link may open):\n${pages}${controls ? `\n\nControls of the page:\n${controls}` : ""}`;
 }

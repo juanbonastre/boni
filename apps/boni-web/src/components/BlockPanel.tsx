@@ -1,12 +1,16 @@
 import {
   applies,
   type BlockKind,
+  type ControlBlock,
+  controlsOf,
   fitAfter,
   HEIGHTS,
   kindOf,
   type Option,
   optionsOf,
   type PageBlock,
+  refOf,
+  refTo,
   type Setting,
   WIDTHS,
 } from "@boni/views";
@@ -19,6 +23,7 @@ import { PALETTE } from "../core/palette.ts";
 import { formOf, shortcutValues } from "../core/shortcuts.ts";
 import { catText, type T } from "../i18n.ts";
 import {
+  agentApi,
   closePanel,
   loadDataTypes,
   loadScreen,
@@ -55,8 +60,10 @@ export function BlockPanel({ id }: { id: string }) {
     | undefined;
   const [filterOpen, setFilterOpen] = useState(Boolean(raw?.filterField));
   if (!block || !raw) return <p className="muted panel-body">{t("block.panel.gone")}</p>;
-  const data = catalogueOf(dataTypes, pages);
-  const settings = (kind?.settings ?? []).filter((s) => applies(s, raw));
+  const controls = controlsOf(blocks);
+  const data = catalogueOf(dataTypes, pages, controls);
+  // A control's value is changed on the page, in the control itself.
+  const settings = (kind?.settings ?? []).filter((s) => applies(s, raw) && s.type !== "current");
   const set = (key: string, value: unknown) => {
     const next: Record<string, unknown> = { ...raw };
     if (value === undefined || value === "") delete next[key];
@@ -64,9 +71,19 @@ export function BlockPanel({ id }: { id: string }) {
     const fitted = fitAfter(next, key, data) as unknown as PageBlock;
     setPageBlocks(blocks.map((b) => (b.id === id ? fitted : b)));
   };
-  const control = (s: Setting) => (
-    <SettingControl key={s.key} s={s} block={raw} data={data} set={set} />
-  );
+  const control = (s: Setting) =>
+    s.type === "pass" ? (
+      <PassControl
+        key={s.key}
+        label={catText(t, s.label)}
+        to={String(raw.to ?? "")}
+        value={raw.pass as Record<string, string | number> | undefined}
+        controls={controls}
+        set={(v) => set(s.key, v)}
+      />
+    ) : (
+      <SettingControl key={s.key} s={s} block={raw} data={data} set={set} />
+    );
   const section = (sec: Setting["section"]) => settings.filter((s) => s.section === sec);
   const look = section("look");
   const filter = section("filter");
@@ -255,6 +272,78 @@ function SettingControl({
       empty={s.optional ? "—" : undefined}
       onChange={(v) => set(s.key, v)}
     />
+  );
+}
+
+/**
+ * What a link carries to the page it opens (D-59): for each control of that page, what a control of this page of
+ * the same kind holds, or nothing. A value of its own is the assistant's (`pages.add_block`); it is kept, said as is.
+ */
+function PassControl({
+  label,
+  to,
+  value,
+  controls,
+  set,
+}: {
+  label: string;
+  to: string;
+  value: Record<string, string | number> | undefined;
+  controls: readonly ControlBlock[];
+  set: (v: Record<string, string | number> | undefined) => void;
+}) {
+  const t = useStore((st) => st.t);
+  const [theirs, setTheirs] = useState<ControlBlock[] | null>(null);
+  useEffect(() => {
+    setTheirs(null);
+    if (!to) return;
+    let live = true;
+    agentApi
+      .page(to)
+      .then((p) => live && setTheirs(p ? controlsOf(p.spec.blocks) : []))
+      .catch(() => live && setTheirs([]));
+    return () => {
+      live = false;
+    };
+  }, [to]);
+  if (!to) return null;
+  if (!theirs) return <p className="muted small">{t("chart.loading")}</p>;
+  if (!theirs.length) return null;
+  const put = (id: string, v: string | number | undefined) => {
+    const next = { ...(value ?? {}) };
+    if (v === undefined) delete next[id];
+    else next[id] = v;
+    set(Object.keys(next).length ? next : undefined);
+  };
+  return (
+    <div className="block-panel-values">
+      <h3 className="block-panel-head">{label}</h3>
+      {theirs.map((c) => {
+        const now = value?.[c.id];
+        const own = now !== undefined && refOf(now) === null;
+        const options: Option[] = [
+          ...(own ? [{ value: now, label: String(now) }] : []),
+          ...controls
+            // An option passes only to a control over the same field (its value is one of that field's).
+            .filter(
+              (x) =>
+                x.kind === c.kind &&
+                (c.kind !== "option" || (x.collection === c.collection && x.field === c.field)),
+            )
+            .map((x) => ({ value: refTo(x.id), label: x.name })),
+        ];
+        return (
+          <Choice
+            key={c.id}
+            label={c.name}
+            value={now}
+            options={options}
+            empty="—"
+            onChange={(v) => put(c.id, v)}
+          />
+        );
+      })}
+    </div>
   );
 }
 

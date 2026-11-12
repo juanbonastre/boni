@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
+import { moneyEngine, moneyTypes } from "./money-records.ts";
 
 /** The server's documented answers (`api/examples`): the fake server below answers with them. */
 const DIR = join(import.meta.dirname, "..", "apps", "boni-web", "api", "examples");
@@ -60,6 +61,11 @@ export interface Options {
   agenda?: boolean | "mother";
   /** Who reads and writes each collection (`/api/data/usage`, F6). */
   usage?: unknown;
+  /**
+   * «Movimientos» and «Categorías» shaped like Juan's, a year of them, counted with the real engine and the page's
+   * controls (money-records.ts; D-59).
+   */
+  money?: boolean;
 }
 
 export interface FakePage {
@@ -111,7 +117,7 @@ const engined = new WeakSet<Page>();
 export async function openApp(page: Page, url = "/", opts: Options = {}): Promise<void> {
   const pages = opts.pages === undefined ? [PAGE_FROM_HOME] : opts.pages;
   await page.addInitScript(
-    ({ examples, opts, pages, boni }) => {
+    ({ examples, opts, pages, boni, money }) => {
       const w = window as unknown as Record<string, unknown>;
       const record = (key: string, v: string) => {
         const list = (w[key] as string[] | undefined) ?? [];
@@ -992,6 +998,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 ...(opts.mail ? [correos, archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
+                ...money,
                 myType(),
                 flowsType(),
               ],
@@ -1497,6 +1504,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         (w.__boniEngine as (k: string, b: unknown, t: string) => Promise<unknown>)(kind, b, day());
       const isSys = (x: unknown) =>
         String((x as { collection?: unknown })?.collection ?? "").startsWith("t_sys_");
+      // The movements and their categories (money-records.ts), counted in Node with the page's controls.
+      const moneyIds = new Set((money as { id: string }[]).map((t) => t.id));
+      const isMoney = (x: unknown) =>
+        moneyIds.has(String((x as { collection?: unknown })?.collection ?? ""));
+      const spend = (kind: string, b: unknown) =>
+        (w.__moneyEngine as (k: string, b: unknown, t: string) => Promise<unknown>)(kind, b, day());
       const engine = async (
         method: string,
         path: string,
@@ -1507,9 +1520,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         // «Mis datos» and «Flujos» are made apart (myRows, flowRows), as on the server.
         if (own && method === "GET" && own[1] !== "t_sys_datos" && own[1] !== "t_sys_flujos")
           return [200, JSON.stringify(await call("list", own[1]))];
+        const spent = /^api\/data\/types\/([a-z0-9_]+)\/rows$/.exec(p);
+        if (spent && method === "GET" && moneyIds.has(spent[1] as string))
+          return [200, JSON.stringify(await spend("list", spent[1]))];
         if (p === "api/data/blocks/rows") {
           const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };
           if (isSys(b.block)) return [200, JSON.stringify(await call("rows", b))];
+          if (isMoney(b.block)) return [200, JSON.stringify(await spend("rows", b))];
           const x = b.block ?? {};
           const picked = rows.filter(
             (r) =>
@@ -1529,6 +1546,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         if (p === "api/data/blocks") {
           const list = ((body ?? {}) as { blocks?: unknown[] }).blocks ?? [];
+          if (list.some(isMoney)) return [200, JSON.stringify(await spend("blocks", body))];
           if (!list.some(isSys)) return null;
           const mine = (await call("blocks", { blocks: list.filter(isSys) })) as {
             results: object;
@@ -1637,11 +1655,18 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           : {}),
       };
     },
-    { examples: EXAMPLES, opts, pages, boni: boniTypes(new Date().toISOString().slice(0, 10)) },
+    {
+      examples: EXAMPLES,
+      opts,
+      pages,
+      boni: boniTypes(new Date().toISOString().slice(0, 10)),
+      money: opts.money ? moneyTypes() : [],
+    },
   );
   if (!engined.has(page)) {
     engined.add(page);
     await page.exposeFunction("__boniEngine", boniEngine);
+    await page.exposeFunction("__moneyEngine", moneyEngine);
   }
   await page.goto(url);
 }

@@ -34,7 +34,7 @@ export function serverRegistry(): ToolRegistry {
 export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "POST /api/pages": ["pages.create"],
   // The editor saves the whole page: what «/» adds, a table's view, its name, icon and place.
-  "PUT /api/pages/:id": ["pages.update", "pages.add_block", "pages.set_view"],
+  "PUT /api/pages/:id": ["pages.update", "pages.add_block", "pages.set_view", "pages.set_value"],
   "DELETE /api/pages/:id": ["pages.delete"],
   // Juan's corrections (title, collection, «Enlazar», «Es el mismo») go with it; the acceptance is the agent's.
   "POST /api/agent/proposals/:id/accept": ["inbox.accept", "inbox.correct"],
@@ -100,6 +100,7 @@ export const UNDO_ROUTES: Readonly<Record<string, readonly string[]>> = {
     "pages.create",
     "pages.add_block",
     "pages.set_view",
+    "pages.set_value",
     "pages.update",
     "entities.create",
     "entities.update",
@@ -264,6 +265,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "pages.create": "pages_create",
   "pages.add_block": "pages_add_block",
   "pages.set_view": "pages_set_view",
+  "pages.set_value": "pages_set_value",
   "pages.update": "pages_update",
   "pages.delete": { why: "deleting is Juan's touch: his card, in his app" },
   "calendars.list": "calendars",

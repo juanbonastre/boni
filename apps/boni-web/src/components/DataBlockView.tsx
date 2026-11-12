@@ -1,4 +1,4 @@
-import { type BlockProblem, kindOf } from "@boni/views";
+import { type BlockProblem, type ControlBlock, heldValue, kindOf, refOf } from "@boni/views";
 import { useEffect, useRef, useState } from "react";
 import { ApiError, OfflineError } from "../core/api.ts";
 import type { BlockResult, DataBlock } from "../core/blocks.ts";
@@ -17,32 +17,47 @@ import { BarList, Kpi } from "./Dash.tsx";
 
 type Failure = "offline" | "personal" | null;
 
-/** The page's data blocks' results, by block id. */
-export function useBlockResults(blocks: readonly DataBlock[]): {
+/**
+ * The page's data blocks' results, by block id, computed with what the page's controls hold (D-59). `pending` while
+ * a change is being asked (I-15: the blocks say they are waiting, in their place).
+ */
+export function useBlockResults(
+  blocks: readonly DataBlock[],
+  controls: readonly ControlBlock[] = [],
+): {
   results: Record<string, BlockResult>;
   failure: Failure;
+  pending: boolean;
 } {
   const tick = useStore((s) => s.refreshTick);
   const [results, setResults] = useState<Record<string, BlockResult>>({});
   const [failure, setFailure] = useState<Failure>(null);
-  // Only what changes the numbers asks again (not a width or a colour).
-  const key = JSON.stringify(
+  const [pending, setPending] = useState(false);
+  // Only what changes the numbers asks again (not a width, a colour or a control's name).
+  const key = JSON.stringify([
     blocks.map(({ at: _a, bg: _b, color: _c, shape: _s, ...rest }) => rest),
-  );
+    controls.map(({ name: _n, ...rest }) => ({ ...rest, at: undefined })),
+  ]);
   const asked = useRef(0);
   useEffect(() => {
     if (!blocks.length) return;
     const n = ++asked.current;
+    setPending(true);
     const timer = setTimeout(() => {
       agentApi
-        .blocks(blocks.map(({ at: _a, ...b }) => b))
+        .blocks(
+          blocks.map(({ at: _a, ...b }) => b),
+          controls,
+        )
         .then((r) => {
           if (n !== asked.current) return;
           setResults(r);
           setFailure(null);
+          setPending(false);
         })
         .catch((e) => {
           if (n !== asked.current) return;
+          setPending(false);
           setFailure(
             e instanceof OfflineError
               ? "offline"
@@ -59,7 +74,7 @@ export function useBlockResults(blocks: readonly DataBlock[]): {
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
   }, []);
-  return { results, failure };
+  return { results, failure, pending };
 }
 
 const HEIGHTS = { s: 240, m: 340, l: 440 } as const;
@@ -75,10 +90,13 @@ export function DataBlockView({
   block,
   result,
   failure,
+  controls = [],
 }: {
   block: DataBlock;
   result: BlockResult | undefined;
   failure: Failure;
+  /** The page's controls, for what its period says when it names one. */
+  controls?: readonly ControlBlock[];
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
@@ -110,8 +128,13 @@ export function DataBlockView({
     );
   const data = result?.data ?? null;
   const note = failure ? t(`block.problem.${failure}`) : null;
-  // "All time" starts where the engine's time starts (2000): said in words, not as that range.
-  const sub = block.period === "all" ? catText(t, "Desde siempre") : (data?.subtitle ?? undefined);
+  // "All time" starts where the engine's time starts (2000): said in words, not as that range. So does a month
+  // control holding nothing.
+  const monthRef = refOf(block.period);
+  const all =
+    block.period === "all" ||
+    (monthRef !== null && heldValue(controls.find((c) => c.id === monthRef)) === undefined);
+  const sub = all ? catText(t, "Desde siempre") : (data?.subtitle ?? undefined);
   if (block.type === "number")
     return (
       <Kpi

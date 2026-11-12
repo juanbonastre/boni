@@ -148,6 +148,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "pages_create",
       "pages_add_block",
       "pages_set_view",
+      "pages_set_value",
       "pages_update",
       "rename_collection",
       "move_collection",

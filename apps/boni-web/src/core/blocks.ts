@@ -1,4 +1,4 @@
-import type { BlockProblem, CatalogueData, PageBlock } from "@boni/views";
+import type { BlockProblem, CatalogueControl, CatalogueData, PageBlock } from "@boni/views";
 import type { ChartData } from "./contract.ts";
 
 /**
@@ -52,6 +52,8 @@ export function catalogueOf(
       }[]
     | null,
   pages: readonly { id: string; title: string }[] | null = [],
+  /** The page's controls: what its blocks may name (D-59). */
+  controls: readonly CatalogueControl[] = [],
 ): CatalogueData {
   // The roles the catalogue uses (D-20), when their fields are among the shown.
   const rolesOf = (t: {
@@ -75,6 +77,17 @@ export function catalogueOf(
   };
   return {
     pages: (pages ?? []).map((p) => ({ value: p.id, label: p.title })),
+    ...(controls.length
+      ? {
+          controls: controls.map(({ id, name, kind, collection, field }) => ({
+            id,
+            name,
+            kind,
+            ...(collection ? { collection } : {}),
+            ...(field ? { field } : {}),
+          })),
+        }
+      : {}),
     collections: (types ?? []).map((t) => ({
       id: t.id,
       name: t.name,

@@ -1,3 +1,4 @@
+import { controlsOf } from "@boni/views";
 import { useEffect, useState } from "react";
 import type { DataRow, DataType } from "../core/agent.ts";
 import { isDataBlock } from "../core/blocks.ts";
@@ -31,8 +32,10 @@ export function RowsPanel({ id, drill, label }: { id: string; drill?: string; la
     if (!types) void loadDataTypes();
   }, []);
   // Asked again when what it counts changes (not its look).
+  // The page's values are part of what it counts (D-59).
+  const controls = doc ? controlsOf(doc.spec.blocks) : [];
   const key = data
-    ? JSON.stringify({ ...data, at: undefined, bg: undefined, color: undefined })
+    ? JSON.stringify([{ ...data, at: undefined, bg: undefined, color: undefined }, controls])
     : "";
   useEffect(() => {
     if (!data) return;
@@ -40,7 +43,7 @@ export function RowsPanel({ id, drill, label }: { id: string; drill?: string; la
     setError(null);
     const { at: _a, ...b } = data;
     agentApi
-      .blockRows(b, drill)
+      .blockRows(b, drill, controls)
       .then((r) => {
         if ("problems" in r) setError(t("block.problem.title"));
         else setRows(r);

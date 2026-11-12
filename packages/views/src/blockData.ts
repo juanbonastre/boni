@@ -15,13 +15,14 @@ import {
 } from "./chart.ts";
 import { entityMonths, entityProfile } from "./entities.ts";
 import type { DataBlock } from "./page.ts";
+import { type ControlBlock, heldValue, monthRange, refOf } from "./pageValues.ts";
 
 /**
  * A data block of a page (a number, a bar list or a chart; catalogue.ts) computed from one of the user's
  * collections with the chart engine (chart.ts, entities.ts), so it gives the same numbers as any other chart.
  */
 
-const PERIOD: Record<NonNullable<DataBlock["period"]>, Period> = {
+const PERIOD: Record<"month" | "30d" | "12m" | "year" | "all", Period> = {
   month: { kind: "this_month" },
   "30d": { kind: "last_days", days: 30 },
   "12m": { kind: "last_months", months: 12 },
@@ -30,8 +31,23 @@ const PERIOD: Record<NonNullable<DataBlock["period"]>, Period> = {
 };
 const GRANULARITY = { "@day": "day", "@week": "week", "@month": "month" } as const;
 
-/** The engine's chart for a data block. */
-export function blockChartSpec(b: DataBlock): ChartSpec {
+/**
+ * The engine's chart for a data block, with the page's values where it names its controls (pageValues.ts): a
+ * filter by what an option control holds, a period of a month control's month; an empty control, no filter and
+ * every date.
+ */
+export function blockChartSpec(b: DataBlock, controls: readonly ControlBlock[] = []): ChartSpec {
+  const held = (v: string | undefined) => {
+    const ref = refOf(v);
+    return ref ? heldValue(controls.find((c) => c.id === ref)) : v;
+  };
+  const filterValue = held(b.filterValue);
+  const month = refOf(b.period) ? held(b.period) : undefined;
+  const period: Period = refOf(b.period)
+    ? typeof month === "string"
+      ? { kind: "range", ...monthRange(month) }
+      : PERIOD.all
+    : PERIOD[(b.period ?? "all") as keyof typeof PERIOD];
   const measure =
     !b.measure || b.measure === "count" || !b.field ? "count" : `${b.measure}:${b.field}`;
   const time =
@@ -48,10 +64,10 @@ export function blockChartSpec(b: DataBlock): ChartSpec {
         : time
           ? { field: "date", granularity: time }
           : { field: b.groupBy },
-    period: PERIOD[b.period ?? "all"],
+    period,
     filters:
-      b.filterField && b.filterValue
-        ? [{ field: b.filterField, op: "in", values: [b.filterValue] }]
+      b.filterField && filterValue !== undefined
+        ? [{ field: b.filterField, op: "in", values: [String(filterValue)] }]
         : [],
     compare: "none",
   };
@@ -79,7 +95,10 @@ export function blockDateField(
  * What the catalogue knows of the user's collections, from the store's schema (the user's own types), each with
  * the roles the catalogue uses (its day, its amount, its category; D-20), when their fields are among the shown.
  */
-export function catalogueData(types: readonly TypeDef[]): CatalogueData {
+export function catalogueData(
+  types: readonly TypeDef[],
+  controls: readonly ControlBlock[] = [],
+): CatalogueData {
   const schema = { types: Object.fromEntries(types.map((t) => [t.id, t])) };
   return {
     collections: types
@@ -105,6 +124,17 @@ export function catalogueData(types: readonly TypeDef[]): CatalogueData {
           ...(Object.keys(roles).length ? { roles } : {}),
         };
       }),
+    ...(controls.length
+      ? {
+          controls: controls.map((c) => ({
+            id: c.id,
+            name: c.name,
+            kind: c.kind,
+            ...(c.collection ? { collection: c.collection } : {}),
+            ...(c.field ? { field: c.field } : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -118,9 +148,10 @@ export function computeBlock(
   b: DataBlock,
   types: Readonly<Record<string, TypeDef>>,
   entities: (type: string) => Entity[],
-  o: { today: string; titleOf?: (id: string) => string },
+  o: { today: string; titleOf?: (id: string) => string; controls?: readonly ControlBlock[] },
 ): BlockResult {
-  const problems = catalogueErrors(b, catalogueData(Object.values(types)));
+  const controls = o.controls ?? [];
+  const problems = catalogueErrors(b, catalogueData(Object.values(types), controls));
   if (problems.length) return { problems };
   const def = types[b.collection] as TypeDef;
   const dateField = blockDateField(b, def, types);
@@ -128,7 +159,7 @@ export function computeBlock(
   try {
     const data = computeChart(
       entityProfile(def, { dateField, ...(o.titleOf ? { titleOf: o.titleOf } : {}) }),
-      blockChartSpec(b),
+      blockChartSpec(b, controls),
       rows,
       { today: o.today, monthsWithData: dateField ? entityMonths(rows, dateField) : new Set() },
     );
@@ -149,9 +180,15 @@ export function blockRows(
   b: DataBlock,
   types: Readonly<Record<string, TypeDef>>,
   entities: (type: string) => Entity[],
-  o: { today: string; titleOf?: (id: string) => string; drill?: string | null },
+  o: {
+    today: string;
+    titleOf?: (id: string) => string;
+    drill?: string | null;
+    controls?: readonly ControlBlock[];
+  },
 ): { rows: Entity[] } | { problems: BlockProblem[] } {
-  const problems = catalogueErrors(b, catalogueData(Object.values(types)));
+  const controls = o.controls ?? [];
+  const problems = catalogueErrors(b, catalogueData(Object.values(types), controls));
   if (problems.length) return { problems };
   const def = types[b.collection] as TypeDef;
   const dateField = blockDateField(b, def, types);
@@ -159,7 +196,7 @@ export function blockRows(
   try {
     const rows = chartRecords(
       entityProfile(def, { dateField, ...(o.titleOf ? { titleOf: o.titleOf } : {}) }),
-      blockChartSpec(b),
+      blockChartSpec(b, controls),
       all,
       {
         today: o.today,

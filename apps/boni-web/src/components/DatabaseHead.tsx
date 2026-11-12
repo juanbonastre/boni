@@ -5,11 +5,18 @@
  */
 import { type DatabaseView, type FilterItem, isFilterGroup, type SavedView } from "@boni/views";
 import { ArrowDown, ArrowUp, ListFilter, Plus } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useContext, useState } from "react";
 import type { DataType } from "../core/agent.ts";
 import { useStore } from "../store.ts";
 import { RenameInput } from "./CollectionTree.tsx";
-import { FilterEditor, GroupEditor, itemText, newGroup, opsFor } from "./DatabaseBlock.tsx";
+import {
+  FilterEditor,
+  GroupEditor,
+  itemText,
+  newGroup,
+  opsFor,
+  PageControls,
+} from "./DatabaseBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 /** The layouts a view may take, each with its icon and, where a collection names it its own way («Mapa»), its name. */
@@ -246,6 +253,7 @@ export function ViewBar({
   onDone: () => void;
 }) {
   const t = useStore((s) => s.t);
+  const controls = useContext(PageControls);
   // A filter just added opens its editor, for its value (Notion's).
   const [fresh, setFresh] = useState<number | null>(null);
   const rules = view.filter ?? [];
@@ -339,7 +347,7 @@ export function ViewBar({
             <PopButton
               key={`${isFilterGroup(r) ? "g" : r.field}-${i}${fresh === i ? "-new" : ""}${asked ? `-${focus.n}` : ""}`}
               className="db-chip on"
-              title={itemText(type, r, t)}
+              title={itemText(type, r, t, controls)}
               align="start"
               width={isFilterGroup(r) ? 480 : 420}
               initialOpen={fresh === i || asked}
@@ -350,7 +358,9 @@ export function ViewBar({
               }}
               label={
                 <span>
-                  {isFilterGroup(r) ? t("db.rules", { n: r.rules.length }) : itemText(type, r, t)}
+                  {isFilterGroup(r)
+                    ? t("db.rules", { n: r.rules.length })
+                    : itemText(type, r, t, controls)}
                 </span>
               }
             >
