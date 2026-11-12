@@ -600,7 +600,8 @@ contraseña ni un código aquí» under a question.
 - **Pointing** (F9, task 85; `ScreenPointer.tsx`, `core/pointing.ts`; docs/sistema.md §4.7; I-31): `Ctrl+Shift+E`, or
   «Señalar» in the window's bar (a 28 px icon button beside the model, `--accent` on a 14 % tint while it is on),
   makes the pointer one that marks what the next message is about: a block of a page, a row in any view, a card of
-  the Bandeja.
+  the Bandeja; since the fourth part (A-22, I-33) also a card or a step of the map, a step of a flow's canvas, a
+  paragraph of a note («Párrafo: …»), the chart on its own screen, an open record's header and the sidebar's rows.
   - **A mode, shown twice.** Nielsen Norman Group, «Modes in User Interfaces: When They Help and When They Hurt»:
     the active mode must be clearly indicated, with at least two visual indicators (a highlighted mode control and
     a cursor change). So the pointer is a crosshair over the screen (Apple HIG, «Pointing devices»: the cross says a
@@ -620,6 +621,10 @@ contraseña ni un código aquí» under a question.
     as a contact in a mail's «To», taken off from the chip itself): «Gráfica: Gasto del mes», its kind and its name
     cut to a line, 12.5 px on a 14 % `--accent` tint with a 6 px radius and an 18 px «×». Each thing once, twenty at
     most; they go with the message.
+  - **A sent message keeps its chips** (I-33): over its bubble, aligned with it on the right, at most 80 % of its
+    width, the same chips without their «×» and a little tighter (1 px × 8 px), labelled «Señalado en este mensaje».
+    They come back when the conversation is opened again. What Boni was told is what the server read; the chips are
+    only how Juan sees what he pointed at.
   - **Where Boni departs:** NN/g prefers a mode held with a key (spring-loaded) where it fits. Dragging across rows
     with `Ctrl+Shift` held is a strain, so this one is a toggle that ends by itself as soon as something is taken.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a

@@ -18,11 +18,16 @@ import {
   DONE,
   EXTENSION_PROPOSALS,
   EXTENSIONS,
+  FLOW_CATALOG,
+  FLOW_CHECK,
+  FLOW_DETAIL,
+  FLOWS_WITH_SUMMARY,
   GUIDE,
   LIVE_STEPS,
   LONG_SENDER,
   MAIL,
   MAIL_SUGGESTED,
+  MAP,
   OPEN_CONFIRMED,
   OPEN_REPLY,
   OPEN_THEN_CONFIRM,
@@ -180,7 +185,7 @@ test("Señalar (F9, task 85): Ctrl+Shift+E lights what the pointer is over, a cl
   // (it opens its screen) did nothing: the page is still there.
   await chart.click();
   const win = page.getByRole("dialog", { name: "Boni" });
-  const chips = win.locator(".chat-chip");
+  const chips = win.locator(".chat-pointed:not(.turn-pointed) .chat-chip");
   await expect(chips).toHaveText(["Gráfica: Gasto del mes"]);
   await expect(html).not.toHaveAttribute("data-boni-pointing", "");
   await expect(page.locator("[data-boni-pointed]")).toHaveCount(0);
@@ -281,10 +286,17 @@ test("Señalar (F9, task 85): Ctrl+Shift+E lights what the pointer is over, a cl
   await box.fill("¿y ahora?");
   await box.press("Enter");
   expect((await turnWith(page, "¿y ahora?")).screen.pointed).toBeUndefined();
-  // A click where there is nothing to take leaves the pointer on, and clicks nothing.
+  // The sidebar can be pointed at too (A-22): a collection there is a chip, and it is not opened.
   await page.keyboard.press("Control+Shift+e");
   await page.locator(".sidebar").getByRole("button", { name: "Libros", exact: true }).click();
+  await expect(chips).toHaveText(["Colección: Libros"]);
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  await win.getByRole("button", { name: "Quitar: Colección: Libros" }).click();
+  // A click where there is nothing to take leaves the pointer on, and clicks nothing.
+  await page.keyboard.press("Control+Shift+e");
+  await page.locator(".doc-title").click();
   await expect(html).toHaveAttribute("data-boni-pointing", "");
+  await expect(chips).toHaveCount(0);
   await expect(page.locator(".doc-title")).toHaveValue("Gastos");
   // The conversation's own screen has nothing to point at: `Ctrl+Shift+E` does nothing there.
   await page.keyboard.press("Escape");
@@ -333,7 +345,7 @@ test("Señalar (F9, task 85): the rows a drag crosses in a table and a card of t
   await expect(page.locator("[data-boni-pointed]")).toHaveCount(2);
   await page.mouse.up();
   const win = page.getByRole("dialog", { name: "Boni" });
-  const chips = win.locator(".chat-chip");
+  const chips = win.locator(".chat-pointed:not(.turn-pointed) .chat-chip");
   await expect(chips).toHaveText([titles[0] ?? "", titles[1] ?? ""]);
   expect(titles[0]).toMatch(/^Libros: ./);
   // No row was chosen nor opened by the drag: the table is as it was.
@@ -391,6 +403,124 @@ test("Señalar (F9, task 85): the rows a drag crosses in a table and a card of t
   const next = (await turnWith(page, "¿y la elegida?")).screen;
   expect(next.chosen).toEqual([ids[2]]);
   expect(next.pointed).toBeUndefined();
+});
+
+test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragraph of a note; the sent message keeps its chips, after reopening too; nothing pointed, the open view goes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const pointedTurn = {
+    ...TEXT_REPLY,
+    id: "u_1",
+    request: "¿qué hace esto?",
+    at: 1761900000000,
+    pointed: [
+      { ref: { kind: "flow", id: "leer-correo" }, title: "Flujo: Leer correo" },
+      { ref: { kind: "node", id: "conn:mail" }, title: "Nodo: Correo" },
+    ],
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/map": [MAP],
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "POST api/agent/turn": [TEXT_REPLY],
+      "GET api/agent/conversations": [
+        { conversations: [{ id: "k_1", title: "Lo del mapa", model: "", last: 1761900000000 }] },
+      ],
+      "GET api/agent/conversations/k_1": [
+        {
+          conversation: { id: "k_1", title: "Lo del mapa", model: "", last: 1761900000000 },
+          turns: [pointedTurn],
+        },
+      ],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.getByRole("tab", { name: "Mapa" }).click();
+  const map = page.locator(".mp-stage");
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  await expect(card("Leer correo")).toBeVisible();
+  // A flow of the map, then the mail coming in: each a chip, by the id the map gives it; neither is opened.
+  await page.keyboard.press("Control+Shift+e");
+  await card("Leer correo").click();
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const chips = win.locator(".chat-pointed:not(.turn-pointed) .chat-chip");
+  await expect(chips).toHaveText(["Flujo: Leer correo"]);
+  await page.keyboard.press("Control+Shift+e");
+  await card("Correo").click();
+  await expect(chips).toHaveText(["Flujo: Leer correo", "Nodo: Correo"]);
+  await expect(map).toBeVisible();
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await box.fill("¿qué hace esto?");
+  await box.press("Enter");
+  const sent = await turnWith(page, "¿qué hace esto?");
+  expect(sent.screen.pointed).toEqual([
+    { kind: "flow", id: "leer-correo" },
+    { kind: "node", id: "conn:mail" },
+  ]);
+  // The chips go with the message as it was written (I-33): the bar is clean, the message shows them.
+  expect(sent.chips).toEqual([
+    { ref: { kind: "flow", id: "leer-correo" }, title: "Flujo: Leer correo" },
+    { ref: { kind: "node", id: "conn:mail" }, title: "Nodo: Correo" },
+  ]);
+  await expect(win.locator(".turn-answer")).toHaveCount(1);
+  await expect(chips).toHaveCount(0);
+  const sentChips = win.locator(".turn-pointed .chat-chip");
+  await expect(sentChips).toHaveText(["Flujo: Leer correo", "Nodo: Correo"]);
+  await page.screenshot({ path: `${SHOTS}/boni-pointed-sent.png` });
+  // Opened again from the list, the conversation shows each message with what was pointed at in it.
+  await win.getByRole("button", { name: "Ampliar" }).click();
+  await page.locator(".chat-item-open", { hasText: "Lo del mapa" }).click();
+  await expect(page.locator(".turn-pointed .chat-chip")).toHaveText([
+    "Flujo: Leer correo",
+    "Nodo: Correo",
+  ]);
+  // A paragraph of a note: by its row, its words' key and which of the same it is.
+  await page
+    .locator(".sidebar")
+    .getByRole("list", { name: "Páginas" })
+    .getByRole("button", { name: "Libros", exact: true })
+    .click();
+  await page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true }).click();
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  const para = page.locator('.row-doc [data-boni-title^="Párrafo: Propuesta del correo"]');
+  await expect(para).toHaveCount(1);
+  await page.keyboard.press("Control+Shift+e");
+  await para.click();
+  await expect(chips).toHaveText(["Párrafo: Propuesta del correo: revisar el presupuesto."]);
+  await box.fill("¿y este párrafo?");
+  await box.press("Enter");
+  expect((await turnWith(page, "¿y este párrafo?")).screen.pointed).toEqual([
+    { kind: "part", id: "r1", part: expect.stringMatching(/^[0-9a-f]{8}$/), n: 0 },
+  ]);
+  // Nothing pointed at: the open collection with its view, and the rows on screen, go with the message.
+  await page.keyboard.press("Escape");
+  await page
+    .locator(".sidebar")
+    .getByRole("list", { name: "Páginas" })
+    .getByRole("button", { name: "Libros", exact: true })
+    .click();
+  await expect(page.locator(".db-table tbody tr[data-row]")).toHaveCount(3);
+  await page.keyboard.press("Control+e");
+  await box.fill("¿qué estoy viendo?");
+  await box.press("Enter");
+  const seen = (await turnWith(page, "¿qué estoy viendo?")).screen;
+  expect(seen.pointed).toBeUndefined();
+  // No view chosen: the collection goes by its id, and the server reads its first view with its filters
+  // (apps/server/src/screen.test.ts); a chosen one goes by its id.
+  expect(seen.open).toEqual({ kind: "collection", id: expect.any(String) });
+  expect(seen.visible).toEqual(
+    expect.arrayContaining([
+      { kind: "row", id: "r1" },
+      { kind: "row", id: "r2" },
+    ]),
+  );
 });
 
 test("«ábreme Libros» (F9, task 85): Boni opens it on the screen, lit, once; the conversation goes on in the window", async ({

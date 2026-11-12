@@ -18,6 +18,7 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { WaitLine } from "./components/WaitLine.tsx";
+import { chipTitle, pointAttrs } from "./core/pointing.ts";
 import { host, PHONE_QUERY } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
@@ -473,6 +474,11 @@ function Crumbs({
 function Content() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
+  const chartTitle = useStore((s) =>
+    s.view.kind === "chart"
+      ? (s.chartSpecs.find((c) => c.id === (s.view as { id: string }).id)?.title ?? "")
+      : "",
+  );
   const settings = useStore((s) => s.settings);
   const pages = useStore((s) => s.pages);
   const loadError = useStore((s) => s.loadError);
@@ -511,9 +517,17 @@ function Content() {
     );
   if (view.kind === "audit") return <AuditView filter={view.filter} />;
   if (view.kind === "chart") {
+    // The chart on its own screen can be pointed at (F9): the server says what it counts and its numbers.
     return (
       <div className="content">
-        <ChartCard key={view.id} chartId={view.id} focused className="focus" />
+        <div
+          {...pointAttrs(
+            { kind: "chart", id: view.id },
+            chipTitle(t("point.kind.chart"), chartTitle),
+          )}
+        >
+          <ChartCard key={view.id} chartId={view.id} focused className="focus" />
+        </div>
       </div>
     );
   }

@@ -305,13 +305,15 @@ test("a page of numbers and charts from a collection: each block's panel from th
   await expect(number).toHaveAttribute("data-boni-pointed", "");
   await number.locator(".kpi-value").click();
   const boni = w.getByRole("dialog", { name: "Boni" });
-  await expect(boni.locator(".chat-chip")).toHaveText(["Cifra: Cosas"]);
+  await expect(boni.locator(".chat-pointed:not(.turn-pointed) .chat-chip")).toHaveText([
+    "Cifra: Cosas",
+  ]);
   await expect(panel).toHaveCount(0);
   await expect(boni.getByRole("textbox", { name: "Escribe a Boni…" })).toBeFocused();
   await shot(w, "pointed");
   // The chip off and the window away, for what comes next.
   await boni.getByRole("button", { name: "Quitar: Cifra: Cosas" }).click();
-  await expect(boni.locator(".chat-chip")).toHaveCount(0);
+  await expect(boni.locator(".chat-pointed:not(.turn-pointed) .chat-chip")).toHaveCount(0);
   await w.keyboard.press("Escape");
   await expect(boni).toHaveCount(0);
 });

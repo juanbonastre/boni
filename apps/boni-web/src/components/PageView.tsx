@@ -4,6 +4,7 @@ import {
   kindOf as catalogueKind,
   markdownToBlocks,
   newBlock,
+  partOf,
 } from "@boni/views";
 import { ChevronRight, FileText, GripVertical, Paperclip, Plus, Smile, X } from "lucide-react";
 import {
@@ -923,8 +924,12 @@ function BlockRow({
   const target = drag && drag.over === block.id && drag.id !== block.id ? drag.where : null;
   const clickRows = CLICK_ROWS.has(block.type);
   // A block of a page can be pointed at for Boni (F9, `Ctrl+Shift+E`), by reference: its chip says its kind and
-  // its name. A note's text has no blocks of its own to name (they are made as it is read), and a line says nothing.
+  // its name. A note's text has no blocks of its own to name (they are made as it is read): a paragraph of it is
+  // pointed at by its words' key and which of the identical ones it is (`partOf`), which the server finds again in
+  // the text it keeps. A line says nothing.
   const onPage = useStore((s) => s.page?.id === page.id);
+  const note = page.id.startsWith("row:") ? page.id.slice(4) : null;
+  const part = note && isText(block) ? partOf(blocks, block.id) : null;
   const named = useStore((s) =>
     block.type === "chart"
       ? (s.chartSpecs.find((c) => c.id === block.chart)?.title ?? "")
@@ -935,25 +940,27 @@ function BlockRow({
           : "",
   );
   const pointable =
-    onPage && block.type !== "divider"
-      ? pointAttrs(
-          { kind: "block", page: page.id, block: block.id },
-          chipTitle(
-            name,
-            isDataBlock(block)
-              ? (block.title ?? "")
-              : isText(block)
-                ? block.text
-                : block.type === "action"
-                  ? block.label
-                  : block.type === "link"
-                    ? (block.title ?? "")
-                    : block.type === "file"
-                      ? block.name
-                      : named,
-          ),
-        )
-      : {};
+    note && part && isText(block)
+      ? pointAttrs({ kind: "part", id: note, ...part }, chipTitle(t("point.kind.part"), block.text))
+      : onPage && block.type !== "divider"
+        ? pointAttrs(
+            { kind: "block", page: page.id, block: block.id },
+            chipTitle(
+              name,
+              isDataBlock(block)
+                ? (block.title ?? "")
+                : isText(block)
+                  ? block.text
+                  : block.type === "action"
+                    ? block.label
+                    : block.type === "link"
+                      ? (block.title ?? "")
+                      : block.type === "file"
+                        ? block.name
+                        : named,
+            ),
+          )
+        : {};
   const openAt = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();

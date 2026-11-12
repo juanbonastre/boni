@@ -63,7 +63,14 @@ import { activate, previousVersion, proposals, reject, revert } from "./proposal
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 import { keep as keepForRun, undoable, undoKept } from "./runUndo.ts";
-import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
+import {
+  MAX_POINTED,
+  type PointedRef,
+  pointedRef,
+  type SavedChart,
+  screenOf,
+  screenRefs,
+} from "./screen.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -504,6 +511,16 @@ interface Live {
 const LIVE_MS = 15 * 60_000;
 const LIVE_EVENTS = 500;
 /** A live id a device made: letters, digits and dashes. */
+/** The chips of a message as the app sent them, bounded: each a reference the screen takes and its words. */
+function chipsOf(x: unknown): { ref: PointedRef; title: string }[] {
+  const out: { ref: PointedRef; title: string }[] = [];
+  for (const c of Array.isArray(x) ? x.slice(0, MAX_POINTED) : []) {
+    const ref = c && typeof c === "object" ? pointedRef((c as { ref?: unknown }).ref) : null;
+    const title = c && typeof c === "object" ? (c as { title?: unknown }).title : null;
+    if (ref) out.push({ ref, title: typeof title === "string" ? title.slice(0, 80) : "" });
+  }
+  return out;
+}
 const liveId = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9-]{8,80}$/.test(v) ? v : null);
 
 /** One agent request of an authenticated account (`route` from routes.ts, already allowed here). */
@@ -854,8 +871,11 @@ async function answerAgent(
             mailAccount: host.mailAccountOf?.(who.account) ?? null,
             today: host.today(),
             chart: (id) => host.savedChart?.(who.account, id) ?? null,
+            toolTitle: (tool) => host.toolTitle(tool),
           })
         : null;
+      // What Juan pointed at, as its chips said it, kept with his message for him to see (I-33): never the planner's.
+      const chips = chipsOf(b.chips);
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
       const r = await agent.turn({
@@ -865,6 +885,7 @@ async function answerAgent(
         ...(live ? { live: host.liveStart(who.account, live) } : {}),
         ...(planner ? { planner } : {}),
         ...(screen ? { screen } : {}),
+        ...(chips.length ? { chips } : {}),
       });
       return send(res, 200, after(r));
     }

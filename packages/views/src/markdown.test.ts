@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { blocksToMarkdown, leadingTitle, markdownToBlocks } from "./markdown.ts";
+import {
+  blocksToMarkdown,
+  findPart,
+  leadingTitle,
+  markdownToBlocks,
+  partKey,
+  partOf,
+} from "./markdown.ts";
 import { type PageBlock, pageErrors } from "./page.ts";
 
 /** A data block as the editor puts it on the grid (invented; never a real collection). */
@@ -148,5 +155,33 @@ describe("a file of the user's in a note's text", () => {
       expect(pageErrors({ version: 1, blocks: [bad] })).toEqual([
         "blocks[0]: a file names its row and has a name",
       ]);
+  });
+});
+
+describe("a paragraph of a note pointed at (F9, task 85): found again by its words, not by where it is", () => {
+  const text = "# Ideas\n\nUna idea que vuelve.\n\n- Otra cosa\n\nUna  idea que   vuelve.\n";
+  it("is the hash of its words, the same for the same words however they are spaced", () => {
+    expect(partKey("Una idea que vuelve.")).toMatch(/^[0-9a-f]{8}$/);
+    expect(partKey(" Una  idea que   vuelve. ")).toBe(partKey("Una idea que vuelve."));
+    expect(partKey("Otra cosa")).not.toBe(partKey("Una idea que vuelve."));
+  });
+  it("tells identical ones apart by which of them it is, and finds it after text is written above", () => {
+    const blocks = markdownToBlocks(text);
+    const twins = blocks.filter(
+      (b) => "text" in b && b.text.replace(/\s+/g, " ") === "Una idea que vuelve.",
+    );
+    expect(twins).toHaveLength(2);
+    const second = partOf(blocks, twins[1]?.id ?? "");
+    expect(second).toEqual({ part: partKey("Una idea que vuelve."), n: 1 });
+    const moved = markdownToBlocks(`Algo nuevo arriba.\n\n${text}`);
+    expect(findPart(moved, second?.part ?? "", 1)).toMatch(/^Una\s+idea/);
+    expect(findPart(moved, partKey("Otra cosa"), 0)).toBe("Otra cosa");
+    // One of them deleted: the first that is left.
+    expect(findPart(markdownToBlocks("Una idea que vuelve.\n"), second?.part ?? "", 1)).toBe(
+      "Una idea que vuelve.",
+    );
+    expect(findPart(moved, partKey("No está"), 0)).toBeNull();
+    // A line is no paragraph.
+    expect(partOf(markdownToBlocks("---\n"), "md1")).toBeNull();
   });
 });

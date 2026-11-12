@@ -81,6 +81,7 @@ import {
   stepLayout,
   withTold,
 } from "../core/flowLayout.ts";
+import { chipTitle, mapRef, pointAttrs } from "../core/pointing.ts";
 import {
   mapNodeName,
   moneyText,
@@ -279,11 +280,25 @@ type RFNode =
   | Node<StepData, "step">
   | Node<TrigData, "trig">;
 
-const MapCard = memo(function MapCard({ data }: NodeProps<Node<CardData, "card">>) {
+/** What a card of the map carries to be pointed at (`Ctrl+Shift+E`): what its id stands for, with its chip's words. */
+function mapPoint(t: (k: string) => string, id: string, name: string) {
+  const ref = mapRef(id);
+  if (!ref) return {};
+  const kind =
+    ref.kind === "collection" || ref.kind === "flow" || ref.kind === "step"
+      ? t(`point.kind.${ref.kind}`)
+      : ref.kind === "row"
+        ? t("point.kind.page")
+        : t("point.kind.node");
+  return pointAttrs(ref, chipTitle(kind, name));
+}
+
+const MapCard = memo(function MapCard({ id, data }: NodeProps<Node<CardData, "card">>) {
   const t = useStore((s) => s.t);
   const n = data.node;
   return (
     <div
+      {...mapPoint(t, id, data.name)}
       className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.way ? " way" : ""}${data.centre ? " centre" : ""}${n.kind === "flow" && !n.on ? " off" : ""}`}
       title={data.name}
       style={data.way ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties) : undefined}
@@ -332,20 +347,28 @@ const MapCard = memo(function MapCard({ data }: NodeProps<Node<CardData, "card">
   );
 });
 
-const Frame = memo(function Frame({ data }: NodeProps<Node<FrameData, "frame">>) {
+const Frame = memo(function Frame({ id, data }: NodeProps<Node<FrameData, "frame">>) {
+  const t = useStore((s) => s.t);
   return (
     <div className={`mp-frame ${data.kind}`}>
       <Handle type="target" position={Position.Left} id="l" />
-      {/* An unfolded flow's name chooses it (a press on it is a click, not the start of a pan). */}
-      <span className={`mp-frame-label${data.kind === "flow" ? " nopan" : ""}`}>{data.label}</span>
+      {/* An unfolded flow's name chooses it (a press on it is a click, not the start of a pan); pointed at, the flow. */}
+      <span
+        className={`mp-frame-label${data.kind === "flow" ? " nopan" : ""}`}
+        {...(data.kind === "flow" ? mapPoint(t, id, data.label) : {})}
+      >
+        {data.label}
+      </span>
       <Handle type="source" position={Position.Right} id="r" />
     </div>
   );
 });
 
-const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step">>) {
+const StepCard = memo(function StepCard({ id, data }: NodeProps<Node<StepData, "step">>) {
+  const t = useStore((s) => s.t);
   return (
     <div
+      {...mapPoint(t, id, data.name)}
       className={`mp-step ${data.step.op}${data.dim ? " dim" : ""}${data.run ? ` run-${data.run.state}` : ""}`}
       title={data.desc ? `${data.name} — ${data.desc}` : data.name}
       style={
@@ -394,9 +417,11 @@ function bringsOf(steps: readonly FlowStep[]): string[] {
 }
 
 /** An unfolded flow's first box: what starts it («Llega a Correos») and what it brings, as its editor shows it. */
-const TrigCard = memo(function TrigCard({ data }: NodeProps<Node<TrigData, "trig">>) {
+const TrigCard = memo(function TrigCard({ id, data }: NodeProps<Node<TrigData, "trig">>) {
+  const t = useStore((s) => s.t);
   return (
     <div
+      {...mapPoint(t, id, data.text)}
       className={`mp-step mp-trig${data.dim ? " dim" : ""}${data.way ? " run-ran" : ""}`}
       title={data.text}
       style={data.way ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties) : undefined}

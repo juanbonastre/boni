@@ -11,7 +11,7 @@ import {
   stillCurrent,
   trusted,
 } from "./confirm.ts";
-import { history, recordTurn } from "./conversations.ts";
+import { history, recordTurn, type TurnChip } from "./conversations.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
 import { calibrate, levelsOf, resolve, type Thresholds } from "./decisions.ts";
 import { exposure } from "./exposure.ts";
@@ -112,14 +112,20 @@ appear in this turn, after the user confirms it. When the user asks for somethin
 each morning, a button with a form), one call to flows.save with the flow written whole (its trigger and plan as
 {"lit": {...}} objects, the plan in this same language) and a short text reply saying it waits in the inbox: it is
 only proposed, the user turns it on by accepting it. A flow never runs or saves another flow. "screen", when there is
-one: what Boni's app shows the user as he writes (the page, collection or record open, the inbox's cards in the order
-he sees them, the first at the top, the rows he chose) and, in "pointed", what he pointed at for this message, in his
-order: a row, a card of the inbox, or a block of a page with its kind (number, bars, chart, view, text, button, link,
-page, file), what it counts (collection, measure, field, group, period, filter: use them as the tools' arguments to
-look further) and its numbers (total, or labels and values, one value per label; "partial": rows closed to you are
-left out of them, so they are not the ones he sees: say so). Kind "closed" is something you may not see: say that it
-is closed to you; kind "gone" is no longer there. "This", "the one at the top", "the second one" mean what is there,
-what he pointed at first; use its values as {"ref": "$screen..."} with the path the input shows.
+one: what Boni's app shows the user as he writes (the page, collection or record open, of a collection the view he
+sees with its layout, group, sort and filters, the inbox's cards in the order he sees them, the first at the top, a
+question with what it asks, its options, its flow and the record it is about, the rows he chose, in "visible" what is
+in view, in "focus" what he was on, in "panel" what the right panel shows) and, in "pointed", what he pointed at for
+this message, in his order: a row, a card of the inbox, a paragraph of a note (kind text: its record and its words),
+a collection, a flow (its id for the flows tools, name, trigger, on, collections and steps), a step of a flow (its
+flow and what it does: op, tool, title, collections, args), a node of the map (connector, boni: a piece of Boni such
+as the inbox or the guide's review, actor, devices), or a block of a page with its kind (number, bars, chart, view,
+text, button, link, page, file), what it counts (collection, measure, field, group, period, filter: use them as the
+tools' arguments to look further) and its numbers (total, or labels and values, one value per label; "partial": rows
+closed to you are left out of them, so they are not the ones he sees: say so). Kind "closed" is something you may
+not see: say that it is closed to you; kind "gone" is no longer there. "This", "the one at the top", "the second
+one" mean what is there, what he pointed at first, else what is in view; use its values as {"ref": "$screen..."}
+with the path the input shows.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -418,6 +424,8 @@ interface RunState {
   conversation: string | null;
   /** The turn's record in the conversation (conversations.ts), once it has one. */
   turnRecord?: string | null;
+  /** What the user pointed at for this turn, as its chips said it: written with the turn when it is first kept. */
+  chips?: TurnChip[];
   /** Who is watching it live (the turn's device), and the planner chosen for its conversation. */
   live?: ((e: LiveEvent) => void) | undefined;
   planner?: ModelProvider | undefined;
@@ -874,6 +882,11 @@ export class Agent {
      * as `$screen`; nothing of it is the user's word.
      */
     screen?: Val;
+    /**
+     * What the user pointed at for this message, as its chips said it (I-33): kept with the turn for him to see in
+     * the conversation, never given to the planner (it gets what the server says of each, in `screen`).
+     */
+    chips?: TurnChip[];
   }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
@@ -895,6 +908,7 @@ export class Agent {
     st.live = req.live;
     st.planner = req.planner;
     if (req.screen && !req.flow) st.env.set("screen", req.screen);
+    if (req.chips?.length) st.chips = req.chips.slice(0, 20);
     this.emit(st, { type: "start", run });
     this.active.set(run, st);
     // The turn is kept before it is planned: a device that reloads sees it, running.
@@ -1008,6 +1022,7 @@ export class Agent {
         error,
         at: this.now(),
         ...(st.origin.device ? { device: st.origin.device } : {}),
+        ...(st.chips ? { chips: st.chips } : {}),
       });
     } catch {
       // A conversation that cannot be written (gone) never stops the run.

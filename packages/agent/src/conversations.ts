@@ -29,6 +29,11 @@ export interface HistoryTurn {
   request: string;
   replies: { component: string; data: Record<string, Val> }[];
 }
+/** Something the user pointed at with a message, as its chip said it (a reference and its words; I-33). */
+export interface TurnChip {
+  ref: Record<string, unknown>;
+  title: string;
+}
 /** A turn as a device shows it. */
 export interface TurnView {
   id: string;
@@ -41,6 +46,8 @@ export interface TurnView {
   /** Whether its run changed something still not undone. */
   changed: boolean;
   at: number;
+  /** What the user pointed at with it, as its chips said it. */
+  pointed: TurnChip[];
 }
 
 const json = <T>(s: unknown, fallback: T): T => {
@@ -179,6 +186,7 @@ export function turnViews(
         text(s, "run") !== "" &&
         (store.runUndoable(text(s, "run")) || !!undoable?.(text(s, "run"))),
       at: Number(text(s, "at")) || 0,
+      pointed: json<TurnChip[]>(s.entity.values.f_pointed, []).slice(0, 20),
     };
   });
 }
@@ -201,6 +209,8 @@ export function recordTurn(
     error: string | null;
     at: number;
     device?: string;
+    /** What the user pointed at with it: written when the turn is first kept, never changed after. */
+    chips?: TurnChip[];
   },
 ): string | null {
   const c = conversation(store, t.conversation);
@@ -217,7 +227,19 @@ export function recordTurn(
   let id = t.id;
   store.batch(() => {
     if (id && store.get(id)) store.update(id, writes, meta(t.device));
-    else id = store.create(TURN, { ...writes, f_at: v(String(t.at)) }, meta(t.device)).entity.id;
+    else
+      id = store.create(
+        TURN,
+        {
+          ...writes,
+          f_at: v(String(t.at)),
+          ...(t.chips?.length &&
+          store.schema().types[TURN]?.fields.some((f) => f.id === "f_pointed")
+            ? { f_pointed: v(JSON.stringify(t.chips)) }
+            : {}),
+        },
+        meta(t.device),
+      ).entity.id;
     const conv: Record<string, ReturnType<typeof v>> = { f_last: v(String(t.at)) };
     if (!c.title) conv.f_title = v(titleFrom(t.request));
     store.update(t.conversation, conv, meta(t.device));
