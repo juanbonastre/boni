@@ -1422,9 +1422,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/live\/[^/]+$/, "/live/:id")
             .replace(/\/origin\/[^/]+$/, "/origin/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
-            .replace(/\/flows\/[^/]+\/(enabled|revert|run|test)$/, "/flows/:id/$1")
+            .replace(/\/flows\/[^/]+\/(enabled|revert|run|test|draft)$/, "/flows/:id/$1")
             .replace(/\/mail\/webmail\/[^/]+$/, "/mail/webmail/:id")}`;
           const list = opts.agent?.[key];
+          // A flow's draft kept as the server keeps it (task 80), unless a test says otherwise.
+          if (!list?.length && key === "PUT api/agent/flows/:id/draft")
+            return [200, JSON.stringify({ draft: { ...(body as object), updated: Date.now() } })];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;
           agentCalls[key] = n + 1;

@@ -179,6 +179,12 @@ export const NOT_ACTIONS: Readonly<Record<string, string>> = {
   "POST /api/agent/requests/:id/dismiss": "a flow's question, set aside",
   "POST /api/agent/flows/check": "checks a flow, changes nothing",
   "POST /api/agent/flows/:id/test": "«Probar» a flow (flows.test): it runs dry, changes nothing",
+  // A flow's draft (task 80): what Juan changes in his editor, kept as he changes it; «Guardar» is `flows.save`. No
+  // model writes it (what the user changes, the AI only proposes, D-41), and nothing runs it.
+  "PUT /api/agent/flows/:id/draft":
+    "the flow editor keeps Juan's unsaved changes (its draft): nothing runs it; «Guardar» is flows.save",
+  "DELETE /api/agent/flows/:id/draft":
+    "«Descartar» in the flow editor: Juan's unsaved changes dropped, the flow as it was saved",
   "POST /api/data/files": "a file's bytes from Juan's device: no model has them",
   "POST /api/v1/charts/preview": "computes a chart, changes nothing",
   "POST /api/data/blocks": "computes a page's numbers, changes nothing",

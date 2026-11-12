@@ -12,7 +12,15 @@ export * from "./chartStyle.ts";
 export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
 export { filterErrors, matchesFilters } from "./filter.ts";
-export { blocksToMarkdown, leadingTitle, markdownToBlocks } from "./markdown.ts";
+export {
+  blocksToMarkdown,
+  findPart,
+  leadingTitle,
+  markdownToBlocks,
+  PART_KINDS,
+  partKey,
+  partOf,
+} from "./markdown.ts";
 export * from "./money.ts";
 export {
   BONI_BLOCKS,

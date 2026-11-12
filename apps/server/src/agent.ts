@@ -40,6 +40,7 @@ import {
   flowProposalView,
   flowsView,
   flowView,
+  keepDraft,
   MAIL_FLOW,
   originOf,
   revertFlow,
@@ -63,7 +64,14 @@ import { activate, previousVersion, proposals, reject, revert } from "./proposal
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 import { keep as keepForRun, undoable, undoKept } from "./runUndo.ts";
-import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
+import {
+  MAX_POINTED,
+  type PointedRef,
+  pointedRef,
+  type SavedChart,
+  screenOf,
+  screenRefs,
+} from "./screen.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -504,6 +512,16 @@ interface Live {
 const LIVE_MS = 15 * 60_000;
 const LIVE_EVENTS = 500;
 /** A live id a device made: letters, digits and dashes. */
+/** The chips of a message as the app sent them, bounded: each a reference the screen takes and its words. */
+function chipsOf(x: unknown): { ref: PointedRef; title: string }[] {
+  const out: { ref: PointedRef; title: string }[] = [];
+  for (const c of Array.isArray(x) ? x.slice(0, MAX_POINTED) : []) {
+    const ref = c && typeof c === "object" ? pointedRef((c as { ref?: unknown }).ref) : null;
+    const title = c && typeof c === "object" ? (c as { title?: unknown }).title : null;
+    if (ref) out.push({ ref, title: typeof title === "string" ? title.slice(0, 80) : "" });
+  }
+  return out;
+}
 const liveId = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9-]{8,80}$/.test(v) ? v : null);
 
 /** One agent request of an authenticated account (`route` from routes.ts, already allowed here). */
@@ -663,6 +681,28 @@ async function serveFlows(
         const status = r.error === "not-found" ? 404 : r.error === "conflict" ? 409 : 400;
         return send(res, status, { error: r.error, problems: check.problems });
       }
+      // «Guardar» made the draft a version: there is nothing left to keep (task 80).
+      store.journal.deleteFlowDraft(id);
+      return send(res, 200, detail(id));
+    }
+    // The editor keeps what Juan changes as the flow's draft, as he changes it (docs/flujos.md §6, decision 6): no
+    // version, nothing runs it; the answer is only the draft, so a keystroke costs no drawing of the flow.
+    case "PUT /api/agent/flows/:id/draft": {
+      const b = (await bodyOf(req)) as { base?: unknown; trigger?: unknown; plan?: unknown };
+      const r = keepDraft(
+        store,
+        id,
+        { base: b.base, trigger: b.trigger, plan: b.plan },
+        who.device,
+        Date.now(),
+      );
+      if ("error" in r) return send(res, r.error === "not-found" ? 404 : 400, { error: r.error });
+      return send(res, 200, r);
+    }
+    // «Descartar»: the draft dropped, the flow as its last version.
+    case "DELETE /api/agent/flows/:id/draft": {
+      if (!store.journal.flow(id)) return send(res, 404, { error: "not-found" });
+      store.journal.deleteFlowDraft(id);
       return send(res, 200, detail(id));
     }
     case "PUT /api/agent/flows/:id/enabled": {
@@ -854,8 +894,11 @@ async function answerAgent(
             mailAccount: host.mailAccountOf?.(who.account) ?? null,
             today: host.today(),
             chart: (id) => host.savedChart?.(who.account, id) ?? null,
+            toolTitle: (tool) => host.toolTitle(tool),
           })
         : null;
+      // What Juan pointed at, as its chips said it, kept with his message for him to see (I-33): never the planner's.
+      const chips = chipsOf(b.chips);
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
       const r = await agent.turn({
@@ -865,6 +908,7 @@ async function answerAgent(
         ...(live ? { live: host.liveStart(who.account, live) } : {}),
         ...(planner ? { planner } : {}),
         ...(screen ? { screen } : {}),
+        ...(chips.length ? { chips } : {}),
       });
       return send(res, 200, after(r));
     }

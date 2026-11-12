@@ -79,10 +79,13 @@ import {
 import * as F from "./core/formLogic.ts";
 import {
   addPointed,
+  focusRef,
   MAX_POINTED,
   type Pointed,
   type PointedRef,
+  panelRef,
   pointKey,
+  visibleRefs,
 } from "./core/pointing.ts";
 import { isPending, OfflineQueue, type QueuedAction } from "./core/queue.ts";
 import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
@@ -194,6 +197,8 @@ export interface ChatEntry {
   error: string | null;
   /** The steps it took, as they were seen live (docs/conversacion.md 3.5); kept for the session. */
   steps?: LiveStep[];
+  /** What was pointed at for it: its chips, shown with the message (I-33). */
+  pointed?: Pointed[];
 }
 /**
  * A step of a turn as it runs: what it is (the tool's title, or the kind of step), in Juan's words when the server
@@ -1541,12 +1546,18 @@ export const togglePointing = () => setPointing(!get().pointing);
 export async function sendTurn(text: string) {
   const request = text.trim();
   if (!request || get().chatBusy) return;
-  // What was pointed at goes with this message, once.
-  const pointed = draftOf(get()).pointed.map((p) => p.ref);
+  // What was pointed at goes with this message, once, and stays shown with it.
+  const chips = draftOf(get()).pointed.slice(-MAX_POINTED);
+  const pointed = chips.map((p) => p.ref);
   if (pointed.length) putDraft((d) => ({ ...d, pointed: [] }));
   set({ pointing: false });
   const id = newId();
-  set((s) => ({ chat: [...s.chat, { id, request, result: null, error: null }] }));
+  set((s) => ({
+    chat: [
+      ...s.chat,
+      { id, request, result: null, error: null, ...(chips.length ? { pointed: chips } : {}) },
+    ],
+  }));
   // A new conversation is made with its first message (its title comes from it).
   let conversation = get().conversationId;
   if (!conversation)
@@ -1565,7 +1576,9 @@ export async function sendTurn(text: string) {
       // A server without the list: the device keeps a conversation of its own there, as before.
     }
   const screen = screenNow(pointed);
-  await agentCall(id, (live) => agent.turn(request, conversation ?? CONVERSATION, live, screen));
+  await agentCall(id, (live) =>
+    agent.turn(request, conversation ?? CONVERSATION, live, screen, chips),
+  );
 }
 
 /**
@@ -1585,9 +1598,10 @@ export function inboxOrder(
 }
 
 /**
- * What is on the screen as Juan writes (docs/sistema.md §4.7, F9; task 85), by reference: what is open, the Bandeja's
- * cards when it is open, in its order, the rows chosen in its tables and what he pointed at for this message. The
- * server makes them values.
+ * What is on the screen as Juan writes (docs/sistema.md §4.7, F9; task 85), by reference: what is open (of a
+ * collection, the view it shows), the Bandeja's cards when it is open, in its order, the rows chosen in its tables,
+ * what he pointed at for this message, what is in view, what he was on (the focus) and what the right panel shows.
+ * The server makes them values; what is closed to the models or no longer there it leaves out.
  */
 export function screenNow(pointed: readonly PointedRef[] = []): ScreenRefs {
   const s = get();
@@ -1598,8 +1612,13 @@ export function screenNow(pointed: readonly PointedRef[] = []): ScreenRefs {
       : v.kind === "flows"
         ? (v.flow ?? null)
         : (v.id ?? null);
+  const view = v.kind === "collection" && v.type ? s.activeViews[v.type] : undefined;
+  const dom = typeof document !== "undefined";
+  const visible = dom ? visibleRefs() : [];
+  const focus = dom ? focusRef() : null;
+  const panel = panelRef(s.panel, s.page?.id ?? null);
   return {
-    open: { kind: v.kind, id },
+    open: { kind: v.kind, id, ...(view ? { view } : {}) },
     // The Bandeja's cards when they are on the screen: its panel, or its own screen.
     inbox:
       s.inboxOpen || v.kind === "inbox"
@@ -1611,6 +1630,9 @@ export function screenNow(pointed: readonly PointedRef[] = []): ScreenRefs {
         : [],
     chosen: [...new Set(Object.values(s.chosenRows).flat())].slice(0, 50),
     ...(pointed.length ? { pointed: pointed.slice(-MAX_POINTED) } : {}),
+    ...(visible.length ? { visible } : {}),
+    ...(focus ? { focus } : {}),
+    ...(panel ? { panel } : {}),
   };
 }
 
@@ -1782,6 +1804,7 @@ export async function openConversation(id: string) {
       chat: r.turns.map((x) => ({
         id: x.id,
         request: x.request,
+        ...(x.pointed.length ? { pointed: x.pointed } : {}),
         result: {
           run: x.run,
           status: x.status,
@@ -3627,6 +3650,15 @@ export async function editCell(type: string, id: string, field: string, value: D
     putRow(type, before);
     toast(OWN(type) ? myDataError(e) : get().t("db.saveError"));
   }
+}
+
+/**
+ * A flow's new name from its editor (task 80): the same change as its «Nombre» in «Flujos» (a version with the
+ * same steps), so the list says it at once, its rows here too.
+ */
+export async function renameFlow(id: string, name: string): Promise<void> {
+  const saved = await agent.updateRow(SYS.flows.row + id, { [SYS.flows.title]: name });
+  if (saved) putRow(SYS.flows.id, saved);
 }
 
 /** The file a row holds (a file block names the row): its bytes' hash and its name; null when it is gone. */

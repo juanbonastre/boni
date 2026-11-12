@@ -1694,6 +1694,156 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
   await expect(page.getByRole("menuitemradio", { name: "Función", exact: true })).toHaveCount(0);
 });
 
+const bodies = (page: Page, start: string) =>
+  page.evaluate(
+    (st) =>
+      ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+        b.startsWith(st),
+      ),
+    start,
+  );
+
+test("a flow's name changes from the list and from its editor, which the list shows at once; Boni's keep theirs (task 80)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const renamed = { ...FLOW_SUMMARY, name: "Resumen de la mañana", version: 3 };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_SUMMARY, renamed, FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [{ problems: [], refs: {} }],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const table = page.locator(".db-table");
+  // From the list: a double click on its name, as any row's title.
+  await table.getByRole("button", { name: "Resumen diario", exact: true }).dblclick();
+  await expect(table.getByRole("textbox", { name: "Nombre" })).toBeFocused();
+  await page.keyboard.type("Resumen de hoy", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await bodies(page, "PUT api/data/rows/sys_flow_resumen-diario ")).length)
+    .toBe(1);
+  await expect(table.getByRole("button", { name: "Resumen de hoy", exact: true })).toBeVisible();
+  // From the editor: saved when the name is left, no «Guardar»; the list says it at once.
+  await table.getByText("Resumen de hoy", { exact: true }).click();
+  const name = page.locator(".flow-editor .flow-name");
+  await name.fill("Resumen de la mañana");
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () => (await bodies(page, "PUT api/data/rows/sys_flow_resumen-diario ")).at(-1))
+    .toContain("Resumen de la mañana");
+  await expect(name).toHaveValue("Resumen de la mañana");
+  await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled();
+  await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
+  await expect(
+    table.getByRole("button", { name: "Resumen de la mañana", exact: true }),
+  ).toBeVisible();
+  // Boni's «Leer correo» keeps the name Boni gives it.
+  await table.getByText("Leer correo", { exact: true }).click();
+  await expect(page.locator(".flow-editor .flow-name")).toHaveAttribute("readonly", "");
+});
+
+test("what is changed in a flow is kept as its draft on its own: left and opened again it is there, a flow that is on keeps its version, «Descartar» goes back (task 80)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const on = { ...FLOW_SUMMARY, enabled: true };
+  const schedule = { schedule: { every: "day", at: "08:00" } };
+  const withDraft = {
+    ...on,
+    draft: { base: 1, trigger: schedule, plan: FLOW_SUMMARY.plan, updated: 1761900000000 },
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [
+        {
+          flows: FLOWS_WITH_SUMMARY.flows.map((f) =>
+            f.id === on.id ? { ...f, enabled: true } : f,
+          ),
+        },
+      ],
+      "GET api/agent/flows/:id": [on, withDraft],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [{ problems: [], refs: {} }],
+      "DELETE api/agent/flows/:id/draft": [on],
+    },
+  });
+  await openFlow(page, "Resumen diario");
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const state = page.locator(".flow-editor .flow-draft-state");
+  await expect(state).toHaveCount(0);
+  await canvas.locator(".fl-node.source .fl-name").click();
+  await page
+    .locator(".flow-step-panel .flow-setting", { hasText: "Disparador" })
+    .locator("select")
+    .selectOption("schedule");
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 08:00");
+  // Kept after a pause, said with a word: one request, the draft of the version it started from.
+  await expect(state).toHaveText("Borrador");
+  await expect
+    .poll(async () => (await bodies(page, "PUT api/agent/flows/resumen-diario/draft ")).length)
+    .toBe(1);
+  await expect(state).toHaveText("Borrador");
+  const kept = await bodies(page, "PUT api/agent/flows/resumen-diario/draft ");
+  expect(JSON.parse((kept[0] as string).replace(/^PUT \S+ /, ""))).toMatchObject({
+    base: 1,
+    trigger: schedule,
+  });
+  // Not saved: the flow that is on runs its version; «Ejecutar» is not offered over a draft.
+  expect(await bodies(page, "PUT api/agent/flows/resumen-diario ")).toEqual([]);
+  await expect(page.getByRole("button", { name: "Ejecutar", exact: true })).toHaveCount(0);
+  await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
+  await expect(page.locator(".db-table tbody tr", { hasText: "Resumen diario" })).toContainText(
+    "Encendido",
+  );
+  // Opened again (here, or on another device): the draft, as it was left.
+  await page.locator(".db-table").getByText("Resumen diario", { exact: true }).click();
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 08:00");
+  await expect(state).toHaveText("Borrador");
+  await page.screenshot({ path: `${SHOTS}/flow-draft.png` });
+  // «Descartar»: the saved version again, no draft.
+  await page.getByRole("button", { name: "Descartar", exact: true }).click();
+  await expect(canvas.locator(".fl-node.source")).toContainText("Disparado por el usuario");
+  await expect(state).toHaveCount(0);
+  expect(await bodies(page, "PUT api/agent/flows/resumen-diario/draft ")).toHaveLength(1);
+});
+
+test("a draft that could not be kept says «Sin guardar», stays on the screen and is kept again a moment later (task 80)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const schedule = { schedule: { every: "day", at: "08:00" } };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_SUMMARY],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [{ problems: [], refs: {} }],
+      "PUT api/agent/flows/:id/draft": [
+        { __status: 503, error: "unavailable" },
+        { draft: { base: 1, trigger: schedule, plan: FLOW_SUMMARY.plan, updated: 1761900000000 } },
+      ],
+    },
+  });
+  await openFlow(page, "Resumen diario");
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const state = page.locator(".flow-editor .flow-draft-state");
+  await canvas.locator(".fl-node.source .fl-name").click();
+  await page
+    .locator(".flow-step-panel .flow-setting", { hasText: "Disparador" })
+    .locator("select")
+    .selectOption("schedule");
+  await expect(state).toHaveText("Sin guardar");
+  await expect(state).toHaveClass(/failed/);
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 08:00");
+  // Again two seconds later, by itself.
+  await expect(state).toHaveText("Borrador", { timeout: 6000 });
+  expect(await bodies(page, "PUT api/agent/flows/resumen-diario/draft ")).toHaveLength(2);
+});
+
 test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the month's spending, with its «Avisar»; its trigger is fixed and it is not run by hand; «Probar» says what it would tell; without «Avisar» it is not saved", async ({
   page,
 }) => {

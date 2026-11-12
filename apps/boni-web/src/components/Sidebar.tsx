@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import {
   deletePage,
   duplicatePage,
@@ -248,7 +249,18 @@ export function RecentSection({ open, toggle }: { open: boolean; toggle: () => v
         <ul className="nav-list" aria-label={t("nav.recent")}>
           {items.map(({ r, name, icon }) => (
             <li key={`${r.kind}:${r.id}`}>
-              <div className={`chart-row tree-row${isOpen(r) ? " active" : ""}`}>
+              <div
+                className={`chart-row tree-row${isOpen(r) ? " active" : ""}`}
+                {...pointAttrs(
+                  r.kind === "collection"
+                    ? { kind: "collection", id: r.id }
+                    : { kind: "row", id: r.id },
+                  chipTitle(
+                    t(r.kind === "collection" ? "point.kind.collection" : "point.kind.page"),
+                    name,
+                  ),
+                )}
+              >
                 <span className="page-toggle static">
                   {icon ?? <FileText size={14} strokeWidth={1.8} className="page-icon" />}
                 </span>
@@ -370,6 +382,7 @@ export function PageTree({
                 drag?.over === p.id && drag.id !== p.id ? ` drop-${drag.where}` : ""
               }${drag?.id === p.id ? " dragging" : ""}${menu?.id === p.id ? " menu-open" : ""}`}
               style={{ paddingLeft: depth * 14 }}
+              {...pointAttrs({ kind: "row", id: p.id }, chipTitle(t("point.kind.page"), p.title))}
               draggable={renaming !== p.id}
               onContextMenu={(e) => {
                 if (renaming === p.id) return;

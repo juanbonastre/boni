@@ -724,4 +724,49 @@ describe("flows through Boni's MCP (docs/flujos.md F5)", () => {
       ["a", "removed"],
     ]);
   });
+
+  it("a flow's draft is not what the MCP sees: flows_describe says the saved plan, flows_propose compares with it (task 80)", async () => {
+    const store = host.store(1);
+    const mine = store.journal.saveFlow({
+      id: "borrador-ejemplo",
+      name: "Con borrador",
+      trigger: { manual: true },
+      inputs: [],
+      plan,
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: 1,
+    });
+    const half = { version: 1, steps: [plan.steps[0], { id: "b", op: "call" }] };
+    store.journal.saveFlowDraft({
+      id: mine.id,
+      base: mine.version,
+      trigger: { manual: true },
+      plan: half,
+      device: null,
+      updated: 2,
+    });
+    const d = (await tool("flows_describe")).json as { flows: Record<string, unknown>[] };
+    const seen = d.flows.find((f) => f.id === mine.id);
+    expect(seen?.plan).toEqual(plan);
+    expect(JSON.stringify(d.flows)).not.toContain('"draft"');
+    const same = (await tool("flows_propose", {
+      flow: mine.id,
+      name: "Con borrador",
+      trigger: mine.trigger,
+      plan,
+    })) as { json: { proposal: string } };
+    const p = store.journal.proposal(same.json.proposal) as NonNullable<
+      ReturnType<typeof store.journal.proposal>
+    >;
+    expect(
+      flowProposalView(
+        store,
+        p,
+        () => null,
+        () => null,
+      )?.nodes.map((n) => n.change),
+    ).toEqual(["same", "same"]);
+  });
 });

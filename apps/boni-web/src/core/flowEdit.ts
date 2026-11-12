@@ -397,3 +397,18 @@ export function exprText(v: unknown, depth = 0): string {
   }
   return "";
 }
+
+// ------------------------------------------------------------------ the draft (task 80)
+
+/** How long the editor waits after a change before keeping the draft (one request per pause, not per keystroke). */
+export const DRAFT_PAUSE_MS = 800;
+/** After a failed keep, when it tries again: twice as long each time, up to a minute. */
+export const draftRetryMs = (failures: number) => Math.min(60_000, 2_000 * 2 ** failures);
+/** The word next to «Guardar» (I-15): the draft being kept, kept, or not kept; none without a draft. */
+export function draftState(
+  dirty: boolean,
+  keeping: "idle" | "saving" | "failed",
+): "saving" | "failed" | "draft" | null {
+  if (keeping !== "idle") return keeping;
+  return dirty ? "draft" : null;
+}

@@ -29,6 +29,8 @@ let base: string;
 let pub: string;
 let offBase: string;
 const plans: unknown[] = [];
+/** What the planner was asked, turn by turn. */
+const asked: unknown[] = [];
 
 async function listen(s: Server): Promise<string> {
   servers.push(s);
@@ -55,11 +57,14 @@ beforeAll(async () => {
   addUser(db, "juan", PASSWORD);
   addUser(db, "otra", PASSWORD);
   const planner = fakePlanner([]);
-  planner.complete = async () => ({
-    json: plans.shift(),
-    usage: { input: 1, output: 1 },
-    model: "fake",
-  });
+  planner.complete = async (req) => {
+    asked.push(req);
+    return {
+      json: plans.shift(),
+      usage: { input: 1, output: 1 },
+      model: "fake",
+    };
+  };
   host = new AgentHost({ dataDir: dir, providers: { planner, reader: planner } });
   const opts = {
     db,
@@ -399,6 +404,91 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     ],
   };
 
+  it("a sent message keeps its chips: the conversation shows them after a reload, and the planner never gets their words (I-33)", async () => {
+    const token = await login(base, "juan");
+    const made = (await (await post(base, token, "/api/agent/conversations")).json()) as {
+      conversation: { id: string };
+    };
+    const id = made.conversation.id;
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    host
+      .store(1)
+      .create(
+        "t_tarea",
+        { f_titulo: { value: "Regar las plantas", label: own } },
+        { actor: "user" },
+        "e_regar",
+      );
+    plans.length = 0;
+    plans.push({
+      version: 1,
+      steps: [
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("{a} · {b}"),
+            a: { ref: "$screen.pointed[0].title" },
+            b: { ref: "$screen.open.view.layout" },
+          },
+        },
+      ],
+    });
+    asked.length = 0;
+    const chips = [
+      { ref: { kind: "row", id: "e_regar" }, title: "Fila · Lo que la app pinta" },
+      { ref: { kind: "node", id: "conn:mail" }, title: "Nodo · Correo" },
+    ];
+    const r = await post(base, token, "/api/agent/turn", {
+      text: "¿qué es esto?",
+      conversation: id,
+      screen: {
+        open: { kind: "collection", id: "t_tarea" },
+        inbox: [],
+        chosen: [],
+        pointed: chips.map((c) => c.ref),
+        visible: [{ kind: "row", id: "e_regar" }],
+        focus: { kind: "row", id: "e_regar" },
+        panel: { kind: "screen" },
+      },
+      chips,
+    });
+    expect(r.status).toBe(200);
+    const said = JSON.stringify(await r.json());
+    // The row's title and the open collection's view, as the store has them.
+    expect(said).toContain('"value":"Regar las plantas"');
+    expect(said).toContain('"value":"table"');
+    const sent = JSON.stringify(asked);
+    expect(sent).not.toContain("Lo que la app pinta");
+    expect(sent).not.toContain("Nodo · Correo");
+    const shown = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      turns: { request: string; pointed: unknown[] }[];
+    };
+    expect(shown.turns[0]?.pointed).toEqual(chips);
+    // Chips that are not references are left out; the turn still runs.
+    plans.push({
+      version: 1,
+      steps: [{ id: "r", op: "reply", component: "text", data: { template: lit("ok") } }],
+    });
+    const odd = await post(base, token, "/api/agent/turn", {
+      text: "¿y esto?",
+      conversation: id,
+      chips: [
+        { ref: { kind: "otra" }, title: "x" },
+        "e_regar",
+        { ref: { kind: "row", id: "e_regar" } },
+      ],
+    });
+    expect(odd.status).toBe(200);
+    const again = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      turns: { request: string; pointed: unknown[] }[];
+    };
+    expect(again.turns.find((t) => t.request === "¿y esto?")?.pointed).toEqual([
+      { ref: { kind: "row", id: "e_regar" }, title: "" },
+    ]);
+  });
+
   it("are listed, kept turn by turn with a title, watched live, renamed and sent to the trash", async () => {
     const token = await login(base, "juan");
     const made = (await (await post(base, token, "/api/agent/conversations")).json()) as {
@@ -718,5 +808,71 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
     expect(
       flowCatalog(host.tools, host.store(1), ["tasks"]).collections.every((c) => !("id" in c)),
     ).toBe(true);
+  });
+
+  it("keep a flow's draft apart: it never runs, a shared device cannot write it, «Guardar» and «Descartar» end it (task 80)", async () => {
+    const token = await login(base, "juan");
+    const made = (await (
+      await call(token, "POST", "/api/agent/flows", { name: "Borrador de prueba" })
+    ).json()) as { id: string };
+    const trigger = { manual: true, inputs: [{ name: "titulo" }] };
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}`, { base: 1, trigger, plan: tally }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}/enabled`, { enabled: true })).status,
+    ).toBe(200);
+    // A change that is incomplete, kept as the draft of the version it started from.
+    const half = { version: 1, steps: [...tally.steps, { id: "x", op: "call" }] };
+    const keep = (body: unknown) => call(token, "PUT", `/api/agent/flows/${made.id}/draft`, body);
+    const kept = await keep({ base: 2, trigger, plan: half });
+    expect(kept.status).toBe(200);
+    expect(await kept.json()).toMatchObject({ draft: { base: 2, plan: half } });
+    expect((await keep({ base: 9, trigger, plan: half })).status).toBe(400);
+    expect(
+      (await call(token, "PUT", "/api/agent/flows/nadie/draft", { base: 1, trigger, plan: half }))
+        .status,
+    ).toBe(404);
+    // Read back with the flow, which is still its saved version and on.
+    const detail = (await (
+      await call(token, "GET", `/api/agent/flows/${made.id}?days=7`)
+    ).json()) as Record<string, unknown>;
+    expect(detail).toMatchObject({
+      version: 2,
+      enabled: true,
+      draft: { base: 2, plan: half },
+      renamable: true,
+    });
+    // It runs the saved version: the draft's incomplete step would fail.
+    const ran = (await (
+      await call(token, "POST", `/api/agent/flows/${made.id}/run`, {
+        inputs: { titulo: "Tienes {a}" },
+      })
+    ).json()) as { status: string };
+    expect(ran.status).toBe("done");
+    // A shared device cannot write or drop it.
+    const s = sessionUser(db, token);
+    const trust = (t: string) =>
+      db.prepare("UPDATE devices SET trust = ? WHERE name = ?").run(t, s?.device ?? "");
+    trust("shared");
+    expect((await keep({ base: 2, trigger, plan: tally })).status).toBe(403);
+    expect((await call(token, "DELETE", `/api/agent/flows/${made.id}/draft`)).status).toBe(403);
+    trust("personal");
+    // «Descartar»: the flow as it was saved, no draft.
+    const dropped = await call(token, "DELETE", `/api/agent/flows/${made.id}/draft`);
+    expect(dropped.status).toBe(200);
+    expect(await dropped.json()).toMatchObject({ version: 2, draft: null, plan: tally });
+    // «Guardar» makes the draft a version and ends it.
+    const done = {
+      version: 1,
+      steps: [tally.steps[0], { ...tally.steps[1], data: { template: { lit: "Hay" } } }],
+    };
+    expect((await keep({ base: 2, trigger, plan: done })).status).toBe(200);
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}`, { base: 2, trigger, plan: done }))
+        .status,
+    ).toBe(200);
+    expect(host.store(1).journal.flowDraft(made.id)).toBeNull();
   });
 });

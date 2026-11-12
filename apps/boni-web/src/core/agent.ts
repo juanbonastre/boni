@@ -22,7 +22,7 @@ import {
 } from "./audit.ts";
 import { type BlockResult, type DataBlock, parseBlockResults } from "./blocks.ts";
 import type { MapEdgeKind, MapEdgeLike, MapKind, MapNodeLike } from "./flowLayout.ts";
-import type { PointedRef } from "./pointing.ts";
+import { type Pointed, type PointedRef, readRef } from "./pointing.ts";
 import { tracked } from "./wait.ts";
 
 /**
@@ -89,6 +89,15 @@ export interface TurnView extends TurnResult {
   id: string;
   request: string;
   at: number;
+  /** What was pointed at for it, as its chips said (I-33): shown with the message, never given to the planner. */
+  pointed: Pointed[];
+}
+/** A sent message's chips as the server kept them: only references, each with its words cut to a chip's. */
+export function parsePointed(x: unknown): Pointed[] {
+  return (Array.isArray(x) ? x.slice(0, 20) : []).filter(isObj).flatMap((c) => {
+    const ref = readRef(JSON.stringify(c.ref ?? null));
+    return ref ? [{ ref, title: typeof c.title === "string" ? c.title.slice(0, 80) : "" }] : [];
+  });
 }
 /** What a turn does while it runs (docs/conversacion.md 3.5), as the server tells it. */
 export type LiveEvent =
@@ -990,6 +999,21 @@ export interface FlowDetailView extends FlowSummary {
   /** The key of the collection the mail's connector brings records to (a trigger on it «viene del conector Correo»),
    * or null; servers before 0.8.114 say none. */
   mailKey?: string | null;
+  /** What the editor changed and has not saved as a version (task 80), or null; servers before it say none. */
+  draft: FlowDraftView | null;
+  /** Whether its name may change (Boni's own keep theirs); servers before task 80 say nothing: as the list did. */
+  renamable: boolean;
+}
+/** A flow's draft (docs/flujos.md §6, decision 6): the version it started from, its trigger and plan. */
+export interface FlowDraftView {
+  base: number;
+  trigger: Record<string, unknown>;
+  plan: FlowPlan;
+  updated: number;
+}
+export function parseFlowDraft(v: unknown): FlowDraftView | null {
+  if (!isObj(v) || typeof v.base !== "number" || !isObj(v.trigger)) return null;
+  return { base: v.base, trigger: v.trigger, plan: planOf(v.plan), updated: numOf(v.updated) };
 }
 /** A flow's plan as the editor holds it (docs/flujos.md: the plan language, `packages/agent` plan.ts). */
 export interface FlowPlan {
@@ -1402,6 +1426,11 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
     plan: planOf(b.plan),
     preset: typeof b.preset === "number" ? b.preset : null,
     mailKey: strOf(b.mailKey, 80),
+    draft: parseFlowDraft(b.draft),
+    renamable:
+      typeof b.renamable === "boolean"
+        ? b.renamable
+        : typeof b.preset !== "number" && s.by !== "preset",
   };
 }
 
@@ -1516,11 +1545,18 @@ const parseDecisions = (b: unknown): DecisionsView => ({
  * from what the store holds, through the models' view.
  */
 export interface ScreenRefs {
-  open: { kind: string; id: string | null } | null;
+  /** What is open, and of a collection, the view (its tab) it shows. */
+  open: { kind: string; id: string | null; view?: string } | null;
   inbox: { kind: "proposal" | "question"; id: string }[];
   chosen: string[];
-  /** What Juan pointed at for this message (`Ctrl+Shift+E`): blocks of a page, rows, cards. */
+  /** What Juan pointed at for this message (`Ctrl+Shift+E`): blocks, rows, cards, paragraphs, nodes, steps. */
   pointed?: PointedRef[];
+  /** What is in view without pointing: blocks, rows and paragraphs from the top, at most `MAX_VISIBLE`. */
+  visible?: PointedRef[];
+  /** What had the focus before he wrote. */
+  focus?: PointedRef;
+  /** What the right panel shows: its kind, and what of his it is about. */
+  panel?: { kind: string; ref?: PointedRef };
 }
 
 /** The areas of `GET /api/agent/decisions` (and of the PUT that turns a switch). */
@@ -2484,13 +2520,20 @@ export class AgentApi {
 
   /** `live`: an id the device makes to watch the turn while it runs (`live()`); `screen`: what is on the screen, by
    * reference (F9; servers before 0.8.114 ignore it). */
-  turn = async (text: string, conversation?: string, live?: string, screen?: ScreenRefs) =>
+  turn = async (
+    text: string,
+    conversation?: string,
+    live?: string,
+    screen?: ScreenRefs,
+    chips?: readonly Pointed[],
+  ) =>
     parseTurn(
       await this.call("POST", "turn", {
         text,
         ...(conversation ? { conversation } : {}),
         ...(live ? { live } : {}),
         ...(screen ? { screen } : {}),
+        ...(chips?.length ? { chips } : {}),
       }),
     );
   answer = async (
@@ -2532,6 +2575,7 @@ export class AgentApi {
         id,
         request: typeof t.request === "string" ? t.request.slice(0, 8000) : "",
         at: typeof t.at === "number" ? t.at : 0,
+        pointed: parsePointed(t.pointed),
       });
     }
     return { conversation: c, turns };
@@ -2680,11 +2724,19 @@ export class AgentApi {
     id: string,
     body: {
       base: number;
-      name: string;
+      name?: string;
       trigger: unknown;
       plan: FlowPlan;
     },
   ) => parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}`, body));
+  /** Keeps the editor's changes as the flow's draft (task 80): the draft as the server keeps it (null: none). */
+  keepFlowDraft = async (id: string, body: { base: number; trigger: unknown; plan: FlowPlan }) => {
+    const r = await this.call("PUT", `flows/${encodeURIComponent(id)}/draft`, body);
+    return parseFlowDraft(isObj(r) ? r.draft : null);
+  };
+  /** «Descartar»: the draft dropped; the flow as it was saved. */
+  discardFlowDraft = async (id: string) =>
+    parseFlowDetail(await this.call("DELETE", `flows/${encodeURIComponent(id)}/draft`));
   setFlowEnabled = async (id: string, enabled: boolean) =>
     parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}/enabled`, { enabled }));
   revertFlow = async (id: string, to: { version: number } | { preset: true }) =>

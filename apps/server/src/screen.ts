@@ -11,6 +11,7 @@ import {
   deepLabel,
   entityVal,
   fieldName,
+  flowLabel,
   leaf,
   list,
   pendingVal,
@@ -19,8 +20,20 @@ import {
   typeName,
   type Val,
 } from "@boni/agent";
-import { ancestors, branch, type FieldDef, join, type Label, type TypeDef } from "@boni/entities";
-import type { StoredEntity, UserStore } from "@boni/store";
+import {
+  ancestors,
+  branch,
+  type FieldDef,
+  INTEGRITY_ORDER,
+  type Integrity,
+  join,
+  type Label,
+  label,
+  SENSITIVITY_ORDER,
+  type Sensitivity,
+  type TypeDef,
+} from "@boni/entities";
+import { BODY, type StoredEntity, type UserStore } from "@boni/store";
 import {
   blockDateField,
   type ChartData,
@@ -28,8 +41,12 @@ import {
   computeBlock,
   type DataBlock,
   type DatabaseView,
+  findPart,
+  markdownToBlocks,
   type PageBlock,
 } from "@boni/views";
+import { rowUiOf } from "./data.ts";
+import { collectionKeysOf, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
 import type { MoneyReads } from "./money/book.ts";
 import { pendingFacts } from "./origin.ts";
 import { getPage } from "./pages.ts";
@@ -43,6 +60,15 @@ export const MAX_POINTED = 20;
 const MAX_POINTS = 60;
 /** The most of a text block given (a page's paragraph; the rest is read with the page). */
 const MAX_TEXT = 2000;
+/** The most things on the screen given without pointing (blocks, rows, paragraphs in view). */
+export const MAX_VISIBLE = 30;
+/** The most steps of a flow, and lines of a step's arguments, given with it. */
+const MAX_STEPS = 40;
+const MAX_ARGS = 8;
+/** What may be open in the right panel (the app's `Panel`). */
+const PANELS = new Set(["screen", "edit", "shortcut", "block", "rows", "row"]);
+/** A node of the map that is none of the account's records: a connector, a piece of Boni, someone, the devices. */
+const MAP_NODE = /^(conn|boni|actor|dev)(:[A-Za-z0-9_.-]{1,60}){0,2}$/;
 /** What may be open (the app's views). */
 const KINDS = new Set([
   "home",
@@ -59,21 +85,35 @@ const KINDS = new Set([
   "chart",
 ]);
 
-/** Something pointed at, by reference: a block of a page, a row, a card of the Bandeja. */
+/**
+ * Something on the screen, by reference: a block of a page, a row (a record, a page), a card of the Bandeja, a
+ * paragraph of a note's text (`part`: its words' key and which of them, `@boni/views` partKey), a collection, a flow,
+ * a step of a flow, a chart on its own screen, or another node of the map (a connector, a piece of Boni).
+ */
 export type PointedRef =
   | { kind: "block"; page: string; block: string }
   | { kind: "row"; id: string }
-  | { kind: "proposal" | "question"; id: string };
+  | { kind: "proposal" | "question"; id: string }
+  | { kind: "part"; id: string; part: string; n: number }
+  | { kind: "collection" | "flow" | "chart" | "node"; id: string }
+  | { kind: "step"; flow: string; step: string };
 
 /** The app's references to what is on its screen. */
 export interface ScreenRefs {
-  open: { kind: string; id: string | null } | null;
+  /** What is open, and of a collection, the view (its tab) it shows. */
+  open: { kind: string; id: string | null; view?: string } | null;
   /** The Bandeja's cards in the order it shows them: a proposal or a question, by id. */
   inbox: { kind: "proposal" | "question"; id: string }[];
   /** Rows Juan chose (a table's selection), by id. */
   chosen: string[];
   /** What he pointed at for this message (`Ctrl+Shift+E`), in the order he did. */
   pointed?: PointedRef[];
+  /** What is in view without pointing: blocks, rows and paragraphs, from the top. */
+  visible?: PointedRef[];
+  /** What had the focus before he wrote (a block, a row, a paragraph). */
+  focus?: PointedRef;
+  /** What is open in the right panel: its kind, and what it shows when it is something of his. */
+  panel?: { kind: string; ref?: PointedRef };
 }
 
 /** A saved chart of the first pages (the v1 API's): its spec, and its numbers over the money a source gives. */
@@ -89,27 +129,59 @@ const id80 = (x: unknown): string | null =>
 const isObj = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === "object" && !Array.isArray(x);
 
-function pointedRef(x: unknown): PointedRef | null {
+export function pointedRef(x: unknown): PointedRef | null {
   if (!isObj(x)) return null;
   if (x.kind === "block") {
     const page = id80(x.page);
     const block = id80(x.block);
     return page && block ? { kind: "block", page, block } : null;
   }
-  if (x.kind === "row" || x.kind === "proposal" || x.kind === "question") {
+  if (x.kind === "step") {
+    const flow = id80(x.flow);
+    const step = id80(x.step);
+    return flow && step ? { kind: "step", flow, step } : null;
+  }
+  if (x.kind === "part") {
     const id = id80(x.id);
-    return id ? { kind: x.kind, id } : null;
+    const part = typeof x.part === "string" && /^[0-9a-f]{8}$/.test(x.part) ? x.part : null;
+    const n =
+      typeof x.n === "number" && Number.isInteger(x.n) && x.n >= 0 && x.n < 1000 ? x.n : null;
+    return id && part && n !== null ? { kind: "part", id, part, n } : null;
+  }
+  if (
+    x.kind === "row" ||
+    x.kind === "proposal" ||
+    x.kind === "question" ||
+    x.kind === "collection" ||
+    x.kind === "flow" ||
+    x.kind === "chart" ||
+    x.kind === "node"
+  ) {
+    const id = id80(x.id);
+    if (!id || (x.kind === "node" && !MAP_NODE.test(id))) return null;
+    return { kind: x.kind, id };
   }
   return null;
+}
+/** A list of references as the app sent them, at most `max`; null when one is not a reference. */
+function refsOf(x: unknown, max: number): PointedRef[] | null {
+  const out: PointedRef[] = [];
+  for (const r of Array.isArray(x) ? x.slice(0, max) : []) {
+    const ref = pointedRef(r);
+    if (!ref) return null;
+    out.push(ref);
+  }
+  return out;
 }
 
 /** The references as the app sent them, bounded; null when they are not references. */
 export function screenRefs(b: unknown): ScreenRefs | null {
   if (!isObj(b)) return null;
   const o = b.open;
+  const view = isObj(o) ? id80(o.view) : null;
   const open =
     isObj(o) && typeof o.kind === "string" && KINDS.has(o.kind)
-      ? { kind: o.kind, id: id80(o.id) }
+      ? { kind: o.kind, id: id80(o.id), ...(view ? { view } : {}) }
       : null;
   if (o !== undefined && o !== null && !open) return null;
   const inbox: ScreenRefs["inbox"] = [];
@@ -124,13 +196,30 @@ export function screenRefs(b: unknown): ScreenRefs | null {
     if (!id) return null;
     chosen.push(id);
   }
-  const pointed: PointedRef[] = [];
-  for (const x of Array.isArray(b.pointed) ? b.pointed.slice(0, MAX_POINTED) : []) {
-    const ref = pointedRef(x);
-    if (!ref) return null;
-    pointed.push(ref);
-  }
-  return { open, inbox, chosen, ...(pointed.length ? { pointed } : {}) };
+  const pointed = refsOf(b.pointed, MAX_POINTED);
+  const visible = refsOf(b.visible, MAX_VISIBLE);
+  if (!pointed || !visible) return null;
+  const focus = b.focus === undefined || b.focus === null ? null : pointedRef(b.focus);
+  if (b.focus !== undefined && b.focus !== null && !focus) return null;
+  const p = b.panel;
+  const panelRef = isObj(p) && p.ref !== undefined ? pointedRef(p.ref) : null;
+  const panel =
+    isObj(p) &&
+    typeof p.kind === "string" &&
+    PANELS.has(p.kind) &&
+    (p.ref === undefined || panelRef)
+      ? { kind: p.kind, ...(panelRef ? { ref: panelRef } : {}) }
+      : null;
+  if (p !== undefined && p !== null && !panel) return null;
+  return {
+    open,
+    inbox,
+    chosen,
+    ...(pointed.length ? { pointed } : {}),
+    ...(visible.length ? { visible } : {}),
+    ...(focus ? { focus } : {}),
+    ...(panel ? { panel } : {}),
+  };
 }
 
 /** The text blocks of a page: what they say is the page's own words. */
@@ -151,15 +240,25 @@ const GROUP_TIME: Record<string, string> = { "@day": "day", "@week": "week", "@m
  * The screen as the planner gets it: null when nothing on it is worth saying. A record by reference (its id, its
  * collection, its title): the planner reads the rest with `entities.get`, as it may; one of a collection or a row
  * closed or opaque to the models is not on it. A card as `inbox.pending` gives it (`pendingVal`): its title as a
- * reader's words from outside, never what it would write. What was pointed at, in its order: a row and a card as
+ * reader's words from outside, never what it would write; a question with what it asks, its options and where it
+ * comes from, when nothing it read was kept from the models. What was pointed at, in its order: a row and a card as
  * those; a block of a page as what it is (its kind, its title, the collection it shows), what it counts (its
  * measure, its field, its group, its period, its filter, by the keys the planner knows) and its numbers, computed
- * here over the rows the models may read; something closed to the models says only that it is closed.
+ * here over the rows the models may read; a paragraph of a note as its words; a node of the map or a step of a flow
+ * as what it stands for (the flow, the step, the collection, the connector); something closed to the models says
+ * only that it is closed. Without pointing: the view of the open collection with its filters, what is in view,
+ * what had the focus and what the right panel shows, resolved the same way, leaving out what is closed or gone.
  */
 export function screenOf(
   store: UserStore,
   refs: ScreenRefs,
-  o: { mailAccount: string | null; today?: string; chart?: (id: string) => SavedChart | null } = {
+  o: {
+    mailAccount: string | null;
+    today?: string;
+    chart?: (id: string) => SavedChart | null;
+    /** A tool's title from the registry («Crear»), for a step. */
+    toolTitle?: (tool: string) => string | null;
+  } = {
     mailAccount: null,
   },
 ): Val | null {
@@ -184,21 +283,91 @@ export function screenOf(
       code,
     );
   };
+  const all = [
+    ...(refs.pointed ?? []),
+    ...(refs.visible ?? []),
+    ...(refs.focus ? [refs.focus] : []),
+    ...(refs.panel?.ref ? [refs.panel.ref] : []),
+  ];
   const wantsFacts =
     refs.inbox.some((c) => c.kind === "proposal") ||
     refs.open?.kind === "proposal" ||
-    !!refs.pointed?.some((p) => p.kind === "proposal");
+    all.some((p) => p.kind === "proposal");
   const facts = wantsFacts ? new Map(pendingFacts(store, o).map((p) => [p.id, p])) : new Map();
   const card = (id: string): Val | null => {
     const fact = facts.get(id);
     const v = fact ? pendingVal(fact, view) : null;
     return v?.t === "rec" ? rec({ kind: leaf("proposal", code), ...v.fields }, code) : null;
   };
+  const reader = screenReader(store, view, visible, code, record, o);
   const question = (id: string): Val | null => {
     const q = store.journal.request(id);
-    return q?.status === "pending"
-      ? rec({ kind: leaf("question", code), id: leaf(q.id, code) }, code)
-      : null;
+    if (q?.status !== "pending") return null;
+    const out: Record<string, Val> = {
+      kind: leaf("question", code),
+      id: leaf(q.id, code),
+      asked: leaf(new Date(q.created).toISOString(), code),
+      expires: leaf(new Date(q.expires).toISOString(), code),
+    };
+    const run = store.journal.run(q.run);
+    const flow = run?.flow ? store.journal.flow(run.flow) : null;
+    if (flow)
+      out.flow = rec({ id: leaf(flow.id, code), name: leaf(flow.name, flowLabel(flow.id)) }, code);
+    // The record that started its run (the mail being read), by reference, as a row.
+    const about = run?.input ? record(run.input) : null;
+    if (about) out.about = about;
+    // What it asks and its options, with the labels they were painted with (a mail's words reach the planner as a
+    // handle). Its words were made from what its run read: when that was a collection the models may not read whole
+    // (closed, opaque, a rule keeping rows from them), or a record they may not read, it does not say them.
+    const kept =
+      !run ||
+      collectionKeysOf(run.plan).some((k) => {
+        const def = Object.values(visible).find((t) => t.key === k);
+        return !def || !reader.open(def.id) || reader.mayHide(def.id);
+      }) ||
+      (!!run.input && !about);
+    const v = q.view as { kind?: unknown; control?: unknown; prompt?: unknown; options?: unknown };
+    if (!kept && v?.kind === "ask") {
+      const prompt = paintedLeaf(v.prompt);
+      if (prompt) out.prompt = prompt;
+      if (v.control === "choice" || v.control === "text") out.control = leaf(v.control, code);
+      const options = (Array.isArray(v.options) ? v.options : []).slice(0, 20).flatMap((x) => {
+        const l = paintedLeaf(x);
+        return l ? [l] : [];
+      });
+      if (options.length) out.options = list(options, code);
+    }
+    return rec(out, code);
+  };
+  // Something closed to the models says only that it is: Boni can say so, and learns nothing of it. So does what is
+  // no longer there (a card decided since it was pointed at, a row or a block deleted), which is another thing to
+  // say. Only the app sends these references, never a model: telling the two apart probes nothing.
+  const said = (why: Missing): Val => rec({ kind: leaf(why, code) }, code);
+  const there = (id: string) => {
+    const s = store.get(id);
+    return !!s && s.entity.deleted === undefined;
+  };
+  const resolve = (p: PointedRef): Val | Missing => {
+    if (p.kind === "block") return reader.block(p.page, p.block);
+    if (p.kind === "proposal") return card(p.id) ?? (facts.has(p.id) ? "closed" : "gone");
+    if (p.kind === "question") return question(p.id) ?? "gone";
+    if (p.kind === "part") return reader.part(p.id, p.part, p.n);
+    if (p.kind === "collection") return reader.collection(p.id);
+    if (p.kind === "flow") return reader.flow(p.id);
+    if (p.kind === "step") return reader.step(p.flow, p.step);
+    if (p.kind === "chart") return reader.chart(p.id);
+    if (p.kind === "node") return reader.node(p.id);
+    const r = record(p.id);
+    return r?.t === "rec"
+      ? rec({ kind: leaf("row", code), ...r.fields }, code)
+      : there(p.id)
+        ? "closed"
+        : "gone";
+  };
+  /** What is on the screen without pointing: only what the models may see and is there. */
+  const quiet = (p: PointedRef): Val | null => {
+    const v = resolve(p);
+    return typeof v === "string" ? null : v;
   };
   const fields: Record<string, Val> = {};
   const open = refs.open;
@@ -209,6 +378,20 @@ export function screenOf(
       // By the name the models know it by (a collection named from outside, by its id).
       what.collection = leaf(typeName(def), code);
       what.name = leaf(def.name, def.label);
+      // The view it shows (its tab, as the account keeps it): its layout, group, order and filters.
+      if (reader.open(def.id)) {
+        const views = rowUiOf(store, def.id).views;
+        const shown = views.find((x) => x.id === open.view) ?? views[0];
+        what.view = reader.view(def, shown ?? { layout: "table" }, def.label, shown?.name);
+      }
+    }
+    if (open.kind === "flows" && open.id) {
+      const f = reader.flow(open.id);
+      if (typeof f !== "string") what.flow = f;
+    }
+    if (open.kind === "chart" && open.id) {
+      const c = reader.chart(open.id);
+      if (typeof c !== "string") what.chart = c;
     }
     const r = (open.kind === "row" || open.kind === "page") && open.id ? record(open.id) : null;
     if (r) what.record = r;
@@ -230,31 +413,45 @@ export function screenOf(
     return r ? [r] : [];
   });
   if (chosen.length) fields.chosen = list(chosen, code);
-  if (refs.pointed?.length) {
-    const blocks = pointedBlocks(store, view, visible, code, record, o);
-    // Something closed to the models says only that it is: Boni can say so, and learns nothing of it. So does what
-    // is no longer there (a card decided since it was pointed at, a row or a block deleted), which is another
-    // thing to say. Only the app sends these references, never a model: telling the two apart probes nothing.
-    const said = (why: Missing): Val => rec({ kind: leaf(why, code) }, code);
-    const there = (id: string) => {
-      const s = store.get(id);
-      return !!s && s.entity.deleted === undefined;
-    };
-    const pointed = refs.pointed.map((p) => {
-      if (p.kind === "block") {
-        const b = blocks(p.page, p.block);
-        return typeof b === "string" ? said(b) : b;
-      }
-      if (p.kind === "proposal") return card(p.id) ?? said(facts.has(p.id) ? "closed" : "gone");
-      if (p.kind === "question") return question(p.id) ?? said("gone");
-      const r = record(p.id);
-      return r?.t === "rec"
-        ? rec({ kind: leaf("row", code), ...r.fields }, code)
-        : said(there(p.id) ? "closed" : "gone");
-    });
-    fields.pointed = list(pointed, code);
+  if (refs.pointed?.length)
+    fields.pointed = list(
+      refs.pointed.map((p) => {
+        const v = resolve(p);
+        return typeof v === "string" ? said(v) : v;
+      }),
+      code,
+    );
+  const inView = (refs.visible ?? []).flatMap((p) => {
+    const v = quiet(p);
+    return v ? [v] : [];
+  });
+  if (inView.length) fields.visible = list(inView, code);
+  const focus = refs.focus ? quiet(refs.focus) : null;
+  if (focus) fields.focus = focus;
+  if (refs.panel) {
+    const shows = refs.panel.ref ? quiet(refs.panel.ref) : null;
+    fields.panel = rec({ kind: leaf(refs.panel.kind, code), ...(shows ? { shows } : {}) }, code);
   }
   return Object.keys(fields).length ? rec(fields, code) : null;
+}
+
+/** A value the app was painted (a question's words) back as a value with its label; null for anything else. */
+function paintedLeaf(p: unknown): Val | null {
+  if (!isObj(p) || p.t !== "v") return null;
+  const value = p.value;
+  if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean")
+    return null;
+  // What it says it is, never better: an unknown integrity is from outside.
+  const integrity = INTEGRITY_ORDER.includes(p.integrity as Integrity)
+    ? (p.integrity as Integrity)
+    : "external";
+  const sensitivity = SENSITIVITY_ORDER.includes(p.sensitivity as Sensitivity)
+    ? (p.sensitivity as Sensitivity)
+    : "sensitive";
+  return leaf(
+    typeof value === "string" ? value.slice(0, MAX_TEXT) : value,
+    label(integrity, sensitivity, [{ kind: "code", id: "inbox" }]),
+  );
 }
 
 type ReadView = ReturnType<typeof readStore>;
@@ -274,18 +471,24 @@ function joined(first: Label, rest: readonly Label[]): Label {
 }
 
 /**
- * A block of a page as the planner gets it when Juan points at it; «closed» when the models may not see it (its page
- * or its collection closed or opaque to them), «gone» when it is no longer there. A collection's rows are read once
- * for all the blocks pointed at in a message (A-15: his thousands of records, never once per block).
+ * What the screen's references are, as the planner gets them; «closed» when the models may not see it (its page or
+ * its collection closed or opaque to them), «gone» when it is no longer there. A block of a page; a chart of the
+ * first pages; a view of a collection; a paragraph of a note; a collection, a flow, a step of a flow and the other
+ * nodes of the map. A collection's rows are read once for all the blocks of a message (A-15: his thousands of
+ * records, never once per block).
  */
-function pointedBlocks(
+function screenReader(
   store: UserStore,
   view: ReadView,
   visible: Types,
   code: Label,
   record: (id: string) => Val | null,
-  o: { today?: string; chart?: (id: string) => SavedChart | null },
-): (page: string, block: string) => Val | Missing {
+  o: {
+    today?: string;
+    chart?: (id: string) => SavedChart | null;
+    toolTitle?: (tool: string) => string | null;
+  },
+) {
   const today = o.today ?? new Date().toISOString().slice(0, 10);
   const levels = store.aiAccess();
   /** A collection the models read whole values of: there, not Boni's own, and neither closed nor opaque. */
@@ -539,8 +742,9 @@ function pointedBlocks(
     return out;
   };
 
-  const viewOf = (def: TypeDef, v: DatabaseView, by: Label): Val => {
+  const viewOf = (def: TypeDef, v: DatabaseView, by: Label, name?: string): Val => {
     const out: Record<string, Val> = { layout: leaf(v.layout, code) };
+    if (name) out.name = leaf(name, by);
     const group = key(def, v.group);
     if (group) out.group = leaf(fieldName(group), code);
     const sort = key(def, v.sort?.field);
@@ -573,7 +777,7 @@ function pointedBlocks(
     return rec(out, code);
   };
 
-  return (pageId, blockId) => {
+  const block = (pageId: string, blockId: string): Val | Missing => {
     const page = pageOf(pageId);
     if (typeof page === "string") return page;
     const b = page.blocks.find((x) => x.id === blockId);
@@ -619,4 +823,181 @@ function pointedBlocks(
     // A line, or a kind of block that says nothing of its own.
     return said(b.type === "divider" ? "line" : "block");
   };
+
+  /** A chart on its own screen: as a chart block of a page says it. */
+  const charts = label("own", "personal", [{ kind: "code", id: "charts" }]);
+  const chart = (id: string): Val | Missing => {
+    const more = savedChart(id, charts);
+    return typeof more === "string"
+      ? more
+      : rec({ kind: leaf("chart", code), id: leaf(id, code), ...more }, code);
+  };
+
+  /** A paragraph of a note's text, found again by its words in the text the store keeps (`@boni/views` partKey). */
+  const part = (id: string, key: string, n: number): Val | Missing => {
+    const r = record(id);
+    const s = r ? view.get(id) : null;
+    if (!r || !s) {
+      const x = store.get(id);
+      return x && x.entity.deleted === undefined ? "closed" : "gone";
+    }
+    const text = findPart(markdownToBlocks(String(s.entity.body ?? "")), key, n);
+    if (text === null) return "gone";
+    return rec(
+      {
+        kind: leaf("text", code),
+        record: r,
+        text: leaf(text.slice(0, MAX_TEXT), s.labels[BODY] ?? codeLabel("store")),
+      },
+      code,
+    );
+  };
+
+  /** A collection (the sidebar's tree, a node of the map): by the key and the name the models know it by. */
+  const collection = (id: string): Val | Missing => {
+    const def = visible[id];
+    if (!def) return store.schema().types[id] ? "closed" : "gone";
+    if (def.system)
+      return rec(
+        { kind: leaf("collection", code), name: leaf(def.name, code), boni: leaf(true, code) },
+        code,
+      );
+    if (!open(id)) return "closed";
+    return rec(
+      {
+        kind: leaf("collection", code),
+        collection: leaf(typeName(def), code),
+        name: leaf(def.name, def.label),
+      },
+      code,
+    );
+  };
+
+  /** The collections a flow names, by the names the models know them by: only the ones they may read. */
+  const byKey = new Map(Object.values(visible).map((t) => [t.key, t]));
+  const closedKeys = Object.values(schema.types).flatMap((t) => {
+    const seen = byKey.get(t.key);
+    return seen && open(seen.id) ? [] : [t.key];
+  });
+  const named = (keys: readonly string[]): Val[] =>
+    keys.flatMap((k) => {
+      const def = byKey.get(k);
+      return def && open(def.id) ? [leaf(typeName(def), code)] : [];
+    });
+  /** What starts a flow, in the words of its trigger (a collection only when the models may read it). */
+  const triggerOf = (t: unknown): Val => {
+    const x = isObj(t) ? t : {};
+    if (typeof x.created === "string") {
+      const c = named([x.created]);
+      return rec({ on: leaf("created", code), ...(c[0] ? { collection: c[0] } : {}) }, code);
+    }
+    if (isObj(x.schedule)) {
+      const every = typeof x.schedule.every === "string" ? x.schedule.every : "";
+      const at = typeof x.schedule.at === "string" ? x.schedule.at : "";
+      return rec(
+        { on: leaf("schedule", code), every: leaf(every, code), at: leaf(at, code) },
+        code,
+      );
+    }
+    if (x.manual) return rec({ on: leaf("manual", code) }, code);
+    return rec({ on: leaf(Object.keys(x)[0] ?? "manual", code) }, code);
+  };
+  const flowRow = (id: string) => store.journal.flow(id);
+  /** A step of a flow: what it does (its op, its tool or reader, its title), the collections and its arguments. */
+  const stepVal = (f: NonNullable<ReturnType<typeof flowRow>>, stepId: string): Val | null => {
+    const by = flowLabel(f.id);
+    const steps = stepsOf(f.plan);
+    const s = steps.find((x) => x.id === stepId);
+    const n = nodesOf(f.plan, f.trigger, o.toolTitle ?? (() => null), () => null).find(
+      (x) => x.id === stepId,
+    );
+    if (!s || !n) return null;
+    const keys =
+      n.op === "call" ? typeKeysOf((s.args as Record<string, unknown> | undefined)?.type) : [];
+    // Its arguments as the editor writes them, without what names a collection the models may not read. A step over
+    // a closed collection says none: its values and conditions name that collection's fields.
+    const word = (k: string) => new RegExp(`(^|[^A-Za-z0-9_])${k}([^A-Za-z0-9_]|$)`);
+    const shut = keys.some((k) => closedKeys.includes(k));
+    const args = (shut ? [] : n.args)
+      .filter((a) => !a.startsWith("type:") && !closedKeys.some((k) => word(k).test(a)))
+      .slice(0, MAX_ARGS)
+      .map((a) => leaf(a.slice(0, 200), by));
+    const into = named(keys);
+    return rec(
+      {
+        id: leaf(n.id, code),
+        op: leaf(n.op, code),
+        what: leaf(n.what, code),
+        ...(n.title ? { title: leaf(n.title, code) } : {}),
+        ...(into.length ? { collections: list(into, code) } : {}),
+        ...(n.when ? { when: leaf(true, code) } : {}),
+        ...(n.each ? { each: leaf(true, code) } : {}),
+        ...(args.length ? { args: list(args, by) } : {}),
+      },
+      code,
+    );
+  };
+  /** A flow: its name, whether it is on, what starts it, the collections it names and its steps. */
+  const flow = (id: string): Val | Missing => {
+    const f = flowRow(id);
+    if (!f) return "gone";
+    const steps = stepsOf(f.plan)
+      .slice(0, MAX_STEPS)
+      .flatMap((s) => {
+        const v = stepVal(f, s.id);
+        return v ? [v] : [];
+      });
+    const cols = named(collectionKeysOf(f.plan));
+    return rec(
+      {
+        kind: leaf("flow", code),
+        id: leaf(f.id, code),
+        name: leaf(f.name, flowLabel(f.id)),
+        on: leaf(f.enabled, code),
+        by: leaf(f.by, code),
+        trigger: triggerOf(f.trigger),
+        ...(cols.length ? { collections: list(cols, code) } : {}),
+        steps: list(steps, code),
+      },
+      code,
+    );
+  };
+  /** A step of a flow pointed at on its canvas or on the map: the step, with its flow by id and name. */
+  const step = (flowId: string, stepId: string): Val | Missing => {
+    const f = flowRow(flowId);
+    const v = f ? stepVal(f, stepId) : null;
+    if (!f || !v) return "gone";
+    return rec(
+      {
+        kind: leaf("step", code),
+        flow: rec({ id: leaf(f.id, code), name: leaf(f.name, flowLabel(f.id)) }, code),
+        step: v,
+      },
+      code,
+    );
+  };
+  /** A node of the map that is none of the account's records: what it is (a connector, a piece of Boni, someone). */
+  const KIND: Record<string, string> = {
+    conn: "connector",
+    boni: "boni",
+    actor: "actor",
+    dev: "devices",
+  };
+  // Only what it is, by its kind and its code («mail», «inbox», «mcp»): a third part (an MCP client's name) is
+  // outside text the app copied into the id, never said as the code's.
+  const node = (id: string): Val | Missing => {
+    const [first, what] = id.split(":");
+    const kind = KIND[first ?? ""];
+    if (!kind) return "gone";
+    return rec(
+      {
+        kind: leaf(kind, code),
+        node: leaf(what ? `${first}:${what}` : (first ?? ""), code),
+        ...(what ? { code: leaf(what, code) } : {}),
+      },
+      code,
+    );
+  };
+
+  return { block, chart, part, collection, flow, step, node, view: viewOf, open, mayHide };
 }

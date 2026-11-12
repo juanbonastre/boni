@@ -265,3 +265,55 @@ export function blocksToMarkdown(blocks: readonly Block[]): string {
   }
   return parts.length ? `${parts.join("")}\n` : "";
 }
+
+/** The blocks of a note's text that say something of their own: what can be pointed at as a paragraph (F9). */
+export const PART_KINDS: ReadonlySet<string> = new Set([
+  "heading",
+  "text",
+  "bullet",
+  "numbered",
+  "todo",
+  "toggle",
+  "quote",
+  "callout",
+  "code",
+]);
+
+/**
+ * A paragraph of a note as a reference (docs/sistema.md §4.7, F9): its blocks are made as it is read and their ids
+ * (`md<N>`) move with every block written before them, so a paragraph is named by what it says (an FNV-1a hash of
+ * its text, as eight hex digits) and which of those it is when the same words appear more than once. The app and
+ * the server compute it the same way; the server finds the paragraph again in the text it keeps.
+ */
+export function partKey(text: string): string {
+  let h = 0x811c9dc5;
+  const s = text.replace(/\s+/g, " ").trim();
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+/** Where a paragraph is among a note's blocks: its key, and how many before it say the same; null for no paragraph. */
+export function partOf(
+  blocks: readonly PageBlock[],
+  id: string,
+): { part: string; n: number } | null {
+  const i = blocks.findIndex((b) => b.id === id);
+  const b = blocks[i];
+  if (!b || !PART_KINDS.has(b.type) || !("text" in b) || !b.text.trim()) return null;
+  const part = partKey(b.text);
+  let n = 0;
+  for (const x of blocks.slice(0, i))
+    if (PART_KINDS.has(x.type) && "text" in x && partKey(x.text) === part) n++;
+  return { part, n };
+}
+
+/** The paragraph a reference names in a note's text, found again by its words; null when it is no longer there. */
+export function findPart(blocks: readonly PageBlock[], part: string, n: number): string | null {
+  const same = blocks.flatMap((b) =>
+    PART_KINDS.has(b.type) && "text" in b && partKey(b.text) === part ? [b.text] : [],
+  );
+  return same[n] ?? same[0] ?? null;
+}

@@ -18,7 +18,7 @@ import {
 import type { FlowRow, UserStore } from "@boni/store";
 import { flowRowTarget, SYS } from "@boni/views";
 import { DataError } from "./data.ts";
-import { createFlow, type Problem, saveUserFlow, stepsOf } from "./flows.ts";
+import { createFlow, type Problem, renamable, renameFlow, stepsOf } from "./flows.ts";
 import type { SystemCollections } from "./systemCollections.ts";
 
 const F = SYS.flows;
@@ -58,8 +58,7 @@ const triggerId = (words: string) =>
   `o_disp_${createHash("sha256").update(words).digest("hex").slice(0, 10)}`;
 
 /** Boni's own flows: one Boni saved a version of (the user's may run instead; Boni's stays to go back to). */
-const isBoni = (store: UserStore, id: string) =>
-  store.journal.flowVersions(id).some((v) => v.by === "preset");
+const isBoni = (store: UserStore, id: string) => !renamable(store, id);
 
 function typeOf(triggers: SelectOption[]): TypeDef {
   return {
@@ -147,9 +146,9 @@ function flowOf(store: UserStore, row: string): FlowRow {
 }
 
 /**
- * A change to a row, done to its flow: its name (a new version of the user's with the same steps; Boni's keep the
- * name Boni gives them) or its state (on only with an empty checklist: `problems` says the flow's). Anything else
- * in a row is computed and says «read-only».
+ * A change to a row, done to its flow: its name (`renameFlow`, as its editor does: a new version of the user's with
+ * the same steps, its draft kept; Boni's keep the name Boni gives them) or its state (on only with an empty
+ * checklist: `problems` says the flow's). Anything else in a row is computed and says «read-only».
  */
 export function updateFlowRow(
   store: UserStore,
@@ -167,15 +166,8 @@ export function updateFlowRow(
   for (const [k, v] of changes) {
     if (k === F.title) {
       if (typeof v !== "string" || !v.trim()) throw new DataError("bad-body");
-      if (isBoni(store, f.id) && f.by === "preset") throw new DataError("flow-boni-name");
-      const latest = store.journal.flow(f.id) as FlowRow;
-      const r = saveUserFlow(
-        store,
-        f.id,
-        { base: latest.version, name: v.trim().slice(0, 80), plan: latest.plan },
-        [],
-        now,
-      );
+      if (!renamable(store, f.id)) throw new DataError("flow-boni-name");
+      const r = renameFlow(store, f.id, v.trim().slice(0, 80), now);
       if ("error" in r) throw new DataError("bad-body");
     } else if (k === F.state) {
       if (v !== F.on && v !== F.off) throw new DataError("bad-body");

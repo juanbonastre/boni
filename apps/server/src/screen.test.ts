@@ -18,12 +18,13 @@ import {
   type Val,
 } from "@boni/agent";
 import { label } from "@boni/entities";
-import { openUserStore } from "@boni/store";
+import { BODY, openUserStore } from "@boni/store";
+import { markdownToBlocks, partKey, partOf } from "@boni/views";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { openDb } from "./db.ts";
 import { createPage } from "./pages.ts";
-import { MAX_POINTED, type SavedChart, screenOf, screenRefs } from "./screen.ts";
+import { MAX_POINTED, MAX_VISIBLE, type SavedChart, screenOf, screenRefs } from "./screen.ts";
 import { seed } from "./seed.test-util.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
@@ -129,6 +130,8 @@ describe("the screen as data (F9, task 85)", () => {
       kind: "collection",
       collection: "tarea",
       name: "Tarea",
+      // No view of its own yet: a table, as the app shows it.
+      view: { layout: "table" },
     });
     // Only the open collection's row, by reference: the restricted one and the opaque one are not there.
     const chosen = plain(screen.fields.chosen as Val) as { id: string; type: string }[];
@@ -824,4 +827,393 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
       store.close();
     }
   });
+});
+
+describe("the map, a flow's steps, a note's paragraphs and the screen without pointing (F9, task 85, A-22)", () => {
+  const flowPlan = (into: string) => ({
+    version: 1,
+    steps: [
+      {
+        id: "crear",
+        op: "call",
+        tool: "entities.create",
+        args: {
+          type: { lit: into },
+          values: { fn: "obj", args: [{ lit: "titulo" }, { ref: "$titulo" }] },
+        },
+      },
+      { id: "decir", op: "reply", component: "text", data: { template: { lit: "Hecho" } } },
+    ],
+  });
+  function withFlows() {
+    const s = setUp();
+    s.store.journal.saveFlow({
+      id: "apuntar-x1",
+      name: "Apuntar tarea",
+      trigger: { created: "libro" },
+      inputs: [],
+      plan: flowPlan("tarea"),
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: 1000,
+    });
+    // One that writes into a collection closed to the models.
+    s.store.journal.saveFlow({
+      id: "guardar-x2",
+      name: "Guardar lo mío",
+      trigger: { manual: true },
+      inputs: [],
+      plan: flowPlan("privado"),
+      layout: null,
+      by: "user",
+      enabled: false,
+      created: 2000,
+    });
+    const one = (ref: Record<string, unknown>) =>
+      (
+        plain(
+          screenOf(
+            s.store,
+            { open: null, inbox: [], chosen: [], pointed: [ref as never] },
+            { mailAccount: null, toolTitle: (t) => (t === "entities.create" ? "Crear" : null) },
+          ) as Val,
+        ) as { pointed: Record<string, unknown>[] }
+      ).pointed[0];
+    return { ...s, one };
+  }
+
+  it("takes the new kinds by reference, and refuses what is not one", () => {
+    const refs = screenRefs({
+      open: { kind: "collection", id: "t_x", view: "v1" },
+      pointed: [
+        { kind: "part", id: "e1", part: "0a1b2c3d", n: 0 },
+        { kind: "collection", id: "t_x" },
+        { kind: "flow", id: "apuntar-x1" },
+        { kind: "step", flow: "apuntar-x1", step: "crear" },
+        { kind: "chart", id: "spending-by-category" },
+        { kind: "node", id: "conn:mail" },
+      ],
+      visible: [{ kind: "row", id: "e1" }],
+      focus: { kind: "block", page: "p1", block: "b1" },
+      panel: { kind: "row", ref: { kind: "row", id: "e2" } },
+    });
+    expect(refs?.open).toEqual({ kind: "collection", id: "t_x", view: "v1" });
+    expect(refs?.pointed).toHaveLength(6);
+    expect(refs?.visible).toEqual([{ kind: "row", id: "e1" }]);
+    expect(refs?.focus).toEqual({ kind: "block", page: "p1", block: "b1" });
+    expect(refs?.panel).toEqual({ kind: "row", ref: { kind: "row", id: "e2" } });
+    for (const bad of [
+      { pointed: [{ kind: "part", id: "e1", part: "zz", n: 0 }] },
+      { pointed: [{ kind: "part", id: "e1", part: "0a1b2c3d", n: -1 }] },
+      { pointed: [{ kind: "node", id: "col:t_x<script>" }] },
+      { pointed: [{ kind: "step", flow: "f" }] },
+      { visible: [{ kind: "row" }] },
+      { focus: { kind: "otra", id: "x" } },
+      { panel: { kind: "otro" } },
+      { panel: { kind: "row", ref: { kind: "row" } } },
+    ])
+      expect(screenRefs(bad)).toBeNull();
+    const many = screenRefs({
+      visible: Array.from({ length: 80 }, (_, i) => ({ kind: "row", id: `e${i}` })),
+    });
+    expect(many?.visible).toHaveLength(MAX_VISIBLE);
+  });
+
+  it("«¿qué hace esto?» over the map: a flow is its name, its trigger and its steps; a step, what it does and where", () => {
+    const { one } = withFlows();
+    expect(one({ kind: "flow", id: "apuntar-x1" })).toMatchObject({
+      kind: "flow",
+      id: "apuntar-x1",
+      name: "Apuntar tarea",
+      on: true,
+      by: "user",
+      trigger: { on: "created", collection: "libro" },
+      collections: ["tarea"],
+      steps: [
+        { id: "crear", op: "call", title: "Crear", collections: ["tarea"] },
+        { id: "decir", op: "reply" },
+      ],
+    });
+    expect(one({ kind: "step", flow: "apuntar-x1", step: "crear" })).toMatchObject({
+      kind: "step",
+      flow: { id: "apuntar-x1", name: "Apuntar tarea" },
+      step: { id: "crear", op: "call", collections: ["tarea"] },
+    });
+    // A node of the map that is none of the account's records says what it is.
+    expect(one({ kind: "node", id: "conn:mail" })).toEqual({
+      kind: "connector",
+      node: "conn:mail",
+      code: "mail",
+    });
+    expect(one({ kind: "step", flow: "apuntar-x1", step: "otro" })).toEqual({ kind: "gone" });
+    expect(one({ kind: "flow", id: "no-existe" })).toEqual({ kind: "gone" });
+  });
+
+  it("a flow over a collection closed to the models never names it, not in a step's arguments either", () => {
+    const { one } = withFlows();
+    const f = one({ kind: "flow", id: "guardar-x2" });
+    expect(f).toMatchObject({ kind: "flow", name: "Guardar lo mío", trigger: { on: "manual" } });
+    expect(JSON.stringify(f)).not.toContain("privado");
+    expect(f).not.toHaveProperty("collections");
+    // Its step into that collection says none of its arguments: they name its fields. The open flow's step does.
+    expect(JSON.stringify(f)).not.toContain("titulo");
+    expect(JSON.stringify(one({ kind: "flow", id: "apuntar-x1" }))).toContain("titulo");
+    // A node is what it is: what an id carries past its code (an MCP client's name) is not said.
+    expect(one({ kind: "node", id: "actor:mcp:cliente-x" })).toEqual({
+      kind: "actor",
+      node: "actor:mcp",
+      code: "mcp",
+    });
+  });
+
+  it("a collection of the sidebar or the map is its key and its name; one closed to the models, «closed»", () => {
+    const { one, typeOf } = withFlows();
+    expect(one({ kind: "collection", id: typeOf("libro").id })).toEqual({
+      kind: "collection",
+      collection: "libro",
+      name: "Libros",
+    });
+    expect(one({ kind: "collection", id: typeOf("privado").id })).toEqual({ kind: "closed" });
+    expect(one({ kind: "collection", id: "t_no" })).toEqual({ kind: "gone" });
+  });
+
+  it("a paragraph of a note is found again by its words, even after the text above it changed", () => {
+    const { store, typeOf, rowOf, one } = withFlows();
+    const id = rowOf("libro");
+    const body = "# El primero\n\nUna idea que vuelve.\n\nOtra cosa.\n\nUna idea que vuelve.\n";
+    const own = label("own", "personal", [{ kind: "user-edit", id: "portatil" }]);
+    store.update(id, { [BODY]: { value: body, label: own } }, { actor: "user" });
+    const blocks = markdownToBlocks(body);
+    const second = blocks.filter((b) => "text" in b && b.text === "Una idea que vuelve.")[1];
+    const at = partOf(blocks, second?.id ?? "");
+    expect(at).toEqual({ part: partKey("Una idea que vuelve."), n: 1 });
+    // Something is written above it: the block ids move, the reference still finds it.
+    store.update(
+      id,
+      { [BODY]: { value: `Un párrafo nuevo.\n\n${body}`, label: own } },
+      { actor: "user" },
+    );
+    expect(one({ kind: "part", id, ...at })).toMatchObject({
+      kind: "text",
+      record: { id, type: "libro" },
+      text: "Una idea que vuelve.",
+    });
+    // Gone from the text: «gone»; in a closed collection: «closed».
+    expect(one({ kind: "part", id, part: partKey("No está"), n: 0 })).toEqual({ kind: "gone" });
+    expect(
+      one({
+        kind: "part",
+        id: store.list(typeOf("privado").id)[0]?.entity.id,
+        part: "0a1b2c3d",
+        n: 0,
+      }),
+    ).toEqual({ kind: "closed" });
+  });
+
+  it("«¿qué estoy viendo?» with nothing pointed: the open collection's view with its filters, what is in view, the focus and the panel", () => {
+    const { store, typeOf, rowOf } = withFlows();
+    const libro = typeOf("libro");
+    const estado = libro.fields.find((f) => f.key === "estado");
+    const read = estado?.options?.find((o) => o.name === "Leído");
+    store.setSetting(
+      `ui/row/${libro.id}`,
+      JSON.stringify({
+        views: [
+          { id: "v_todo", name: "Todos", layout: "table" },
+          {
+            id: "v_leidos",
+            name: "Leídos",
+            layout: "board",
+            group: estado?.id,
+            filter: [{ field: estado?.id, op: "is", value: read?.id }],
+          },
+        ],
+      }),
+    );
+    const got = plain(
+      screenOf(store, {
+        open: { kind: "collection", id: libro.id, view: "v_leidos" },
+        inbox: [],
+        chosen: [],
+        visible: [
+          { kind: "row", id: rowOf("libro") },
+          { kind: "row", id: rowOf("privado") },
+          { kind: "row", id: "e_no_existe" },
+        ],
+        focus: { kind: "row", id: rowOf("libro") },
+        panel: { kind: "row", ref: { kind: "row", id: rowOf("opaca") } },
+      }) as Val,
+    ) as Record<string, Record<string, unknown>>;
+    expect(got.open).toMatchObject({
+      kind: "collection",
+      collection: "libro",
+      view: {
+        layout: "board",
+        name: "Leídos",
+        group: "estado",
+        filter: [{ field: "estado", op: "is", value: "Leído" }],
+      },
+    });
+    // What is closed or gone is left out without a word: nothing pointed at, nothing to answer about.
+    expect(got.visible).toEqual([expect.objectContaining({ kind: "row", id: rowOf("libro") })]);
+    expect(got.focus).toMatchObject({ kind: "row", id: rowOf("libro") });
+    expect(got.panel).toEqual({ kind: "row" });
+    expect(JSON.stringify(got)).not.toContain("Lo que no ve nadie");
+    expect(JSON.stringify(got)).not.toContain("solo el código");
+  });
+
+  it("a question of the Bandeja says what it asks, its options and where it comes from; its words only when nothing it read was kept", () => {
+    const { store } = withFlows();
+    let n = 0;
+    const ask = (flow: string, words: string) => {
+      n += 1;
+      const run = `r_pregunta${n}`;
+      store.journal.startRun({
+        id: run,
+        turn: null,
+        origin: "flow",
+        device: null,
+        started: 1000,
+        flow,
+      });
+      store.journal.setPlan(run, store.journal.flow(flow)?.plan);
+      const id = `q_pregunta${n}`;
+      store.journal.addRequest({
+        id,
+        run,
+        created: 1000,
+        view: {
+          kind: "ask",
+          control: "choice",
+          prompt: { t: "v", value: words, integrity: "external", sensitivity: "personal" },
+          options: [
+            { t: "v", value: "Sí", integrity: "own", sensitivity: "personal" },
+            { t: "v", value: "No", integrity: "own", sensitivity: "personal" },
+          ],
+        },
+        expires: Date.now() + 60_000,
+      });
+      return id;
+    };
+    const open = ask("apuntar-x1", "¿Lo apunto?");
+    const kept = ask("guardar-x2", "¿Lo guardo?");
+    const screen = screenOf(store, {
+      open: { kind: "inbox", id: null },
+      inbox: [
+        { kind: "question", id: open },
+        { kind: "question", id: kept },
+      ],
+      chosen: [],
+    }) as Val;
+    if (screen.t !== "rec" || screen.fields.inbox?.t !== "list") throw new Error("no cards");
+    const [a, b] = screen.fields.inbox.items;
+    expect(plain(a as Val)).toMatchObject({
+      kind: "question",
+      id: open,
+      flow: { id: "apuntar-x1", name: "Apuntar tarea" },
+      control: "choice",
+      prompt: "¿Lo apunto?",
+      options: ["Sí", "No"],
+    });
+    // Its words keep the label they were painted with: from outside, as a handle.
+    if (a?.t !== "rec") throw new Error("no question");
+    expect(deepLabel(a.fields.prompt as Val).integrity).toBe("external");
+    // A run over a closed collection: where it comes from, never its words.
+    expect(plain(b as Val)).toMatchObject({ kind: "question", flow: { id: "guardar-x2" } });
+    expect(plain(b as Val)).not.toHaveProperty("prompt");
+    expect(JSON.stringify(plain(screen))).not.toContain("privado");
+  });
+
+  it("what goes with every message is read in time with Juan's volume: 3,000 notes, a view with filters, 30 rows on screen, a paragraph (A-15)", () => {
+    const store = openUserStore(":memory:");
+    ensureSystemTypes(store);
+    try {
+      seed(
+        store,
+        [
+          {
+            key: "agenda",
+            name: "Agenda",
+            folder: "agenda/",
+            fields: {
+              estado: { type: "select", options: ["Hecha", "Pendiente"] },
+              horas: "number",
+            },
+          },
+        ],
+        { "agenda/a.md": "---\nestado: Hecha\nhoras: 1\n---\n\n# Tarea a\n" },
+      );
+      const def = Object.values(store.schema().types).find((x) => x.key === "agenda");
+      if (!def) throw new Error("no agenda");
+      const f = (key: string) => def.fields.find((x) => x.key === key)?.id ?? "";
+      const hecha =
+        def.fields.find((x) => x.key === "estado")?.options?.find((x) => x.name === "Hecha")?.id ??
+        "";
+      const own = label("imported", "personal", [{ kind: "vault", id: "seed" }]);
+      const ids: string[] = [];
+      store.batch(() => {
+        for (let i = 0; i < 3000; i++)
+          ids.push(
+            store.create(
+              def.id,
+              {
+                [def.titleField]: { value: `Tarea ${i}`, label: own },
+                [f("estado")]: { value: hecha, label: own },
+                [f("horas")]: { value: (i % 7) + 1, label: own },
+                [BODY]: {
+                  value: `Primera idea de la tarea ${i}.\n\nLo que falta por hacer.\n\n- un punto\n`,
+                  label: own,
+                },
+              },
+              { actor: "user" },
+            ).entity.id,
+          );
+      });
+      store.setSetting(
+        `ui/row/${def.id}`,
+        JSON.stringify({
+          views: [
+            {
+              id: "v_hechas",
+              name: "Hechas",
+              layout: "table",
+              filter: [{ field: f("estado"), op: "is", value: hecha }],
+            },
+          ],
+        }),
+      );
+      const note = ids[1500] ?? "";
+      const blocks = markdownToBlocks(
+        "Primera idea de la tarea 1500.\n\nLo que falta por hacer.\n",
+      );
+      const part = partOf(blocks, blocks[1]?.id ?? "");
+      if (!part) throw new Error("no paragraph");
+      const refs = screenRefs({
+        open: { kind: "collection", id: def.id, view: "v_hechas" },
+        pointed: [{ kind: "part", id: note, ...part }],
+        visible: ids.slice(0, MAX_VISIBLE).map((id) => ({ kind: "row", id })),
+        focus: { kind: "row", id: ids[3] },
+        panel: { kind: "row", ref: { kind: "row", id: ids[4] } },
+      });
+      const t0 = performance.now();
+      const screen = plain(screenOf(store, refs as never, { mailAccount: null }) as Val) as {
+        open: { view?: unknown };
+        pointed: { kind: string; text?: string }[];
+        visible: unknown[];
+      };
+      const ms = performance.now() - t0;
+      // The view as the planner names it: its filter by the field's key and the option's name.
+      expect(screen.open.view).toMatchObject({
+        name: "Hechas",
+        filter: [{ field: "estado", op: "is", value: "Hecha" }],
+      });
+      expect(screen.pointed[0]).toMatchObject({ text: "Lo que falta por hacer." });
+      expect(screen.visible).toHaveLength(MAX_VISIBLE);
+      // A turn takes seconds; what the screen adds to it stays well under a fraction of one on any machine.
+      expect(ms).toBeLessThan(500);
+    } finally {
+      store.close();
+    }
+  }, 20_000);
 });

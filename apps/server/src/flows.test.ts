@@ -15,8 +15,11 @@ import {
   flowsView,
   flowView,
   inputsOf,
+  keepDraft,
   MAIL_FLOW,
   REVIEW_FLOW,
+  renamable,
+  renameFlow,
   revertFlow,
   saveUserFlow,
   triggerNames,
@@ -1116,4 +1119,164 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     expect(store.journal.flowVersions(id)).toHaveLength(3);
     store.close();
   });
+
+  it("keeps a flow's draft, incomplete or on, apart from what runs; renaming moves it, going back drops it (task 80)", () => {
+    const store = withTypes();
+    const made = createFlow(store, { name: "Resumen del lunes" }, 1000);
+    const id = made?.id as string;
+    const plan = {
+      version: 1,
+      steps: [{ id: "a", op: "reply", component: "text", data: { template: { lit: "Hola" } } }],
+    };
+    expect(saveUserFlow(store, id, { base: 1, plan }, [], 2000)).toMatchObject({
+      flow: { version: 2 },
+    });
+    store.journal.setFlowEnabled(id, true);
+    // An incomplete step is kept as it is: nothing checks a draft but its shape.
+    const half = { version: 1, steps: [...plan.steps, { id: "b", op: "call" }] };
+    const kept = keepDraft(
+      store,
+      id,
+      { base: 2, trigger: { manual: true }, plan: half },
+      "d1",
+      3000,
+    );
+    expect(kept).toEqual({
+      draft: { base: 2, trigger: { manual: true }, plan: half, updated: 3000 },
+    });
+    // The flow, what runs and what the MCP describes, is still the saved version, and on.
+    expect(store.journal.flow(id)).toMatchObject({ version: 2, plan, enabled: true });
+    expect(
+      flowView(
+        store,
+        id,
+        3000,
+        7,
+        () => null,
+        () => null,
+      )?.draft,
+    ).toMatchObject({ base: 2, plan: half });
+    // The same as the saved version again is no draft.
+    expect(keepDraft(store, id, { base: 2, trigger: { manual: true }, plan }, "d1", 3500)).toEqual({
+      draft: null,
+    });
+    expect(store.journal.flowDraft(id)).toBeNull();
+    // Shapes it refuses, and a version it never had.
+    for (const bad of [
+      { base: 3, trigger: {}, plan: half },
+      { base: 0, trigger: {}, plan: half },
+      { base: "2", trigger: {}, plan: half },
+      { base: 2, trigger: [], plan: half },
+      { base: 2, trigger: {}, plan: { steps: "x" } },
+      { base: 2, trigger: {}, plan: { steps: [{ big: "x".repeat(200_001) }] } },
+    ])
+      expect(keepDraft(store, id, bad, null, 4000)).toEqual({ error: "bad-request" });
+    expect(keepDraft(store, "nadie", { base: 1, trigger: {}, plan }, null, 4000)).toEqual({
+      error: "not-found",
+    });
+    // A rename is a version with the same steps; the draft now starts from it.
+    keepDraft(store, id, { base: 2, trigger: { manual: true }, plan: half }, "d1", 5000);
+    expect(renameFlow(store, id, "Resumen", 6000)).toMatchObject({
+      flow: { version: 3, name: "Resumen", plan, enabled: true },
+    });
+    expect(store.journal.flowDraft(id)).toMatchObject({ base: 3, plan: half });
+    // Back to a version drops it.
+    expect(revertFlow(store, id, { version: 1 }, 7000)).toMatchObject({ version: 4 });
+    expect(store.journal.flowDraft(id)).toBeNull();
+    // Boni's flows keep the name Boni gives them; the user's version of one is his to name.
+    ensureFlow(
+      store,
+      { id: MAIL_FLOW, name: "Leer correo", trigger: { created: "correo" }, plan, by: "preset" },
+      1000,
+    );
+    expect(renamable(store, MAIL_FLOW)).toBe(false);
+    expect(renamable(store, id)).toBe(true);
+    expect(saveUserFlow(store, MAIL_FLOW, { base: 1, plan }, [], 8000)).toMatchObject({
+      flow: { by: "user" },
+    });
+    expect(renamable(store, MAIL_FLOW)).toBe(false);
+    expect(
+      flowView(
+        store,
+        MAIL_FLOW,
+        8000,
+        7,
+        () => null,
+        () => null,
+      )?.renamable,
+    ).toBe(false);
+    store.close();
+  });
+
+  it("keeps a draft and reads the flow with it in time, with a year of runs and a dozen flows (task 80, A-15)", () => {
+    const store = withTypes();
+    const ids = Array.from(
+      { length: 12 },
+      (_, i) => createFlow(store, { name: `Flujo ${i}` }, 1000)?.id as string,
+    );
+    const id = ids[0] as string;
+    const plan = {
+      version: 1,
+      steps: Array.from({ length: 20 }, (_, i) => ({
+        id: `s${i}`,
+        op: "reply",
+        component: "text",
+        data: { template: { lit: `Paso ${i}` } },
+      })),
+    };
+    saveUserFlow(store, id, { base: 1, plan }, [], 2000);
+    const NOW = 400 * 86_400_000;
+    for (let i = 0; i < 12_000; i++) {
+      const at = NOW - (i % 365) * 86_400_000;
+      store.journal.startRun({
+        id: `y${i}`,
+        turn: null,
+        origin: "background",
+        device: null,
+        started: at,
+        flow: id,
+        flowVersion: 2,
+      });
+      store.journal.step({
+        run: `y${i}`,
+        step: "s0",
+        kind: "reply",
+        decision: "allow",
+        rule: "P1",
+        detail: {},
+        at,
+      });
+    }
+    // A pause in the editor is one keep: what a morning of edits would send, each with the whole plan.
+    const t0 = performance.now();
+    for (let i = 0; i < 100; i++) {
+      const steps = plan.steps.map((s, k) =>
+        k === i % 20 ? { ...s, data: { template: { lit: `Cambio ${i}` } } } : s,
+      );
+      expect(
+        keepDraft(
+          store,
+          id,
+          { base: 2, trigger: { manual: true }, plan: { version: 1, steps } },
+          "d1",
+          NOW + i,
+        ),
+      ).toHaveProperty("draft.base", 2);
+    }
+    const keeps = (performance.now() - t0) / 100;
+    const t1 = performance.now();
+    const v = flowView(
+      store,
+      id,
+      NOW,
+      30,
+      () => null,
+      () => null,
+    );
+    const view = performance.now() - t1;
+    expect(v?.draft?.base).toBe(2);
+    expect(keeps).toBeLessThan(20);
+    expect(view).toBeLessThan(500);
+    // Writing a year of runs first takes longer than vitest's 5 s on CI's machine; what is measured is above.
+  }, 30_000);
 });

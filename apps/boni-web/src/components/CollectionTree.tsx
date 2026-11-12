@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { TreeCollection } from "../core/agent.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import {
   deleteCollection,
   newCollection,
@@ -187,6 +188,10 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
       <div
         className={`chart-row tree-row${lit ? " active" : ""}${menu ? " menu-open" : ""}`}
         style={{ paddingLeft: depth * 14 }}
+        {...pointAttrs(
+          { kind: "collection", id: c.id },
+          chipTitle(t("point.kind.collection"), c.name),
+        )}
         onContextMenu={(e) => {
           if (renaming) return;
           e.preventDefault();
@@ -480,6 +485,10 @@ function Leaf({
       <div
         className={`chart-row tree-row${on ? " active" : ""}${menu ? " menu-open" : ""}`}
         style={{ paddingLeft: depth * 14 }}
+        {...pointAttrs(
+          table ? { kind: "collection", id: active } : { kind: "row", id: active },
+          chipTitle(t(table ? "point.kind.collection" : "point.kind.page"), name),
+        )}
         onContextMenu={(e) => {
           // Boni's own things have nothing to be done with.
           if (!onDelete || renaming) return;
