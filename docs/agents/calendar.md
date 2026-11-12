@@ -50,9 +50,13 @@ tests guard most of them.
   the same moment and a like title, code only, never linked alone), «Enlazar» (`candidatesFor`, the records near it)
   and «Crear nota»; the record's detail has an «Enlace» row naming that calendar, with «Quitar enlace». The column is added the
   first time (`ensureLinkColumn` in the store; `POST /api/collections/link-column` on the server).
-- **Writes go through `ServerWriter`** (`src/serverWriter.ts`): shown at once, queued on the device (IndexedDB) and
-  sent in order; a batch carries the version the device had, and the server refuses it (409) only when one of its
-  records changed elsewhere after that version. The queue waits while there is no connection, no session, the
+- **Writes go through `ServerWriter`** (`src/serverWriter.ts`): shown at once, queued on the device and sent in
+  order. The queue is written at once in localStorage (synchronous) and then in IndexedDB; localStorage's copy, when
+  there is one, wins (`savedOutbox` in `remote.ts`): a change made while the batch before waits for its answer does
+  not leave until that answer comes, so a window closed in between must find it on the device (task 98, 2026-11-12:
+  IndexedDB writes only after its database opens, and an event titled and closed at once was lost). A batch
+  carries the version the device had, and the server refuses it (409) only when one of its records changed
+  elsewhere after that version. The queue waits while there is no connection, no session, the
   server is on its way (502, 503, 504: a deploy, the proxy) or it says too many (429), and goes when the stream is
   live again; any other failure drops the batch and says so (2026-11-04: a deploy's 502 dropped a new event).
   A move to another calendar leaves the queue as `diffRows` makes it (a removal, then the row in its new
