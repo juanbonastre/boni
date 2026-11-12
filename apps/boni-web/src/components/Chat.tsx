@@ -38,6 +38,7 @@ import {
 import { deviceZone, today } from "../core/clock.ts";
 import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
+import { filterOf, litKeys, litNames } from "../core/screenReplies.ts";
 import type { T } from "../i18n.ts";
 import {
   agentErrorText,
@@ -48,6 +49,7 @@ import {
   declinePending,
   draftOf,
   type LiveStep,
+  lightKeys,
   loadConversations,
   loadInbox,
   loadPlanners,
@@ -684,6 +686,23 @@ function wordsText(t: T, w: StepWords): string | null {
       return t("chat.w.remember");
     case "notify":
       return t("chat.w.notify");
+    // Boni over the screen (F9): what it does there, said while it acts.
+    case "screen.open":
+      return a.collection || a.record
+        ? t("chat.w.open", { what: a.collection ?? a.record ?? "" })
+        : a.place
+          ? t("chat.w.open", { what: t(`chat.place.${a.place}`) })
+          : a.run
+            ? t("chat.w.openRun")
+            : t("chat.w.openFlow");
+    case "screen.filter":
+      return a.collection ? t("chat.w.filter", { type: a.collection }) : null;
+    case "screen.highlight":
+      return t("chat.w.highlight");
+    case "screen.scroll":
+      return t("chat.w.scroll");
+    case "flows.runs":
+      return t("chat.w.runs");
     default:
       return null;
   }
@@ -1093,7 +1112,7 @@ function ReplyView({ reply }: { reply: Reply }) {
     }
     case "open": {
       // What Boni opened on the screen (F9), said in the code's words: the opening itself happened once, when the
-      // turn came (`openFromReplies`), never when the conversation is read again; what it may not open, unsaid.
+      // turn came (`screenActs`), never when the conversation is read again; what it may not open, unsaid.
       const target = openTarget(reply, dataTypes);
       const what = !target
         ? null
@@ -1101,13 +1120,65 @@ function ReplyView({ reply }: { reply: Reply }) {
           ? t(`chat.place.${target.place}`)
           : target.kind === "collection"
             ? target.type.name
-            : (target.title ?? t("inbox.element"));
+            : target.kind === "run"
+              ? t("chat.aRun")
+              : target.kind === "flow"
+                ? t("chat.aFlow")
+                : (target.title ?? t("inbox.element"));
       return what ? (
         <p className="reply-opened">
-          {t("chat.opened", { what })}
+          {t(target?.map ? "chat.openedMap" : "chat.opened", { what })}
           {caption}
         </p>
       ) : null;
+    }
+    case "filter": {
+      // A collection Boni opened filtered (F9): said, never saved; the bar over it takes it away or keeps it.
+      const f = filterOf(reply, dataTypes);
+      return f ? (
+        <p className="reply-opened">
+          {t("chat.filtered", { what: f.type.name })}
+          {caption}
+        </p>
+      ) : null;
+    }
+    case "highlight":
+    case "scroll": {
+      // What Boni lit or brought into view (F9), by name, with «Ver» to light it again (the same action).
+      const keys = litKeys(reply);
+      if (!keys.length) return null;
+      const names = litNames(reply);
+      const what =
+        names.length > 3
+          ? t("chat.litMore", { what: names.slice(0, 3).join(", "), n: names.length - 3 })
+          : names.join(", ") || t("chat.litThings", { n: keys.length });
+      const scroll = reply.component === "scroll";
+      return (
+        <p className="reply-opened">
+          {t(scroll ? "chat.scrolled" : "chat.lit", { what })}{" "}
+          {/* The action by its name, each its own (the parity test reads them literally). */}
+          {scroll ? (
+            <button
+              type="button"
+              className="link-btn small"
+              data-boni-action="screen.scroll"
+              onClick={() => lightKeys(keys, true)}
+            >
+              {t("chat.litAgain")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="link-btn small"
+              data-boni-action="screen.highlight"
+              onClick={() => lightKeys(keys)}
+            >
+              {t("chat.litAgain")}
+            </button>
+          )}
+          {caption}
+        </p>
+      );
     }
     case "run": {
       // A run drawn in the conversation, with «Ampliar» to the map (task 92): only one a tool gave (the code's own
@@ -1583,7 +1654,7 @@ export function LogView() {
         </p>
       )}
       {accuracy.length > 0 && <Accuracy t={t} areas={accuracy} lang={lang} />}
-      <ul className="log-list">
+      <ul className="log-list" data-boni-action="flows.runs">
         {logEntries(runs).map((e) => {
           if ("run" in e) return line(e.run);
           const first = e.quiet[0] as RunSummary;

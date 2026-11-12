@@ -447,6 +447,7 @@ export function makeApp(opts: ServerOptions): App {
             now: (opts.now ?? Date.now)(),
             tz: (opts.agent as AgentHost).tz,
           }),
+        (opts.agent as AgentHost).tz,
       );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });

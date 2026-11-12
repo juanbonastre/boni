@@ -19,6 +19,8 @@ import {
   type UserStore,
 } from "@boni/store";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
+// The screen's actions import this module's helpers; coreTools only calls them, once everything is loaded.
+import { withScreenActions } from "./screen.ts";
 import {
   asKey,
   codeLabel,
@@ -60,6 +62,9 @@ export const EFFECTS = [
   // the code paints from the real arguments (accepting or rejecting what waits in the Bandeja). Only from his own
   // turn on a personal device, never from outside (P21).
   "touch",
+  // Boni over the screen (docs/sistema.md §4.7, F9): what the app opens, scrolls to, lights or filters on Juan's
+  // screen; nothing is written. Only from his own turn, never from outside (P22).
+  "screen",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
 /**
@@ -76,6 +81,8 @@ export const AREAS = [
   "connectors",
   "extensions",
   "boni",
+  // What Boni does on the screen (screen.ts).
+  "screen",
 ] as const;
 export type Area = (typeof AREAS)[number];
 export const ARG_ROLES = [
@@ -98,6 +105,8 @@ export const ARG_ROLES = [
   // A JSON object given as it is (a flow's trigger and plan, `flows.save`): the plan language lets {"lit": {...}}
   // only here, and the tool checks it whole.
   "definition",
+  // Something on the screen or a run, as the screen or a tool gave it (`screen.*`): never a model's own id.
+  "target",
 ] as const;
 export type ArgRole = (typeof ARG_ROLES)[number];
 /** Roles whose value says where something goes: only a value taken as it is from Juan or his data (P2, P14). */
@@ -216,6 +225,8 @@ export interface Caps {
    * proposals this run has made so far. */
   piece: { pieces: unknown; proposals: () => readonly string[]; dry: boolean };
   touch: { store: ReadStore; inbox: InboxDecider; service?: unknown };
+  /** The screen's actions only read: what they give, the app does (screen.ts). */
+  screen: { store: ReadStore };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -433,7 +444,7 @@ export const fieldByName = (def: TypeDef, name: string) =>
   (name === "title" ? def.fields.find((f) => f.id === def.titleField && !f.archived) : undefined);
 
 /** A select's value by its option id, or by the option's name as a model writes it ("Leído", "leido"). */
-const optionFor = (f: FieldDef, v: unknown): unknown => {
+export const optionFor = (f: FieldDef, v: unknown): unknown => {
   if (typeof v !== "string" || f.options?.some((o) => o.id === v)) return v;
   return f.options?.find((o) => asKey(o.name) === asKey(v))?.id ?? v;
 };
@@ -490,7 +501,14 @@ export function stepWords(
     if (!v || spec.role === "type" || spec.role === "limit") continue;
     const x = plain(v);
     if (spec.role === "entity") {
-      const s = typeof x === "string" ? store.get(x) : null;
+      // By its id, or a record a tool gave whole (`screen.open`).
+      const id =
+        typeof x === "string"
+          ? x
+          : x && typeof x === "object" && !Array.isArray(x) && typeof x.id === "string"
+            ? x.id
+            : null;
+      const s = id ? store.get(id) : null;
       const d = s ? store.schema().types[s.entity.type] : undefined;
       const title = s && d ? s.entity.values[d.titleField] : undefined;
       if (typeof title === "string" && title) out[k] = cut(title);
@@ -1036,7 +1054,7 @@ export function coreTools(): ToolRegistry {
       return leaf(true, codeLabel("notify"));
     },
   });
-  return r;
+  return withScreenActions(r);
 }
 
 // ---------------------------------------------------------------- capabilities
@@ -1423,6 +1441,7 @@ export function makeCaps(c: CapsContext): Caps {
       },
     },
     piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []), dry: !!c.dry },
+    screen: { store: ro },
     touch: {
       store: ro,
       ...(c.service !== undefined ? { service: c.service } : {}),

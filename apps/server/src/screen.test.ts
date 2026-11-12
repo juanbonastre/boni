@@ -136,7 +136,9 @@ describe("the screen as data (F9, task 85)", () => {
     // Only the open collection's row, by reference: the restricted one and the opaque one are not there.
     const chosen = plain(screen.fields.chosen as Val) as { id: string; type: string }[];
     expect(chosen).toEqual([expect.objectContaining({ id: rowOf("tarea"), type: "tarea" })]);
-    expect(Object.keys(chosen[0] ?? {}).sort()).toEqual(["id", "title", "type"]);
+    // `at`: where it is on the screen, the code's key for Boni's screen actions (part five).
+    expect(Object.keys(chosen[0] ?? {}).sort()).toEqual(["at", "id", "title", "type"]);
+    expect(chosen[0]).toMatchObject({ at: `row:${rowOf("tarea")}` });
     // The card: its title from outside, its collection; never what it would write. The closed one is not there.
     const inbox = screen.fields.inbox as Val;
     if (inbox.t !== "list" || inbox.items[0]?.t !== "rec") throw new Error("no cards");
@@ -277,6 +279,7 @@ describe("the screen as data (F9, task 85)", () => {
     });
     const pointed = (plain(screen as Val) as { pointed: Record<string, unknown>[] }).pointed;
     expect(pointed[0]).toEqual({
+      at: `block:${page.id}/pages`,
       kind: "number",
       page: page.id,
       block: "pages",
@@ -303,6 +306,7 @@ describe("the screen as data (F9, task 85)", () => {
       total: 3,
     });
     expect(pointed[2]).toEqual({
+      at: `block:${page.id}/table`,
       kind: "view",
       page: page.id,
       block: "table",
@@ -311,12 +315,19 @@ describe("the screen as data (F9, task 85)", () => {
       view: { layout: "board", group: "estado" },
     });
     expect(pointed[3]).toEqual({
+      at: `block:${page.id}/words`,
       kind: "text",
       page: page.id,
       block: "words",
       text: "Lo que quiero leer este año",
     });
-    expect(pointed[4]).toEqual({ kind: "button", page: page.id, block: "go", title: "Apuntar" });
+    expect(pointed[4]).toEqual({
+      at: `block:${page.id}/go`,
+      kind: "button",
+      page: page.id,
+      block: "go",
+      title: "Apuntar",
+    });
     expect(JSON.stringify(pointed)).not.toContain("Forged");
     // A line says only that it is one; a block or a page that is not there, that it is gone.
     const none = screenOf(store, {
@@ -330,7 +341,11 @@ describe("the screen as data (F9, task 85)", () => {
       ],
     });
     expect(plain(none as Val)).toEqual({
-      pointed: [{ kind: "line", page: page.id, block: "line" }, { kind: "gone" }, { kind: "gone" }],
+      pointed: [
+        { at: `block:${page.id}/line`, kind: "line", page: page.id, block: "line" },
+        { kind: "gone" },
+        { kind: "gone" },
+      ],
     });
   });
 
@@ -388,6 +403,7 @@ describe("the screen as data (F9, task 85)", () => {
     expect(said[0]).toMatchObject({ collection: "tarea", total: 1 });
     // A row, by reference: the planner reads the rest with its tools, and an «open» reply may name it whole.
     expect(said[3]).toEqual({
+      at: `row:${rowOf("tarea")}`,
       kind: "row",
       id: rowOf("tarea"),
       type: "tarea",
@@ -661,7 +677,8 @@ describe("the screen as data (F9, task 85)", () => {
       origin: { kind: "turn", trust: "personal", device: "portatil" },
     });
     expect(r.error).toBe("plan-invalid");
-    expect(JSON.stringify(planner.requests[0]?.input)).not.toContain('"screen"');
+    // No input «screen» (the screen's actions are tools, and their effect is named so).
+    expect(JSON.stringify(planner.requests[0]?.input)).not.toContain('"screen":{');
   });
 });
 
@@ -942,6 +959,7 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
     });
     // A node of the map that is none of the account's records says what it is.
     expect(one({ kind: "node", id: "conn:mail" })).toEqual({
+      at: "node:conn:mail",
       kind: "connector",
       node: "conn:mail",
       code: "mail",
@@ -970,6 +988,7 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
   it("a collection of the sidebar or the map is its key and its name; one closed to the models, «closed»", () => {
     const { one, typeOf } = withFlows();
     expect(one({ kind: "collection", id: typeOf("libro").id })).toEqual({
+      at: `collection:${typeOf("libro").id}`,
       kind: "collection",
       collection: "libro",
       name: "Libros",

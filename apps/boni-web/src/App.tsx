@@ -18,7 +18,7 @@ import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { WaitLine } from "./components/WaitLine.tsx";
-import { chipTitle, pointAttrs } from "./core/pointing.ts";
+import { chipTitle, pointAttrs, pointKey, readRef } from "./core/pointing.ts";
 import { host, PHONE_QUERY } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
@@ -87,6 +87,7 @@ export function App() {
         <Content />
         <BoniLit />
       </div>
+      <ScreenLight />
       {panelOpen && <SidePanel />}
       {/* Under a mail seen from a card it stays as it was (its cards, what was unfolded), back when that closes. */}
       <InboxPanel under={panelOpen} />
@@ -120,6 +121,58 @@ export function App() {
 function BoniLit() {
   const lit = useStore((s) => s.lit);
   return lit ? <div key={lit} className="boni-lit" aria-hidden="true" /> : null;
+}
+
+/** How long a thing Boni lit stays lit (docs/design-guide.md, «Resaltar»), and how long it is looked for. */
+const LIT_MS = 2400;
+const LIT_LOOK_MS = 3000;
+/**
+ * What Boni lit or brought into view (F9, `screen.highlight`, `screen.scroll`): each thing where it is drawn, by its
+ * key (`data-boni-ref`), outlined in the accent for a moment and then gone on its own; never over it, so it never
+ * takes a click. What it names may be drawn a moment later (a collection opening, the map laying out): it is looked
+ * for a while. The first one found is brought into view.
+ */
+function ScreenLight() {
+  const light = useStore((s) => s.screenLight);
+  useEffect(() => {
+    if (!light) return;
+    const want = new Set(light.keys);
+    const lit = new Set<Element>();
+    let scrolled = false;
+    const look = () => {
+      for (const el of document.querySelectorAll("[data-boni-ref]")) {
+        // Boni's own window is not the screen.
+        if (lit.has(el) || el.closest(".boni-window")) continue;
+        const r = readRef(el.getAttribute("data-boni-ref"));
+        if (!r || !want.has(pointKey(r))) continue;
+        lit.add(el);
+        el.setAttribute("data-boni-lit", "");
+        if (scrolled) continue;
+        scrolled = true;
+        const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        el.scrollIntoView({
+          block: light.scroll ? "center" : "nearest",
+          behavior: still ? "auto" : "smooth",
+        });
+      }
+    };
+    const started = Date.now();
+    look();
+    const again = window.setInterval(() => {
+      if (lit.size >= want.size || Date.now() - started > LIT_LOOK_MS) window.clearInterval(again);
+      else look();
+    }, 150);
+    const off = () => {
+      for (const el of lit) el.removeAttribute("data-boni-lit");
+    };
+    const done = window.setTimeout(off, LIT_MS + LIT_LOOK_MS);
+    return () => {
+      window.clearInterval(again);
+      window.clearTimeout(done);
+      off();
+    };
+  }, [light?.n]);
+  return null;
 }
 
 function useMedia(query: string): boolean {

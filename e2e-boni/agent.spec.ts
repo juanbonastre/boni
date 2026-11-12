@@ -21,11 +21,14 @@ import {
   DONE,
   EXTENSION_PROPOSALS,
   EXTENSIONS,
+  FILTER_REPLY,
   FLOW_CATALOG,
   FLOW_CHECK,
   FLOW_DETAIL,
+  FLOWS,
   FLOWS_WITH_SUMMARY,
   GUIDE,
+  LIGHT_REPLY,
   LIVE_STEPS,
   LONG_SENDER,
   MAIL,
@@ -38,6 +41,8 @@ import {
   REQUESTS,
   RTL,
   RUN_2,
+  RUN_STOPPED,
+  RUN_STOPPED_REPLY,
   RUNS,
   RUNS_EXPLAINED,
   STOPPED,
@@ -511,6 +516,9 @@ test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragr
     .click();
   await expect(page.locator(".db-table tbody tr[data-row]")).toHaveCount(3);
   await page.keyboard.press("Control+e");
+  // The turn before must have ended: Enter while one runs sends nothing (Chat's send), and under a full suite's
+  // load its answer can come after the clicks above (task 85, part five).
+  await expect(win.getByRole("button", { name: "Enviar" })).toBeVisible();
   await box.fill("¿qué estoy viendo?");
   await box.press("Enter");
   const seen = (await turnWith(page, "¿qué estoy viendo?")).screen;
@@ -542,6 +550,82 @@ test("«ábreme Libros» (F9, task 85): Boni opens it on the screen, lit, once; 
   await win.getByRole("button", { name: "Ampliar" }).click();
   await expect(page.locator(".content .reply-opened")).toHaveText("Abierto: Libros");
   await expect(page.locator(".content .chat-layout")).toBeVisible();
+});
+
+test("«enséñame los leídos» (F9, §4.7): Libros filtered by Boni, said in the turn; × takes it off, «Guardar en la vista» keeps it", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: { "POST api/agent/turn": [FILTER_REPLY, FILTER_REPLY] },
+  });
+  await ask(page, "enséñame los leídos");
+  const rows = page.locator(".main tbody tr[data-boni-ref]");
+  const bar = page.locator(".main .boni-filter");
+  // Temporary, never in the view (a screen act touches no data): the bar says it, with the view's own words.
+  await expect(bar).toContainText("Filtrado por Boni");
+  await expect(bar).toContainText("Leído");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Ficciones");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  await expect(win.locator(".reply-opened")).toContainText("Libros");
+  expect(await requests(page, "PUT api/")).toEqual([]);
+  // The window closed (Esc), the bar under it is his.
+  await page.keyboard.press("Escape");
+  await expect(win).toHaveCount(0);
+  await bar.getByRole("button", { name: "Quitar el filtro de Boni" }).click();
+  await expect(bar).toHaveCount(0);
+  await expect(rows).toHaveCount(3);
+  // Kept: his own action puts it into the view, and the bar goes.
+  await ask(page, "enséñame los leídos");
+  await expect(bar).toBeVisible();
+  await page.keyboard.press("Escape");
+  await bar.getByRole("button", { name: "Guardar en la vista" }).click();
+  await expect(bar).toHaveCount(0);
+  await expect(rows).toHaveCount(1);
+});
+
+test("«ábreme Libros, lo pendiente» (F9, §4.7): the row lit for a moment, never in the way of a click, «Ver» lights it again", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: { "POST api/agent/turn": [LIGHT_REPLY] } });
+  await ask(page, "ábreme Libros, lo pendiente");
+  const lit = page.locator(".main [data-boni-lit]");
+  await expect(lit).toHaveCount(1);
+  await expect(lit).toContainText("Pedro Páramo");
+  // What it names is lit, not the whole area.
+  await expect(page.locator(".main .boni-lit")).toHaveCount(0);
+  // A light, not a layer: the row under it takes the click (Playwright refuses one another element would catch).
+  await lit.locator("td").nth(1).click({ timeout: 1000 });
+  // It goes on its own.
+  await expect(lit).toHaveCount(0, { timeout: 5000 });
+  const win = page.getByRole("dialog", { name: "Boni" });
+  await expect(win.locator(".reply-opened").last()).toContainText("Pedro Páramo");
+  await win.getByRole("button", { name: "Ver", exact: true }).click();
+  await expect(lit).toHaveCount(1);
+});
+
+test("«¿por qué paró el flujo de ayer?» (F9 with F8, §4.7): the run over the map, its flow unfolded, the step that stopped it lit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [RUN_STOPPED_REPLY],
+      "GET api/agent/runs/:id": [RUN_STOPPED],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await ask(page, "¿por qué paró el flujo de ayer?");
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  const reader = page.locator(".mp-stage .mp-step").filter({ hasText: "Lectora" });
+  await expect(reader).toHaveClass(/run-bad/);
+  await expect(reader).toHaveAttribute("data-boni-lit", "");
+  await expect(page.locator("[data-boni-lit]")).toHaveCount(1);
+  const win = page.getByRole("dialog", { name: "Boni" });
+  await expect(win.locator(".reply-opened")).toContainText("en el mapa");
 });
 
 test("what Boni opened is not opened again when its run goes on: a confirmation repeats its replies, never its opening (F9)", async ({

@@ -318,6 +318,47 @@ describe("the policy engine", () => {
       ).toMatchObject({ kind: "deny", rule: "P21" });
     }
   });
+  it("Boni moves Juan's screen only from his own turn, and nothing from outside chooses what it shows (P22; docs/sistema.md §4.7)", () => {
+    for (const tool of ["screen.open", "screen.filter"]) {
+      const args = (l: typeof user) => ({ collection: leaf("Agenda", l) });
+      expect(decide(call(tool, args(model)), turn, counters)).toEqual({
+        kind: "allow",
+        rule: "P22",
+      });
+      expect(decide(call(tool, args(ext)), turn, counters)).toMatchObject({
+        kind: "deny",
+        rule: "P22",
+      });
+      for (const kind of ["background", "miniapp", "accepted"] as const)
+        expect(decide(call(tool, args(user)), { kind, trust: "personal" }, counters)).toMatchObject(
+          {
+            kind: "deny",
+            rule: "P22",
+          },
+        );
+      // A flow he runs by hand is his turn (§4.7).
+      expect(decide({ ...call(tool, args(user)), flow: true }, turn, counters).kind).toBe("allow");
+    }
+    // A row a mail made is still his to light: what chooses it is its key, the code's own, never its other fields.
+    const row = (id: typeof user) =>
+      rec({ id: leaf("e_01", id), titulo: leaf("Reunión", ext) }, model);
+    for (const tool of ["screen.highlight", "screen.scroll"]) {
+      expect(decide(call(tool, { target: list([row(model)], model) }), turn, counters)).toEqual({
+        kind: "allow",
+        rule: "P22",
+      });
+      // Its key from outside, or the list chosen from outside, is not.
+      expect(decide(call(tool, { target: list([row(ext)], model) }), turn, counters)).toMatchObject(
+        { kind: "deny", rule: "P22" },
+      );
+      expect(decide(call(tool, { target: list([row(model)], ext) }), turn, counters)).toMatchObject(
+        {
+          kind: "deny",
+          rule: "P22",
+        },
+      );
+    }
+  });
   it("a piece of Boni runs only in a flow; one that changes the inbox only in the flow's own background run, or tried (P20)", () => {
     // docs/sistema.md §4.2: Boni's own code as a step of a flow, never in a plan a model writes for a turn.
     const piece = (changes: boolean): ToolDef<"piece"> => ({

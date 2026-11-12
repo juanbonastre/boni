@@ -2,16 +2,21 @@ import {
   codeLabel,
   deepLabel,
   leaf,
+  list,
   plain,
+  rec,
   ToolError,
   type ToolRegistry,
   type Val,
 } from "@boni/agent";
+import { dayToIso, formatMinute, toLocal } from "@boni/calendar";
 import { join, type Label } from "@boni/entities";
+import type { RunRow, UserStore } from "@boni/store";
 
 /**
  * The actions of the area «Flujos» that the core's (`flows.run`, `flows.save`) did not cover (docs/sistema.md §4.1,
- * F10): switching a flow on or off, deleting it and trying it («Probar»). Switching one on or off is Juan's touch
+ * F10): switching a flow on or off, deleting it, trying it («Probar») and reading its runs (to open one over the map,
+ * F9). Switching one on or off is Juan's touch
  * (P21: the AI prepares it in his turn and he confirms the card); deleting is his card (P5); trying changes nothing.
  * They run the same code as the routes of «Flujos» (agent.ts `FlowsService`), and what a run switched or deleted is
  * taken back by Undo of the run.
@@ -25,7 +30,47 @@ export interface FlowsService {
   remove(flow: string): { flow: string; name: string };
   /** «Probar»: the saved flow, dry, with its form's values (`said`: who wrote them); what it would do. */
   test(flow: string, inputs: Record<string, string>, said: Label): Promise<unknown>;
+  /** A flow's runs (every flow's when null), the newest first: when, how it ended, and the step that stopped it. */
+  runs(flow: string | null, limit: number): FlowRunFacts[];
 }
+/** A run of a flow as the model reads it: codes and the server's own words only, never a step's texts. */
+export interface FlowRunFacts {
+  run: string;
+  flow: { id: string; name: string };
+  /** The civil day and the time it started, in the account's zone. */
+  day: string;
+  time: string;
+  status: string;
+  /** The step it stopped at (an error, a denial, a piece that ended it), or null when it went to the end. */
+  stopped: { step: string; decision: string; rule: string | null; code: string | null } | null;
+}
+/** The decisions that stop a run where they are logged (agent.ts `advance`, `run`). */
+const STOPS = new Set(["end", "stopped", "deny"]);
+const codeOf = (d: unknown): string | null => {
+  const c = d && typeof d === "object" ? (d as { code?: unknown; reason?: unknown }) : null;
+  const x = c?.code ?? c?.reason;
+  return typeof x === "string" && /^[a-z0-9][a-z0-9:_-]{0,79}$/i.test(x) ? x : null;
+};
+/** A run's facts, for `flows.runs`: when it started in `tz`, and the last step that stopped it. */
+export function runFacts(store: UserStore, r: RunRow, tz: string): FlowRunFacts {
+  const at = toLocal(r.started, tz);
+  const stop = store.journal
+    .steps(r.id)
+    .filter((s) => STOPS.has(s.decision))
+    .at(-1);
+  return {
+    run: r.id,
+    flow: { id: r.flow ?? "", name: (r.flow && store.journal.flow(r.flow)?.name) || "" },
+    day: dayToIso(at.day),
+    time: formatMinute(Math.floor(at.minute), true),
+    status: r.status,
+    stopped: stop
+      ? { step: stop.step, decision: stop.decision, rule: stop.rule, code: codeOf(stop.detail) }
+      : null,
+  };
+}
+/** Runs one call gives, at most. */
+export const MAX_RUNS = 20;
 const serviceOf = (s: unknown): FlowsService => {
   if (!s || typeof s !== "object" || !("enable" in s)) throw new ToolError("not-available");
   return s as FlowsService;
@@ -102,6 +147,40 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
           inputs,
           a.inputs ? join(extra, deepLabel(a.inputs)) : extra,
         )) as never,
+        code,
+      );
+    },
+  });
+  r.register({
+    name: "flows.runs",
+    effect: "read",
+    area: "flows",
+    service: "flows",
+    title: "Ejecuciones de un flujo",
+    describe: `The runs of one of Juan's flows (or of all of them, without flow), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did. To answer «¿por qué paró…?» and open that run on the map (screen.open with its run, map: true)`,
+    args: {
+      flow: { ...flow, required: false },
+      limit: { role: "value", describe: `how many, ${MAX_RUNS} at most` },
+    },
+    run(c, a) {
+      const n = a.limit ? Number(plain(a.limit)) : 10;
+      const limit = Number.isFinite(n) ? Math.min(MAX_RUNS, Math.max(1, Math.floor(n))) : 10;
+      // Records, so that a plan names one's run (`$r[0].run`) as a tool gave it.
+      const runs = serviceOf(c.service).runs(a.flow ? idOf(a.flow) : null, limit);
+      return list(
+        runs.map((x) =>
+          rec(
+            {
+              run: leaf(x.run, code),
+              flow: rec({ id: leaf(x.flow.id, code), name: leaf(x.flow.name, code) }, code),
+              day: leaf(x.day, code),
+              time: leaf(x.time, code),
+              status: leaf(x.status, code),
+              stopped: leaf(x.stopped, code),
+            },
+            code,
+          ),
+        ),
         code,
       );
     },

@@ -267,6 +267,7 @@ export function RecentSection({ open, toggle }: { open: boolean; toggle: () => v
                 <button
                   type="button"
                   className="chart-main"
+                  data-boni-action="screen.open"
                   onClick={() =>
                     r.kind === "page"
                       ? void openPage(r.id)

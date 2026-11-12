@@ -10710,6 +10710,43 @@ button.rows-panel-row:hover {
   color: var(--muted);
   font-size: 13px;
 }
+/* What Boni lit or brought into view (F9, «Resaltar», «Desplazar»; docs/design-guide.md): the thing itself outlined in
+   the accent, held a moment and faded, ending on its own. An outline takes no room and no click. */
+[data-boni-lit] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: boni-lit-thing 2400ms ease-out forwards;
+}
+@keyframes boni-lit-thing {
+  0%,
+  55% {
+    outline-color: var(--accent);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-boni-lit] {
+    animation: boni-lit-thing 1ms linear 2400ms forwards;
+  }
+}
+/* Boni's filter over a collection (F9, `screen.filter`): what it filters by, «Guardar en la vista» and ×. */
+.boni-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  padding: 6px 8px 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.boni-filter-what {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* Pointing (docs/sistema.md §4.7, F9; `Ctrl+Shift+E` or the bar's «Señalar»): over the screen the pointer is a
    crosshair (Boni's own window keeps its own), what it would take is outlined in the accent, and a drag draws its

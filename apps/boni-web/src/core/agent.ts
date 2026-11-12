@@ -37,7 +37,18 @@ export type Painted =
   | { t: "rec"; fields: Record<string, Painted>; integrity: string };
 
 export interface Reply {
-  component: "text" | "number" | "list" | "table" | "chart" | "run" | "open";
+  /** open, filter, highlight, scroll: what Boni does on the screen (F9), done once when the turn comes. */
+  component:
+    | "text"
+    | "number"
+    | "list"
+    | "table"
+    | "chart"
+    | "run"
+    | "open"
+    | "filter"
+    | "highlight"
+    | "scroll";
   data: Record<string, Painted>;
 }
 export interface ConfirmRow {
@@ -1718,7 +1729,18 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
   return { tool, title, rows };
 }
 
-const COMPONENTS = new Set(["text", "number", "list", "table", "chart", "run", "open"]);
+const COMPONENTS = new Set([
+  "text",
+  "number",
+  "list",
+  "table",
+  "chart",
+  "run",
+  "open",
+  "filter",
+  "highlight",
+  "scroll",
+]);
 
 export function parseTurn(v: unknown): TurnResult {
   if (!isObj(v)) throw new ApiError(0, "bad-answer", "bad answer");

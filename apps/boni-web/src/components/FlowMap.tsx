@@ -81,7 +81,7 @@ import {
   stepLayout,
   withTold,
 } from "../core/flowLayout.ts";
-import { chipTitle, mapRef, pointAttrs } from "../core/pointing.ts";
+import { chipTitle, mapRef, pointAttrs, pointKey } from "../core/pointing.ts";
 import {
   mapNodeName,
   moneyText,
@@ -91,6 +91,7 @@ import {
   runWords,
   stepDesc,
   stepName,
+  stopStep,
   valueText,
 } from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
@@ -98,6 +99,7 @@ import { phoneLayout } from "../host.ts";
 import {
   agentApi,
   errorText,
+  lightKeys,
   openCollection,
   openPage,
   showChat,
@@ -285,11 +287,13 @@ function mapPoint(t: (k: string) => string, id: string, name: string) {
   const ref = mapRef(id);
   if (!ref) return {};
   const kind =
-    ref.kind === "collection" || ref.kind === "flow" || ref.kind === "step"
-      ? t(`point.kind.${ref.kind}`)
-      : ref.kind === "row"
-        ? t("point.kind.page")
-        : t("point.kind.node");
+    ref.kind === "step" && ref.step === "trigger"
+      ? t("point.kind.trigger")
+      : ref.kind === "collection" || ref.kind === "flow" || ref.kind === "step"
+        ? t(`point.kind.${ref.kind}`)
+        : ref.kind === "row"
+          ? t("point.kind.page")
+          : t("point.kind.node");
   return pointAttrs(ref, chipTitle(kind, name));
 }
 
@@ -1162,6 +1166,9 @@ function Canvas({
           const owner = d.owner ?? (d.flow ? `flow:${d.flow}` : (centre ?? "boni:chat"));
           setRun({ ...d, owner });
           if (owner.startsWith("flow:")) setOpen((o) => new Set([...o, owner]));
+          // The step that stopped it, lit for a moment over its flow unfolded (docs/sistema.md §4.7, «Flujos»).
+          const stop = d.flow ? stopStep(d.steps) : null;
+          if (d.flow && stop) lightKeys([pointKey({ kind: "step", flow: d.flow, step: stop })]);
           // «Recorrido» (task 90): asked with no centre, it is centred on where the run belongs.
           if (!centre && map.nodes.some((x) => x.id === owner)) setCenter(owner);
         },

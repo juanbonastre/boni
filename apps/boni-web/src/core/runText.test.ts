@@ -10,6 +10,7 @@ import {
   runWords,
   stepDesc,
   stepName,
+  stopStep,
   whyText,
 } from "./runText.ts";
 
@@ -152,5 +153,19 @@ describe("a run in words", () => {
       "2. Enviar correo — Parado: una regla de seguridad lo impide (P2-untrusted-destination)",
     );
     expect(copied).not.toMatch(/entities\.|mail\.send|\$s1/);
+  });
+});
+
+describe("the step a run stopped at (docs/sistema.md §4.7, «Flujos»)", () => {
+  const s = (id: string, decision: string | null, error: string | null = null) => ({
+    id,
+    decision,
+    error,
+  });
+  it("is the last one an error, a denial or a piece that ended it left, and none for a run that went to the end", () => {
+    expect(stopStep([s("leer", "allow"), s("aviso", "deny"), s("fin", "skip")])).toBe("aviso");
+    expect(stopStep([s("leer", "allow", "timeout"), s("otro", "stopped")])).toBe("otro");
+    expect(stopStep([s("leer", "allow", "timeout")])).toBe("leer");
+    expect(stopStep([s("leer", "allow"), s("fin", "allow")])).toBeNull();
   });
 });

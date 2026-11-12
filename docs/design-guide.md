@@ -619,6 +619,21 @@ contraseña ni un código aquí» under a question.
   draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
+- **What Boni acts on, lit** (F9, task 85, fifth part; `App.tsx` `ScreenLight`, `store.ts` `screenActs`; docs/sistema.md
+  §4.7; I-34): what `screen.highlight` or `screen.scroll` names (rows, blocks, a flow's steps, paragraphs), and the
+  step that stopped a run opened over the map, get a 2 px `--accent` outline, 2 px away, held for half the time and
+  faded to nothing in 2.4 s (`[data-boni-lit]`, `ease-out`); the first is brought into view (`nearest`, or the centre
+  for a scroll). It is an outline, never a layer: everything under it keeps its clicks. With «menos movimiento» it is
+  shown still and goes at once at the end, with no fade or smooth scroll. The conversation says it («Resaltado:
+  Pedro Páramo», «Filtrado: …») with «Ver» to light it again; the turn's steps say it while it acts
+  («Abriendo Agenda», «Filtrando Movimientos», «Resaltando en tu pantalla»).
+  - **Brief, and only for what changed.** Nielsen Norman Group, «Animation for Attention and Comprehension»: motion
+    draws the eye to what changed, so it must be brief and rare, or it becomes noise; Apple HIG, «Motion»: make motion
+    optional and honour Reduce Motion. A light that goes on its own, never one to dismiss.
+  - **Boni's filter** shows as a bar over the table (`.boni-filter`, `role="status"`): «Filtrado por Boni:» and its
+    rules in the view's own words, its caption in `--muted`, «Guardar en la vista» (a link button) and × («Quitar el
+    filtro de Boni»). It is temporary: it leaves the view as it was, goes with ×, or when the collection changes, and
+    «Guardar en la vista» adds its rules to the view through Juan's own action.
 - **Pointing** (F9, task 85; `ScreenPointer.tsx`, `core/pointing.ts`; docs/sistema.md §4.7; I-31): `Ctrl+Shift+E`, or
   «Señalar» in the window's bar (a 28 px icon button beside the model, `--accent` on a 14 % tint while it is on),
   makes the pointer one that marks what the next message is about: a block of a page, a row in any view, a card of

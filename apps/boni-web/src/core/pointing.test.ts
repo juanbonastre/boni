@@ -125,8 +125,12 @@ describe("the map, a flow's steps, a note's paragraphs and what is in view (F9, 
       flow: "leer-correo",
       step: "clasificar",
     });
-    // An unfolded flow's trigger stands for the flow.
-    expect(mapRef("step:flow:leer-correo:trigger")).toEqual({ kind: "flow", id: "leer-correo" });
+    // An unfolded flow's trigger is pointed at as its steps are: the server tells what starts it.
+    expect(mapRef("step:flow:leer-correo:trigger")).toEqual({
+      kind: "step",
+      flow: "leer-correo",
+      step: "trigger",
+    });
     expect(mapRef("conn:mail")).toEqual({ kind: "node", id: "conn:mail" });
     expect(mapRef("boni:inbox")).toEqual({ kind: "node", id: "boni:inbox" });
     expect(mapRef("dev:all")).toEqual({ kind: "node", id: "dev:all" });

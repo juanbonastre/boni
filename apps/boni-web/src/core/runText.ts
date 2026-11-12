@@ -60,6 +60,16 @@ export function runStatusLine(t: T, status: string, withCode = false): string {
 }
 
 /** What came of a step in a run, in a word or two (no rule codes: they are the policy's, not the user's). */
+/** The step a run stopped at: the last one an error, a denial or a piece that ended it left; null when none did. */
+export function stopStep(
+  steps: readonly Pick<RunStep, "id" | "error" | "decision">[],
+): string | null {
+  const stop = steps.filter(
+    (x) => !!x.error || x.decision === "deny" || x.decision === "stopped" || x.decision === "end",
+  );
+  return stop.at(-1)?.id ?? null;
+}
+
 export function runStepLine(t: T, s: Pick<RunStep, "error" | "decision">): string {
   if (s.error) return t("run.node.stopped", { why: whyText(t, s.error) });
   if (s.decision === null) return t("run.node.never");

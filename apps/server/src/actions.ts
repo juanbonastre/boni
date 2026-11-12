@@ -243,6 +243,19 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "flows.enable": { why: "Juan's touch: his card, in his app (P21)" },
   "flows.delete": { why: "deleting is Juan's touch: his card, in his app" },
   "flows.test": "flows_test",
+  "flows.runs": "flows_runs",
+  "screen.open": {
+    why: "Juan's screen is his app's: an assistant has its own chat, not his screen (P22)",
+  },
+  "screen.scroll": {
+    why: "Juan's screen is his app's: an assistant has its own chat, not his screen (P22)",
+  },
+  "screen.highlight": {
+    why: "Juan's screen is his app's: an assistant has its own chat, not his screen (P22)",
+  },
+  "screen.filter": {
+    why: "Juan's screen is his app's: an assistant has its own chat, not his screen (P22)",
+  },
   "inbox.correct": { why: "Juan's touch: his card, in his app (P21)" },
   "memory.save": { why: "an assistant writes Juan's instructions with edit (guide)" },
   "flows.run": { why: "Juan's touch: his card, in his app (P8)" },
