@@ -30,8 +30,8 @@ actions for the app, the AI and the MCP, extensions as packages, pages with valu
   with `ANTHROPIC_BASE_URL` set in your shell, run it as `env -u ANTHROPIC_BASE_URL make check`) · `make map`
 - `make e2e` (Playwright on the system Chrome) · `make e2e-boni` (Boni's only) · `make e2e-boni-desktop` and
   `make e2e-calendar-desktop` (the real desktop apps, on a virtual screen; `E2E_SCREEN=real` on this one). The e2e
-  targets and `make check`'s tests wait in one queue shared by every worktree, saying who holds it (T-08): run them
-  through `make`, never `playwright` by hand
+  targets and `make check`'s tests wait in one queue shared by every worktree, in arrival order, saying who holds it
+  (T-08, T-09): run them through `make`, never `playwright` by hand
 - `make package-boni` (Boni's desktop `.deb`) · `make package` (Boni Calendar's `.deb` and AppImage) · `make server`
 - `make bench-chrome` / `make bench-electron`: the calendar grid's smoothness (`docs/rendimiento.md`)
 
