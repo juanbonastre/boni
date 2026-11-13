@@ -25,6 +25,7 @@ let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
 let noteId = "";
 let longId = "";
+let pictureId = "";
 
 function startServer() {
   const env = { ...process.env, BONI_DB: join(dir, "boni-calendar.db"), BONI_PASSWORD: PASSWORD };
@@ -104,12 +105,17 @@ test.beforeAll(async () => {
   const env = { ...process.env, BONI_DB: join(dir, "boni-calendar.db"), BONI_PASSWORD: PASSWORD };
   execFileSync("node", ["apps/server/src/cli.ts", "add-user", "ejemplo"], { cwd: ROOT, env });
   mkdirSync(join(dir, "users"), { recursive: true });
-  const { openUserStore } = await import("../packages/store/src/index.ts");
+  const { BODY, openUserStore } = await import("../packages/store/src/index.ts");
   const store = openUserStore(join(dir, "users", "1.db"));
   const ids = seed(
     store,
-    [{ key: "apunte", name: "Apuntes", folder: "apuntes/", fields: { lugar: "text" } }],
+    [
+      { key: "apunte", name: "Apuntes", folder: "apuntes/", fields: { lugar: "text" } },
+      { key: "adjuntos", name: "Adjuntos", folder: "adjuntos/", files: true },
+    ],
     {
+      "adjuntos/plano.png": readFileSync(join(ROOT, "e2e-boni", "__screens__", "ajustes.png")),
+      "apuntes/Con imagen de ejemplo.md": '---\nlugar: "Casa"\n---\nUna imagen.\n',
       "apuntes/Reunión de ejemplo.md": '---\nlugar: "Sala 1"\n---\nPrimera línea.\n',
       // A long note, as some of Juan's are (A-15).
       "apuntes/Diario de ejemplo.md": `---\nlugar: "Casa"\n---\n${Array.from({ length: 1500 }, (_, i) => `Línea ${i + 1} del diario de ejemplo.`).join("\n\n")}\n`,
@@ -117,6 +123,18 @@ test.beforeAll(async () => {
   );
   noteId = ids.get("apuntes/Reunión de ejemplo.md") as string;
   longId = ids.get("apuntes/Diario de ejemplo.md") as string;
+  pictureId = ids.get("apuntes/Con imagen de ejemplo.md") as string;
+  // Its text shows the picture by its row's id (task 2h: an image grown by its corner, then Boni closed at once).
+  store.update(
+    pictureId,
+    {
+      [BODY]: {
+        value: `Una imagen.\n\n![plano.png](boni:${ids.get("adjuntos/plano.png")})\n`,
+        label: store.schema().types.t_apunte?.label as never,
+      },
+    },
+    { actor: "user", device: "seed" },
+  );
   store.close();
   await startServer();
   mkdirSync(join(dir, "tmp"));
@@ -335,6 +353,35 @@ test("a long note's text, typed and Boni closed at once: there when it opens aga
   await expect(w.locator(".row-doc .doc-editor .blk-input").first()).toHaveText(
     "Línea 1 del diario de ejemplo.",
   );
+});
+
+test("an image grown by its corner and Boni closed at once: its width there when it opens again (task 2h)", async () => {
+  let w = await main();
+  await openNote(w, pictureId);
+  const frame = w.locator(".row-doc .doc-file-image");
+  const img = frame.locator("img");
+  await expect(img).toBeVisible();
+  await expect
+    .poll(() => img.evaluate((i) => (i as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(100);
+  const before = (await img.boundingBox())?.width ?? 0;
+  await frame.hover();
+  const corner = await frame.locator(".doc-img-corner").boundingBox();
+  if (!corner) throw new Error("no corner");
+  const x = corner.x + corner.width / 2;
+  const y = corner.y + corner.height / 2;
+  await w.mouse.move(x, y);
+  await w.mouse.down();
+  await w.mouse.move(x - 150, y, { steps: 6 });
+  await w.mouse.up();
+  await close("quit");
+  w = await main();
+  await openNote(w, pictureId);
+  const again = w.locator(".row-doc .doc-file-image img");
+  await expect(again).toBeVisible();
+  await expect
+    .poll(async () => Math.round((await again.boundingBox())?.width ?? 0))
+    .toBe(Math.round(before - 150));
 });
 
 async function stopServer() {

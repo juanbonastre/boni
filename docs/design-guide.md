@@ -660,6 +660,26 @@ contraseña ni un código aquí» under a question.
   only under the pointer (Juan, 2026-10-30); any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
   comes through the app's own channel to the server, so it shows the same on the desktop, the phone and the web.
   A file no longer there says so ("Este fichero ya no está").
+- **Images in a note** (task 2h, Juan's mockup, 2026-10-30): everything an image gets is written in its own link
+  and never touches the file: its width (`![name|440](boni:<id>)`), its crop (`|crop=x,y,w,h`, in % of the image,
+  shown with `object-view-box`), and a row (images on one line, separated by spaces). An image that never had any of
+  it keeps its bytes; a note opened and left is not written (D-66).
+  - **Size:** a corner (bottom right) grows or shrinks it under the pointer, from 48 px to the text's width; on a
+    phone (no hover) the corner is always there and larger. Let go, it is written at once (task 100) and is one Undo
+    step.
+  - **Rows:** an image dragged beside another (a mouse drags after 6 px; a finger after a hold of 400 ms, so a quick
+    move scrolls the page) makes a row, at most 8; a line shows where it goes, Esc cancels, the page scrolls near
+    its edges. A row starts even (one height, each image cropped to fill its cell); each one then changes size in the
+    row by its corner and is dragged on its own, inside the row, to another row or out of it above or below a block.
+    A row left with one image is a single image again.
+  - **Look:** one click (a tap) shows the note's images large, in their order in the text, with their name, "n de N",
+    arrows (the keys ← → too, and a swipe), and Esc or a click outside to close. With the block selected (↑ from the
+    text), Space opens it. It takes no shortcut of Boni's: a key pressed elsewhere (the search box) is that box's.
+  - **Crop:** the crop button under the pointer, the block's menu, or "Recortar" in the large view: the image whole with
+    a box (drag it, or its corners; arrows nudge 1 %, with Shift 10 %), "Sin recorte", "Cancelar" (Esc) and "Hecho"
+    (Enter). The original stays; "Quitar el recorte" takes it off, and Undo gives back the crop whole.
+  - **Block menu** (⋮⋮): "Ver en grande", "Recortar", "Quitar el recorte" and "Tamaño original" for an image;
+    "Separar las imágenes" for a row. Its name shows only under the pointer, as before.
 - **Peek** (2026-10-22): a note opened from another app, or a mail from the conversation or a Bandeja card (tasks 30
   and 74; a mail shows as the mail client view) (a double click on an event in Boni Calendar; its "Abrir en
   Boni", in the right-button menu and the detail, opens the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →

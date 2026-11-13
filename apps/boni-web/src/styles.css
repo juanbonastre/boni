@@ -7958,7 +7958,9 @@ button.rows-panel-row:hover {
   display: block;
   max-width: 100%;
   border-radius: 6px;
-  border: 1px solid var(--line);
+  /* Drawn inside the image, so that an image is as wide as its pixels or the width in its link, never 2 px more. */
+  outline: 1px solid var(--line);
+  outline-offset: -1px;
 }
 .doc-file-image figcaption {
   position: absolute;
@@ -7979,6 +7981,244 @@ button.rows-panel-row:hover {
 }
 .doc-file-image:hover figcaption {
   opacity: 1;
+}
+/* Task 2h: an image grown by its corner, dragged on its own, several in a row, shown large and cropped. */
+.doc-file-image img {
+  -webkit-touch-callout: none;
+  user-select: none;
+  cursor: zoom-in;
+}
+.doc-img-wait {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: 160px;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.doc-img-corner {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.doc-img-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.doc-img-tools button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+.doc-file-image:hover .doc-img-corner,
+.doc-file-image:hover .doc-img-tools,
+.doc-file-image:focus-within .doc-img-tools,
+.doc-file-image.resizing .doc-img-corner {
+  opacity: 1;
+}
+/* A phone has no pointer over it: its corner always there, its tools in the viewer. */
+@media (hover: none) {
+  .doc-img-corner {
+    opacity: 0.85;
+    width: 22px;
+    height: 22px;
+    right: -8px;
+    bottom: -8px;
+  }
+}
+.doc-files-row {
+  display: flex;
+  gap: 8px;
+  height: clamp(120px, 32vw, 240px);
+  margin: 4px 0;
+}
+.doc-file-image.in-row {
+  flex: 1 1 0;
+  min-width: 48px;
+  height: 100%;
+  margin: 0;
+  width: auto;
+}
+.doc-file-image.in-row img,
+.doc-file-image.in-row .doc-img-wait {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+body.dragging-image,
+body.dragging-image * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.doc-img-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 130;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.doc-img-ghost img {
+  display: block;
+  width: 96px;
+  max-height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+.doc-img-drop {
+  position: fixed;
+  z-index: 129;
+  pointer-events: none;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 56px 16px 24px;
+  background: color-mix(in srgb, #000 82%, transparent);
+  color: #fff;
+}
+.image-viewer-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+.image-viewer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.image-viewer .muted {
+  color: color-mix(in srgb, #fff 70%, transparent);
+}
+.image-viewer-gap {
+  flex: 1;
+}
+.image-viewer .icon-btn {
+  color: #fff;
+}
+.image-viewer-img {
+  display: block;
+  max-width: min(100%, 1400px);
+  max-height: calc(100dvh - 96px);
+  object-fit: contain;
+  border-radius: 4px;
+  user-select: none;
+}
+.image-viewer-go {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, #000 40%, transparent);
+  color: #fff;
+  cursor: pointer;
+}
+.image-viewer-go.prev {
+  left: 12px;
+}
+.image-viewer-go.next {
+  right: 12px;
+}
+.image-crop-stage {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.image-crop-stage img {
+  display: block;
+  max-width: min(calc(100vw - 32px), 1200px);
+  max-height: calc(100dvh - 150px);
+}
+.image-crop-box {
+  position: absolute;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, #000 55%, transparent);
+  outline: 2px solid #fff;
+  cursor: move;
+  touch-action: none;
+}
+/* Inside the box, so that over the whole image (the stage clips the dimming) every corner can be taken whole. */
+.image-crop-corner {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  touch-action: none;
+}
+.image-crop-corner.nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.image-crop-corner.ne {
+  right: 0;
+  top: 0;
+  cursor: nesw-resize;
+}
+.image-crop-corner.sw {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+.image-crop-corner.se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+@media (hover: none) {
+  .image-crop-corner {
+    width: 26px;
+    height: 26px;
+  }
+}
+.image-crop-help {
+  max-width: 520px;
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
 }
 .doc-file {
   display: inline-flex;

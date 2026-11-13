@@ -162,6 +162,73 @@ describe("a file of the user's in a note's text", () => {
   });
 });
 
+describe("images shown at a width, side by side and cropped (task 2h)", () => {
+  it("a width and a crop after bars, a row on one line; read and written back as they were", () => {
+    const md = [
+      "![foto.jpg|320|crop=10,5.5,80,90](boni:e_01abc)",
+      "![solo recorte|crop=0,0,50,50](boni:e_02def)",
+      "![a.png](boni:e_03) ![b.png|200](boni:e_04) ![c.png|crop=25,0,50,100](boni:e_05)\n",
+    ].join("\n\n");
+    const blocks = markdownToBlocks(md);
+    expect(blocks.map((b) => b.type)).toEqual(["file", "file", "files"]);
+    expect(blocks[0]).toMatchObject({ width: 320, crop: { x: 10, y: 5.5, w: 80, h: 90 } });
+    expect(blocks[1]).toMatchObject({ crop: { x: 0, y: 0, w: 50, h: 50 } });
+    expect(blocks[1]).not.toHaveProperty("width");
+    expect(blocks[2]).toMatchObject({
+      files: [
+        { file: "e_03", name: "a.png" },
+        { file: "e_04", name: "b.png", width: 200 },
+        { file: "e_05", name: "c.png", crop: { x: 25, y: 0, w: 50, h: 100 } },
+      ],
+    });
+    expect(blocksToMarkdown(blocks)).toBe(md);
+    expect(pageErrors({ version: 1, blocks })).toEqual([]);
+  });
+
+  it("a crop outside the image, nine images or a word on the line: the line stays text as written", () => {
+    for (const line of [
+      "![x.png|crop=60,0,50,100](boni:e_01)",
+      "![x.png|crop=0,0,0,100](boni:e_01)",
+      "![x.png|crop=1.25,0,50,100](boni:e_01)",
+      Array.from({ length: 9 }, (_, i) => `![${i}.png](boni:e_0${i})`).join(" "),
+      "![a.png](boni:e_01) y ![b.png](boni:e_02)",
+      "![a.png](https://example.com/a.png) ![b.png](boni:e_02)",
+    ]) {
+      const blocks = markdownToBlocks(`${line}\n`);
+      expect(blocks.map((b) => b.type)).toEqual(["text"]);
+      expect(blocksToMarkdown(blocks)).toBe(`${line}\n`);
+    }
+    // Two next to each other with no space between are a row too, as any Markdown reader shows them.
+    expect(markdownToBlocks("![a.png](boni:e_01)![b.png](boni:e_02)\n")[0]?.type).toBe("files");
+  });
+
+  it("a row holds two to eight valid images; a crop is inside its image with one decimal at most", () => {
+    const f = { file: "e_01abc", name: "foto.png" };
+    const row = (files: unknown[]) => ({
+      version: 1,
+      blocks: [{ id: "r1", type: "files", files }],
+    });
+    expect(pageErrors(row([f, f]))).toEqual([]);
+    for (const bad of [[f], Array(9).fill(f), [f, { ...f, file: "../x" }], [f, { ...f, extra: 1 }]])
+      expect(pageErrors(row(bad))).toEqual([
+        "blocks[0]: a row of images has two to 8, each naming its row",
+      ]);
+    const one = (crop: unknown) => ({
+      version: 1,
+      blocks: [{ id: "b1", type: "file", ...f, crop }],
+    });
+    expect(pageErrors(one({ x: 0, y: 0, w: 100, h: 100 }))).toEqual([]);
+    for (const crop of [
+      { x: -1, y: 0, w: 50, h: 50 },
+      { x: 60, y: 0, w: 50, h: 50 },
+      { x: 0, y: 0, w: 0, h: 50 },
+      { x: 0.25, y: 0, w: 50, h: 50 },
+      { x: 0, y: 0, w: 50 },
+    ])
+      expect(pageErrors(one(crop))).toEqual(["blocks[0]: a file names its row and has a name"]);
+  });
+});
+
 describe("a paragraph of a note pointed at (F9, task 85): found again by its words, not by where it is", () => {
   const text = "# Ideas\n\nUna idea que vuelve.\n\n- Otra cosa\n\nUna  idea que   vuelve.\n";
   it("is the hash of its words, the same for the same words however they are spaced", () => {
@@ -235,8 +302,9 @@ describe("a note's text does not change by being read, nor where it was not edit
     const md = corpus["a year's journal"];
     const t0 = performance.now();
     const { blocks, source } = readMarkdown(md);
+    const at = blocks.findIndex((b, i) => i >= 100 && "text" in b);
     const edited = blocks.map((b, i) =>
-      i === 100 && "text" in b ? { ...b, text: `${b.text}!` } : b,
+      i === at && "text" in b ? { ...b, text: `${b.text}!` } : b,
     );
     const out = writeMarkdown(edited, source);
     const ms = performance.now() - t0;

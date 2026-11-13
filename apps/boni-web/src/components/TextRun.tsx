@@ -63,6 +63,7 @@ import {
 } from "../store.ts";
 import { type Bubble, FormatBar } from "./FormatBar.tsx";
 import { historyColor, whoLabel } from "./History.tsx";
+import { hasImage, viewImage } from "./Images.tsx";
 import { AnchoredBox, PointMenu } from "./Popover.tsx";
 import {
   FORMAT_EDIT,
@@ -115,7 +116,7 @@ type Menu =
   | { kind: "point"; id: string; x: number; y: number };
 
 /** Clicks on these are a control's own (a button, a link), never the text's. */
-const OWN = "button, a, input, select, textarea, label, [role='button']";
+const OWN = "button, a, input, select, textarea, label, [role='button'], .doc-img-live";
 const DOTS = ["•", "◦", "▪"];
 /** The page's blocks as the store holds them now. */
 const blocksNow = (): Block[] => editingDoc()?.spec.blocks ?? [];
@@ -580,6 +581,14 @@ class RunCore {
       if (!e.shiftKey && k === "k") {
         if (!formattable(view.state) && linkAt(view.state)?.span.kind !== "link") return false;
         this.editLink(true);
+        return true;
+      }
+    }
+    // Space on an image (the arrows reach it): shown large, as a click does.
+    if (e.key === " " && !mod && sel instanceof NodeSelection) {
+      const on = blockOfNode(sel.node);
+      if (hasImage(on)) {
+        viewImage({ block: on.id, index: 0 });
         return true;
       }
     }
@@ -1174,21 +1183,26 @@ class BlockView implements NodeView {
             { kind: "part", id: note, ...part },
             chipTitle(t("point.kind.part"), plainText(b.text)),
           )
-        : live.onPage && b.type !== "divider"
-          ? pointAttrs(
-              { kind: "block", page: ctx.page.id, block: b.id },
-              chipTitle(
-                ctx.menus.name(b),
-                isText(b)
-                  ? plainText(b.text)
-                  : b.type === "file"
-                    ? b.name
-                    : b.type === "page"
-                      ? (live.pageTitles.get(b.page) ?? "")
-                      : "",
-              ),
-            )
-          : null;
+        : note && b.type === "file"
+          ? // An image alone in a note points at its file, as each image of a row does (Images.tsx; task 85).
+            pointAttrs({ kind: "row", id: b.file }, chipTitle(t("block.kind.file"), b.name))
+          : live.onPage && b.type !== "divider"
+            ? pointAttrs(
+                { kind: "block", page: ctx.page.id, block: b.id },
+                chipTitle(
+                  ctx.menus.name(b),
+                  isText(b)
+                    ? plainText(b.text)
+                    : b.type === "file"
+                      ? b.name
+                      : b.type === "files"
+                        ? b.files.map((f) => f.name).join(", ")
+                        : b.type === "page"
+                          ? (live.pageTitles.get(b.page) ?? "")
+                          : "",
+                ),
+              )
+            : null;
     if (attrs) {
       this.dom.setAttribute("data-boni-ref", attrs["data-boni-ref"]);
       this.dom.setAttribute("data-boni-title", attrs["data-boni-title"]);

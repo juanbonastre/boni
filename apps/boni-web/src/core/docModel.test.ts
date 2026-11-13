@@ -1,7 +1,13 @@
 // A note's text through the editor's engine and back (task 2g): byte for byte, an edit only where it was made.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { readMarkdown, writeMarkdown } from "@boni/views";
+import {
+  blockKey,
+  blocksToMarkdown,
+  markdownToBlocks,
+  readMarkdown,
+  writeMarkdown,
+} from "@boni/views";
 import { Node as PMNode } from "prosemirror-model";
 import { EditorState, TextSelection } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
@@ -44,6 +50,16 @@ function firstDifference(a: string, b: string): string {
   return `at ${i}: ${JSON.stringify(a.slice(Math.max(0, i - 20), i + 20))} → ${JSON.stringify(b.slice(Math.max(0, i - 20), i + 20))}`;
 }
 
+/** What is wrong with an image block read from a note: written anew alone, it must read back as the same block. */
+function imageHolds(b: Block): string | null {
+  const again = markdownToBlocks(blocksToMarkdown([b]))[0];
+  const { id: _a, ...was } = b;
+  const { id: _b, ...now } = (again ?? {}) as Block;
+  return blockKey({ id: "x", ...was } as Block) === blockKey({ id: "x", ...now } as Block)
+    ? null
+    : `the image ${JSON.stringify(was)} reads back as ${JSON.stringify(now)}`;
+}
+
 describe("a note through the editor's engine (task 2g)", () => {
   it("comes back byte for byte: every note of the corpus and a year of a journal", () => {
     const notes = { ...NOTES, "a year of a journal": longNote(365) };
@@ -52,6 +68,31 @@ describe("a note through the editor's engine (task 2g)", () => {
       return back === md ? [] : [`${name}: ${firstDifference(md, back)}`];
     });
     expect(differ).toEqual([]);
+  });
+
+  it("its images (task 2h): each read as what it says and written anew the same; one resized changes its line only", () => {
+    const md = NOTES["images at a width, cropped and side by side"] as string;
+    const { blocks, source } = readMarkdown(md);
+    const shown = (blocks as Block[]).filter((b) => b.type === "file" || b.type === "files");
+    expect(shown.map((b) => b.type)).toEqual([
+      "file",
+      "file",
+      "file",
+      "file",
+      "files",
+      "files",
+      "files",
+    ]);
+    expect(shown.map(imageHolds).filter(Boolean)).toEqual([]);
+    const row = shown[4] as Extract<Block, { type: "files" }>;
+    const edited = (blocks as Block[]).map((b) =>
+      b === row
+        ? { ...row, files: row.files.map((f, i) => (i === 0 ? { ...f, width: 300 } : f)) }
+        : b,
+    );
+    const out = writeMarkdown(edited, source);
+    const line = md.split("\n").find((l) => l.startsWith("![a.png]")) as string;
+    expect(out).toBe(md.replace(line, () => line.replace("![a.png]", "![a.png|300]")));
   });
 
   it("an edit typed in one block changes only that block's text", () => {
@@ -185,12 +226,26 @@ describe.runIf(!!process.env.BONI_NOTES_DIR)("notes of a folder through the engi
     walk(dir);
     const started = performance.now();
     let formats = 0;
+    const images = { alone: 0, wide: 0, cropped: 0, rows: 0, inRows: 0 };
     const differ = files.flatMap((p) => {
       const md = readFileSync(p, "utf8");
       const back = throughEngine(md);
       const name = p.slice(dir.length + 1);
       // Its formats as the editor paints them (task 2f): each inside its block's text.
       const painted = (readMarkdown(md).blocks as Block[]).flatMap((b) => {
+        // Its images (task 2h): each read as what it says, written anew as the same image.
+        if (b.type === "file" || b.type === "files") {
+          const shown = b.type === "file" ? [b] : b.files;
+          if (b.type === "file") images.alone++;
+          else {
+            images.rows++;
+            images.inRows += b.files.length;
+          }
+          images.wide += shown.filter((f) => f.width).length;
+          images.cropped += shown.filter((f) => f.crop).length;
+          const wrong = imageHolds(b);
+          return wrong ? [`${name}: ${wrong}`] : [];
+        }
         if (!isText(b) || b.type === "code") return [];
         formats += inlineSpans(b.text).length;
         const wrong = formatsHold(b.text);
@@ -199,7 +254,7 @@ describe.runIf(!!process.env.BONI_NOTES_DIR)("notes of a folder through the engi
       return [...(back === md ? [] : [`${name}: ${firstDifference(md, back)}`]), ...painted];
     });
     console.info(
-      `${files.length} notes, ${differ.length} would change, ${formats} formats painted, ${Math.round(performance.now() - started)} ms`,
+      `${files.length} notes, ${differ.length} would change, ${formats} formats painted, ${images.alone} images alone and ${images.inRows} in ${images.rows} rows (${images.wide} at a width, ${images.cropped} cropped), ${Math.round(performance.now() - started)} ms`,
     );
     expect(differ).toEqual([]);
   });

@@ -1,4 +1,4 @@
-import { type PageBlock, pageErrors } from "./page.ts";
+import { type FileShown, isCrop, type PageBlock, pageErrors, ROW_MAX } from "./page.ts";
 
 /**
  * A note's text (Markdown, as the vault kept it and Boni keeps a row's body) as the page editor's blocks, and back
@@ -217,18 +217,16 @@ export function readMarkdown(md: string): { blocks: Block[]; source: MarkdownSou
       out.push({ id: id(), type: "quote", text: q.join("\n") });
       continue;
     }
-    // A file of the user's alone on its line (`![name|width](boni:<id>)`): shown in place, as the page's own block.
-    const file =
-      /^\s*!\[([^\]|\n]*)(?:\|(\d{2,4}))?\]\(boni:([a-z0-9][a-z0-9_-]{0,63})\)\s*$/i.exec(line);
-    if (file) {
+    // A file of the user's alone on its line (`![name|width|crop=x,y,w,h](boni:<id>)`): shown in place, as the
+    // page's own block; several on one line and nothing else, a row of them side by side (task 2h).
+    const shown = filesOfLine(line);
+    if (shown) {
       flush();
-      out.push({
-        id: id(),
-        type: "file",
-        file: file[3] as string,
-        name: (file[1] as string).trim(),
-        ...(file[2] ? { width: Number(file[2]) } : {}),
-      });
+      out.push(
+        shown.length === 1
+          ? { id: id(), type: "file", ...(shown[0] as FileShown) }
+          : { id: id(), type: "files", files: shown },
+      );
       continue;
     }
     // Anything else is a paragraph's line, kept as written (tables, images, links, deeper headings...).
@@ -262,6 +260,53 @@ function fenceFor(text: string): string {
     need = Math.max(need, run + 1);
   }
   return "`".repeat(need);
+}
+
+/**
+ * A file of the user's as Markdown (task 2h, extending the width it already had): its name, then its width and the
+ * part of it shown after bars, as Obsidian writes a width; the address stays `boni:<id>`, so any reader of the text
+ * still finds the file and shows it whole.
+ */
+export function fileLink(f: FileShown): string {
+  const c = f.crop;
+  return `![${f.name.replace(/[\]|\n]/g, " ")}${f.width ? `|${f.width}` : ""}${
+    c ? `|crop=${c.x},${c.y},${c.w},${c.h}` : ""
+  }](boni:${f.file})`;
+}
+
+const NUM = String.raw`\d{1,3}(?:\.\d)?`;
+const FILE_LINK = new RegExp(
+  String.raw`!\[([^\]|\n]*)(?:\|(\d{2,4}))?(?:\|crop=(${NUM}),(${NUM}),(${NUM}),(${NUM}))?\]\(boni:([a-z0-9][a-z0-9_-]{0,63})\)`,
+  "iy",
+);
+
+/**
+ * The files of a line that holds only files of the user's (one, or a row of up to `ROW_MAX` with spaces between):
+ * null for any other line, which stays as it was written (a crop outside its image, a ninth image, a word between).
+ */
+export function filesOfLine(line: string): FileShown[] | null {
+  if (!line.includes("](boni:")) return null;
+  const out: FileShown[] = [];
+  let at = (/^\s*/.exec(line) as RegExpExecArray)[0].length;
+  for (;;) {
+    FILE_LINK.lastIndex = at;
+    const m = FILE_LINK.exec(line);
+    if (!m) return null;
+    const crop = m[3]
+      ? { x: Number(m[3]), y: Number(m[4]), w: Number(m[5]), h: Number(m[6]) }
+      : undefined;
+    if (crop && !isCrop(crop)) return null;
+    out.push({
+      file: m[7] as string,
+      name: (m[1] as string).trim(),
+      ...(m[2] ? { width: Number(m[2]) } : {}),
+      ...(crop ? { crop } : {}),
+    });
+    const rest = line.slice(FILE_LINK.lastIndex);
+    if (/^\s*$/.test(rest)) break;
+    at = FILE_LINK.lastIndex + (/^[ \t]*/.exec(rest) as RegExpExecArray)[0].length;
+  }
+  return out.length && out.length <= ROW_MAX ? out : null;
 }
 
 export function blocksToMarkdown(blocks: readonly Block[]): string {
@@ -318,7 +363,10 @@ export function writeMarkdown(blocks: readonly Block[], source: MarkdownSource |
         text = "---";
         break;
       case "file":
-        text = `![${b.name.replace(/[\]|\n]/g, " ")}${b.width ? `|${b.width}` : ""}](boni:${b.file})`;
+        text = fileLink(b);
+        break;
+      case "files":
+        text = b.files.map(fileLink).join(" ");
         break;
       case "toggle":
       case "callout":
@@ -348,7 +396,11 @@ export function writeMarkdown(blocks: readonly Block[], source: MarkdownSource |
     const src = source?.text ?? "";
     const same = span && span.key === blockKey(b);
     // Only its text changed: its marker, spacing and closing hashes are kept as they were written («* », «#  »).
-    const retyped = span && !same ? textEdited(src.slice(span.from, span.to), span.key, b) : null;
+    const retyped =
+      span && !same
+        ? (textEdited(src.slice(span.from, span.to), span.key, b) ??
+          imageEdited(src.slice(span.from, span.to), span.key, b))
+        : null;
     const kept = same || retyped !== null ? span : null;
     if (!parts.length) {
       // Before the first block: what was there, when it is still the first one read.
@@ -390,6 +442,20 @@ function textEdited(written: string, key: string, b: Block): string | null {
   const after = written.slice(marker.length + was.text.length);
   if (!/^[ \t#]*$/.test(after)) return null;
   return `${marker}${b.text}${after}`;
+}
+
+/**
+ * An image or a row of them changed in place (task 2h: a width, a crop, one more beside it): its line written anew
+ * with the spaces it had around it, so the lines next to it stay as they were (a row right under another, no blank
+ * line between them).
+ */
+function imageEdited(written: string, key: string, b: Block): string | null {
+  if (b.type !== "file" && b.type !== "files") return null;
+  const was = JSON.parse(key) as { type?: unknown };
+  if (was.type !== "file" && was.type !== "files") return null;
+  const lead = (/^[ \t]*/.exec(written) as RegExpExecArray)[0];
+  const trail = (/[ \t]*$/.exec(written) as RegExpExecArray)[0];
+  return `${lead}${b.type === "file" ? fileLink(b) : b.files.map(fileLink).join(" ")}${trail}`;
 }
 
 /** The blocks of a note's text that say something of their own: what can be pointed at as a paragraph (F9). */

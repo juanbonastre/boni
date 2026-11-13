@@ -11,7 +11,7 @@ import {
   partsOf,
   passedValues,
 } from "@boni/views";
-import { ArrowRight, FileText, GripVertical, Paperclip, Play, Plus, Smile, X } from "lucide-react";
+import { ArrowRight, FileText, GripVertical, Play, Plus, Smile, X } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -60,8 +60,6 @@ import {
   addFilesToPage,
   blockId,
   clearBlockSel,
-  fileInline,
-  fileOfRow,
   loadDataTypes,
   newChartForPage,
   newChatBlock,
@@ -69,7 +67,6 @@ import {
   newSubpageBlock,
   openBlockPanel,
   openEditor,
-  openFile,
   openPage,
   openPageWith,
   openRowsPanel,
@@ -96,6 +93,7 @@ import { ControlView, withValue } from "./ControlView.tsx";
 import { DataBlockView, useBlockResults } from "./DataBlockView.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { historyColor, whoLabel } from "./History.tsx";
+import { ImageBlock, ImageDialogs, ImageMenu } from "./Images.tsx";
 import { PageChatBlock } from "./PageChatBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { TemplatePill } from "./TemplatePill.tsx";
@@ -659,8 +657,8 @@ export function Blocks({ page }: { page: Page }) {
       />
     ),
     inText: (b) =>
-      b.type === "file" ? (
-        <FileBlock block={b} />
+      b.type === "file" || b.type === "files" ? (
+        <ImageBlock block={b} />
       ) : b.type === "page" ? (
         <PageLink id={b.page} />
       ) : null,
@@ -765,6 +763,7 @@ export function Blocks({ page }: { page: Page }) {
     >
       {out}
       <FileChoice />
+      <ImageDialogs />
     </div>
   );
 }
@@ -848,54 +847,6 @@ function PageLink({ id }: { id: string }) {
       <span className={`doc-page-name${target.title ? "" : " untitled"}`}>
         {target.title || t("page.untitled")}
       </span>
-    </button>
-  );
-}
-
-const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
-
-/**
- * A file of the user's in the text (Juan, 2026-10-29): an image in place, at the width it had, its name (its record's
- * title in the files' collection) only under the pointer (Juan, 2026-10-30); anything else a card with its name that
- * opens it. Where the host cannot show bytes, an image is a card too.
- */
-function FileBlock({ block }: { block: Extract<Block, { type: "file" }> }) {
-  const t = useStore((s) => s.t);
-  const [file, setFile] = useState<
-    { sha: string; name: string; url: string | null } | "gone" | null
-  >(null);
-  useEffect(() => {
-    let live = true;
-    void (async () => {
-      const f = await fileOfRow(block.file);
-      if (!f) return live && setFile("gone");
-      const name = f.name || block.name;
-      const url = IMAGE.test(name) ? await fileInline(f.sha) : null;
-      if (live) setFile({ ...f, name, url });
-    })();
-    return () => {
-      live = false;
-    };
-  }, [block.file, block.name]);
-  if (file === "gone") return <p className="doc-gone">{t("file.missing")}</p>;
-  const name = file?.name || block.name;
-  if (file?.url)
-    return (
-      <figure className="doc-file-image">
-        <img src={file.url} alt={name} style={block.width ? { width: block.width } : undefined} />
-        <figcaption>{name}</figcaption>
-      </figure>
-    );
-  return (
-    <button
-      type="button"
-      className="doc-file"
-      disabled={!file}
-      onClick={() => file && void openFile(file.sha, name)}
-    >
-      <Paperclip size={15} strokeWidth={1.8} aria-hidden="true" />
-      <span className="doc-file-name">{name}</span>
-      <span className="muted">{t("file.open")}</span>
     </button>
   );
 }
@@ -988,7 +939,9 @@ function BlockRow({
                     ? (block.title ?? "")
                     : block.type === "file"
                       ? block.name
-                      : named,
+                      : block.type === "files"
+                        ? block.files.map((f) => f.name).join(", ")
+                        : named,
           ),
         )
       : {};
@@ -1227,6 +1180,9 @@ function BlockMenu({ block, page, close }: { block: Block; page: Page; close: ()
           <ButtonLabel block={block} blocks={blocks} />
           <MenuSep />
         </>
+      )}
+      {(block.type === "file" || block.type === "files") && (
+        <ImageMenu block={block} blocks={blocks} close={close} />
       )}
       {(catalogueKind(block.type) || block.at) && !isText(block) && (
         <MenuRow

@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { crc32, deflateSync } from "node:zlib";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
@@ -54,6 +55,11 @@ export interface Options {
   today?: unknown[] | null;
   /** The mail's collection as the server keeps it (`t_01m6correo`, read only, opened as a mail), with one mail (`m1`). */
   mail?: boolean;
+  /**
+   * Images kept in the account's files (`i1`… named `foto-01.png`…, task 2h), each a real PNG of this size (default
+   * 640×480) to paint in place; `png` is made here from the size.
+   */
+  images?: { count: number; width?: number; height?: number; png?: string };
   /** How long a dropped file takes to go up (ms; default 600), in six steps. */
   uploadMs?: number;
   /** The desktop shell opens a note in its peek window, a window of its own (Boni desktop 0.4.65; task 30). */
@@ -120,8 +126,42 @@ export const PAGE_FROM_HOME: FakePage = {
  */
 const engined = new WeakSet<Page>();
 
+/** A PNG of one colour, this size, as base64: an image that decodes as a real one does (its pixels, its size). */
+export function pngOf(width: number, height: number): string {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(width, 0);
+  head.writeUInt32BE(height, 4);
+  head[8] = 8;
+  head[9] = 2;
+  const line = Buffer.alloc(1 + width * 3);
+  for (let x = 0; x < width; x++) line.set([90 + (x % 120), 140, 200], 1 + x * 3);
+  const raw = Buffer.concat(Array.from({ length: height }, () => line));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk("IHDR", head),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]).toString("base64");
+}
+
 export async function openApp(page: Page, url = "/", opts: Options = {}): Promise<void> {
   const pages = opts.pages === undefined ? [PAGE_FROM_HOME] : opts.pages;
+  if (opts.images && !opts.images.png)
+    opts = {
+      ...opts,
+      images: {
+        ...opts.images,
+        png: pngOf(opts.images.width ?? 640, opts.images.height ?? 480),
+      },
+    };
   await page.addInitScript(
     ({ examples, opts, pages, boni, money }) => {
       const w = window as unknown as Record<string, unknown>;
@@ -398,6 +438,16 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           values: { f_title: "foto.png", f_boni_file: "sha-foto", f_folder: "correo/2026-10" },
           updated: 7,
         },
+        // Images of a note's text (task 2h).
+        ...Array.from({ length: opts.images?.count ?? 0 }, (_, i) => ({
+          id: `i${i + 1}`,
+          values: {
+            f_title: `foto-${String(i + 1).padStart(2, "0")}.png`,
+            f_boni_file: `sha-img-${i + 1}`,
+            f_folder: "notas",
+          },
+          updated: 7,
+        })),
       ];
       const mailRow = {
         id: "m1",
@@ -1052,7 +1102,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 documentos,
                 ...agenda,
                 ...(opts.travel ? [viaje] : []),
-                ...(opts.mail ? [correos, archivos] : []),
+                ...(opts.mail ? [correos] : []),
+                ...(opts.mail || opts.images ? [archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
                 ...money,
@@ -1342,9 +1393,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             }),
           ];
         // An image of the mail, as the server gives it to paint in place (a data: address).
+        if (
+          opts.images?.png &&
+          /^api\/data\/files\/sha-img-\d+\/inline$/.test(p) &&
+          method === "GET"
+        )
+          return [200, JSON.stringify({ mime: "image/png", data: opts.images.png })];
         if (opts.mail && /^api\/data\/files\/[^/]+\/inline$/.test(p) && method === "GET")
           return [200, JSON.stringify({ mime: "image/png", data: "iVBORw0KGgo=" })];
-        const fileRow = opts.mail && /^api\/data\/rows\/(a\d)$/.exec(p);
+        const fileRow = (opts.mail || opts.images) && /^api\/data\/rows\/(a\d|i\d+)$/.exec(p);
         if (fileRow && method === "GET") {
           const row = fileRows.find((r) => r.id === fileRow[1]);
           return row ? [200, JSON.stringify({ row: { ...row, type: "t_archivo" } })] : [404, "{}"];
