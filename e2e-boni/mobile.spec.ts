@@ -316,6 +316,26 @@ test("formats on the phone (task 2f): the menu over selected words comes below t
   await expect(line.locator(".md-strong")).toHaveText("idea");
 });
 
+test("a mention on the phone (task 110): tapped, the menu shows its title and «Abrir», for a finger; «Abrir» opens what it names", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { rayuelaBody: "Leer después [[Ficciones]] entero\n" });
+  await tab(page, "Páginas");
+  await page.locator(".m-item-main", { hasText: "Libros" }).tap();
+  await page.locator(".m-swipe-row", { hasText: "Rayuela" }).locator(".m-item-main").tap();
+  const line = page.locator(".row-doc .blk-input").first();
+  await line.locator(".md-mention").tap();
+  const bar = page.getByRole("toolbar", { name: "Formato" });
+  await expect(bar.locator(".fmt-url")).toHaveText("Ficciones");
+  const open = bar.getByRole("button", { name: "Abrir" });
+  expect((await open.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(40);
+  const box = await bar.boundingBox();
+  expect(box && box.x >= 0 && box.x + box.width <= 412).toBe(true);
+  await page.screenshot({ path: `${SHOTS}/phone-mention.png` });
+  await open.tap();
+  await expect(page.locator(".row-title, .doc-title").first()).toHaveValue("Ficciones");
+});
+
 test("the + button: «Crear» with capturing first (the server's buttons, the shortcuts), then something new", async ({
   page,
 }) => {

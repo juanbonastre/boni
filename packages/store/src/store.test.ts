@@ -152,6 +152,37 @@ describe("the store", () => {
     expect(store.recentOps(1000)).toHaveLength(whole.length);
   });
 
+  it("finds entities by their title through the search index (a mention, task 110)", () => {
+    const { store } = fresh();
+    const a = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
+    const gone = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
+    store.remove(gone.entity.id, me);
+    // Case and outer spaces aside, the whole title, never in the trash.
+    const r = store.create(
+      "t_libro",
+      { f_titulo: { value: " Reunión (martes) ", label: JUAN } },
+      me,
+    );
+    store.create("t_libro", { f_titulo: { value: "Reunión (martes) 2", label: JUAN } }, me);
+    store.create("t_libro", { f_titulo: { value: "—", label: JUAN } }, me);
+    expect(store.findByTitle("uno")).toEqual([{ id: a.entity.id, type: "t_libro", title: "Uno" }]);
+    expect(store.findByTitle("reunión (MARTES)").map((x) => x.id)).toEqual([r.entity.id]);
+    expect(store.findByTitle("Reunion (martes)")).toEqual([]);
+    expect(store.findByTitle("—")).toHaveLength(1);
+    expect(store.findByTitle('Uno" OR "Dos')).toEqual([]);
+    expect(store.findByTitle("  ")).toEqual([]);
+    // Its accents apart (NFD, as some keyboards and pastes give them), on either side: the same title.
+    expect(store.findByTitle("Reunión (martes)".normalize("NFD")).map((x) => x.id)).toEqual([
+      r.entity.id,
+    ]);
+    const apart = store.create(
+      "t_libro",
+      { f_titulo: { value: "Canción".normalize("NFD"), label: JUAN } },
+      me,
+    );
+    expect(store.findByTitle("canción").map((x) => x.id)).toEqual([apart.entity.id]);
+  });
+
   it("counts a type and finds entities by a value without reading them one by one", () => {
     const { store } = fresh();
     const a = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);

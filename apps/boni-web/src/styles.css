@@ -3948,8 +3948,65 @@ select.input.invalid {
   color: var(--bad);
   font-size: 12px;
 }
+/* A mention's title, what came of opening it, and the records of that title to choose from (task 110). */
+.fmt-mention {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fmt-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.fmt-state {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.fmt-choices {
+  display: flex;
+  flex-direction: column;
+  max-height: min(240px, 40vh);
+  overflow-y: auto;
+  margin: 2px 0 0;
+  padding: 2px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.fmt-choice {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.fmt-choice:hover {
+  background: var(--hover);
+}
+.fmt-choice-when {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.fmt-choices .fmt-state {
+  padding: 4px 8px;
+}
 /* A finger's buttons are larger. */
 @media (pointer: coarse) {
+  .fmt-choice {
+    min-height: 40px;
+  }
   .fmt-btn {
     width: 40px;
     height: 40px;

@@ -1,8 +1,11 @@
-import { openUserStore, type UserStore } from "@boni/store";
+import { ensureSystemTypes } from "@boni/agent";
+import { BODY, openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
+import { createByName } from "./byName.ts";
 import { addFile, DataError, FILES_INTO, fileInline, rowUiOf, setRowUi } from "./data.ts";
-import { relatedTo } from "./related.ts";
-import { seed, type TypeSpec } from "./seed.test-util.ts";
+import { createPage } from "./pages.ts";
+import { relatedTo, titledRows } from "./related.ts";
+import { seed, type TypeSpec, typeId } from "./seed.test-util.ts";
 
 /** Invented collections: people, projects that name one, and money under a mother (a payment names her branch). */
 const TYPES: TypeSpec[] = [
@@ -174,4 +177,115 @@ describe("a file pasted or dropped into a page", () => {
     expect(store.setting(FILES_INTO)).toBe("t_fotos");
     expect(addFile(store, { name: "d.png", data: png })).toMatchObject({ type: "t_fotos" });
   });
+});
+
+describe("the records a mention names (task 110, D-71)", () => {
+  it("by the whole title, case and outer spaces aside, in any collection, never one in the trash", () => {
+    const { store, id } = fresh();
+    expect(titledRows(store, "  proyecto a ")).toEqual({
+      rows: [
+        {
+          id: id("proyectos/a.md"),
+          type: "t_proyecto",
+          collection: "Proyecto",
+          title: "Proyecto A",
+          updated: expect.any(Number),
+        },
+      ],
+      count: 1,
+    });
+    expect(titledRows(store, "Proyecto").rows).toEqual([]);
+    expect(titledRows(store, "Ana Ejemplo").rows.map((r) => r.collection)).toEqual(["Persona"]);
+    store.remove(id("proyectos/b.md"), { actor: "user", device: "portatil" });
+    expect(titledRows(store, "Proyecto B")).toEqual({ rows: [], count: 0 });
+  });
+
+  it("a page of that title too, beside a record of the same title", () => {
+    const { store, id } = fresh();
+    ensureSystemTypes(store);
+    const page = createPage(store, { title: "Proyecto A" }, "portatil");
+    const r = titledRows(store, "proyecto a");
+    expect(r.count).toBe(2);
+    expect(r.rows.map((x) => [x.id, x.type])).toEqual([
+      [id("proyectos/a.md"), "t_proyecto"],
+      [page.id, "page"],
+    ]);
+  });
+
+  it("several of one title, the oldest first; at most twenty, with how many there are", () => {
+    const { store } = fresh();
+    for (let i = 0; i < 25; i++)
+      createByName(store, "t_proyecto", { title: "Reunión", values: {} }, "portatil");
+    const r = titledRows(store, "reunión");
+    expect(r.count).toBe(25);
+    expect(r.rows).toHaveLength(20);
+    expect(new Set(r.rows.map((x) => x.id)).size).toBe(20);
+  });
+
+  it("a title empty or too long is refused", () => {
+    const { store } = fresh();
+    expect(() => titledRows(store, "  ")).toThrow(DataError);
+    expect(() => titledRows(store, "x".repeat(301))).toThrow(DataError);
+  });
+
+  it("is quick with Juan's volume: thousands of records with their texts (A-15)", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const types: TypeSpec[] = [
+      { key: "agenda", name: "Agenda", folder: "agenda/" },
+      { key: "tarea", name: "Tarea", folder: "agenda/tareas/", parent: "agenda" },
+      { key: "evento", name: "Evento", folder: "agenda/eventos/", parent: "agenda" },
+      { key: "movimiento", name: "Movimiento", folder: "finanzas/" },
+      { key: "correos", name: "Correos", folder: "correos/" },
+      { key: "nota", name: "Nota", folder: "" },
+    ];
+    const text = (i: number) =>
+      `Reunión de seguimiento ${i} con ejemplo.persona${i % 90}@example.org sobre el proyecto Boni.\n`;
+    seed(store, types, {});
+    const label = { integrity: "user", sensitivity: "normal", sources: [] } as never;
+    const meta = { actor: "import" as const, device: "seed" };
+    const schema = store.schema();
+    const add = (key: string, title: string, body?: string) => {
+      const t = typeId(key);
+      const f = schema.types[t]?.titleField as string;
+      store.create(
+        t,
+        { [f]: { value: title, label }, ...(body ? { [BODY]: { value: body, label } } : {}) },
+        meta,
+      );
+    };
+    // His Agenda's size (2,805 tasks and about 1,150 events), a few long texts besides.
+    const s0 = performance.now();
+    store.batch(() => {
+      for (let i = 0; i < 2800; i++)
+        add("tarea", `${i}. Revisar el proyecto Boni${i % 7 ? "" : " y la reunión"}`, text(i));
+      for (let i = 0; i < 1150; i++) add("evento", i % 40 ? `Reunión de equipo ${i}` : "Reunión");
+      for (let i = 0; i < 30; i++) add("correos", `Reunión del proyecto ${i}`, text(i).repeat(40));
+      for (let i = 0; i < 20; i++) add("nota", `Plan de diseño ${i}`, text(i).repeat(40));
+      for (let i = 0; i < 20; i++) add("movimiento", `Bizum ${i}`);
+    });
+    const seeded = performance.now() - s0;
+    const asked = [
+      "Reunión",
+      "Plan de diseño 7",
+      "1234. Revisar el proyecto Boni",
+      "No existe ninguna",
+      "Bizum 3",
+    ];
+    titledRows(store, "Reunión");
+    const times: number[] = [];
+    for (let round = 0; round < 10; round++)
+      for (const t of asked) {
+        const t0 = performance.now();
+        titledRows(store, t);
+        times.push(performance.now() - t0);
+      }
+    times.sort((a, b) => a - b);
+    expect(titledRows(store, "Reunión").count).toBe(29);
+    expect(titledRows(store, "Plan de diseño 7").rows).toHaveLength(1);
+    console.log(
+      `seeded in ${seeded.toFixed(0)} ms; titledRows: median ${times[25]?.toFixed(2)} ms, worst ${times.at(-1)?.toFixed(2)} ms`,
+    );
+    expect(times[25]).toBeLessThan(15);
+  }, 60_000);
 });

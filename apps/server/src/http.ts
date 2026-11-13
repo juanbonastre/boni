@@ -94,7 +94,7 @@ import {
   updatePage,
 } from "./pages.ts";
 import { noteRequest } from "./perf.ts";
-import { relatedTo } from "./related.ts";
+import { relatedTo, titledRows } from "./related.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, sendFileChunks, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
@@ -700,6 +700,9 @@ export function makeApp(opts: ServerOptions): App {
             route.endsWith("/rows") ? blockRowsOf(store, body, o) : computeBlocks(store, body, o),
           );
         }
+        // The records a mention `[[Título]]` of a note names (task 110).
+        if (route === "GET /api/data/titled")
+          return send(res, 200, titledRows(store, url.searchParams.get("title") ?? ""));
         if (route === "GET /api/data/rows/:id/related")
           return send(res, 200, relatedTo(store, params.id ?? ""));
         if (route === "GET /api/data/rows/:id") {

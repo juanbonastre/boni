@@ -72,6 +72,7 @@ import {
   formattable,
   linkAt,
   linkSelection,
+  mentionAt,
   toggleFormat,
 } from "./runFormat.ts";
 
@@ -187,6 +188,9 @@ interface Live {
   pageTitles: ReadonlyMap<string, string>;
 }
 
+/** The mentions opened so far (Ctrl+click): each its own request to the menu. */
+let mentionAsks = 0;
+
 /** A run's engine: its ProseMirror view, its blocks as last written, and what its React part draws. */
 class RunCore {
   view: EditorView;
@@ -270,13 +274,17 @@ class RunCore {
         // A backtick over selected words makes them code (Ctrl+E is Boni's window).
         handleTextInput: (v, from, to, text) =>
           text === "`" && from < to && formattable(v.state) ? toggleFormat(v, "code") : false,
-        // Ctrl+click (Cmd on a Mac) opens a link, as in an editor of code; a click alone puts the caret in it.
+        // Ctrl+click (Cmd on a Mac) opens a link or what a mention names, as in an editor of code; a click alone
+        // puts the caret in it, and typing in it never opens anything (task 110).
         handleClick: (v, pos, e) => {
           if (!(e.ctrlKey || e.metaKey)) return false;
-          const at = linkAt(v.state, pos, pos);
-          const href = at?.span.href;
-          if (!href) return false;
-          void openUrl(href);
+          const href = linkAt(v.state, pos, pos)?.span.href;
+          if (href) {
+            void openUrl(href);
+            return true;
+          }
+          if (!mentionAt(v.state, pos, pos)) return false;
+          this.openMention(pos);
           return true;
         },
         handleDrop: (v, e, _s, moved) => this.drop(v, e as DragEvent, moved),
@@ -527,12 +535,25 @@ class RunCore {
           ? "format"
           : s.selection.empty && linkAt(s)
             ? "link"
-            : null;
-    const next: Bubble | null = mode ? { mode, editing: false } : null;
+            : s.selection.empty && mentionAt(s)
+              ? "mention"
+              : null;
+    // A mention being opened (Ctrl+click) keeps its request while the caret stays in it.
+    const open =
+      mode === "mention" && this.bubble?.mode === "mention" ? this.bubble.open : undefined;
+    const next: Bubble | null = mode ? { mode, editing: false, ...(open ? { open } : {}) } : null;
     if (next || this.bubble) {
       this.bubble = next;
       this.bubbleSeen();
     }
+  }
+
+  /** What the mention at `pos` names, opened (Ctrl+click): the caret goes into it and its menu says what came of it. */
+  openMention(pos: number) {
+    const v = this.view;
+    v.dispatch(v.state.tr.setSelection(TextSelection.create(v.state.doc, pos)));
+    this.bubble = { mode: "mention", editing: false, open: ++mentionAsks };
+    this.bubbleSeen();
   }
 
   /** The field for a link's address opened (Ctrl+K, the menu's button) or closed. */

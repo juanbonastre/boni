@@ -51,6 +51,7 @@ import {
   type RunSummary,
   type ScreenRefs,
   type StepWords,
+  type Titled,
   type TodayItem,
   type Tree,
   type TurnResult,
@@ -4532,6 +4533,36 @@ export async function openNoteAt(id: string) {
     toast(get().t(e instanceof ApiError && e.status === 404 ? "note.notFound" : "note.offline"));
   }
 }
+
+/** What came of opening a mention `[[Título]]` (task 110): opened, none of that title, several to choose, offline. */
+export type MentionFound =
+  | { kind: "opened" }
+  | { kind: "none" }
+  | { kind: "many"; rows: Titled[]; count: number }
+  | { kind: "offline" };
+
+/**
+ * Opens the record a mention names, found by its whole title on the server (D-71): only when one record has it;
+ * none, or several, are said where the mention is and nothing is opened.
+ */
+export async function openMention(title: string): Promise<MentionFound> {
+  let r: { rows: Titled[]; count: number };
+  try {
+    r = await agent.dataTitled(title);
+  } catch {
+    return { kind: "offline" };
+  }
+  const only = r.count === 1 ? r.rows[0] : undefined;
+  if (only) {
+    await openTitled(only);
+    return { kind: "opened" };
+  }
+  return r.rows.length ? { kind: "many", rows: r.rows, count: r.count } : { kind: "none" };
+}
+
+/** One of the records a mention names, opened as its own page (a page, a mail as a mail, a note as its page). */
+export const openTitled = (r: Titled) =>
+  r.type === "page" ? openPage(r.id) : openRecord(r.type, r.id);
 
 /** A row opened as a page: its properties and its text (a note's body). */
 export async function openRow(type: string, id: string) {

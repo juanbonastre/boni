@@ -30,6 +30,8 @@ export interface Options {
   language?: "es" | "en";
   /** The text of the book «Rayuela» (r1) in place of its own: a long note's, for the editor's timing (A-15). */
   rayuelaBody?: string;
+  /** Records of other collections a mention `[[Título]]` may name besides the books (GET api/data/titled, task 110). */
+  titled?: { id: string; type: string; collection: string; title: string; updated: number }[];
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
@@ -1487,6 +1489,23 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         const tree = /^api\/data\/tree(?:\?type=([^&]+))?$/.exec(path);
         if (tree && method === "GET")
           return treeAnswer(tree[1] ? decodeURIComponent(tree[1]) : null);
+        // The records a mention names (apps/server/src/related.ts `titledRows`): the books and `titled`, by title.
+        if (p === "api/data/titled" && method === "GET") {
+          const want = (new URLSearchParams(path.split("?")[1] ?? "").get("title") ?? "")
+            .trim()
+            .toLowerCase();
+          const hits = [
+            ...rows.map((r) => ({
+              id: r.id,
+              type: "t_libro",
+              collection: "Libros",
+              title: String(r.values.f_titulo ?? ""),
+              updated: Date.UTC(2026, 9, 20, 9),
+            })),
+            ...(opts.titled ?? []),
+          ].filter((h) => h.title.trim().toLowerCase() === want);
+          return [200, JSON.stringify({ rows: hits.slice(0, 20), count: hits.length })];
+        }
         const audited = p.startsWith("api/data/audit/");
         if (p.startsWith("api/data/") && !audited) return dataAnswer(method, p, body);
         if (p === "api/pages-trash")
