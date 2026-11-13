@@ -1,9 +1,10 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
 import { openUserStore } from "../packages/store/src/index.ts";
+import { startServer } from "./server.ts";
 
 /**
  * Boni's notices on the desktop (task 62, A-17): with its window closed Boni goes on in the tray, and a notice of the
@@ -13,10 +14,9 @@ import { openUserStore } from "../packages/store/src/index.ts";
  */
 const ROOT = join(import.meta.dirname, "..");
 const PASSWORD = "una contraseña larga de ejemplo";
-const PORT = 19000 + Math.floor(Math.random() * 1000);
-const SERVER = `http://127.0.0.1:${PORT}`;
 
 let dir = "";
+let SERVER = "";
 let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
 
@@ -49,20 +49,9 @@ test.beforeAll(async () => {
     created: Date.now() - 60_000,
   });
   store.close();
-  server = spawn("node", ["apps/server/src/main.ts"], {
-    cwd: ROOT,
-    env: { ...env, BONI_PORT: String(PORT), ANTHROPIC_API_KEY: "clave-inventada-0005" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  await new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("server did not start")), 20_000);
-    server?.stdout?.on("data", (b: Buffer) => {
-      if (b.toString().includes(`127.0.0.1:${PORT}`)) {
-        clearTimeout(t);
-        resolve();
-      }
-    });
-  });
+  const started = await startServer({ ...env, ANTHROPIC_API_KEY: "clave-inventada-0005" });
+  server = started.process;
+  SERVER = started.url;
   const bin = process.env.BONI_DESKTOP_BIN;
   mkdirSync(join(dir, "tmp"));
   app = await electron.launch({
