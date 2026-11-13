@@ -51,6 +51,63 @@ export type PageTemplate = (typeof PAGE_TEMPLATES)[number];
 export const isPageTemplate = (x: unknown): x is PageTemplate =>
   (PAGE_TEMPLATES as readonly unknown[]).includes(x);
 
+/**
+ * The part of an image shown (task 2h): its left, top, width and height in percent of the whole image, at most one
+ * decimal. A way of showing the file, never a change to it: the file stays whole, and taking the crop off shows it all.
+ */
+export interface Crop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+/** A file of the user's as the text shows it: its row, its name, and the width and the part of it shown, if set. */
+export interface FileShown {
+  file: string;
+  name: string;
+  width?: number;
+  crop?: Crop;
+}
+/** At most, the images a row holds side by side. */
+export const ROW_MAX = 8;
+/** The widths an image may have, in CSS pixels. */
+export const WIDTH_MIN = 16;
+export const WIDTH_MAX = 4000;
+
+/** Whether a crop is one the text can hold: inside the image, not empty, at most one decimal. */
+export function isCrop(c: unknown): c is Crop {
+  if (!isObj(c) || !only(c, ["x", "y", "w", "h"])) return false;
+  const v = [c.x, c.y, c.w, c.h];
+  if (!v.every((n) => typeof n === "number" && Number.isFinite(n) && Math.round(n * 10) === n * 10))
+    return false;
+  const [x, y, w, h] = v as number[];
+  return (
+    (x as number) >= 0 &&
+    (y as number) >= 0 &&
+    (w as number) > 0 &&
+    (h as number) > 0 &&
+    (x as number) + (w as number) <= 100 &&
+    (y as number) + (h as number) <= 100
+  );
+}
+
+/** Whether a file as the text shows it is well formed (its row, its name, its width and crop within limits). */
+function isFileShown(b: Record<string, unknown>, keys: string[]): boolean {
+  return (
+    only(b, [...keys, "file", "name", "width", "crop"]) &&
+    typeof b.file === "string" &&
+    ID.test(b.file) &&
+    typeof b.name === "string" &&
+    b.name.length <= 200 &&
+    (b.width === undefined ||
+      (typeof b.width === "number" &&
+        Number.isInteger(b.width) &&
+        b.width >= WIDTH_MIN &&
+        b.width <= WIDTH_MAX)) &&
+    (b.crop === undefined || isCrop(b.crop))
+  );
+}
+
 export type PageBlock = (
   | ({ id: string; type: "heading"; text: string; level?: 1 | 2 | 3 } & Indent)
   | ({ id: string; type: "text"; text: string } & Indent)
@@ -68,9 +125,13 @@ export type PageBlock = (
   | { id: string; type: "page"; page: string }
   /**
    * A file of the user's (a row that holds one, by its id) in the text: an image shown in place, anything else as a
-   * card that opens it. In Markdown, `![name|width](boni:<id>)`.
+   * card that opens it. In Markdown, `![name|width|crop=x,y,w,h](boni:<id>)`, the width and the crop optional.
    */
-  | { id: string; type: "file"; file: string; name: string; width?: number }
+  | ({ id: string; type: "file" } & FileShown)
+  /**
+   * Images side by side (task 2h): in Markdown, their images on one line, a space between them. Two to eight.
+   */
+  | { id: string; type: "files"; files: FileShown[] }
   | { id: string; type: "chart"; chart: string }
   /** A collection of the user's shown as a Notion database view (plan PR 19). */
   | { id: string; type: "database"; source: string; view: DatabaseView }
@@ -357,6 +418,7 @@ export const PAGE_BLOCKS = [
   "divider",
   "page",
   "file",
+  "files",
   "chart",
   "database",
   "action",
@@ -484,20 +546,20 @@ export function pageErrors(spec: unknown): string[] {
         if (!only(b, ["at", "id", "type"])) errors.push(`${w}: a divider has nothing else`);
         break;
       case "file":
-        if (
-          !only(b, ["at", "id", "type", "file", "name", "width"]) ||
-          typeof b.file !== "string" ||
-          !ID.test(b.file) ||
-          typeof b.name !== "string" ||
-          b.name.length > 200 ||
-          (b.width !== undefined &&
-            (typeof b.width !== "number" ||
-              !Number.isInteger(b.width) ||
-              b.width < 16 ||
-              b.width > 4000))
-        )
+        if (!isFileShown(b, ["at", "id", "type"]))
           errors.push(`${w}: a file names its row and has a name`);
         break;
+      case "files": {
+        const items: unknown[] = Array.isArray(b.files) ? b.files : [];
+        if (
+          !only(b, ["at", "id", "type", "files"]) ||
+          items.length < 2 ||
+          items.length > ROW_MAX ||
+          items.some((x) => !isObj(x) || !isFileShown(x, []))
+        )
+          errors.push(`${w}: a row of images has two to ${ROW_MAX}, each naming its row`);
+        break;
+      }
       case "page":
         if (
           !only(b, ["at", "id", "type", "page"]) ||

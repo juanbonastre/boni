@@ -148,6 +148,25 @@ Una línea justo después.
 
 1. otra lista
 `,
+  // Task 2h: a width, a crop and rows, in every way they may be written; and the lines that look like them but are not.
+  "images at a width, cropped and side by side": `Fotos del viaje
+
+![portada|480](boni:${FILE})
+![recortada|320|crop=10,5.5,80,90](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ac)
+![solo recorte|crop=0,0,50,50](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ad)
+  ![sangrada|200](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ae)  
+
+![a.png](boni:f_01m5ztq8w3k2v7n4b9c6x1d0af) ![b.png|200](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ag) ![c.png|crop=25,0,50,100](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ah)
+![d.png](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ai)![e.png](boni:f_01m5ztq8w3k2v7n4b9c6x1d0aj)
+![f.png](boni:f_01m5ztq8w3k2v7n4b9c6x1d0ak)\t   ![g.png|crop=0,0,100,100](boni:f_01m5ztq8w3k2v7n4b9c6x1d0al)\t
+Texto justo debajo de la fila.
+
+![fuera|crop=60,0,50,100](boni:f_01m5ztq8w3k2v7n4b9c6x1d0am)
+![a](boni:f_01) y ![b](boni:f_02) en una frase
+![web](https://example.com/a.png) ![b](boni:f_02)
+![1](boni:f_01) ![2](boni:f_02) ![3](boni:f_03) ![4](boni:f_04) ![5](boni:f_05) ![6](boni:f_06) ![7](boni:f_07) ![8](boni:f_08) ![9](boni:f_09)
+![dos barras|200|300](boni:f_01)
+`,
   "windows line ends": "# Título\r\n\r\n- uno\r\n- dos\r\n\r\nPárrafo\r\ncon dos líneas\r\n",
   "old mac line ends": "Uno\rDos\r\rTres",
   "spaces and tabs at the edges": "   \n\t\nTexto\t\n   \n",
@@ -175,6 +194,9 @@ export function longNote(days: number): string {
     if (d % 5 === 0) out.push(`| a | b |`, `|---|---|`, `| ${d} | ${d * 2} |`, "");
     if (d % 7 === 0)
       out.push(`![foto ${d}](boni:f_01m5ztq8w3k2v7n4b9c6x${String(d).padStart(4, "0")})`, "");
+    const f = (n: number) => `f_01m5ztq8w3k2v7n4b9c6x${String(n).padStart(4, "0")}`;
+    if (d % 9 === 0) out.push(`![izq ${d}](boni:${f(d)}) ![der ${d}|240](boni:${f(d + 1)})`, "");
+    if (d % 17 === 0) out.push(`![recorte ${d}|360|crop=12.5,0,75,100](boni:${f(d)})`, "");
     if (d % 11 === 0) out.push("```", `codigo(${d})`, "```", "");
     if (d % 13 === 0) out.push(`> Cita del día ${d}`, "");
   }

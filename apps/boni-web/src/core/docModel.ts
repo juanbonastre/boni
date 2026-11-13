@@ -1,6 +1,6 @@
 /**
  * The text of a page or a note as the editor's engine holds it (task 2g, ProseMirror): a run of blocks one after
- * another (text of every kind, dividers, files, links to pages) is one document, so text is selected from one block to
+ * another (text of every kind, dividers, files and rows of images, links to pages) is one document, so text is selected from one block to
  * another as in a document; and back to the very blocks it was made of. A block that was not edited comes back as the
  * same object (so a note's text keeps its bytes, `writeMarkdown`), one whose text changed comes back with only its
  * text changed. Nothing here knows the screen.
@@ -25,7 +25,7 @@ export const TEXT_TYPES: ReadonlySet<string> = new Set([
 ]);
 export const isText = (b: Block): b is TextBlock => TEXT_TYPES.has(b.type);
 /** Blocks that sit inside the text without text of their own: the caret passes over them, a selection takes them. */
-export const IN_TEXT: ReadonlySet<string> = new Set(["divider", "file", "page"]);
+export const IN_TEXT: ReadonlySet<string> = new Set(["divider", "file", "files", "page"]);
 /** Whether a block is part of the document of text around it. */
 export const inRun = (b: Block): boolean => TEXT_TYPES.has(b.type) || IN_TEXT.has(b.type);
 
