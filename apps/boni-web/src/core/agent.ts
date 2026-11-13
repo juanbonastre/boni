@@ -3104,8 +3104,13 @@ export class AgentApi {
     parsePage(
       (await this.call("GET", `/${encodeURIComponent(id)}`, undefined, "api/pages")) as never,
     );
-  createPage = async (input: { title: string; parent?: string | null; spec?: PageSpec }) =>
-    parsePage((await this.call("POST", "", input, "api/pages")) as never);
+  /** `id`: the one this device gave the page (task 109); a server before it makes its own, which it answers. */
+  createPage = async (input: {
+    id?: string;
+    title: string;
+    parent?: string | null;
+    spec?: PageSpec;
+  }) => parsePage((await this.call("POST", "", input, "api/pages")) as never);
   updatePage = async (
     id: string,
     input: {

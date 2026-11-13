@@ -862,8 +862,10 @@ export function makeApp(opts: ServerOptions): App {
       }
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       try {
-        if (route === "POST /api/pages")
-          return send(res, 200, { page: createPage(store, await bodyOf(req), s.device) });
+        if (route === "POST /api/pages") {
+          const b = await bodyOf(req);
+          return send(res, 200, { page: createPage(store, b, s.device, b.id) });
+        }
         if (route === "PUT /api/pages/:id")
           return send(res, 200, { page: updatePage(store, id, await bodyOf(req), s.device) });
         if (route === "POST /api/pages/:id/restore")

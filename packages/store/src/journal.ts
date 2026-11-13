@@ -199,6 +199,8 @@ export interface Journal {
   runs(limit?: number): RunRow[];
   /** Each run that started in the period, oldest first (the read-only collection «Ejecuciones»). */
   runsIn(from: number, to: number): RunRow[];
+  /** How many runs started in the period, but those of `except` origin: counted, never read (task 108). */
+  countRunsIn(from: number, to: number, except?: string): number;
   /** The flows (docs/flujos.md), each at its latest version, by name. */
   flows(): FlowRow[];
   /** A flow at its latest version, or at `version`. */
@@ -248,6 +250,8 @@ export interface Journal {
   addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits" | "before">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
+  /** How many proposals were made in the period, and how many of them were accepted: counted, never read. */
+  countProposalsIn(from: number, to: number): { made: number; accepted: number };
   /** The proposals one run made, oldest first (its trace, task 52). */
   proposalsOf(run: string): ProposalRow[];
   /** How many proposals of each state every run made: one count, never the proposals themselves (task 43). */
@@ -611,6 +615,16 @@ export function openJournal(db: DatabaseSync): Journal {
     },
     runs: (limit = 50) =>
       db.prepare("SELECT * FROM runs ORDER BY started DESC LIMIT ?").all(limit).map(runOf),
+    countRunsIn: (from, to, except) =>
+      Number(
+        (
+          db
+            .prepare(
+              "SELECT count(*) AS n FROM runs WHERE started >= ? AND started < ? AND origin IS NOT ?",
+            )
+            .get(from, to, except ?? null) as { n: number }
+        ).n,
+      ),
     runsIn: (from, to) =>
       db
         .prepare("SELECT * FROM runs WHERE started >= ? AND started < ? ORDER BY started, rowid")
@@ -706,6 +720,15 @@ export function openJournal(db: DatabaseSync): Journal {
         ? db.prepare("SELECT * FROM proposals WHERE status = ? ORDER BY created, id").all(status)
         : db.prepare("SELECT * FROM proposals ORDER BY created, id").all()
       ).map(proposalOf),
+    countProposalsIn: (from, to) => {
+      const r = db
+        .prepare(
+          `SELECT count(*) AS made, coalesce(sum(status = 'accepted'), 0) AS accepted FROM proposals
+           WHERE created >= ? AND created < ?`,
+        )
+        .get(from, to) as { made: number; accepted: number };
+      return { made: Number(r.made), accepted: Number(r.accepted) };
+    },
     proposalsOf: (run) =>
       (
         db.prepare("SELECT * FROM proposals WHERE run = ? ORDER BY created, id").all(run) as Record<

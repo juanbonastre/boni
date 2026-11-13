@@ -113,6 +113,8 @@ export interface Audit {
     before?: number;
     limit?: number;
   }): ActionRow[];
+  /** How many actions in [from, to) by actors whose `by` starts with `byPrefix`, of one tool: counted, never read. */
+  countActions(q: { from: number; to: number; byPrefix: string; tool: string }): number;
   /** What each action saw, for some actions. */
   accessOf(actions: number[]): Map<number, Seen[]>;
   /** Who saw an entity, newest first. */
@@ -146,6 +148,16 @@ export interface Audit {
     op: number;
     rows: { q: number; by: By; type: string; reads: number; writes: number }[];
   };
+  /**
+   * The same counts per quarter, actor and type, of the instants in [from, to) only: whole quarters from the kept sums
+   * (brought up to date with only what came since), a whole UTC day as one row at its first quarter, the parts at
+   * either end from the audit (task 108: counting thirty days of reads on every open of «Todas las páginas» held the
+   * server).
+   */
+  activityIn(
+    from: number,
+    to: number,
+  ): { q: number; by: By; type: string; reads: number; writes: number }[];
   /** Per type and actor: how many entities were read and how many changed. */
   byType(from: number, to: number): { type: string; by: By; reads: number; writes: number }[];
   /** Changes in a period by kind (create, update, delete, restore) and how many undid another. */
@@ -163,6 +175,8 @@ export interface Audit {
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 /** A quarter of an hour, in ms: the step of every time zone's offset. */
 const QUARTER = 15 * 60_000;
+/** Quarters in a UTC day. */
+const PER_DAY = 96;
 const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /**
@@ -457,13 +471,20 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     upToOp = Number.MAX_SAFE_INTEGER,
   ) => {
     const quarter = (col: string) => `(${col} / ${QUARTER})`;
+    // With no numbers to bound, only the instants: so a short period is read by its index on `at` (task 108).
+    const all =
+      afterAction === 0 &&
+      afterOp === 0 &&
+      upToAction === Number.MAX_SAFE_INTEGER &&
+      upToOp === Number.MAX_SAFE_INTEGER;
+    const after = (col: string) => (all ? "" : `${col} > ? AND ${col} <= ? AND `);
     const rows: { q: number; by: By; type: string; reads: number; writes: number }[] = [];
     for (const r of db
       .prepare(
         `SELECT ${quarter("x.at")} AS q, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
-         WHERE x.seq > ? AND x.seq <= ? AND x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY q, x.by, a.type`,
+         WHERE ${after("x.seq")}x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY q, x.by, a.type`,
       )
-      .all(afterAction, upToAction, from, to))
+      .all(...(all ? [] : [afterAction, upToAction]), from, to))
       rows.push({
         q: Number(r.q),
         by: r.by as string,
@@ -476,9 +497,9 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
         `SELECT ${quarter("o.at")} AS q, e.type,
            coalesce(o.by, CASE o.actor WHEN 'user' THEN 'user:' || coalesce(o.device, '?') ELSE o.actor END) AS who,
            count(*) AS n FROM ops o JOIN entities e ON e.id = o.target
-         WHERE o.seq > ? AND o.seq <= ? AND o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY q, e.type, who`,
+         WHERE ${after("o.seq")}o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY q, e.type, who`,
       )
-      .all(afterOp, upToOp, from, to))
+      .all(...(all ? [] : [afterOp, upToOp]), from, to))
       rows.push({
         q: Number(r.q),
         by: r.who as string,
@@ -487,6 +508,68 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
         writes: Number(r.n),
       });
     return rows;
+  };
+
+  /**
+   * The kept activity (migration 14) brought up to the last action and operation: what came after its cursor goes in
+   * (everything, once, when it is new: the old first pass for the last time), so nothing counts the whole audit again.
+   */
+  const activityCaughtUp = () => {
+    const lastAction = Number(
+      (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
+    );
+    const lastOp = Number(
+      (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n,
+    );
+    const kept = (cursorOf.get() as { action: number; op: number } | undefined) ?? {
+      action: 0,
+      op: 0,
+    };
+    const fresh =
+      kept.action < lastAction || kept.op < lastOp
+        ? activityRows(0, Number.MAX_SAFE_INTEGER, kept.action, kept.op, lastAction, lastOp)
+        : [];
+    for (const r of fresh) {
+      addQuarter.run(r.q, r.by, r.type, r.reads, r.writes);
+      addDay.run(Math.floor(r.q / PER_DAY), r.by, r.type, r.reads, r.writes);
+    }
+    if (fresh.length) setCursor.run(lastAction, lastOp);
+    return { lastAction, lastOp, kept, fresh };
+  };
+  const addDay = db.prepare(
+    `INSERT INTO activity_d (day, by, type, reads, writes) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(day, by, type) DO UPDATE SET reads = reads + excluded.reads, writes = writes + excluded.writes`,
+  );
+  type Kept = { q: number; by: By; type: string; reads: number; writes: number };
+  const keptOf = (r: Record<string, unknown>, q: number): Kept => ({
+    q,
+    by: r.by as string,
+    type: r.type as string,
+    reads: Number(r.reads),
+    writes: Number(r.writes),
+  });
+  const quartersIn = db.prepare(
+    "SELECT q, by, type, reads, writes FROM activity_q WHERE q >= ? AND q < ?",
+  );
+  const daysIn = db.prepare(
+    "SELECT day, by, type, reads, writes FROM activity_d WHERE day >= ? AND day < ?",
+  );
+  /** The kept quarters in [a, b), the whole UTC days among them from their day's sum (as their first quarter). */
+  const keptIn = (a: number, b: number): Kept[] => {
+    const quarters = (x: number, y: number) =>
+      x < y
+        ? (quartersIn.all(x, y) as Record<string, unknown>[]).map((r) => keptOf(r, Number(r.q)))
+        : [];
+    const da = Math.ceil(a / PER_DAY);
+    const dz = Math.floor(b / PER_DAY);
+    if (da >= dz) return quarters(a, b);
+    return [
+      ...quarters(a, da * PER_DAY),
+      ...(daysIn.all(da, dz) as Record<string, unknown>[]).map((r) =>
+        keptOf(r, Number(r.day) * PER_DAY),
+      ),
+      ...quarters(dz * PER_DAY, b),
+    ];
   };
 
   return {
@@ -643,24 +726,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     },
     activitySince: (action, op, from) =>
       tx(() => {
-        const lastAction = Number(
-          (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
-        );
-        const lastOp = Number(
-          (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n,
-        );
-        // The kept sum first: what came after its cursor goes in (everything, once, when it is new: the old first
-        // pass for the last time), so a start never counts the whole audit again.
-        const kept = (cursorOf.get() as { action: number; op: number } | undefined) ?? {
-          action: 0,
-          op: 0,
-        };
-        const fresh =
-          kept.action < lastAction || kept.op < lastOp
-            ? activityRows(0, Number.MAX_SAFE_INTEGER, kept.action, kept.op, lastAction, lastOp)
-            : [];
-        for (const r of fresh) addQuarter.run(r.q, r.by, r.type, r.reads, r.writes);
-        if (fresh.length) setCursor.run(lastAction, lastOp);
+        const { lastAction, lastOp, kept, fresh } = activityCaughtUp();
         const first = Math.floor(from / QUARTER);
         // The caller: from the start, the sum as kept; from where it was, only what came since.
         const rows =
@@ -684,6 +750,30 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
               ? fresh.filter((r) => r.q >= first)
               : activityRows(from, Number.MAX_SAFE_INTEGER, action, op, lastAction, lastOp);
         return { action: lastAction, op: lastOp, rows };
+      }),
+    countActions: (q) =>
+      Number(
+        (
+          db
+            .prepare(
+              "SELECT count(*) AS n FROM actions WHERE at >= ? AND at < ? AND substr(by, 1, ?) = ? AND tool = ?",
+            )
+            .get(q.from, q.to, q.byPrefix.length, q.byPrefix, q.tool) as { n: number }
+        ).n,
+      ),
+    activityIn: (from, to) =>
+      tx(() => {
+        activityCaughtUp();
+        // Whole quarters (and whole days) from the kept sums; the parts of a quarter at either end counted from the
+        // audit, by its index on the instant (fifteen minutes at most each).
+        const a = Math.ceil(from / QUARTER);
+        const b = Math.floor(to / QUARTER);
+        if (a >= b) return activityRows(from, to, 0, 0);
+        return [
+          ...activityRows(from, a * QUARTER, 0, 0),
+          ...keptIn(a, b),
+          ...activityRows(b * QUARTER, to, 0, 0),
+        ];
       }),
     byType: (from, to) => {
       const rows = new Map<string, { type: string; by: By; reads: number; writes: number }>();

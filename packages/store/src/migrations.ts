@@ -357,6 +357,22 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
      target TEXT PRIMARY KEY,
      bytes INTEGER NOT NULL
    ) WITHOUT ROWID;`,
+  // 24: the same activity as migration 14 per UTC day (`day`: days since 1970), kept with it as it grows (task 108):
+  // «Todas las páginas» counts thirty days of it on every open, and per quarter that is thousands of rows (each
+  // quarter has a row per actor and collection). Filled here once from the quarters already kept, which stay as they
+  // are; from then on the catch-up adds what is new to both. And the runs by when they started, with their origin, so
+  // the requests of a period are counted from the index: counting them read every run whole, plan and all.
+  `CREATE INDEX runs_started ON runs(started, origin);
+   CREATE TABLE activity_d (
+     day INTEGER NOT NULL,
+     by TEXT NOT NULL,
+     type TEXT NOT NULL,
+     reads INTEGER NOT NULL DEFAULT 0,
+     writes INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (day, by, type)
+   ) WITHOUT ROWID;
+   INSERT INTO activity_d (day, by, type, reads, writes)
+     SELECT q / 96, by, type, sum(reads), sum(writes) FROM activity_q GROUP BY q / 96, by, type;`,
 ];
 
 export function migrate(db: DatabaseSync): void {
