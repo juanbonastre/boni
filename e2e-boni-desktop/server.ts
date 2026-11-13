@@ -26,9 +26,11 @@ export type Server = { process: ChildProcess; port: number; url: string };
 /**
  * Starts `apps/server/src/main.ts` with `env` and waits for its start line. Its stdout and stderr are read for as long
  * as it runs (a pipe nobody reads stops the server once it is full), the last of them kept for the error. A port
- * taken between being found free and being listened on is tried again with another.
+ * taken between being found free and being listened on is tried again with another. Given a `port` (a server started
+ * again where the app already knows it, task 118), it starts on that one only.
  */
-export async function startServer(env: NodeJS.ProcessEnv): Promise<Server> {
+export async function startServer(env: NodeJS.ProcessEnv, port?: number): Promise<Server> {
+  if (port !== undefined) return startOn(port, env);
   for (let attempt = 1; ; attempt++) {
     const port = await freePort();
     try {
