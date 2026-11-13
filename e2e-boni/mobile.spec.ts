@@ -271,13 +271,13 @@ test("a note on the phone: its properties as chips, all in a sheet; «…»; a b
   await expect(page.getByRole("menuitem")).toHaveText(["Historial", "Mover a la papelera"]);
   await page.keyboard.press("Escape");
   // Writing: a bar over the keyboard, and the tab bar and the + button step aside.
-  const first = page.locator(".row-doc textarea.blk-input").first();
+  const first = page.locator(".row-doc .blk-input").first();
   await first.tap();
   await expect(page.locator(".m-keybar")).toBeVisible();
   await expect(page.locator(".m-tabs")).toBeHidden();
   await page.screenshot({ path: `${SHOTS}/phone-note-writing.png` });
   await page.locator(".m-keybar").getByRole("button", { name: "Lista" }).tap();
-  await expect(first).toHaveAttribute("aria-label", "Lista");
+  await expect(page.locator(".row-doc .blk").first()).toHaveClass(/blk-bullet/);
   await page.locator(".m-keybar").getByRole("button", { name: "Listo" }).tap();
   await expect(page.locator(".m-keybar")).toHaveCount(0);
   await expect(page.locator(".m-tabs")).toBeVisible();

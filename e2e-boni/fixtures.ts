@@ -27,6 +27,8 @@ export interface Options {
   /** Configured with a device token of the first clients (no user): the page asks to log in. */
   legacy?: boolean;
   language?: "es" | "en";
+  /** The text of the book «Rayuela» (r1) in place of its own: a long note's, for the editor's timing (A-15). */
+  rayuelaBody?: string;
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
@@ -426,7 +428,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             },
             updated: 3,
             // The lines its History (ROW_HISTORY) says who wrote.
-            body: "Boni es el núcleo: un servidor, una cuenta.\n\nPropuesta del correo: revisar el presupuesto.\n\n- 24 oct: «Modelos» desplegado.\n",
+            body:
+              opts.rayuelaBody ??
+              "Boni es el núcleo: un servidor, una cuenta.\n\nPropuesta del correo: revisar el presupuesto.\n\n- 24 oct: «Modelos» desplegado.\n",
           },
           {
             id: "r2",

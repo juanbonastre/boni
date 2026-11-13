@@ -284,7 +284,7 @@ test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/"
   // Enter goes to the first line; "# " makes it a heading, Enter the next line, "/" the block menu.
   await page.keyboard.press("Enter");
   await page.keyboard.type("# Este curso", { delay: 20 });
-  await expect(page.locator(".blk-h1 textarea")).toHaveValue("Este curso");
+  await expect(page.locator(".blk-h1 .blk-input")).toHaveText("Este curso");
   await page.keyboard.press("Enter");
   await page.keyboard.type("- Exámenes", { delay: 20 });
   await expect(page.locator(".blk-bullet .blk-mark")).toHaveCount(1);
@@ -350,22 +350,22 @@ test("Notion's blocks: lists, toggles, code; Tab nests, a closed toggle folds, C
   await expect(page.locator(".blk-fold")).toHaveCount(1);
   await page.keyboard.press("Enter"); // the next line goes inside the toggle
   await page.keyboard.type("Dentro", { delay: 15 });
-  await expect(page.locator('.blk[style*="margin-left"] textarea')).toHaveValue("Dentro");
+  await expect(page.locator('.blk[style*="margin-left"] .blk-input')).toHaveText("Dentro");
   await page.keyboard.press("Enter");
   await page.keyboard.press("Shift+Tab");
   await page.keyboard.type("```", { delay: 15 });
   await page.keyboard.type("a = 1", { delay: 15 });
   await page.keyboard.press("Enter");
   await page.keyboard.type("b = 2", { delay: 15 });
-  await expect(page.locator(".blk-code textarea")).toHaveValue("a = 1\nb = 2");
+  await expect.poll(() => page.locator(".blk-code .blk-input").textContent()).toBe("a = 1\nb = 2");
   // Ctrl+Z takes back the last change (the code typed in one go), Ctrl+Shift+Z brings it again.
   await page.keyboard.press("Control+z");
-  await expect(page.locator(".blk-code textarea")).toHaveValue("");
+  await expect.poll(() => page.locator(".blk-code .blk-input").textContent()).toBe("");
   await page.keyboard.press("Control+Shift+z");
-  await expect(page.locator(".blk-code textarea")).toHaveValue("a = 1\nb = 2");
+  await expect.poll(() => page.locator(".blk-code .blk-input").textContent()).toBe("a = 1\nb = 2");
   await page.screenshot({ path: `${SHOTS}/page-blocks.png` });
   // A closed toggle hides what is inside it.
-  const lines = page.locator(".doc-blocks textarea");
+  const lines = page.locator(".doc-blocks .blk-input");
   const before = await lines.count();
   await page.locator(".blk-fold").click();
   await expect(lines).toHaveCount(before - 1);

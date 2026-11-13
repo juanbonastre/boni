@@ -597,19 +597,30 @@ contraseña ni un código aquí» under a question.
   wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
   collection (Boni, Boni Calendar's peek, every device). A note opens with its properties over its text (Juan,
   2026-11-02: they are what he comes to change from the calendar), folded only where he folded them.
-- **Editing as a document** (Juan, 2026-10-30; phase 1 of the Boni note «Boni: el editor de páginas»). A selection
-  that leaves a block takes whole blocks, as Notion's: a drag from one block into another, Shift+click from the block
-  being edited, Esc (the block the caret is in; a second Esc lets go, a third leaves, as the peek's), Shift+↑ or
-  Shift+↓ at a block's edge, Ctrl+A twice (its text, then every block). Selected blocks are tinted with the accent's
-  soft colour and their text cannot be selected meanwhile. On them: Ctrl+C copies them as Markdown (any app pastes
-  it; Boni gets the same blocks back), Ctrl+X cuts, Supr or Retroceso deletes, Ctrl+D duplicates (the copies stay
-  selected), Ctrl+Shift+↑/↓ moves them, Tab and Shift+Tab nest them, ↑ and ↓ move the selection (Shift: grow it),
-  Enter edits the first one, typing puts what is typed in their place; Ctrl+Z undoes any of it. Pasting several
-  lines makes a block of each paragraph, heading, list item or to-do (the text before the caret joins the first,
-  the text after it the last); a picture or a file pasted or dropped is kept in Boni (where the account keeps such
-  files: asked once when there are several collections of files) and shown where it fell. The arrows go from block
-  to block as in a document: ↑ from the first line shown, ↓ from the last, ← at the start, → at the end; a block
-  that is not text (a picture, a chart) is selected on the way.
+- **Editing as a document** (Juan, 2026-10-30; phase 1 of the Boni note «Boni: el editor de páginas»; task 2g, its
+  engine, 2026-11-13). The text of a page or a note is one document, as Google Docs': a drag from one block's text
+  into another's, or Shift+click, selects loose text across blocks, Shift+arrows grow it line by line, and typing,
+  Supr, Retroceso, Enter, Ctrl+X or a paste replace it, the blocks it began and ended in becoming one. Ctrl+C copies it:
+  plain text within one block, Markdown across blocks (Boni gets the same blocks back). Supr at a block's end brings
+  the next one up into it, as Retroceso at a block's start joins it to the one above. Whole blocks are selected as
+  Notion's: Esc (the blocks the selection touches; a second Esc lets go, a third leaves, as the peek's), Shift+↑ or
+  Shift+↓ past the text's first or last line, Ctrl+A twice (its block's text, then every block). Selected blocks are
+  tinted with the accent's soft colour. On them: Ctrl+C copies them as Markdown, Ctrl+X cuts, Supr or Retroceso
+  deletes, Ctrl+D duplicates (the copies stay selected), Ctrl+Shift+↑/↓ moves them, Tab and Shift+Tab nest them, ↑
+  and ↓ move the selection (Shift: grow it), Enter edits the first one, typing puts what is typed in their place;
+  Ctrl+Z undoes any of it. Pasting several lines makes a block of each paragraph, heading, list item or to-do (the
+  text before the caret joins the first, the text after it the last); what is pasted is always plain text. A picture
+  or a file pasted or dropped is kept in Boni (where the account keeps such files: asked once when there are several
+  collections of files) and shown where it fell. The arrows go from block to block as in a document; a block that is
+  not text (a line, a picture, a page) is selected on the way. Markdown typed at a line's start («# », «- », «[] »,
+  «---») turns it only as it is typed: a paragraph that already begins so (a note as it was written) stays as it is.
+  The «/» menu opens under the line being written only. A long note (thousands of paragraphs) opens at once and
+  shows each letter within a frame or two (A-15, `e2e-boni/editor.spec.ts`). The text is saved when it is left for
+  anything else (a title, a property, another screen), as a field is, and shortly after typing stops.
+  What changed with the engine (task 2g), against the textarea per block before it: a drag or Shift+click selects
+  text, not whole blocks (those are Esc and Shift+arrows); Supr at a block's end joins the next one; the «/» menu shows
+  only in the block being written; a block's length is no longer cut while typing; a Markdown shortcut turns a line
+  only as it is typed; the text is one field for a screen reader («Texto»), not one per block named by its kind.
 - **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
   from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
   per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the

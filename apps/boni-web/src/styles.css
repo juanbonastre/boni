@@ -3801,6 +3801,58 @@ select.input.invalid {
 .blk-input:not(:focus)::placeholder {
   color: transparent;
 }
+/*
+ * The page's text as one document (TextRun.tsx, task 2g): text is selected from one block to another. ProseMirror's
+ * own rules (prosemirror-view/style/prosemirror.css) are copied here, never loaded from elsewhere.
+ */
+/* In block flow, not a flex column: a column of thousands of lines is laid out whole on every key, a block flow only
+   down from the line that changed (A-15). Each line is its own formatting context, so margins fall as they did. */
+.doc-run {
+  position: relative;
+  display: block;
+  outline: none;
+  overflow-wrap: break-word;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+.doc-run > .blk {
+  display: flow-root;
+}
+.doc-run .blk-input {
+  position: relative;
+  white-space: break-spaces;
+  cursor: text;
+}
+.doc-run .blk-gutter,
+.doc-run .blk-mark,
+.doc-run .blk-who,
+.doc-run .blk-fold,
+.doc-run .blk-callout-icon,
+.doc-run .blk-check {
+  user-select: none;
+}
+.doc-run [draggable][contenteditable="false"] {
+  user-select: text;
+}
+.ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+/* A block in the text that is not text (a line, a file, a page), taken whole by a click or a selection. */
+.doc-run .blk.ProseMirror-selectednode {
+  background: var(--accent-soft);
+}
+/* The hint, as in Notion, only on the empty line being written. */
+.doc-run.ProseMirror-focused .blk.caret.empty > .blk-body > .blk-input::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  color: var(--muted);
+  opacity: 0.6;
+  pointer-events: none;
+}
 .blk-h1 {
   margin-top: 22px;
 }

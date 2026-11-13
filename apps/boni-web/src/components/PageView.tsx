@@ -8,20 +8,10 @@ import {
   controlsOfBlock,
   markdownToBlocks,
   newBlock,
-  partOf,
+  partsOf,
   passedValues,
 } from "@boni/views";
-import {
-  ArrowRight,
-  ChevronRight,
-  FileText,
-  GripVertical,
-  Paperclip,
-  Play,
-  Plus,
-  Smile,
-  X,
-} from "lucide-react";
+import { ArrowRight, FileText, GripVertical, Paperclip, Play, Plus, Smile, X } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -36,6 +26,7 @@ import { catalogueOf, isDataBlock } from "../core/blocks.ts";
 import { focusAtEnd } from "../core/caret.ts";
 import { isCategoryKind, newSpec } from "../core/chartBuilder.ts";
 import { emptyState } from "../core/charts.ts";
+import { inRun, isText, type TextBlock } from "../core/docModel.ts";
 import {
   colsOf,
   moveTo,
@@ -51,11 +42,18 @@ import {
   duplicated,
   indented,
   moved,
-  pastedInto,
   rangeIds,
   replacedBy,
   withoutBlocks,
 } from "../core/selection.ts";
+import {
+  asKind,
+  indentOf,
+  kindOf,
+  type TextKind,
+  emptyText as textBlock,
+  withChildren,
+} from "../core/textKeys.ts";
 import { phoneLayout } from "../host.ts";
 import { catText } from "../i18n.ts";
 import {
@@ -101,55 +99,11 @@ import { historyColor, whoLabel } from "./History.tsx";
 import { PageChatBlock } from "./PageChatBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { TemplatePill } from "./TemplatePill.tsx";
+import { type Drag, type RunContext, type RunMenus, TextRun } from "./TextRun.tsx";
 
 type Block = Page["spec"]["blocks"][number];
-type TextBlock = Extract<Block, { text: string }>;
-export type TextKind =
-  | "text"
-  | "h1"
-  | "h2"
-  | "h3"
-  | "bullet"
-  | "numbered"
-  | "todo"
-  | "toggle"
-  | "quote"
-  | "callout"
-  | "code";
 
-const TEXT_TYPES = new Set([
-  "text",
-  "heading",
-  "bullet",
-  "numbered",
-  "todo",
-  "toggle",
-  "quote",
-  "callout",
-  "code",
-]);
-const isText = (b: Block): b is TextBlock => TEXT_TYPES.has(b.type);
-const kindOf = (b: TextBlock): TextKind =>
-  b.type === "heading" ? (`h${b.level ?? 1}` as TextKind) : (b.type as TextKind);
-const indentOf = (b: Block | undefined): number => (b && "indent" in b && b.indent) || 0;
-const withIndent = (n: number) => (n > 0 ? { indent: Math.min(n, 4) as 1 | 2 | 3 | 4 } : {});
-/** The same block (id, text and indent kept) as another kind of text. */
-function asKind(b: TextBlock, kind: TextKind, text = b.text): TextBlock {
-  // Its indent and its place on the grid stay.
-  const ind = { ...withIndent(indentOf(b)), ...(b.at ? { at: b.at } : {}) };
-  if (kind === "h1" || kind === "h2" || kind === "h3")
-    return { id: b.id, type: "heading", text, level: Number(kind[1]) as 1 | 2 | 3, ...ind };
-  if (kind === "toggle") return { id: b.id, type: "toggle", text, open: true, ...ind };
-  if (kind === "callout")
-    return {
-      id: b.id,
-      type: "callout",
-      text,
-      icon: b.type === "callout" && b.icon ? b.icon : "💡",
-      ...ind,
-    };
-  return { id: b.id, type: kind, text, ...ind } as TextBlock;
-}
+export type { TextKind };
 
 /**
  * A block of the document being edited turned into another kind, its text kept (Notion's «Turn into»), or back to
@@ -166,19 +120,8 @@ export function turnBlock(id: string, kind: TextKind) {
     id,
   );
 }
-const emptyText = (indent = 0): TextBlock => ({
-  id: blockId(),
-  type: "text",
-  text: "",
-  ...withIndent(indent),
-});
-/** A block with the ones nested under it (moved, duplicated and deleted together, as in Notion). */
-function withChildren(blocks: Block[], i: number): Block[] {
-  const base = indentOf(blocks[i]);
-  let j = i + 1;
-  while (j < blocks.length && indentOf(blocks[j]) > base) j++;
-  return blocks.slice(i, j);
-}
+/** An empty line of text, with an id of its own. */
+const emptyText = (indent = 0): TextBlock => textBlock(blockId(), indent);
 
 /**
  * A page of the user's, as a Notion page (docs/extensiones.md 6): always editable in place, no edit mode.
@@ -431,9 +374,6 @@ export function DocTail({ page }: { page: Page }) {
   );
 }
 
-/** Where a dragged block would land: above or below another, or beside it (a column of its own). */
-type Drag = { id: string; over: string | null; where: Where } | null;
-
 /** What the page shows of its blocks: those under a closed toggle are folded away; numbered lists count. */
 function layoutOf(blocks: Block[]) {
   const hidden = new Set<string>();
@@ -464,6 +404,7 @@ function layoutOf(blocks: Block[]) {
  * row), or in rows of columns on the page's grid of 12 (packages/views `Place`), one under another in each column.
  */
 export function Blocks({ page }: { page: Page }) {
+  const t = useStore((s) => s.t);
   const specs = useVisibleCharts();
   // While a chart is being edited its height follows the draft.
   const panel = useStore((s) => s.panel);
@@ -555,6 +496,11 @@ export function Blocks({ page }: { page: Page }) {
     const id = el.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
     if (!id || el.closest(".blk-gutter, .blk-resize")) return;
     const s = useStore.getState().blockSel;
+    // In the text, a press and a drag select text, from one block to another (task 2g): the text's own.
+    if (el.closest(".doc-run")) {
+      if (s) clearBlockSel();
+      return;
+    }
     const editingIn = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
       ".blk[data-block]",
     )?.dataset.block;
@@ -667,12 +613,6 @@ export function Blocks({ page }: { page: Page }) {
         )
       ) : b.type === "action" ? (
         <ActionButton block={b} page={page.id} controls={controls} />
-      ) : b.type === "divider" ? (
-        <hr className="doc-divider" />
-      ) : b.type === "page" ? (
-        <PageLink id={b.page} />
-      ) : b.type === "file" ? (
-        <FileBlock block={b} />
       ) : b.type === "database" ? (
         <DatabaseBlock
           source={b.source}
@@ -683,11 +623,66 @@ export function Blocks({ page }: { page: Page }) {
             setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? { ...b, view } : x)))
           }
         />
-      ) : isText(b) ? (
-        <TextField block={b} page={page} number={numbers.get(b.id)} hidden={hidden} />
       ) : null}
     </BlockRow>
   );
+  // The page's text, a run of blocks one after another as one document (TextRun.tsx), and the menus its blocks open.
+  const byId = useMemo(() => new Map(blocks.map((b) => [b.id, b])), [blocks]);
+  const parts = useMemo(
+    () => (page.id.startsWith("row:") ? partsOf(blocks) : null),
+    [blocks, page.id],
+  );
+  const menus: RunMenus = {
+    add: (b, close) => (
+      <AddMenu
+        onPick={(choice) => {
+          close();
+          addAfter(choice, b, blocks);
+        }}
+      />
+    ),
+    block: (b, close) => <BlockMenu block={b} page={page} close={close} />,
+    icon: (b, close) => (
+      <EmojiGrid
+        onPick={(icon) => {
+          close();
+          setPageBlocks(blocks.map((x) => (x.id === b.id ? ({ ...b, icon } as Block) : x)));
+        }}
+      />
+    ),
+    slash: (b, query, onClose, keys) => (
+      <SlashMenu
+        query={query}
+        onClose={onClose}
+        onPick={(choice) => pick(choice, b, blocks, blocks.indexOf(b))}
+        keys={keys}
+      />
+    ),
+    inText: (b) =>
+      b.type === "file" ? (
+        <FileBlock block={b} />
+      ) : b.type === "page" ? (
+        <PageLink id={b.page} />
+      ) : null,
+    name: (b) =>
+      isText(b) ? t(`block.kind.${kindOf(b)}`) : kindName(t, catalogueKind(b.type), b.type),
+  };
+  const ctx: RunContext = {
+    page,
+    byId,
+    order,
+    numbers,
+    selected,
+    parts,
+    drag,
+    onDragStart: (id) => setDrag({ id, over: null, where: "below" }),
+    onDragOver: (id, where) => {
+      if (drag && (drag.over !== id || drag.where !== where)) setDrag({ ...drag, over: id, where });
+    },
+    onDrop: drop,
+    onDragEnd: () => setDrag(null),
+    menus,
+  };
   const chart = (b: Block) => {
     const spec = b.type === "chart" ? specs.find((s) => s.id === b.chart) : null;
     const wide = spec && isCategoryKind(spec.kind) && spec.kind !== "donut";
@@ -704,12 +699,17 @@ export function Blocks({ page }: { page: Page }) {
     const groups: Block[][] = [];
     for (const b of list) {
       const last = groups[groups.length - 1];
-      const joins = (b.type === "chart" || b.type === "action") && last?.[0]?.type === b.type;
+      const head = last?.[0];
+      const joins =
+        ((b.type === "chart" || b.type === "action") && head?.type === b.type) ||
+        (inRun(b) && !!head && inRun(head));
       if (last && joins) last.push(b);
       else groups.push([b]);
     }
     return groups.map((g) => {
       const first = g[0] as Block;
+      if (inRun(first))
+        return <TextRun key={`run-${first.id}`} ids={g.map((b) => b.id)} ctx={ctx} />;
       if (first.type === "chart")
         return (
           <div key={first.id} className="doc-charts">
@@ -961,12 +961,8 @@ function BlockRow({
   const target = drag && drag.over === block.id && drag.id !== block.id ? drag.where : null;
   const clickRows = CLICK_ROWS.has(block.type);
   // A block of a page can be pointed at for Boni (F9, `Ctrl+Shift+E`), by reference: its chip says its kind and
-  // its name. A note's text has no blocks of its own to name (they are made as it is read): a paragraph of it is
-  // pointed at by its words' key and which of the identical ones it is (`partOf`), which the server finds again in
-  // the text it keeps. A line says nothing.
+  // its name (a note's paragraphs are pointed at in its text, TextRun.tsx). A line says nothing.
   const onPage = useStore((s) => s.page?.id === page.id);
-  const note = page.id.startsWith("row:") ? page.id.slice(4) : null;
-  const part = note && isText(block) ? partOf(blocks, block.id) : null;
   const named = useStore((s) =>
     block.type === "chart"
       ? (s.chartSpecs.find((c) => c.id === block.chart)?.title ?? "")
@@ -977,27 +973,25 @@ function BlockRow({
           : "",
   );
   const pointable =
-    note && part && isText(block)
-      ? pointAttrs({ kind: "part", id: note, ...part }, chipTitle(t("point.kind.part"), block.text))
-      : onPage && block.type !== "divider"
-        ? pointAttrs(
-            { kind: "block", page: page.id, block: block.id },
-            chipTitle(
-              name,
-              isDataBlock(block)
-                ? (block.title ?? "")
-                : isText(block)
-                  ? block.text
-                  : block.type === "action"
-                    ? block.label
-                    : block.type === "link"
-                      ? (block.title ?? "")
-                      : block.type === "file"
-                        ? block.name
-                        : named,
-            ),
-          )
-        : {};
+    onPage && block.type !== "divider"
+      ? pointAttrs(
+          { kind: "block", page: page.id, block: block.id },
+          chipTitle(
+            name,
+            isDataBlock(block)
+              ? (block.title ?? "")
+              : isText(block)
+                ? block.text
+                : block.type === "action"
+                  ? block.label
+                  : block.type === "link"
+                    ? (block.title ?? "")
+                    : block.type === "file"
+                      ? block.name
+                      : named,
+          ),
+        )
+      : {};
   const openAt = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1399,43 +1393,7 @@ function FormButton({ block }: { block: Extract<Block, { type: "action" }> }) {
   );
 }
 
-/** A textarea that grows with its text (one line when empty). */
-/**
- * How far down its textarea a place in the text is drawn (wrapped lines count): whether the caret is on the first
- * or the last line shown, as the arrow keys of a document need.
- */
-function lineTop(el: HTMLTextAreaElement, at: number): number {
-  const style = getComputedStyle(el);
-  const probe = document.createElement("div");
-  const width =
-    el.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
-  Object.assign(probe.style, {
-    position: "absolute",
-    visibility: "hidden",
-    top: "0",
-    left: "-9999px",
-    width: `${width}px`,
-    font: style.font,
-    letterSpacing: style.letterSpacing,
-    wordSpacing: style.wordSpacing,
-    lineHeight: style.lineHeight,
-    tabSize: style.tabSize,
-    whiteSpace: "pre-wrap",
-    overflowWrap: "break-word",
-  });
-  probe.textContent = el.value.slice(0, at);
-  const mark = document.createElement("span");
-  mark.textContent = "\u200b";
-  probe.append(mark);
-  document.body.append(probe);
-  const top = mark.offsetTop;
-  probe.remove();
-  return top;
-}
-const onFirstLine = (el: HTMLTextAreaElement) => lineTop(el, el.selectionStart) === lineTop(el, 0);
-const onLastLine = (el: HTMLTextAreaElement) =>
-  lineTop(el, el.selectionEnd) === lineTop(el, el.value.length);
-
+/** A textarea that grows with its text (one line when empty): the page's title. */
 function useAutosize(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {
   const grow = () => {
     const el = ref.current;
@@ -1456,300 +1414,6 @@ function useAutosize(ref: React.RefObject<HTMLTextAreaElement | null>, value: st
     o.observe(el);
     return () => o.disconnect();
   }, []);
-}
-
-/** Markdown at the start of a line turns the block into another kind, as Notion does. */
-const SHORTCUTS: [string, TextKind | "divider"][] = [
-  ["### ", "h3"],
-  ["## ", "h2"],
-  ["# ", "h1"],
-  ["- ", "bullet"],
-  ["* ", "bullet"],
-  ["1. ", "numbered"],
-  ["[] ", "todo"],
-  ["[ ] ", "todo"],
-  ["> ", "toggle"],
-  ['" ', "quote"],
-  ["```", "code"],
-  ["---", "divider"],
-];
-/** Kinds whose Enter makes another of the same kind (a list goes on). */
-const CONTINUES = new Set(["bullet", "numbered", "todo"]);
-/** Kinds whose empty line ends with Enter (it becomes text), as Notion's lists. */
-const ENDS = new Set(["bullet", "numbered", "todo", "toggle", "quote", "callout"]);
-const DOTS = ["•", "◦", "▪"];
-
-function TextField({
-  block,
-  page,
-  number,
-  hidden,
-}: {
-  block: TextBlock;
-  page: Page;
-  number?: number;
-  hidden: Set<string>;
-}) {
-  const t = useStore((s) => s.t);
-  const focus = useStore((s) => s.pageFocus);
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const [slashOff, setSlashOff] = useState(false);
-  const blocks = page.spec.blocks;
-  const kind = kindOf(block);
-  const indent = indentOf(block);
-  useAutosize(ref, block.text);
-  useEffect(() => {
-    if (!focus || !("block" in focus) || focus.block !== block.id) return;
-    const el = ref.current;
-    if (!el) return;
-    el.focus();
-    const at = focus.at === "start" ? 0 : focus.at === "end" ? el.value.length : focus.at;
-    el.setSelectionRange(at, at);
-    setPageFocus(null);
-  }, [focus, block.id]);
-
-  const index = blocks.findIndex((b) => b.id === block.id);
-  const slash =
-    !slashOff && block.type !== "code" && block.text.startsWith("/") && !block.text.includes("\n");
-  const put = (b: Block) => blocks.map((x) => (x.id === block.id ? b : x));
-  // The blocks next to this one that are on screen (a closed toggle's are not).
-  const near = (dir: -1 | 1) => {
-    for (let i = index + dir; i >= 0 && i < blocks.length; i += dir) {
-      const b = blocks[i];
-      if (b && !hidden.has(b.id)) return b;
-    }
-    return undefined;
-  };
-
-  const change = (text: string) => {
-    setSlashOff(false);
-    for (const [prefix, to] of SHORTCUTS) {
-      if (block.type !== "text" || !text.startsWith(prefix)) continue;
-      if (to === "divider") {
-        const after = emptyText(indent);
-        const next = [...blocks];
-        next.splice(index, 1, { id: block.id, type: "divider" }, after);
-        setPageBlocks(next);
-        setPageFocus({ block: after.id, at: "start" });
-      } else setPageBlocks(put(asKind(block, to, text.slice(prefix.length))));
-      return;
-    }
-    setPageBlocks(put({ ...block, text }), block.id);
-  };
-
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slash || e.nativeEvent.isComposing) return;
-    const el = e.currentTarget;
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const prev = near(-1);
-    const next = near(1);
-    const mod = e.ctrlKey || e.metaKey;
-    if (e.key === "Tab") {
-      // Nesting, as Notion's Tab: under the block above (at most one level deeper), Shift+Tab back out.
-      e.preventDefault();
-      const deeper = Math.min(4, indentOf(prev) + 1, indent + 1);
-      const to = e.shiftKey ? Math.max(0, indent - 1) : prev ? deeper : indent;
-      if (to !== indent) {
-        const { indent: _, ...rest } = block as TextBlock & { indent?: number };
-        setPageBlocks(put({ ...rest, ...withIndent(to) } as TextBlock));
-        setPageFocus({ block: block.id, at: start });
-      }
-    } else if (e.key === "Enter" && !e.shiftKey && (block.type !== "code" || mod)) {
-      e.preventDefault();
-      // Enter on an empty list item first comes out of its nesting, then ends the list, as in Notion.
-      if (!block.text && ENDS.has(block.type)) {
-        if (indent > 0) {
-          const { indent: _, ...rest } = block as TextBlock & { indent?: number };
-          setPageBlocks(put({ ...rest, ...withIndent(indent - 1) } as TextBlock));
-        } else setPageBlocks(put(asKind(block, "text")));
-        return;
-      }
-      const tail = block.type === "code" ? "" : block.text.slice(end);
-      const head = block.type === "code" ? block.text : block.text.slice(0, start);
-      // A toggle's next line goes inside it; a list goes on; anything else is followed by text.
-      const made: TextBlock =
-        block.type === "toggle"
-          ? emptyText(Math.min(4, indent + 1))
-          : CONTINUES.has(block.type)
-            ? {
-                ...asKind({ ...block, id: blockId() }, kind, tail),
-                ...(block.type === "todo" ? { done: false } : {}),
-              }
-            : { ...emptyText(indent), text: tail };
-      const out = [...blocks];
-      out.splice(index, 1, { ...block, text: head } as TextBlock, made);
-      if (block.type === "toggle" && !block.open) {
-        // A closed toggle opens to take the new line.
-        out[index] = { ...(out[index] as TextBlock), open: true } as TextBlock;
-      }
-      setPageBlocks(out);
-      setPageFocus({ block: made.id, at: "start" });
-    } else if (e.key === "Backspace" && start === 0 && end === 0) {
-      if (block.type !== "text") {
-        e.preventDefault();
-        setPageBlocks(put(asKind(block, "text")));
-      } else if (indent > 0) {
-        e.preventDefault();
-        const { indent: _, ...rest } = block as TextBlock & { indent?: number };
-        setPageBlocks(put({ ...rest, ...withIndent(indent - 1) } as TextBlock));
-      } else if (prev && isText(prev)) {
-        e.preventDefault();
-        const joined = { ...prev, text: prev.text + block.text };
-        setPageBlocks(
-          blocks.flatMap((b) => (b.id === block.id ? [] : b.id === prev.id ? [joined] : [b])),
-        );
-        // The caret goes where the two texts meet.
-        setPageFocus({ block: prev.id, at: prev.text.length });
-      } else if (prev && !block.text) {
-        e.preventDefault();
-        setPageBlocks(blocks.filter((b) => b.id !== block.id));
-      }
-    } else if (e.key === "Escape") {
-      // Out of the text, the block selected (as Notion's): the next Esc lets go of it.
-      e.preventDefault();
-      el.blur();
-      selectBlocks(block.id, block.id);
-    } else if (mod && e.key.toLowerCase() === "a" && start === 0 && end === block.text.length) {
-      // Ctrl+A a second time (its text already all selected): every block of the page.
-      e.preventDefault();
-      el.blur();
-      const all = blocks.filter((b) => !hidden.has(b.id));
-      selectBlocks((all[0] as Block).id, (all[all.length - 1] as Block).id);
-    } else if (e.shiftKey && !mod && e.key === "ArrowUp" && start === 0) {
-      e.preventDefault();
-      el.blur();
-      selectBlocks(block.id, prev?.id ?? block.id);
-    } else if (e.shiftKey && !mod && e.key === "ArrowDown" && end === block.text.length) {
-      e.preventDefault();
-      el.blur();
-      selectBlocks(block.id, next?.id ?? block.id);
-    } else if (e.shiftKey || mod || e.altKey || start !== end) {
-      // Anything else with a modifier, or a text selection, is the textarea's own.
-    } else if ((e.key === "ArrowUp" && onFirstLine(el)) || (e.key === "ArrowLeft" && start === 0)) {
-      // Up from the first line shown (or left from the start) goes to the block above, as in a document;
-      // one that is not text (a picture, a chart) is selected.
-      if (!prev) return;
-      e.preventDefault();
-      if (isText(prev)) setPageFocus({ block: prev.id, at: "end" });
-      else {
-        el.blur();
-        selectBlocks(prev.id, prev.id);
-      }
-    } else if (
-      (e.key === "ArrowDown" && onLastLine(el)) ||
-      (e.key === "ArrowRight" && end === block.text.length)
-    ) {
-      if (!next) return;
-      e.preventDefault();
-      if (isText(next)) setPageFocus({ block: next.id, at: "start" });
-      else {
-        el.blur();
-        selectBlocks(next.id, next.id);
-      }
-    }
-  };
-
-  // Pasting several lines (or Markdown) makes blocks of them; a picture or a file is kept in Boni and shown here.
-  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = [...e.clipboardData.files];
-    if (files.length) {
-      e.preventDefault();
-      e.stopPropagation();
-      void addFilesToPage(files, block.id);
-      return;
-    }
-    if (block.type === "code") return;
-    const text = e.clipboardData.getData("text/plain");
-    if (!text.includes("\n")) return;
-    const incoming = markdownToBlocks(text);
-    const el = e.currentTarget;
-    const r = pastedInto(
-      blocks,
-      { id: block.id, start: el.selectionStart, end: el.selectionEnd },
-      incoming,
-      blockId,
-    );
-    if (!r) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setPageBlocks(r.blocks);
-    setPageFocus(r.focus);
-  };
-
-  return (
-    <div className={`blk-body${block.type === "callout" ? " callout" : ""}`}>
-      {block.type === "bullet" && (
-        <span className="blk-mark" aria-hidden="true">
-          {DOTS[indent % DOTS.length]}
-        </span>
-      )}
-      {block.type === "numbered" && (
-        <span className="blk-mark num" aria-hidden="true">
-          {`${number ?? 1}.`}
-        </span>
-      )}
-      {block.type === "todo" && (
-        <input
-          type="checkbox"
-          className="blk-check"
-          checked={Boolean(block.done)}
-          aria-label={t("block.done")}
-          onChange={(e) => setPageBlocks(put({ ...block, done: e.target.checked }))}
-        />
-      )}
-      {block.type === "toggle" && (
-        <button
-          type="button"
-          className={`blk-fold${block.open ? " open" : ""}`}
-          aria-expanded={Boolean(block.open)}
-          aria-label={block.open ? t("block.fold") : t("block.unfold")}
-          onClick={() => setPageBlocks(put({ ...block, open: !block.open }))}
-        >
-          <ChevronRight size={16} strokeWidth={2} />
-        </button>
-      )}
-      {block.type === "callout" && (
-        <PopButton
-          className="blk-callout-icon"
-          title={t("page.iconChange")}
-          align="start"
-          width={330}
-          label={block.icon || "💡"}
-        >
-          {(close) => (
-            <EmojiGrid
-              onPick={(icon) => {
-                close();
-                setPageBlocks(put({ ...block, icon }));
-              }}
-            />
-          )}
-        </PopButton>
-      )}
-      <textarea
-        ref={ref}
-        className="blk-input"
-        rows={1}
-        value={block.text}
-        spellCheck={block.type !== "code"}
-        maxLength={block.type === "heading" ? 200 : block.type === "code" ? 20000 : 5000}
-        placeholder={kind === "text" ? t("block.placeholder") : t(`block.kind.${kind}`)}
-        aria-label={t(`block.kind.${kind}`)}
-        onChange={(e) => change(e.target.value)}
-        onKeyDown={onKey}
-        onPaste={onPaste}
-      />
-      {slash && (
-        <SlashMenu
-          query={block.text.slice(1)}
-          onClose={() => setSlashOff(true)}
-          onPick={(choice) => pick(choice, block, blocks, index)}
-          inputRef={ref}
-        />
-      )}
-    </div>
-  );
 }
 
 type Choice =
@@ -1940,12 +1604,13 @@ function SlashMenu({
   query,
   onPick,
   onClose,
-  inputRef,
+  keys,
 }: {
   query: string;
   onPick: (c: Choice) => void;
   onClose: () => void;
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  /** Where the keys are typed (the text's editor): the menu follows them. */
+  keys: HTMLElement;
 }) {
   const t = useStore((s) => s.t);
   const items = useBlockItems(query);
@@ -1954,8 +1619,7 @@ function SlashMenu({
   useEffect(() => setActive(0), [query]);
   // The keys stay in the text field: the menu follows them.
   useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
+    const el = keys;
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -1974,7 +1638,7 @@ function SlashMenu({
     };
     el.addEventListener("keydown", onKey);
     return () => el.removeEventListener("keydown", onKey);
-  }, [items, active, onPick, onClose, inputRef]);
+  }, [items, active, onPick, onClose, keys]);
   useEffect(() => {
     box.current?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);

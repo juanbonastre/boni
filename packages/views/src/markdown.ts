@@ -28,14 +28,74 @@ export function leadingTitle(md: string): { title: string; rest: string } | null
 }
 
 export function markdownToBlocks(md: string): Block[] {
+  return readMarkdown(md).blocks;
+}
+
+/**
+ * Where each block of a note's text came from (task 2g: Juan's notes are data and do not change by being opened or
+ * by an edit elsewhere): the text as it was read, each block's span in it and what the block was then.
+ * `writeMarkdown` writes a block that is still what it was as those very bytes, and the gap between two such blocks
+ * that were next to each other as it was, so an edit changes only what was edited: a list written with «*», a
+ * numbering that skips, two blank lines, «\r\n», a missing last newline or a fence never closed stay as they were.
+ */
+export interface MarkdownSource {
+  readonly text: string;
+  /** Per block id: its span in `text`, its place among the blocks read, and the block then (`blockKey`). */
+  readonly spans: ReadonlyMap<string, { from: number; to: number; index: number; key: string }>;
+  /** The ids of the blocks read, in their order. */
+  readonly ids: readonly string[];
+}
+
+/** A block's content as a key that does not depend on the order of its fields. */
+export function blockKey(b: Block): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v as object)
+              .sort()
+              .map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return JSON.stringify(sort(b));
+}
+
+/** A note's text as the editor's blocks, with where each came from (`MarkdownSource`). */
+export function readMarkdown(md: string): { blocks: Block[]; source: MarkdownSource } {
+  // Where each line starts and ends in `md` («\r\n» and «\r» end a line, as the parser reads them).
+  const starts: number[] = [0];
+  const ends: number[] = [];
+  for (let k = 0; k < md.length; k++) {
+    const c = md[k];
+    if (c !== "\n" && c !== "\r") continue;
+    ends.push(k);
+    if (c === "\r" && md[k + 1] === "\n") k++;
+    starts.push(k + 1);
+  }
+  ends.push(md.length);
   const lines = md.replace(/\r\n?/g, "\n").split("\n");
   const out: Block[] = [];
+  /** Each block's first and last line. */
+  const lineSpans: [number, number][] = [];
   let n = 0;
   const id = () => `md${++n}`;
   let para: string[] = [];
+  let paraAt = 0;
+  // The line an iteration of the loop starts at, and how many blocks there were then.
+  let at = 0;
+  let before = 0;
   const flush = () => {
-    if (para.length) out.push({ id: id(), type: "text", text: para.join("\n") });
+    if (para.length) {
+      out.push({ id: id(), type: "text", text: para.join("\n") });
+      lineSpans.push([paraAt, paraAt + para.length - 1]);
+      before = out.length;
+    }
     para = [];
+  };
+  /** The block an iteration made spans from the line it started at to the one it ended at. */
+  const record = (i: number) => {
+    for (let k = before; k < out.length; k++) lineSpans.push([at, Math.min(i, lines.length - 1)]);
   };
   /** A «boni» fence's block (JSON of one block) as the block, its id never one already used or a later `md<N>`. */
   const fromBoni = (b: Block): Block => {
@@ -45,7 +105,9 @@ export function markdownToBlocks(md: string): Block[] {
     if (taken.has(b.id)) return { ...b, id: id() };
     return b;
   };
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = 0; i < lines.length; record(i), i++) {
+    at = i;
+    before = out.length;
     const line = lines[i] as string;
     // A code fence: its lines as they are, until a closing fence of the same character, at least as long (Markdown).
     const fence = /^(\s*)(`{3,}|~{3,})\s*([\w+-]*)\s*$/.exec(line);
@@ -170,10 +232,21 @@ export function markdownToBlocks(md: string): Block[] {
       continue;
     }
     // Anything else is a paragraph's line, kept as written (tables, images, links, deeper headings...).
+    if (!para.length) paraAt = i;
     para.push(line);
   }
   flush();
-  return out;
+  const spans = new Map<string, { from: number; to: number; index: number; key: string }>();
+  out.forEach((b, index) => {
+    const [first, last] = lineSpans[index] as [number, number];
+    spans.set(b.id, {
+      from: starts[first] as number,
+      to: ends[last] as number,
+      index,
+      key: blockKey(b),
+    });
+  });
+  return { blocks: out, source: { text: md, spans, ids: out.map((b) => b.id) } };
 }
 
 const LIST = new Set(["bullet", "numbered", "todo"]);
@@ -192,8 +265,20 @@ function fenceFor(text: string): string {
 }
 
 export function blocksToMarkdown(blocks: readonly Block[]): string {
+  return writeMarkdown(blocks, null);
+}
+
+/**
+ * The blocks as a note's text. With the `source` they were read from (`readMarkdown`), a block that is still what it
+ * was is written as its very bytes there, and so is the gap between two such blocks that were next to each other, the
+ * text before the first and after the last: the blocks as read give back the text as read, byte for byte, and an
+ * edit changes only the blocks edited (and the gaps around them, written as `blocksToMarkdown` writes them).
+ */
+export function writeMarkdown(blocks: readonly Block[], source: MarkdownSource | null): string {
   const parts: string[] = [];
   let prev: Block | null = null;
+  /** The span in the source of the block written last, when it was written as it was there. */
+  let prevKept: { from: number; to: number; index: number } | null = null;
   const counters: number[] = [];
   for (const b of blocks) {
     const ind = "indent" in b && b.indent ? b.indent : 0;
@@ -259,11 +344,52 @@ export function blocksToMarkdown(blocks: readonly Block[]): string {
       LIST.has(prev.type) &&
       LIST.has(b.type) &&
       (prev.type === "numbered") === (b.type === "numbered");
-    if (parts.length) parts.push(tight ? "\n" : "\n\n");
-    parts.push(text);
+    const span = source?.spans.get(b.id);
+    const src = source?.text ?? "";
+    const same = span && span.key === blockKey(b);
+    // Only its text changed: its marker, spacing and closing hashes are kept as they were written («* », «#  »).
+    const retyped = span && !same ? textEdited(src.slice(span.from, span.to), span.key, b) : null;
+    const kept = same || retyped !== null ? span : null;
+    if (!parts.length) {
+      // Before the first block: what was there, when it is still the first one read.
+      if (kept?.index === 0) parts.push(src.slice(0, kept.from));
+    } else if (kept && prevKept && prevKept.index === kept.index - 1)
+      parts.push(src.slice(prevKept.to, kept.from));
+    else parts.push(tight ? "\n" : "\n\n");
+    parts.push(retyped ?? (kept ? src.slice(kept.from, kept.to) : text));
     prev = b;
+    prevKept = kept ?? null;
   }
-  return parts.length ? `${parts.join("")}\n` : "";
+  // No blocks: a text that had none (blank lines) stays as it was; one whose blocks were all taken away is empty.
+  if (!parts.length) return source && !source.ids.length ? source.text : "";
+  // After the last block: what was there, when it is still the last one read.
+  const end =
+    prevKept && source && prevKept.index === source.ids.length - 1
+      ? source.text.slice(prevKept.to)
+      : "\n";
+  return `${parts.join("")}${end}`;
+}
+
+/** A line's marker as it may be written: a heading's hashes, a list's dash, star, plus or number, a to-do's box. */
+const MARKER = /^[ \t]*(?:#{1,6}[ \t]+|(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)/;
+
+/**
+ * A block whose text alone changed, written as it was (`written`, the block then as `key`) with its old text replaced:
+ * the marker before it and what closes it (a heading's trailing spaces or hashes) as they were. Null when it is not
+ * that block written that way, and then the block is written as Boni writes it.
+ */
+function textEdited(written: string, key: string, b: Block): string | null {
+  if (!("text" in b) || typeof b.text !== "string") return null;
+  if (!["text", "heading", "bullet", "todo", "numbered"].includes(b.type)) return null;
+  const was = JSON.parse(key) as { text?: unknown };
+  if (typeof was.text !== "string" || !was.text) return null;
+  if (blockKey({ ...was, text: b.text } as Block) !== blockKey(b)) return null;
+  const marker = b.type === "text" ? "" : (MARKER.exec(written)?.[0] ?? "");
+  if (b.type !== "text" && !marker) return null;
+  if (!written.startsWith(was.text, marker.length)) return null;
+  const after = written.slice(marker.length + was.text.length);
+  if (!/^[ \t#]*$/.test(after)) return null;
+  return `${marker}${b.text}${after}`;
 }
 
 /** The blocks of a note's text that say something of their own: what can be pointed at as a paragraph (F9). */
@@ -308,6 +434,28 @@ export function partOf(
   for (const x of blocks.slice(0, i))
     if (PART_KINDS.has(x.type) && "text" in x && partKey(x.text) === part) n++;
   return { part, n };
+}
+
+const keysOf = new WeakMap<PageBlock, string>();
+/**
+ * `partOf` for every paragraph of a note at once, by block id, in one pass: what a note's editor marks its blocks with
+ * as the note is typed (task 2g), each block's key worked out once for as long as the block is the same.
+ */
+export function partsOf(blocks: readonly PageBlock[]): Map<string, { part: string; n: number }> {
+  const out = new Map<string, { part: string; n: number }>();
+  const seen = new Map<string, number>();
+  for (const b of blocks) {
+    if (!PART_KINDS.has(b.type) || !("text" in b)) continue;
+    let part = keysOf.get(b);
+    if (part === undefined) {
+      part = partKey(b.text);
+      keysOf.set(b, part);
+    }
+    const n = seen.get(part) ?? 0;
+    seen.set(part, n + 1);
+    if (b.text.trim()) out.set(b.id, { part, n });
+  }
+  return out;
 }
 
 /** The paragraph a reference names in a note's text, found again by its words; null when it is no longer there. */
