@@ -13,8 +13,9 @@ import {
 import { BarList, bytes, Kpi } from "./Dash.tsx";
 import { DatabaseBlock, SystemPill } from "./DatabaseBlock.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
+import { RolesTags } from "./Roles.tsx";
 
-/** One collection on a page of its own: its name, its protection (unlocked only here) and its rows. */
+/** One collection on a page of its own: its name, its protection (unlocked only here), what it can do and its rows. */
 export function CollectionView() {
   const t = useStore((s) => s.t);
   const id = useStore((s) => (s.view.kind === "collection" ? s.view.type : ""));
@@ -49,6 +50,7 @@ export function CollectionView() {
           <span className="muted small">{t("col.ai")}</span>
           {type.system ? <SystemPill /> : <ProtectionMenu type={type} canUnlock />}
           {type.zone && <span className="muted small">· {t(`db.zone.${type.zone}`)}</span>}
+          {!type.system && <RolesTags type={type} mother={mother} />}
         </div>
         <DatabaseBlock
           source={type.id}

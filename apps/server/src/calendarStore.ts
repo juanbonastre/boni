@@ -303,7 +303,7 @@ function expandNode(
       path: below,
     };
     p.def = {
-      ...withRoles(schema, s.type, r.def, taskType),
+      ...withRoles(schema, s.type, r.def, taskType, byRoles(store)),
       group: here,
       path: below,
       split: { field: null, choices: choices.filter((c) => !next.some((x) => x.field === c.id)) },
@@ -422,9 +422,13 @@ function readCalendarDefs(
 ): Placed[] {
   const schema = store.schema();
   const pools: Listed[] = [];
+  const roles = byRoles(store);
   const placed = storedCalendarDefs(store).flatMap((s) => {
     const r = parseCollectionDef(s.raw);
     if (!r.ok) return [];
+    // Its collection's day taken away (Calendario, on its page): the calendar does not show, its definition stays, and
+    // the day given back brings it back as it was (D-64).
+    if (roles && !dated(schema, s.type)) return [];
     const choices = splitChoices(schema, s.type);
     if (s.split && choices.some((c) => c.id === s.split?.field)) {
       // The branch's records, listed once for every node of the split.
@@ -457,7 +461,7 @@ function readCalendarDefs(
       ...(s.make ? { make: s.make } : {}),
     };
     one.def = {
-      ...withRoles(schema, s.type, r.def, s.make?.task ?? s.type),
+      ...withRoles(schema, s.type, r.def, s.make?.task ?? s.type, roles),
       // A calendar picked by a field (the first restructurings) is not split again.
       ...(s.where ? {} : { split: { field: null, choices } }),
     };
@@ -477,7 +481,29 @@ function readCalendarDefs(
   return placed;
 }
 
-/** Whether a record belongs to a calendar: its type in the calendar's branch, its field as `where` says. */
+/**
+ * Whether the account goes by its collections' roles alone (D-64; docs/clases.md §6): once any collection has roles
+ * (the restructuring ran, or Juan gave one on a collection's page), a calendar shows only while its collection has a
+ * day or an instant, and a task's box is only the `done` role (and so once roles were changed by hand: `BY_ROLES`). Before, each calendar's definition says them (the
+ * transition of step 3a), so an account never restructured keeps its calendars.
+ */
+export function byRoles(store: UserStore): boolean {
+  if (store.setting(BY_ROLES) === "1") return true;
+  return Object.values(store.schema().types).some(
+    (t) => !!t.roles && Object.keys(t.roles).length > 0,
+  );
+}
+/**
+ * Kept once a collection's roles are given or taken away by hand (`schema.set_roles`): the account goes by roles even
+ * when the last one is taken away, so a collection without them never falls back to its calendar's definition.
+ */
+export const BY_ROLES = "calendar/byRoles";
+/** Whether a collection has a day or an instant: its Calendario. */
+const dated = (schema: Schema, type: string): boolean => {
+  const r = rolesOf(schema, type);
+  return !!(r.date || r.start);
+};
+
 /** A calendar column of the type a role's field has (the calendar roles take dates, times, instants and boxes). */
 const columnTypeOf = (t: FieldType): "date" | "time" | "datetime" | "checkbox" | "text" =>
   t === "date" || t === "time" || t === "datetime" || t === "checkbox" ? t : "text";
@@ -495,6 +521,7 @@ export function withRoles(
   type: string,
   def: CollectionDef,
   taskType = type,
+  strict = false,
 ): CollectionDef {
   const roles = rolesOf(schema, type);
   const done = rolesOf(schema, taskType).done;
@@ -533,8 +560,14 @@ export function withRoles(
       ...timezone,
     };
   }
-  const task = done ? { column: col(taskType, done) as string } : def.mapping.task;
-  return { ...def, columns, mapping: { ...def.mapping, when, ...(task ? { task } : {}) } };
+  // By roles alone, a branch with no `done` keeps no tasks, whatever its definition said (D-64).
+  const task = done
+    ? { column: col(taskType, done) as string }
+    : strict
+      ? undefined
+      : def.mapping.task;
+  const { task: _t, ...mapping } = def.mapping;
+  return { ...def, columns, mapping: { ...mapping, when, ...(task ? { task } : {}) } };
 }
 
 /** Whether a record's field holds what a condition asks: the value (a relation may hold several), or nothing. */
@@ -563,6 +596,7 @@ export function taskDoneField(store: UserStore, type: string): FieldDef | null {
   const schema = store.schema();
   const byRole = rolesOf(schema, type).done;
   if (byRole) return schema.types[type]?.fields.find((f) => f.id === byRole) ?? null;
+  if (byRoles(store)) return null;
   const p = calendarDefs(store).find(
     (x) => x.type === type || (x.where && branch(schema, x.type).includes(type)),
   );

@@ -211,6 +211,7 @@ describe("the actions inside: routes and tools through the policy, Undo and icon
         "connectors.mail",
         "connectors.mail_guide",
         "connectors.mail_suggestion",
+        "schema.set_roles",
         "schema.set_tree",
         "schema.set_view",
       ].sort(),

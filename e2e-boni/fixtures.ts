@@ -61,6 +61,8 @@ export interface Options {
    * kinds (task 47); `"mother"`: both inside a mother «Agenda» (F6).
    */
   agenda?: boolean | "mother";
+  /** A collection with an amount, a day and a category, and those roles: «Dinero» on its page (task 4). */
+  travel?: boolean;
   /** Who reads and writes each collection (`/api/data/usage`, F6). */
   usage?: unknown;
   /**
@@ -266,7 +268,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_tfin", key: "fin", name: "Fin", type: "time" },
           { id: "f_thecha", key: "hecha", name: "Hecha", type: "checkbox" },
         ],
-        roles: { date: "f_tdia", time: "f_tini", endTime: "f_tfin", done: "f_thecha" },
+        roles: { date: "f_tdia", time: "f_tini", endTime: "f_tfin", done: "f_thecha" } as Record<
+          string,
+          string
+        >,
+        // Boni Calendar shows it (D-64: while it has a day).
+        calendar: true,
         rowUi: { open: false, hidden: [] as string[] },
       };
       const eventos = {
@@ -283,7 +290,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_ehora", key: "hora", name: "Hora de inicio", type: "time" },
           { id: "f_ehfin", key: "hora_fin", name: "Hora de fin", type: "time" },
         ],
-        roles: { date: "f_efecha", time: "f_ehora", endTime: "f_ehfin" },
+        roles: { date: "f_efecha", time: "f_ehora", endTime: "f_ehfin" } as Record<string, string>,
+        calendar: true,
         rowUi: { open: false, hidden: [] as string[] },
       };
       // In a mother «Agenda» (F6): her daughters carry her id as their parent.
@@ -296,6 +304,23 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         count: 0,
         level: "visible",
         fields: [{ id: "f_at", key: "titulo", name: "Título", type: "text" }],
+        rowUi: { open: false, hidden: [] as string[] },
+      };
+      const viaje = {
+        id: "t_gastos_viaje",
+        key: "gastos_viaje",
+        name: "Gastos de viaje",
+        icon: "",
+        titleField: "f_gc",
+        count: 0,
+        level: "visible",
+        fields: [
+          { id: "f_gc", key: "concepto", name: "Concepto", type: "text" },
+          { id: "f_gd", key: "dia", name: "Día", type: "date" },
+          { id: "f_gi", key: "importe", name: "Importe", type: "money" },
+          { id: "f_gk", key: "categoria", name: "Categoría", type: "select" },
+        ],
+        roles: { date: "f_gd", amount: "f_gi", category: "f_gk" } as Record<string, string>,
         rowUi: { open: false, hidden: [] as string[] },
       };
       const agenda =
@@ -452,7 +477,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         values: Record<string, unknown>;
         body: string;
       }[] = [];
-      const userCols = () => [libros, documentos, ...agenda, ...madeCols];
+      const userCols = () => [
+        libros,
+        documentos,
+        ...agenda,
+        ...(opts.travel ? [viaje] : []),
+        ...madeCols,
+      ];
       const own = (id: string) =>
         (id === "t_libro" ? rows.length : id === documentos.id ? 2 : 0) +
         madeRows.filter((r) => r.type === id).length;
@@ -986,6 +1017,24 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           });
           return [200, JSON.stringify({ id })];
         }
+        // A collection's roles given or taken away (null), as the server's `schema.set_roles`; a calendar of Boni
+        // Calendar shows while it has a day (D-64).
+        const rolesFor = /^api\/data\/types\/([^/]+)\/roles$/.exec(p);
+        if (rolesFor && method === "PUT") {
+          const col = userCols().find((c) => c.id === rolesFor[1]) as
+            | { roles?: Record<string, string>; calendar?: boolean }
+            | undefined;
+          if (!col) return [404, '{"error":"not-found"}'];
+          const want = ((body ?? {}) as { roles?: Record<string, string | null> }).roles ?? {};
+          const next = { ...(col.roles ?? {}) };
+          for (const [r, f] of Object.entries(want))
+            if (f === null) delete next[r];
+            else next[r] = f;
+          col.roles = next;
+          if (["t_tareas", "t_eventos"].includes(rolesFor[1] ?? ""))
+            col.calendar = !!(next.date || next.start);
+          return [200, JSON.stringify({ roles: next })];
+        }
         if (p === "api/data/today")
           return opts.today === null
             ? [404, '{"error":"not-found"}']
@@ -998,6 +1047,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 libros,
                 documentos,
                 ...agenda,
+                ...(opts.travel ? [viaje] : []),
                 ...(opts.mail ? [correos, archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,

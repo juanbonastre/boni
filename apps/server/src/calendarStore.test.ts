@@ -3,8 +3,10 @@ import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runAction } from "./actions.ts";
 import {
   addCalendar,
+  byRoles,
   calendarCandidates,
   calendarDefs,
   removeCalendar,
@@ -1036,5 +1038,88 @@ describe("a calendar reads its collection's roles (docs/clases.md §6, D-20)", (
       f_lista: true,
     });
     expect((await rowOf(cal, id)).values).toMatchObject({ dia: "2026-11-06", lista: true });
+  });
+
+  it("by roles alone once the account has any (D-64): its day taken away hides the calendar, kept; its box, the tasks", async () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    seed(
+      store,
+      [
+        { key: "proyecto", name: "Proyecto", folder: "proyectos/", fields: { inicio: "date" } },
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          fields: { ...PROJECT, dia: "date", lista: "checkbox" },
+          calendar: RAW,
+        },
+      ],
+      NOTES,
+    );
+    // Never restructured: the definition says the day and the box.
+    expect(byRoles(store)).toBe(false);
+    expect(calendarDefs(store).map((p) => p.type)).toEqual(["t_docencia"]);
+    expect(taskDoneField(store, "t_docencia")?.key).toBe("completed");
+    const was = calendarDefs(store)[0]?.def;
+    // Another collection gets a role (the account goes by roles now): this one, with none, shows no calendar and
+    // keeps no tasks, though its definition stays as it was.
+    store.applySchema(
+      { op: "set_roles", type: "t_proyecto", roles: { date: "f_inicio" } },
+      { actor: "user" },
+    );
+    expect(byRoles(store)).toBe(true);
+    expect(calendarDefs(store)).toEqual([]);
+    expect(taskDoneField(store, "t_docencia")).toBeNull();
+    // Its day and its box given: the calendar is back as it was, its box the role's.
+    store.applySchema(
+      { op: "set_roles", type: "t_docencia", roles: { date: "f_dia", done: "f_lista" } },
+      { actor: "user" },
+    );
+    const back = calendarDefs(store)[0]?.def;
+    expect(back?.id).toBe(was?.id);
+    expect(back?.color).toBe(was?.color);
+    expect(back?.mapping.task).toEqual({ column: "lista" });
+    expect(taskDoneField(store, "t_docencia")?.id).toBe("f_lista");
+    // Only the box taken away: a calendar still, with no tasks (not the definition's column).
+    store.applySchema(
+      { op: "set_roles", type: "t_docencia", roles: { done: null } },
+      { actor: "user" },
+    );
+    expect(calendarDefs(store)[0]?.def.mapping.task).toBeUndefined();
+    expect(taskDoneField(store, "t_docencia")).toBeNull();
+  });
+
+  it("the account's first role, given from a page, makes its calendars' definitions roles first: none hides (D-64)", async () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    seed(
+      store,
+      [
+        { key: "proyecto", name: "Proyecto", folder: "proyectos/", fields: { inicio: "date" } },
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          fields: { ...PROJECT, dia: "date", lista: "checkbox" },
+          calendar: RAW,
+        },
+      ],
+      NOTES,
+    );
+    const was = calendarDefs(store)[0]?.def;
+    const hand = { store, trust: "personal" as const, device: "portatil-ejemplo" };
+    expect(
+      await runAction("schema.set_roles", { type: "proyecto", roles: { inicio: null } }, hand),
+    ).toEqual({ error: "bad-role" });
+    expect(byRoles(store)).toBe(false);
+    expect(
+      await runAction("schema.set_roles", { type: "proyecto", roles: { date: "inicio" } }, hand),
+    ).toMatchObject({ out: { roles: ["date"] } });
+    expect(byRoles(store)).toBe(true);
+    // Docencia's calendar is still there as it was, its day and box now its collection's roles.
+    expect(calendarDefs(store).map((p) => p.def.id)).toEqual([was?.id]);
+    expect(store.schema().types.t_docencia?.roles?.date).toBeDefined();
+    expect(taskDoneField(store, "t_docencia")?.key).toBe("completed");
   });
 });

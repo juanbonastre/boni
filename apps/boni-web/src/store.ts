@@ -3623,6 +3623,32 @@ export async function setNotesInTree(type: string, notes: boolean) {
   await loadTree();
 }
 
+/**
+ * A collection's roles given or taken away (docs/clases.md §6): `roles` names only what changes; the toast's
+ * «Deshacer» puts back what it had of its own.
+ */
+export async function setRoles(type: DataType, roles: Record<string, string | null>) {
+  const t = get().t;
+  const given = new Set(type.givenRoles ?? []);
+  const before = Object.fromEntries(
+    Object.keys(roles).map((r) => [r, given.has(r) ? null : (type.roles?.[r] ?? null)]),
+  );
+  try {
+    await agent.setRoles(type.id, roles);
+    await loadDataTypes();
+    toast(t("roles.changed"), {
+      label: t("toast.undo"),
+      run: () =>
+        void agent
+          .setRoles(type.id, before)
+          .then(() => loadDataTypes())
+          .catch((e) => toast(errorText(t, e))),
+    });
+  } catch (e) {
+    toast(errorText(t, e));
+  }
+}
+
 export async function loadDataTypes(): Promise<DataType[] | null> {
   try {
     const fresh = await agent.dataTypes();

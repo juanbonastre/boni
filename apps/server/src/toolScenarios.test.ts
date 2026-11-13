@@ -86,6 +86,7 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
     { file: CAL_ACTIONS, test: TAB_TEST },
     { file: CAL_ACTIONS, test: CAL_MCP_TEST },
   ],
+  "schema.set_roles": [{ file: CAL_ACTIONS, test: CAL_MCP_TEST }],
   "schema.set_tree": [
     { file: CAL_ACTIONS, test: TAB_TEST },
     { file: CAL_ACTIONS, test: CAL_MCP_TEST },

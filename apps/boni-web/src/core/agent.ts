@@ -2243,6 +2243,10 @@ export interface DataType {
   rules: ProtectionRule[];
   /** The fields that play a role for the apps (docs/clases.md §6): day, amount, category… by role. */
   roles?: Record<string, string>;
+  /** Of those, the ones its mother gives: changed at hers, shown here. */
+  givenRoles?: string[];
+  /** Boni Calendar shows it as a calendar (what taking its day away stops). */
+  calendar?: boolean;
   /** A collection a connector fills (the mail's): shown, never edited (D-22). */
   readOnly?: boolean;
   /** Its rows open as a mail (who, to whom, when, the text) instead of as a page. */
@@ -2331,6 +2335,12 @@ function parseDataType(v: unknown): DataType | null {
           ),
         }
       : {}),
+    ...(Array.isArray(v.givenRoles)
+      ? {
+          givenRoles: v.givenRoles.filter((x): x is string => typeof x === "string").slice(0, 12),
+        }
+      : {}),
+    ...(v.calendar === true ? { calendar: true } : {}),
     rules: Array.isArray(v.rules)
       ? v.rules.flatMap((r): ProtectionRule[] =>
           isObj(r) && typeof r.id === "string" && filterErrors(r.filter).length === 0
@@ -3249,6 +3259,14 @@ export class AgentApi {
       ),
     };
   };
+  /** Gives a collection's fields roles, or takes them away (null): {role: field id | null} (docs/clases.md §6). */
+  setRoles = async (type: string, roles: Record<string, string | null>) =>
+    void (await this.call(
+      "PUT",
+      `/${encodeURIComponent(type)}/roles`,
+      { roles },
+      "api/data/types",
+    ));
   /** Whether a collection's records with a note show in the tree. */
   setNotesInTree = async (type: string, notes: boolean) =>
     void (await this.call("PUT", `/${encodeURIComponent(type)}/tree`, { notes }, "api/data/types"));

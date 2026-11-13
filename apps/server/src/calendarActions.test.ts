@@ -9,7 +9,7 @@ import { label, newId } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { calendarDefs, storedCalendarDefs } from "./calendarStore.ts";
+import { BY_ROLES, calendarDefs, storedCalendarDefs } from "./calendarStore.ts";
 import { notesInTree, rowUiOf } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { installed } from "./extensions.ts";
@@ -361,6 +361,12 @@ describe("the list of actions: «Calendarios», a collection's tabs and tree, «
     expect(closed.error).toBe(true);
     expect(mine()[0]?.def.color).not.toBe("#f97316");
     host.store(1).setAiAccess(VIAJE, "visible", "portatil-ejemplo");
+    // Its day taken away (D-64): the calendar does not show; `undo` brings it back.
+    await write("set_roles", { type: "viajes", roles: { date: null } });
+    expect(mine()).toEqual([]);
+    expect((await mcp("set_roles", { type: "viajes", roles: { done: "Salida" } })).error).toBe(
+      true,
+    );
     // Its `undo`, each write newest first: everything it did is taken back.
     const undone: number[] = [];
     for (const run of [...runs].reverse()) {
@@ -368,7 +374,10 @@ describe("the list of actions: «Calendarios», a collection's tabs and tree, «
       expect(back.error).toBe(false);
       undone.push((back.out as { undone: number }).undone);
     }
-    expect(undone).toEqual(runs.map(() => 1));
+    // The roles' run, the last (undone first), also takes back the account's going by roles (BY_ROLES, kept with it).
+    expect(undone).toEqual(runs.map((_, i) => (i === 0 ? 2 : 1)));
+    expect(host.store(1).setting(BY_ROLES)).toBeNull();
+    expect(host.store(1).schema().types[VIAJE]?.roles).toEqual({ date: F.salida });
     expect(mine()).toHaveLength(0);
     expect(rowUiOf(host.store(1), VIAJE).views.some((v) => v.name === "Lista")).toBe(false);
     // A calendar that is not there is refused.

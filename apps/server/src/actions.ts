@@ -121,6 +121,8 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   // A collection's tabs and its notes in the sidebar tree (dataActions.ts).
   "PUT /api/data/types/:type/row-ui": ["schema.set_view"],
   "PUT /api/data/types/:type/tree": ["schema.set_tree"],
+  // What a collection can do (docs/clases.md §6): Calendario, Tareas, Dinero, from its page.
+  "PUT /api/data/types/:type/roles": ["schema.set_roles"],
 };
 
 /**
@@ -198,6 +200,7 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "POST /api/collections/split": "calendars.split",
   "POST /api/collections/color": "calendars.color",
   "PUT /api/data/types/:type/tree": "schema.set_tree",
+  "PUT /api/data/types/:type/roles": "schema.set_roles",
 };
 
 /**
@@ -519,6 +522,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "calendars.reminders": "calendars_reminders",
   "schema.set_view": "collection_view",
   "schema.set_tree": "notes_in_tree",
+  "schema.set_roles": "set_roles",
   "connectors.mail_view": { why: "an assistant reads the mail Boni brought with query" },
   "connectors.mail": { why: "Juan's touch: his card, in his app (P21)" },
   "connectors.mail_guide": { why: "Juan's touch: his card, in his app (P21)" },

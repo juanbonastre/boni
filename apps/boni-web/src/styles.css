@@ -5736,9 +5736,48 @@ body:has(.toast) .db-selinfo {
 }
 .col-protect {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 0 0 18px;
+}
+/* What it can do (docs/clases.md §6): a tag per interface, filled when it has it, faint when it only could. */
+.col-roles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: 8px;
+}
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.role-pill:hover {
+  color: var(--text);
+}
+.role-pill:not(.on) {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--muted);
+}
+.role-pill.on {
+  background: var(--accent-soft, var(--hover));
+  color: var(--text);
+}
+.role-given {
+  cursor: default;
+  color: var(--muted);
+}
+.role-effect {
+  margin: 0 10px 6px;
 }
 @container (max-width: 560px) {
   .cols-origin,
