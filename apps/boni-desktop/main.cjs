@@ -31,6 +31,7 @@ const BK = require("./backup.cjs");
 const { Readable } = require("node:stream");
 const { pipeline } = require("node:stream/promises");
 const W = require("./widgets.cjs");
+const { createUnsent } = require("./unsent.cjs");
 const autostart = require("./autostart.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
@@ -697,12 +698,17 @@ ipcMain.handle("account:logout", async () => {
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 const MAX_BODY = 10 * 1024 * 1024;
 
+// What was typed and not answered yet (task 100): written before the page that sends it may go on, so a window
+// closed or an app quit a moment after the last key keeps it.
+const unsent = createUnsent(P.store);
 ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
   if (!METHODS.has(method) || !allowedPath(apiPath)) {
     return { ok: false, offline: true, message: "bad request" };
   }
   if (!settings.serverUrl || !settings.token)
     return { ok: false, offline: false, notConfigured: true };
+  const ticket = unsent.sending(method, apiPath);
+  let reached = false;
   try {
     const url = new URL(apiPath, `${settings.serverUrl}/`);
     const r = await net.fetch(url.href, {
@@ -715,6 +721,8 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutFor(apiPath)),
     });
+    // A server failing (5xx: restarting, its disk full) did not take the write: it stays kept, like no connection.
+    reached = r.status < 500;
     const text = await r.text();
     if (r.status === 401 && !sessionEnded) {
       sessionEnded = true;
@@ -723,6 +731,8 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
     return { ok: true, status: r.status, body: text.length > MAX_BODY ? "" : text };
   } catch (e) {
     return { ok: false, offline: true, message: String(e.message ?? e) };
+  } finally {
+    unsent.answered(ticket, reached);
   }
 });
 
@@ -812,6 +822,13 @@ ipcMain.handle("store:write", (_e, name, text) => {
     } catch {
       widgetList = [];
     }
+  }
+});
+ipcMain.on("unsent:keep", (e, text) => {
+  try {
+    if (typeof text === "string") unsent.keep(text);
+  } finally {
+    e.returnValue = null;
   }
 });
 ipcMain.handle("store:remove", (_e, name) => {
@@ -996,9 +1013,19 @@ if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
   app.on("before-quit", () => {
     quitting = true;
   });
-  // The attachments opened in this session go with it.
-  app.on("will-quit", () => {
-    if (filesDir) fs.rmSync(filesDir, { recursive: true, force: true });
+  // What the windows sent as they went gets its answer first (task 100), a second at most; what gets none stays
+  // in `unsent.json` and goes on the next start. Then Boni ends at once (`app.exit`): its windows are closed already,
+  // and quitting a second time hung when a hidden window had come up meanwhile. The attachments opened in this
+  // session go with it.
+  let settled = false;
+  app.on("will-quit", (e) => {
+    if (settled) return;
+    settled = true;
+    e.preventDefault();
+    void unsent.settle().then(() => {
+      if (filesDir) fs.rmSync(filesDir, { recursive: true, force: true });
+      app.exit(0);
+    });
   });
   app.whenReady().then(start);
   // Windows come and go; Boni lives in the tray until "Quit".

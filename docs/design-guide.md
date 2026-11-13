@@ -183,6 +183,13 @@ slate `#94a3b8`.
   under External calendars says so). Theme, density and timezone stay per device. The first time a device joins, its own
   external calendars join the account's, with a toast saying how many.
 - Every edit is optimistic and undoable; one gesture is one undo step.
+- **What is typed in Boni is never lost by closing it** (task 100, D-65): a page's text and name, a note's text,
+  title and properties, and the draft to Boni are there when the app opens again, however quickly it was closed (the
+  window, «Salir», the system's log-out). A title or a property being typed is saved as the window goes, as if it
+  were left. Without a connection, or with a server that fails (5xx), what is typed stays on the screen and on the device: one toast says «Sin conexión:
+  lo escrito queda en este equipo y se guardará al volver la red», the page or note opens with it on that device
+  (offline too), and it reaches the server when the app opens again or within a minute of the network coming back.
+  Nothing returns to the server's version. Quitting waits a second at most for answers in flight.
 
 ## 4b. Quality (learned 2026-10-21)
 Distilled from pbakaus/impeccable (Apache 2.0) and emilkowalski/skills (MIT) at Juan's request; the general version for
