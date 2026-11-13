@@ -54,6 +54,7 @@ import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./f
 import { type InboxCard, type InboxContext, inboxCard, inboxContext } from "./inboxCard.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
+import { charCount, charSlice, fitOutline, headed, outlineOf, PART, startOf } from "./noteParts.ts";
 import { originFacts, pendingFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { proposals, propose } from "./proposals.ts";
@@ -256,6 +257,80 @@ function view(c: Ctx) {
   const mother = (t: TypeDef) =>
     t.parent ? types().find((m) => m.id === t.parent)?.name : undefined;
   return { ro, types, level, typeNamed, fields, shown, asNote, find, description, mother };
+}
+
+/**
+ * `read`: a note as `asNote` gives it, whole, when its text is at most `PART` characters and no part is asked for
+ * (the answer every assistant knew, unchanged). Over it, or when a part is asked for, its text comes as a part,
+ * never as `body` (`body` is always the whole text, the one `edit` with `body` replaces): the outline and the
+ * start, one section, or a range (task 112, A-30; `noteParts.ts`).
+ */
+function readNote(v: ReturnType<typeof view>, a: Args) {
+  const s = v.find(a);
+  const ranged = a.offset !== undefined || a.length !== undefined;
+  const opaque = Object.values(s.labels).some((l) => l.noModel);
+  const text = s.entity.body ?? "";
+  const total = charCount(text);
+  if (a.section === undefined && !ranged && (opaque || total <= PART)) return v.asNote(s, true);
+  if (opaque) throw new ToolFail("its text is not for a model");
+  if (a.section !== undefined && ranged)
+    throw new ToolFail("give section, or offset and length, not both");
+  const cutSay = (from: number, next: number, end: number, deepest?: number, more?: number) =>
+    [
+      `This is characters ${from} to ${next} of ${total}${end < total ? ` (the section ends at ${end})` : ""}: read on with section (a heading of the outline) or with offset ${next} and length (at most ${PART}).`,
+      ...(deepest
+        ? [`The outline goes down to level ${deepest}; a section read lists its own.`]
+        : []),
+      ...(more ? [`${more} more headings are left out: read on by range.`] : []),
+    ].join(" ");
+  let part: Record<string, unknown>;
+  if (ranged) {
+    const whole = (x: unknown, name: string, min: number, max: number, dflt: number) => {
+      if (x === undefined || x === null) return dflt;
+      if (typeof x !== "number" || !Number.isInteger(x) || x < min || x > max)
+        throw new ToolFail(`${name}: a whole number from ${min} to ${max}`);
+      return x;
+    };
+    const offset = whole(a.offset, "offset", 0, total, 0);
+    const length = whole(a.length, "length", 1, PART, PART);
+    const got = charSlice(text, offset, length);
+    const end = offset + charCount(got);
+    part = { offset, length: end - offset, text: got, ...(end < total ? { next: end } : {}) };
+  } else if (a.section !== undefined) {
+    const outline = outlineOf(text);
+    const want = str(a.section, "section", 300);
+    const hits = headed(outline, want);
+    if (!hits.length) throw new ToolFail(`no heading "${want}" in this note`);
+    if (hits.length > 1)
+      throw new ToolFail(
+        `${hits.length} headings are "${want}" (at ${hits.map((h) => h.at).join(", ")}): read the one you want with offset and length`,
+      );
+    const sec = hits[0] as (typeof hits)[number];
+    const end = sec.at + sec.chars;
+    const start = startOf(text, sec.at, end);
+    if (start.next >= end) part = { section: sec, text: start.text };
+    else {
+      const fit = fitOutline(outline.filter((h) => h.at > sec.at && h.at < end));
+      part = {
+        section: sec,
+        outline: fit.outline,
+        text: start.text,
+        next: start.next,
+        cut: cutSay(sec.at, start.next, end, fit.deepest, fit.more),
+      };
+    }
+  } else {
+    const fit = fitOutline(outlineOf(text));
+    const start = startOf(text);
+    part = {
+      outline: fit.outline,
+      text: start.text,
+      next: start.next,
+      cut: cutSay(0, start.next, total, fit.deepest, fit.more),
+    };
+  }
+  const { body: _whole, ...note } = v.asNote(s, true);
+  return { ...note, chars: total, ...part };
 }
 
 // ------------------------------------------------------------------ writing
@@ -872,11 +947,21 @@ const TOOLS: Tool[] = [
   {
     name: "read",
     actions: ["entities.get"],
-    description: "One note with its properties and text: by id, or by collection and exact title.",
-    inputSchema: obj(REF),
+    description: `One note with its properties and text (a long one in parts: its outline and start first, then a section or a range): by id, or by collection and exact title. A text over ${PART} characters comes without \`body\`: its \`outline\` (each heading with its level, where it starts and its size in characters, subsections included), its start in \`text\` and \`next\`; ask for the rest with \`section\` (a heading of the outline: it comes whole with its subsections, or its own outline and start when it is over ${PART} itself) or with \`offset\` and \`length\` (characters, at most ${PART}; \`next\` is where to go on). A short note comes whole, as always.`,
+    inputSchema: obj({
+      ...REF,
+      section: {
+        type: "string",
+        description: "A heading of the note's outline: that section, with its subsections",
+      },
+      offset: { type: "number", description: "Where a range starts (characters, from 0)" },
+      length: {
+        type: "number",
+        description: `How many characters from offset (at most ${PART}, the default)`,
+      },
+    }),
     call(c, a) {
-      const v = view(c);
-      return v.asNote(v.find(a), true);
+      return readNote(view(c), a);
     },
   },
   {
@@ -1039,8 +1124,7 @@ const TOOLS: Tool[] = [
   {
     name: "edit",
     actions: ["entities.update"],
-    description:
-      "Changes a note's text: replaces old_text (it must appear exactly once) with new_text; or the whole text with `body` and the `version` read last.",
+    description: `Changes a note's text: replaces old_text (it must appear exactly once) with new_text; or the whole text with \`body\` and the \`version\` read last, only for a note read whole (one over ${PART} characters, read in parts, changes with old_text or append).`,
     inputSchema: obj({
       ...REF,
       old_text: { type: "string" },
@@ -1057,6 +1141,13 @@ const TOOLS: Tool[] = [
       const now = s.entity.body ?? "";
       let next: string;
       if (a.body !== undefined) {
+        // Whole text only over a text read whole (task 112, A-30): a long note is read in parts, so a body written
+        // from them would drop what was not read; its changes go by old_text or append.
+        const long = charCount(now);
+        if (long > PART)
+          throw new ToolFail(
+            `this note has ${long} characters, more than read gives whole (${PART}): change it with old_text and new_text, or append`,
+          );
         if (a.version !== s.entity.version)
           throw new ToolFail("changed since you read it: read again");
         next = optStr(a.body, "body") ?? "";
