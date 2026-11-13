@@ -28,7 +28,8 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         val now = System.currentTimeMillis()
         val left = flushQueue(shell, now)
         if (unsentLeft || QueueLogic.pendingCount(left, now) > 0) return Result.retry() // still no server: later
-        QueueLogic.nextHold(left, now)?.let { schedule(applicationContext, it - now) }
+        // Behind this one, never in its place: the app is hidden (task 109).
+        QueueLogic.nextHold(left, now)?.let { behind(applicationContext, it - now) }
         return Result.success()
     }
 
@@ -66,24 +67,47 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
             }
         }
 
+        /** As the app hides: the job a moment later, so what the page keeps as it hides, just after, is in it. */
+        const val HIDDEN_MS = 1_500L
+
+        private fun request(delayMs: Long) = OneTimeWorkRequestBuilder<QueueWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(maxOf(0L, delayMs) + 500, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+
         /**
-         * The job, in `delayMs`. `wait` as the app hides: the system may end it a moment later, and WorkManager takes
-         * out the job it had (REPLACE) before it schedules the new one, so it returns once the new one is scheduled
-         * (on a phone, a kill right after `onStop` left none: task 109). The system ends an app only once `onStop`
-         * has returned.
+         * The job, in `delayMs`, in place of the one there. WorkManager takes out the job it had (REPLACE) before it
+         * schedules the new one, so with the app hidden only `onStop` does this, with `wait`: it returns once the new
+         * one is scheduled, and the system ends an app only once `onStop` has returned (task 109).
          */
         fun schedule(context: Context, delayMs: Long, wait: Boolean = false) {
-            val request = OneTimeWorkRequestBuilder<QueueWorker>()
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                .setInitialDelay(maxOf(0L, delayMs) + 500, TimeUnit.MILLISECONDS)
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
-                .build()
-            val done = WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request)
+            val done = WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request(delayMs))
             if (!wait) return
             try {
                 done.result.get(2, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 Log.w(MainActivity.TAG, "the queue's job was not scheduled in time: ${e.message}")
+            }
+        }
+
+        /**
+         * With the app hidden: one more job, in `delayMs` after the one there ends, for what the page wrote after it
+         * (APPEND_OR_REPLACE takes none out). Never in its place: the system may end the app at any moment, and on a
+         * phone a kill between taking out the job `onStop` left and scheduling the new one left nothing to send what
+         * was kept.
+         */
+        fun behind(context: Context, delayMs: Long = 0) {
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, request(delayMs))
+        }
+
+        /** A job for what the page wrote (the queue or the kept list), as `UnsentLogic.ask` says. */
+        fun ask(context: Context, foreground: Boolean, due: Boolean, inPlace: () -> Unit) {
+            when (UnsentLogic.ask(foreground, due)) {
+                UnsentLogic.Ask.IN_PLACE -> inPlace()
+                UnsentLogic.Ask.BEHIND -> behind(context)
+                UnsentLogic.Ask.NONE -> {}
             }
         }
     }

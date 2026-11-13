@@ -241,9 +241,11 @@ class Shell private constructor(context: Context) {
             writeUnsent(next, if (UnsentLogic.same(list, next)) text else null)
             !had && next.isNotEmpty()
         }
+        val front = foreground
+        // Said first: the system may end the app while the job is asked for.
+        Log.i(MainActivity.TAG, "unsent: kept ${list.size}, foreground $front")
         // The first kept write, or the last one as the app hides: a job that sends them, also if the app is closed.
-        if ((wrote || !foreground) && hasUnsent()) QueueWorker.schedule(app, 0, wait = !foreground)
-        Log.i(MainActivity.TAG, "unsent: kept ${list.size}, foreground $foreground")
+        QueueWorker.ask(app, front, (wrote || !front) && hasUnsent()) { QueueWorker.schedule(app, 0) }
     }
 
     fun hasUnsent(): Boolean = synchronized(UNSENT_LOCK) { storeFile(UNSENT_FILE).exists() }
@@ -340,7 +342,7 @@ class Shell private constructor(context: Context) {
                 tmp.delete()
             }
         }
-        if (name == QUEUE_FILE) QueueWorker.scheduleFor(app, text)
+        if (name == QUEUE_FILE) QueueWorker.ask(app, foreground, true) { QueueWorker.scheduleFor(app, text) }
     }
 
     fun storeRemove(name: String) {

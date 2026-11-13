@@ -204,6 +204,21 @@ object UnsentLogic {
     fun same(list: List<JSONObject>, next: List<JSONObject>) =
         list.size == next.size && list.indices.all { list[it] === next[it] }
 
+    /** The job a write of the page's asks for: none, one in place of the job there, or one behind it. */
+    enum class Ask { NONE, IN_PLACE, BEHIND }
+
+    /**
+     * The job a write the worker sends asks for (the kept list, the queue), when it is `due` (task 109). In front, in
+     * place of the job there (the page sends while it is in front, so that job only waits). Hidden, always behind it,
+     * never in its place: the system may end the app at any moment, and taking a job out before scheduling the new
+     * one left, on a phone, nothing to send what was kept. The job `onStop` leaves, before it returns, sends it.
+     */
+    fun ask(foreground: Boolean, due: Boolean): Ask = when {
+        !due -> Ask.NONE
+        foreground -> Ask.IN_PLACE
+        else -> Ask.BEHIND
+    }
+
     /** What one resend of the list did: how many requests were answered, and whether to try again later. */
     data class Flushed(val answered: Int, val retry: Boolean)
 

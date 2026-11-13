@@ -216,6 +216,15 @@ class UnsentLogicTest {
     }
 
     @Test
+    fun withTheAppHiddenAWriteAsksForAJobBehindTheOneThereNeverInItsPlace() {
+        // On a phone, a job asked for in place of the one onStop left, as the app was ended, left none.
+        assertEquals(UnsentLogic.Ask.BEHIND, UnsentLogic.ask(foreground = false, due = true))
+        assertEquals(UnsentLogic.Ask.IN_PLACE, UnsentLogic.ask(foreground = true, due = true))
+        assertEquals(UnsentLogic.Ask.NONE, UnsentLogic.ask(foreground = false, due = false))
+        assertEquals(UnsentLogic.Ask.NONE, UnsentLogic.ask(foreground = true, due = false))
+    }
+
+    @Test
     fun onlyAKeptWritesShapeIsSent() {
         assertNull(UnsentLogic.requestOf(JSONObject().put("path", "api/pages/p1").put("id", "p1").put("kind", "page")))
         assertNull(UnsentLogic.requestOf(page("p1", 1, "Uno").put("path", "api/settings")))

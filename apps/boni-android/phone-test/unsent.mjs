@@ -5,6 +5,8 @@
 //
 //   flock -w 3600 "$(git rev-parse --git-common-dir)/boni-phone.lock" node apps/boni-android/phone-test/unsent.mjs <boni-prueba.apk>
 //
+// With ONLY=2,6 it runs those scenarios alone, numbered in the order they are here.
+//
 // The APK is CI's `boni-android-test-apk` artifact of a branch (boni-android.yml). The phone must be unlocked, with
 // the screen on. «No connection» is a door on this laptop that closes, so the phone's own network never changes. The page is
 // read through the test copy's WebView devtools (only the test copy has them); every key goes with the test copy in
@@ -71,10 +73,11 @@ function mustFront() {
 }
 const pid = () => sh(`pidof ${PKG} || true`).trim();
 
-/** Typed as a person does, a key at a time (ASCII: `input text` takes no accents). */
-async function type(text) {
+/** Typed as a person does, a key at a time (ASCII: `input text` takes no accents); `before` runs before each key. */
+async function type(text, before) {
   for (const c of text) {
     mustFront();
+    if (before) await before();
     sh(c === " " ? "input keyevent KEYCODE_SPACE" : `input text ${c}`);
     await sleep(60);
   }
@@ -242,10 +245,28 @@ const focusOf = () =>
       return (a ? a.tagName + "." + a.className : "nothing") + (document.querySelector(".modal") ? ", a window open" : "");
     })()`)
     .catch(() => "?");
-/** Typed at the end of the note, and on its screen before going on: keys that went nowhere fail here, not later. */
+/** Whether the note's editor has the focus, where the keys go. */
+const inNote = () =>
+  cdp.eval(`(() => {
+    const a = document.activeElement;
+    return !!a && (!!a.closest(".row-doc") || a.contains(document.querySelector(".row-doc .blk-input")));
+  })()`);
+/**
+ * Typed at the end of the note, and on its screen before going on: keys that went nowhere fail here, not later. A key
+ * goes to what has the focus, and in run 11 the note's back button had it twice (a space there is a tap): the caret
+ * goes back to the note's end before any key that would land elsewhere, and the log says so.
+ */
 async function typeInNote(text, shows) {
-  await caretAtEnd();
-  await type(text);
+  await until(
+    "the caret in the note",
+    async () => (await caretAtEnd()) && (await inNote()),
+    10_000,
+  );
+  await type(text, async () => {
+    if (await inNote()) return;
+    say(`while typing, the focus was on ${await focusOf()}: back to the note's end`);
+    await caretAtEnd();
+  });
   await until(
     "the typed text on the screen",
     async () => shows.test(await shownBody()),
@@ -284,11 +305,18 @@ function openNote() {
 }
 /** How many jobs the system holds for the test copy (WorkManager's): filtered on the phone, never another app's. */
 const jobsOnPhone = () => sh(`dumpsys jobscheduler | grep -c 'JOB #.*${PKG}/' || true`).trim();
-/** After a kill: what the phone kept and the jobs that will send it, said in the log. */
+/**
+ * After a kill: what the phone kept and the jobs that will send it, said in the log; kept with no job, nothing would
+ * send it until the app is opened again (the app's job was taken out as it hid: run 11), so it fails at once.
+ */
 async function afterKill(died) {
+  const kept = keptOnPhone();
+  const jobs = jobsOnPhone();
   say(
-    `killed at ${died}; kept ${keptOnPhone()}; jobs ${jobsOnPhone()}; the server ${JSON.stringify(await bodyOnServer())}`,
+    `killed at ${died}; kept ${kept}; jobs ${jobs}; the server ${JSON.stringify(await bodyOnServer())}`,
   );
+  if (kept !== "none" && jobs === "0")
+    throw new Error("kept on the phone, and no job left to send it");
 }
 /** The server's note to have `shows`, or a failure saying what it has. */
 const serverShows = (shows, ms) =>
@@ -353,7 +381,12 @@ function logSince(since) {
 const phoneClock = () => `${sh("date +%s").trim()}.000`;
 
 const results = [];
+// ONLY=2,6 runs those scenarios alone (by their order here), to try a fix again without the whole run.
+const only = process.env.ONLY ? new Set(process.env.ONLY.split(",").map(Number)) : null;
+let order = 0;
 async function scenario(name, run) {
+  order++;
+  if (only && !only.has(order)) return;
   const since = phoneClock();
   say(`— ${name}`);
   try {
@@ -592,9 +625,15 @@ try {
       await sleep(1500);
       await attach();
       mustFront();
-      // Its home, where the create button is (a note opened from a link stays on screen as the app comes back).
+      // Its home, where the create button is. The task comes back with the note it was opened with, which hides the
+      // tabs: Back closes it, as a person does, then the «Inicio» tab.
+      for (let i = 0; i < 3 && !(await cdp.eval(`!!document.querySelector(".m-tabs")`)); i++) {
+        mustFront();
+        sh("input keyevent KEYCODE_BACK");
+        await sleep(700);
+      }
       await cdp.eval(
-        `[...document.querySelectorAll("button, a")].find((b) => /^(Inicio|Home)$/.test(b.textContent.trim()))?.click()`,
+        `[...document.querySelectorAll(".m-tabs .m-tab-label")].find((l) => /^(Inicio|Home)$/.test(l.textContent.trim()))?.closest("button, a")?.click()`,
       );
       await sleep(700);
       offline();
@@ -602,7 +641,9 @@ try {
         "the create button",
         () => cdp.eval(`!!document.querySelector(".m-fab")`),
         20_000,
-      );
+      ).catch(async (e) => {
+        throw new Error(`${e.message}; the test copy shows: ${JSON.stringify(await onScreen())}`);
+      });
       await cdp.eval(`(async () => {
       document.querySelector(".m-fab").click();
       await new Promise((r) => setTimeout(r, 500));
@@ -617,7 +658,7 @@ try {
       await sleep(3000);
       const died = homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
-      say(`killed at ${died}; kept ${keptOnPhone()}; jobs ${jobsOnPhone()}`);
+      await afterKill(died);
       online();
       await until(
         "the page on the server",
@@ -635,7 +676,9 @@ try {
 } finally {
   cleanUp();
 }
-process.exit(results.every((r) => r.startsWith("PASS")) && results.length === 6 ? 0 : 1);
+process.exit(
+  results.every((r) => r.startsWith("PASS")) && results.length === (only?.size ?? 6) ? 0 : 1,
+);
 
 /** Everything the run made goes, also when it is stopped (Ctrl-C, a kill): the phone and this laptop as they were. */
 function cleanUp() {

@@ -229,11 +229,11 @@ class MainActivity : ComponentActivity() {
         main.removeCallbacks(tick)
         shell.live.stop()
         shell.emit = null
-        // Whatever the page left in the queue goes from here, with the network, even if the app is closed; and what
-        // was typed and kept unsent (task 109).
-        // Both scheduled before onStop returns, after which the system may end the app at once.
-        shell.storeRead(Shell.QUEUE_FILE)?.let { QueueWorker.scheduleFor(this, it, wait = true) }
-        if (shell.hasUnsent()) QueueWorker.schedule(this, 0, wait = true)
+        // A job before onStop returns, after which the system may end the app at once: whatever the page left in the
+        // queue and what was typed and kept unsent (task 109) go from it, with the network, even if the app is
+        // closed. Always, as the page keeps its list just after this (its hide notice) and then only asks for a job
+        // behind this one: on a phone, the job asked for then was not there when the app was ended.
+        if (shell.configured()) QueueWorker.schedule(this, QueueWorker.HIDDEN_MS, wait = true)
         Log.i(TAG, "stop")
     }
 
