@@ -2415,6 +2415,43 @@ export interface Related {
   /** The titles of what the row itself points to (its relations' values). */
   titles: Record<string, string>;
 }
+/** A record a mention `[[Título]]` names (task 110): its collection (`page`: one of the user's pages). */
+export interface Titled {
+  id: string;
+  type: string;
+  collection: string;
+  icon?: string;
+  title: string;
+  updated: number;
+}
+
+/** A text as a query's value: every character but letters, digits and `-_.` escaped (the apps' paths allow no other). */
+export const queryValue = (s: string) =>
+  encodeURIComponent(s).replace(
+    /[!'()*~]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+
+export function parseTitled(v: unknown): { rows: Titled[]; count: number } {
+  const b = isObj(v) ? v : {};
+  const s = (x: unknown, max = 300) => (typeof x === "string" ? x.slice(0, max) : "");
+  const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 20).flatMap((r): Titled[] =>
+    isObj(r) && typeof r.id === "string" && typeof r.type === "string"
+      ? [
+          {
+            id: r.id,
+            type: r.type,
+            collection: s(r.collection, 80),
+            ...(typeof r.icon === "string" ? { icon: s(r.icon, 8) } : {}),
+            title: s(r.title),
+            updated: Number(r.updated) || 0,
+          },
+        ]
+      : [],
+  );
+  return { rows, count: Math.max(Number(b.count) || 0, rows.length) };
+}
+
 function parseRelated(v: unknown): Related {
   const b = isObj(v) ? v : {};
   const s = (x: unknown, max = 300) => (typeof x === "string" ? x.slice(0, max) : "");
@@ -3530,6 +3567,11 @@ export class AgentApi {
   dataRelated = async (id: string) =>
     parseRelated(
       await this.call("GET", `/${encodeURIComponent(id)}/related`, undefined, "api/data/rows"),
+    );
+  /** The records a mention `[[Título]]` names: by their whole title, at most twenty, with how many there are. */
+  dataTitled = async (title: string) =>
+    parseTitled(
+      await this.call("GET", `?title=${queryValue(title)}`, undefined, "api/data/titled"),
     );
   deleteRow = async (id: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));

@@ -146,9 +146,13 @@ test("several lines pasted become blocks (Markdown read); the arrows go from blo
 });
 
 /** «Rayuela» opened from its collection's table: when it was clicked. */
-async function openRayuela(page: Page, body?: string): Promise<number> {
+async function openRayuela(
+  page: Page,
+  body?: string,
+  more: Parameters<typeof openApp>[2] = {},
+): Promise<number> {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "/?still", body === undefined ? {} : { rayuelaBody: body });
+  await openApp(page, "/?still", body === undefined ? more : { ...more, rayuelaBody: body });
   await page
     .locator(".sidebar")
     .getByRole("list", { name: "Páginas" })
@@ -380,6 +384,75 @@ test("a note with every format, opened, clicked, selected and left, is not writt
     ),
   );
   expect(sent.at(-1)).toContain(JSON.stringify(body.replace("Texto", "**Texto**")).slice(1, -1));
+});
+
+test("a mention [[Título]] opens what it names (task 110, D-71): Ctrl+click as on a link; none or several said in place, several chosen there; typing in it never opens; the note not written", async ({
+  page,
+}) => {
+  const body = "Ver [[Ficciones]], [[Nada de esto]] y [[pedro páramo|el otro]].\n";
+  await openRayuela(page, body, {
+    titled: [
+      {
+        id: "x1",
+        type: "t_lecturas",
+        collection: "Lecturas",
+        title: "Pedro Páramo",
+        updated: Date.UTC(2026, 9, 2, 9),
+      },
+    ],
+  });
+  const text = page.locator(".row-doc .blk-input").first();
+  const mention = (name: string) => text.locator(".md-mention", { hasText: name });
+  await expect(text.locator(".md-mention")).toHaveText(["Ficciones", "Nada de esto", "el otro"]);
+  const asked = async () =>
+    (await recorded(page)).requests.filter((r) => r.startsWith("GET api/data/titled"));
+  // A plain click puts the caret in it: its title shown, to open; nothing asked yet.
+  await mention("Nada de esto").click();
+  await expect(bar(page).locator(".fmt-url")).toHaveText("Nada de esto");
+  await expect(bar(page).getByRole("button", { name: "Abrir" })).toBeVisible();
+  expect(await asked()).toEqual([]);
+  // Ctrl+click: none of that title, said in place; the title asked escaped strictly (the apps' allowed paths).
+  await mention("Nada de esto").click({ modifiers: ["Control"] });
+  await expect(bar(page).getByRole("status")).toHaveText("No existe");
+  expect(await asked()).toEqual(["GET api/data/titled?title=Nada%20de%20esto"]);
+  // Two of that title (case aside): both offered, each with its collection; nothing opened.
+  await mention("el otro").click({ modifiers: ["Control"] });
+  const choices = bar(page).getByRole("list", { name: "2 con este título" });
+  await expect(choices.getByRole("button")).toHaveCount(2);
+  await expect(choices.getByRole("button").first()).toContainText("Libros");
+  await expect(choices.getByRole("button").nth(1)).toContainText("Lecturas");
+  await page.screenshot({ path: `${SHOTS}/editor-mention-many.png` });
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  // Typing inside a mention edits it and never opens anything.
+  const before = (await asked()).length;
+  await mention("Ficciones").click();
+  await page.keyboard.type("x", { delay: 60 });
+  await page.keyboard.press("Backspace");
+  await page.waitForTimeout(400);
+  expect((await asked()).length).toBe(before);
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  // Its text as it was: whatever is written of it is the same bytes (D-66).
+  await page.waitForTimeout(900);
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+      b.startsWith("PUT api/data/rows/r1"),
+    ),
+  );
+  for (const b of sent) expect(b).toContain(JSON.stringify(body).slice(1, -1));
+  // One of them chosen: that one opens.
+  await mention("el otro").click({ modifiers: ["Control"] });
+  await choices.getByRole("button", { name: /Libros/ }).click();
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Pedro Páramo");
+  // One of that title: Ctrl+click opens it.
+  await page
+    .locator(".sidebar")
+    .getByRole("list", { name: "Páginas" })
+    .getByRole("button", { name: "Libros", exact: true })
+    .click();
+  await page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true }).click();
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  await mention("Ficciones").click({ modifiers: ["Control"] });
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Ficciones");
 });
 
 /**

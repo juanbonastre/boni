@@ -79,3 +79,46 @@ export function relatedTo(
   );
   return { groups, titles: asShown(store, own, [e.entity]).titles };
 }
+
+export interface TitledRow {
+  id: string;
+  /** Its collection (its id), or `page` for one of the user's pages. */
+  type: string;
+  collection: string;
+  icon?: string;
+  title: string;
+  /** When it last changed (epoch ms): two of one collection told apart. */
+  updated: number;
+}
+
+const MAX_TITLED = 20;
+const MAX_TITLE = 300;
+
+/**
+ * The records a mention `[[Título]]` names (task 110, D-71): those of the user's collections and pages whose title is
+ * that one, case and outer spaces aside, as the MCP's `read` and a relation by title find them (byName.ts), the
+ * oldest first. Found through the search index (A-15), never by reading every record; at most twenty, with how many
+ * there are.
+ */
+export function titledRows(store: UserStore, title: string): { rows: TitledRow[]; count: number } {
+  if (!title.trim() || title.length > MAX_TITLE) throw new DataError("bad-request");
+  const schema = store.schema();
+  const shown = new Set(userTypes(store).map((t) => t.id));
+  if (schema.types.page) shown.add("page");
+  const hits = store.findByTitle(title).filter((h) => shown.has(h.type));
+  const rows: TitledRow[] = [];
+  for (const h of hits.slice(0, MAX_TITLED)) {
+    const t = schema.types[h.type];
+    const e = store.get(h.id);
+    if (!t || !e) continue;
+    rows.push({
+      id: h.id,
+      type: h.type,
+      collection: t.name,
+      ...(t.icon ? { icon: t.icon } : {}),
+      title: h.title,
+      updated: e.entity.updated,
+    });
+  }
+  return { rows, count: hits.length };
+}

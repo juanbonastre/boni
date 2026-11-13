@@ -210,6 +210,11 @@ export interface UserStore {
   stamp(type: TypeId): { count: number; updated: number };
   /** The entities (not in the trash) whose `field` holds exactly `value` (a text), by one query. */
   findByValue(field: string, value: string): { id: EntityId; type: TypeId }[];
+  /**
+   * The entities (not in the trash) whose title is `title`, case and outer spaces aside, the oldest first: found by
+   * the search index's titles, never by reading every record (a mention `[[Título]]`, task 110).
+   */
+  findByTitle(title: string): { id: EntityId; type: TypeId; title: string }[];
   linksTo(id: EntityId): { src: EntityId; field: string }[];
   search(text: string, opts?: { type?: TypeId; limit?: number }): EntityId[];
   /** The last operation's number: the version devices sync from. */
@@ -974,6 +979,29 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
           "SELECT id, type FROM entities WHERE deleted IS NULL AND json_extract(vals, ?) = ? ORDER BY created, id",
         )
         .all(`$."${field.replace(/"/g, "")}"`, value) as { id: string; type: string }[],
+    findByTitle(title) {
+      // Accents composed (NFC) on both sides: a title typed or pasted with them apart is the same title.
+      const same = (t: string) => t.normalize("NFC").trim().toLowerCase();
+      const want = same(title);
+      if (!want) return [];
+      // Every word of it in the title column, each as a quoted prefix (never FTS syntax); then the whole title
+      // compared. A title with no word (signs alone) is compared as it is: nothing in it has a case.
+      const words = want.match(/[\p{L}\p{N}\p{M}]+/gu) ?? [];
+      const rows = db
+        .prepare(
+          `SELECT f.entity AS id, e.type AS type, f.title AS title FROM entities_fts f JOIN entities e ON e.id = f.entity
+           WHERE ${words.length ? "entities_fts MATCH ?" : "trim(f.title) = ?"} AND e.deleted IS NULL
+           ORDER BY e.created, e.id`,
+        )
+        .all(words.length ? words.map((w) => `title : "${w}"*`).join(" AND ") : want) as {
+        id: string;
+        type: string;
+        title: string;
+      }[];
+      return rows
+        .filter((r) => same(String(r.title)) === want)
+        .map((r) => ({ id: r.id, type: r.type, title: String(r.title) }));
+    },
     linksTo: (id) =>
       db.prepare("SELECT src, field FROM links WHERE dst = ? ORDER BY src, pos").all(id) as {
         src: string;

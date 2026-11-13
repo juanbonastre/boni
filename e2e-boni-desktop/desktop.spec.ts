@@ -51,6 +51,8 @@ const NOTES: Record<string, string> = {
   [`agenda/docencia/${iso(tomorrow)} Tutoría.md`]: `---\ntitle: "Tutoría"\ndate: "${iso(tomorrow)}"\nstartTime: "16:00"\ncompleted: false\n---\n`,
   "registros/personas/ana-ejemplo.md":
     "---\ntype: person\nsummary: Invented colleague.\n---\n# Ana\n",
+  // Another invented person of the same name: a mention `[[Ana]]` names two (task 110).
+  "registros/personas/ana-otra.md": "---\ntype: person\nsummary: Invented neighbour.\n---\n# Ana\n",
   // Invented belongings: a number, a date and a list (its values become a select's options).
   "registros/pertenencias/cafetera.md": `---\nprecio: 210\ncomprado: "${iso(today)}"\ntipo: [cocina]\nRegalo de: "[[ana-ejemplo]]"\n---\n# Cafetera\n`,
   "registros/pertenencias/cortacesped.md": `---\nprecio: 180\ncomprado: "${iso(today)}"\ntipo: [jardín]\n---\n# Cortacésped\n`,
@@ -117,7 +119,7 @@ test.beforeAll(async () => {
     hornoId,
     {
       [BODY]: {
-        value: `Instrucciones del horno.\n\n![plano.png|320](boni:${ids.get("adjuntos/plano.png")})\n`,
+        value: `Instrucciones del horno. Junto a [[Cafetera]]; lo trajo [[Ana]]; ver [[Manual (versión 2)]].\n\n![plano.png|320](boni:${ids.get("adjuntos/plano.png")})\n`,
         label: store.schema().types.t_pertenencia?.label as never,
       },
     },
@@ -657,6 +659,32 @@ test("a record says what points to it («Relacionado»), and a note's text shows
   expect(await img.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(100);
   await expect(w.locator(".doc-file-image figcaption")).toHaveText("plano.png");
   await shot(w, "related-and-picture");
+});
+
+test("a mention in a note opens what it names over the real server (task 110, D-71): one opens, none and two are said in place, one of the two chosen", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  openLink(`boni://note?id=${hornoId}`);
+  const line = w.locator(".row-doc .blk-input").first();
+  await expect(line.locator(".md-mention")).toHaveText(["Cafetera", "Ana", "Manual (versión 2)"]);
+  const bar = w.getByRole("toolbar", { name: "Formato" });
+  // None of that title: said, nothing opened (its title, with spaces, an accent and brackets, through the app's
+  // allowed paths to the server).
+  await line.locator(".md-mention", { hasText: "Manual" }).click({ modifiers: ["Control"] });
+  await expect(bar.getByRole("status")).toHaveText("No existe");
+  await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Horno");
+  // Two people of that name: both offered, by their collection; one chosen opens it.
+  await line.locator(".md-mention", { hasText: "Ana" }).click({ modifiers: ["Control"] });
+  const choices = bar.getByRole("list", { name: "2 con este título" });
+  await expect(choices.getByRole("button")).toHaveCount(2);
+  await expect(choices.getByRole("button").first()).toContainText("Persona");
+  await shot(w, "mention-many");
+  await choices.getByRole("button").first().click();
+  await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Ana");
+  // One of that title: Ctrl+click opens it.
+  openLink(`boni://note?id=${hornoId}`);
+  await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Horno");
+  await line.locator(".md-mention", { hasText: "Cafetera" }).click({ modifiers: ["Control"] });
+  await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Cafetera");
 });
 
 test("a boni:// link with the window closed: the window opens on the note at the first click", async () => {

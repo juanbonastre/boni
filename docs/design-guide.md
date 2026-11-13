@@ -646,7 +646,14 @@ contraseña ni un código aquí» under a question.
   dirección»; Enter applies, Esc leaves). With the caret in a link the menu shows its address as plain text, «Abrir»
   (web addresses only), «Cambiar» and «Quitar» (its words stay). **Ctrl+click** on a link opens it; a click alone
   puts the caret in it. An address pasted over words makes them its link; anything else pasted is plain text, HTML
-  never painted. A mention is painted but opens nothing yet (finding a note by its title needs the server).
+  never painted. **A mention opens what it names** (task 110, D-71): **Ctrl+click** on `[[Título]]` (as on a link)
+  opens the record or page of that exact title, case and outer spaces aside (as the MCP's `read` and a relation by
+  title find it), in any collection; a mail opens as a mail does. With the caret in a mention (a click alone, or a tap
+  on the phone) the menu shows its title as plain text and «Abrir». It never guesses: with no record of that title
+  the menu says «No existe» (without the server, «Sin conexión»), and nothing opens; with several it lists them in
+  place («N con este título»), each by its collection («Página» for a page) and the day it last changed, a press on one
+  opening it; past twenty it says «20 de N». «Buscando…» while the server answers. Typing inside a mention edits its
+  text and never opens anything; the note is not written by any of this (D-66).
 - **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
   from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
   per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the

@@ -283,6 +283,20 @@ export function linkAt(
   return span ? { pos: p, span } : null;
 }
 
+/** The mention `[[Título]]` the selection is in (task 110), or null. */
+export function mentionAt(
+  state: EditorState,
+  from = state.selection.from,
+  to = state.selection.to,
+): { pos: number; span: Span } | null {
+  const p = blockAt(state.doc, from);
+  if (p === null || blockAt(state.doc, to) !== p) return null;
+  const n = state.doc.nodeAt(p);
+  if (!n?.isTextblock) return null;
+  const span = spanAround(spansOf(n), "mention", from - p - 1, to - p - 1);
+  return span?.target ? { pos: p, span } : null;
+}
+
 /** A link around the selection (in one block), or a new address for the link it is in. */
 export function linkSelection(view: EditorView, href: string): boolean {
   const state = view.state;

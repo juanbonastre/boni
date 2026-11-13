@@ -14,6 +14,8 @@ test("the page reaches only Boni's APIs through the shell", () => {
     "api/mail/guide",
     // A file dropped on Boni's window (A-24), its name escaped strictly (uploads.cjs).
     "api/data/files/upload?name=Factura%20FAC-2026-0142%20%28taller%29.pdf",
+    // The records a mention `[[Título]]` names (task 110), its title escaped strictly (queryValue in agent.ts).
+    "api/data/titled?title=Reuni%C3%B3n%20%28martes%29",
   ])
     assert.equal(allowedPath(p), true, p);
   for (const p of [
@@ -25,6 +27,7 @@ test("the page reaches only Boni's APIs through the shell", () => {
     "api/datax",
     "boni/index.html",
     "api/data/files/upload?name=Factura (taller).pdf",
+    "api/data/titled?title=Reunión (martes)",
     42,
   ])
     assert.equal(allowedPath(p), false, String(p));

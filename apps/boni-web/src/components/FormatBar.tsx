@@ -1,10 +1,13 @@
 /**
  * The menu that comes up over selected text (task 2f): bold, italic, strikethrough, code and a link, each pressed when
- * the selection already has it; with the caret in a link, its address (plain text), to open, change or take it off.
+ * the selection already has it; with the caret in a link, its address (plain text), to open, change or take it off;
+ * with the caret in a mention `[[Título]]`, its title, to open what it names (task 110): none or several of that
+ * title are said here, and several are chosen from here.
  * It keeps the text's focus and selection (a press is no click away from it), and sits below the selection where the
  * pointer is a finger, as a phone's own bar for copying sits above it.
  */
 import {
+  ArrowUpRight,
   Bold,
   Check,
   Code,
@@ -18,15 +21,19 @@ import {
 import type { EditorView } from "prosemirror-view";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { deviceZone } from "../core/clock.ts";
 import { linkHref, type WrapKind } from "../core/inline.ts";
 import { openUrl } from "../host.ts";
-import type { useStore } from "../store.ts";
-import { formatOn, linkAt, linkSelection, toggleFormat, unlinkAt } from "./runFormat.ts";
+import { type MentionFound, openMention, openTitled, useStore } from "../store.ts";
+import { formatOn, linkAt, linkSelection, mentionAt, toggleFormat, unlinkAt } from "./runFormat.ts";
 
 type T = ReturnType<typeof useStore.getState>["t"];
 
-/** What the menu shows: the formats of a selection, or the link the caret is in; the field for an address open. */
-export type Bubble = { mode: "format" | "link"; editing: boolean };
+/**
+ * What the menu shows: the formats of a selection, the link or the mention the caret is in; the field for an address
+ * open. `open`: a mention asked to open (Ctrl+click), each ask its own number.
+ */
+export type Bubble = { mode: "format" | "link" | "mention"; editing: boolean; open?: number };
 
 const WRAPS: { kind: WrapKind; label: string; Icon: typeof Bold }[] = [
   { kind: "strong", label: "fmt.strong", Icon: Bold },
@@ -56,6 +63,21 @@ export function FormatBar({
   const href = link?.span.href ?? "";
   const [value, setValue] = useState("");
   const [wrong, setWrong] = useState(false);
+  const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
+  const mention = bubble.mode === "mention" ? mentionAt(state) : null;
+  const target = mention?.span.target ?? "";
+  // What came of opening it, for the title it was asked for (the caret may have gone to another since).
+  const [found, setFound] = useState<{ target: string; f: MentionFound | "wait" } | null>(null);
+  const openIt = async () => {
+    if (!target) return;
+    setFound({ target, f: "wait" });
+    const f = await openMention(target);
+    setFound(f.kind === "opened" ? null : { target, f });
+  };
+  useEffect(() => {
+    if (bubble.open) void openIt();
+  }, [bubble.open]);
+  const said = found && found.target === target ? found.f : null;
 
   // The field starts with the link's address (none for new words).
   useEffect(() => {
@@ -216,6 +238,55 @@ export function FormatBar({
           </>
         )}
       </>
+    );
+  } else if (bubble.mode === "mention" && mention) {
+    const day = (ms: number) =>
+      new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: deviceZone() }).format(ms);
+    body = (
+      <div className="fmt-mention">
+        <div className="fmt-row">
+          <span className="fmt-url" title={target}>
+            {target}
+          </span>
+          {said === "wait" ? (
+            <span className="fmt-state" role="status">
+              {t("mention.wait")}
+            </span>
+          ) : said?.kind === "none" || said?.kind === "offline" ? (
+            <span className="fmt-state" role="status">
+              {t(said.kind === "none" ? "mention.none" : "mention.offline")}
+            </span>
+          ) : null}
+          {said !== "wait" &&
+            said?.kind !== "many" &&
+            button("fmt.open", <ArrowUpRight size={16} strokeWidth={2} />, () => void openIt())}
+        </div>
+        {said !== "wait" && said?.kind === "many" && (
+          <ul className="fmt-choices" aria-label={t("mention.many", { n: said.count })}>
+            {said.rows.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  className="fmt-choice"
+                  onPointerDown={keep}
+                  onMouseDown={keep}
+                  onClick={() => void openTitled(r)}
+                >
+                  <span className="fmt-choice-where">
+                    {r.type === "page" ? t("mention.page") : r.collection}
+                  </span>
+                  {r.updated > 0 && <span className="fmt-choice-when">{day(r.updated)}</span>}
+                </button>
+              </li>
+            ))}
+            {said.count > said.rows.length && (
+              <li className="fmt-state">
+                {t("mention.more", { n: said.rows.length, total: said.count })}
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
     );
   } else
     body = (
