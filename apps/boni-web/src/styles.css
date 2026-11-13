@@ -11531,6 +11531,89 @@ tr[data-boni-pointed] > td {
   border-style: solid;
   border-color: var(--accent);
 }
+/* Task 27 (C3): the other kinds of question. Several: a box per option, then «Responder» and «Ninguna»; a file: its
+   own drop place; a rehearsal: what it would write, folded until «Revisar». */
+.ask-state {
+  margin-left: 8px;
+}
+.ask-boxes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ask-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ask-box:hover {
+  background: var(--surface);
+}
+.ask-box input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: none;
+  accent-color: var(--accent);
+}
+.ask-options.even .pill:first-child,
+.ask-options .pill.ask-none:not(:disabled),
+.ask-options .pill.ask-none:disabled {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+.ask-text .ask-options {
+  display: contents;
+}
+.ask-found {
+  max-height: 11rem;
+  overflow-y: auto;
+}
+.ask-file {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  margin: -8px;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+}
+.ask-file.over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ask-would {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-would > li {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.ask-would h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+@media (max-width: 640px) {
+  .ask-box {
+    min-height: 40px;
+  }
+  .ask-box input {
+    width: 20px;
+    height: 20px;
+  }
+}
 .reply-asked {
   display: flex;
   flex-wrap: wrap;

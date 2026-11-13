@@ -305,6 +305,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "brings the mail through its piece «Guardar en Correos»: a look that finds mail is a run, one that finds none is not, and turned off it brings nothing",
     },
   ],
+  "turns.undo": [
+    {
+      file: "apps/server/src/agent.test.ts",
+      test: "«antes te he dicho X, pero es Y»: the planner asks to take back that turn, Juan says yes on a card, and it is corrected as editing it would (C1)",
+    },
+  ],
 };
 /**
  * Effects no tool of the registry has yet, with their policy ready (docs/nucleo.md §7.5): a write with no Undo

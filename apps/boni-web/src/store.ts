@@ -24,6 +24,7 @@ import {
   AgentApi,
   type AiLevel,
   type AreaAccuracy,
+  type AskAnswer,
   type AutoAccept,
   type ConversationSummary,
   type DataRow,
@@ -1516,6 +1517,18 @@ export function agentErrorText(t: T, code: string): string {
   if (code === "plan-invalid") return t("agent.error.planInvalid");
   // A card accepted from the conversation whose state changed since it was seen (task 73).
   if (code === "changed") return t("inbox.changed");
+  // A rehearsal's «Ahora no» (§3.4): nothing of it was done.
+  if (code === "not-saved") return t("agent.error.notSaved");
+  // An earlier turn the planner asked to take back (C1) that could not be, as the edited message's say it.
+  if (code === "tool-cannot-undo") return t("agent.error.turnCannotUndo");
+  if (code === "tool-busy") return t("agent.error.turnBusy");
+  if (code === "tool-corrected") return t("agent.error.turnCorrected");
+  if (
+    code === "undo-after-writes" ||
+    code === "tool-turn-not-from-history" ||
+    code === "tool-not-found"
+  )
+    return t("agent.error.undoTurn");
   if (code.startsWith("model-")) return t("agent.error.model");
   // The limits of one request (P12) are not a security rule: say which one was hit.
   if (code.startsWith("P12-")) return t(`agent.error.limit.${code.slice(4)}`);
@@ -1641,6 +1654,9 @@ async function agentCall(
         : {}),
     });
     if (r.pending?.kind === "confirm") set((s) => ({ confirmFlip: !s.confirmFlip }));
+    // The planner took an earlier turn back (C1, «antes te he dicho X, pero es Y»): it shows «Corregido», as an
+    // edited message's does, and what its Undo took back leaves the pages, the log and the Bandeja.
+    if (r.corrects && r.corrects !== entry?.result?.corrects) correctedRun(r.corrects);
     // A turn that changed something may have made or changed a page, or decided cards of the Bandeja (F10).
     if (r.proposals.length || r.changed) void loadInbox();
     if (r.changed) void pagesAfterRun();
@@ -1705,7 +1721,7 @@ export const canAttach = () => !!hostRef.uploadFile || !!hostRef.chooseFiles;
 export const hostPicks = () => !!hostRef.chooseFiles;
 let uploadKeys = 0;
 /** A file about to go up: its name and size, and how its host sends it. */
-interface Outgoing {
+export interface Outgoing {
   name: string;
   size: number;
   send(progress: (sent: number, size: number) => void): Promise<UploadAnswer>;
@@ -1823,6 +1839,19 @@ async function turnOf(
   );
 }
 
+/** A turn of the open conversation taken back, by its run: «Corregido», and what it did reloaded. */
+function correctedRun(run: string) {
+  set((x) => ({
+    chat: x.chat.map((e) =>
+      e.result?.run === run
+        ? { ...e, corrected: true, result: { ...e.result, changed: false, pending: null } }
+        : e,
+    ),
+  }));
+  void loadInbox();
+  void loadRuns();
+  void pagesAfterRun();
+}
 /**
  * Juan corrects a message he sent (docs/conversacion.md §3.1, C1): the server takes its turn back (its Undo, through
  * the store's log) and runs the new words, with the chips it had, as a turn after it; both stay in the conversation.
@@ -2161,12 +2190,83 @@ export function stopTurn() {
   const l = get().live;
   if (l) void agent.stop(l.id).catch(() => undefined);
 }
-export async function answerAsk(entryId: string, a: { choice: number } | { text: string }) {
+/**
+ * An answer to Boni's question (docs/conversacion.md §3.4), with what the card showed (rule 3a): the server checks
+ * the question again first, and a question that changed comes back as it is now («Ha cambiado»), nothing answered.
+ */
+export async function answerAsk(entryId: string, a: AskAnswer) {
   const e = get().chat.find((x) => x.id === entryId);
   const p = e?.result?.pending;
-  if (!e?.result || p?.kind !== "ask") return;
+  if (!e?.result || p?.kind !== "ask") return null;
   const run = e.result.run;
-  await agentCall(entryId, (live) => agent.answer(run, p.id, a, live));
+  return agentCall(entryId, (live) => agent.answer(run, p.id, a, live, p.seen));
+}
+/**
+ * «Nueva…» among a property's options (§3.4, rule 2): the option added to the property by Juan (his change of the
+ * collection, as its column's menu makes one), then it is his answer; the server checks it is one of them now.
+ */
+export async function answerWithNewOption(entryId: string, title: string) {
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (get().chatBusy || p?.kind !== "ask" || !p.field) return;
+  const name = await addFieldOption(p.field.type, p.field.field, title);
+  return name ? answerAsk(entryId, { option: name }) : null;
+}
+/**
+ * An option added to a property from a question (§3.4, «Nueva…»), as its column's menu adds one: the one of that
+ * name when it has it already (whatever its case). Its name, or null when it could not be added.
+ */
+export async function addFieldOption(
+  type: string,
+  field: string,
+  title: string,
+): Promise<string | null> {
+  const name = title.replace(/\s+/g, " ").trim().slice(0, 200);
+  const def = get()
+    .dataTypes?.find((x) => x.id === type)
+    ?.fields.find((f) => f.id === field);
+  if (!name || !def) return null;
+  const options = def.options ?? [];
+  const had = options.find((o) => o.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+  if (had) return had.name;
+  return (await changeColumn(type, field, { options: [...options, { name }] })) ? name : null;
+}
+/** A row made from a question (§3.4, «Nueva…» among rows), with what Juan wrote as its title: its id, or null. */
+export async function addOptionRow(type: string, title: string): Promise<string | null> {
+  const name = title.replace(/\s+/g, " ").trim();
+  const def = get().dataTypes?.find((x) => x.id === type);
+  if (!name || !def) return null;
+  return (await addRow(type, { [def.titleField]: name }))?.id ?? null;
+}
+/** A file of the page's (dropped, or chosen in the page's own dialog) as its host sends one; null where it cannot. */
+export function outgoing(file: File): Outgoing | null {
+  const up = hostRef.uploadFile;
+  return up ? { name: file.name, size: file.size, send: (progress) => up(file, progress) } : null;
+}
+/** The phone's own picker for a card's file (task 114's): the first file chosen, or null when none was. */
+export async function chooseOne(): Promise<Outgoing | null> {
+  const choose = hostRef.chooseFiles;
+  return choose ? ((await choose())[0] ?? null) : null;
+}
+/**
+ * A file as the answer (§3.4): it goes up as a file dropped on the conversation, or attached on the phone, goes (the
+ * same upload, the same row of his files), and that row is the answer. The word of a file that could not go up, or
+ * null.
+ */
+export async function answerWithFile(
+  entryId: string,
+  file: Outgoing,
+  progress: (sent: number) => void,
+): Promise<"too-big" | "failed" | null> {
+  const first = dropped(`a${++uploadKeys}`, file);
+  if (first.state === "failed") return "failed";
+  if (first.state === "too-big") return "too-big";
+  const end = uploadEnd(await file.send(progress));
+  if ("state" in end) return end.state;
+  const ref = end.chip.ref;
+  if (ref.kind !== "row") return "failed";
+  await answerAsk(entryId, { file: ref.id });
+  return null;
 }
 /**
  * «Otra cosa…» (docs/conversacion.md §3.4, rule 2): the question ends, kept as text, and what Juan wrote is his next
@@ -2178,7 +2278,9 @@ export async function answerInWords(entryId: string, words: string) {
   const p = e?.result?.pending;
   if (!text || get().chatBusy || !e?.result || p?.kind !== "ask") return;
   const run = e.result.run;
-  const failed = await agentCall(entryId, (live) => agent.answer(run, p.id, { words: text }, live));
+  const failed = await agentCall(entryId, (live) =>
+    agent.answer(run, p.id, { words: text }, live, p.seen),
+  );
   // Refused (answered already, on another device): the question stays, and the words are not sent on their own.
   if (failed || get().chat.find((x) => x.id === entryId)?.result?.status === "waiting") return;
   await turnOf(text, []);
@@ -2188,15 +2290,13 @@ export async function answerInWords(entryId: string, words: string) {
  * write, with its Undo in the log), is his answer.
  */
 export async function answerWithNew(entryId: string, type: string, title: string) {
-  const name = title.replace(/\s+/g, " ").trim();
-  const def = get().dataTypes?.find((x) => x.id === type);
   const e = get().chat.find((x) => x.id === entryId);
   const p = e?.result?.pending;
-  if (!name || !def || get().chatBusy || !e?.result || p?.kind !== "ask") return;
-  const row = await addRow(type, { [def.titleField]: name });
+  if (get().chatBusy || !e?.result || p?.kind !== "ask") return;
+  const row = await addOptionRow(type, title);
   if (!row) return;
   const run = e.result.run;
-  await agentCall(entryId, (live) => agent.answer(run, p.id, { record: row.id }, live));
+  await agentCall(entryId, (live) => agent.answer(run, p.id, { record: row }, live, p.seen));
 }
 export async function confirmPending(entryId: string) {
   const e = get().chat.find((x) => x.id === entryId);

@@ -102,9 +102,58 @@ export interface ConfirmView {
   title: string;
   rows: ConfirmRow[];
 }
-export type Pending =
-  | { kind: "ask"; id: string; control: "choice" | "text"; prompt: Painted; options: Painted[] }
-  | { kind: "confirm"; id: string; view: ConfirmView };
+/** The kinds of question (docs/conversacion.md §3.4); background work asks only `choice` and `text`. */
+export const ASK_CONTROLS = [
+  "choice",
+  "several",
+  "text",
+  "number",
+  "date",
+  "file",
+  "yesno",
+  "rehearsal",
+] as const;
+export type AskControl = (typeof ASK_CONTROLS)[number];
+/** What one call of the rest of a rehearsal would do: the confirmation's own rows, and whether it would ask. */
+export interface RehearsalItem {
+  decision: "allow" | "propose" | "confirm";
+  view: ConfirmView;
+}
+export interface AskPending {
+  kind: "ask";
+  id: string;
+  control: AskControl;
+  prompt: Painted;
+  options: Painted[];
+  /**
+   * A question over a property's options (§3.4, «Nueva…» among categories): the property, by ids, and all its
+   * options' names, for «Otra…» to find one and «Nueva…» to add one.
+   */
+  field?: { type: string; field: string; names: string[] };
+  /** A rehearsal's: what the rest would write. */
+  would?: RehearsalItem[];
+  /** What the server showed (rule 3a): sent back with the answer, which it checks again. */
+  seen?: string;
+}
+export type Pending = AskPending | { kind: "confirm"; id: string; view: ConfirmView };
+/** An answer to a question as the server takes it (§3.4); the server checks each against the question. */
+export type AskAnswer =
+  | { choice: number }
+  | { text: string }
+  /** «Otra cosa…»: the question ends; they are the next turn. */
+  | { words: string }
+  /** A row made with «Nueva…». */
+  | { record: string }
+  /** One of the property's options by its name, or the one «Nueva…» just added. */
+  | { option: string }
+  | { choices: number[]; records?: string[]; options?: string[] }
+  | { number: number }
+  | { date: string }
+  | { yes: boolean }
+  /** A file of his (a row of his files), as a chip dropped on the conversation makes one. */
+  | { file: string }
+  /** A rehearsal: «Guardar» or «Ahora no». */
+  | { save: boolean };
 export interface Notice {
   code: string;
   rule?: string;
@@ -120,6 +169,8 @@ export interface TurnResult {
   error: string | null;
   /** Whether it changed something still not undone; absent from older servers (then «Deshacer» shows). */
   changed?: boolean;
+  /** The earlier turn's run it took back (C1, «antes te he dicho X, pero es Y»): that turn shows «Corregido». */
+  corrects?: string;
 }
 /** One of Juan's conversations with Boni, as the list shows it (docs/conversacion.md 3.1). */
 export interface ConversationSummary {
@@ -775,20 +826,47 @@ function runWhat(v: unknown): RunWhat | undefined {
   }
 }
 /** A question (the agent's `ask`): its prompt and options as painted values; null when it is not one. */
-export function parseAsk(p: unknown): Extract<Pending, { kind: "ask" }> | null {
+export function parseAsk(p: unknown): AskPending | null {
   if (!isObj(p) || typeof p.id !== "string" || p.kind !== "ask") return null;
-  if (p.control !== "choice" && p.control !== "text") return null;
+  const control = ASK_CONTROLS.find((c) => c === p.control);
+  if (!control) return null;
   const prompt = parsePainted(p.prompt);
   if (!prompt) return null;
+  const f = p.field;
+  const field =
+    isObj(f) && str(f.type, 80) && str(f.field, 80)
+      ? {
+          type: f.type as string,
+          field: f.field as string,
+          names: strs(f.names)
+            .slice(0, 500)
+            .map((n) => n.slice(0, 200)),
+        }
+      : null;
+  const would = Array.isArray(p.would)
+    ? p.would.slice(0, 200).flatMap((w): RehearsalItem[] => {
+        if (!isObj(w)) return [];
+        const view = parseConfirmView(w.view);
+        const decision =
+          w.decision === "allow" || w.decision === "propose" || w.decision === "confirm"
+            ? w.decision
+            : null;
+        return view && decision ? [{ decision, view }] : [];
+      })
+    : null;
+  const seen = str(p.seen, 80);
   return {
     kind: "ask",
     id: p.id.slice(0, 80),
-    control: p.control,
+    control,
     prompt,
     options: (Array.isArray(p.options) ? p.options : [])
       .slice(0, 20)
       .map((o) => parsePainted(o))
       .filter((x): x is Painted => x !== null),
+    ...(field ? { field } : {}),
+    ...(would ? { would } : {}),
+    ...(seen ? { seen } : {}),
   };
 }
 
@@ -799,7 +877,7 @@ export function parseAsk(p: unknown): Extract<Pending, { kind: "ask" }> | null {
 export interface InboxRequest {
   id: string;
   run: string;
-  ask: Extract<Pending, { kind: "ask" }>;
+  ask: AskPending;
   created: number;
   expires: number;
   about: RunWhat | null;
@@ -1860,6 +1938,7 @@ export function parseTurn(v: unknown): TurnResult {
     })),
     error: typeof v.error === "string" ? v.error.slice(0, 80) : null,
     ...(typeof v.changed === "boolean" ? { changed: v.changed } : {}),
+    ...(str(v.corrects, 80) ? { corrects: v.corrects as string } : {}),
   };
 }
 
@@ -2759,13 +2838,17 @@ export class AgentApi {
         ...(corrects ? { corrects } : {}),
       }),
     );
-  /** `words`: «Otra cosa…» (the question ends; they are the next turn); `record`: a row made with «Nueva…». */
-  answer = async (
-    run: string,
-    ask: string,
-    a: { choice: number } | { text: string } | { words: string } | { record: string },
-    live?: string,
-  ) => parseTurn(await this.call("POST", "answer", { run, ask, ...a, ...(live ? { live } : {}) }));
+  /** `seen`: what the card showed (rule 3a): the server checks the question again before it takes the answer. */
+  answer = async (run: string, ask: string, a: AskAnswer, live?: string, seen?: string) =>
+    parseTurn(
+      await this.call("POST", "answer", {
+        run,
+        ask,
+        ...a,
+        ...(live ? { live } : {}),
+        ...(seen ? { seen } : {}),
+      }),
+    );
   confirm = async (run: string, confirmation: string, live?: string) =>
     parseTurn(await this.call("POST", "confirm", { run, confirmation, ...(live ? { live } : {}) }));
   async conversations(): Promise<ConversationSummary[]> {

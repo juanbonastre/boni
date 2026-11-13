@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join, type Label, label, modelMaySee } from "@boni/entities";
+import { type FieldDef, join, type Label, label, modelMaySee, type TypeDef } from "@boni/entities";
 import type { FlowRow, ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
 import { type ChatScope, chatPlanErrors } from "./chat.ts";
 import {
@@ -32,12 +32,15 @@ import {
 } from "./filling.ts";
 import { callFn, FnError } from "./fns.ts";
 import {
+  type AskControl,
   type Expr,
+  FLOW_ASKS,
   MAX_EACH,
   type Plan,
   type PlanResult,
   planSchema,
   type Step,
+  UNDO_TURN,
   validatePlan,
 } from "./plan.ts";
 import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts";
@@ -60,6 +63,7 @@ import {
   entityVal,
   type FlowStarter,
   type FlowWriter,
+  fieldByName,
   type InboxDecider,
   makeCaps,
   type Net,
@@ -76,6 +80,7 @@ import {
 import { type RunDetail, smallJson, traceOf } from "./trace.ts";
 import { newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
 import {
+  asKey,
   at,
   atOrNull,
   codeLabel,
@@ -109,9 +114,13 @@ you have no tools: you answer with one plan in the plan language below, which Bo
 The code decides what is allowed; a step it refuses stops the plan, so plan only what the request asks.
 
 Input (JSON): "request" (the user's words), "today", "tools" (the only tools you may call, with their arguments),
-"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation: a reply "asked" is
-a question you asked with the user's answer, or with none when he answered in his own words in the next turn; a turn
-"corrected" the user edited, what it did was undone and the next turn redoes it with his new words), "memories", and
+"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation, oldest first: a reply
+"asked" is a question you asked with the user's answer, or with none when he answered in his own words in the next
+turn; a turn "corrected" was taken back, what it did was undone and the turn after it redoes it with the right
+words). When the user says an earlier turn was wrong («antes te he dicho X, pero es Y», «no era eso, era…»), the
+plan's first call is turns.undo with "turn": {"ref": "$history[i].turn"}, i that turn's place in "history", and then
+it does what that turn asked with the right words; never for a turn already "corrected", never to undo something
+else, and nothing written before it. "memories", and
 "flows" when there are some: the user's own flows, each with its id, name and the inputs its form asks for. When the
 user asks to run one of them, one call to flows.run with its id (and inputs as obj(name, value, ...)): its answers
 appear in this turn, after the user confirms it. When the user asks for something to happen on its own (every Monday,
@@ -153,9 +162,15 @@ one "op":
   first. A record that only mentions the words (a form's receipt, a newsletter that names them) is not about them:
   when the user asks for what is about something, read the found ones with label_each (options like "about it",
   "only mentions it") and show only those about it.
-- {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user, only when a
-  later step needs the answer (the plan waits for it; an offer at the end of an answer goes in the text, never here);
-  choice options must be a list. Never ask for passwords or codes.
+- {"id", "op": "ask", "control", "prompt": expr, "options": expr, "field": expr}: ask the user, only when a later
+  step needs the answer (the plan waits for it; an offer at the end of an answer goes in the text, never here). Never
+  ask for passwords or codes. control: "choice" (one of "options", a list of at most 20; among a property's options,
+  "field": {"lit": "<type key>.<field key>"} instead or as well, "options" then being the names it suggests: the user
+  may pick another or make a new one, the answer is its name), "several" (the same, any number: the answer is a list),
+  "text", "number", "date" (a day, "YYYY-MM-DD"), "file" (a file of his: give it to files.read), "yesno" (true or
+  false), "rehearsal" (once, after the reads and before the first write when the plan writes several things or
+  something the user should look at first: the user sees what the rest of the plan would do and saves it or not; the
+  answer is true).
 - {"id", "op": "reply", "component": "text" | "number" | "list" | "table" | "chart" | "run", "data": {...}}: what the
   user sees. text: template, a, b, c, d; number: value, unit, caption; list: items, fields, caption, group (a field of
   the items: one section per value, in the items' order; items with an id and a type open their record); table: rows,
@@ -300,9 +315,43 @@ export interface RowsOf {
   block: string;
   values: Record<string, string | number>;
 }
-export type Pending =
-  | { kind: "ask"; id: string; control: "choice" | "text"; prompt: Painted; options: Painted[] }
-  | { kind: "confirm"; id: string; view: ConfirmView };
+/** What a rehearsal would do, one call each (docs/conversacion.md §3.4): its decision and its card's rows. */
+export interface RehearsalItem {
+  decision: "allow" | "propose" | "confirm";
+  view: ConfirmView;
+}
+/** A question's card in the conversation (docs/conversacion.md §3.4), painted by code. */
+export interface AskView {
+  kind: "ask";
+  id: string;
+  control: AskControl;
+  prompt: Painted;
+  options: Painted[];
+  /** A choice among a property's options: which one (by ids, for «Nueva…») and all its names, for «Otra…». */
+  field?: { type: string; field: string; names: string[] };
+  /** A rehearsal: what the rest of the plan would do. */
+  would?: RehearsalItem[];
+  /** What the card shows, as a hash: an answer to an older card finds it changed (rule 3a). */
+  seen?: string;
+}
+export type Pending = AskView | { kind: "confirm"; id: string; view: ConfirmView };
+/**
+ * Juan's answer to a question (§3.4): its control's own (a choice, several, words, a number, a civil day, a file of his,
+ * yes or no, «Guardar» or «Ahora no»), or a free way out: `words` («Otra cosa…»), `record` and `option` (a row or a
+ * category he picked or made with «Nueva…»).
+ */
+export type AskAnswer =
+  | { choice: number }
+  | { text: string }
+  | { words: string }
+  | { record: string }
+  | { option: string }
+  | { choices: number[]; records?: string[]; options?: string[] }
+  | { number: number }
+  | { date: string }
+  | { yes: boolean }
+  | { file: string }
+  | { save: boolean };
 export interface Notice {
   code: "memory-unconfirmed" | "schema-changed" | "proposals" | "budget" | "denied" | "undone";
   rule?: string;
@@ -321,6 +370,8 @@ export interface TurnResult {
   changed?: boolean;
   /** A plan made by code only: the values of the steps it asked to keep (Agent.background). */
   kept?: Record<string, Json>;
+  /** The run of the earlier turn this one corrects (§3.1): the device marks that turn «Corregido». */
+  corrects?: string;
 }
 
 /**
@@ -379,13 +430,25 @@ export interface AgentOptions {
    */
   services?: (
     name: string,
-    run: { run: string; action?: number; device?: string; inFlow?: boolean },
+    run: {
+      run: string;
+      action?: number;
+      device?: string;
+      inFlow?: boolean;
+      /** The conversation the run is a turn of (`turns.undo` takes back a turn of that one only). */
+      conversation?: string;
+    },
   ) => unknown;
   /**
    * Whether a run changed something its Undo takes back outside the store's log (a service's own record): the turn
    * offers «Deshacer» then too.
    */
   undoable?: (run: string) => boolean;
+  /**
+   * A file of his as the answer to a question with a file (§3.4): the row of his files Juan uploaded or dropped, as the
+   * screen gives a file he points at (its `at` and its facts); null when it is not one. The server's (A-02).
+   */
+  fileOf?: (row: string) => Val | null;
   /** Where a record comes from, from the server's log and journal (`entities.origin`, docs/sistema.md §4.4). */
   origin?: OriginReader;
   /**
@@ -417,6 +480,13 @@ class Stop extends Error {
   }
 }
 const BLOCKED = Symbol("blocked");
+/** A civil day as YYYY-MM-DD that is a real day of the calendar (an answer to a question with a date). */
+const civilDay = (d: unknown): boolean => {
+  if (typeof d !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+  const [y, m, day] = d.split("-").map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, day));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === day;
+};
 
 interface PendingState {
   kind: "ask" | "confirm";
@@ -427,6 +497,10 @@ interface PendingState {
   view?: Pending;
   /** An ask's question as a value: kept as text in the turn once it is answered (§3.4, rule 3). */
   prompt?: Val;
+  /** Its options as values, as the card shows them: what a choice's index names (fresh after a recheck, rule 3a). */
+  items?: Val[];
+  /** Who decided the question is asked (its step's control): the card is painted with it. */
+  taint?: Label | null;
 }
 
 interface RunState {
@@ -493,6 +567,10 @@ interface RunState {
    */
   dry?: boolean;
   would?: Map<string, Would[]>;
+  /** A rehearsal's dry pass (§3.4): each call it would make also keeps its card's rows (`Would.view`). */
+  rehearsing?: boolean;
+  /** What the readers of a rehearsal's dry pass gave, by step: the run after «Guardar» does what it showed. */
+  reused?: Map<string, Val>;
   /** The run is a flow's (by hand, on its trigger, tried, or started by `flows.run`): it starts no flow. */
   flowRun?: boolean;
   /**
@@ -510,6 +588,8 @@ export interface Would {
   rule: string | null;
   tool: string | null;
   args: Record<string, Painted>;
+  /** In a rehearsal: the call as its confirmation card paints it (names and titles by code). */
+  view?: ConfirmView;
 }
 
 const neutral = label("user", "public", []);
@@ -1281,23 +1361,34 @@ export class Agent {
         ]),
       ),
     }));
-    const past = (st.conversation ? history(this.o.store, st.conversation, 11) : [])
+    const turns = (st.conversation ? history(this.o.store, st.conversation, 11) : [])
       // This turn is already kept (running): the history is the turns before it.
       .filter((_h, i, all) => !(st.turnRecord && i === all.length - 1))
-      .slice(-10)
-      .map((h, i) => ({
-        request: h.request,
-        ...(h.corrected ? { corrected: true } : {}),
-        replies: h.replies.map((r, j) => ({
-          component: r.component,
-          data: Object.fromEntries(
-            Object.entries(r.data).map(([k, v]) => [
-              k,
-              toPlannerView(v, `$history${i}.reply${j}.${k}`),
-            ]),
-          ),
-        })),
-      }));
+      .slice(-10);
+    // Each earlier turn's run, by code (C1): what `turns.undo` takes back is named as `$history[i].turn`.
+    if (st.origin.kind === "turn" && turns.some((h) => h.run)) {
+      const code = codeLabel("conversation");
+      st.env.set(
+        "history",
+        list(
+          turns.map((h) => rec({ turn: leaf(h.run ?? null, code) }, code)),
+          code,
+        ),
+      );
+    }
+    const past = turns.map((h, i) => ({
+      request: h.request,
+      ...(h.corrected ? { corrected: true } : {}),
+      replies: h.replies.map((r, j) => ({
+        component: r.component,
+        data: Object.fromEntries(
+          Object.entries(r.data).map(([k, v]) => [
+            k,
+            toPlannerView(v, `$history${i}.reply${j}.${k}`),
+          ]),
+        ),
+      })),
+    }));
     // The user's flows `flows.run` may start (docs/flujos.md F4): their ids, names and what their forms ask for.
     const flows = tools.some((t) => t.name === "flows.run")
       ? this.o.store.journal
@@ -1506,7 +1597,7 @@ export class Agent {
     // Deferred tools (7.11) wait until the catalogue is long enough to need them: today the planner
     // gets every tool it may use, with its arguments.
     // What the code bound for this turn (the screen, F9) the plan may name.
-    const bound = st.env.has("screen") ? ["screen"] : [];
+    const bound = ["screen", "history"].filter((k) => st.env.has(k));
     let out = await ask({});
     let v = this.checkPlanned(st, out, bound);
     if (!v.ok) {
@@ -1580,80 +1671,7 @@ export class Agent {
   private async advance(st: RunState): Promise<TurnResult> {
     if (st.origin.kind !== "background") this.active.set(st.id, st);
     try {
-      while (st.pc < st.plan.steps.length) {
-        if (st.stopRequested) throw new Stop("stopped-by-juan");
-        const step = st.plan.steps[st.pc] as Step;
-        if (!st.controlDone) {
-          st.control = null;
-          if (step.when) {
-            const w = this.evalExpr(st, step.when, true);
-            st.control = decidedBy(deepLabel(w));
-            if (!truthy(w)) {
-              st.env.set(step.id, leaf(null, st.control, true));
-              this.log(st, step, "skip", "skip", null);
-              st.pc++;
-              continue;
-            }
-          }
-          st.controlDone = true;
-        }
-        let result: Val | typeof BLOCKED;
-        const shown = step.op !== "reply" && st.iter === 0 && !st.partial.length;
-        if (shown)
-          this.emit(st, {
-            type: "step",
-            id: step.id,
-            op: step.op,
-            what: this.what(step),
-            state: "start",
-            ...this.wordsOf(st, step),
-          });
-        if (step.each) {
-          const items = this.evalAtom(st, step.each);
-          if (items.t !== "list") throw new Stop("each-not-a-list");
-          if (items.items.length > MAX_EACH) throw new Stop("too-many-items");
-          // A second list walked along (`zip`): the same length, or the step stops.
-          const zip = step.zip ? this.evalAtom(st, step.zip) : null;
-          if (zip && (zip.t !== "list" || zip.items.length !== items.items.length))
-            throw new Stop("zip-length");
-          // Which items there are decides that each iteration runs: that is control (P15).
-          const control = st.control
-            ? join(st.control, decidedBy(items.label))
-            : decidedBy(items.label);
-          result = BLOCKED;
-          for (; st.iter < items.items.length; st.iter++) {
-            st.env.set("item", items.items[st.iter] as Val);
-            if (zip?.t === "list") st.env.set("zip", zip.items[st.iter] as Val);
-            const r = await this.execStep(st, step, control);
-            if (r === BLOCKED) return this.waiting(st);
-            st.partial.push(r);
-          }
-          st.env.delete("item");
-          st.env.delete("zip");
-          result = list(st.partial, control, true);
-        } else {
-          result = await this.execStep(st, step, st.control);
-          if (result === BLOCKED) return this.waiting(st);
-        }
-        st.env.set(step.id, result);
-        if (step.op !== "reply")
-          this.emit(st, {
-            type: "step",
-            id: step.id,
-            op: step.op,
-            what: this.what(step),
-            state: "done",
-            ...(result.t === "list"
-              ? { n: result.items.length }
-              : result.t === "v" && typeof result.value === "number"
-                ? { value: result.value }
-                : {}),
-          });
-        st.pc++;
-        st.iter = 0;
-        st.partial = [];
-        st.controlDone = false;
-      }
+      if ((await this.runSteps(st)) === BLOCKED) return this.waiting(st);
       return this.finish(st, "done", null);
     } catch (e) {
       // A piece of Boni said there is nothing more to do (docs/sistema.md §4.2): the run is done here, and its log
@@ -1670,6 +1688,96 @@ export class Agent {
       if (step) this.log(st, step, "error", "stopped", null, { code });
       return this.finish(st, "stopped", code);
     }
+  }
+
+  /** The plan's steps from where it is, until it ends or a step waits for Juan (BLOCKED). */
+  private async runSteps(st: RunState): Promise<typeof BLOCKED | null> {
+    while (st.pc < st.plan.steps.length) {
+      if (st.stopRequested) throw new Stop("stopped-by-juan");
+      const step = st.plan.steps[st.pc] as Step;
+      if (!st.controlDone) {
+        st.control = null;
+        if (step.when) {
+          const w = this.evalExpr(st, step.when, true);
+          st.control = decidedBy(deepLabel(w));
+          if (!truthy(w)) {
+            st.env.set(step.id, leaf(null, st.control, true));
+            this.log(st, step, "skip", "skip", null);
+            st.pc++;
+            continue;
+          }
+        }
+        st.controlDone = true;
+      }
+      let result: Val | typeof BLOCKED;
+      // A reader the rehearsal's dry pass ran gives what it gave then (one model call, and what Juan saw is done).
+      const reused = step.op === "read" && !st.dry ? st.reused?.get(step.id) : undefined;
+      if (reused) {
+        st.reused?.delete(step.id);
+        st.env.set(step.id, reused);
+        st.pc++;
+        st.iter = 0;
+        st.partial = [];
+        st.controlDone = false;
+        continue;
+      }
+      const shown = step.op !== "reply" && st.iter === 0 && !st.partial.length;
+      if (shown)
+        this.emit(st, {
+          type: "step",
+          id: step.id,
+          op: step.op,
+          what: this.what(step),
+          state: "start",
+          ...this.wordsOf(st, step),
+        });
+      if (step.each) {
+        const items = this.evalAtom(st, step.each);
+        if (items.t !== "list") throw new Stop("each-not-a-list");
+        if (items.items.length > MAX_EACH) throw new Stop("too-many-items");
+        // A second list walked along (`zip`): the same length, or the step stops.
+        const zip = step.zip ? this.evalAtom(st, step.zip) : null;
+        if (zip && (zip.t !== "list" || zip.items.length !== items.items.length))
+          throw new Stop("zip-length");
+        // Which items there are decides that each iteration runs: that is control (P15).
+        const control = st.control
+          ? join(st.control, decidedBy(items.label))
+          : decidedBy(items.label);
+        result = BLOCKED;
+        for (; st.iter < items.items.length; st.iter++) {
+          st.env.set("item", items.items[st.iter] as Val);
+          if (zip?.t === "list") st.env.set("zip", zip.items[st.iter] as Val);
+          const r = await this.execStep(st, step, control);
+          if (r === BLOCKED) return BLOCKED;
+          st.partial.push(r);
+        }
+        st.env.delete("item");
+        st.env.delete("zip");
+        result = list(st.partial, control, true);
+      } else {
+        result = await this.execStep(st, step, st.control);
+        if (result === BLOCKED) return BLOCKED;
+      }
+      st.env.set(step.id, result);
+      if (step.op !== "reply")
+        this.emit(st, {
+          type: "step",
+          id: step.id,
+          op: step.op,
+          what: this.what(step),
+          state: "done",
+          ...(result.t === "list"
+            ? { n: result.items.length }
+            : result.t === "v" && typeof result.value === "number"
+              ? { value: result.value }
+              : {}),
+        });
+      st.pc++;
+      st.iter = 0;
+      st.partial = [];
+      st.controlDone = false;
+    }
+    return null;
   }
 
   private async execStep(
@@ -1751,6 +1859,9 @@ export class Agent {
     control: Label | null,
   ): Promise<Val | typeof BLOCKED> {
     const tool = this.o.registry.get(step.tool);
+    // A past turn is taken back before this run writes anything, and once (C1): all or nothing, said first.
+    if (tool?.name === UNDO_TURN && (st.counters.writes > 0 || st.corrects))
+      throw new Stop("undo-after-writes");
     const preset = st.preset.get(step.id);
     const raw: Record<string, Val> =
       preset ??
@@ -1808,6 +1919,9 @@ export class Agent {
         rule: d.rule,
         tool: tool.name,
         args: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, paint(v)])),
+        ...(st.rehearsing
+          ? { view: this.flowNamed(this.viewOf(tool, args, st.id, st), tool) }
+          : {}),
       });
       st.would?.set(step.id, list);
       this.log(st, step, "call", d.kind, d.rule, { ...info, dry: true });
@@ -1841,7 +1955,7 @@ export class Agent {
             // The step that made it: the map's run shows it in that step's panel.
             step: step.id,
           },
-          view: this.viewOf(tool, args, st.id),
+          view: this.viewOf(tool, args, st.id, st),
           sources: [
             ...new Set(
               Object.values(args).flatMap((v) =>
@@ -1876,7 +1990,7 @@ export class Agent {
         if (st.counters.confirmations > this.limits.maxConfirmations)
           throw new Stop("P5-too-many-confirmations");
         const id = randomUUID();
-        const view = this.flowNamed(this.viewOf(tool, args, st.id), tool);
+        const view = this.flowNamed(this.viewOf(tool, args, st.id, st), tool);
         this.o.store.journal.addConfirmation({
           id,
           run: st.id,
@@ -1967,6 +2081,9 @@ export class Agent {
                 ...(st.origin.device ? { device: st.origin.device } : {}),
                 // A flow's run or its «Probar» (trying a flow from inside one is refused: no loop).
                 ...(st.flowRun || st.dry ? { inFlow: true } : {}),
+                ...(st.conversation && st.origin.kind === "turn"
+                  ? { conversation: st.conversation }
+                  : {}),
               }) ?? null,
           }
         : {}),
@@ -1981,6 +2098,11 @@ export class Agent {
       // Only a piece of Boni may end its run (the guide's rule); anything else that tries is an error.
       if (e instanceof EndRun && tool.effect !== "piece") throw new ToolError("end-not-allowed");
       throw e;
+    }
+    // The turn it took back is the one this turn corrects, as when Juan edits its message (§3.1).
+    if (tool.name === UNDO_TURN) {
+      const back = plain(args.turn as Val);
+      if (typeof back === "string") st.corrects = back;
     }
     if (!writes)
       this.audit(st, {
@@ -2061,10 +2183,18 @@ export class Agent {
    * A card's rows (`confirmView`), with what the action's own code names (`ToolDef.names`: a calendar by its name)
    * read from the service it runs on.
    */
-  private viewOf(tool: ToolDef, args: Readonly<Record<string, Val>>, run: string): ConfirmView {
+  private viewOf(
+    tool: ToolDef,
+    args: Readonly<Record<string, Val>>,
+    run: string,
+    /** The run's own, when it has it: a turn is named by the conversation it is of (`turns.undo`). */
+    st?: RunState,
+  ): ConfirmView {
+    const conversation = st?.conversation && st.origin.kind === "turn" ? st.conversation : null;
     const service =
       tool.names && tool.service
-        ? (this.o.services?.(tool.service, { run }) ?? undefined)
+        ? (this.o.services?.(tool.service, { run, ...(conversation ? { conversation } : {}) }) ??
+          undefined)
         : undefined;
     return confirmView(tool, args, readStore(this.o.store), service);
   }
@@ -2458,6 +2588,7 @@ export class Agent {
           step: st.pc,
           iter: st.iter,
           prompt: control ? taint(askPrompt, control) : askPrompt,
+          items,
           view: {
             kind: "ask",
             id,
@@ -2682,21 +2813,38 @@ export class Agent {
     return r;
   }
 
-  private execAsk(
+  private async execAsk(
     st: RunState,
     step: Extract<Step, { op: "ask" }>,
     control: Label | null,
-  ): Val | typeof BLOCKED {
-    // Background work may ask too (asking has no effect, P7 holds): the run waits in the panel of requests.
+  ): Promise<Val | typeof BLOCKED> {
+    // Background work may ask too (asking has no effect, P7 holds): the run waits in the panel of requests, whose card
+    // chooses or takes words; the other questions are the conversation's (§3.4).
     const answered = st.answers.get(step.id);
     if (answered) return answered;
+    if (st.origin.kind === "background" && !FLOW_ASKS.includes(step.control))
+      throw new Stop("ask-only-in-a-turn");
+    if (step.control === "rehearsal") return this.rehearse(st, step, control);
     const prompt = this.evalExpr(st, step.prompt);
     const options = step.options ? this.evalExpr(st, step.options) : null;
-    if (
-      step.control === "choice" &&
-      (options?.t !== "list" || !options.items.length || options.items.length > 20)
-    )
+    if (step.options && options?.t !== "list") throw new Stop("ask-bad-options");
+    const field = step.field ? this.askField(st, step.field) : null;
+    let items = options?.t === "list" ? options.items : [];
+    if (field) {
+      // A choice among categories: what it suggests are options of that property, as their names; with none, all of
+      // a short list. The rest are found and made on the card («Otra…», «Nueva…»).
+      const all = field.f.options ?? [];
+      const named = items.map((i) => {
+        const v = plain(i);
+        return all.find((o) => typeof v === "string" && asKey(o.name) === asKey(v));
+      });
+      if (named.some((o) => !o)) throw new Stop("ask-bad-options");
+      items = (items.length ? (named as typeof all) : all.length <= 8 ? all : []).map((o) =>
+        leaf(o.name, o.label),
+      );
+    } else if ((step.control === "choice" || step.control === "several") && !items.length)
       throw new Stop("ask-bad-options");
+    if (items.length > 20) throw new Stop("ask-bad-options");
     if (st.dry) {
       st.would?.set(step.id, [
         {
@@ -2710,26 +2858,159 @@ export class Agent {
       throw new Stop("dry-ask");
     }
     const id = randomUUID();
-    const view: Pending = {
-      kind: "ask",
-      id,
-      control: step.control,
-      prompt: paint(control ? taint(prompt, control) : prompt),
-      options:
-        options && options.t === "list"
-          ? options.items.map((i) => paint(control ? taint(i, control) : i))
-          : [],
-    };
+    const shown = control ? taint(prompt, control) : prompt;
     st.pending = {
       kind: "ask",
       id,
       step: st.pc,
       iter: st.iter,
-      view,
-      prompt: control ? taint(prompt, control) : prompt,
+      view: this.askView(id, step.control, shown, items, control, field),
+      prompt: shown,
+      items,
+      taint: control,
     };
     this.log(st, step, "ask", "ask", null);
     return BLOCKED;
+  }
+
+  /** The card of a question, painted by code from its values, with what it shows as a hash (rule 3a). */
+  private askView(
+    id: string,
+    control: AskControl,
+    prompt: Val,
+    items: readonly Val[],
+    taintWith: Label | null,
+    field: { def: TypeDef; f: FieldDef } | null,
+    would?: RehearsalItem[],
+  ): AskView {
+    const shown = {
+      control,
+      prompt: paint(prompt),
+      options: items.map((i) => paint(taintWith ? taint(i, taintWith) : i)),
+      ...(field
+        ? {
+            field: {
+              type: field.def.id,
+              field: field.f.id,
+              names: (field.f.options ?? []).map((o) => o.name),
+            },
+          }
+        : {}),
+      ...(would ? { would } : {}),
+    };
+    // What it shows, not every name of the property: one added since («Nueva…», his) changes nothing he saw.
+    const { field: f, ...rest } = shown;
+    const what = { ...rest, ...(f ? { field: [f.type, f.field] } : {}) };
+    const seen = createHash("sha256").update(JSON.stringify(what)).digest("hex").slice(0, 32);
+    return { kind: "ask", id, ...shown, seen };
+  }
+
+  /** The property a choice among categories names ("collection.field"): a select of a collection the planner sees. */
+  private askField(st: RunState, e: Expr): { def: TypeDef; f: FieldDef } {
+    const v = plain(this.evalExpr(st, e));
+    const [type, name] = typeof v === "string" ? v.split(".", 2) : [];
+    if (!type || !name) throw new Stop("ask-bad-field");
+    let def: TypeDef;
+    try {
+      def = typeByKey(readStore(this.o.store), type);
+    } catch {
+      throw new Stop("ask-bad-field");
+    }
+    const f = fieldByName(def, name);
+    if (!f || (f.type !== "select" && f.type !== "multiselect")) throw new Stop("ask-bad-field");
+    return { def, f };
+  }
+
+  /**
+   * A rehearsal (§3.4): the rest of the plan runs dry, as «Probar» does (readers and tools that only read run; what
+   * would be written is kept with its card's rows, a later question ends the pass), and the card shows it with
+   * «Guardar», «Revisar» and «Ahora no». With nothing to write it does not ask. A step the policy refuses stops the
+   * run now, as it would after «Guardar».
+   */
+  private async rehearse(
+    st: RunState,
+    step: Extract<Step, { op: "ask" }>,
+    control: Label | null,
+  ): Promise<Val | typeof BLOCKED> {
+    if (st.dry) return leaf(true, codeLabel("dry"));
+    const would = await this.dryRest(st, step.id);
+    if (!would.length) return leaf(true, codeLabel("rehearsal"));
+    const prompt = this.evalExpr(st, step.prompt);
+    const shown = control ? taint(prompt, control) : prompt;
+    const id = randomUUID();
+    st.pending = {
+      kind: "ask",
+      id,
+      step: st.pc,
+      iter: st.iter,
+      view: this.askView(id, "rehearsal", shown, [], control, null, would),
+      prompt: shown,
+      items: [],
+      taint: control,
+    };
+    this.log(st, step, "ask", "ask", null);
+    return BLOCKED;
+  }
+
+  /**
+   * The steps after a rehearsal, dry, from where the run is; then the run is put back as it was (nothing it wrote,
+   * no reply, no step shown live), keeping what its readers gave for the run after «Guardar» (`reused`).
+   */
+  private async dryRest(st: RunState, rehearsal: string): Promise<RehearsalItem[]> {
+    const was = {
+      pc: st.pc,
+      iter: st.iter,
+      partial: st.partial,
+      control: st.control,
+      controlDone: st.controlDone,
+      env: new Map(st.env),
+      answers: new Map(st.answers),
+      replies: st.replies.length,
+      replyVals: st.replyVals.length,
+      notices: st.notices.length,
+      stepRuns: st.counters.stepRuns,
+      live: st.live,
+      pending: st.pending,
+    };
+    st.dry = true;
+    st.rehearsing = true;
+    st.would = new Map();
+    st.live = undefined;
+    st.answers.set(rehearsal, leaf(true, codeLabel("dry")));
+    let failed: unknown = null;
+    try {
+      await this.runSteps(st);
+    } catch (e) {
+      // A later question ends the pass there; a piece that ends the run ends it. Anything else stops the run.
+      if (!(e instanceof EndRun) && !(e instanceof Stop && e.code === "dry-ask")) failed = e;
+    }
+    const reused = new Map<string, Val>();
+    for (const s of st.plan.steps.slice(was.pc + 1))
+      if (s.op === "read" && st.env.has(s.id)) reused.set(s.id, st.env.get(s.id) as Val);
+    const would = [...(st.would?.values() ?? [])]
+      .flat()
+      .flatMap((w) =>
+        w.view && w.decision !== "ask" ? [{ decision: w.decision, view: w.view }] : [],
+      );
+    st.dry = false;
+    st.rehearsing = false;
+    st.would = undefined;
+    st.pc = was.pc;
+    st.iter = was.iter;
+    st.partial = was.partial;
+    st.control = was.control;
+    st.controlDone = was.controlDone;
+    st.env = was.env;
+    st.answers = was.answers;
+    st.replies.length = was.replies;
+    st.replyVals.length = was.replyVals;
+    st.notices.length = was.notices;
+    st.counters.stepRuns = was.stepRuns;
+    st.live = was.live;
+    st.pending = was.pending;
+    st.reused = reused;
+    if (failed) throw failed;
+    return would.slice(0, 200);
   }
 
   private waiting(st: RunState): TurnResult {
@@ -2770,6 +3051,7 @@ export class Agent {
         : st.notices,
       error,
       changed: this.o.store.runUndoable(st.id) || !!this.o.undoable?.(st.id),
+      ...(st.corrects ? { corrects: st.corrects } : {}),
     };
   }
 
@@ -2889,19 +3171,24 @@ export class Agent {
   }
 
   /**
-   * Juan's answer to an `ask`: what he types is his; an option he picks keeps the option's label (A2). In a turn of
-   * the conversation a choice also has its free ways out (docs/conversacion.md §3.4, rule 2): `record`, a row he just
-   * made with «Nueva…» in the collection the options are rows of (his own write, through the store's log); `words`,
-   * «Otra cosa…»: the question ends there and what he wrote is his next turn, where the planner reads it. Answered,
-   * the question stays in the turn as text, with its answer (rule 3).
+   * Juan's answer to an `ask`: what he types, picks, counts or dates is his; an option he picks keeps the option's
+   * label (A2). In a turn of the conversation each kind has its free way out (docs/conversacion.md §3.4, rule 2): `words`,
+   * «Otra cosa…» (the question ends there and what he wrote is his next turn, where the planner reads it), on all but
+   * yes or no and the rehearsal; `record` and `option`, a row or a category he picked or made with «Nueva…» (his own
+   * write, through the store's log), on a choice among rows or a property's options. Answered, the question stays in
+   * the turn as text, with its answer (rule 3). An old card is checked first (rule 3a): when what it read changed
+   * since (`seen`, the card the answer was given on, or the one the run keeps), nothing is answered: the run keeps
+   * waiting with the card made again, "changed".
    */
   async answer(
     run: string,
     ask: string,
-    a: { choice: number } | { text: string } | { words: string } | { record: string },
+    a: AskAnswer,
     /** The device that answers a question of background work: what is typed there is Juan's only if personal. */
     by?: { trust: Origin["trust"] },
     live?: (e: LiveEvent) => void,
+    /** The card's `seen` on the device that answers. */
+    seen?: string,
   ): Promise<TurnResult> {
     let st: RunState;
     try {
@@ -2924,44 +3211,206 @@ export class Agent {
         ? { id: at.id, control: "choice" as const, options: at.params?.options }
         : (at as Extract<Step, { op: "ask" }>);
     const background = st.origin.kind === "background";
-    const opts = step.options ? this.evalExpr(st, step.options) : null;
-    const items = opts && opts.t === "list" ? opts.items : [];
-    // The free ways out are the conversation's: a question of background work keeps its options (its Bandeja card).
-    if (("words" in a || "record" in a) && (background || step.control !== "choice"))
-      return this.result(st, "waiting", "wrong-answer");
+    const control = step.control;
+    if (!background && st.pending?.view?.kind === "ask" && st.pending.view.seen) {
+      const was = st.pending.view.seen;
+      await this.recheck(st);
+      const now = (st.pending?.view as AskView | undefined)?.seen;
+      if (now !== was) this.record(st, "waiting", null);
+      if (now !== was || (seen !== undefined && seen !== now))
+        return this.result(st, "waiting", "changed");
+    }
+    const items =
+      st.pending?.items ??
+      (() => {
+        const opts = step.options ? this.evalExpr(st, step.options) : null;
+        return opts && opts.t === "list" ? opts.items : [];
+      })();
     const prompt = st.pending?.prompt;
+    const view = st.pending?.view?.kind === "ask" ? st.pending.view : null;
+    const wrong = () => this.result(st, "waiting", "wrong-answer");
+    // The free ways out are the conversation's: a question of background work keeps its options (its Bandeja card).
+    const free = "words" in a || "record" in a || "option" in a;
+    if (free && background) return wrong();
     if ("words" in a) {
+      if (control === "yesno" || control === "rehearsal") return wrong();
       // «Otra cosa…»: the question as text with its options, for the planner of the next turn to read his words by.
-      if (prompt) this.reply(st, "asked", { prompt, ...(opts ? { options: opts } : {}) });
+      if (prompt)
+        this.reply(st, "asked", {
+          prompt,
+          control: leaf(control, codeLabel("ask")),
+          ...(items.length ? { options: list(items, codeLabel("ask")) } : {}),
+        });
       st.pending = null;
       return this.finish(st, "stopped", "answered-in-words");
     }
-    let v: Val;
+    const his = this.quoteLabel(st);
+    let v: Val | null = null;
     if ("text" in a) {
-      if (step.control !== "text") return this.result(st, "waiting", "wrong-answer");
+      if (control !== "text") return wrong();
       v = leaf(
         a.text.slice(0, 500),
         background
           ? label(by?.trust === "personal" ? "user" : "ambient", "public", [
               { kind: "turn", id: ask },
             ])
-          : this.quoteLabel(st),
+          : his,
       );
     } else if ("record" in a) {
-      const made = this.rowOfOptions(items, a.record);
-      if (!made) return this.result(st, "waiting", "wrong-answer");
-      v = made;
-    } else {
-      const chosen = items[a.choice];
-      if (step.control !== "choice" || !chosen) return this.result(st, "waiting", "wrong-answer");
-      v = chosen;
+      if (control !== "choice") return wrong();
+      v = this.rowOfOptions(items, a.record);
+    } else if ("option" in a) {
+      if (control !== "choice") return wrong();
+      v = this.optionOf(view, a.option);
+    } else if ("choice" in a) {
+      if (control !== "choice") return wrong();
+      v = items[a.choice] ?? null;
+    } else if ("choices" in a) {
+      if (control !== "several") return wrong();
+      const picked = [...new Set(a.choices)].map((i) => items[i] ?? null);
+      const more = [
+        ...(a.records ?? []).map((r) => this.rowOfOptions(items, r)),
+        ...(a.options ?? []).map((o) => this.optionOf(view, o)),
+      ];
+      const all = [...picked, ...more];
+      if (all.some((x) => !x) || all.length > 50) return wrong();
+      v = list(all as Val[], his);
+    } else if ("number" in a) {
+      if (control !== "number" || !Number.isFinite(a.number) || Math.abs(a.number) > 1e15)
+        return wrong();
+      v = leaf(a.number, his);
+    } else if ("date" in a) {
+      if (control !== "date" || !civilDay(a.date)) return wrong();
+      v = leaf(a.date, his);
+    } else if ("yes" in a) {
+      if (control !== "yesno" || typeof a.yes !== "boolean") return wrong();
+      v = leaf(a.yes, his);
+    } else if ("file" in a) {
+      if (control !== "file") return wrong();
+      v = this.o.fileOf?.(a.file) ?? null;
+    } else if ("save" in a) {
+      if (control !== "rehearsal" || typeof a.save !== "boolean") return wrong();
+      v = leaf(a.save, his);
+    }
+    if (!v) return wrong();
+    if (prompt && !background)
+      this.reply(st, "asked", { prompt, answer: v, control: leaf(control, codeLabel("ask")) });
+    st.pending = null;
+    if ("save" in a && !a.save) {
+      // «Ahora no»: nothing of it is done.
+      st.reused = undefined;
+      return this.finish(st, "stopped", "not-saved");
     }
     st.answers.set(step.id, v);
-    if (prompt && !background) this.reply(st, "asked", { prompt, answer: v });
-    st.pending = null;
     if (background) this.o.store.journal.setRequest(ask, "answered", this.now(), a);
     if (live) st.live = live;
     return this.advance(st);
+  }
+
+  /**
+   * A category Juan picked or made with «Nueva…» as the answer to a choice among a property's options (§3.4): one of
+   * its options now, read from the schema (the option's own label).
+   */
+  private optionOf(view: AskView | null, name: string): Val | null {
+    if (!view?.field || typeof name !== "string") return null;
+    const def = readStore(this.o.store).schema().types[view.field.type];
+    const f = def?.fields.find((x) => x.id === view.field?.field && !x.archived);
+    const o = f?.options?.find((x) => x.name === name);
+    return o ? leaf(o.name, o.label) : null;
+  }
+
+  /**
+   * Rule 3a: what a question of the conversation showed, read again from the store (its records at their versions
+   * now, a deleted one gone; a property's options; a rehearsal's dry pass run again). Whether it could be read again;
+   * the pending card is then the fresh one.
+   */
+  private async recheck(st: RunState): Promise<void> {
+    const p = st.pending;
+    const view = p?.view;
+    if (!p || view?.kind !== "ask") return;
+    const step = st.plan.steps[p.step] as Step;
+    let field: { def: TypeDef; f: FieldDef } | null = null;
+    if (view.field) {
+      const def = readStore(this.o.store).schema().types[view.field.type];
+      const f = def?.fields.find((x) => x.id === view.field?.field && !x.archived);
+      field = def && f ? { def, f } : null;
+      if (!field) {
+        // The property is gone: a card with nothing to choose and nowhere to make one.
+        p.view = { ...view, options: [], field: { ...view.field, names: [] }, seen: "gone" };
+        p.items = [];
+        return;
+      }
+    }
+    // What was read again carries who decided the question, as the card it was.
+    const again = (v: Val) => {
+      const r = this.refreshed(v);
+      return r === v || !r || !p.taint ? r : taint(r, p.taint);
+    };
+    const prompt = p.prompt ? (again(p.prompt) ?? p.prompt) : leaf(null, codeLabel("ask"));
+    let items = (p.items ?? []).map((i) => this.refreshed(i)).filter((i): i is Val => !!i);
+    if (field) {
+      const names = new Set((field.f.options ?? []).map((o) => o.name));
+      items = items.filter((i) => names.has(String(plain(i))));
+    }
+    let would: RehearsalItem[] | undefined;
+    if (view.control === "rehearsal" && step.op === "ask") {
+      would = await this.dryRest(st, step.id);
+      st.pending = p;
+    }
+    p.prompt = prompt;
+    p.items = items;
+    p.view = this.askView(view.id, view.control, prompt, items, p.taint ?? null, field, would);
+  }
+
+  /**
+   * A value as the store has it now (rule 3a): a record read at a newer version is read again, keeping the fields it
+   * had (one emptied since is gone); a record deleted since is null; a field's value is its value now.
+   */
+  private refreshed(v: Val): Val | null {
+    const types = readStore(this.o.store).schema().types;
+    const now = (e: string) => {
+      const s = this.o.store.get(e);
+      return s && s.entity.deleted === undefined ? s : null;
+    };
+    if (v.t === "rec") {
+      const id = v.fields.id;
+      const from = id?.t === "v" ? id.from : undefined;
+      if (from && id?.t === "v" && id.value === from.e) {
+        const s = now(from.e);
+        if (!s) return null;
+        if (s.entity.version === from.v) return v;
+        const fresh = entityVal(s, types[s.entity.type]);
+        if (fresh.t !== "rec") return v;
+        const fields: Record<string, Val> = {};
+        for (const [k, x] of Object.entries(v.fields)) {
+          const f = fresh.fields[k];
+          if (f) fields[k] = f;
+          else if (!(x.t === "v" && x.from)) fields[k] = x;
+        }
+        return rec(fields, v.label, v.derived);
+      }
+      const fields = Object.entries(v.fields).map(([k, x]) => [k, this.refreshed(x) ?? x] as const);
+      return fields.every(([k, x]) => x === v.fields[k])
+        ? v
+        : rec(Object.fromEntries(fields), v.label, v.derived);
+    }
+    if (v.t === "list") {
+      const items = v.items.map((x) => this.refreshed(x));
+      return items.every((x, i) => x === v.items[i])
+        ? v
+        : list(
+            items.filter((x): x is Val => !!x),
+            v.label,
+            v.derived,
+          );
+    }
+    const from = v.from;
+    if (!from?.f) return v;
+    const s = now(from.e);
+    if (!s || s.entity.version === from.v) return v;
+    const fresh = entityVal(s, types[s.entity.type]);
+    if (fresh.t !== "rec") return v;
+    return Object.values(fresh.fields).find((x) => x.t === "v" && x.from?.f === from.f) ?? v;
   }
 
   /**

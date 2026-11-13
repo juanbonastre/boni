@@ -764,6 +764,174 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     expect(words).toMatchObject({ status: "stopped", error: "answered-in-words" });
     expect(words.replies.at(-1)?.component).toBe("asked");
   });
+
+  it("«antes te he dicho X, pero es Y»: the planner asks to take back that turn, Juan says yes on a card, and it is corrected as editing it would (C1)", async () => {
+    const token = await login(base, "juan");
+    const id = (
+      (await (await post(base, token, "/api/agent/conversations")).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation.id;
+    const create = (titulo: string) => ({
+      id: `c${titulo.length}`,
+      op: "call",
+      tool: "entities.create",
+      args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), lit(titulo)] } },
+    });
+    const undo = {
+      id: "u",
+      op: "call",
+      tool: "turns.undo",
+      args: { turn: { ref: "$history[0].turn" } },
+    };
+    const titles = () =>
+      host
+        .store(1)
+        .list("t_tarea")
+        .map((x) => x.entity.values.f_titulo);
+    plans.push({ version: 1, steps: [create("Cita con la dentista")] });
+    const first = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "apunta la cita con la dentista",
+        conversation: id,
+      })
+    ).json()) as { run: string };
+    expect(titles()).toContain("Cita con la dentista");
+
+    plans.push({ version: 1, steps: [undo, create("Cita con el dentista")] });
+    const asks = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "antes te he dicho la dentista, pero es el dentista",
+        conversation: id,
+      })
+    ).json()) as {
+      run: string;
+      status: string;
+      pending: { kind: string; id: string; view: unknown };
+    };
+    // Juan's touch (P21): a card first, saying which turn; nothing is taken back before his yes.
+    expect(asks).toMatchObject({ status: "waiting", pending: { kind: "confirm" } });
+    expect(JSON.stringify(asks.pending.view)).toContain("apunta la cita con la dentista");
+    expect(titles()).toContain("Cita con la dentista");
+    const done = (await (
+      await post(base, token, "/api/agent/confirm", {
+        run: asks.run,
+        confirmation: asks.pending.id,
+      })
+    ).json()) as { status: string; corrects?: string };
+    expect(done).toMatchObject({ status: "done", corrects: first.run });
+    expect(titles()).not.toContain("Cita con la dentista");
+    expect(titles()).toContain("Cita con el dentista");
+    const shown = (await (
+      await fetch(`${base}/api/agent/conversations/${id}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    ).json()) as { turns: { request: string; corrected: boolean; corrects: string | null }[] };
+    expect(shown.turns.map((t) => [t.corrected, t.corrects])).toEqual([
+      [true, null],
+      [false, first.run],
+    ]);
+
+    // The same turn again: already corrected, nothing is done and it says so.
+    plans.push({ version: 1, steps: [undo] });
+    const again = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "y deshaz lo primero otra vez",
+        conversation: id,
+      })
+    ).json()) as { run: string; pending: { id: string } };
+    const twice = (await (
+      await post(base, token, "/api/agent/confirm", {
+        run: again.run,
+        confirmation: again.pending.id,
+      })
+    ).json()) as { status: string; error: string };
+    expect(twice).toMatchObject({ status: "stopped", error: "tool-corrected" });
+    expect(titles()).toContain("Cita con el dentista");
+
+    // Another conversation has none of this one's turns: there is nothing there to take back.
+    const other = (
+      (await (await post(base, token, "/api/agent/conversations")).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation.id;
+    plans.push({ version: 1, steps: [undo] });
+    const elsewhere = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "deshaz lo de antes",
+        conversation: other,
+      })
+    ).json()) as { status: string; pending: unknown };
+    expect(elsewhere).toMatchObject({ status: "stopped", pending: null });
+    expect(titles()).toContain("Cita con el dentista");
+
+    // Background work has no turn of Juan's to take back, nor his card to ask on.
+    const background = await host.agent(1).background({ version: 1, steps: [undo] });
+    expect(background).toMatchObject({ status: "stopped", pending: null });
+    expect(titles()).toContain("Cita con el dentista");
+  });
+
+  it("every kind of answer is checked by the server: its shape here, its kind and its card in the agent (C3)", async () => {
+    const token = await login(base, "juan");
+    const id = (
+      (await (await post(base, token, "/api/agent/conversations")).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation.id;
+    const ask = (control: string) => ({
+      version: 1,
+      steps: [
+        { id: "q", op: "ask", control, prompt: lit("¿Y bien?") },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: { template: lit("{a}"), a: { ref: "$q" } },
+        },
+      ],
+    });
+    const turn = async (control: string) => {
+      plans.push(ask(control));
+      return (await (
+        await post(base, token, "/api/agent/turn", { text: "pregúntame", conversation: id })
+      ).json()) as { run: string; pending: { id: string; control: string; seen: string } };
+    };
+    const answer = (t: { run: string; pending: { id: string } }, a: Record<string, unknown>) =>
+      post(base, token, "/api/agent/answer", { run: t.run, ask: t.pending.id, ...a });
+
+    const n = await turn("number");
+    expect(n.pending).toMatchObject({ control: "number" });
+    expect(n.pending.seen).toMatch(/^[0-9a-f]{32}$/);
+    expect((await answer(n, { number: "12" })).status).toBe(400);
+    expect((await answer(n, { choices: [1.5] })).status).toBe(400);
+    expect(((await (await answer(n, { yes: true })).json()) as { error: string }).error).toBe(
+      "wrong-answer",
+    );
+    const stale = (await (await answer(n, { number: 12, seen: "x".repeat(32) })).json()) as {
+      status: string;
+      error: string;
+    };
+    expect(stale).toMatchObject({ status: "waiting", error: "changed" });
+    const twelve = (await (await answer(n, { number: 12, seen: n.pending.seen })).json()) as {
+      status: string;
+    };
+    expect(twelve.status).toBe("done");
+
+    const d = await turn("date");
+    expect((await answer(d, { date: 20261120 })).status).toBe(400);
+    expect(
+      ((await (await answer(d, { date: "2026-11-31" })).json()) as { error: string }).error,
+    ).toBe("wrong-answer");
+    expect(
+      ((await (await answer(d, { date: "2026-11-30" })).json()) as { status: string }).status,
+    ).toBe("done");
+
+    const y = await turn("yesno");
+    expect((await answer(y, { yes: "sí" })).status).toBe(400);
+    expect(((await (await answer(y, { yes: true })).json()) as { status: string }).status).toBe(
+      "done",
+    );
+  });
 });
 
 describe("flows over the API (docs/flujos.md, F2)", () => {

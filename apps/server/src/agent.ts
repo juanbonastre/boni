@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import {
   Agent,
+  type AskAnswer,
   codeLabel,
   conversation,
   conversationByKey,
@@ -79,6 +80,7 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 import { keep as keepForRun, keptInTheWay, undoable, undoKept } from "./runUndo.ts";
 import {
   blockFigures,
+  fileOnScreen,
   MAX_POINTED,
   type PointedRef,
   pageScreen,
@@ -87,6 +89,7 @@ import {
   screenOf,
   screenRefs,
 } from "./screen.ts";
+import type { TurnsService } from "./turnActions.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -327,6 +330,8 @@ export class AgentHost {
         undoable: (run) => this.keptUndoable(account, run),
         // A file's images for a model that sees them, by the references `files.read` gave (A-24, P23).
         image: (ref) => imageOf(this.store(account), ref),
+        // A file of his as the answer to a question with a file (§3.4): as the screen gives one he points at.
+        fileOf: (row) => fileOnScreen(this.store(account), row),
       });
       this.agents.set(account, a);
       this.used.set(account, p);
@@ -345,7 +350,13 @@ export class AgentHost {
   private service(
     account: number,
     name: string,
-    run: { run: string; action?: number; device?: string; inFlow?: boolean },
+    run: {
+      run: string;
+      action?: number;
+      device?: string;
+      inFlow?: boolean;
+      conversation?: string;
+    },
   ): unknown {
     const store = this.store(account);
     if (name === "pages" || name === "data")
@@ -381,6 +392,18 @@ export class AgentHost {
         : null;
     }
     if (name === "files") return filesService(store);
+    if (name === "turns") {
+      // A turn of this run's own conversation only, in Juan's own turn (the policy asked him on a card, P21).
+      const conversation = run.conversation;
+      if (!conversation || run.inFlow) return null;
+      return {
+        said: (r) => {
+          const t = turnOfRun(store, conversation, r);
+          return t ? t.request : null;
+        },
+        undo: (r) => this.correctTurn(account, conversation, r, run.device),
+      } satisfies TurnsService;
+    }
     if (name !== "flows") return null;
     // What this run switched or deleted, so that its Undo takes it back (`undoKept`).
     const keep = (flow: string, was: { enabled?: boolean; deleted?: boolean }) =>
@@ -446,6 +469,31 @@ export class AgentHost {
       store.journal.setFlowEnabled(c.flow, false);
       return true;
     });
+  }
+
+  /**
+   * A turn of a conversation taken back (§3.1, C1), whether Juan edited its message or the planner asked for it
+   * (`turns.undo`, on his card): what it changed beside the log is asked first, as nothing of the log is undone
+   * after; then its run is undone through the store's log, all or nothing, its question ends, its proposals leave the
+   * Bandeja, and the turn is marked corrected. How many things, or why nothing was done.
+   */
+  correctTurn(
+    account: number,
+    conversation: string,
+    run: string,
+    device?: string,
+  ): number | "not-found" | "corrected" | "busy" | "cannot-undo" {
+    const store = this.store(account);
+    const old = run ? turnOfRun(store, conversation, run) : null;
+    if (!old) return "not-found";
+    // Corrected already (on another device): its words ran once; a second correction would run them again.
+    if (old.corrected) return "corrected";
+    if (this.keptInTheWay(account, run)) return "cannot-undo";
+    const back = this.agent(account).correct(run);
+    if (typeof back === "string") return back;
+    const kept = this.undoKept(account, run);
+    markCorrected(store, old.id, device);
+    return back + kept;
   }
 
   /**
@@ -541,6 +589,43 @@ export class AgentHost {
     this.flowsKept.clear();
     this.agents.clear();
   }
+}
+
+const ids = (v: unknown, max: number, len: number): string[] | null =>
+  Array.isArray(v) &&
+  v.length <= max &&
+  v.every((x) => typeof x === "string" && x.length > 0 && x.length <= len)
+    ? (v as string[])
+    : null;
+
+/**
+ * An answer to a question as a device sends it (docs/conversacion.md §3.4): its shape only; what it may be is the
+ * agent's to check against the question (the option, the number, the day, the file).
+ */
+function askAnswer(b: Record<string, unknown>): AskAnswer | null {
+  if (typeof b.choice === "number" && Number.isInteger(b.choice)) return { choice: b.choice };
+  if (str(b.text, 500)) return { text: b.text as string };
+  if (str(b.words, 500)) return { words: b.words as string };
+  if (str(b.record, 80)) return { record: b.record as string };
+  if (str(b.option, 200)) return { option: b.option as string };
+  if (Array.isArray(b.choices)) {
+    const choices =
+      b.choices.every((x) => Number.isInteger(x)) && b.choices.length <= 50 ? b.choices : null;
+    const records = b.records === undefined ? [] : ids(b.records, 50, 80);
+    const options = b.options === undefined ? [] : ids(b.options, 50, 200);
+    if (!choices || !records || !options) return null;
+    return {
+      choices: choices as number[],
+      ...(records.length ? { records } : {}),
+      ...(options.length ? { options } : {}),
+    };
+  }
+  if (typeof b.number === "number") return { number: b.number };
+  if (str(b.date, 10)) return { date: b.date as string };
+  if (typeof b.yes === "boolean") return { yes: b.yes };
+  if (str(b.file, 80)) return { file: b.file as string };
+  if (typeof b.save === "boolean") return { save: b.save };
+  return null;
 }
 
 const str = (v: unknown, max: number) =>
@@ -1005,18 +1090,10 @@ async function answerAgent(
       let corrects: string | undefined;
       if (b.corrects !== undefined) {
         const run = str(b.corrects, 80);
-        const old = run ? turnOfRun(store, c.id, run) : null;
-        if (!run || !old) return send(res, 404, { error: "not-found" });
-        // Corrected already (on another device): its words ran once; a second correction would run them again.
-        if (old.corrected) return send(res, 409, { error: "corrected" });
-        // All or nothing: what it changed beside the log is asked first, as nothing of the log is undone after.
-        if (host.keptInTheWay(who.account, run)) return send(res, 409, { error: "cannot-undo" });
-        const back = agent.correct(run);
-        if (back === "busy") return send(res, 409, { error: "busy" });
-        if (back === "cannot-undo") return send(res, 409, { error: "cannot-undo" });
-        host.undoKept(who.account, run);
-        markCorrected(store, old.id, who.device);
-        corrects = run;
+        const back = run ? host.correctTurn(who.account, c.id, run, who.device) : "not-found";
+        if (back === "not-found") return send(res, 404, { error: "not-found" });
+        if (typeof back === "string") return send(res, 409, { error: back });
+        corrects = run as string;
       }
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
@@ -1038,18 +1115,10 @@ async function answerAgent(
       const run = str(b.run, 80);
       const ask = str(b.ask, 80);
       if (!run || !ask) return bad();
-      const answer =
-        typeof b.choice === "number" && Number.isInteger(b.choice)
-          ? { choice: b.choice }
-          : str(b.text, 500)
-            ? { text: b.text as string }
-            : str(b.words, 500)
-              ? { words: b.words as string }
-              : str(b.record, 80)
-                ? { record: b.record as string }
-                : null;
+      const answer = askAnswer(b);
       if (!answer) return bad();
       const live = liveId(b.live);
+      const seen = str(b.seen, 80) ?? undefined;
       return send(
         res,
         200,
@@ -1060,6 +1129,7 @@ async function answerAgent(
             answer,
             undefined,
             live ? host.liveStart(who.account, live) : undefined,
+            seen,
           ),
         ),
       );

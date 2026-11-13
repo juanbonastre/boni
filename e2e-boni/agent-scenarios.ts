@@ -3556,3 +3556,155 @@ export const WROTE = {
   error: null,
 };
 export const REWROTE = { ...WROTE, run: "run-e2" };
+
+/** A question of another kind (task 27, §3.4), waiting in the conversation. */
+const asking = (
+  run: string,
+  id: string,
+  control: string,
+  prompt: string,
+  extra: Record<string, unknown> = {},
+) => ({
+  run,
+  status: "waiting",
+  replies: [],
+  pending: { kind: "ask", id, control, prompt: v(prompt, "model"), options: [], ...extra },
+  proposals: [],
+  notices: [],
+  error: null,
+});
+/** What a run did after the answer: the question as text with it, then a word. */
+export const answered = (run: string, prompt: string, answer: unknown, control: string) => ({
+  run,
+  status: "done",
+  replies: [
+    {
+      component: "asked",
+      data: { prompt: v(prompt, "model"), answer, control: v(control, "own") },
+    },
+    { component: "text", data: { template: v("Hecho.", "model") } },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+});
+export const SEVERAL_ASK = asking("r-varios", "a-varios", "several", "¿Cuáles has leído?", {
+  options: [book("r1", "Rayuela"), book("r2", "Ficciones"), book("r3", "Pedro Páramo")],
+});
+export const NUMBER_ASK = asking("r-num", "a-num", "number", "¿Cuántas páginas tiene?");
+export const DATE_ASK = asking("r-dia", "a-dia", "date", "¿Qué día lo terminaste?");
+export const YESNO_ASK = asking("r-sino", "a-sino", "yesno", "¿Lo marco como favorito?");
+export const FILE_ASK = asking("r-arch", "a-arch", "file", "¿Qué factura es?");
+/** A choice among a property's options: two suggested, the rest found with «Más…», a new one with «Nueva…». */
+export const STATE_ASK = asking("r-estado", "a-estado", "choice", "¿En qué estado está?", {
+  options: [v("Pendiente", "user", "personal"), v("Leyendo", "user", "personal")],
+  field: { type: "t_libro", field: "f_estado", names: ["Pendiente", "Leyendo", "Leído"] },
+});
+/** «Lo que haría»: a book made, and a mail that will still be asked for, folded until «Revisar». */
+export const REHEARSAL_ASK = asking("r-ensayo", "a-ensayo", "rehearsal", "¿Lo guardo?", {
+  would: [
+    {
+      decision: "allow",
+      view: {
+        tool: "entities.create",
+        title: "Crear",
+        rows: [
+          {
+            arg: "type",
+            role: "type",
+            value: "libros",
+            integrity: "own",
+            sources: ["code"],
+            marks: [],
+          },
+          {
+            arg: "values",
+            role: "content",
+            value: "Rayuela",
+            integrity: "user",
+            sources: ["turn"],
+            marks: [],
+          },
+        ],
+      },
+    },
+    {
+      decision: "confirm",
+      view: {
+        tool: "mail.send",
+        title: "Enviar correo",
+        rows: [
+          {
+            arg: "to",
+            role: "recipient",
+            value: "ejemplo.ana@example.com",
+            integrity: "imported",
+            sources: ["vault"],
+            marks: [],
+          },
+        ],
+      },
+    },
+  ],
+});
+export const NOT_SAVED = {
+  ...answered("r-ensayo", "¿Lo guardo?", v(false, "user", "personal"), "rehearsal"),
+  status: "stopped",
+  replies: [
+    {
+      component: "asked",
+      data: {
+        prompt: v("¿Lo guardo?", "model"),
+        answer: v(false, "user", "personal"),
+        control: v("rehearsal", "own"),
+      },
+    },
+  ],
+  error: "not-saved",
+};
+/** An old card (rule 3a): what it shows has a hash, and the server finds a book renamed since. */
+export const BOOK_ASK_SEEN = { ...BOOK_ASK, pending: { ...BOOK_ASK.pending, seen: "s1" } };
+export const BOOK_CHANGED = {
+  ...BOOK_ASK,
+  error: "changed",
+  pending: {
+    ...BOOK_ASK.pending,
+    options: [book("r1", "Rayuela (edición de bolsillo)"), book("r2", "Ficciones")],
+    seen: "s2",
+  },
+};
+/** «Antes te he dicho Rayuela, pero es Ficciones» (C1): the planner asks to take back that turn, on Juan's card. */
+export const UNDO_TURN_CARD = {
+  run: "run-e3",
+  status: "waiting",
+  replies: [],
+  pending: {
+    kind: "confirm",
+    id: "c-deshacer",
+    view: {
+      tool: "turns.undo",
+      title: "Deshacer lo que hizo",
+      rows: [
+        {
+          arg: "turn",
+          role: "target",
+          value: "run-e1",
+          integrity: "own",
+          sources: ["code"],
+          marks: [],
+          detail: "apunta Rayuela como leído",
+        },
+      ],
+    },
+  },
+  proposals: [],
+  notices: [],
+  error: null,
+};
+export const UNDONE_TURN = {
+  ...WROTE,
+  run: "run-e3",
+  corrects: "run-e1",
+  replies: [{ component: "text", data: { template: v("Apuntado Ficciones.", "model") } }],
+};

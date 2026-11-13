@@ -39,6 +39,8 @@ let host: AgentHost;
 let server: Server;
 let base: string;
 let token: string;
+/** What the planner answers, turn by turn. */
+const plans: unknown[] = [];
 
 async function login() {
   const r = await fetch(`${base}/api/login`, {
@@ -64,9 +66,15 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-drops-"));
   db = openDb(join(dir, "system.db"));
   addUser(db, "juan", PASSWORD);
+  const planner = fakePlanner([]);
+  planner.complete = async () => ({
+    json: plans.shift(),
+    usage: { input: 1, output: 1 },
+    model: "fake",
+  });
   host = new AgentHost({
     dataDir: dir,
-    providers: { planner: fakePlanner([]), reader: fakePlanner([]) },
+    providers: { planner, reader: fakePlanner([]) },
     now: () => NOW,
     tz: "Europe/Madrid",
   });
@@ -278,4 +286,47 @@ describe("a file dropped on Boni's window (A-24)", () => {
     // Whole in memory it would be 128 MB at least; a part at a time it stays near a few parts.
     expect(peak).toBeLessThan(32 * MB);
   }, 60_000);
+});
+
+describe("a file as the answer to a question of the conversation (docs/conversacion.md §3.4, C3)", () => {
+  it("is uploaded as a drop is, and the answer is that row of his files, as the screen names it; a row that is not a file is refused", async () => {
+    const r = await upload(
+      "Contrato de alquiler.pdf",
+      Buffer.from("%PDF-1.7 inventado\n%%EOF\n", "latin1"),
+    );
+    const file = r.body.id as string;
+    const post = (path: string, body: unknown) =>
+      fetch(`${base}${path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      }).then((x) => x.json() as Promise<Record<string, unknown>>);
+    const conversation = (
+      (await post("/api/agent/conversations", {})).conversation as { id: string }
+    ).id;
+    plans.push({
+      version: 1,
+      steps: [
+        { id: "q", op: "ask", control: "file", prompt: { lit: "¿Qué contrato?" } },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: { template: { lit: "{a}" }, a: { ref: "$q" } },
+        },
+      ],
+    });
+    const asks = (await post("/api/agent/turn", { text: "guarda el contrato", conversation })) as {
+      run: string;
+      pending: { id: string; control: string };
+    };
+    expect(asks.pending.control).toBe("file");
+    const answer = (a: Record<string, unknown>) =>
+      post("/api/agent/answer", { run: asks.run, ask: asks.pending.id, ...a });
+    const other = createRow(host.store(1), ARCHIVOS, { [NOMBRE]: "No es un archivo" }).id;
+    expect((await answer({ file: other })).error).toBe("wrong-answer");
+    const done = (await answer({ file })) as { status: string; replies: { data: unknown }[] };
+    expect(done.status).toBe("done");
+    expect(JSON.stringify(done.replies.at(-1)?.data)).toContain("Contrato de alquiler.pdf");
+  });
 });

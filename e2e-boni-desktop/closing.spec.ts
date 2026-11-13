@@ -1,6 +1,6 @@
 // What is typed in Boni's desktop app and closed at once is not lost (task 100): each way of writing that saves on
 // its own path, typed and the app closed the moment after the last key, then opened again and read there.
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,41 +15,33 @@ import {
   test,
 } from "@playwright/test";
 import { seed } from "../apps/server/src/seed.test-util.ts";
+import { startServer as start } from "./server.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const PASSWORD = "una contraseña larga de ejemplo";
-const PORT = 19000 + Math.floor(Math.random() * 1000);
 
 let dir = "";
 let server: ChildProcess | null = null;
+/** The server's address: the system gives its port at the first start, and the later starts keep it (the app has it). */
+let SERVER = "";
 let app: ElectronApplication | null = null;
 let noteId = "";
 let longId = "";
 let pictureId = "";
 
-function startServer() {
-  const env = { ...process.env, BONI_DB: join(dir, "boni-calendar.db"), BONI_PASSWORD: PASSWORD };
-  server = spawn("node", ["apps/server/src/main.ts"], {
-    cwd: ROOT,
-    env: {
-      ...env,
-      BONI_PORT: String(PORT),
-      BONI_WRITE: "1",
-      ANTHROPIC_API_KEY: "",
-      // Boni's web app, for the phone-sized browser below (the desktop app carries its own).
-      BONI_BONI_WEB: join(ROOT, "apps", "boni-web", "dist"),
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("server did not start")), 20_000);
-    server?.stdout?.on("data", (b: Buffer) => {
-      if (b.toString().includes(`127.0.0.1:${PORT}`)) {
-        clearTimeout(t);
-        resolve();
-      }
-    });
-  });
+async function startServer() {
+  const env = {
+    ...process.env,
+    BONI_DB: join(dir, "boni-calendar.db"),
+    BONI_PASSWORD: PASSWORD,
+    BONI_WRITE: "1",
+    ANTHROPIC_API_KEY: "",
+    // Boni's web app, for the phone-sized browser below (the desktop app carries its own).
+    BONI_BONI_WEB: join(ROOT, "apps", "boni-web", "dist"),
+  };
+  const started = await start(env, SERVER ? Number(new URL(SERVER).port) : undefined);
+  server = started.process;
+  SERVER = started.url;
 }
 
 const desktopEnv = () => ({
@@ -142,7 +134,7 @@ test.beforeAll(async () => {
   const w = await app.firstWindow();
   await w.setViewportSize({ width: 1280, height: 860 });
   await w.getByRole("button", { name: "Configurar servidor" }).click();
-  await w.getByPlaceholder("https://boni.example.ts.net").fill(`http://127.0.0.1:${PORT}`);
+  await w.getByPlaceholder("https://boni.example.ts.net").fill(SERVER);
   const form = w.locator(".server-form");
   await form.locator("input").nth(1).fill("ejemplo");
   await form.locator('input[type="password"]').fill(PASSWORD);
@@ -421,7 +413,7 @@ test("a page typed with the server gone, Boni closed at once: on the device when
 let serverAuth: Record<string, string> | null = null;
 /** A request to the server as an account of its own (logged in once: the server keeps it across its restarts). */
 async function fromServer<T>(path: string): Promise<T> {
-  const base = `http://127.0.0.1:${PORT}`;
+  const base = SERVER;
   if (!serverAuth) {
     const login = await fetch(`${base}/api/login`, {
       method: "POST",
@@ -712,14 +704,14 @@ async function phone(browser: Browser) {
   });
   ctx.setDefaultTimeout(15_000);
   const p = await ctx.newPage();
-  await p.goto(`http://127.0.0.1:${PORT}/boni/`);
+  await p.goto(`${SERVER}/boni/`);
   return { ctx, p };
 }
 
 async function phoneLogin(p: Page) {
   await p.getByRole("button", { name: "Configurar servidor" }).tap();
   const form = p.locator(".server-form");
-  await form.locator("input").nth(0).fill(`http://127.0.0.1:${PORT}`);
+  await form.locator("input").nth(0).fill(SERVER);
   await form.locator("input").nth(1).fill("ejemplo");
   await form.locator('input[type="password"]').fill(PASSWORD);
   await form.locator("input").nth(3).fill("movil-ejemplo");
@@ -757,7 +749,7 @@ test("on a phone, a note's title typed and the tab closed at once: there in a ne
     await p.keyboard.type(" móvil");
     await p.close();
     const again = await ctx.newPage();
-    await again.goto(`http://127.0.0.1:${PORT}/boni/`);
+    await again.goto(`${SERVER}/boni/`);
     await phoneNote(again);
     await expect(again.locator(".row-doc .doc-title")).toHaveValue(/ móvil$/);
   } finally {
@@ -790,7 +782,7 @@ test("on a phone without a connection, a note's title typed, the tab hidden and 
     await p.close().catch(() => undefined);
     await ctx.setOffline(false);
     const again = await ctx.newPage();
-    await again.goto(`http://127.0.0.1:${PORT}/boni/`);
+    await again.goto(`${SERVER}/boni/`);
     await expect
       .poll(() => again.evaluate(() => localStorage.getItem("boni:store:unsent.json")), {
         timeout: 20_000,
@@ -809,7 +801,7 @@ async function browserTab(browser: Browser) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, hasTouch: true });
   ctx.setDefaultTimeout(15_000);
   const p = await ctx.newPage();
-  await p.goto(`http://127.0.0.1:${PORT}/boni/`);
+  await p.goto(`${SERVER}/boni/`);
   await phoneLogin(p);
   return { ctx, p };
 }
@@ -824,7 +816,7 @@ async function closeTab(p: Page) {
 /** A new tab of the same browser: what the last one kept goes, and its list on the device empties. */
 async function nextTab(ctx: Awaited<ReturnType<typeof browserTab>>["ctx"]) {
   const again = await ctx.newPage();
-  await again.goto(`http://127.0.0.1:${PORT}/boni/`);
+  await again.goto(`${SERVER}/boni/`);
   await expect
     .poll(() => again.evaluate(() => localStorage.getItem("boni:store:unsent.json")), {
       timeout: 20_000,

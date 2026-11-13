@@ -101,10 +101,11 @@ Lo que no tomamos:
     el historial.
   - Cada turno tiene su ejecución, así que «Deshacer este turno» sigue siendo un clic.
   - Además, un mensaje de Juan se puede **editar**. Eso crea un turno de corrección que lleva el turno original y lo
-    nuevo. El planificador lo convierte en deshacer lo afectado (`runs.undo`, por la política) y rehacer con el dato
-    bueno.
+    nuevo. Lo deshace el código, no el planificador (la 27): todo o nada por el registro, y lo que no se puede deshacer
+    se dice antes de hacer nada; luego lo nuevo corre como un turno.
   - «Antes te he dicho X, pero es Y», escrito tal cual, hace lo mismo: el turno anterior está en el historial, con su
-    ejecución.
+    ejecución, y el planificador pide deshacerlo con `turns.undo`, por la política. Es un toque de Juan: lo confirma en
+    su tarjeta, y corre lo mismo que al editar el mensaje (la 27, segunda parte).
 - **Varios chats.** «Conversaciones» en la barra lateral: buscar, fijar, cambiar el nombre, archivar (a la papelera).
   Una conversación nueva empieza vacía; la de un modo de extensión empieza con su bienvenida.
 
@@ -377,8 +378,7 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   («Corregido»). Si lo nuevo falla después de deshacer, el turno viejo se pinta como lo tiene el servidor.
   - **Decidido, y por qué:** deshace el código, no el planificador con `runs.undo` como decía el diseño. Deshacer es
     todo o nada y lo que se pierde se dice antes de hacer nada; dejarlo al modelo podía deshacer a medias.
-  - **Falta:** «Antes te he dicho X, pero es Y», escrito tal cual, no deshace nada: el planificador ve el turno viejo
-    en el historial, pero no tiene una herramienta para deshacer una ejecución pasada. Queda para cuando la tenga.
+  - «Antes te he dicho X, pero es Y», escrito tal cual, hace lo mismo desde la 27, segunda parte (abajo).
 - **Fijar conversaciones** (la 63, punto 7). «Fijar» en la lista; las fijadas van arriba, en «Fijadas». Se guarda en
   la conversación (`pinned`), así que sigue tras reiniciar y en otro dispositivo.
 - **C3, punto por punto:**
@@ -387,17 +387,56 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   |---|---|---|
   | 1 | La barra nunca se bloquea | Hecho (antes de la 27) |
   | 2a | «Otra cosa…» en una elección entre opciones: lo escrito termina la pregunta y es el turno siguiente | Hecho |
-  | 2b | «Nueva…» en una elección entre filas de una colección: crea la fila y es la respuesta | En parte: entre filas sí; entre categorías (las opciones de una propiedad), no |
+  | 2b | «Nueva…» en una elección entre filas o categorías: la crea y es la respuesta | Hecho: entre filas (la 27) y entre las opciones de una propiedad (la 27, segunda parte) |
   | 2c | Una regla trae «Cambiarla…», «Es esporádico» y «Más general…» | Falta (C6, con las reglas) |
   | 2d | El sí o no y la confirmación sin salida libre | Hecho |
-  | 3a | Una tarjeta vieja se vuelve a comprobar al pulsarla | En parte: las de la Bandeja sí (D-57); las preguntas de la conversación, no (sin fase aún) |
+  | 3a | Una tarjeta vieja se vuelve a comprobar al pulsarla | Hecho: las de la Bandeja (D-57) y las preguntas de la conversación (la 27, segunda parte) |
   | 3b | Una pregunta contestada queda como texto con su respuesta | Hecho en la conversación (la respuesta `asked`); las de la Bandeja salen de ella |
   | 4 | Agrupar lo seguro en una tarjeta con casillas | Falta (C6: necesita el umbral que se aprende) |
   | 5 | Sin modelo, preguntas con tarjetas | Falta (C6, las preguntas de las funciones) |
-  | — | Pregunta: elegir varias, número o fecha, archivo, sí o no | Falta |
-  | — | Ensayo en la conversación | Falta |
+  | — | Pregunta: elegir varias, número o fecha, archivo, sí o no | Hecho (la 27, segunda parte) |
+  | — | Ensayo en la conversación | Hecho (la 27, segunda parte) |
   | — | Hecho con «Deshacer» y confirmación | Hecho |
   | — | Las preguntas del trabajo en segundo plano (la Bandeja) | Sin salida libre a propósito: siguen siendo trabajo en segundo plano; su «Crear» de colección ya existía |
+
+**Hecho, la 27, segunda parte (2026-11-13): cada pregunta con su salida libre, el ensayo, la tarjeta vieja y
+«antes te he dicho X, pero es Y».**
+- **Las preguntas que faltaban (§3.4).** El plan pide el control (`ask` con `control`) y la tarjeta la pinta el código:
+  - **elegir varias:** casillas, «Responder (n)» y «Ninguna» (no marcar ninguna es una respuesta);
+  - **entre las opciones de una propiedad** (`field`, «colección.propiedad»): sugiere las que el plan dice, o todas si son
+    ocho o menos; «Más…» busca las demás (sin tildes ni mayúsculas) y «Nueva…» la añade a la propiedad como la añade
+    Juan desde la columna (con su Deshacer), y es la respuesta. El servidor la lee del esquema, nunca del texto;
+  - **un número:** como lo escribe Juan en su idioma («1.250,5» en español, «1,250.5» en inglés); lo que no es un número
+    lo dice y no se envía;
+  - **una fecha:** el selector de día del sistema; el servidor comprueba que el día existe;
+  - **un archivo:** «Subir un archivo…» o soltarlo en la tarjeta. Sube igual que uno soltado en la conversación (A-24)
+    y la respuesta es su fila de Archivos. En el móvil, «Subir un archivo…» abre su selector, como «Adjuntar» (la
+    114), y no hay dónde soltar. Donde el dispositivo no puede subir archivos, lo dice y queda «Otra cosa…»;
+  - **sí o no:** dos botones, ninguno teñido, sin salida libre.
+  - Número, fecha y archivo traen «Otra cosa…», como una elección.
+- **El ensayo.** El resto del plan corre en seco, como «Probar»: lo que escribiría, cada cosa con las filas de su
+  tarjeta, plegado hasta «Revisar». «Guardar» lo hace de verdad, y lo que pide confirmación la sigue pidiendo; «Ahora no»
+  no hace nada («No se ha guardado nada.»). Si no escribiría nada, no hay tarjeta.
+- **Una tarjeta vieja se vuelve a comprobar (regla 3a).** Cada tarjeta lleva un resumen de lo que enseña (`seen`). Al
+  contestar, el servidor la vuelve a leer: sus registros a su versión de ahora, las opciones de la propiedad, el ensayo
+  otra vez. Si ha cambiado, o el dispositivo enseña otra, no contesta nada: la tarjeta vuelve hecha de nuevo, con «Ha
+  cambiado». Una opción añadida con «Nueva…» no cuenta como cambio: no cambia nada de lo que Juan vio.
+- **«Antes te he dicho X, pero es Y» (§3.1).** El planificador pide deshacer ese turno con la acción `turns.undo`, por
+  la política: es un toque de Juan (P21), así que sale su tarjeta, «Deshacer lo que hizo», con el mensaje de aquel
+  turno. Con su sí corre lo mismo que el lápiz (todo o nada, lo de fuera antes), y el turno viejo queda «Corregido».
+  - El turno solo puede venir del historial (`$history[i].turn`, el valor del código; nunca uno que escriba el
+    modelo), va antes de cualquier otra llamada y una vez por plan; solo en un turno de una conversación, nunca en un
+    flujo ni en segundo plano.
+- **Decidido, y por qué:**
+  - Los controles nuevos son de la conversación. El trabajo en segundo plano sigue preguntando solo elegir o escribir,
+    lo que contesta su tarjeta de la Bandeja (`ask-only-in-a-turn`).
+  - `turns.undo` es un toque y no algo que el planificador hace solo: deshacer quita lo que Juan tenía, así que lo
+    confirma él, igual que borrar.
+  - La tarjeta vieja usa el trato de la Bandeja (D-57: el dispositivo manda lo que vio, el servidor vuelve a mirar y,
+    si cambió, no contesta), no su código: la de la Bandeja juzga una propuesta con el calendario y el buzón; la de
+    una pregunta es lo que leyó su plan, así que la vuelve a leer el agente.
+- **Falta:** probar el planificador con un modelo de verdad («antes te he dicho…», cada control): se hace a mano, con
+  presupuesto, y no se ha hecho. Las pruebas son de escenario, con un planificador de guion.
 
 La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta
 de modo, las tarjetas con su salida libre, lo agrupado y el bloque «Chat» en Gastos.

@@ -158,3 +158,73 @@ describe("a plan's expressions", () => {
     expect(errors(light({ ref: "$item" }, { ref: "$o" }))).toContain("step 2: screen-in-each");
   });
 });
+
+describe("the conversation's questions and the correction of a past turn (§3.4, C1)", () => {
+  const withUndo: PlanCatalog = {
+    args: (tool) =>
+      tool === "turns.undo"
+        ? { names: ["turn"], required: ["turn"] }
+        : tool === "entities.create"
+          ? { names: ["type", "values"], required: ["type"] }
+          : null,
+  };
+  const check = (steps: unknown[]) => {
+    const r = validatePlan({ version: 1, steps }, withUndo, "", ["history"]);
+    return r.ok ? [] : r.errors;
+  };
+  const undo = (turn: unknown, extra: Record<string, unknown> = {}) => ({
+    id: "u",
+    op: "call",
+    tool: "turns.undo",
+    args: { turn },
+    ...extra,
+  });
+  const create = {
+    id: "c",
+    op: "call",
+    tool: "entities.create",
+    args: { type: { lit: "tarea" } },
+  };
+
+  it("a past turn is the code's, taken back once, before anything else is done", () => {
+    expect(check([undo({ ref: "$history[2].turn" }), create])).toEqual([]);
+    // A turn a model wrote, or anything of the history but its turn, is refused.
+    expect(check([undo({ lit: "r_ejemplo" })])).toEqual(["step 1.args: turn-not-from-history"]);
+    expect(check([undo({ ref: "$history[0].reply0" })])).toEqual([
+      "step 1.args: turn-not-from-history",
+    ]);
+    // After a write it would leave that write half undone; twice, or per item, it is not one correction.
+    expect(check([create, undo({ ref: "$history[0].turn" })])).toEqual(["step 2: undo-not-first"]);
+    expect(
+      check([undo({ ref: "$history[0].turn" }), { ...undo({ ref: "$history[1].turn" }), id: "v" }]),
+    ).toEqual(["step 2: undo-once", "step 2: undo-not-first"]);
+  });
+
+  it("each kind of question has what it needs and nothing else; a rehearsal once", () => {
+    const ask = (control: string, extra: Record<string, unknown> = {}) => ({
+      id: `q${control}`,
+      op: "ask",
+      control,
+      prompt: { lit: "¿?" },
+      ...extra,
+    });
+    for (const c of ["text", "number", "date", "file", "yesno", "rehearsal"])
+      expect(check([ask(c)])).toEqual([]);
+    // Choose one or several: among options, or a property's (its options read by code).
+    expect(
+      check([ask("several", { options: { fn: "list", args: [{ lit: "a" }, { lit: "b" }] } })]),
+    ).toEqual([]);
+    expect(check([ask("choice", { field: { lit: "tarea.area" } })])).toEqual([]);
+    expect(check([ask("several")])).toEqual(["step 1: missing-argument"]);
+    expect(check([ask("number", { options: { fn: "list", args: [{ lit: 1 }] } })])).toEqual([
+      "step 1: unknown-argument",
+    ]);
+    expect(check([ask("yesno", { field: { lit: "tarea.area" } })])).toEqual([
+      "step 1: unknown-argument",
+    ]);
+    expect(check([ask("slider")])).toEqual(["step 1: unknown-control"]);
+    expect(check([ask("rehearsal"), { ...ask("rehearsal"), id: "q2" }])).toEqual([
+      "step 2: rehearsal-once",
+    ]);
+  });
+});
