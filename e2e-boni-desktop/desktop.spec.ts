@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -14,11 +14,11 @@ import { seed } from "../apps/server/src/seed.test-util.ts";
 import { readZip } from "../packages/export/src/zip.ts";
 import { BODY, openUserStore } from "../packages/store/src/index.ts";
 import { applies, CATALOGUE } from "../packages/views/src/catalogue.ts";
+import { startServer } from "./server.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const SHOTS = join(ROOT, "e2e-boni", "screenshots");
 const PASSWORD = "una contraseña larga de ejemplo";
-const PORT = 18000 + Math.floor(Math.random() * 1000);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const today = new Date();
 const tomorrow = new Date(Date.now() + 86_400_000);
@@ -72,6 +72,7 @@ let tutorialId = "";
 let anaId = "";
 let hornoId = "";
 let server: ChildProcess | null = null;
+let SERVER = "";
 let app: ElectronApplication | null = null;
 
 test.beforeAll(async () => {
@@ -126,20 +127,9 @@ test.beforeAll(async () => {
     { actor: "user", device: "seed" },
   );
   store.close();
-  server = spawn("node", ["apps/server/src/main.ts"], {
-    cwd: ROOT,
-    env: { ...env, BONI_PORT: String(PORT), BONI_WRITE: "1", ANTHROPIC_API_KEY: "" },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  await new Promise<void>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("server did not start")), 20_000);
-    server?.stdout?.on("data", (b: Buffer) => {
-      if (b.toString().includes(`127.0.0.1:${PORT}`)) {
-        clearTimeout(t);
-        resolve();
-      }
-    });
-  });
+  const started = await startServer({ ...env, BONI_WRITE: "1", ANTHROPIC_API_KEY: "" });
+  server = started.process;
+  SERVER = started.url;
   // The desktop app as it runs on Juan's computer, with a profile of its own (never his).
   // BONI_DESKTOP_BIN: the packaged app (release/linux-unpacked/boni) instead of the source.
   mkdirSync(join(dir, "tmp"));
@@ -176,7 +166,7 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await w.setViewportSize({ width: 1280, height: 860 });
   // Log in (Settings → Account), as a new device of the account.
   await w.getByRole("button", { name: "Configurar servidor" }).click();
-  await w.getByPlaceholder("https://boni.example.ts.net").fill(`http://127.0.0.1:${PORT}`);
+  await w.getByPlaceholder("https://boni.example.ts.net").fill(SERVER);
   const form = w.locator(".server-form");
   await form.locator("input").nth(1).fill("ejemplo");
   await form.locator('input[type="password"]').fill(PASSWORD);
@@ -689,15 +679,18 @@ test("a mention in a note opens what it names over the real server (task 110, D-
 
 test("a boni:// link with the window closed: the window opens on the note at the first click", async () => {
   const a = app as ElectronApplication;
-  const main = () =>
-    a.windows().find((x) => !x.url().includes("peek=1") && !x.url().includes("widget="));
+  // Boni's own window: the app's page with no query (the peek and the widgets have one), not one closing, nor a
+  // window being made before the app's page is in it (task 117: a page found closed under a second after the click).
+  const main = () => a.windows().find((x) => !x.isClosed() && /\/index\.html(#.*)?$/.test(x.url()));
   await main()?.close(); // Boni goes on in the tray
   await expect.poll(() => main()).toBeUndefined();
   openLink(`boni://note?id=${classId}`);
   await expect.poll(() => main()).toBeDefined();
   const w = main() as NonNullable<ReturnType<typeof main>>;
+  // A window made now starts the whole app before the note is there, as Boni's first start does.
   await expect(w.locator(".row-doc .blk-input").first()).toHaveText(
     /Preparar los ejercicios del tema 3/,
+    { timeout: 20_000 },
   );
 });
 
