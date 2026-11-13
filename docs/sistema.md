@@ -1108,7 +1108,9 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     y una imagen sobre imagen tienen su propio modo. Cuentan también una tarea de varias ventanas siempre encima y la
     marca de Android `isLaunchedFromBubble`. Boni que empieza en una burbuja abre la conversación (el mismo destino
     `chat`), y Boni abierto que pasa a ser burbuja también, una vez. A ese tamaño Boni es el del teléfono, con sus
-    pestañas al pie, y se lee bien;
+    pestañas al pie, y se lee bien. Al volver al frente, o al flotar, la conexión en vivo se abre otra vez y la app lo
+    lee todo de nuevo; eso ya no pone la página de inicio bajo la pestaña «Boni» (en el teléfono de Juan ponía sobre
+    la conversación la barra de una página, «Atrás» y «…»);
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);

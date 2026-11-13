@@ -3007,6 +3007,10 @@ async function startPages() {
     void loadPages();
     return;
   }
+  // On the phone the Boni tab's own screen is the conversation (`view: home` there): reading everything again (the
+  // live connection opening as the app comes back, or as it floats as Android's bubble) never puts the start page
+  // under it, with a page's Back and «…» over the conversation (task 115).
+  if (v.kind === "home" && phoneLayout() && get().tab === "boni") return;
   if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
     await openStart();
   else if (v.kind === "page") await openPage(v.id);
