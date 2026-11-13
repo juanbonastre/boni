@@ -770,8 +770,10 @@ contraseña ni un código aquí» under a question.
     a circle that moves over any app and opens Boni in a small window. Boni asks for no permission to draw over other
     apps and keeps no notification of its own. Opened as a bubble, Boni opens on the conversation, the last one:
     when it starts in the bubble and when an open Boni is floated, once (what is opened inside the bubble after that
-    stays); the window is the phone's layout, with the conversation's bar at its foot. From Android 17's bubbles (any
-    app can float from its icon; an app meets them by working well in multi-window) and the Material 3 FAB below.
+    stays). The window is the phone's layout as it is, tabs at its foot: on Juan's phone (2026-11-13) the bubble is
+    997 × 1794 px of 1080 × 2424, inset on every side, and Boni reads well in it with nothing changed. From Android
+    17's bubbles (any app can float from its icon; an app meets them by working well in multi-window) and the
+    Material 3 FAB below.
     Boni's own circle always on top (with that permission and a fixed notification) is not built: a possible next
     step if the bubble falls short.
     The widget is «Conversación» in the launcher's list: one cell, a 56 dp circle in the dark theme's `--accent`

@@ -212,7 +212,8 @@ class MainActivity : ComponentActivity() {
         val launched = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && isLaunchedFromBubble
         val text = config.toString()
         val now = Bubble.isBubble(launched, text)
-        val window = Regex("mWindowingMode=\\S+|mAlwaysOnTop=\\S+").findAll(text.substringAfter("winConfig=", ""))
+        val window = Regex("mBounds=Rect\\([^)]*\\)|mMaxBounds=Rect\\([^)]*\\)|mWindowingMode=\\S+|mAlwaysOnTop=\\S+")
+            .findAll(text.substringAfter("winConfig=", ""))
             .joinToString(" ") { it.value }
         Log.i(TAG, "window: bubble=$now launchedFromBubble=$launched multiWindow=$isInMultiWindowMode $window")
         return now

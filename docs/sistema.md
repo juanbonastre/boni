@@ -1102,9 +1102,13 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   - **la burbuja** (`Bubble.kt`, I-38): el círculo sobre las demás apps es la burbuja de Android 17 (Juan,
     2026-11-13: «A, la burbuja»). Se pide desde el icono de Boni (mantenerlo pulsado y elegir la burbuja); Boni no
     pide permisos ni deja una notificación fija. Android no da una forma de preguntar si una app es una burbuja, así
-    que lo dice la ventana: una tarea de varias ventanas que se queda siempre encima, lo que no es una pantalla
-    partida ni una ventana de escritorio (o la marca de Android `isLaunchedFromBubble`). Boni que empieza en una
-    burbuja abre la conversación (el mismo destino `chat`), y Boni abierto que pasa a ser burbuja también, una vez.
+    que lo dice la ventana: en el teléfono de Juan (2026-11-13) una burbuja es una tarea de varias ventanas más
+    estrecha y más baja que la pantalla (997 × 1794 de 1080 × 2424, con margen por los cuatro lados), y una pantalla
+    partida, que también es de varias ventanas, ocupa siempre todo el ancho o todo el alto; una ventana de escritorio
+    y una imagen sobre imagen tienen su propio modo. Cuentan también una tarea de varias ventanas siempre encima y la
+    marca de Android `isLaunchedFromBubble`. Boni que empieza en una burbuja abre la conversación (el mismo destino
+    `chat`), y Boni abierto que pasa a ser burbuja también, una vez. A ese tamaño Boni es el del teléfono, con sus
+    pestañas al pie, y se lee bien;
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);
