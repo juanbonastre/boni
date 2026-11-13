@@ -1,6 +1,7 @@
 import { emptyPage } from "@boni/views";
 import { describe, expect, it } from "vitest";
 import type { DataRow, Page } from "./agent.ts";
+import { cpu } from "./cpu.test-util.ts";
 import {
   answered,
   creating,
@@ -129,11 +130,11 @@ describe("what was typed and has no answer yet (task 100)", () => {
   it("a long note's text is merged at once (nothing runs on every key; this is once per pause)", () => {
     const body = Array.from({ length: 5000 }, (_, i) => `Línea ${i}`).join("\n\n");
     let list: UnsentWrite[] = [];
-    const t = performance.now();
+    const t = cpu();
     for (let i = 0; i < 100; i++) list = merged(list, rowWrite("r_01", {}, `${body} ${i}`, i));
-    expect(performance.now() - t).toBeLessThan(200);
+    expect(cpu() - t).toBeLessThan(200);
     expect(list).toHaveLength(1);
-  });
+  }, 120_000);
 
   it("a page made here waits for the server to make it; then what was typed in it goes (task 109)", () => {
     const id = "e_01kaaaaaaaaaaaaaaaaaaaaaaa";

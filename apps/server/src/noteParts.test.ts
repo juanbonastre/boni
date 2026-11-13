@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ensureSystemTypes } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import { mcpAnswer } from "./mcp.ts";
 import { charCount, charSlice, OUTLINE_MAX, outlineOf, PART } from "./noteParts.ts";
 import { seed } from "./seed.test-util.ts";
@@ -329,17 +330,18 @@ describe("a long note is always readable in parts (task 112, A-30)", () => {
 
   it("is quick on his largest note (A-15)", async () => {
     const time = async (args: Record<string, unknown>) => {
-      const t0 = performance.now();
+      const t0 = cpu();
       for (let i = 0; i < 10; i++) await call("read", { id: idOf("registro.md"), ...args });
-      return (performance.now() - t0) / 10;
+      return (cpu() - t0) / 10;
     };
     const outline = await time({});
     const section = await time({ section: "Historia" });
     const range = await time({ offset: 180_000 });
-    // Printed for the PR; the bound is loose (a slow CI runner), the number is what matters.
+    // In the thread's CPU time (task 116). Printed for the PR; the bound is loose (a slow CI runner), the number is
+    // what matters.
     console.log(
       `read of a ${charCount(BIG)}-character note: outline ${outline.toFixed(1)} ms, section ${section.toFixed(1)} ms, range ${range.toFixed(1)} ms`,
     );
     for (const ms of [outline, section, range]) expect(ms).toBeLessThan(250);
-  });
+  }, 120_000);
 });

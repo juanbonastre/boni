@@ -13,6 +13,7 @@ import type { UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { createPage } from "./pages.ts";
 import { screenOf } from "./screen.ts";
 import { seed } from "./seed.test-util.ts";
@@ -293,9 +294,9 @@ describe("a page's values on the server (F11, D-59)", () => {
     computeBlocks(store, body, o);
     const times: number[] = [];
     for (let k = 0; k < 5; k++) {
-      const t0 = performance.now();
+      const t0 = cpu();
       const r = computeBlocks(store, body, o).results as Results;
-      times.push(performance.now() - t0);
+      times.push(cpu() - t0);
       expect(r.b_count?.data?.total).toBeGreaterThan(0);
     }
     times.sort((a, b) => a - b);
@@ -319,9 +320,9 @@ describe("a page's values on the server (F11, D-59)", () => {
     };
     const rowTimes: number[] = [];
     for (let k = 0; k < 5; k++) {
-      const t0 = performance.now();
+      const t0 = cpu();
       const r = blockRowsOf(store, tabla, o) as { rows: unknown[]; total: number };
-      rowTimes.push(performance.now() - t0);
+      rowTimes.push(cpu() - t0);
       expect(r.total).toBe(N / 5 + 2);
       expect(r.rows).toHaveLength(N / 5 + 2);
     }
@@ -331,7 +332,7 @@ describe("a page's values on the server (F11, D-59)", () => {
       `A-15 page table: ${N / 5 + 2} of ${N + 3} movements, median ${rowMedian.toFixed(1)} ms`,
     );
     expect(rowMedian).toBeLessThan(1500);
-  }, 60_000);
+  }, 120_000);
 });
 
 function titleOf(store: UserStore, key: string): string {

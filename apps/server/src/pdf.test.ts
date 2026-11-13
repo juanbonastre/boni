@@ -1,5 +1,6 @@
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import {
   attachmentText,
   fileState,
@@ -189,9 +190,9 @@ describe("the file reader, shared with the mail's attachments (A-24)", () => {
         flate(page(i)),
       ]).flat(),
     ]);
-    let t = performance.now();
+    let t = cpu();
     const r = readFile("facturas 2026.pdf", "application/pdf", book);
-    const textMs = performance.now() - t;
+    const textMs = cpu() - t;
     expect(r.pages).toBe(N);
     expect(r.text).toContain("Factura FAC-2026-0000 Revisión 1.020,30 €");
     expect(r.cut).toBe(true);
@@ -210,9 +211,9 @@ describe("the file reader, shared with the mail's attachments (A-24)", () => {
         },
       ]).flat(),
     ]);
-    t = performance.now();
+    t = cpu();
     const s = readFile("escaneo.pdf", "application/pdf", scan);
-    const scanMs = performance.now() - t;
+    const scanMs = cpu() - t;
     expect(s.images.length).toBe(5);
     expect(s.images.every((i) => i.data.byteLength === 3_000_006)).toBe(true);
     console.log(
@@ -220,7 +221,7 @@ describe("the file reader, shared with the mail's attachments (A-24)", () => {
     );
     expect(textMs).toBeLessThan(800);
     expect(scanMs).toBeLessThan(800);
-  });
+  }, 120_000);
 
   it("a mail's PDF attachment gives its text too", () => {
     expect(

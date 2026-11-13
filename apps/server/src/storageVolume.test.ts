@@ -9,6 +9,7 @@ import type { UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -121,18 +122,6 @@ function fill(path: string) {
     COMMIT;`);
   sql.close();
 }
-
-/**
- * The CPU time this thread has spent, in ms (task 113). The bounds of the loop's holding are in it, not in the clock's
- * time: a machine busy with other work (CI's `check` runs every package's tests at once) stops this thread now and
- * then while the clock goes on, so a slice read on the clock can take the length of the stop, and the whole sum,
- * timed a moment before, need not have been stopped as long. This thread's CPU time does not advance while it is
- * stopped.
- */
-const cpu = () => {
-  const u = process.threadCpuUsage();
-  return (u.user + u.system) / 1000;
-};
 
 /** The figures as the route summed them before (task 43): every table whole, in one go. */
 function whole(path: string) {

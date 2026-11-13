@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import {
   applyEdits,
   inlineSpans,
@@ -92,11 +93,11 @@ describe("inline formats read from a block's Markdown (task 2f)", () => {
 
   it("is quick on a long paragraph full of marks (A-15)", () => {
     const long = "palabra **negrita** *cursiva* `x` [e](https://example.com) 2 * 3 ".repeat(400);
-    const t0 = performance.now();
+    const t0 = cpu();
     const spans = inlineSpans(long);
-    expect(performance.now() - t0).toBeLessThan(150);
+    expect(cpu() - t0).toBeLessThan(150);
     expect(spans.length).toBe(1600);
-  });
+  }, 120_000);
 });
 
 describe("a format's shortcut or button on the text", () => {

@@ -3,6 +3,7 @@ import { checkPlan, coreTools, leaf } from "@boni/agent";
 import { label } from "@boni/entities";
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import {
   BUDGET_FLOW,
   checkFlow,
@@ -1249,7 +1250,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       });
     }
     // A pause in the editor is one keep: what a morning of edits would send, each with the whole plan.
-    const t0 = performance.now();
+    const t0 = cpu();
     for (let i = 0; i < 100; i++) {
       const steps = plan.steps.map((s, k) =>
         k === i % 20 ? { ...s, data: { template: { lit: `Cambio ${i}` } } } : s,
@@ -1264,8 +1265,8 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
         ),
       ).toHaveProperty("draft.base", 2);
     }
-    const keeps = (performance.now() - t0) / 100;
-    const t1 = performance.now();
+    const keeps = (cpu() - t0) / 100;
+    const t1 = cpu();
     const v = flowView(
       store,
       id,
@@ -1274,10 +1275,10 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       () => null,
       () => null,
     );
-    const view = performance.now() - t1;
+    const view = cpu() - t1;
     expect(v?.draft?.base).toBe(2);
     expect(keeps).toBeLessThan(20);
     expect(view).toBeLessThan(500);
     // Writing a year of runs first takes longer than vitest's 5 s on CI's machine; what is measured is above.
-  }, 30_000);
+  }, 120_000);
 });

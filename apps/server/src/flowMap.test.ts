@@ -6,6 +6,7 @@ import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTO_AREA } from "./autoAccept.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { createCollection, createRow } from "./data.ts";
 import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
 import { BUDGET_FLOW, ensureFlow, FETCH_FLOW, REVIEW_FLOW } from "./flows.ts";
@@ -958,12 +959,12 @@ describe("Boni's map, computed (F8; A-16)", () => {
         },
         "portatil",
       );
-    const t0 = performance.now();
+    const t0 = cpu();
     const m = mapOf(30, null);
-    const ms = performance.now() - t0;
+    const ms = cpu() - t0;
     expect(m.nodes.filter((n) => n.kind === "block").length).toBe(1 + 20 * 11);
     expect(ms).toBeLessThan(1500);
-  }, 30_000);
+  }, 120_000);
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {
     world();
@@ -1028,9 +1029,9 @@ describe("Boni's map, computed (F8; A-16)", () => {
           at,
         });
     }
-    const t0 = performance.now();
+    const t0 = cpu();
     const m = mapOf(30, w.correo);
-    const ms = performance.now() - t0;
+    const ms = cpu() - t0;
     const leer = m.nodes.find((n) => n.id === "flow:leer-correo");
     expect(leer?.runs).toBeGreaterThan(900);
     // Its reading's calls of the period, on its step.
@@ -1039,5 +1040,5 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(edgeOf(m, "flow:leer-correo", "dev:all", "tells")?.n).toBe(inPeriod);
     expect(ms).toBeLessThan(1500);
     // What is measured is the map (above); writing a year of runs first takes longer than vitest's 5 s on CI's machine.
-  }, 30_000);
+  }, 120_000);
 });

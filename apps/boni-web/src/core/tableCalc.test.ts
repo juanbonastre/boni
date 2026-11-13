@@ -1,6 +1,7 @@
 // Tests of a table's calculations and groups (task 76), with rows shaped like Juan's and at his volume.
 import { describe, expect, it } from "vitest";
 import type { DataField, DataRow } from "./agent.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { calcsFor, calcValue, groupRows } from "./tableCalc.ts";
 
 const estado: DataField = {
@@ -117,17 +118,17 @@ describe("a table's rows grouped by a column (task 76)", () => {
         f_hecha: i % 2 === 0,
       }),
     );
-    const t0 = performance.now();
+    const t0 = cpu();
     for (let k = 0; k < 10; k++) {
       groupRows(many, estado);
       groupRows(many, dia);
       for (const c of calcsFor(horas)) calcValue(c, horas, many);
       for (const c of calcsFor(dia)) calcValue(c, dia, many);
     }
-    // A few ms alone, 51 under make check beside the e2e suite: the bound catches worse than linear (3,000² is seconds).
-    expect((performance.now() - t0) / 10).toBeLessThan(250);
+    // A few ms of CPU: the bound, in the thread's CPU time (task 116), catches worse than linear (3,000² is seconds).
+    expect((cpu() - t0) / 10).toBeLessThan(250);
     expect(groupRows(many, estado).map((g) => g.rows.length)).toEqual([2000, 1000]);
-  });
+  }, 120_000);
 
   it("measures a list too long to spread into Math.max (a stack's worth of values)", () => {
     const long = Array.from({ length: 300_000 }, (_, i) =>
