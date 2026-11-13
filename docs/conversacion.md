@@ -120,7 +120,7 @@ Una conversación es la misma esté donde esté; la superficie solo cambia cómo
 | **Pantalla Conversación** | «Ampliar» en la ventana | La conversación entera, con la lista de chats al lado |
 | **Bloque «Chat» en una página** | Una conversación centrada en una extensión (§3.3) | Su bienvenida, sus botones y la barra. Al escribir o pulsar, se abre la ventana con esa conversación, como los agentes incrustados de Notion |
 | **Móvil** | Las mismas entradas | Pantalla completa, con la barra abajo |
-| **Círculo de Boni** | En las pantallas de Boni en el escritorio (F9, la 85) y, en el teléfono, como widget de la pantalla de inicio (la 115); sobre las demás apps, más adelante | Abre la última conversación o una nueva. Es el «botón abajo a la derecha» de `extensiones.md` §8, con el contexto de la pantalla |
+| **Círculo de Boni** | En las pantallas de Boni en el escritorio (F9, la 85) y, en el teléfono, como la burbuja de Android sobre las demás apps y como widget de la pantalla de inicio (la 115) | Abre la última conversación o una nueva. Es el «botón abajo a la derecha» de `extensiones.md` §8, con el contexto de la pantalla |
 | **Voz** (más adelante) | Desde el círculo | §3.7 |
 
 ### 3.3 Sin «asistentes» aparte: el modo de conversación de una extensión

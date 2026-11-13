@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -157,7 +158,9 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(frame)
         WindowCompat.getInsetsController(window, frame).isAppearanceLightStatusBars = false
-        pendingLaunch = intent.launchTarget()
+        // Boni open as one of Android's bubbles (its circle on the phone, task 115) opens on the conversation.
+        bubbled = inBubble(resources.configuration)
+        pendingLaunch = intent.launchTarget() ?: if (bubbled) Launcher.CHAT else null
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
         // Boni's notices reach the phone with the app closed (task 62): its address, once per start with a session.
         // Not in the test copy (the debug build, beside the real app): it never asks for the permission nor registers.
@@ -200,6 +203,36 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         val target = intent.launchTarget() ?: return
         send(JSONObject().put("type", "navigate").put("screen", target))
+    }
+
+    /** Whether the window is one of Android's bubbles (Bubble), said in the log with what decided it. */
+    private var bubbled = false
+
+    private fun inBubble(config: Configuration): Boolean {
+        val launched = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && isLaunchedFromBubble
+        val text = config.toString()
+        val now = Bubble.isBubble(launched, text)
+        val window = Regex("mWindowingMode=\\S+|mAlwaysOnTop=\\S+").findAll(text.substringAfter("winConfig=", ""))
+            .joinToString(" ") { it.value }
+        Log.i(TAG, "window: bubble=$now launchedFromBubble=$launched multiWindow=$isInMultiWindowMode $window")
+        return now
+    }
+
+    /** Boni turned into a bubble while it was open (its task floated from the launcher): the conversation, once. */
+    private fun windowChanged(config: Configuration) {
+        val now = inBubble(config)
+        if (now && !bubbled) send(JSONObject().put("type", "navigate").put("screen", Launcher.CHAT))
+        bubbled = now
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        windowChanged(newConfig)
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        windowChanged(newConfig)
     }
 
     /** One event for the page (`ShellEvent` in host.ts). */

@@ -1099,10 +1099,17 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     (se cierran los ajustes, una gráfica, un registro venido de otra app y la lista de conversaciones; el texto de
     un registro se manda antes, y un panel con algo escrito pregunta antes de irse). No enseña nada de Juan, así que
     nunca se refresca ni lee el servidor;
+  - **la burbuja** (`Bubble.kt`, I-38): el círculo sobre las demás apps es la burbuja de Android 17 (Juan,
+    2026-11-13: «A, la burbuja»). Se pide desde el icono de Boni (mantenerlo pulsado y elegir la burbuja); Boni no
+    pide permisos ni deja una notificación fija. Android no da una forma de preguntar si una app es una burbuja, así
+    que lo dice la ventana: una tarea de varias ventanas que se queda siempre encima, lo que no es una pantalla
+    partida ni una ventana de escritorio (o la marca de Android `isLaunchedFromBubble`). Boni que empieza en una
+    burbuja abre la conversación (el mismo destino `chat`), y Boni abierto que pasa a ser burbuja también, una vez.
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);
-  - el círculo en el teléfono sobre las demás apps (la 115: su forma, a la espera de Juan);
+  - un círculo propio de Boni siempre encima de las demás apps (con «Mostrar sobre otras apps» y una notificación
+    fija), si la burbuja se queda corta: no se pidió (la 115);
   - la decisión 3 de `conversacion.md` (la ventana, superficie por defecto): la fila «Conversación» abre aún la
     pantalla entera.
 
