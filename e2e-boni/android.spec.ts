@@ -137,9 +137,6 @@ async function openAndroid(
               const [status, body] = answer(a[0] as string, a[1] as string);
               return { ok: true, status, body };
             }
-          // «Adjuntar» (task 114): what the phone's picker gave, as the app tells the page (a key, a name, a size).
-          case "chooseFiles":
-            return w.__chosen ?? [];
           case "storeRead":
             return files.get(a[0] as string) ?? null;
           case "storeWrite":
@@ -193,40 +190,55 @@ async function openAndroid(
           calls.push(
             `${method} ${method === "login" ? "(form)" : JSON.stringify(a).slice(0, 120)}`,
           );
+          // «Adjuntar» (task 114): what the phone's picker gave, as the app tells the page (a key, a name, a
+          // size). It is fixed when asked, as the phone's is once chosen: a test that sets `__chosen` right
+          // after a cancelled pick must not have that pick answer with its files.
+          if (method === "chooseFiles") {
+            const chosen = JSON.stringify({ ok: true, value: w.__chosen ?? [] });
+            setTimeout(() => {
+              answers.set(id, chosen);
+              (w.__boniReply as (id: string) => void)(id);
+            }, 15);
+            return;
+          }
           // A chosen file goes from the phone in steps, saying how much has gone, and the server keeps it as a row
           // of his files (apps/server/src/drops.ts answers so).
           if (method === "uploadFile") {
             const file = ((w.__chosen ?? []) as { key: string; name: string; size: number }[]).find(
               (f) => f.key === a[0],
             );
-            const steps = 6;
-            for (let i = 1; i <= steps; i++)
-              setTimeout(() => {
-                if (i < steps && file)
-                  (w.__boniEvent as (j: string) => void)(
-                    JSON.stringify({
-                      type: "upload",
-                      key: file.key,
-                      sent: Math.floor((file.size * i) / steps),
+            const answer = () => {
+              const value = file
+                ? {
+                    status: 200,
+                    body: JSON.stringify({
+                      id: `e_01drop${file.key}`,
+                      name: file.name,
+                      type: "t_01archivos",
+                      size: file.size,
+                      folder: "conversación/2026-11",
+                      state: file.name.endsWith(".pdf") ? "text" : "image",
                     }),
-                  );
-                if (i < steps) return;
-                const value = file
-                  ? {
-                      status: 200,
-                      body: JSON.stringify({
-                        id: `e_01drop${file.key}`,
-                        name: file.name,
-                        type: "t_01archivos",
-                        size: file.size,
-                        folder: "conversación/2026-11",
-                        state: file.name.endsWith(".pdf") ? "text" : "image",
-                      }),
-                    }
-                  : { error: "unreadable" };
-                answers.set(id, JSON.stringify({ ok: true, value }));
-                (w.__boniReply as (id: string) => void)(id);
-              }, i * 250);
+                  }
+                : { error: "unreadable" };
+              answers.set(id, JSON.stringify({ ok: true, value }));
+              (w.__boniReply as (id: string) => void)(id);
+            };
+            // Half of it has gone; the rest when the test lets it (`__held`), never on a timer it could miss.
+            setTimeout(() => {
+              if (file)
+                (w.__boniEvent as (j: string) => void)(
+                  JSON.stringify({
+                    type: "upload",
+                    key: file.key,
+                    sent: Math.floor(file.size / 2),
+                  }),
+                );
+              if (!w.__holdUploads) return void setTimeout(answer, 100);
+              const held = (w.__held ?? []) as (() => void)[];
+              held.push(answer);
+              w.__held = held;
+            }, 20);
             return;
           }
           setTimeout(() => {
@@ -376,21 +388,28 @@ test("«Adjuntar» in the conversation (task 114, A-24, I-36): the phone's own p
   await expect(page.locator(".chat-composer .chat-chip")).toHaveCount(0);
   // A PDF and a photo of the phone, as the picker gives them.
   await page.evaluate(() => {
-    (window as unknown as { __chosen: unknown }).__chosen = [
+    const w = window as unknown as { __chosen: unknown; __holdUploads: boolean };
+    w.__chosen = [
       { key: "f1", name: "Factura FAC-2026-0142.pdf", size: 182_000 },
       { key: "f2", name: "IMG_0042.jpg", size: 3_400_000 },
     ];
+    w.__holdUploads = true;
   });
   await attach.tap();
   const bar = page.locator(".chat-composer .chat-pointed");
   const going = bar.locator(".chat-chip.upload.uploading");
   await expect(going).toHaveCount(2);
   await expect(going.first().locator(".chat-chip-text")).toHaveText("Factura FAC-2026-0142.pdf");
+  // How much has gone, from the app's `upload` events, by each file's key.
+  await expect(going.locator(".chat-chip-word")).toHaveText(["50 %", "50 %"]);
+  await expect(going.first().getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
   await expect(going.first().getByRole("progressbar")).toBeVisible();
-  await expect(going.first().locator(".chat-chip-word")).toHaveText(/^\d{1,2} %$/);
   await box.fill("¿cuánto es el total?");
   await expect(page.getByRole("button", { name: "Subiendo" })).toBeDisabled();
   await page.screenshot({ path: "e2e-boni/screenshots/android-attach-uploading.png" });
+  await page.evaluate(() => {
+    for (const done of (window as unknown as { __held: (() => void)[] }).__held) done();
+  });
   // Up: chips of his files, read for the message, and the page only ever named their keys.
   const chips = bar.locator('.chat-chip:has([data-boni-action="files.read"])');
   await expect(chips).toHaveText(["Factura FAC-2026-0142.pdf", "IMG_0042.jpg"]);
