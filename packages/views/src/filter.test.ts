@@ -145,11 +145,18 @@ describe("filters", () => {
       },
     ];
     const typeOf = (x: string) => types[x];
-    const start = performance.now();
+    // Timed in this thread's CPU time, not on the clock: a busy machine stops the thread while the clock goes on, and
+    // the clock read 110-147 ms for what takes a few (task 113: `make check` beside seven other sessions' checks).
+    const cpu = () => {
+      const u = process.threadCpuUsage();
+      return (u.user + u.system) / 1000;
+    };
+    const start = cpu();
     let kept = 0;
     for (let n = 0; n < 10; n++)
       kept = rows.filter((r) => matchesFilters(r, typeOf, items, "2026-11-12")).length;
-    const each = (performance.now() - start) / 10;
+    const each = (cpu() - start) / 10;
+    console.log(`a group over 5,000 records: ${each.toFixed(1)} ms of CPU each read`);
     expect(kept).toBeGreaterThan(0);
     expect(kept).toBeLessThan(5000);
     // Measured at 2026-11-12 on the laptop: see the PR; the bound only catches a change of order.

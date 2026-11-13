@@ -43,6 +43,10 @@ beforeAll(async () => {
     agent: host,
   });
   http = serve(app, "tailnet");
+  // fetch keeps the connection of one request for the next; on a busy machine the setup between two of them can last
+  // past Node's 5 s, the server closes it as fetch sends on it, and the request fails with ECONNRESET (task 113:
+  // every run with the CPUs held). The server's own idle limit is not what these tests measure.
+  http.keepAliveTimeout = 120_000;
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
   const r = await fetch(`${base}/api/login`, {
@@ -118,10 +122,23 @@ function fill(path: string) {
   sql.close();
 }
 
+/**
+ * The CPU time this thread has spent, in ms (task 113). The bounds of the loop's holding are in it, not in the clock's
+ * time: a machine busy with other work (CI's `check` runs every package's tests at once) stops this thread now and
+ * then while the clock goes on, so a slice read on the clock can take the length of the stop, and the whole sum,
+ * timed a moment before, need not have been stopped as long. This thread's CPU time does not advance while it is
+ * stopped.
+ */
+const cpu = () => {
+  const u = process.threadCpuUsage();
+  return (u.user + u.system) / 1000;
+};
+
 /** The figures as the route summed them before (task 43): every table whole, in one go. */
 function whole(path: string) {
   const sql = new DatabaseSync(path, { readOnly: true });
   try {
+    const c0 = cpu();
     const t0 = performance.now();
     const history = sql
       .prepare(
@@ -143,6 +160,7 @@ function whole(path: string) {
       .get() as { a: number; x: number; b: number };
     return {
       ms: performance.now() - t0,
+      cpu: cpu() - c0,
       figures: {
         history: Object.fromEntries(history.map((r) => [r.type, Number(r.b)])),
         modelCalls: { rows: Number(mc.n), bytes: Number(mc.b) },
@@ -161,47 +179,57 @@ type Figures = {
 };
 
 /**
- * The route asked, with the longest the event loop went without a turn while it answered and how many times it was
- * held 10 ms or more (the slices it was counted in).
+ * The route asked, with the longest the event loop went without a turn while it answered, on the clock (`held`) and
+ * in this thread's CPU time (`cpuHeld`, what the bounds use), the CPU time the whole answer took (`cpuMs`), and how
+ * many times the loop was held 10 ms or more on the clock (the slices it was counted in; a busy machine only makes
+ * that count larger).
  */
 async function asked<T = Figures>(
   path = "/api/data/audit/storage",
-): Promise<{ ms: number; held: number; long: number; body: T }> {
+): Promise<{ ms: number; held: number; cpuMs: number; cpuHeld: number; long: number; body: T }> {
   let held = 0;
+  let cpuHeld = 0;
   let long = 0;
   let last = performance.now();
+  let lastCpu = cpu();
   let on = true;
   const tick = () => {
     const now = performance.now();
+    const nowCpu = cpu();
     held = Math.max(held, now - last);
+    cpuHeld = Math.max(cpuHeld, nowCpu - lastCpu);
     if (now - last >= 10) long++;
     last = now;
+    lastCpu = nowCpu;
     if (on) setTimeout(tick, 0);
   };
   setTimeout(tick, 0);
   const t0 = performance.now();
+  const c0 = cpu();
   const r = await fetch(`${base}${path}`, {
     headers: { authorization: `Bearer ${t}` },
   });
   const body = (await r.json()) as T;
   const ms = performance.now() - t0;
+  const cpuMs = cpu() - c0;
   on = false;
   expect(r.status).toBe(200);
-  return { ms, held, long, body };
+  return { ms, held, cpuMs, cpuHeld, long, body };
 }
 
 describe("the storage figures with Juan's volume (task 107, A-28)", () => {
   it("never hold the server: counted a slice at a time the first time, then only what is new", async () => {
     const path = join(dir, "users", "1.db");
-    // What the old route did at once, timed warm (the best of two, after one to warm it): the bounds are relative to
-    // it, so a loaded runner slows both alike.
+    // What the old route did at once, timed warm (the best of two, after one to warm it), in this thread's CPU time:
+    // the bounds are relative to it and measured the same way, so a busy machine, which stops this thread but not
+    // its CPU time, moves neither side (task 113).
     whole(path);
     const before = whole(path);
-    const ref = Math.min(before.ms, whole(path).ms);
+    const ref = Math.min(before.cpu, whole(path).cpu);
     const first = await asked();
     const again = await asked();
     console.log(
-      `storage figures with his volume: the whole sum ${ref.toFixed(0)} ms at once; the first answer ${first.ms.toFixed(0)} ms with the loop held at most ${first.held.toFixed(0)} ms, ${first.long} times 10 ms or more; the next ${again.ms.toFixed(0)} ms`,
+      `storage figures with his volume: the whole sum ${ref.toFixed(0)} ms of CPU at once (${before.ms.toFixed(0)} ms on the clock); the first answer ${first.ms.toFixed(0)} ms with the loop held at most ${first.cpuHeld.toFixed(0)} ms of CPU (${first.held.toFixed(0)} ms on the clock), ${first.long} times 10 ms or more; the next ${again.cpuMs.toFixed(0)} ms of CPU (${again.ms.toFixed(0)} ms on the clock)`,
     );
     const figures = (b: Figures) => ({
       history: Object.fromEntries(b.types.map((x) => [x.type, x.history])),
@@ -212,11 +240,11 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
     expect(figures(first.body)).toEqual(before.figures);
     expect(figures(again.body)).toEqual(before.figures);
     // The loop is free between slices: never held for the whole sum (the route as it was held it all of `ref`).
-    expect(first.held).toBeLessThan(Math.max(80, ref / 2));
+    expect(first.cpuHeld).toBeLessThan(Math.max(80, ref / 2));
     // And given back between slices: the old route held it once, for all of it.
     expect(first.long).toBeGreaterThanOrEqual(4);
     // Then only what is new is counted: no table read whole again.
-    expect(again.ms).toBeLessThan(Math.max(40, ref / 4));
+    expect(again.cpuMs).toBeLessThan(Math.max(40, ref / 4));
   }, 120_000);
 });
 
@@ -225,6 +253,7 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
  * runs and every proposal read whole, the readings among the latest thousand actions of a reader.
  */
 function summedBefore(store: UserStore, from: number, to: number) {
+  const c0 = cpu();
   const t0 = performance.now();
   const inRange = (at: number | null) => at !== null && at >= from && at < to;
   const activity = store.audit.activity(from, to);
@@ -237,6 +266,7 @@ function summedBefore(store: UserStore, from: number, to: number) {
   return {
     readingsCut: readings,
     ms: performance.now() - t0,
+    cpu: cpu() - c0,
     figures: {
       activity,
       byType: byType.sort((a, b) => a.type.localeCompare(b.type) || a.by.localeCompare(b.by)),
@@ -280,14 +310,14 @@ describe("the activity of the last thirty days with Juan's volume (task 108, A-2
       COMMIT;`);
     sql.close();
     const from = NOW - 30 * DAY;
-    // The old count, timed warm (the best of two, after one to warm it).
+    // The old count, timed warm (the best of two, after one to warm it), in this thread's CPU time (task 113).
     summedBefore(store, from, NOW);
     const before = summedBefore(store, from, NOW);
-    const ref = Math.min(before.ms, summedBefore(store, from, NOW).ms);
+    const ref = Math.min(before.cpu, summedBefore(store, from, NOW).cpu);
     const got = await asked<Summary>(`/api/data/audit/summary?from=${from}&to=${NOW}`);
     const again = await asked<Summary>(`/api/data/audit/summary?from=${from}&to=${NOW}`);
     console.log(
-      `activity of thirty days with his volume (${before.figures.reads} reads, ${before.figures.writes} changes, ${before.figures.requests} requests in them): counted as before ${ref.toFixed(0)} ms at once; now ${got.ms.toFixed(0)} ms with the loop held at most ${got.held.toFixed(0)} ms, the next ${again.ms.toFixed(0)} ms`,
+      `activity of thirty days with his volume (${before.figures.reads} reads, ${before.figures.writes} changes, ${before.figures.requests} requests in them): counted as before ${ref.toFixed(0)} ms of CPU at once; now ${got.ms.toFixed(0)} ms with the loop held at most ${got.cpuHeld.toFixed(0)} ms of CPU (${got.held.toFixed(0)} ms on the clock), the next held at most ${again.cpuHeld.toFixed(0)} ms of CPU`,
     );
     const figures = (b: Summary) => ({
       activity: b.activity,
@@ -321,7 +351,7 @@ describe("the activity of the last thirty days with Juan's volume (task 108, A-2
     expect(all).toBeGreaterThan(before.readingsCut);
     expect(got.body.totals.readings).toBe(all);
     // Never held for the old count (the route as it was held the loop all of `ref`): kept sums and counts on indexes.
-    expect(got.held).toBeLessThan(Math.max(40, ref / 3));
-    expect(again.held).toBeLessThan(Math.max(40, ref / 3));
+    expect(got.cpuHeld).toBeLessThan(Math.max(40, ref / 3));
+    expect(again.cpuHeld).toBeLessThan(Math.max(40, ref / 3));
   }, 120_000);
 });
