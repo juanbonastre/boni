@@ -127,6 +127,83 @@ export function PopButton({
 }
 
 /**
+ * `PopButton`'s box for a button that is not React's (the text editor's own, TextRun.tsx): under it, kept inside the
+ * window; an outside click or Esc closes it, Esc giving the focus back to the button.
+ */
+export function AnchoredBox({
+  anchor,
+  label,
+  align = "start",
+  width,
+  onClose,
+  children,
+}: {
+  anchor: HTMLElement;
+  label: string;
+  align?: "start" | "end";
+  width?: number;
+  onClose: () => void;
+  children: (close: () => void) => ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const b = anchor.getBoundingClientRect();
+      const el = box.current;
+      if (!el) return;
+      const r = { width: el.offsetWidth, height: el.offsetHeight };
+      let left = align === "end" ? b.right - r.width : b.left;
+      left = Math.max(4, Math.min(left, window.innerWidth - r.width - 4));
+      let top = b.bottom + 4;
+      if (top + r.height > window.innerHeight - 4) top = Math.max(4, b.top - r.height - 4);
+      setPos({ left: Math.round(left), top: Math.round(top) });
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (box.current) ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [anchor, align]);
+  useEffect(() => {
+    const outside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (box.current?.contains(target) || anchor.contains(target)) return;
+      if ((target as Element).closest?.(".pop-box")) return;
+      onClose();
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
+      anchor.focus();
+    };
+    document.addEventListener("mousedown", outside);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [anchor, onClose]);
+  return (
+    <div
+      ref={box}
+      className="pop-box"
+      role="dialog"
+      aria-label={label}
+      style={{
+        left: pos?.left ?? 0,
+        top: pos?.top ?? 0,
+        visibility: pos ? "visible" : "hidden",
+        ...(width ? { width } : {}),
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {children(onClose)}
+    </div>
+  );
+}
+
+/**
  * A menu where the pointer was (a click or a right click on a block), kept inside the window. Outside click or
  * Esc closes it. It is opened by a click, so listening for the next press can start at once.
  */

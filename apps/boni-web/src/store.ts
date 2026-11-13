@@ -1,5 +1,4 @@
 import {
-  blocksToMarkdown,
   type ControlBlock,
   type DatabaseFilter,
   type DatabaseView,
@@ -7,14 +6,16 @@ import {
   type FilterItem,
   flowRowTarget,
   MAX_VIEWS,
-  markdownToBlocks,
+  type MarkdownSource,
   type PageSpec,
+  readMarkdown,
   resolveTemplateLinks,
   type SavedView,
   SYS,
   tableRules,
   templatePage,
   withPassed,
+  writeMarkdown,
 } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -3050,7 +3051,7 @@ export function setPageBlocks(blocks: Block[], typingIn?: string) {
 function putSpec(page: Page, spec: PageSpec) {
   if (page.id.startsWith("row:")) {
     set({ rowDoc: { ...page, spec } });
-    setRowBody(blocksToMarkdown(spec.blocks));
+    setRowBlocks(page.id.slice(4), spec.blocks);
     return;
   }
   set({ page: { ...page, spec } });
@@ -4594,15 +4595,25 @@ export async function editRowValue(type: string, id: string, field: string, valu
   }
 }
 
-/** A row's text (Markdown) as a page the block editor edits (Juan, 2026-10-22: notes as pages). */
-const rowDocOf = (row: DataRow): Page => ({
-  id: `row:${row.id}`,
-  title: "",
-  icon: "",
-  parent: null,
-  position: 0,
-  spec: { version: 1, blocks: markdownToBlocks(row.body ?? "") },
-});
+/**
+ * A row's text (Markdown) as a page the block editor edits (Juan, 2026-10-22: notes as pages). The text as it was read
+ * is kept with where each block came from, so it is written back with the same bytes where it was not edited (task
+ * 2g, `writeMarkdown`).
+ */
+function rowDocOf(row: DataRow): Page {
+  const { blocks, source } = readMarkdown(row.body ?? "");
+  rowSource = { id: row.id, source };
+  return {
+    id: `row:${row.id}`,
+    title: "",
+    icon: "",
+    parent: null,
+    position: 0,
+    spec: { version: 1, blocks },
+  };
+}
+/** The open row's text as it was read: what its blocks are written over. */
+let rowSource: { id: string; source: MarkdownSource } | null = null;
 
 /** The document being edited (a page, a row's text), for the panels that show one of its blocks. */
 export const useEditing = () => useStore((s) => (s.view.kind === "row" ? s.rowDoc : s.page));
@@ -4612,10 +4623,16 @@ const editing = (): Page | null => {
   if (v === "row") return get().rowDoc;
   return get().page;
 };
+/** The document being edited, as it is now (the text editor writes its blocks into it, TextRun.tsx). */
+export const editingDoc = (): Page | null => editing();
 
 // The text of the open row is sent after a pause in typing, and before leaving it.
 let bodyTimer: ReturnType<typeof setTimeout> | null = null;
-let bodyPending: { id: string; body: string } | null = null;
+/**
+ * What is to be sent: the row's blocks as they are now (their Markdown is written only when they are sent, never on
+ * every key: a long note is not written whole as each letter is typed, A-15), or a text set as it is.
+ */
+let bodyPending: { id: string; blocks?: readonly Block[]; body?: string } | null = null;
 
 export function setRowBody(body: string) {
   const row = get().row;
@@ -4626,12 +4643,29 @@ export function setRowBody(body: string) {
   bodyTimer = setTimeout(() => void flushRowBody(), 600);
 }
 
+/** The open row's blocks changed in its editor: its text is written from them when it is sent. */
+function setRowBlocks(id: string, blocks: readonly Block[]) {
+  if (get().row?.id !== id) return;
+  bodyPending = { id, blocks };
+  if (bodyTimer) clearTimeout(bodyTimer);
+  bodyTimer = setTimeout(() => void flushRowBody(), 600);
+}
+
 export async function flushRowBody() {
   if (bodyTimer) clearTimeout(bodyTimer);
   bodyTimer = null;
-  const p = bodyPending;
+  const pending = bodyPending;
   bodyPending = null;
-  if (!p) return;
+  if (!pending) return;
+  const row = get().row;
+  const source = rowSource?.id === pending.id ? rowSource.source : null;
+  const body = pending.body ?? writeMarkdown(pending.blocks ?? [], source);
+  if (pending.blocks) {
+    // Blocks changed and changed back say the same text: nothing is written.
+    if (row?.id === pending.id && (row.body ?? "") === body) return;
+    if (row?.id === pending.id) set({ row: { ...row, body } });
+  }
+  const p = { id: pending.id, body };
   try {
     await sendWrite(rowWrite(p.id, {}, p.body, Date.now()));
   } catch (e) {
@@ -4659,8 +4693,21 @@ function keepUnsent() {
 /** A title or a property being typed in is saved when it is left: the window going leaves it. */
 function leaveTyping() {
   const el = document.activeElement;
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.blur();
+  // A page's or a note's text (its editor, contenteditable) first takes what the screen shows and it has not read yet
+  // (a word being composed on a phone's keyboard), then is left as a field is.
+  if (el instanceof HTMLElement && el.isContentEditable) editorLeaving?.();
+  if (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    (el instanceof HTMLElement && el.isContentEditable)
+  )
+    el.blur();
 }
+/** What the text editor with the caret does when the window goes (TextRun.tsx): what is on its screen is read. */
+let editorLeaving: (() => void) | null = null;
+export const onEditorLeaving = (f: (() => void) | null) => {
+  editorLeaving = f;
+};
 
 /** The write did not reach the server or the server failed (5xx): it stays kept, and what is on the screen too. */
 const unreached = (e: unknown) =>

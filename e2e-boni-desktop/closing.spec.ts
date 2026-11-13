@@ -208,7 +208,8 @@ const WAYS: { how: Close; paces: readonly (typeof PACES)[number][] }[] = [
   { how: "window", paces: [PACES[0]] },
 ];
 
-const pageText = (w: Page) => w.getByRole("textbox", { name: "Texto" });
+/** A page's lines of text (TextRun.tsx): each block's text in the page's blocks (a page has no `.doc-editor`, a note's own). */
+const pageText = (w: Page) => w.locator(".doc-blocks .blk-input");
 const unsentFile = () => join(dir, "data", "boni", "store", "unsent.json");
 const unsentText = () => (existsSync(unsentFile()) ? readFileSync(unsentFile(), "utf8") : "");
 
@@ -253,7 +254,7 @@ for (const { how, paces } of WAYS) {
       await close(how);
       w = await main();
       await openNote(w);
-      await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveValue(`Texto ${tag}`);
+      await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText(`Texto ${tag}`);
     });
 
     test(`a note's title, typed at ${pace.name} and Boni closed at once (${how})`, async () => {
@@ -308,8 +309,8 @@ test("a long note's text, typed and Boni closed at once: there when it opens aga
   await close("quit");
   w = await main();
   await openNote(w, longId);
-  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveValue("Final del diario");
-  await expect(w.locator(".row-doc .doc-editor .blk-input").first()).toHaveValue(
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText("Final del diario");
+  await expect(w.locator(".row-doc .doc-editor .blk-input").first()).toHaveText(
     "Línea 1 del diario de ejemplo.",
   );
 });
@@ -366,7 +367,7 @@ test("a note's property and text typed with the server gone: kept on the device,
   await expect.poll(unsentText, { timeout: 20_000 }).toBe("");
   await openNote(w);
   await expect((await lugar(w)).locator(".db-cell")).toContainText(" SR");
-  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveValue("Escrito sin red");
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText("Escrito sin red");
 });
 
 test("a property kept without the server goes with the note's next write once it is back, not left behind", async () => {
@@ -389,7 +390,7 @@ test("a property kept without the server goes with the note's next write once it
   w = await main();
   await openNote(w);
   await expect((await lugar(w)).locator(".db-cell")).toContainText(" kept");
-  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveValue("Con red otra vez");
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText("Con red otra vez");
 });
 
 test("quitting with a write the server does not answer takes a second or so, and the write is kept for the next start", async () => {

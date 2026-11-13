@@ -215,12 +215,10 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
   // Its text as a page (Juan, 2026-10-22): a paragraph, a heading, a bullet, a to-do.
   const doc = w.locator(".row-doc .doc-editor");
-  await expect(doc.locator(".blk-input").first()).toHaveValue(
-    "Preparar los ejercicios del tema 3.",
-  );
-  await expect(doc.locator(".blk-h2 .blk-input")).toHaveValue("Material");
-  await expect(doc.locator(".blk-bullet .blk-input")).toHaveValue("Proyector");
-  await expect(doc.locator(".blk-todo .blk-input")).toHaveValue("Fotocopias");
+  await expect(doc.locator(".blk-input").first()).toHaveText("Preparar los ejercicios del tema 3.");
+  await expect(doc.locator(".blk-h2 .blk-input")).toHaveText("Material");
+  await expect(doc.locator(".blk-bullet .blk-input")).toHaveText("Proyector");
+  await expect(doc.locator(".blk-todo .blk-input")).toHaveText("Fotocopias");
   // Written at the end as on a page: a new block, kept as Markdown.
   await doc.locator(".doc-tail").click();
   await w.keyboard.type("Llevar el proyector.", { delay: 15 });
@@ -228,8 +226,8 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await w.waitForTimeout(1200);
   await w.locator(".topbar .crumb", { hasText: "Mi agenda" }).click();
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
-  await expect(doc.locator(".blk-input").last()).toHaveValue("Llevar el proyector.");
-  await expect(doc.locator(".blk-h2 .blk-input")).toHaveValue("Material");
+  await expect(doc.locator(".blk-input").last()).toHaveText("Llevar el proyector.");
+  await expect(doc.locator(".blk-h2 .blk-input")).toHaveText("Material");
 });
 
 test("a page of numbers and charts from a collection: each block's panel from the catalogue, side by side on the grid", async () => {
@@ -628,7 +626,7 @@ test("a boni:// link opens a record by its id in the running app", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   openLink(`boni://note?id=${classId}`);
-  await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
+  await expect(w.locator(".row-doc .blk-input").first()).toHaveText(
     /Preparar los ejercicios del tema 3/,
   );
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
@@ -670,7 +668,7 @@ test("a boni:// link with the window closed: the window opens on the note at the
   openLink(`boni://note?id=${classId}`);
   await expect.poll(() => main()).toBeDefined();
   const w = main() as NonNullable<ReturnType<typeof main>>;
-  await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
+  await expect(w.locator(".row-doc .blk-input").first()).toHaveText(
     /Preparar los ejercicios del tema 3/,
   );
 });
@@ -717,7 +715,7 @@ test("Boni Calendar's link with peek=1: a small window with the note; it stays w
   // The next one opens again, with its own note.
   openLink(`boni://note?id=${classId}&peek=1`);
   await expect.poll(visible).toBe(true);
-  await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
+  await expect(peek.locator(".row-doc .blk-input").first()).toHaveText(/Preparar los ejercicios/);
   // A hide that arrives just after opening (the same click in the calendar) does not take the new note away.
   openLink("boni://peek?hide=1");
   expect(await visible()).toBe(true);
@@ -754,7 +752,7 @@ test("the page opens a note in the peek, a window of its own (a mail from the co
   await expect.poll(visible).toBe(true);
   const peek = a.windows().find((x) => x.url().includes("peek=1"));
   if (!peek) throw new Error("no peek window");
-  await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
+  await expect(peek.locator(".row-doc .blk-input").first()).toHaveText(/Preparar los ejercicios/);
   await new Promise((r) => setTimeout(r, 1000));
   openLink("boni://peek?hide=1");
   await expect.poll(visible).toBe(false);

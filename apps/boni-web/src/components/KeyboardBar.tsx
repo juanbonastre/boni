@@ -3,6 +3,7 @@ import { CheckSquare, Heading1, List, Plus, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { undoPage, useStore } from "../store.ts";
 import { type TextKind, turnBlock } from "./PageView.tsx";
+import { addFromBar, caretInText } from "./TextRun.tsx";
 
 /** Whatever takes typing on the phone: then the keyboard is up and the tab bar steps aside. */
 const typing = (el: Element | null) =>
@@ -11,11 +12,9 @@ const typing = (el: Element | null) =>
     (el instanceof HTMLInputElement &&
       /^(text|search|email|url|tel|number|password)$/.test(el.type)) ||
     (el instanceof HTMLElement && el.isContentEditable));
-/** A block of a page or a note being written: what the bar works on. */
-const blockOf = (el: Element | null): HTMLTextAreaElement | null =>
-  el instanceof HTMLTextAreaElement && el.classList.contains("blk-input") && el.closest(".m-app")
-    ? el
-    : null;
+/** The text of a page or a note being written (TextRun.tsx): what the bar works on. */
+const inText = (el: Element | null): boolean =>
+  el instanceof HTMLElement && el.classList.contains("doc-run") && !!el.closest(".m-app");
 
 /**
  * While Juan writes, the tab bar and the + button step aside (the keyboard is up); in a page or a note's block a bar
@@ -31,7 +30,7 @@ export function KeyboardBar() {
     const update = () => {
       const el = document.activeElement;
       document.body.classList.toggle("m-typing", typing(el));
-      setBlock(!!blockOf(el));
+      setBlock(inText(el));
       const vv = window.visualViewport;
       setBottom(vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0);
     };
@@ -51,28 +50,13 @@ export function KeyboardBar() {
   // The bar's buttons keep the keyboard: pressing one never takes the focus from the block.
   const keep = (e: React.PointerEvent) => e.preventDefault();
   // The block the caret is in turns into a heading, a list or a to-do (and back), whatever its kind or the caret's place.
+  // The caret stays where it was in the block's text (the editor keeps it by block and place).
   const turn = (kind: TextKind) => {
-    const el = blockOf(document.activeElement);
-    const id = el?.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
-    if (!el || !id) return;
-    const at = el.selectionStart;
-    turnBlock(id, kind);
-    requestAnimationFrame(() => blockOf(document.activeElement)?.setSelectionRange(at, at));
+    const at = caretInText();
+    if (at) turnBlock(at.id, kind);
   };
-  const add = () => {
-    const el = blockOf(document.activeElement);
-    if (!el) return;
-    if (el.value === "") return void document.execCommand("insertText", false, "/");
-    // A new block after this one (Enter at its end), with the block menu open in it.
-    el.setSelectionRange(el.value.length, el.value.length);
-    el.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-    );
-    setTimeout(() => {
-      const next = blockOf(document.activeElement);
-      if (next && next.value === "") document.execCommand("insertText", false, "/");
-    }, 60);
-  };
+  // A new block after this one (Enter at its end), with the block menu open in it.
+  const add = () => void addFromBar();
   return (
     <div className="m-keybar" style={{ bottom }} role="toolbar" aria-label={t("kb.label")}>
       <button type="button" onPointerDown={keep} onClick={add} aria-label={t("kb.block")}>

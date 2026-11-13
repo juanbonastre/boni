@@ -14,13 +14,18 @@ export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
 export { filterErrors, liveRules, matchesFilters } from "./filter.ts";
 export {
+  blockKey,
   blocksToMarkdown,
   findPart,
   leadingTitle,
+  type MarkdownSource,
   markdownToBlocks,
   PART_KINDS,
   partKey,
   partOf,
+  partsOf,
+  readMarkdown,
+  writeMarkdown,
 } from "./markdown.ts";
 export * from "./money.ts";
 export {
