@@ -109,7 +109,9 @@ export type ShellEvent =
   /** Open something in the main window (tray, widget menu): "capture", "settings", "chart:<id>", "edit:<id>". */
   | { type: "navigate"; screen: string }
   /** The settings changed (another window, the live connection, a login). */
-  | { type: "settings"; settings: ClientSettings };
+  | { type: "settings"; settings: ClientSettings }
+  /** How much of a file chosen on the phone has gone (Android, task 114): its key, as `chooseFiles` gave it. */
+  | { type: "upload"; key: string; sent: number };
 
 export interface DesktopHost {
   /** This device's widget list changed (from the server): the shell opens, closes and resizes their windows. */
@@ -187,13 +189,20 @@ export interface Host {
    */
   openUrl?: (url: string) => Promise<"opened" | "error">;
   /**
-   * Sends a file dropped on Boni's window to `POST /api/data/files/upload` (A-24), saying how much has gone: the desktop
-   * app streams it from disk (its uploads.cjs), a browser with its own request. None on the phone (not yet).
+   * Sends a file dropped on Boni's window, or chosen with «Adjuntar», to `POST /api/data/files/upload` (A-24), saying
+   * how much has gone: the desktop app streams it from disk (its uploads.cjs), a browser with its own request. None on
+   * the phone: there the page never has the file (`chooseFiles`).
    */
   uploadFile?: (
     file: File,
     progress: (sent: number, size: number) => void,
   ) => Promise<UploadAnswer>;
+  /**
+   * The phone's own picker for «Adjuntar» in the conversation (Android, task 114): what was chosen (none if
+   * cancelled), each sent by the app from where it is on the phone, a part at a time, as the desktop sends a dropped
+   * file; the page gets a name and a size, never the file or its place.
+   */
+  chooseFiles?: () => Promise<readonly ChosenFile[]>;
   /**
    * The page inside another app's window (Boni Calendar's note peek, Juan 2026-10-22): it says when it listens,
    * asks to be put away and to open a note in Boni. The notes to show arrive as `navigate` events.
@@ -205,6 +214,13 @@ export interface Host {
    * browser, its localStorage. None: the store's write, which may not finish (Android's is a native call).
    */
   keepUnsent?: (text: string) => void;
+}
+
+/** A file chosen with the phone's picker: its name and size, and how the app sends it (`send`, once). */
+export interface ChosenFile {
+  name: string;
+  size: number;
+  send(progress: (sent: number, size: number) => void): Promise<UploadAnswer>;
 }
 
 export interface EmbedHost {

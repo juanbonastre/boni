@@ -1,5 +1,6 @@
 import type { TransportAnswer } from "./core/api.ts";
-import type { ClientSettings, Host, LoginAnswer, ShellEvent } from "./host.ts";
+import type { UploadAnswer } from "./core/uploads.ts";
+import type { ChosenFile, ClientSettings, Host, LoginAnswer, ShellEvent } from "./host.ts";
 
 /**
  * The Android app's side of the page (`window.boniAndroid`, apps/android/AndroidBridge.kt), as Boni Calendar's.
@@ -10,7 +11,9 @@ import type { ClientSettings, Host, LoginAnswer, ShellEvent } from "./host.ts";
  * The app owns what the desktop shell owns: the login (the token is kept encrypted by the Android Keystore and
  * never reaches the page), every request to the server (it has no CORS), the live changes while the app is open,
  * the minute ticks, the small files (offline queue, last answers) and the settings. It sends events with
- * `window.__boniEvent(json)`, and asks `window.__boniBack()` what Back should close.
+ * `window.__boniEvent(json)`, and asks `window.__boniBack()` what Back should close. A file attached to the
+ * conversation is chosen with the phone's own picker and sent by the app (`chooseFiles`, task 114): the page gets a
+ * key, a name and a size, and how much has gone as `upload` events.
  */
 export interface AndroidNative {
   call(id: string, method: string, args: string): void;
@@ -25,6 +28,8 @@ export function androidHost(native: AndroidNative): Host {
   let seq = 0;
   const pending = new Map<string, (a: Answer) => void>();
   const listeners = new Set<(e: ShellEvent) => void>();
+  // How much of each file being sent has gone, by its key (the app's `upload` events).
+  const sending = new Map<string, (sent: number) => void>();
   const w = window as unknown as Record<string, unknown>;
   w.__boniReply = (id: string) => {
     const done = pending.get(id);
@@ -45,6 +50,7 @@ export function androidHost(native: AndroidNative): Host {
     } catch {
       return;
     }
+    if (e.type === "upload") return void sending.get(e.key)?.(e.sent);
     for (const l of listeners) l(e);
   };
   const call = <T>(method: string, ...args: unknown[]): Promise<T> =>
@@ -87,6 +93,27 @@ export function androidHost(native: AndroidNative): Host {
     },
     logout: () => call<ClientSettings>("logout"),
     suggestedDevice: () => call<string>("suggestedDevice"),
+    // «Adjuntar» in the conversation: the phone's picker; each file goes from the phone, one after another, with
+    // its key (the page never has the file). A cancelled picker is none.
+    async chooseFiles(): Promise<readonly ChosenFile[]> {
+      const chosen = await call<{ key: string; name: string; size: number }[]>("chooseFiles").catch(
+        () => [],
+      );
+      return chosen.map((c) => ({
+        name: c.name,
+        size: c.size,
+        async send(progress) {
+          sending.set(c.key, (sent) => progress(sent, c.size));
+          try {
+            return await call<UploadAnswer>("uploadFile", c.key);
+          } catch {
+            return { error: "offline" as const };
+          } finally {
+            sending.delete(c.key);
+          }
+        },
+      }));
+    },
     // An outside address (a mail in its webmail, task 55): the phone's browser.
     openUrl: (url) =>
       call<null>("openUrl", url)

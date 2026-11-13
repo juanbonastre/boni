@@ -229,7 +229,8 @@ Las reglas:
 - **Forma.** Un área de texto que crece con lo escrito, sin el asa de cambiar el tamaño (son las rayas de hoy), con el
   botón dentro, a la derecha: enviar, o parar cuando hay turno.
 - **Debajo, dentro de la barra:**
-  - adjuntar (y arrastrar a toda la ventana);
+  - adjuntar (y arrastrar a toda la ventana): el clip abre el selector del sistema, y en el teléfono el suyo; lo
+    elegido sube como lo soltado (la 85 y la 114, `sistema.md` §4.7);
   - el modelo;
   - la etiqueta del modo, si lo hay;
   - más adelante, el micrófono.

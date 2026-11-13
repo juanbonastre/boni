@@ -126,6 +126,7 @@ import {
 import {
   dropped,
   type Upload,
+  type UploadAnswer,
   type Uploads,
   uploadEnd,
   uploadsIn,
@@ -1692,15 +1693,38 @@ export const uploadsOf = (s: Pick<State, "conversationId" | "chatUploads">): rea
   uploadsIn(s.chatUploads, s.conversationId);
 /** Whether files can be dropped here (a host that sends them: the desktop app and a browser). */
 export const canDrop = () => !!hostRef.uploadFile;
+/** Whether the bar has «Adjuntar»: a host that sends files, or the phone's own picker (task 114). */
+export const canAttach = () => !!hostRef.uploadFile || !!hostRef.chooseFiles;
+/** Whether «Adjuntar» opens the host's own picker (the phone) instead of the page's file input. */
+export const hostPicks = () => !!hostRef.chooseFiles;
 let uploadKeys = 0;
+/** A file about to go up: its name and size, and how its host sends it. */
+interface Outgoing {
+  name: string;
+  size: number;
+  send(progress: (sent: number, size: number) => void): Promise<UploadAnswer>;
+}
 /**
- * Files dropped on Boni's window (docs/sistema.md §4.7, A-24): each goes up now, to his files, whether or not the
- * message is sent; once there it is a chip of this conversation's draft, as anything pointed at.
+ * Files dropped on Boni's window, or chosen with «Adjuntar» (docs/sistema.md §4.7, A-24): each goes up now, to his
+ * files, whether or not the message is sent; once there it is a chip of this conversation's draft, as anything
+ * pointed at.
  */
 export function dropFiles(files: readonly File[]) {
   const up = hostRef.uploadFile;
   if (!up) return;
+  sendFiles(
+    get().conversationId,
+    files.map((f) => ({ name: f.name, size: f.size, send: (progress) => up(f, progress) })),
+  );
+}
+/** «Adjuntar» on the phone (task 114): its own picker, and each file chosen goes up as a dropped one does. */
+export async function attachFiles() {
+  const choose = hostRef.chooseFiles;
+  if (!choose) return;
   const conversation = get().conversationId;
+  sendFiles(conversation, await choose());
+}
+function sendFiles(conversation: string | null, files: readonly Outgoing[]) {
   const change = (key: string, f: (u: Upload) => Upload | null) =>
     set((s) => ({
       chatUploads: withUploads(s.chatUploads, conversation, (l) =>
@@ -1712,23 +1736,25 @@ export function dropFiles(files: readonly File[]) {
     set((s) => ({ chatUploads: withUploads(s.chatUploads, conversation, (l) => [...l, u]) }));
     if (u.state !== "uploading") continue;
     let shown = 0;
-    void up(file, (sent) => {
-      // A redraw a few times a second is enough for a bar.
-      const now = Date.now();
-      if (now - shown < 120) return;
-      shown = now;
-      change(u.key, (x) => ({ ...x, sent }));
-    }).then((answer) => {
-      const end = uploadEnd(answer);
-      if ("state" in end) return change(u.key, (x) => ({ ...x, state: end.state }));
-      change(u.key, () => null);
-      set((s) => ({
-        chatDrafts: withDraft(s.chatDrafts, conversation, (d) => ({
-          ...d,
-          pointed: addPointed(d.pointed, [end.chip]),
-        })),
-      }));
-    });
+    void file
+      .send((sent) => {
+        // A redraw a few times a second is enough for a bar.
+        const now = Date.now();
+        if (now - shown < 120) return;
+        shown = now;
+        change(u.key, (x) => ({ ...x, sent }));
+      })
+      .then((answer) => {
+        const end = uploadEnd(answer);
+        if ("state" in end) return change(u.key, (x) => ({ ...x, state: end.state }));
+        change(u.key, () => null);
+        set((s) => ({
+          chatDrafts: withDraft(s.chatDrafts, conversation, (d) => ({
+            ...d,
+            pointed: addPointed(d.pointed, [end.chip]),
+          })),
+        }));
+      });
   }
 }
 /** Takes a file that could not go up off the bar. */
