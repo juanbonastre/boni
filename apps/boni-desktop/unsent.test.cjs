@@ -42,6 +42,47 @@ test("only a page's or a row's write is kept until answered", () => {
   assert.equal(u.sending("POST", "api/pages"), null);
 });
 
+const ID = "e_01kaaaaaaaaaaaaaaaaaaaaaaa";
+const REAL = "e_01kbbbbbbbbbbbbbbbbbbbbbbb";
+const newPage = (id, at) => ({ path: `api/pages#${id}`, at, id, kind: "new-page", parent: null });
+const pageAnswer = (id) => JSON.stringify({ page: { id, title: "" } });
+
+test("a page made here is kept until its create is answered, even with the window gone (task 109)", () => {
+  const dir = folder();
+  const u = createUnsent(dir, () => 50);
+  const ticket = u.sending("POST", "api/pages", { id: ID, title: "", parent: null });
+  assert.ok(ticket);
+  // The window went with the create in flight: it kept the page and what was typed in it.
+  u.keep(JSON.stringify([newPage(ID, 40), page(ID, 45, "Plan")]));
+  u.answered(ticket, true, pageAnswer(ID));
+  // The page is on the server: what was typed in it goes on the next start, to it.
+  assert.deepEqual(listIn(dir), [page(ID, 45, "Plan")]);
+  // A window that kept its list before it saw the answer does not bring the create back.
+  u.keep(JSON.stringify([newPage(ID, 40), page(ID, 60, "Plan de ejemplo")]));
+  assert.deepEqual(listIn(dir), [page(ID, 60, "Plan de ejemplo")]);
+});
+
+test("a create with no answer leaves the page kept; one a server before task 109 answered moves its writes", () => {
+  const dir = folder();
+  const u = createUnsent(dir, () => 50);
+  const lost = u.sending("POST", "api/pages", { id: ID, title: "" });
+  u.keep(JSON.stringify([newPage(ID, 40), page(ID, 45, "Plan")]));
+  u.answered(lost, false, "");
+  assert.deepEqual(listIn(dir), [newPage(ID, 40), page(ID, 45, "Plan")]);
+  // An answer without the page (the session gone, too many requests) does not make it either.
+  u.answered(
+    u.sending("POST", "api/pages", { id: ID, title: "" }),
+    true,
+    '{"error":"unauthorized"}',
+  );
+  assert.deepEqual(listIn(dir), [newPage(ID, 40), page(ID, 45, "Plan")]);
+  // An older server made it with an id of its own.
+  u.answered(u.sending("POST", "api/pages", { id: ID, title: "" }), true, pageAnswer(REAL));
+  assert.deepEqual(listIn(dir), [page(REAL, 45, "Plan")]);
+  // A create without an id (an older page) is not kept, as before.
+  assert.equal(u.sending("POST", "api/pages", { title: "" }), null);
+});
+
 test("a write answered after the window went is taken out of the list; a newer one of the same page stays", () => {
   const dir = folder();
   let clock = 100;

@@ -257,12 +257,17 @@ for (const { how, paces } of WAYS) {
     const tag = `${how} ${pace.delay}`;
     test(`a page's text, typed at ${pace.name} and Boni closed at once (${how}): there when it opens again`, async () => {
       let w = await main();
+      const before = (await serverPages()).length;
       const title = `Página ${tag}`;
       await newPage(w, title, `Escrito ${tag}`, pace.delay);
       await close(how);
       w = await main();
       await inTree(w).getByRole("button", { name: title, exact: true }).click();
       await expect(pageText(w).first()).toHaveText(`Escrito ${tag}`);
+      // On the server once, with all of it (task 109: made with its id, then what was typed in it).
+      await expect.poll(unsentText, { timeout: 20_000 }).toBe("");
+      await expect.poll(() => onServer(title), { timeout: 20_000 }).toEqual([`Escrito ${tag}`]);
+      expect(await serverPages()).toHaveLength(before + 1);
     });
 
     test(`a note's text, typed at ${pace.name} and Boni closed at once (${how})`, async () => {
@@ -364,6 +369,92 @@ test("a page typed with the server gone, Boni closed at once: on the device when
   // The list of what was kept is empty: what shows now is the server's.
   await inTree(w).getByRole("button", { name: title, exact: true }).click();
   await expect(pageText(w).first()).toHaveText("Antes y sin red");
+});
+
+let serverAuth: Record<string, string> | null = null;
+/** A request to the server as an account of its own (logged in once: the server keeps it across its restarts). */
+async function fromServer<T>(path: string): Promise<T> {
+  const base = `http://127.0.0.1:${PORT}`;
+  if (!serverAuth) {
+    const login = await fetch(`${base}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ user: "ejemplo", password: PASSWORD, device: "prueba-ejemplo" }),
+    });
+    const { token: t } = (await login.json()) as { token: string };
+    serverAuth = { authorization: `Bearer ${t}` };
+  }
+  return (await (await fetch(`${base}${path}`, { headers: serverAuth })).json()) as T;
+}
+/** Every page on the server: a page made twice shows here, untitled or not. */
+const serverPages = async () =>
+  (await fromServer<{ pages?: { id: string; title: string }[] }>("/api/pages")).pages ?? [];
+/** The pages on the server with this title, each with its text (the server's, not the device's). */
+async function onServer(title: string): Promise<string[]> {
+  const same = (await serverPages()).filter((p) => p.title === title);
+  return Promise.all(
+    same.map(async (p) =>
+      (
+        (
+          await fromServer<{ page?: { spec: { blocks: { text?: string }[] } } }>(
+            `/api/pages/${p.id}`,
+          )
+        ).page?.spec.blocks ?? []
+      )
+        .map((b) => b.text ?? "")
+        .join("\n"),
+    ),
+  );
+}
+
+// A new page closed before the server made it (task 109, D-70): kept with what was typed in it, and made once.
+for (const { how, paces } of WAYS) {
+  for (const pace of paces) {
+    const tag = `${how} ${pace.delay}`;
+    test(`a new page typed at ${pace.name} with the server gone, Boni closed at once (${how}): kept, and made once with all of it when the server is back`, async () => {
+      let w = await main();
+      const before = (await serverPages()).length;
+      await stopServer();
+      const title = `Nueva sin red ${tag}`;
+      await newPage(w, title, `Escrito sin red ${tag}`, pace.delay);
+      await close(how);
+      w = await main();
+      // On the device, offline: in the sidebar with its name, and its text.
+      await inTree(w).getByRole("button", { name: title, exact: true }).click();
+      await expect(pageText(w).first()).toHaveText(`Escrito sin red ${tag}`);
+      await startServer();
+      // A window opened again sends what was kept, as a start does.
+      await close("window");
+      await expect.poll(unsentText, { timeout: 30_000 }).toBe("");
+      expect(await onServer(title)).toEqual([`Escrito sin red ${tag}`]);
+      expect(await serverPages()).toHaveLength(before + 1);
+    });
+  }
+}
+
+test("a new page whose create the server took but never answered (Boni quit with it in flight) is made once, with what was typed", async () => {
+  let w = await main();
+  const title = "Nueva sin respuesta";
+  const before = (await serverPages()).length;
+  // The server is there but answers nothing: the create stays in flight, taken when it wakes, after Boni went.
+  (server as ChildProcess).kill("SIGSTOP");
+  try {
+    await newPage(w, title, "Escrito sin respuesta");
+    await w.waitForTimeout(800);
+    await close("quit");
+    expect(unsentText()).toContain("new-page");
+    expect(unsentText()).toContain("Escrito sin respuesta");
+  } finally {
+    (server as ChildProcess).kill("SIGCONT");
+  }
+  // The start sends the create again with the same id: the same page, then what was typed in it.
+  w = await main();
+  await expect.poll(unsentText, { timeout: 30_000 }).toBe("");
+  await expect.poll(() => onServer(title), { timeout: 20_000 }).toEqual(["Escrito sin respuesta"]);
+  // Made once: no second page, untitled or not.
+  expect(await serverPages()).toHaveLength(before + 1);
+  await expect(inTree(w).getByRole("button", { name: title, exact: true })).toHaveCount(1);
+  await inTree(w).getByRole("button", { name: title, exact: true }).click();
+  await expect(pageText(w).first()).toHaveText("Escrito sin respuesta");
 });
 
 test("a note's property and text typed with the server gone: kept on the device, said once, on the server once it is back", async () => {
@@ -660,6 +751,78 @@ test("on a phone without a connection, a note's title typed, the tab hidden and 
       .toBeNull();
     await phoneNote(again);
     await expect(again.locator(".row-doc .doc-title")).toHaveValue(/ oculta$/);
+  } finally {
+    await browser.close();
+  }
+});
+
+// ---------- a new page in the web app in a browser, the tab closed before the server made it (task 109) ----------
+
+async function browserTab(browser: Browser) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, hasTouch: true });
+  ctx.setDefaultTimeout(15_000);
+  const p = await ctx.newPage();
+  await p.goto(`http://127.0.0.1:${PORT}/boni/`);
+  await phoneLogin(p);
+  return { ctx, p };
+}
+
+/** Closes the tab as a person does (its `pagehide` runs), and waits until it is gone. */
+async function closeTab(p: Page) {
+  const gone = p.waitForEvent("close");
+  await p.close({ runBeforeUnload: true });
+  await gone;
+}
+
+/** A new tab of the same browser: what the last one kept goes, and its list on the device empties. */
+async function nextTab(ctx: Awaited<ReturnType<typeof browserTab>>["ctx"]) {
+  const again = await ctx.newPage();
+  await again.goto(`http://127.0.0.1:${PORT}/boni/`);
+  await expect
+    .poll(() => again.evaluate(() => localStorage.getItem("boni:store:unsent.json")), {
+      timeout: 20_000,
+    })
+    .toBeNull();
+  return again;
+}
+
+test("in a browser, a new page typed without a connection and the tab closed at once: made once, with all of it, from the next tab", async () => {
+  const browser = await chromium.launch({ channel: "chrome" });
+  try {
+    const { ctx, p } = await browserTab(browser);
+    await ctx.setOffline(true);
+    const title = "Nueva en el navegador";
+    const before = (await serverPages()).length;
+    await newPage(p, title, "Escrito en el navegador");
+    await closeTab(p);
+    await ctx.setOffline(false);
+    await nextTab(ctx);
+    expect(await onServer(title)).toEqual(["Escrito en el navegador"]);
+    expect(await serverPages()).toHaveLength(before + 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("in a browser, a new page whose create the server took only after the tab was closed: made once from the next tab", async () => {
+  const browser = await chromium.launch({ channel: "chrome" });
+  try {
+    const { ctx, p } = await browserTab(browser);
+    const title = "Nueva en el navegador sin respuesta";
+    const before = (await serverPages()).length;
+    (server as ChildProcess).kill("SIGSTOP");
+    try {
+      await newPage(p, title, "Escrito sin respuesta en el navegador");
+      await p.waitForTimeout(800);
+      await closeTab(p);
+    } finally {
+      (server as ChildProcess).kill("SIGCONT");
+    }
+    await nextTab(ctx);
+    await expect
+      .poll(() => onServer(title), { timeout: 20_000 })
+      .toEqual(["Escrito sin respuesta en el navegador"]);
+    expect(await serverPages()).toHaveLength(before + 1);
   } finally {
     await browser.close();
   }

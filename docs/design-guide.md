@@ -688,7 +688,9 @@ contraseña ni un código aquí» under a question.
   link, it is the link's address instead) opens Notion's search: a box over the window, pages
   matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nuevo flujo (Flujos)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words and its action's icon, read from the definitions, `GET /api/agent/actions`, task 95); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
-  server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
+  server behind it, keeping what was typed). Without a connection it stays, as an edit does: the same notice once
+  («save.offline»), in the sidebar and kept on the device with what is typed in it, and made on the server when it is
+  back (task 109, D-70); only a server that refuses it takes it away, with «page.error». **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
   Settings has «Privacidad» (what the AI sees) after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip

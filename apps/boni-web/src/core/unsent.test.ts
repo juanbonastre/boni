@@ -3,15 +3,19 @@ import { describe, expect, it } from "vitest";
 import type { DataRow, Page } from "./agent.ts";
 import {
   answered,
+  creating,
   FAILING_AFTER,
   FAILING_RETRY_MS,
   type Failing,
   failedAgain,
+  made,
   merged,
+  newPageWrite,
   overPage,
   overRow,
   pageWrite,
   parseUnsent,
+  renamed,
   rowWrite,
   type UnsentWrite,
 } from "./unsent.ts";
@@ -129,5 +133,39 @@ describe("what was typed and has no answer yet (task 100)", () => {
     for (let i = 0; i < 100; i++) list = merged(list, rowWrite("r_01", {}, `${body} ${i}`, i));
     expect(performance.now() - t).toBeLessThan(200);
     expect(list).toHaveLength(1);
+  });
+
+  it("a page made here waits for the server to make it; then what was typed in it goes (task 109)", () => {
+    const id = "e_01kaaaaaaaaaaaaaaaaaaaaaaa";
+    let list: UnsentWrite[] = [newPageWrite(id, "e_01kpadreaaaaaaaaaaaaaaaaa", 10)];
+    list = merged(list, pageWrite(id, { title: "Plan" }, 20));
+    list = merged(list, pageWrite(id, { spec: emptyPage() }, 30));
+    expect(creating(list, id)).toBe(true);
+    // Kept on the device and read back as it was: the create first, then one write with every field.
+    expect(parseUnsent(JSON.stringify(list))).toEqual(list);
+    expect(list.map((w) => w.path)).toEqual([`api/pages#${id}`, `api/pages/${id}`]);
+    const after = made(list, id);
+    expect(creating(after, id)).toBe(false);
+    expect(after).toEqual([pageWrite(id, { title: "Plan", spec: emptyPage() }, 30)]);
+    // Two pages made here are two creates.
+    const other = "e_01kcccccccccccccccccccccccc";
+    expect(merged(list, newPageWrite(other, null, 40))).toHaveLength(3);
+  });
+
+  it("a page a server before task 109 made with its own id takes what was typed for it, no field lost", () => {
+    const id = "e_01kaaaaaaaaaaaaaaaaaaaaaaa";
+    const real = "e_01kbbbbbbbbbbbbbbbbbbbbbbb";
+    const list = [pageWrite(id, { title: "Plan", icon: "📄" }, 20), rowWrite("r_01", {}, "Uno", 5)];
+    expect(renamed(list, id, real)).toEqual([
+      rowWrite("r_01", {}, "Uno", 5),
+      pageWrite(real, { title: "Plan", icon: "📄" }, 20),
+    ]);
+    // A write to the real id already there (the window renamed first): the later fields win, none is lost.
+    const both = [...list, pageWrite(real, { title: "Plan de ejemplo" }, 30)];
+    expect(renamed(both, id, real)).toEqual([
+      rowWrite("r_01", {}, "Uno", 5),
+      pageWrite(real, { title: "Plan de ejemplo", icon: "📄" }, 30),
+    ]);
+    expect(renamed(list, "otra", real)).toEqual(list);
   });
 });

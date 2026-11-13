@@ -35,6 +35,7 @@ import {
   openFind,
   openPage,
   openSettings,
+  sameMadePage,
   setChartDrill,
   setPageFull,
   showAllPages,
@@ -72,10 +73,14 @@ export function App() {
   );
   const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen || docked));
   // What the main area shows rises into place, again when another page takes its place (4b «Motion», I-14).
-  // A new page is shown at once with a temporary id, then with the server's: the same page, it rises once.
+  // A new page is shown at once with the id it is made with; a server before task 109 answers another: the same
+  // page, it rises once.
   const enter = useEnterFlip(
     useStore((s) => `${s.view.kind}:${(s.view as { id?: string }).id ?? ""}`),
-    (from, to) => from.startsWith("page:new-") && to.startsWith("page:"),
+    (from, to) =>
+      from.startsWith("page:") &&
+      to.startsWith("page:") &&
+      sameMadePage(from.slice(5), to.slice(5)),
   );
   if (mobile) return <MobileApp />;
   return (

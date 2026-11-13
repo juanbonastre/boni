@@ -13,9 +13,16 @@ export interface PagePatch {
   spec?: PageSpec;
 }
 
-/** `path` and `at` are what the desktop's main process reads (`apps/boni-desktop/unsent.cjs`). */
+/**
+ * `path` and `at` are what the desktop's main process reads (`apps/boni-desktop/unsent.cjs`). A page made here and
+ * not yet on the server (task 109, D-70) is two entries: its `new-page` (that it exists, with the id this device gave
+ * it, which the server keeps) first, and its `page` write (what was typed in it), sent only once the page exists.
+ */
 export type UnsentWrite = {
-  /** Where it goes, with PUT: `api/pages/<id>` or `api/data/rows/<id>`. */
+  /**
+   * Where it goes, with PUT: `api/pages/<id>` or `api/data/rows/<id>`. A `new-page` goes with POST to `api/pages`; its
+   * path is that and its id after a `#`, one per page.
+   */
   path: string;
   /** When it last changed here (epoch ms): an answer to a request that left after it means it arrived. */
   at: number;
@@ -23,7 +30,42 @@ export type UnsentWrite = {
 } & (
   | { kind: "page"; patch: PagePatch }
   | { kind: "row"; values: Record<string, DataValue>; body?: string }
+  | { kind: "new-page"; parent: string | null }
 );
+
+/** A page made here, to be made on the server with this `id` (the server answers the same page if it already is). */
+export const newPageWrite = (id: string, parent: string | null, at: number): UnsentWrite => ({
+  path: `api/pages#${id}`,
+  at,
+  id,
+  kind: "new-page",
+  parent,
+});
+
+/** The page `id` is made here and not yet on the server: its writes wait for it. */
+export const creating = (list: readonly UnsentWrite[], id: string) =>
+  list.some((x) => x.kind === "new-page" && x.id === id);
+
+/** The list once the server has made page `id`: its `new-page` entry leaves, and its writes may go. */
+export const made = (list: readonly UnsentWrite[], id: string): UnsentWrite[] =>
+  list.filter((x) => !(x.kind === "new-page" && x.id === id));
+
+/**
+ * The list once page `from` turned out to be `to` on the server (a server before task 109 gives a page its own id):
+ * what was typed in it goes to `to`, the later fields over the earlier ones if `to` has a write already.
+ */
+export function renamed(list: readonly UnsentWrite[], from: string, to: string): UnsentWrite[] {
+  const mine = list.find((x) => x.kind === "page" && x.id === from);
+  if (mine?.kind !== "page" || from === to) return [...list];
+  const moved = pageWrite(to, mine.patch, mine.at);
+  const rest = list.filter((x) => x !== mine);
+  const there = rest.find((x) => x.kind === "page" && x.id === to);
+  if (there?.kind !== "page") return [...rest, moved];
+  const late = there.at > mine.at ? there : moved;
+  const early = late === there ? moved : there;
+  if (late.kind !== "page" || early.kind !== "page") return rest;
+  return rest.map((x) => (x === there ? { ...late, patch: { ...early.patch, ...late.patch } } : x));
+}
 
 export const pageWrite = (id: string, patch: PagePatch, at: number): UnsentWrite => ({
   path: `api/pages/${encodeURIComponent(id)}`,
@@ -142,7 +184,8 @@ export function parseUnsent(text: string | null): UnsentWrite[] {
         typeof w.at === "number" &&
         typeof w.id === "string" &&
         ((w.kind === "page" && w.patch && typeof w.patch === "object") ||
-          (w.kind === "row" && w.values && typeof w.values === "object")),
+          (w.kind === "row" && w.values && typeof w.values === "object") ||
+          (w.kind === "new-page" && (w.parent === null || typeof w.parent === "string"))),
     );
   } catch {
     return [];

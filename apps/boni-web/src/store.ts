@@ -1,3 +1,4 @@
+import { newId as entityId } from "@boni/entities";
 import {
   type ControlBlock,
   type DatabaseFilter,
@@ -108,13 +109,17 @@ import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
   answered,
+  creating,
   type Failing,
   failedAgain,
+  made,
   merged,
+  newPageWrite,
   overPage,
   overRow,
   pageWrite,
   parseUnsent,
+  renamed,
   rowWrite,
   type UnsentWrite,
 } from "./core/unsent.ts";
@@ -654,7 +659,12 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     if (f) set({ fold: { sections: ids(f.sections), branches: ids(f.branches) } });
   });
   // The device's copy of the pages and of the last one opened: the window opens on it without network.
-  const cachedPages = Array.isArray(pages?.pages) ? pagesOver(pages.pages) : null;
+  // With the pages made here that the server has not made yet (task 109): they were kept with what was typed in them.
+  const cachedPages = Array.isArray(pages?.pages)
+    ? withMade(pagesOver(pages.pages))
+    : unsent.some((w) => w.kind === "new-page")
+      ? withMade([])
+      : null;
   const lastPage =
     last?.page && cachedPages?.some((p) => p.id === last.page.id)
       ? overPage(last.page, unsent)
@@ -2825,11 +2835,8 @@ export const blockId = () => Math.random().toString(36).slice(2, 10);
 export async function loadPages(): Promise<PageInfo[] | null> {
   try {
     const pages = await agent.pages();
-    // A page still being made here (its server id not back yet) stays in the list (task 36).
-    const making = (get().pages ?? []).filter(
-      (p) => p.id.startsWith("new-") && !pages.some((x) => x.id === p.id),
-    );
-    set({ pages: [...pagesOver(pages), ...making] });
+    // A page still being made on the server stays in the list (task 36), kept or not (task 109).
+    set({ pages: withMade(pagesOver(pages)) });
     await keep(FILES.pages, { pages });
     return pages;
   } catch {
@@ -2873,7 +2880,11 @@ export async function openPage(id: string) {
     noteRecent({ kind: "page", id, title: page.title });
     await keep(FILES.lastPage, { page });
   } catch {
-    if (!get().page) toast(get().t("page.loadError"));
+    // A page made here that the server has not made yet (task 109) is what was kept of it.
+    if (!get().page && creating(unsent, id)) {
+      const v = get().view;
+      if (v.kind === "page" && v.id === id) set({ page: madePage(id) });
+    } else if (!get().page) toast(get().t("page.loadError"));
   }
 }
 
@@ -2903,52 +2914,118 @@ export async function openStart() {
   if (id) await openPage(id);
 }
 
-/** A new page (as Notion's): untitled, open at once with the caret in its name. It is on screen before
- * the server answers; what is typed meanwhile goes to the server with it. */
+/** A new page (as Notion's): untitled, open at once with the caret in its name. It is on screen before the server
+ * answers, with the id this device gives it (task 109, D-70): what is typed in it is kept as in any page and goes
+ * once the server has made it; closed before then, or without a connection, both are kept and go later, and a create
+ * sent again is the same page on the server. */
 export async function newPage(parent: string | null = null) {
   await flushPage();
-  const temp: Page = {
-    id: `new-${blockId()}`,
-    title: "",
-    icon: "",
-    parent,
-    position: Number.MAX_SAFE_INTEGER,
-    spec: { version: 1, blocks: [] },
-  };
+  const w = newPageWrite(entityId("e"), parent, Date.now());
+  unsent = [...unsent, w];
+  const temp = madePage(w.id);
   set({
     pages: [...(get().pages ?? []), temp],
     page: temp,
     view: { kind: "page", id: temp.id },
     pageFocus: { title: true },
   });
+  await sendNewPage(w).catch(() => undefined);
+}
+
+/** A page made here as the device shows it until the server has it: what was kept of it. */
+function madePage(id: string): Page {
+  const w = unsent.find((x) => x.kind === "new-page" && x.id === id);
+  return overPage(
+    {
+      id,
+      title: "",
+      icon: "",
+      parent: w?.kind === "new-page" ? w.parent : null,
+      position: Number.MAX_SAFE_INTEGER,
+      spec: { version: 1, blocks: [] },
+    },
+    unsent,
+  );
+}
+
+/** The pages' list with those made here that the server has not made yet, last (task 109). */
+function withMade<P extends PageInfo>(list: P[]): (P | Page)[] {
+  const mine = unsent.filter((w) => w.kind === "new-page" && !list.some((p) => p.id === w.id));
+  return mine.length ? [...list, ...mine.map((w) => madePage(w.id))] : list;
+}
+
+/**
+ * A page made here goes to the server with its id (task 109, D-70); once it is there, what was typed in it follows
+ * (`fresh`: from `newPage`; a resend leaves that to `sendUnsent`, which sends it next). Without a connection or with
+ * a failing server it stays kept and goes later; refused, it leaves the screen with what was typed in it, as before.
+ */
+async function sendNewPage(w: UnsentWrite, fresh = true): Promise<void> {
+  if (w.kind !== "new-page") return;
+  let page: Page | null;
   try {
-    const made = await agent.createPage({ title: "", parent });
-    if (!made) throw new Error("no page");
-    const typed = get().page?.id === temp.id ? (get().page as Page) : null;
-    const page: Page = typed
-      ? { ...made, title: typed.title, icon: typed.icon, spec: typed.spec }
-      : made;
-    // In the list in place of the temporary one; or added, if a list read meanwhile left it out.
-    const list = get().pages ?? [];
-    set({
-      pages: list.some((p) => p.id === temp.id)
-        ? list.map((p) => (p.id === temp.id ? page : p))
-        : [...list.filter((p) => p.id !== page.id), page],
-      ...(typed ? { page, view: { kind: "page" as const, id: page.id } } : {}),
-    });
-    if (typed && (typed.title || typed.icon || typed.spec.blocks.length))
-      savePage(page.id, {
-        title: typed.title.trim(),
-        spec: typed.spec,
-        ...(typed.icon ? { icon: typed.icon } : {}),
-      });
-    await keep(FILES.lastPage, { page });
-    await keep(FILES.pages, { pages: get().pages });
-  } catch {
-    set({ pages: (get().pages ?? []).filter((p) => p.id !== temp.id) });
-    if (get().page?.id === temp.id) await openStart();
-    toast(get().t("page.error"));
+    page = await agent.createPage({ id: w.id, title: "", parent: w.parent });
+  } catch (e) {
+    if (refusesPage(e)) return refusedNewPage(w);
+    const first = !unsentKept;
+    keepUnsent();
+    if (first) toast(get().t("save.offline"));
+    if (e instanceof ApiError && !fresh) serverFailed(w);
+    throw e;
   }
+  if (!page) return refusedNewPage(w);
+  failing.delete(w.path);
+  unsent = made(unsent, w.id);
+  // A server before task 109 gave it an id of its own: what was typed here goes to that one.
+  if (page.id !== w.id) pageMadeAs(w.id, page.id);
+  const id = page.id;
+  const open = get().page?.id === id ? (get().page as Page) : null;
+  const shown: Page = open
+    ? { ...page, title: open.title, icon: open.icon, spec: open.spec }
+    : overPage(page, unsent);
+  const list = get().pages ?? [];
+  set({
+    pages: list.some((p) => p.id === id)
+      ? list.map((p) => (p.id === id ? shown : p))
+      : [...list, shown],
+    ...(open ? { page: shown } : {}),
+  });
+  if (unsentKept) keepUnsent();
+  const kept = unsent.find((x) => x.kind === "page" && x.id === id);
+  if (kept && (fresh || id !== w.id)) await sendWrite(kept).catch(() => undefined);
+  if (open) await keep(FILES.lastPage, { page: shown });
+  await keep(FILES.pages, { pages: get().pages });
+}
+
+/** The server refused a page made here (not a connection's fault): it is not made, nor what was typed in it. */
+async function refusedNewPage(w: UnsentWrite) {
+  unsent = unsent.filter((x) => !(x.id === w.id && x.kind !== "row"));
+  failing.delete(w.path);
+  if (unsentKept) keepUnsent();
+  set({ pages: (get().pages ?? []).filter((p) => p.id !== w.id) });
+  if (get().page?.id === w.id) await openStart();
+  toast(get().t("page.error"));
+}
+
+/** Page `from` is `to` on the server (one before task 109): everywhere this device has it. */
+/** The pages made here that a server before task 109 gave an id of its own: the id shown first, and the server's. */
+const madeAsIds = new Map<string, string>();
+/** Whether `to` is the id a server gave the page shown as `from` (the same page: it rises once, App.tsx). */
+export const sameMadePage = (from: string, to: string) => madeAsIds.get(from) === to;
+
+function pageMadeAs(from: string, to: string) {
+  madeAsIds.set(from, to);
+  unsent = renamed(unsent, from, to);
+  if (pending?.id === from) pending.id = to;
+  const s = get();
+  set({
+    pages:
+      s.pages?.filter((p) => p.id !== to).map((p) => (p.id === from ? { ...p, id: to } : p)) ??
+      null,
+    ...(s.page?.id === from ? { page: { ...s.page, id: to } } : {}),
+    ...(s.view.kind === "page" && s.view.id === from
+      ? { view: { kind: "page" as const, id: to } }
+      : {}),
+  });
 }
 
 // Changes to the open page are kept at once on screen and sent together after a short pause (typing does
@@ -2961,8 +3038,6 @@ let pending: {
 } | null = null;
 
 function savePage(id: string, patch: { title?: string; icon?: string; spec?: PageSpec }) {
-  // A page still being made on the server: what it holds is sent when it is (newPage).
-  if (id.startsWith("new-")) return;
   if (pending && pending.id !== id) void flushPage();
   if (pending) clearTimeout(pending.timer);
   pending = {
@@ -4714,6 +4789,15 @@ export const onEditorLeaving = (f: (() => void) | null) => {
 /** The write did not reach the server or the server failed (5xx): it stays kept, and what is on the screen too. */
 const unreached = (e: unknown) =>
   e instanceof OfflineError || (e instanceof ApiError && e.status >= 500);
+/**
+ * The server refused the page itself (a bad id, or one a note has): a new page it answers so is not made, and
+ * goes. The session gone, a forbidden or timed-out request, too many requests: not about the page, so it stays kept.
+ */
+const refusesPage = (e: unknown) =>
+  e instanceof ApiError &&
+  e.status >= 400 &&
+  e.status < 500 &&
+  ![401, 403, 408, 429].includes(e.status);
 
 /**
  * Sends a write of what was typed, kept in `unsent` until the server answers it. What goes is the page's or row's
@@ -4723,7 +4807,13 @@ const unreached = (e: unknown) =>
  */
 async function sendWrite(w: UnsentWrite, fresh = true): Promise<unknown> {
   if (fresh) unsent = merged(unsent, w);
+  // A page the server has not made yet: what was typed in it waits, kept, and goes once it is (sendNewPage).
   const all = unsent.find((x) => x.path === w.path) ?? w;
+  if (creating(unsent, w.id) || all.kind === "new-page") {
+    // The device holds the list already (no connection): this goes into it at once, not only as the window goes.
+    if (unsentKept) keepUnsent();
+    return null;
+  }
   const sent = Date.now();
   try {
     const r =
@@ -4764,8 +4854,9 @@ function serverFailed(w: UnsentWrite) {
   if (!say) return;
   const s = get();
   const title =
-    w.kind === "page"
-      ? (s.pages?.find((p) => p.id === w.id)?.title ?? w.patch.title)
+    w.kind !== "row"
+      ? s.pages?.find((p) => p.id === w.id)?.title ||
+        (w.kind === "page" ? w.patch.title : undefined)
       : s.rowDoc?.id === w.id
         ? s.rowDoc.title
         : s.recent.find((r) => r.id === w.id)?.title;
@@ -4792,11 +4883,17 @@ async function sendUnsent() {
     // Another window of the app (the peek) may have kept some too.
     for (const w of parseUnsent(await store.read(UNSENT_FILE).catch(() => null)))
       if (!unsent.some((x) => x.path === w.path && x.at >= w.at)) unsent = merged(unsent, w);
-    for (const path of unsent.map((w) => w.path)) {
+    // The pages made here first: what was typed in them goes once they are.
+    const paths = [
+      ...unsent.filter((w) => w.kind === "new-page"),
+      ...unsent.filter((w) => w.kind !== "new-page"),
+    ].map((w) => w.path);
+    for (const path of paths) {
       const w = unsent.find((x) => x.path === path);
       if (!w || (failing.get(path)?.next ?? 0) > Date.now()) continue;
       try {
-        await sendWrite(w, false);
+        if (w.kind === "new-page") await sendNewPage(w, false);
+        else await sendWrite(w, false);
       } catch (e) {
         // No connection: the rest wait too. A server that fails one write still gets the others.
         if (e instanceof OfflineError) break;
