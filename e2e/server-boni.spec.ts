@@ -86,6 +86,14 @@ test.beforeAll(async () => {
   // Two proposals waiting in the inbox (as a mail read in the background leaves them: values by field key).
   // Movimiento gets its day's role (as `roles --apply` does): a calendar candidate, not a calendar yet.
   setRoles(dir, 1, "movimiento", { date: "date" });
+  // Docencia's, as Juan's Agenda has them: an account with roles goes by them alone (D-64).
+  setRoles(dir, 1, "docencia", {
+    date: "date",
+    time: "starttime",
+    endTime: "endtime",
+    endDate: "enddate",
+    done: "completed",
+  });
   proposeEntries(dir, 1, "docencia", [
     { title: "Revisión propuesta", date: "2025-09-19", starttime: "10:00", endtime: "11:00" },
     { title: "Entrega hecha", date: "2025-09-19", starttime: "12:00", endtime: "13:00" },

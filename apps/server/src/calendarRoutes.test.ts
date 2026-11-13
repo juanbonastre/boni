@@ -27,6 +27,7 @@ const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
 const VIAJE = newId("t");
 const AGENDA = newId("t");
 const OTRO_TIPO = newId("f");
+const DIA = newId("f");
 const F = { titulo: newId("f"), salida: newId("f"), tipo: newId("f") };
 let dir: string;
 let db: Db;
@@ -106,7 +107,7 @@ beforeAll(() => {
     { actor: "import" },
   );
   // An account keeps a calendar already (one with none has no calendar's routes): his «Agenda».
-  const dia = newId("f");
+  const dia = DIA;
   const nombre = newId("f");
   store.applySchema(
     {
@@ -223,6 +224,52 @@ describe("the routes that run their action itself (ROUTE_RUNS, task 95)", () => 
     });
   });
 
+  it("a collection's roles from its page, by ids (docs/clases.md §6): its day taken away hides its calendar, given back it is as it was", async () => {
+    const call = await signedIn(await start());
+    const agenda = () => calendarDefs(host.store(1)).filter((p) => p.type === AGENDA);
+    const was = agenda()[0]?.def;
+    expect(was).toBeDefined();
+    const types = async () =>
+      (
+        (await call("GET", "/api/data/types", undefined)).body.types as {
+          id: string;
+          roles?: Record<string, string>;
+          calendar?: boolean;
+        }[]
+      ).find((t) => t.id === AGENDA);
+    expect((await types())?.calendar).toBe(true);
+    expect(await call("PUT", `/api/data/types/${AGENDA}/roles`, { roles: { date: null } })).toEqual(
+      {
+        status: 200,
+        body: { roles: {} },
+      },
+    );
+    expect(agenda()).toEqual([]);
+    expect(await types()).toMatchObject({ roles: {} });
+    expect((await types())?.calendar).toBeUndefined();
+    expect(await call("PUT", `/api/data/types/${AGENDA}/roles`, { roles: { date: DIA } })).toEqual({
+      status: 200,
+      body: { roles: { date: DIA } },
+    });
+    expect(agenda()[0]?.def.id).toBe(was?.id);
+    expect(agenda()[0]?.def.color).toBe(was?.color);
+    // What does not fit is refused, and nothing changes.
+    const bad = async (roles: unknown, error: string) =>
+      expect(await call("PUT", `/api/data/types/${AGENDA}/roles`, { roles })).toEqual({
+        status: 400,
+        body: { error },
+      });
+    await bad({ done: DIA }, "bad-roles");
+    await bad({ colour: DIA }, "bad-role");
+    await bad({ date: F.salida }, "unknown-field");
+    await bad({ date: 3 }, "bad-request");
+    await bad([], "bad-request");
+    expect(host.store(1).schema().types[AGENDA]?.roles).toEqual({ date: DIA });
+    expect(
+      await call("PUT", `/api/data/types/${newId("t")}/roles`, { roles: { date: null } }),
+    ).toEqual({ status: 404, body: { error: "not-found" } });
+  });
+
   it("without the list of actions, the policy refuses each one there, once, and nothing changes (P0)", async () => {
     const call = await signedIn(await start(new ToolRegistry().freeze()));
     const refused = { status: 403, body: { error: "policy", rule: "P0" } };
@@ -233,6 +280,10 @@ describe("the routes that run their action itself (ROUTE_RUNS, task 95)", () => 
     );
     expect(await call("POST", "/api/collections/remove", { id: "x" })).toEqual(refused);
     expect(await call("PUT", `/api/data/types/${VIAJE}/tree`, { notes: true })).toEqual(refused);
+    expect(await call("PUT", `/api/data/types/${VIAJE}/roles`, { roles: { date: null } })).toEqual(
+      refused,
+    );
+    expect(host.store(1).schema().types[VIAJE]?.roles).toEqual({ date: F.salida });
     expect(mine()).toEqual([]);
   });
 });

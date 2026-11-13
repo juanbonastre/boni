@@ -574,6 +574,14 @@ contraseña ni un código aquí» under a question.
   the collection's rules: each is Notion's filter editor and a level, listed in words ("Título contiene Tutoría ·
   Restringida"); the pill shows "+N" when there are rules. Whatever would lower something private asks for the
   collection's name, and only on its own page.
+  Beside the pill, a collection's page shows what it can do as tags (2026-11-13, `docs/clases.md` §6): Calendario,
+  Tareas, Dinero, one word each, filled when it has it and faint (an outline) when it only could (it has a date, a
+  checkbox, or a number and a date). A tag opens its roles, a row each with its field on the right (Día, Hora, Hora de
+  fin, Día de fin or Fin; Hecha; Importe, Categoría), each row a panel of the fields that can play it («Ninguno» for
+  the optional ones); a role its mother gives shows «…, de Madre» and is not a row to open. «Quitar» takes the tag
+  away at once with «Deshacer» in a toast; if that hides something (the collection from Boni Calendar, its tasks) one
+  line under it says so before the click, and a field list whose choice moves its records in Boni Calendar says that
+  in one line under the fields. No dialog.
 - **Notes as pages** (2026-10-22): a row's text is edited with the page's block editor (headings, lists, to-dos,
   quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
   an Obsidian embed that found no file, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.

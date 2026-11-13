@@ -599,17 +599,57 @@ export function makeApp(opts: ServerOptions): App {
             });
           return send(res, 200, {});
         }
-        if (route === "GET /api/data/types")
+        if (route === "PUT /api/data/types/:type/roles") {
+          // {roles: {role: field id | null}}: the page's controls name fields by id, the action by name.
+          const b = await bodyOf(req);
+          const raw = b.roles;
+          if (!raw || typeof raw !== "object" || Array.isArray(raw))
+            return send(res, 400, { error: "bad-request" });
+          const names = argNames(store);
+          const roles: Record<string, string | null> = {};
+          for (const [r, f] of Object.entries(raw as Record<string, unknown>)) {
+            if (f !== null && typeof f !== "string")
+              return send(res, 400, { error: "bad-request" });
+            roles[r] = f === null ? null : names.field(params.type, f);
+          }
+          const r = await runAction(
+            "schema.set_roles",
+            { type: names.type(params.type ?? ""), roles },
+            {
+              store,
+              trust: s.trust,
+              device: s.device,
+              ...(opts.actions ? { registry: opts.actions } : {}),
+            },
+          );
+          if ("refused" in r) return send(res, 403, { error: "policy", rule: r.refused });
+          if ("error" in r)
+            return send(res, r.error === "unknown-type" || r.error === "not-found" ? 404 : 400, {
+              error: r.error === "unknown-type" ? "not-found" : r.error,
+            });
+          return send(res, 200, { roles: rolesOf(store.schema(), params.type ?? "") });
+        }
+        if (route === "GET /api/data/types") {
+          // The collections Boni Calendar shows (its definitions are read once and kept: calendarDefs).
+          const shown = new Set(calendarDefs(store).map((p) => p.type));
           return send(res, 200, {
             // What each collection can do (its roles, its mother's too: docs/clases.md §6), and which box marks one
             // of its records done: the phone ticks it.
             types: listTypes(store, sys()).map((t) => {
               if (t.system) return t;
               const done = taskDoneField(store, t.id);
+              const roles = rolesOf(store.schema(), t.id);
+              // The roles its mother gives (changed at hers): the page shows them, never changes them here.
+              const own = store.schema().types[t.id]?.roles ?? {};
+              const given = (Object.keys(roles) as (keyof typeof roles)[]).filter(
+                (r) => own[r] !== roles[r],
+              );
               return {
                 ...t,
-                roles: rolesOf(store.schema(), t.id),
+                roles,
+                ...(given.length ? { givenRoles: given } : {}),
                 ...(done ? { done: done.id } : {}),
+                ...(shown.has(t.id) ? { calendar: true } : {}),
                 // The mail's collection: what arrived, read only, opened as a mail (Juan, 2026-11-02; D-22).
                 ...(t.id === opts.agent?.mailTypeOf?.(s.user.id)
                   ? { readOnly: true, view: "mail" }
@@ -617,6 +657,7 @@ export function makeApp(opts: ServerOptions): App {
               };
             }),
           });
+        }
         if (route === "GET /api/data/types/:type/rows") {
           const type = params.type ?? "";
           if (isSystemCollection(type))

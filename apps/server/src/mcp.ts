@@ -491,6 +491,13 @@ const ACTION_TOOLS: readonly {
     required: ["type", "on"],
   },
   {
+    name: "set_roles",
+    action: "schema.set_roles",
+    description:
+      'Gives a collection\'s properties the roles the apps use it by, or takes them away (roles: {role: its property, or null}): "date" (a day) or "start" (an instant) puts it in Boni Calendar\'s list to add, with "time", "endTime", "endDate" or "end"; "done" (a checkbox) makes its records tasks; "amount" (a number) with a day, and "category", makes it money.',
+    required: ["type", "roles"],
+  },
+  {
     name: "calendars",
     action: "calendars.list",
     description:

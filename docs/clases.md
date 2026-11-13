@@ -218,6 +218,34 @@ Planes: una definición cada uno con `where`) se juntan con `cli.ts split-check 
 que tras juntarlos salen todos visibles. «Colorear por» se hizo el 2026-11-03 y Juan lo quitó ese mismo día: un
 calendario se separa por un campo y cada calendario toma su color de la matriz; no hay otra forma de colorear.
 
+**Hecho, la página de una colección con sus papeles (2026-11-13, tarea 4; D-64).** Extiende los papeles del paso 1
+(`set_roles`, `rolesOf`) y la píldora de la IA de la página de una colección: al lado salen las etiquetas de lo que
+sabe hacer, **Calendario**, **Tareas** y **Dinero**, llena la que tiene y tenue la que podría tener (tiene un campo
+de fecha, una casilla, o un número y una fecha). Cada una abre sus papeles, uno por fila con su campo a la derecha
+(Día, Hora, Hora de fin, Día de fin o Fin; Hecha; Importe y Categoría, y Día si aún no lo tiene), y cada fila abre los
+campos que lo pueden hacer (los del tipo que el papel acepta, sin los que ya hacen otro; «Ninguno» en los que no son
+obligatorios). «Quitar» deja la colección sin esa interfaz, y si eso la esconde de Boni Calendar lo dice debajo en una
+línea antes de hacerlo. Un papel que da su madre sale con su nombre y no se cambia aquí. Todo es una sola acción,
+`schema.set_roles` (la página, `PUT /api/data/types/:type/roles`, y la herramienta `set_roles` del MCP), con su
+«Deshacer» en el aviso.
+- **Por papeles y nada más (D-64):** hasta ahora una colección sin papeles se leía por la definición de su
+  calendario, así que quitar el día no habría quitado nada. En cuanto la cuenta tiene un papel (o Juan da o quita uno,
+  que lo deja escrito en `calendar/byRoles`), un calendario sin día no sale y una rama sin `hecha` no tiene tareas; la
+  definición se queda con su id y su color, y devolver el día lo trae igual. El primer papel de una cuenta que aún iba
+  por definiciones convierte antes en papeles lo que dicen las de sus calendarios (`rolesToSet`, lo mismo que
+  `cli.ts roles --apply`), así que no se esconde ninguno. La cuenta de Juan ya va por papeles (paso 2), así que para él
+  solo cambia que ahora los puede tocar.
+- **Lo que se dice antes:** quitar Calendario o Tareas de una colección que sale en Boni Calendar lo dice debajo de
+  «Quitar»; elegir otro campo para uno de sus papeles, en la lista de campos («Cambia cómo salen sus registros en Boni
+  Calendar.»). Quitar Dinero no esconde nada y no dice nada.
+- **Deshacer:** el aviso vuelve a poner los papeles que la colección tenía suyos. El `undo` de la ejecución (el del
+  MCP) deshace también los papeles sacados de las definiciones y `calendar/byRoles`; el del aviso los deja, y eso no
+  cambia lo que se ve.
+- **El paso 3c no hace falta todavía:** las gráficas v1 del dinero y la conciliación siguen nombrando Movimiento. La
+  página se sostiene sin él: la etiqueta Dinero ya vale para los bloques de las páginas (paso 3b), que es donde otra
+  colección con importe entra hoy. Se hará cuando haya una segunda colección de dinero que deba entrar en esas
+  gráficas o en la conciliación.
+
 ## 7. Orden
 
 Cada paso es un PR con sus pruebas, y se despliega al cerrarse:

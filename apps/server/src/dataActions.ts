@@ -14,8 +14,17 @@ import {
   typeName,
   type Val,
 } from "@boni/agent";
-import { type FieldType, join, type Label, type TypeDef } from "@boni/entities";
-import type { OpMeta, UserStore } from "@boni/store";
+import {
+  type FieldId,
+  type FieldType,
+  join,
+  type Label,
+  ROLES,
+  type Role,
+  type TypeDef,
+} from "@boni/entities";
+import { type OpMeta, StoreError, type UserStore } from "@boni/store";
+import { BY_ROLES, byRoles } from "./calendarStore.ts";
 import {
   changeColumn,
   DataError,
@@ -32,6 +41,7 @@ import {
   TREE_UI,
 } from "./data.ts";
 import { viewOf } from "./pageActions.ts";
+import { rolesToSet } from "./roles.ts";
 
 /**
  * The actions of the area «Datos» that the core's tools did not have (docs/sistema.md §4.1, F10): renaming, moving
@@ -293,6 +303,51 @@ export function withDataActions(r: ToolRegistry): ToolRegistry {
       const out = setRowUi(s.store, def.id, { views: next });
       if ("error" in out) throw new ToolError(out.error);
       return leaf({ collection: typeName(def), views: out.views.map((v) => v.name) }, code);
+    },
+  });
+  r.register({
+    name: "schema.set_roles",
+    // The account goes by roles from now on (D-64), kept with the run: its Undo leaves it as it was.
+    keeps: () => [BY_ROLES],
+    icon: "Tags",
+    undo: ["run"],
+    effect: "schema",
+    area: "data",
+    service: "data",
+    title: "Papeles",
+    describe: `Give a collection's fields the roles the apps use it by (docs/clases.md §6: Calendario, Tareas, Dinero), or take them away: roles {role: the field's key, or null to take it away}; roles: ${ROLES.join(", ")}. A day ("date") or an instant ("start"), not both; "time", "endTime" and "endDate" go with "date", "end" with "start"; "done" is a checkbox; "amount" a number and, with a day, makes it money. A role its mother gives stays hers`,
+    args: {
+      type,
+      roles: { role: "definition", required: true, describe: "{role: field key or null}" },
+    },
+    run(c, a) {
+      const s = serviceOf(c.service);
+      const def = typeOf(c.store, a.type);
+      const raw = a.roles ? plain(a.roles) : null;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        throw new ToolError("bad-argument");
+      const roles: Partial<Record<Role, FieldId | null>> = {};
+      for (const [r, v] of Object.entries(raw as Record<string, unknown>)) {
+        if (!(ROLES as string[]).includes(r)) throw new ToolError("bad-role");
+        roles[r as Role] = v === null ? null : fieldOf(def, leaf(v as never, code)).id;
+      }
+      if (!Object.keys(roles).length) throw new ToolError("bad-argument");
+      try {
+        s.store.batch(() => {
+          // The account's first role (D-64): until now its calendars went by their definitions, so what those say
+          // becomes their roles first (as `cli.ts roles --apply`), and going by roles hides none of them.
+          if (!byRoles(s.store))
+            for (const f of rolesToSet(s.store).found)
+              s.store.applySchema({ op: "set_roles", type: f.type, roles: f.roles }, s.meta);
+          s.store.applySchema({ op: "set_roles", type: def.id, roles }, s.meta);
+          if (s.store.setting(BY_ROLES) !== "1") s.store.setSetting(BY_ROLES, "1");
+        });
+      } catch (e) {
+        // What does not fit the branch (a day and an instant, a field in two roles…): the core's reason, as a code.
+        if (e instanceof StoreError && e.code === "invalid") throw new ToolError("bad-roles");
+        throw e;
+      }
+      return leaf({ collection: typeName(def), roles: Object.keys(roles) }, code);
     },
   });
   r.register({

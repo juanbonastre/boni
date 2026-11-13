@@ -158,6 +158,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "move_note",
       "collection_view",
       "notes_in_tree",
+      "set_roles",
       "calendars",
       "calendars_add",
       "calendars_split",
