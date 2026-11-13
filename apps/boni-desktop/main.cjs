@@ -46,6 +46,9 @@ app.commandLine.appendSwitch("lang", settings.language === "en" ? "en-GB" : "es-
 let widgetList = [];
 let mainWindow = null;
 let tray = null;
+// Quitting (task 119): from «before-quit» on, Boni makes no window. One made while it quits (the peek made ahead, 4 s
+// after the start, a link, a widget) is not among the windows the quit closes, so «will-quit» never came and Boni
+// stayed, hidden, through every later quit.
 let quitting = false;
 let labels = {
   open: "Abrir Boni",
@@ -187,6 +190,7 @@ function saveWindowState(win) {
 }
 
 function openMain(screenId) {
+  if (quitting) return;
   if (!mainWindow || mainWindow.isDestroyed()) {
     const state = windowState();
     mainWindow = new BrowserWindow({
@@ -258,6 +262,7 @@ let peekWindow = null;
 let peekReady = null;
 function makePeek() {
   if (peekWindow && !peekWindow.isDestroyed()) return peekReady;
+  if (quitting) return Promise.resolve();
   peekWindow = new BrowserWindow({
     width: 760,
     height: 640,
@@ -306,7 +311,7 @@ function hidePeek({ fromLink = false } = {}) {
 async function openPeek(screenId) {
   await makePeek();
   const win = peekWindow;
-  if (!win) return;
+  if (!win || quitting) return;
   // Centred on the display where the pointer is (where the click in the other app was).
   const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const [w, h] = win.getSize();
@@ -386,6 +391,7 @@ function createWidgetWindow(widget, place) {
 
 /** Opens, updates and closes widget windows so they match the list and the settings. */
 function reconcileWidgets() {
+  if (quitting) return;
   const visible = W.visibleWidgets(widgetList, settings);
   const keep = new Set(visible.map((w) => w.id));
   for (const [id, entry] of widgetWindows) {
