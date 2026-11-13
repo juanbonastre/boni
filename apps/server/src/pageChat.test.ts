@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { computeBlocks } from "./blocks.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { checkFlow, createFlow, saveUserFlow } from "./flows.ts";
@@ -569,9 +570,9 @@ describe("a page's chat (D-61)", () => {
     once();
     const times: number[] = [];
     for (let k = 0; k < 5; k++) {
-      const t0 = performance.now();
+      const t0 = cpu();
       once();
-      times.push(performance.now() - t0);
+      times.push(cpu() - t0);
     }
     times.sort((a, b) => a - b);
     const median = times[2] as number;
@@ -579,5 +580,5 @@ describe("a page's chat (D-61)", () => {
       `A-15 page chat: its turn's chat and screen over ${made.length} movements, median ${median.toFixed(1)} ms`,
     );
     expect(median).toBeLessThan(1500);
-  }, 60_000);
+  }, 120_000);
 });

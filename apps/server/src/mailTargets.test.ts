@@ -2,6 +2,7 @@ import type { FieldDef, TypeDef } from "@boni/entities";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import { TargetMemo } from "./mailTargets.ts";
 
 const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
@@ -97,9 +98,9 @@ describe("the collections a mail may go to, remembered by parts (task 43)", () =
       read: read.mock.calls.map((c) => c[0]).sort(),
       listed: listed.mock.calls.map((c) => c[0]).sort(),
     });
-    const t0 = performance.now();
+    const t0 = cpu();
     const targets = memo.targetsFor(store, ["t_agenda", "t_tarea"]);
-    const first = performance.now() - t0;
+    const first = cpu() - t0;
     console.log(`targets of 3,000 + 20 records (and 100 people): ${first.toFixed(0)} ms`);
     expect(first).toBeLessThan(2000);
     // What a target is made of: the due field, up to three latest titles, the fields to fill.
@@ -138,9 +139,9 @@ describe("the collections a mail may go to, remembered by parts (task 43)", () =
       { t_agenda_t: { value: "Clase nueva", label: own } },
       { actor: "user" },
     );
-    const t1 = performance.now();
+    const t1 = cpu();
     const again = memo.targetsFor(store, ["t_agenda", "t_tarea"]);
-    const agenda = performance.now() - t1;
+    const agenda = cpu() - t1;
     console.log(`the agenda's part again, 3,001 records: ${agenda.toFixed(0)} ms`);
     expect(agenda).toBeLessThan(1000);
     expect(types()).toEqual({ read: ["t_agenda"], listed: [] });
@@ -162,5 +163,5 @@ describe("the collections a mail may go to, remembered by parts (task 43)", () =
     expect(store.get).toBe(got);
     // A collection no store has, or archived: no target.
     expect(memo.targetsFor(store, ["t_nada"])).toEqual([]);
-  });
+  }, 120_000);
 });

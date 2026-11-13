@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
 import { blame } from "./blame.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { MIGRATIONS } from "./migrations.ts";
 import { BODY, type OpMeta, openUserStore, type UserStore } from "./store.ts";
 
@@ -214,9 +215,9 @@ describe("the audit", () => {
       }
       return Object.fromEntries(m);
     };
-    const t1 = performance.now();
+    const t1 = cpu();
     const first = s.audit.activitySince(0, 0, from);
-    const firstMs = performance.now() - t1;
+    const firstMs = cpu() - t1;
     // 30 of the 40 days: 1,500 reads of ten notes each, half by each actor; and the 50 creations (the store's clock).
     expect(sum(first.rows)).toEqual({
       "model:reader:fake|t_nota": { reads: 7500, writes: 0 },
@@ -242,9 +243,9 @@ describe("the audit", () => {
     stores.splice(stores.indexOf(s), 1);
     const again = openUserStore(path);
     stores.push(again);
-    const t2 = performance.now();
+    const t2 = cpu();
     const restarted = again.audit.activitySince(0, 0, from);
-    const againMs = performance.now() - t2;
+    const againMs = cpu() - t2;
     console.log(
       `activity of 20,000 reads: the first pass ${firstMs.toFixed(0)} ms, after a restart ${againMs.toFixed(0)} ms`,
     );
@@ -260,7 +261,7 @@ describe("the audit", () => {
       "model:reader:fake|t_nota": { reads: 500, writes: 0 },
       "mcp:claude-ejemplo|t_nota": { reads: 1, writes: 0 },
     });
-  });
+  }, 120_000);
 
   it("counts a period's activity from the kept sums, the same as reading the audit, at any bounds (task 108)", () => {
     const { s, path } = fresh();

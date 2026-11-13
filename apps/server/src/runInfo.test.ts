@@ -1,6 +1,7 @@
 import { label } from "@boni/entities";
 import { openUserStore, type RunRow, type UserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import { proposalsByRun, runInfo } from "./runInfo.ts";
 
 /** Invented mail and tasks (never real ones), as the journal and the log keep them. */
@@ -85,9 +86,9 @@ describe("what each run of the Registro was, and what came of it", () => {
         if (status !== "pending") store.journal.setProposal(id, status, 3);
       }
     }
-    const t0 = performance.now();
+    const t0 = cpu();
     const counts = proposalsByRun(store);
-    const ms = performance.now() - t0;
+    const ms = cpu() - t0;
     console.log(`proposals of 300 runs counted: ${ms.toFixed(1)} ms`);
     expect(ms).toBeLessThan(100);
     expect(counts.size).toBe(300);
@@ -106,7 +107,7 @@ describe("what each run of the Registro was, and what came of it", () => {
       postponed: 2,
       stale: 2,
     });
-  });
+  }, 120_000);
 
   it("a mail read in the background: its subject and sender, and its proposals by what Juan decided", () => {
     const store = env();

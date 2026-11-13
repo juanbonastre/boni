@@ -2,6 +2,7 @@ import { label } from "@boni/entities";
 import { openUserStore, type ProposalRow, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setSplit } from "./calendarStore.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { ghostRows, listRows } from "./data.ts";
 import {
   crossCalendar,
@@ -754,20 +755,20 @@ describe("a card checked again each time it is seen (task 73)", () => {
       }),
     );
     const spy = vi.spyOn(store, "list");
-    const t0 = performance.now();
+    const t0 = cpu();
     const ctx = inboxContext(store, { now: at("2026-10-29T10:00:00Z"), tz: "Europe/Madrid" });
     const served = cards.map((p) => inboxCard(store, p, { decide: false }, ctx));
-    const first = performance.now() - t0;
+    const first = cpu() - t0;
     // Served again (the inbox polls): the calendar's day memo holds, nothing is read whole again.
-    const t1 = performance.now();
+    const t1 = cpu();
     const ctx2 = inboxContext(store, { now: at("2026-10-29T10:01:00Z"), tz: "Europe/Madrid" });
     for (const p of cards) inboxCard(store, p, { decide: false }, ctx2);
-    const again = performance.now() - t1;
+    const again = cpu() - t1;
     const docencia = spy.mock.calls.filter((c) => c[0] === "t_docencia").length;
     spy.mockRestore();
     expect(served.every((c) => c.now.state === null && c.now.fromToday === null)).toBe(true);
     expect(docencia).toBeLessThanOrEqual(1);
     expect(first).toBeLessThan(1000);
     expect(again).toBeLessThan(200);
-  });
+  }, 120_000);
 });

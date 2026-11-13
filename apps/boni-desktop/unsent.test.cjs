@@ -157,20 +157,37 @@ test("a request from another part of the app to the same note takes out only the
   assert.equal(listIn(dir), null);
 });
 
-test(`quitting waits for the answers in flight, ${QUIT_WAIT_MS} ms at most`, async () => {
+test(`quitting waits for the answers in flight, ${QUIT_WAIT_MS} ms at most`, async (t) => {
+  // On a fake clock (task 116): the waits are exact and a loaded machine cannot stretch them. Only setTimeout is
+  // faked; setImmediate lets the promises settle between ticks.
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const flush = () => new Promise((r) => setImmediate(r));
+  const settled = (p) => {
+    const s = { done: false };
+    p.then(() => {
+      s.done = true;
+    });
+    return s;
+  };
   const u = createUnsent(folder());
-  const start = Date.now();
-  await u.settle();
-  assert.ok(Date.now() - start < 50, "nothing in flight: no wait");
-  const t = u.sending("PUT", "api/pages/p1");
-  setTimeout(() => u.answered(t, true), 50);
-  const a = Date.now();
-  await u.settle();
-  const took = Date.now() - a;
-  assert.ok(took >= 40 && took < 500, `waited ${took} ms for the answer`);
+  const none = settled(u.settle());
+  await flush();
+  assert.ok(none.done, "nothing in flight: no wait");
+  const w = u.sending("PUT", "api/pages/p1");
+  setTimeout(() => u.answered(w, true), 50);
+  const answer = settled(u.settle());
+  t.mock.timers.tick(49);
+  await flush();
+  assert.equal(answer.done, false, "settled before the answer came");
+  t.mock.timers.tick(1);
+  await flush();
+  assert.ok(answer.done, "the answer at 50 ms was not what ended the wait");
   u.sending("PUT", "api/pages/p2");
-  const b = Date.now();
-  await u.settle(200);
-  const bound = Date.now() - b;
-  assert.ok(bound >= 190 && bound < 600, `an answer that never comes is waited ${bound} ms`);
+  const never = settled(u.settle(200));
+  t.mock.timers.tick(199);
+  await flush();
+  assert.equal(never.done, false, "an answer that never comes is waited less than 200 ms");
+  t.mock.timers.tick(1);
+  await flush();
+  assert.ok(never.done, "an answer that never comes is waited more than 200 ms");
 });

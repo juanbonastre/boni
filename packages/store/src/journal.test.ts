@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import { CALLS_BY_STEP } from "./journal.ts";
 import { openUserStore } from "./store.ts";
 
@@ -39,10 +40,10 @@ describe("the journal's model calls by when (task 43)", () => {
     });
     const from = start + 10 * DAY;
     const to = start + 41 * DAY;
-    const t0 = performance.now();
+    const t0 = cpu();
     const calls = store.journal.modelCallsIn(from, to);
     const spend = store.journal.spending(from, to);
-    const ms = performance.now() - t0;
+    const ms = cpu() - t0;
     console.log(`400 calls of 80 KB each: the last 30 days read and summed in ${ms.toFixed(1)} ms`);
     expect(calls).toHaveLength(300);
     expect(calls[0]).toMatchObject({
@@ -85,7 +86,7 @@ describe("the journal's model calls by when (task 43)", () => {
     const again = openUserStore(path);
     cleanups.push(() => again.close());
     expect(again.journal.modelCallsIn(from, to)).toHaveLength(300);
-  });
+  }, 120_000);
 });
 
 describe("a flow's steps: their model calls (task 90)", () => {

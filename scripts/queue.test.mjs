@@ -111,6 +111,29 @@ async function held(lock) {
   throw new Error("the first run never took the queue");
 }
 
+/**
+ * How long a run takes with the queue free, from its start to its exit, as the waits below are measured. A run that
+ * must not wait for a dead one is bounded by its limit or twenty of these, whichever is more (task 116): a loaded
+ * machine stretches both its wait and this run (they are the same processes starting), so it cannot fail the bound;
+ * waiting a timeout for the dead run, many times one run, still does. One is measured before the wait and one after,
+ * and the longer counts: load that eases or starts during the test leaves one of them as stretched as the wait.
+ */
+async function freeRun() {
+  const t0 = Date.now();
+  const r = await start(main, "").done;
+  assert.equal(r.status, 0, r.out);
+  return Date.now() - t0;
+}
+
+/** That `ms` is no wait for a dead run: under `limit`, or twenty free runs (the longer of `before` and one now). */
+async function noDeadWait(ms, limit, what, before) {
+  const one = Math.max(before, await freeRun());
+  assert.ok(
+    ms < Math.max(limit, 20 * one),
+    `${what}: ${ms} ms (a run with the queue free took ${one} ms)`,
+  );
+}
+
 test("every worktree of a repo shares one lock, in the common git dir", () => {
   assert.equal(lockPath(main), lockPath(other));
   assert.match(lockPath(main), /\.git\/boni-queue\.lock$/);
@@ -167,6 +190,7 @@ test("runs in line are served in the order they arrived, each saying its place o
 });
 
 test("a run killed while waiting never takes its turn nor blocks the next", async () => {
+  const before = await freeRun();
   const lock = lockPath(main);
   rmSync(lock, { force: true });
   const go = file("go");
@@ -184,11 +208,12 @@ test("a run killed while waiting never takes its turn nor blocks the next", asyn
   await h.done;
   const t0 = Date.now();
   const r2 = await w2.done;
+  const waited = Date.now() - t0;
   assert.equal(r2.status, 0, r2.out);
-  assert.ok(Date.now() - t0 < 10_000, "W2 waited for a dead run");
   // An orphan of W1 may get the lock after W2: a last run waits for the queue to be free before reading what ran.
   await start(main, "").done;
   assert.equal(readFileSync(order, "utf8"), "W2\n");
+  await noDeadWait(waited, 10_000, "W2 waited for a dead run", before);
 });
 
 test("a run stopped in line (Ctrl+Z) keeps its place but does not hold up the next", async () => {
@@ -232,6 +257,7 @@ test("Ctrl+C on a run in line takes it out of the line", async () => {
 });
 
 test("a stale ticket left by a crash (its pid is gone, or the file is unreadable) is skipped and deleted", async () => {
+  const before = await freeRun();
   const dir = ticketDir(lockPath(main));
   mkdirSync(dir, { recursive: true });
   const gone = spawnSync(process.execPath, ["-e", ""]).pid;
@@ -241,12 +267,13 @@ test("a stale ticket left by a crash (its pid is gone, or the file is unreadable
   writeFileSync(broken, "{");
   const t0 = Date.now();
   const r = await start(main, "console.log('ran')").done;
+  const took = Date.now() - t0;
   assert.equal(r.status, 0, r.out);
   assert.match(r.out, /ran/);
   assert.doesNotMatch(r.out, /waiting/);
-  assert.ok(Date.now() - t0 < 5_000);
   assert.equal(existsSync(stale), false);
   assert.equal(existsSync(broken), false);
+  await noDeadWait(took, 5_000, "the run waited for a stale ticket", before);
 });
 
 test("a run of an older copy of the script (the lock alone, no ticket) never runs beside a new one", async () => {
@@ -279,6 +306,7 @@ test("a run of an older copy of the script (the lock alone, no ticket) never run
 });
 
 test("a killed run frees the queue: nothing is left to delete", async () => {
+  const before = await freeRun();
   const lock = lockPath(main);
   rmSync(lock, { force: true });
   const a = start(main, "setTimeout(() => {}, 60000)", { detached: true });
@@ -287,8 +315,9 @@ test("a killed run frees the queue: nothing is left to delete", async () => {
   await a.done;
   const t0 = Date.now();
   const b = await start(other, "console.log('B ran')").done;
+  const took = Date.now() - t0;
   assert.equal(b.status, 0, b.out);
-  assert.ok(Date.now() - t0 < 10_000, "B waited for a dead run");
+  await noDeadWait(took, 10_000, "B waited for a dead run", before);
 });
 
 test("the command's exit code is the run's", async () => {

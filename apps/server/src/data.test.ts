@@ -8,6 +8,7 @@ import { label } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -53,6 +54,9 @@ beforeAll(async () => {
     agent: host,
   });
   http = serve(app, "tailnet");
+  // On a busy machine the work between two requests can last past Node's 5 s of keep-alive, and the server closes the
+  // connection as fetch sends on it (ECONNRESET, task 116). Its idle limit is not what these tests are about.
+  http.keepAliveTimeout = 120_000;
   await new Promise<void>((r) => http.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
   // A collection of the user's: books with a status.
@@ -87,7 +91,7 @@ beforeAll(async () => {
     },
     { actor: "user" },
   );
-});
+}, 120_000);
 
 afterAll(async () => {
   http.closeAllConnections();
@@ -951,15 +955,16 @@ describe("a collection's columns, as Notion's properties (task 40)", () => {
     ).toBe(400);
     // Duplicate: beside the original, its kind and values of a list, every value copied with where it came from,
     // one change per record in the log; at his volume, a rare action that waits a second or two (1.6 s for 2,000
-    // values on the laptop alone, 4.4 s while make check runs every suite at once, 2026-11-12: the store's own cost
-    // per update). The bound catches a copy that grows worse than linear (minutes), not a busy machine.
+    // values on the laptop alone, 4.4 s on the clock while make check ran every suite at once, 2026-11-12: the store's
+    // own cost per update). The bound, in the thread's CPU time (task 116: the server runs on this thread), catches a
+    // copy that grows worse than linear (minutes), not a busy machine.
     const seq = store.version();
-    const t0 = performance.now();
+    const t0 = cpu();
     const copy = await call("POST", `/api/data/types/${type}/fields`, {
       name: "Estado (copia)",
       copy: estado,
     });
-    const ms = performance.now() - t0;
+    const ms = cpu() - t0;
     expect(copy.status).toBe(200);
     expect(ms).toBeLessThan(10_000);
     const dup = copy.body.id as string;
@@ -1000,7 +1005,7 @@ describe("a collection's columns, as Notion's properties (task 40)", () => {
     expect(store.list(type).filter((x) => x.entity.values[estado] !== undefined)).toHaveLength(
       2000,
     );
-  }, 30_000);
+  }, 120_000);
 });
 
 describe("the diagram over the API (docs/flujos.md F6)", () => {

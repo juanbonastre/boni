@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { cpu } from "./cpu.test-util.ts";
 import { filterErrors, matchesFilters } from "./filter.ts";
 
 const TYPES: Record<string, string> = {
@@ -147,10 +148,6 @@ describe("filters", () => {
     const typeOf = (x: string) => types[x];
     // Timed in this thread's CPU time, not on the clock: a busy machine stops the thread while the clock goes on, and
     // the clock read 110-147 ms for what takes a few (task 113: `make check` beside seven other sessions' checks).
-    const cpu = () => {
-      const u = process.threadCpuUsage();
-      return (u.user + u.system) / 1000;
-    };
     const start = cpu();
     let kept = 0;
     for (let n = 0; n < 10; n++)
@@ -161,5 +158,5 @@ describe("filters", () => {
     expect(kept).toBeLessThan(5000);
     // Measured at 2026-11-12 on the laptop: see the PR; the bound only catches a change of order.
     expect(each).toBeLessThan(100);
-  });
+  }, 120_000);
 });

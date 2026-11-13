@@ -2,6 +2,7 @@ import { ensureSystemTypes } from "@boni/agent";
 import { BODY, openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByName } from "./byName.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { addFile, DataError, FILES_INTO, fileInline, rowUiOf, setRowUi } from "./data.ts";
 import { createPage } from "./pages.ts";
 import { relatedTo, titledRows } from "./related.ts";
@@ -255,7 +256,7 @@ describe("the records a mention names (task 110, D-71)", () => {
       );
     };
     // His Agenda's size (2,805 tasks and about 1,150 events), a few long texts besides.
-    const s0 = performance.now();
+    const s0 = cpu();
     store.batch(() => {
       for (let i = 0; i < 2800; i++)
         add("tarea", `${i}. Revisar el proyecto Boni${i % 7 ? "" : " y la reunión"}`, text(i));
@@ -264,7 +265,7 @@ describe("the records a mention names (task 110, D-71)", () => {
       for (let i = 0; i < 20; i++) add("nota", `Plan de diseño ${i}`, text(i).repeat(40));
       for (let i = 0; i < 20; i++) add("movimiento", `Bizum ${i}`);
     });
-    const seeded = performance.now() - s0;
+    const seeded = cpu() - s0;
     const asked = [
       "Reunión",
       "Plan de diseño 7",
@@ -276,16 +277,16 @@ describe("the records a mention names (task 110, D-71)", () => {
     const times: number[] = [];
     for (let round = 0; round < 10; round++)
       for (const t of asked) {
-        const t0 = performance.now();
+        const t0 = cpu();
         titledRows(store, t);
-        times.push(performance.now() - t0);
+        times.push(cpu() - t0);
       }
     times.sort((a, b) => a - b);
     expect(titledRows(store, "Reunión").count).toBe(29);
     expect(titledRows(store, "Plan de diseño 7").rows).toHaveLength(1);
     console.log(
-      `seeded in ${seeded.toFixed(0)} ms; titledRows: median ${times[25]?.toFixed(2)} ms, worst ${times.at(-1)?.toFixed(2)} ms`,
+      `seeded in ${seeded.toFixed(0)} ms of CPU; titledRows: median ${times[25]?.toFixed(2)} ms, worst ${times.at(-1)?.toFixed(2)} ms of CPU`,
     );
     expect(times[25]).toBeLessThan(15);
-  }, 60_000);
+  }, 120_000);
 });

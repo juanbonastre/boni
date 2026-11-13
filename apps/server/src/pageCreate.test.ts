@@ -8,6 +8,7 @@ import { label, newId } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -40,6 +41,9 @@ async function start() {
     agent: host,
   });
   server = serve(app, "tailnet");
+  // On a busy machine the work between two requests can last past Node's 5 s of keep-alive, and the server closes the
+  // connection as fetch sends on it (ECONNRESET, task 116). Its idle limit is not what these tests are about.
+  server.keepAliveTimeout = 120_000;
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
@@ -100,7 +104,7 @@ beforeAll(async () => {
       ).entity.id;
   });
   for (let i = 0; i < 150; i++) await call("POST", "/api/pages", { title: `Página ${i}` });
-});
+}, 120_000);
 
 afterAll(async () => {
   await stop();
@@ -150,18 +154,19 @@ describe("a new page created twice is one page (task 109, D-70)", () => {
 
   it("is quick with his volume: the repeat is one read by id, never a list (A-15)", async () => {
     const ids = Array.from({ length: 20 }, () => newId("e"));
-    const t0 = performance.now();
+    const t0 = cpu();
     for (const id of ids) await call("POST", "/api/pages", { id, title: "" });
-    const t1 = performance.now();
+    const t1 = cpu();
     for (const id of ids) await call("POST", "/api/pages", { id, title: "" });
-    const t2 = performance.now();
+    const t2 = cpu();
     const create = (t1 - t0) / ids.length;
     const repeat = (t2 - t1) / ids.length;
     console.log(
       `page create: ${create.toFixed(1)} ms, repeated: ${repeat.toFixed(1)} ms (3000 notes, ~190 pages)`,
     );
-    // Generous bounds for a slow CI machine; on the laptop both are a few ms.
+    // In the thread's CPU time (task 116: the server and fetch run on this thread), generous for a slower CI machine;
+    // on the laptop both are a few ms.
     expect(create).toBeLessThan(250);
     expect(repeat).toBeLessThan(100);
-  });
+  }, 120_000);
 });

@@ -22,6 +22,7 @@ import { BODY, openUserStore } from "@boni/store";
 import { markdownToBlocks, partKey, partOf } from "@boni/views";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
+import { cpu } from "./cpu.test-util.ts";
 import { openDb } from "./db.ts";
 import { createPage } from "./pages.ts";
 import { MAX_POINTED, MAX_VISIBLE, type SavedChart, screenOf, screenRefs } from "./screen.ts";
@@ -644,11 +645,11 @@ describe("the screen as data (F9, task 85)", () => {
         lists.push(type);
         return list(type, o);
       }) as typeof store.list;
-      const t0 = performance.now();
+      const t0 = cpu();
       const screen = plain(
         screenOf(store, refs as never, { mailAccount: null, today: "2026-11-10" }) as Val,
       );
-      const ms = performance.now() - t0;
+      const ms = cpu() - t0;
       const pointed = (screen as { pointed: { kind: string; total: number }[] }).pointed;
       expect(pointed).toHaveLength(MAX_POINTED);
       expect(pointed.every((x) => x.kind !== "closed" && x.total > 0)).toBe(true);
@@ -659,7 +660,7 @@ describe("the screen as data (F9, task 85)", () => {
     } finally {
       store.close();
     }
-  }, 20_000);
+  }, 120_000);
 
   it("without a screen there is no `$screen` for a plan to name", async () => {
     const planner = new ScriptedProvider("planner", () => ({
@@ -1236,13 +1237,13 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
         focus: { kind: "row", id: ids[3] },
         panel: { kind: "row", ref: { kind: "row", id: ids[4] } },
       });
-      const t0 = performance.now();
+      const t0 = cpu();
       const screen = plain(screenOf(store, refs as never, { mailAccount: null }) as Val) as {
         open: { view?: unknown };
         pointed: { kind: string; text?: string }[];
         visible: unknown[];
       };
-      const ms = performance.now() - t0;
+      const ms = cpu() - t0;
       // The view as the planner names it: its filter by the field's key and the option's name.
       expect(screen.open.view).toMatchObject({
         name: "Hechas",
@@ -1255,5 +1256,5 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
     } finally {
       store.close();
     }
-  }, 20_000);
+  }, 120_000);
 });
