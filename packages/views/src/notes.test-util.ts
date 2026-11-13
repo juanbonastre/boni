@@ -83,6 +83,17 @@ $$
 Texto con *cursiva*, **negrita**, ~~tachado~~, \`código\` y <u>subrayado</u>.
 \\# no es un título, \\- ni una viñeta
 `,
+  "inline formats of every kind": `Una **negrita** y una __negrita__, una *cursiva* y una _cursiva_, ~~tachado~~.
+***Las dos*** y ___las dos___, **negrita con *cursiva* dentro** y *cursiva con **negrita** dentro*.
+**juntas****pegadas** y *a*_b_ y **a**b y un_nombre_de_fichero y 2 * 3 * 4.
+\`código\` y \`\`con \` dentro\`\` y **\`código\` en negrita** y \`**no es negrita**\`.
+[enlace](https://example.com/a?b=c&d=e) y [con título](https://example.com "Título") y [con espacios](<https://example.com/a b>).
+[**negrita** en un enlace](https://example.com) y [[Nota enlazada]] y [[Nota enlazada|alias]] y <https://example.com>.
+Una dirección suelta https://example.com/x, y www.example.com. \\*sin cursiva\\* y \\[sin enlace\\].
+**sin cerrar y *tampoco y \`tampoco y [tampoco](
+Con salto duro **a  
+través** de líneas.
+`,
   "fences of every kind": `~~~
 con virgulillas
 ~~~

@@ -7,7 +7,8 @@ import { EditorState, TextSelection } from "prosemirror-state";
 import { describe, expect, it } from "vitest";
 import { longNote, NOTES } from "../../../../packages/views/src/notes.test-util.ts";
 import type { Page } from "./agent.ts";
-import { blocksOfDoc, docOf, inRun, schema, spliceRun } from "./docModel.ts";
+import { blocksOfDoc, docOf, inRun, isText, schema, spliceRun } from "./docModel.ts";
+import { applyEdits, inlineSpans, plainText, toggleWrap } from "./inline.ts";
 
 type Block = Page["spec"]["blocks"][number];
 
@@ -130,6 +131,41 @@ describe("a run's blocks written back into the page", () => {
   });
 });
 
+/** A block's formats as the editor paints them: each one inside its text, its marks and words in order. */
+function formatsHold(text: string): string | null {
+  for (const sp of inlineSpans(text)) {
+    const [a, b] = sp.inner;
+    if (!(0 <= sp.from && sp.from <= a && a <= b && b <= sp.to && sp.to <= text.length))
+      return `${sp.kind} at ${sp.from} is out of its text`;
+    for (const [x, y] of sp.marks)
+      if (!(sp.from <= x && x <= y && y <= sp.to) || (x < b && y > a))
+        return `${sp.kind} at ${sp.from}: a mark over its words`;
+  }
+  plainText(text);
+  return null;
+}
+
+describe("a note's inline formats painted (task 2f)", () => {
+  it("every block of the corpus: its formats inside its text, and a format put on and off gives back its bytes", () => {
+    const notes = { ...NOTES, "a year of a journal": longNote(365) };
+    for (const [name, md] of Object.entries(notes))
+      for (const b of readMarkdown(md).blocks as Block[]) {
+        if (!isText(b) || b.type === "code") continue;
+        expect(formatsHold(b.text), `${name}: ${b.text}`).toBeNull();
+        const word = b.text.match(/\p{L}{3,}/u);
+        if (!word || word.index === undefined) continue;
+        for (const kind of ["strong", "em", "strike", "code"] as const) {
+          const on = toggleWrap(b.text, word.index, word.index + word[0].length, kind);
+          if (!on) continue;
+          const once = applyEdits(b.text, on.edits);
+          const off = toggleWrap(once, on.from, on.to, kind);
+          // Some words are inside a format of their own kind already: taking it off is what the key does then.
+          if (off) expect(applyEdits(once, off.edits), `${name}: ${b.text}`).toBe(b.text);
+        }
+      }
+  });
+});
+
 /**
  * The read-only check on a folder of real notes (never in CI, never Juan's notes in this repo): with
  * `BONI_NOTES_DIR` set to a folder of Markdown files (an export of a vault), every file goes through the engine and
@@ -148,13 +184,22 @@ describe.runIf(!!process.env.BONI_NOTES_DIR)("notes of a folder through the engi
     };
     walk(dir);
     const started = performance.now();
+    let formats = 0;
     const differ = files.flatMap((p) => {
       const md = readFileSync(p, "utf8");
       const back = throughEngine(md);
-      return back === md ? [] : [`${p.slice(dir.length + 1)}: ${firstDifference(md, back)}`];
+      const name = p.slice(dir.length + 1);
+      // Its formats as the editor paints them (task 2f): each inside its block's text.
+      const painted = (readMarkdown(md).blocks as Block[]).flatMap((b) => {
+        if (!isText(b) || b.type === "code") return [];
+        formats += inlineSpans(b.text).length;
+        const wrong = formatsHold(b.text);
+        return wrong ? [`${name}: ${wrong}`] : [];
+      });
+      return [...(back === md ? [] : [`${name}: ${firstDifference(md, back)}`]), ...painted];
     });
     console.info(
-      `${files.length} notes, ${differ.length} would change, ${Math.round(performance.now() - started)} ms`,
+      `${files.length} notes, ${differ.length} would change, ${formats} formats painted, ${Math.round(performance.now() - started)} ms`,
     );
     expect(differ).toEqual([]);
   });

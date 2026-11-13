@@ -787,6 +787,59 @@ test("in the peek, Esc first leaves the text with its block selected, then lets 
   await expect.poll(visible).toBe(false);
 });
 
+test("formats in the peek (task 2f): words selected, the menu over them; Ctrl+B paints them bold, kept as Markdown and painted again when the note opens", async () => {
+  const a = app as ElectronApplication;
+  const visible = () =>
+    a.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().some(
+        (x) => x.webContents.getURL().includes("peek=1") && x.isVisible(),
+      ),
+    );
+  await new Promise((r) => setTimeout(r, 1000));
+  openLink(`boni://note?id=${tutorialId}&peek=1`);
+  await expect.poll(visible).toBe(true);
+  const peek = a.windows().find((x) => x.url().includes("peek=1"));
+  if (!peek) throw new Error("no peek window");
+  await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Tutoría");
+  const doc = peek.locator(".row-doc .doc-editor");
+  await doc.locator(".doc-tail").click();
+  await peek.keyboard.type("Una idea suelta", { delay: 15 });
+  const line = doc.locator(".blk-input").first();
+  await expect(line).toHaveText("Una idea suelta");
+  await peek.keyboard.press("Home");
+  for (let i = 0; i < 4; i++) await peek.keyboard.press("ArrowRight");
+  for (let i = 0; i < 4; i++) await peek.keyboard.press("Shift+ArrowRight");
+  const bar = peek.getByRole("toolbar", { name: "Formato" });
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Negrita" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await peek.keyboard.press("Control+b");
+  await expect(line.locator(".md-strong")).toHaveText("idea");
+  await expect(bar.getByRole("button", { name: "Negrita" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await peek.screenshot({ path: join(SHOTS, "desktop-peek-format.png") });
+  // Kept: the peek put away and opened again, the note's Markdown comes back bold, its marks hidden away from the caret.
+  await new Promise((r) => setTimeout(r, 1200));
+  openLink("boni://peek?hide=1");
+  await expect.poll(visible).toBe(false);
+  openLink(`boni://note?id=${classId}&peek=1`);
+  await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Clase de ejemplo");
+  await new Promise((r) => setTimeout(r, 1000));
+  openLink(`boni://note?id=${tutorialId}&peek=1`);
+  await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Tutoría");
+  const again = peek.locator(".row-doc .blk-input").first();
+  await expect(again.locator(".md-strong")).toHaveText("idea");
+  await expect(again).toHaveText("Una **idea** suelta");
+  await expect(again.locator(".md-mark.md-hide")).toHaveCount(2);
+  await new Promise((r) => setTimeout(r, 1000));
+  openLink("boni://peek?hide=1");
+  await expect.poll(visible).toBe(false);
+});
+
 test("a picture pasted into a note is kept in Boni (in its only collection of files a model may see) and shown in place", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   openLink(`boni://note?id=${hornoId}`);

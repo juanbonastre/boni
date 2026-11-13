@@ -283,6 +283,39 @@ test("a note on the phone: its properties as chips, all in a sheet; «…»; a b
   await expect(page.locator(".m-tabs")).toBeVisible();
 });
 
+test("formats on the phone (task 2f): the menu over selected words comes below them, its buttons for a finger", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { rayuelaBody: "Una idea suelta\n" });
+  await tab(page, "Páginas");
+  await page.locator(".m-item-main", { hasText: "Libros" }).tap();
+  await page.locator(".m-swipe-row", { hasText: "Rayuela" }).locator(".m-item-main").tap();
+  const line = page.locator(".row-doc .blk-input").first();
+  await line.tap();
+  // «idea» selected as a finger selects it: the window's selection, which the editor reads.
+  await line.evaluate((el) => {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const node = walk.nextNode() as Text;
+    const at = (node.textContent ?? "").indexOf("idea");
+    document.getSelection()?.setBaseAndExtent(node, at, node, at + 4);
+  });
+  const bar = page.getByRole("toolbar", { name: "Formato" });
+  await expect(bar).toBeVisible();
+  const words = await line.boundingBox();
+  const box = await bar.boundingBox();
+  if (!words || !box) throw new Error("not drawn");
+  // Below the line (the phone's own bar for copying is above it), inside the screen.
+  expect(box.y).toBeGreaterThan(words.y);
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(412);
+  const bold = bar.getByRole("button", { name: "Negrita" });
+  expect((await bold.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(40);
+  await page.screenshot({ path: `${SHOTS}/phone-format.png` });
+  await bold.tap();
+  await expect(line).toHaveText("Una **idea** suelta");
+  await expect(line.locator(".md-strong")).toHaveText("idea");
+});
+
 test("the + button: «Crear» with capturing first (the server's buttons, the shortcuts), then something new", async ({
   page,
 }) => {

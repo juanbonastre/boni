@@ -6,7 +6,8 @@
  * blocks opens and types without a component per block (A-15). Every change is the page's blocks (`setPageBlocks`,
  * the store's undo and saving); the store's blocks come back in (an undo, a block turned into another kind) as the
  * nodes that changed. The keys that act on blocks (Enter, Backspace at a start, Tab, Markdown shortcuts) are
- * core/textKeys.ts's; paste is always plain text, made blocks when it has several lines.
+ * core/textKeys.ts's; paste is always plain text, made blocks when it has several lines. The text is the Markdown a
+ * person writes, painted formatted (runFormat.ts, task 2f): what is saved is what was typed.
  */
 import { blocksToMarkdown, markdownToBlocks } from "@boni/views";
 import type { Node as PMNode, Slice } from "prosemirror-model";
@@ -33,6 +34,7 @@ import {
   type TextBlock,
 } from "../core/docModel.ts";
 import type { Where } from "../core/grid.ts";
+import { plainText } from "../core/inline.ts";
 import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { indented, pastedInto, replacedBy } from "../core/selection.ts";
 import {
@@ -44,6 +46,7 @@ import {
   shortcutTyped,
   tabIn,
 } from "../core/textKeys.ts";
+import { openUrl } from "../host.ts";
 import {
   addFilesToPage,
   blockId,
@@ -58,8 +61,18 @@ import {
   undoPage,
   useStore,
 } from "../store.ts";
+import { type Bubble, FormatBar } from "./FormatBar.tsx";
 import { historyColor, whoLabel } from "./History.tsx";
 import { AnchoredBox, PointMenu } from "./Popover.tsx";
+import {
+  FORMAT_EDIT,
+  formatPlugin,
+  formatSeen,
+  formattable,
+  linkAt,
+  linkSelection,
+  toggleFormat,
+} from "./runFormat.ts";
 
 type Block = Page["spec"]["blocks"][number];
 type T = ReturnType<typeof useStore.getState>["t"];
@@ -185,6 +198,11 @@ class RunCore {
   slashOff: { id: string; text: string } | null = null;
   caretId: string | null = null;
   notify: () => void;
+  /** The menu over selected text (FormatBar), drawn apart from the run: a selection moving draws only it. */
+  bubble: Bubble | null = null;
+  bubbleSeen: () => void;
+  /** A pointer is down in the text: the menu waits for it to lift (a selection being dragged). */
+  held = false;
   /**
    * What every block's drawing depends on beyond the block itself, as last drawn: a new object when any of it changed.
    * A key typed changes none of it, so only the block typed in is drawn again (A-15: a note of thousands of lines).
@@ -212,12 +230,23 @@ class RunCore {
     }
   }
 
-  constructor(mount: HTMLElement, blocks: Block[], live: Live, notify: () => void) {
+  constructor(
+    mount: HTMLElement,
+    blocks: Block[],
+    live: Live,
+    notify: () => void,
+    bubbleSeen: () => void,
+  ) {
     this.live = live;
     this.notify = notify;
+    this.bubbleSeen = bubbleSeen;
     this.emitted = blocks;
 
-    const state = EditorState.create({ schema, doc: docOf(blocks), plugins: [freshIds] });
+    const state = EditorState.create({
+      schema,
+      doc: docOf(blocks),
+      plugins: [freshIds, formatPlugin],
+    });
     this.view = new EditorView(
       { mount },
       {
@@ -237,6 +266,18 @@ class RunCore {
         dispatchTransaction: (tr) => this.apply(tr),
         handleKeyDown: (_v, e) => this.key(e),
         handlePaste: (_v, e) => this.paste(e),
+        // A backtick over selected words makes them code (Ctrl+E is Boni's window).
+        handleTextInput: (v, from, to, text) =>
+          text === "`" && from < to && formattable(v.state) ? toggleFormat(v, "code") : false,
+        // Ctrl+click (Cmd on a Mac) opens a link, as in an editor of code; a click alone puts the caret in it.
+        handleClick: (v, pos, e) => {
+          if (!(e.ctrlKey || e.metaKey)) return false;
+          const at = linkAt(v.state, pos, pos);
+          const href = at?.span.href;
+          if (!href) return false;
+          void openUrl(href);
+          return true;
+        },
         handleDrop: (v, e, _s, moved) => this.drop(v, e as DragEvent, moved),
         clipboardTextSerializer: (slice) => copied(slice),
         handleDOMEvents: {
@@ -248,14 +289,41 @@ class RunCore {
             undoPage(type === "historyRedo");
             return true;
           },
-          focus: () => {
+          focus: (v) => {
             active = this;
             onEditorLeaving(() => this.readScreen());
+            formatSeen(v, { focused: true });
             this.selectionChanged();
             return false;
           },
-          blur: (_v, e) => {
+          pointerdown: (v, e) => {
+            if ((e as PointerEvent).button !== 0) return false;
+            this.held = true;
+            formatSeen(v, { held: true });
+            const up = () => {
+              window.removeEventListener("pointerup", up, true);
+              window.removeEventListener("pointercancel", up, true);
+              this.held = false;
+              // After the engine has read where the pointer left the selection.
+              setTimeout(() => {
+                formatSeen(v, { held: false });
+                this.selectionChanged();
+              }, 0);
+            };
+            window.addEventListener("pointerup", up, true);
+            window.addEventListener("pointercancel", up, true);
+            return false;
+          },
+          compositionend: (v) => {
+            setTimeout(() => {
+              formatSeen(v, { redraw: true });
+              this.selectionChanged();
+            }, 0);
+            return false;
+          },
+          blur: (v, e) => {
             if (active === this) onEditorLeaving(null);
+            formatSeen(v, { focused: false });
             // The text left for anything but more of it (a title, a property, another screen) is saved now, as a
             // field is when it is left; nothing waits for the timer (D-65).
             const to = (e as FocusEvent).relatedTarget;
@@ -296,13 +364,13 @@ class RunCore {
     this.view.updateState(state);
     if (state.doc !== before.doc) {
       if (tr.getMeta(FROM_PAGE)) this.emitted = blocksOfDoc(state.doc);
-      else this.write(state);
+      else this.write(state, tr.getMeta(FORMAT_EDIT) === true);
     }
     this.selectionChanged();
   }
 
-  /** The document changed by typing: the page's blocks with this run's written back. */
-  write(state: EditorState) {
+  /** The document changed by typing (or by a format: a step of Undo of its own): the page's blocks written back. */
+  write(state: EditorState, format = false) {
     const next = blocksOfDoc(state.doc);
     const old = this.emitted;
     this.emitted = next;
@@ -314,6 +382,10 @@ class RunCore {
       next,
     );
     // Markdown just typed at a line's start turns the block into another kind (not while a word is composed).
+    if (format) {
+      setPageBlocks(full);
+      return;
+    }
     if (!this.view.composing && next.length === old.length) {
       const i = next.findIndex((b, k) => b !== old[k]);
       const was = old[i];
@@ -441,6 +513,39 @@ class RunCore {
       this.slash = slash;
       this.notify();
     }
+    // The menu over selected text, or over the link the caret is in; kept while its field for an address is open.
+    if (this.bubble?.editing) {
+      this.bubbleSeen();
+      return;
+    }
+    const s = this.view.state;
+    const mode =
+      !focused || this.held || this.view.composing || slash
+        ? null
+        : formattable(s)
+          ? "format"
+          : s.selection.empty && linkAt(s)
+            ? "link"
+            : null;
+    const next: Bubble | null = mode ? { mode, editing: false } : null;
+    if (next || this.bubble) {
+      this.bubble = next;
+      this.bubbleSeen();
+    }
+  }
+
+  /** The field for a link's address opened (Ctrl+K, the menu's button) or closed. */
+  editLink(on: boolean) {
+    if (on) {
+      const s = this.view.state;
+      const mode = formattable(s) ? "format" : linkAt(s)?.span.kind === "link" ? "link" : null;
+      if (!mode) return;
+      this.bubble = { mode, editing: true };
+      this.bubbleSeen();
+      return;
+    }
+    this.bubble = null;
+    this.selectionChanged();
   }
 
   /** The keys that act on blocks; the rest are the text's own. */
@@ -458,6 +563,26 @@ class RunCore {
     const b = i.block;
     const first = i.index === 0;
     const last = i.index === view.state.doc.childCount - 1;
+    if (mod && !e.altKey) {
+      const k = e.key.toLowerCase();
+      // Bold, italic, strikethrough (Ctrl+Shift+X, as Slack's: Ctrl+Shift+S is a browser's screenshot) and a link
+      // (Ctrl+K with words selected or the caret in a link; otherwise it is the search). Ctrl+U has no Markdown.
+      const wrap =
+        !e.shiftKey && k === "b"
+          ? "strong"
+          : !e.shiftKey && k === "i"
+            ? "em"
+            : e.shiftKey && k === "x"
+              ? "strike"
+              : null;
+      if (wrap) return toggleFormat(view, wrap);
+      if (!e.shiftKey && k === "u") return true;
+      if (!e.shiftKey && k === "k") {
+        if (!formattable(view.state) && linkAt(view.state)?.span.kind !== "link") return false;
+        this.editLink(true);
+        return true;
+      }
+    }
     switch (e.key) {
       case "Tab": {
         const ids = this.touched();
@@ -607,6 +732,10 @@ class RunCore {
     const text = data.getData("text/plain").replace(/\r\n?/g, "\n");
     if (!text) return true;
     if (!i) return true;
+    // An address pasted over words makes them its link.
+    const web = text.trim();
+    if (/^https?:\/\/\S+$/i.test(web) && formattable(view.state) && linkSelection(view, web))
+      return true;
     if (i.block.type === "code" || !text.includes("\n")) {
       view.dispatch(view.state.tr.insertText(text).scrollIntoView());
       return true;
@@ -1041,14 +1170,17 @@ class BlockView implements NodeView {
     const t = live.t;
     const attrs =
       note && part && isText(b)
-        ? pointAttrs({ kind: "part", id: note, ...part }, chipTitle(t("point.kind.part"), b.text))
+        ? pointAttrs(
+            { kind: "part", id: note, ...part },
+            chipTitle(t("point.kind.part"), plainText(b.text)),
+          )
         : live.onPage && b.type !== "divider"
           ? pointAttrs(
               { kind: "block", page: ctx.page.id, block: b.id },
               chipTitle(
                 ctx.menus.name(b),
                 isText(b)
-                  ? b.text
+                  ? plainText(b.text)
                   : b.type === "file"
                     ? b.name
                     : b.type === "page"
@@ -1126,6 +1258,7 @@ export function TextRun({ ids, ctx }: { ids: readonly string[]; ctx: RunContext 
   const host = useRef<HTMLDivElement>(null);
   const core = useRef<RunCore | null>(null);
   const [, redraw] = useReducer((x: number) => x + 1, 0);
+  const bubbles = useRef(new Set<() => void>()).current;
   const t = useStore((s) => s.t);
   const marks = useStore((s) => s.historyMarks);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
@@ -1143,7 +1276,9 @@ export function TextRun({ ids, ctx }: { ids: readonly string[]; ctx: RunContext 
 
   useLayoutEffect(() => {
     if (!host.current) return;
-    const c = new RunCore(host.current, blocks, live, redraw);
+    const c = new RunCore(host.current, blocks, live, redraw, () => {
+      for (const f of bubbles) f();
+    });
     core.current = c;
     return () => {
       c.destroy();
@@ -1174,6 +1309,7 @@ export function TextRun({ ids, ctx }: { ids: readonly string[]; ctx: RunContext 
   return (
     <>
       <div ref={host} />
+      <RunBubble core={core} seen={bubbles} t={t} />
       {c &&
         [...c.views].flatMap((v) =>
           v.host && v.block.type !== "divider"
@@ -1225,4 +1361,26 @@ export function TextRun({ ids, ctx }: { ids: readonly string[]; ctx: RunContext 
       )}
     </>
   );
+}
+
+/** The menu over a run's selected text, drawn again on its own as the selection moves (not the run's blocks). */
+function RunBubble({
+  core,
+  seen,
+  t,
+}: {
+  core: { current: RunCore | null };
+  seen: Set<() => void>;
+  t: T;
+}) {
+  const [, tick] = useReducer((x: number) => x + 1, 0);
+  useLayoutEffect(() => {
+    seen.add(tick);
+    return () => {
+      seen.delete(tick);
+    };
+  }, []);
+  const c = core.current;
+  if (!c?.bubble) return null;
+  return <FormatBar view={c.view} bubble={c.bubble} t={t} setEditing={(on) => c.editLink(on)} />;
 }

@@ -157,6 +157,22 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   await expect(peek.locator(".doc-title")).toHaveValue("Clase de ejemplo");
   await expect(peek.locator(".peek-head")).toContainText("Docencia");
   await peek.screenshot({ path: join(SHOTS, "calendar-peek.png") });
+  // Formats in the quick view (task 2f): «tema» selected, the menu over it, Ctrl+B paints it bold.
+  const line = peek.locator(".row-doc .blk-input").first();
+  await expect(line).toHaveText("Preparar el tema 3.");
+  await line.click();
+  await peek.keyboard.press("Home");
+  for (let i = 0; i < 12; i++) await peek.keyboard.press("ArrowRight");
+  for (let i = 0; i < 4; i++) await peek.keyboard.press("Shift+ArrowRight");
+  await expect(peek.getByRole("toolbar", { name: "Formato" })).toBeVisible();
+  await peek.keyboard.press("Control+b");
+  await expect(line.locator(".md-strong")).toHaveText("tema");
+  await expect(line).toHaveText("Preparar el **tema** 3.");
+  // Out of the text again (its block selected, then let go), as the peek was before.
+  await peek.keyboard.press("Escape");
+  await expect(peek.locator(".blk.selected")).toHaveCount(1);
+  await peek.keyboard.press("Escape");
+  await expect(peek.locator(".blk.selected")).toHaveCount(0);
   // Above the calendar only, not over other apps' windows.
   const where = await (app as ElectronApplication).evaluate(({ BrowserWindow }) => {
     const p = BrowserWindow.getAllWindows().find((w) =>

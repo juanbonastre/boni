@@ -32,7 +32,7 @@ export const inRun = (b: Block): boolean => TEXT_TYPES.has(b.type) || IN_TEXT.ha
 /**
  * One kind of node for every kind of text block (its kind and the rest of it are in `block`, its text is the node's;
  * a line break is "\n" in the text, as a textarea had it) and one for the blocks in the text that have none. No
- * marks: inline format is task 2f's.
+ * marks: a text's format is its Markdown, painted over it (components/runFormat.ts, task 2f), so the text is the bytes.
  */
 export const schema = new Schema({
   nodes: {

@@ -203,7 +203,9 @@ function useShortcuts(mobile: boolean) {
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea, select, [contenteditable]",
       );
+      // The text took Ctrl+K for a link (a selection, or the caret in a link): not the search.
       if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        if (e.defaultPrevented) return;
         e.preventDefault();
         openFind(!s.findOpen);
         return;
