@@ -773,14 +773,13 @@ contraseña ni un código aquí» under a question.
     stays). The window is the phone's layout as it is, tabs at its foot: on Juan's phone (2026-11-13) the bubble is
     997 × 1794 px of 1080 × 2424, inset on every side, and Boni reads well in it with nothing changed. The Boni tab
     keeps its own top bar (its conversations, «Boni», a new one) when the app comes back or floats and reads
-    everything again: it never gets a page's Back and «…» over the conversation. From Android
-    17's bubbles (any app can float from its icon; an app meets them by working well in multi-window) and the
-    Material 3 FAB below.
+    everything again: it never gets a page's Back and «…» over the conversation. From Android 17's bubbles (any app
+    can float from its icon; an app meets them by working well in multi-window).
     Boni's own circle always on top (with that permission and a fixed notification) is not built: a possible next
     step if the bubble falls short.
     The widget is «Conversación» in the launcher's list: one cell, a 56 dp circle in the dark theme's `--accent`
-    with the conversation's icon in white (Lucide's `message-circle`, as the desktop's), and nothing else: no text, no frame, nothing of Juan's, so it never
-    refreshes. A tap opens Boni on the Boni tab, the last conversation, over whatever was open: the settings, a chart
+    with the conversation's icon in white (Lucide's `message-circle`, as the desktop's), and nothing else: no text,
+    no frame, nothing of Juan's, so it never refreshes. A tap opens Boni on the Boni tab, the last conversation, over whatever was open: the settings, a chart
     on its own, a record from another app and the conversations' drawer close; a record's text is sent first, and a
     panel with something typed in it asks before it goes (the page's `chat` target). From Android's widget guidelines
     (a control widget puts an app's frequent action on the home screen, one tap away) and Material 3's FAB (the

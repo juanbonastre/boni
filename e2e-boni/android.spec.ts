@@ -620,6 +620,12 @@ test("Boni's circle on the home screen opens the conversation: at start, and ove
   await navigate("chat");
   await expect(page.locator(".m-row")).toHaveCount(0);
   await onBoni();
+  // Over the list of conversations: the conversation itself.
+  await page.locator(".m-top").getByRole("button", { name: "Conversaciones" }).click();
+  await expect(page.getByRole("dialog", { name: "Conversaciones" })).toBeVisible();
+  await navigate("chat");
+  await expect(page.getByRole("dialog", { name: "Conversaciones" })).toHaveCount(0);
+  await onBoni();
   expect(await audit(page, "android widget conversation")).toEqual([]);
 });
 

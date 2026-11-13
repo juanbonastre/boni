@@ -327,7 +327,7 @@ pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maquet
 | C4 | **Superficies:** la ventana flotante con su animación y los archivos arrastrados, llevarla a la derecha (aparte de la Bandeja), ampliarla y el móvil | C3 |
 | C5 | **Modos de conversación de las extensiones:** en el manifiesto, la sección Extensiones, el bloque «Chat» y el botón que manda un mensaje | C3 |
 | C6 | **La conciliación en modo conversación** (es E4b): las preguntas de las funciones, las respuestas en `data.answers`, crear una categoría, las reglas (cambiar, esporádica, más general con su prueba) y lo que nota solo | C5, E4a |
-| C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio, pulsar para hablar y después tiempo real | C4 |
+| C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio (en el teléfono, la burbuja de Android y un widget: la 115), pulsar para hablar y después tiempo real | C4 |
 
 **Hecho, C1 y C2 (2026-10-31):**
 - **Las conversaciones se guardan.** Los tipos de sistema `conversation` y `turn` están en el almacén
