@@ -14,8 +14,9 @@ dev: ## Start the UI dev server (http://localhost:5173)
 build: ## Build the web UI
 	pnpm build
 
-# The e2e targets and the unit tests (timed ones among them, A-15) wait in one queue shared by every worktree; the
-# desktop ones run on a virtual screen, E2E_SCREEN=real on this one (scripts/queue.mjs, T-08).
+# The e2e targets and the unit tests (timed ones among them, A-15) wait in one queue shared by every worktree, served
+# in the order they came; the desktop ones run on a virtual screen, E2E_SCREEN=real on this one (scripts/queue.mjs,
+# T-08, T-09).
 QUEUE := node scripts/queue.mjs --
 SCREEN := node scripts/queue.mjs --screen --
 
