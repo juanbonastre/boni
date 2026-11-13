@@ -1163,3 +1163,15 @@ function screenReader(
 
   return { block, chart, part, collection, flow, step, node, view: viewOf, open, mayHide };
 }
+
+/**
+ * A file of his as the answer to a question with a file (docs/conversacion.md §3.4): the record the screen gives a
+ * row he chose, its place (`at`) with it, so `files.read` reads it as it reads a chip he dropped; null when the row
+ * is not one of his files, or the models may not see it.
+ */
+export function fileOnScreen(store: UserStore, id: string): Val | null {
+  if (!fileFacts(store, id)) return null;
+  const v = screenOf(store, { open: null, inbox: [], chosen: [id] });
+  const chosen = v?.t === "rec" ? v.fields.chosen : undefined;
+  return chosen?.t === "list" ? (chosen.items[0] ?? null) : null;
+}

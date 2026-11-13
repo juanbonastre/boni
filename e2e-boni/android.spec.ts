@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { answered, FILE_ASK } from "./agent-scenarios.ts";
 import { audit } from "./audit.ts";
 import { EXAMPLES } from "./fixtures.ts";
 
@@ -27,6 +28,7 @@ async function openAndroid(
       const files = new Map<string, string>();
       const answers = new Map<string, string>();
       const turns: unknown[] = [];
+      const answered: unknown[] = [];
       let settings = {
         serverUrl: configured ? "https://boni.example.ts.net" : "",
         hasToken: configured,
@@ -102,9 +104,12 @@ async function openAndroid(
         switch (method) {
           case "request":
             if (!settings.hasToken) return { ok: false, offline: false, notConfigured: true };
-            // A turn of the conversation: kept to be looked at, answered with one line of the model's.
+            // A turn of the conversation: kept to be looked at, answered with what a test set (`__nextTurns`, in
+            // order) or one line of the model's.
             if (a[0] === "POST" && a[1] === "api/agent/turn") {
               turns.push(JSON.parse(a[2] as string));
+              const next = (w.__nextTurns as unknown[] | undefined)?.shift();
+              if (next) return { ok: true, status: 200, body: JSON.stringify(next) };
               return {
                 ok: true,
                 status: 200,
@@ -132,6 +137,12 @@ async function openAndroid(
                   ],
                 }),
               };
+            }
+            // An answer to a card's question (task 27): kept, answered with what a test set (`__nextAnswers`).
+            if (a[0] === "POST" && a[1] === "api/agent/answer") {
+              answered.push(JSON.parse(a[2] as string));
+              const next = (w.__nextAnswers as unknown[] | undefined)?.shift() ?? {};
+              return { ok: true, status: 200, body: JSON.stringify(next) };
             }
             {
               const [status, body] = answer(a[0] as string, a[1] as string);
@@ -258,6 +269,7 @@ async function openAndroid(
       };
       w.__androidCalls = calls;
       w.__turns = turns;
+      w.__answered = answered;
       w.__androidFiles = files;
       w.__setLive = (live: boolean) => {
         settings = { ...settings, live };
@@ -428,6 +440,61 @@ test("«Adjuntar» in the conversation (task 114, A-24, I-36): the phone's own p
   ]);
   await expect(bar.locator(".chat-chip")).toHaveCount(0);
   expect(await audit(page, "android attach")).toEqual([]);
+});
+
+test("a file as a card's answer on the phone (task 27, §3.4): the phone's own picker, the file goes up as an attached one does, and its row of his files is the answer", async ({
+  page,
+}) => {
+  await openAndroid(page);
+  const done = answered(
+    "r-arch",
+    "¿Qué factura es?",
+    { t: "v", value: "Factura FAC-2026-0142.pdf", integrity: "user", sensitivity: "personal" },
+    "file",
+  );
+  await page.evaluate(
+    ([ask, answer]) => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__nextTurns = [ask];
+      w.__nextAnswers = [answer];
+    },
+    [FILE_ASK, done],
+  );
+  await page.locator(".m-tabs").getByRole("button", { name: "Boni" }).tap();
+  const box = page.getByRole("textbox", { name: "Escribe a Boni…" });
+  await box.fill("guarda la factura del taller");
+  await box.press("Enter");
+  const card = page.locator(".ask");
+  const upload = card.getByRole("button", { name: "Subir un archivo…" });
+  await expect(upload).toBeVisible();
+  // Nothing to drop on, on a phone; and no word that it cannot.
+  await expect(card).not.toContainText("o arrástralo aquí");
+  await expect(card).not.toContainText("aún no se puede subir");
+  // A cancelled picker answers nothing.
+  await upload.tap();
+  await expect
+    .poll(async () => (await calls(page)).filter((c) => c.startsWith("chooseFiles")))
+    .toHaveLength(1);
+  await expect(upload).toBeEnabled();
+  await page.evaluate(() => {
+    (window as unknown as { __chosen: unknown }).__chosen = [
+      { key: "f1", name: "Factura FAC-2026-0142.pdf", size: 182_000 },
+    ];
+  });
+  await upload.tap();
+  await expect(page.locator(".reply-asked").last()).toContainText("Factura FAC-2026-0142.pdf");
+  // Sent by the app from where it is on the phone; the page named only its key. Its row is the answer, and no chip
+  // was left on the bar.
+  expect((await calls(page)).filter((c) => c.startsWith("uploadFile"))).toEqual([
+    'uploadFile ["f1"]',
+  ]);
+  const sent = await page.evaluate(
+    () => (window as unknown as { __answered: unknown[] }).__answered,
+  );
+  expect(sent).toHaveLength(1);
+  expect(sent[0]).toMatchObject({ run: "r-arch", ask: "a-arch", file: "e_01dropf1" });
+  await expect(page.locator(".chat-composer .chat-chip")).toHaveCount(0);
+  expect(await audit(page, "android file answer")).toEqual([]);
 });
 
 test("the first start logs in through the app (the password never stays in the page)", async ({

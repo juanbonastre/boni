@@ -24,10 +24,34 @@ export const READERS = [
   "label_each",
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
-export const ASK_CONTROLS = ["choice", "text"] as const;
+/**
+ * The controls of a question (docs/conversacion.md §3.4): choose one or several, words, a number, a civil day, a file,
+ * yes or no, and the rehearsal (what the rest of the plan would do, saved or not with one button). Background work
+ * asks only with the first two (its card in the Bandeja, `FLOW_ASKS`): the others are the conversation's.
+ */
+export const ASK_CONTROLS = [
+  "choice",
+  "several",
+  "text",
+  "number",
+  "date",
+  "file",
+  "yesno",
+  "rehearsal",
+] as const;
+export type AskControl = (typeof ASK_CONTROLS)[number];
+/** What a flow's question may be: it waits in the Bandeja, whose card chooses or takes words. */
+export const FLOW_ASKS: readonly AskControl[] = ["choice", "text"];
+/** The questions whose options may be a property's (`field`): a choice among categories. */
+const FIELD_ASKS: readonly AskControl[] = ["choice", "several"];
 export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart", "run"] as const;
 /** The places of the app `screen.open` may name (F9): the Bandeja, «Flujos», the Registro, «Mis datos». */
 export const OPEN_PLACES = ["inbox", "flows", "log", "data"] as const;
+/**
+ * The action that takes back what a past turn of the conversation did (C1: «antes te he dicho X, pero es Y»): its
+ * `turn` is a ref to `$history[i].turn`, the code's own value for that turn.
+ */
+export const UNDO_TURN = "turns.undo";
 /** What names a thing on the screen (screen.ts): a value a tool or the screen gave, never a model's own. */
 const SCREEN_REFS: Readonly<Record<string, readonly string[]>> = {
   "screen.open": ["record", "run"],
@@ -42,7 +66,7 @@ const SCREEN_REFS: Readonly<Record<string, readonly string[]>> = {
 export type Step = { id: string; when?: Expr; each?: { ref: string }; zip?: { ref: string } } & (
   | { op: "call"; tool: string; args: Record<string, Expr>; why?: Expr }
   | { op: "read"; reader: ReaderKind; input: Expr; params?: Record<string, Expr> }
-  | { op: "ask"; control: (typeof ASK_CONTROLS)[number]; prompt: Expr; options?: Expr }
+  | { op: "ask"; control: AskControl; prompt: Expr; options?: Expr; field?: Expr }
   | { op: "reply"; component: (typeof REPLY_COMPONENTS)[number]; data: Record<string, Expr> }
 );
 export interface Plan {
@@ -122,7 +146,7 @@ export function planVocabulary() {
         },
       ]),
     ) as Record<ReaderKind, { params: string[]; required: string[] }>,
-    asks: [...ASK_CONTROLS],
+    asks: [...FLOW_ASKS],
     replies: { ...REPLY_DATA } as Record<string, string[]>,
     fns: { ...FNS },
     limits: { steps: MAX_STEPS, each: MAX_EACH, nesting: MAX_NESTING },
@@ -228,6 +252,11 @@ export function validatePlan(
   // What a plan opens and filters on the screen (F9): one of each per plan.
   let opens = 0;
   let filters = 0;
+  // A past turn taken back, and a rehearsal: once each per plan.
+  let undoes = 0;
+  let rehearsals = 0;
+  // The calls before this one: a past turn is taken back before anything is done, so nothing stays half done.
+  let calls = 0;
 
   const checkAtom = (where: string, a: unknown, inEach: boolean) => {
     if (!isObj(a) || Object.keys(a).length !== 1) return errors.push(`${where}: bad-expression`);
@@ -386,6 +415,18 @@ export function validatePlan(
           );
         if (typeof s.tool === "string" && s.tool.startsWith("screen.") && spec)
           checkScreen(where, s.tool, isObj(s.args) ? s.args : {}, inEach);
+        if (s.tool === UNDO_TURN && spec) {
+          // A past turn as the code bound it ($history), never an id a model wrote; once, never per item.
+          const t = isObj(s.args) ? s.args.turn : undefined;
+          if (
+            !(isObj(t) && typeof t.ref === "string" && /^\$history\[\d{1,2}\]\.turn$/.test(t.ref))
+          )
+            errors.push(`${where}.args: turn-not-from-history`);
+          if (inEach) errors.push(`${where}: undo-in-each`);
+          if (undoes++ > 0) errors.push(`${where}: undo-once`);
+          if (calls > 0) errors.push(`${where}: undo-not-first`);
+        }
+        calls++;
         break;
       }
       case "read": {
@@ -407,16 +448,22 @@ export function validatePlan(
         break;
       }
       case "ask": {
-        if (!onlyKeys(s, [...common, "control", "prompt", "options"]))
+        if (!onlyKeys(s, [...common, "control", "prompt", "options", "field"]))
           errors.push(`${where}: unknown-key`);
         if (!(ASK_CONTROLS as readonly unknown[]).includes(s.control))
           errors.push(`${where}: unknown-control`);
         checkExpr(`${where}.prompt`, s.prompt, inEach);
-        if (s.control === "choice") {
-          if (s.options === undefined) errors.push(`${where}: missing-argument`);
-          else checkExpr(`${where}.options`, s.options, inEach);
-        } else if (s.options !== undefined) errors.push(`${where}: unknown-argument`);
+        // A choice among categories names the property (its options are read by code); among anything else, its
+        // options are a list.
+        const fielded = (FIELD_ASKS as readonly unknown[]).includes(s.control);
+        if (fielded && s.options === undefined && s.field === undefined)
+          errors.push(`${where}: missing-argument`);
+        if (!fielded && (s.options !== undefined || s.field !== undefined))
+          errors.push(`${where}: unknown-argument`);
+        if (fielded && s.options !== undefined) checkExpr(`${where}.options`, s.options, inEach);
+        if (fielded && s.field !== undefined) checkExpr(`${where}.field`, s.field, inEach);
         if (inEach) errors.push(`${where}: ask-in-each`);
+        if (s.control === "rehearsal" && rehearsals++ > 0) errors.push(`${where}: rehearsal-once`);
         break;
       }
       case "reply": {
@@ -526,6 +573,7 @@ export function planSchema(argNames: readonly string[]) {
             control: { type: "string", enum: [...ASK_CONTROLS] },
             prompt: EXPR_SCHEMA,
             options: EXPR_SCHEMA,
+            field: EXPR_SCHEMA,
             component: { type: "string", enum: [...REPLY_COMPONENTS] },
             data: exprMap(Object.values(REPLY_DATA).flat()),
           },

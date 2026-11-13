@@ -37,6 +37,8 @@ export interface HistoryTurn {
   replies: { component: string; data: Record<string, Val> }[];
   /** Juan edited it (§3.1): what it did was undone, and the turn that corrects it redoes it with his new words. */
   corrected?: boolean;
+  /** Its run: what `turns.undo` takes back, bound by code as `$history[i].turn` (never shown to a model). */
+  run?: string;
 }
 /** Something the user pointed at with a message, as its chip said it (a reference and its words; I-33). */
 export interface TurnChip {
@@ -183,6 +185,7 @@ export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
       request: text(s, "request"),
       replies: json<HistoryTurn["replies"]>(s.entity.values.f_replies, []),
       ...(text(s, "corrected") ? { corrected: true } : {}),
+      ...(text(s, "run") ? { run: text(s, "run") } : {}),
     }));
 }
 
@@ -191,10 +194,12 @@ export function turnOfRun(
   store: UserStore,
   id: string,
   run: string,
-): { id: string; corrected: boolean } | null {
+): { id: string; corrected: boolean; request: string } | null {
   if (!run) return null;
   const s = turnsOf(store, id).find((x) => text(x, "run") === run);
-  return s ? { id: s.entity.id, corrected: text(s, "corrected") === "1" } : null;
+  return s
+    ? { id: s.entity.id, corrected: text(s, "corrected") === "1", request: text(s, "request") }
+    : null;
 }
 
 /** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */
@@ -255,7 +260,10 @@ export function recordTurn(
     device?: string;
     /** What the user pointed at with it: written when the turn is first kept, never changed after. */
     chips?: TurnChip[];
-    /** The run of the turn it corrects (§3.1): written when the turn is first kept. */
+    /**
+     * The run of the turn it corrects (§3.1): written when the turn is first kept (Juan edited his message), or once
+     * its plan took that turn back (`turns.undo`, «antes te he dicho X, pero es Y»); never changed after.
+     */
     corrects?: string;
   },
 ): string | null {
@@ -272,8 +280,13 @@ export function recordTurn(
   };
   let id = t.id;
   store.batch(() => {
-    if (id && store.get(id)) store.update(id, writes, meta(t.device));
-    else
+    const was = id ? store.get(id) : null;
+    if (id && was) {
+      const all: Record<string, ReturnType<typeof v>> = { ...writes };
+      if (t.corrects && !was.entity.values.f_corrects && hasField(store, TURN, "corrects"))
+        all.f_corrects = v(t.corrects);
+      store.update(id, all, meta(t.device));
+    } else
       id = store.create(
         TURN,
         {

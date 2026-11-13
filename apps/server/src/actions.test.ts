@@ -120,6 +120,7 @@ describe("one list of actions (D-41, F10)", () => {
       "inbox.accept",
       "inbox.correct",
       "inbox.reject",
+      "turns.undo",
     ]);
   });
 });
