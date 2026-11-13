@@ -105,11 +105,29 @@ const title = (t: unknown) => {
   return t.trim();
 };
 
+/** A page's id as the apps make it (`newId("e")` of `@boni/entities`): a prefix and a ULID. */
+const CLIENT_ID = /^e_[0-9a-hjkmnp-tv-z]{26}$/;
+
+/**
+ * A new page. `id`: the one the app gave it as it showed it (task 109, D-70), so a create sent again after its answer
+ * was lost (the app closed with it in flight) is the same page: the page that id names is answered as it is, and
+ * nothing is made twice. The key is the record's own id in the user's store: it outlives a restart and leaves with
+ * the page when the trash is emptied. Without one (an older app, an action's run), the store makes the id.
+ */
 export function createPage(
   store: UserStore,
   input: { title?: unknown; parent?: unknown; spec?: unknown },
   device?: By,
+  id?: unknown,
 ): Page {
+  if (id !== undefined) {
+    if (typeof id !== "string" || !CLIENT_ID.test(id)) throw new PageError("bad-id");
+    const prior = store.get(id);
+    if (prior) {
+      if (prior.entity.type !== "page") throw new PageError("taken");
+      return toPage(prior.entity);
+    }
+  }
   const by = writerOf(device);
   const v = val(by);
   const t = title(input.title ?? "");
@@ -128,6 +146,7 @@ export function createPage(
       f_spec: v(JSON.stringify(spec)),
     },
     by.meta,
+    ...(typeof id === "string" ? [id] : []),
   );
   return toPage(made.entity);
 }

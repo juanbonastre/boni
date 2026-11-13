@@ -2,7 +2,9 @@
 // it synchronously as its window goes, and this process, which sees every answer even after the window is gone,
 // takes each write out once the server has answered it, so a later start never sends it again over a newer change.
 // An answer takes out only the fields its request carried (task 106): a request from another part of the app to the
-// same note (the peek, ticking a task) leaves what was typed and not sent with it.
+// same note (the peek, ticking a task) leaves what was typed and not sent with it. A page made here (task 109) is kept
+// as a `new-page` entry until the answer to its create (POST `api/pages` with its id) comes: then it leaves, and if
+// the server gave the page another id (one before task 109), what was typed in it goes to that one.
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -13,6 +15,20 @@ const QUIT_WAIT_MS = 1000;
 /** The paths whose writes the page keeps until they are answered: a page and a row. */
 const KEPT = /^api\/(pages|data\/rows)\/[^/?]+$/;
 const kept = (method, apiPath) => method === "PUT" && KEPT.test(apiPath);
+/** The id a create of a page made here carries (task 109), or null. */
+const madeHere = (method, apiPath, body) =>
+  method === "POST" && apiPath === "api/pages" && body && typeof body.id === "string"
+    ? body.id
+    : null;
+/** The page's id in a create's answer, or null. */
+const pageIdOf = (text) => {
+  try {
+    const id = JSON.parse(text)?.page?.id;
+    return typeof id === "string" ? id : null;
+  } catch {
+    return null;
+  }
+};
 
 const parse = (text) => {
   try {
@@ -76,6 +92,8 @@ function createUnsent(dir, now = Date.now) {
    * written of it before then is on the server).
    */
   const answers = new Map();
+  /** The pages made here whose create the server answered: each one's id there (itself, or a server's own). */
+  const made = new Map();
   let inFlight = 0;
   const idle = new Set();
   const read = () => {
@@ -102,22 +120,53 @@ function createUnsent(dir, now = Date.now) {
         )
       : w;
   };
-  const left = (list) => list.map(rest).filter(Boolean);
+  /** `list` with each answered create out and what was typed in its page under the id the server gave it. */
+  const madeOut = (list) => {
+    if (!made.size) return list;
+    const out = [];
+    for (const w of list) {
+      if (w.kind === "new-page" && made.has(w.id)) continue;
+      const to = w.kind === "page" ? made.get(w.id) : undefined;
+      const moved = to && to !== w.id ? { ...w, id: to, path: `api/pages/${to}` } : w;
+      const i = out.findIndex((x) => x.path === moved.path);
+      if (i < 0) out.push(moved);
+      else out[i] = moved.at >= out[i].at ? joined(out[i], moved) : joined(moved, out[i]);
+    }
+    return out;
+  };
+  const left = (list) => madeOut(list).map(rest).filter(Boolean);
   return {
     /**
      * A request is leaving: a ticket to give back with its answer, or null if it is not a kept write. `body`: what
      * it carries, so its answer takes out of the list those fields alone.
      */
     sending(method, apiPath, body) {
+      const id = madeHere(method, apiPath, body);
+      if (id) {
+        inFlight++;
+        return { made: id, at: now(), fields: [] };
+      }
       if (!kept(method, apiPath)) return null;
       inFlight++;
       return { path: apiPath, at: now(), fields: carriedBy(apiPath, body) };
     },
-    /** Its answer: `reached` when the server took it (any status below 500), false when it could not be reached or failed. */
-    answered(ticket, reached) {
+    /**
+     * Its answer: `reached` when the server took it (any status below 500), false when it could not be reached or
+     * failed. `text`: what it answered (a create's says the page's id).
+     */
+    answered(ticket, reached, text) {
       if (!ticket) return;
       inFlight--;
-      if (reached && ticket.fields.length) {
+      if (reached && ticket.made) {
+        // Only an answer with the page makes it: one without (the session gone, too many requests, a refusal)
+        // leaves it kept, and the page, which sees why, sends it again or takes it out itself.
+        const id = pageIdOf(text);
+        if (!id) return;
+        made.set(ticket.made, id);
+        const list = read();
+        const next = left(list);
+        if (JSON.stringify(next) !== JSON.stringify(list)) write(next);
+      } else if (reached && ticket.fields.length) {
         const got = answers.get(ticket.path) ?? new Map();
         answers.set(ticket.path, got);
         for (const f of ticket.fields) got.set(f, Math.max(got.get(f) ?? 0, ticket.at));

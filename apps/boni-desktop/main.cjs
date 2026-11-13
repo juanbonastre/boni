@@ -709,6 +709,7 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
     return { ok: false, offline: false, notConfigured: true };
   const ticket = unsent.sending(method, apiPath, body);
   let reached = false;
+  let answer = "";
   try {
     const url = new URL(apiPath, `${settings.serverUrl}/`);
     const r = await net.fetch(url.href, {
@@ -724,6 +725,7 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
     // A server failing (5xx: restarting, its disk full) did not take the write: it stays kept, like no connection.
     reached = r.status < 500;
     const text = await r.text();
+    answer = text;
     if (r.status === 401 && !sessionEnded) {
       sessionEnded = true;
       broadcast({ type: "settings", settings: clientSettings() });
@@ -732,7 +734,7 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
   } catch (e) {
     return { ok: false, offline: true, message: String(e.message ?? e) };
   } finally {
-    unsent.answered(ticket, reached);
+    unsent.answered(ticket, reached, answer);
   }
 });
 
