@@ -147,6 +147,8 @@ export function systemColumns(store: UserStore, ids: string[]): Record<string, S
 }
 
 const DAY = 86_400_000;
+/** A quarter of an hour: the step the activity is kept in (the store's `activityIn`). */
+const QUARTER = 15 * 60_000;
 const range = (url: URL, now: number) => {
   const to = Number(url.searchParams.get("to")) || now;
   const from = Number(url.searchParams.get("from")) || to - 30 * DAY;
@@ -177,18 +179,34 @@ function names(store: UserStore, seen: Seen[]) {
   return out;
 }
 
-/** The «Actividad» numbers: per day and actor, per collection and actor, and the totals of the period. */
+/**
+ * The «Actividad» numbers: per day and actor, per collection and actor, and the totals of the period. Every figure
+ * is counted, never read row by row: the reads and changes from the kept activity per quarter, the runs, proposals
+ * and readings with a count (task 108: thirty days of the audit and a year of runs read on every open of «Todas las
+ * páginas» held the server a quarter to half a second with Juan's volume).
+ */
 export function auditSummary(store: UserStore, url: URL, now: number) {
   const { from, to } = range(url, now);
-  const byType = store.audit.byType(from, to);
   const types = store.schema().types;
-  const activity = store.audit.activity(from, to);
-  const inRange = (at: number | null) => at !== null && at >= from && at < to;
-  const proposals = store.journal.proposals().filter((p) => inRange(p.created));
-  const runs = store.journal.runs(100_000).filter((r) => inRange(r.started));
-  const readings = store.audit
-    .actions({ from, to, byPrefix: "model:reader:", limit: 1000 })
-    .filter((a) => a.tool === "model.reader").length;
+  const days = new Map<string, { day: string; by: string; reads: number; writes: number }>();
+  const perType = new Map<string, { type: string; by: string; reads: number; writes: number }>();
+  for (const r of store.audit.activityIn(from, to)) {
+    const day = new Date(r.q * QUARTER).toISOString().slice(0, 10);
+    const d = days.get(`${day}|${r.by}`) ?? { day, by: r.by, reads: 0, writes: 0 };
+    d.reads += r.reads;
+    d.writes += r.writes;
+    days.set(`${day}|${r.by}`, d);
+    const t = perType.get(`${r.type}|${r.by}`) ?? { type: r.type, by: r.by, reads: 0, writes: 0 };
+    t.reads += r.reads;
+    t.writes += r.writes;
+    perType.set(`${r.type}|${r.by}`, t);
+  }
+  // Only who did something: a quarter kept with nothing in it is not a row of the chart.
+  const activity = [...days.values()]
+    .filter((r) => r.reads || r.writes)
+    .sort((a, b) => a.day.localeCompare(b.day) || a.by.localeCompare(b.by));
+  const byType = [...perType.values()].filter((r) => r.reads || r.writes);
+  const proposals = store.journal.countProposalsIn(from, to);
   return {
     from,
     to,
@@ -198,10 +216,15 @@ export function auditSummary(store: UserStore, url: URL, now: number) {
       reads: activity.reduce((n, r) => n + r.reads, 0),
       writes: activity.reduce((n, r) => n + r.writes, 0),
       ...store.audit.changes(from, to),
-      proposals: proposals.length,
-      accepted: proposals.filter((p) => p.status === "accepted").length,
-      requests: runs.filter((r) => r.origin !== "background").length,
-      readings,
+      proposals: proposals.made,
+      accepted: proposals.accepted,
+      requests: store.journal.countRunsIn(from, to, "background"),
+      readings: store.audit.countActions({
+        from,
+        to,
+        byPrefix: "model:reader:",
+        tool: "model.reader",
+      }),
     },
   };
 }

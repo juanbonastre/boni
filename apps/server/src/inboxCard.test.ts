@@ -724,23 +724,28 @@ describe("a card checked again each time it is seen (task 73)", () => {
     const days = Array.from({ length: 365 }, (_, i) =>
       new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10),
     );
-    for (let i = 0; i < 3000; i++)
-      store.create(
-        "t_docencia",
-        {
-          f_title: { value: `Clase ${i}`, label: L },
-          f_date: { value: days[i % days.length] as string, label: L },
-          f_starttime: { value: `${String(8 + (i % 10)).padStart(2, "0")}:00`, label: L },
-        },
-        { actor: "user" },
-      );
+    // Written in one transaction: one per record took most of vitest's 5 s before anything was measured (task 108).
+    store.batch(() => {
+      for (let i = 0; i < 3000; i++)
+        store.create(
+          "t_docencia",
+          {
+            f_title: { value: `Clase ${i}`, label: L },
+            f_date: { value: days[i % days.length] as string, label: L },
+            f_starttime: { value: `${String(8 + (i % 10)).padStart(2, "0")}:00`, label: L },
+          },
+          { actor: "user" },
+        );
+    });
     proposalFromMail(store, "m0", "run-m0", "coordinacion@example.com");
-    for (let i = 1; i < 400; i++)
-      store.create(
-        "t_correo",
-        { f_asunto: { value: `Correo ${i}`, label: L } },
-        { actor: "connector" },
-      );
+    store.batch(() => {
+      for (let i = 1; i < 400; i++)
+        store.create(
+          "t_correo",
+          { f_asunto: { value: `Correo ${i}`, label: L } },
+          { actor: "connector" },
+        );
+    });
     const cards = Array.from({ length: 60 }, (_, i) =>
       proposalAt(store, `p${i}`, {
         title: `Propuesta ${i}`,
