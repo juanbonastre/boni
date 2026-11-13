@@ -13,31 +13,39 @@ import org.json.JSONArray
 import java.util.concurrent.TimeUnit
 
 /**
- * Sends the offline queue when the network is back, also with the app closed (WorkManager keeps the job across
- * restarts). While the app is in front the page sends it itself, so the job waits. Same rules as the page's
- * queue (QueueLogic); a capture held for its Undo goes when its time comes.
+ * Sends what the page left for later when the network is there, also with the app closed (WorkManager keeps the job
+ * across restarts): the offline queue (`queue.json`, captures), with the page's queue rules (QueueLogic), a capture
+ * held for its Undo going when its time comes; and what was typed and has no answer yet (`unsent.json`, task 109),
+ * with the desktop's rules (UnsentLogic). While the app is in front the page sends both itself, so the job waits.
  */
 class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
         if (Shell.foreground) return Result.retry()
         val shell = Shell.get(applicationContext)
+        // What was typed first: it is what is not anywhere else.
+        val unsentLeft = shell.sendUnsent(stopped = { isStopped })
         val now = System.currentTimeMillis()
-        val left: JSONArray = synchronized(Shell.QUEUE_LOCK) {
+        val left = flushQueue(shell, now)
+        if (unsentLeft || QueueLogic.pendingCount(left, now) > 0) return Result.retry() // still no server: later
+        QueueLogic.nextHold(left, now)?.let { schedule(applicationContext, it - now) }
+        return Result.success()
+    }
+
+    /** The captures' queue sent, and what is left of it. */
+    private fun flushQueue(shell: Shell, now: Long): JSONArray {
+        synchronized(Shell.QUEUE_LOCK) {
             val file = shell.storeFile(Shell.QUEUE_FILE)
-            if (!file.exists()) return Result.success()
+            if (!file.exists()) return JSONArray()
             val items = try {
                 JSONArray(file.readText())
             } catch (e: Exception) {
-                return Result.success() // not a queue: leave it to the page
+                return JSONArray() // not a queue: leave it to the page
             }
             val (remaining, delivered) = QueueLogic.flush(items, now) { shell.sendAction(it) }
             if (delivered > 0) WidgetWorker.refresh(applicationContext) // the widgets show the new numbers
             if (remaining.length() == 0) file.delete() else file.writeText(remaining.toString())
-            remaining
+            return remaining
         }
-        if (QueueLogic.pendingCount(left, now) > 0) return Result.retry() // still no server: later
-        QueueLogic.nextHold(left, now)?.let { schedule(applicationContext, it - now) }
-        return Result.success()
     }
 
     companion object {

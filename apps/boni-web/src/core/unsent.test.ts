@@ -18,6 +18,7 @@ import {
   parseUnsent,
   renamed,
   rowWrite,
+  stillKept,
   type UnsentWrite,
 } from "./unsent.ts";
 
@@ -168,5 +169,38 @@ describe("what was typed and has no answer yet (task 100)", () => {
       pageWrite(real, { title: "Plan de ejemplo", icon: "📄" }, 30),
     ]);
     expect(renamed(list, "otra", real)).toEqual(list);
+  });
+
+  it("back on a phone, what the app sent with the page hidden is forgotten, field by field (task 109)", () => {
+    const id = "e_01kaaaaaaaaaaaaaaaaaaaaaaa";
+    const list = [
+      newPageWrite(id, null, 10),
+      pageWrite(id, { title: "Plan", icon: "📄" }, 20),
+      rowWrite("r_01", { lugar: "Sala 2", hora: "10:00" }, "Dos", 30),
+      pageWrite("p_02", { title: "Otra" }, 40),
+    ];
+    // Kept at 50; the worker made the page and sent its title, the row's place and the other page; then the
+    // device's list holds this.
+    const kept = [
+      pageWrite(id, { icon: "📄" }, 20),
+      rowWrite("r_01", { hora: "10:00" }, "Dos", 30),
+    ];
+    expect(stillKept(list, kept, 50)).toEqual([
+      pageWrite(id, { icon: "📄" }, 20),
+      rowWrite("r_01", { hora: "10:00" }, "Dos", 30),
+    ]);
+    // What was typed after it was kept stays, whole: the device never held it.
+    const later = pageWrite("p_02", { title: "Otra más" }, 60);
+    expect(stillKept([...list.slice(0, 3), later], [], 50)).toEqual([later]);
+    // Nothing sent: the same list.
+    expect(stillKept(list, list, 50)).toEqual(list);
+    // A row's text sent, its values not.
+    expect(
+      stillKept(
+        [list[2] as UnsentWrite],
+        [rowWrite("r_01", { lugar: "Sala 2", hora: "10:00" }, undefined, 30)],
+        50,
+      ),
+    ).toEqual([rowWrite("r_01", { lugar: "Sala 2", hora: "10:00" }, undefined, 30)]);
   });
 });

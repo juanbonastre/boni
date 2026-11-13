@@ -122,6 +122,7 @@ import {
   parseUnsent,
   renamed,
   rowWrite,
+  stillKept,
   type UnsentWrite,
 } from "./core/unsent.ts";
 import {
@@ -704,7 +705,11 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     // the list is kept, as it hides. Not on the desktop, whose window hides to the tray and quits with `pagehide`.
     if (!h.desktop)
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState !== "hidden") return;
+        if (document.visibilityState !== "hidden") {
+          // Back on a phone: the app may have sent what was kept while the page was hidden (task 109).
+          if (h.phone && document.visibilityState === "visible") void forgetSent();
+          return;
+        }
         leaveTyping();
         void flushPage();
         void flushRowBody();
@@ -4813,6 +4818,8 @@ const UNSENT_FILE = "unsent.json";
 let unsent: UnsentWrite[] = [];
 /** The device's copy holds some: it is written again as they are answered. */
 let unsentKept = false;
+/** When the page last kept the list on the device (epoch ms). */
+let keptAt = 0;
 
 /** The list on the device: at once where the host can (the desktop's main process, a browser's localStorage). */
 function keepUnsent() {
@@ -4822,6 +4829,25 @@ function keepUnsent() {
   else if (unsent.length) void store.write(UNSENT_FILE, text).catch(() => undefined);
   else void store.remove(UNSENT_FILE).catch(() => undefined);
   unsentKept = unsent.length > 0;
+  keptAt = Date.now();
+}
+
+/**
+ * The page is back on a phone: what Boni Android's worker sent while it was hidden (task 109) has left the device's
+ * list, and leaves the page's (`stillKept`), so it is not sent again over what another device changed since.
+ */
+async function forgetSent() {
+  if (resending || !unsentKept) return;
+  resending = true;
+  try {
+    const kept = parseUnsent(await store.read(UNSENT_FILE).catch(() => null));
+    const before = unsent;
+    unsent = stillKept(unsent, kept, keptAt);
+    for (const w of before) if (!unsent.some((x) => x.path === w.path)) failing.delete(w.path);
+    unsentKept = kept.length > 0;
+  } finally {
+    resending = false;
+  }
 }
 
 /** A title or a property being typed in is saved when it is left: the window going leaves it. */

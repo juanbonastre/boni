@@ -155,8 +155,15 @@ class Shell private constructor(context: Context) {
         if (!Paths.apiRequest(method, path)) return offline("bad request")
         val (server, token) = target()
             ?: return JSONObject().put("ok", false).put("offline", false).put("notConfigured", true)
+        // A kept write's answer takes it out of `unsent.json` even if the page has gone meanwhile (D-65, D-68).
+        val ticket = unsentBook.sending(method, path, UnsentLogic.bodyOf(method, path, body))
+        var reached = false
+        var answer = ""
         return try {
             val r = Http.send(method, "$server/$path", token, body, timeoutMs = Paths.timeoutMs(path))
+            // A server failing (5xx) did not take the write: it stays kept, like no connection (as on the desktop).
+            reached = r.status < 500
+            answer = r.body
             if (r.status == 401 && !sessionEnded) {
                 sessionEnded = true
                 emitSettings()
@@ -164,6 +171,8 @@ class Shell private constructor(context: Context) {
             JSONObject().put("ok", true).put("status", r.status).put("body", r.body)
         } catch (e: IOException) {
             offline(e.message ?: e.toString())
+        } finally {
+            if (unsentBook.answered(ticket, reached, answer)) settleUnsent()
         }
     }
 
@@ -215,6 +224,88 @@ class Shell private constructor(context: Context) {
         }
     }
 
+    // ---------- what was typed and has no answer yet (`unsent.json`, UnsentLogic) ----------
+    /** Every answer this process saw to a kept write, the page's and the worker's (unsent.cjs `createUnsent`). */
+    private val unsentBook = UnsentLogic.Book()
+
+    /**
+     * The page's list, kept before the call returns (`boniAndroid.keepUnsent`, task 106), but for what was answered
+     * meanwhile. With the app hidden, the worker sends it (task 109).
+     */
+    fun keepUnsent(text: String) {
+        val list = UnsentLogic.parse(text)
+        val wrote = synchronized(UNSENT_LOCK) {
+            val f = storeFile(UNSENT_FILE)
+            val had = f.exists()
+            val next = unsentBook.left(list)
+            writeUnsent(next, if (UnsentLogic.same(list, next)) text else null)
+            !had && next.isNotEmpty()
+        }
+        // The first kept write, or the last one as the app hides: a job that sends them, also if the app is closed.
+        if ((wrote || !foreground) && hasUnsent()) QueueWorker.schedule(app, 0)
+        Log.i(MainActivity.TAG, "unsent: kept ${list.size}, foreground $foreground")
+    }
+
+    fun hasUnsent(): Boolean = synchronized(UNSENT_LOCK) { storeFile(UNSENT_FILE).exists() }
+
+    /** `list` as the device's copy (its text, when the page's own is still it); none when it is empty. */
+    private fun writeUnsent(list: List<JSONObject>, text: String? = null) {
+        val f = storeFile(UNSENT_FILE)
+        if (list.isEmpty()) {
+            f.delete()
+            return
+        }
+        val tmp = File(f.parentFile, "${f.name}.tmp")
+        tmp.writeText(text ?: UnsentLogic.text(list))
+        if (!tmp.renameTo(f)) {
+            f.writeText(text ?: UnsentLogic.text(list))
+            tmp.delete()
+        }
+    }
+
+    /** The device's copy without what was answered. */
+    private fun settleUnsent() {
+        synchronized(UNSENT_LOCK) {
+            val f = storeFile(UNSENT_FILE)
+            if (!f.exists()) return
+            val list = UnsentLogic.parse(f.readText())
+            val next = unsentBook.left(list)
+            if (!UnsentLogic.same(list, next)) writeUnsent(next)
+        }
+    }
+
+    /**
+     * The worker's resend of the kept list with the app closed (task 109): what `UnsentLogic.flush` says, with this
+     * app's session; the network is used outside the lock, so the page's own keep never waits for it. True when some
+     * of it is left to try again later.
+     */
+    fun sendUnsent(stopped: () -> Boolean): Boolean {
+        val list = synchronized(UNSENT_LOCK) {
+            val f = storeFile(UNSENT_FILE)
+            if (!f.exists()) return false
+            UnsentLogic.parse(f.readText())
+        }
+        if (list.isEmpty()) return false
+        val (server, token) = target() ?: return true
+        val out = UnsentLogic.flush(
+            list,
+            unsentBook,
+            stop = { foreground || stopped() },
+            send = { r ->
+                try {
+                    Http.send(r.method, "$server/${r.path}", token, r.body.toString()).also {
+                        if (it.status == 401) sessionEnded = true
+                    }
+                } catch (e: IOException) {
+                    null
+                }
+            },
+            answered = { settleUnsent() },
+        )
+        Log.i(MainActivity.TAG, "unsent: the worker sent ${out.answered} of ${list.size}, again later: ${out.retry}")
+        return out.retry
+    }
+
     /** One queued capture, sent by the worker with the app closed (POST /api/v1/actions). */
     fun sendAction(request: JSONObject): QueueLogic.Outcome {
         val (server, token) = target() ?: return QueueLogic.Outcome.Retry
@@ -233,12 +324,14 @@ class Shell private constructor(context: Context) {
         return File(storeDir, name)
     }
 
-    fun storeRead(name: String): String? = synchronized(QUEUE_LOCK) {
+    private fun lockFor(name: String) = if (name == UNSENT_FILE) UNSENT_LOCK else QUEUE_LOCK
+
+    fun storeRead(name: String): String? = synchronized(lockFor(name)) {
         storeFile(name).takeIf { it.exists() }?.readText()
     }
 
     fun storeWrite(name: String, text: String) {
-        synchronized(QUEUE_LOCK) {
+        synchronized(lockFor(name)) {
             val f = storeFile(name)
             val tmp = File(f.parentFile, "${f.name}.tmp")
             tmp.writeText(text)
@@ -251,7 +344,7 @@ class Shell private constructor(context: Context) {
     }
 
     fun storeRemove(name: String) {
-        synchronized(QUEUE_LOCK) { storeFile(name).delete() }
+        synchronized(lockFor(name)) { storeFile(name).delete() }
     }
 
     companion object {
@@ -261,6 +354,9 @@ class Shell private constructor(context: Context) {
 
         /** Page writes and the worker's flush never interleave inside the process. */
         val QUEUE_LOCK = Any()
+
+        /** The same for `unsent.json`, held only while the file is read or written, never over the network. */
+        val UNSENT_LOCK = Any()
 
         /** The activity is in front: the page sends the queue itself (minute ticks). */
         @Volatile var foreground = false

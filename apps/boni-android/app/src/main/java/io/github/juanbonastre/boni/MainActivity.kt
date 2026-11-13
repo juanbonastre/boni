@@ -94,6 +94,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         shell = Shell.get(this)
+        // The test copy's page can be read by a test on the laptop (apps/boni-android/phone-test); the real app's never.
+        if (resources.getBoolean(R.bool.test_copy)) WebView.setWebContentsDebuggingEnabled(true)
         val assets = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .build()
@@ -158,7 +160,8 @@ class MainActivity : ComponentActivity() {
         pendingLaunch = intent.launchTarget()
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
         // Boni's notices reach the phone with the app closed (task 62): its address, once per start with a session.
-        if (shell.configured()) Notices.start(this)
+        // Not in the test copy (the debug build, beside the real app): it never asks for the permission nor registers.
+        if (shell.configured() && !resources.getBoolean(R.bool.test_copy)) Notices.start(this)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             // Back closes what is open in the page (a sheet, a chart, the charts tab); with nothing open the app
@@ -226,8 +229,11 @@ class MainActivity : ComponentActivity() {
         main.removeCallbacks(tick)
         shell.live.stop()
         shell.emit = null
-        // Whatever the page left in the queue goes from here, with the network, even if the app is closed.
+        // Whatever the page left in the queue goes from here, with the network, even if the app is closed; and what
+        // was typed and kept unsent (task 109).
         shell.storeRead(Shell.QUEUE_FILE)?.let { QueueWorker.scheduleFor(this, it) }
+        if (shell.hasUnsent()) QueueWorker.schedule(this, 0)
+        Log.i(TAG, "stop")
     }
 
     companion object {

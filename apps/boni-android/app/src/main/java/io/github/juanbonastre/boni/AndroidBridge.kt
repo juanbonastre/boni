@@ -65,9 +65,7 @@ class AndroidBridge(
      * (task 106). `call("storeWrite")` would return first and write it afterwards, on the pool.
      */
     @JavascriptInterface
-    fun keepUnsent(text: String) {
-        if (text == "[]") shell.storeRemove(Shell.UNSENT_FILE) else shell.storeWrite(Shell.UNSENT_FILE, text)
-    }
+    fun keepUnsent(text: String) = shell.keepUnsent(text)
 
     private fun ok(value: Any?): String =
         JSONObject().put("ok", true).put("value", value ?: JSONObject.NULL).toString()
@@ -87,7 +85,10 @@ class AndroidBridge(
         // After a login the phone gets its address for Boni's notices; after a logout it lets it go (task 62).
         "login" -> shell.login(JSONObject(a.getString(0))).also { answer ->
             val act = activity
-            if (answer.optBoolean("ok") && act != null) ui.post { Notices.start(act) }
+            // Not in the test copy (the debug build): it never asks for the permission nor registers.
+            if (answer.optBoolean("ok") && act != null && !context.resources.getBoolean(R.bool.test_copy)) {
+                ui.post { Notices.start(act) }
+            }
         }
         "logout" -> shell.logout().also { Notices.stop(context) }
         "suggestedDevice" -> shell.suggestedDevice()

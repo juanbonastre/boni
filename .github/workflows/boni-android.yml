@@ -67,6 +67,19 @@ jobs:
         with:
           name: boni-android-apk
           path: boni-android-*.apk
+      # The test copy (task 109): «Boni prueba», installed beside the real app on a phone for a test (its own id,
+      # io.github.juanbonastre.boni.prueba), never in its place. Off main only: what ships is the release above.
+      - name: Test copy
+        if: github.ref != 'refs/heads/main'
+        working-directory: apps/boni-android
+        run: |
+          gradle :app:assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk "../../boni-prueba-0.2.${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/main'
+        with:
+          name: boni-android-test-apk
+          path: boni-prueba-*.apk
       # A signed build of main becomes a GitHub release that Obtainium installs (filter: titles starting with
       # "Boni Android"; tags boni-android-v…). Boni Calendar's are "Boni Calendar Android" / calendar-android-v….
       - name: Release
