@@ -262,6 +262,89 @@ describe("the audit", () => {
     });
   });
 
+  it("counts a period's activity from the kept sums, the same as reading the audit, at any bounds (task 108)", () => {
+    const { s, path } = fresh();
+    const at0 = Date.UTC(2026, 9, 1, 10);
+    const ids = Array.from(
+      { length: 20 },
+      (_, i) => s.create("t_nota", { f_titulo: t(`Nota ${i}`) }, me).entity.id,
+    );
+    const read = (i: number, at: number) =>
+      s.audit.record({
+        at,
+        by: i % 3 ? "model:reader:fake" : "mcp:claude-ejemplo",
+        run: `r${i}`,
+        tool: "mcp.query",
+        target: {},
+        decision: i % 11 ? "allow" : "deny",
+        result: null,
+        seen: ids.slice(i % 20, (i % 20) + 3).map((id, k) => ({
+          entity: id,
+          type: (i + k) % 2 ? "t_nota" : "t_otra",
+          version: 1,
+          fields: ["f_titulo"],
+          shapes: [],
+          body: null,
+          files: [],
+        })),
+      });
+    // Ten days of reads, one every 37 minutes and a few seconds: none on a quarter's edge.
+    s.batch(() => {
+      for (let i = 0; i < 400; i++) read(i, at0 + i * 2_222_222);
+    });
+    // As the old route counted them: the audit read whole, by actor and day, and by collection and actor.
+    const exact = (st: UserStore, from: number, to: number) => ({
+      days: st.audit.activity(from, to),
+      types: st.audit
+        .byType(from, to)
+        .sort((a, b) => a.type.localeCompare(b.type) || a.by.localeCompare(b.by)),
+    });
+    const kept = (st: UserStore, from: number, to: number) => {
+      const days = new Map<string, { day: string; by: string; reads: number; writes: number }>();
+      const types = new Map<string, { type: string; by: string; reads: number; writes: number }>();
+      for (const r of st.audit.activityIn(from, to)) {
+        const day = new Date(r.q * 15 * 60_000).toISOString().slice(0, 10);
+        const d = days.get(`${day}|${r.by}`) ?? { day, by: r.by, reads: 0, writes: 0 };
+        d.reads += r.reads;
+        d.writes += r.writes;
+        days.set(`${day}|${r.by}`, d);
+        const x = types.get(`${r.type}|${r.by}`) ?? { type: r.type, by: r.by, reads: 0, writes: 0 };
+        x.reads += r.reads;
+        x.writes += r.writes;
+        types.set(`${r.type}|${r.by}`, x);
+      }
+      return {
+        days: [...days.values()]
+          .filter((r) => r.reads || r.writes)
+          .sort((a, b) => a.day.localeCompare(b.day) || a.by.localeCompare(b.by)),
+        types: [...types.values()]
+          .filter((r) => r.reads || r.writes)
+          .sort((a, b) => a.type.localeCompare(b.type) || a.by.localeCompare(b.by)),
+      };
+    };
+    const periods: [number, number][] = [
+      [at0 + 1_234_567, at0 + 8 * DAY_AHEAD + 4_321],
+      [at0 + 3 * DAY_AHEAD + 60_000, at0 + 3 * DAY_AHEAD + 600_000], // inside one quarter
+      [at0 + 2 * DAY_AHEAD - 5 * 60_000, at0 + 3 * DAY_AHEAD + 7 * 60_000], // across a day, not a whole one
+      [Date.UTC(2026, 9, 3), Date.UTC(2026, 9, 6)], // whole days only
+      [0, Date.now() + DAY_AHEAD], // everything, the creations included
+    ];
+    for (const [from, to] of periods) expect(kept(s, from, to)).toEqual(exact(s, from, to));
+    expect(exact(s, ...(periods[0] as [number, number])).days.length).toBeGreaterThan(10);
+    // What comes after is added to the kept sums, and counted.
+    for (let i = 400; i < 450; i++) read(i, at0 + i * 2_222_222);
+    for (const [from, to] of periods) expect(kept(s, from, to)).toEqual(exact(s, from, to));
+    // An account from before migration 24: its days are filled from the quarters it kept, then kept with them.
+    s.close();
+    stores.splice(stores.indexOf(s), 1);
+    const sql = new DatabaseSync(path);
+    sql.exec("DROP TABLE activity_d; DROP INDEX runs_started; PRAGMA user_version = 23");
+    sql.close();
+    const again = openUserStore(path);
+    stores.push(again);
+    for (const [from, to] of periods) expect(kept(again, from, to)).toEqual(exact(again, from, to));
+  });
+
   it("filters actions by kind of actor and by collection", () => {
     const { s } = fresh();
     const e = s.create("t_nota", { f_titulo: t("Uno") }, me);
