@@ -26,7 +26,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
+import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * The Android host of Boni: the same web app as the desktop shell (built into `assets/web/`), in a WebView, as Boni
@@ -44,6 +47,37 @@ class MainActivity : ComponentActivity() {
     private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         choosing?.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
         choosing = null
+    }
+
+    /**
+     * «Adjuntar» in the conversation (task 114): the phone's picker, asked by the bridge off the UI thread, which
+     * waits for what Juan chose (none if he cancels); what he chose waits in [chosen] for the page to send it.
+     */
+    val chosen by lazy { Chosen(contentResolver) }
+    private var attaching: CompletableFuture<List<Uri>>? = null
+    private val attachPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        attaching?.complete(uris)
+        attaching = null
+    }
+
+    fun chooseFiles(): JSONArray {
+        val answer = CompletableFuture<List<Uri>>()
+        main.post {
+            attaching?.complete(emptyList())
+            attaching = answer
+            try {
+                attachPicker.launch(arrayOf("*/*"))
+            } catch (e: Exception) {
+                attaching = null
+                answer.complete(emptyList())
+            }
+        }
+        val uris = try {
+            answer.get(1, TimeUnit.HOURS)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        return chosen.add(uris)
     }
 
     /** The coordinator's minute (the desktop shell's tick): the page sends its offline queue, and reloads every
@@ -177,6 +211,13 @@ class MainActivity : ComponentActivity() {
         if (shell.configured()) shell.live.start()
         main.removeCallbacks(tick)
         main.postDelayed(tick, 60_000)
+    }
+
+    override fun onDestroy() {
+        // A picker still open answers none: the bridge's thread never waits for a window that is gone.
+        attaching?.complete(emptyList())
+        attaching = null
+        super.onDestroy()
     }
 
     override fun onStop() {

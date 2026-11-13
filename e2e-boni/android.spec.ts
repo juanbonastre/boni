@@ -26,6 +26,7 @@ async function openAndroid(
       const calls: string[] = [];
       const files = new Map<string, string>();
       const answers = new Map<string, string>();
+      const turns: unknown[] = [];
       let settings = {
         serverUrl: configured ? "https://boni.example.ts.net" : "",
         hasToken: configured,
@@ -101,6 +102,37 @@ async function openAndroid(
         switch (method) {
           case "request":
             if (!settings.hasToken) return { ok: false, offline: false, notConfigured: true };
+            // A turn of the conversation: kept to be looked at, answered with one line of the model's.
+            if (a[0] === "POST" && a[1] === "api/agent/turn") {
+              turns.push(JSON.parse(a[2] as string));
+              return {
+                ok: true,
+                status: 200,
+                body: JSON.stringify({
+                  run: `r${turns.length}`,
+                  status: "done",
+                  replies: [
+                    {
+                      component: "text",
+                      data: {
+                        template: {
+                          t: "v",
+                          value: "{a}",
+                          integrity: "model",
+                          sensitivity: "public",
+                        },
+                        a: {
+                          t: "v",
+                          value: "El total es 1.234,56 €.",
+                          integrity: "model",
+                          sensitivity: "personal",
+                        },
+                      },
+                    },
+                  ],
+                }),
+              };
+            }
             {
               const [status, body] = answer(a[0] as string, a[1] as string);
               return { ok: true, status, body };
@@ -158,6 +190,57 @@ async function openAndroid(
           calls.push(
             `${method} ${method === "login" ? "(form)" : JSON.stringify(a).slice(0, 120)}`,
           );
+          // «Adjuntar» (task 114): what the phone's picker gave, as the app tells the page (a key, a name, a
+          // size). It is fixed when asked, as the phone's is once chosen: a test that sets `__chosen` right
+          // after a cancelled pick must not have that pick answer with its files.
+          if (method === "chooseFiles") {
+            const chosen = JSON.stringify({ ok: true, value: w.__chosen ?? [] });
+            setTimeout(() => {
+              answers.set(id, chosen);
+              (w.__boniReply as (id: string) => void)(id);
+            }, 15);
+            return;
+          }
+          // A chosen file goes from the phone in steps, saying how much has gone, and the server keeps it as a row
+          // of his files (apps/server/src/drops.ts answers so).
+          if (method === "uploadFile") {
+            const file = ((w.__chosen ?? []) as { key: string; name: string; size: number }[]).find(
+              (f) => f.key === a[0],
+            );
+            const answer = () => {
+              const value = file
+                ? {
+                    status: 200,
+                    body: JSON.stringify({
+                      id: `e_01drop${file.key}`,
+                      name: file.name,
+                      type: "t_01archivos",
+                      size: file.size,
+                      folder: "conversación/2026-11",
+                      state: file.name.endsWith(".pdf") ? "text" : "image",
+                    }),
+                  }
+                : { error: "unreadable" };
+              answers.set(id, JSON.stringify({ ok: true, value }));
+              (w.__boniReply as (id: string) => void)(id);
+            };
+            // Half of it has gone; the rest when the test lets it (`__held`), never on a timer it could miss.
+            setTimeout(() => {
+              if (file)
+                (w.__boniEvent as (j: string) => void)(
+                  JSON.stringify({
+                    type: "upload",
+                    key: file.key,
+                    sent: Math.floor(file.size / 2),
+                  }),
+                );
+              if (!w.__holdUploads) return void setTimeout(answer, 100);
+              const held = (w.__held ?? []) as (() => void)[];
+              held.push(answer);
+              w.__held = held;
+            }, 20);
+            return;
+          }
           setTimeout(() => {
             try {
               answers.set(id, JSON.stringify({ ok: true, value: run(method, a) }));
@@ -174,6 +257,7 @@ async function openAndroid(
         },
       };
       w.__androidCalls = calls;
+      w.__turns = turns;
       w.__androidFiles = files;
       w.__setLive = (live: boolean) => {
         settings = { ...settings, live };
@@ -286,6 +370,64 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   expect(await back()).toBe(true);
   await expect(page.locator(".m-large h1")).toHaveText("Inicio");
   expect(await back()).toBe(false);
+});
+
+test("«Adjuntar» in the conversation (task 114, A-24, I-36): the phone's own picker, each file sent by the app with its percent where its chip will be, then a chip of his files that goes with the message by reference; the page never has the file", async ({
+  page,
+}) => {
+  await openAndroid(page);
+  await page.locator(".m-tabs").getByRole("button", { name: "Boni" }).tap();
+  const box = page.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeVisible();
+  const attach = page.getByRole("button", { name: "Adjuntar" });
+  // A cancelled picker leaves the bar as it was.
+  await attach.tap();
+  await expect
+    .poll(async () => (await calls(page)).filter((c) => c.startsWith("chooseFiles")))
+    .toHaveLength(1);
+  await expect(page.locator(".chat-composer .chat-chip")).toHaveCount(0);
+  // A PDF and a photo of the phone, as the picker gives them.
+  await page.evaluate(() => {
+    const w = window as unknown as { __chosen: unknown; __holdUploads: boolean };
+    w.__chosen = [
+      { key: "f1", name: "Factura FAC-2026-0142.pdf", size: 182_000 },
+      { key: "f2", name: "IMG_0042.jpg", size: 3_400_000 },
+    ];
+    w.__holdUploads = true;
+  });
+  await attach.tap();
+  const bar = page.locator(".chat-composer .chat-pointed");
+  const going = bar.locator(".chat-chip.upload.uploading");
+  await expect(going).toHaveCount(2);
+  await expect(going.first().locator(".chat-chip-text")).toHaveText("Factura FAC-2026-0142.pdf");
+  // How much has gone, from the app's `upload` events, by each file's key.
+  await expect(going.locator(".chat-chip-word")).toHaveText(["50 %", "50 %"]);
+  await expect(going.first().getByRole("progressbar")).toHaveAttribute("aria-valuenow", "50");
+  await expect(going.first().getByRole("progressbar")).toBeVisible();
+  await box.fill("¿cuánto es el total?");
+  await expect(page.getByRole("button", { name: "Subiendo" })).toBeDisabled();
+  await page.screenshot({ path: "e2e-boni/screenshots/android-attach-uploading.png" });
+  await page.evaluate(() => {
+    for (const done of (window as unknown as { __held: (() => void)[] }).__held) done();
+  });
+  // Up: chips of his files, read for the message, and the page only ever named their keys.
+  const chips = bar.locator('.chat-chip:has([data-boni-action="files.read"])');
+  await expect(chips).toHaveText(["Factura FAC-2026-0142.pdf", "IMG_0042.jpg"]);
+  await expect(going).toHaveCount(0);
+  const sent = (await calls(page)).filter((c) => c.startsWith("uploadFile"));
+  expect(sent).toEqual(['uploadFile ["f1"]', 'uploadFile ["f2"]']);
+  await page.screenshot({ path: "e2e-boni/screenshots/android-attach-chips.png" });
+  await page.getByRole("button", { name: "Enviar" }).tap();
+  await expect(page.locator(".turn-answer").last()).toContainText("El total es 1.234,56 €.");
+  const turns = await page.evaluate(
+    () => (window as unknown as { __turns: { screen: { pointed: unknown[] } }[] }).__turns,
+  );
+  expect(turns.at(-1)?.screen.pointed).toEqual([
+    { kind: "row", id: "e_01dropf1" },
+    { kind: "row", id: "e_01dropf2" },
+  ]);
+  await expect(bar.locator(".chat-chip")).toHaveCount(0);
+  expect(await audit(page, "android attach")).toEqual([]);
 });
 
 test("the first start logs in through the app (the password never stays in the page)", async ({

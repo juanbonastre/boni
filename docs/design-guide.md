@@ -322,7 +322,8 @@ contraseña ni un código aquí» under a question.
     keeping the cursor where it was), undo and «Listo».
   - **Boni's conversation is the whole screen** (as Claude's and ChatGPT's): its bar docked at the bottom, its
     conversations in a drawer from the left (84 % wide over a scrim) with «Registro» and «Auditoría» at its foot; an
-    empty one greets with things to try. Sending keeps the keyboard up.
+    empty one greets with things to try. Sending keeps the keyboard up. «Adjuntar» on its bar opens the phone's own
+    picker, and what is chosen goes up as a file dropped on the desktop's conversation does (task 114).
   - **Small things:** a notice sits above the + button; no greeting toast (Inicio says the day); a session the
     server no longer takes is a banner on Inicio (in `--now`, as the desktop's pill) that goes to sign in; dates in
     the account's language; one chart on the whole screen with period chips; a tap on a chart shows the value and a
@@ -795,6 +796,16 @@ contraseña ni un código aquí» under a question.
     thing will appear; NN/g, «Drag–and–Drop: How to Design for Ease of Use»: the drop zone is highlighted while
     something is dragged over it; Apple HIG, «Drag and drop»: show where the item will go and accept it where it is
     dropped.
+  - **«Adjuntar» on its bar** (task 114; `Chat.tsx` `Composer`, `store.ts` `attachFiles`; docs/sistema.md §4.7,
+    octava parte; A-24, I-36): a paperclip icon button, the first thing of the row under the text (before the model,
+    as §3.6 of `conversacion.md` orders it), 28 px (44 px on the phone), its tooltip and name «Adjuntar». It opens
+    the system's own chooser, several files at once: on the desktop and in a browser the file dialog, on the phone
+    Android's picker (photos, Downloads, Drive), which needs no permission. What is chosen goes exactly as a dropped
+    file does (its chip with «N %», «Subiendo», then its word), and the writing box keeps the focus, so on the phone
+    the keyboard comes back where it was. A cancelled chooser leaves the bar as it was. Material Design 3, «Icon
+    buttons»: a supplementary action of a bar as a standard icon button with its tooltip; Android developers,
+    «Access documents and other files from shared storage»: the system picker chooses a file without the app asking
+    to read the phone's storage; Apple HIG, «File management»: let people choose files with the system's own browser.
 - **What Boni acts on, lit** (F9, task 85, fifth part; `App.tsx` `ScreenLight`, `store.ts` `screenActs`; docs/sistema.md
   §4.7; I-34): what `screen.highlight` or `screen.scroll` names (rows, blocks, a flow's steps, paragraphs), and the
   step that stopped a run opened over the map, get a 2 px `--accent` outline, 2 px away, held for half the time and

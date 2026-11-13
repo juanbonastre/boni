@@ -30,11 +30,20 @@ class AndroidBridge(
 ) {
     private val ui = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(4)
+    // A file attached from the phone goes on its own thread, one after another (task 114): a long one never holds
+    // the page's requests; and the picker waits for Juan on another.
+    private val sending = Executors.newSingleThreadExecutor()
+    private val picking = Executors.newSingleThreadExecutor()
     private val answers = ConcurrentHashMap<String, String>()
 
     @JavascriptInterface
     fun call(id: String, method: String, args: String) {
-        pool.execute {
+        val runner = when (method) {
+            "uploadFile" -> sending
+            "chooseFiles" -> picking
+            else -> pool
+        }
+        runner.execute {
             val out = try {
                 ok(dispatch(method, JSONArray(args)))
             } catch (e: Exception) {
@@ -85,6 +94,9 @@ class AndroidBridge(
         "pin" -> Launcher.pin(context, JSONObject(a.getString(0)))
         "setTargets" -> Launcher.setTargets(context, JSONArray(a.getString(0)), a.getInt(1)).let { null }
         "takeLaunch" -> activity?.takeLaunch()
+        // «Adjuntar» in the conversation (task 114): the phone's picker, then each file chosen sent by its key.
+        "chooseFiles" -> activity?.chooseFiles() ?: JSONArray()
+        "uploadFile" -> uploadFile(a.getString(0))
         "pictureReady" -> onPicture?.let { ui.post(it) }.let { null }
         // An outside address (a mail in its webmail, task 55): the phone's browser; http(s) only.
         "openUrl" -> {
@@ -99,6 +111,19 @@ class AndroidBridge(
             null
         }
         else -> throw IllegalArgumentException("Unknown call: $method")
+    }
+
+    /** Sends the chosen file `key`, telling the page how much has gone a few times a second (`upload` events). */
+    private fun uploadFile(key: String): JSONObject {
+        val (name, size, open) = activity?.chosen?.take(key) ?: return JSONObject().put("error", "unreadable")
+        var shown = 0L
+        return shell.upload(name, size, open) { sent ->
+            val now = System.currentTimeMillis()
+            if (now - shown >= 150) {
+                shown = now
+                shell.emit?.invoke(JSONObject().put("type", "upload").put("key", key).put("sent", sent))
+            }
+        }
     }
 
     private companion object {

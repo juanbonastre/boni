@@ -12,6 +12,7 @@ import {
   MousePointerClick,
   PanelLeftClose,
   PanelLeftOpen,
+  Paperclip,
   Pencil,
   Pin,
   PinOff,
@@ -52,7 +53,9 @@ import {
   answerAsk,
   answerInWords,
   answerWithNew,
+  attachFiles,
   type ChatEntry,
+  canAttach,
   canDrop,
   chooseModel,
   confirmPending,
@@ -61,6 +64,7 @@ import {
   draftOf,
   dropFiles,
   forgetUpload,
+  hostPicks,
   type LiveStep,
   leavePageChat,
   lightKeys,
@@ -115,7 +119,7 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   const setList = (open: boolean) => toggleChatList(open);
   const first = useStore((s) => s.dataTypes?.find((d) => !d.system)?.name);
   const end = useRef<HTMLDivElement | null>(null);
-  // Files can be dropped where a host sends them (the desktop app, a browser; not the phone yet).
+  // Files can be dropped where a host sends them (the desktop app, a browser); the phone attaches them (Composer).
   const drops = canDrop();
   const [over, setOver] = useState(false);
   useEffect(() => {
@@ -532,6 +536,9 @@ function Composer({ inWindow }: { inWindow: boolean }) {
   const uploads = useStore(uploadsOf);
   const uploading = uploads.some((u) => u.state === "uploading");
   const area = useRef<HTMLTextAreaElement | null>(null);
+  // «Adjuntar» (§3.6): the phone's own picker, or the page's file input where the host sends a File (A-24).
+  const attach = canAttach();
+  const picker = useRef<HTMLInputElement | null>(null);
   // As tall as its text, up to a few lines; then it scrolls.
   useEffect(() => {
     const el = area.current;
@@ -634,6 +641,34 @@ function Composer({ inWindow }: { inWindow: boolean }) {
         }}
       />
       <div className="chat-composer-row">
+        {attach && (
+          <>
+            <button
+              type="button"
+              className="icon-btn chat-attach"
+              onPointerDown={keepFocus}
+              // The system's chooser, opened by Juan's own click (I-32: never a click made by code).
+              onClick={() => (hostPicks() ? void attachFiles() : picker.current?.showPicker())}
+              title={t("drop.attach")}
+              aria-label={t("drop.attach")}
+            >
+              <Paperclip size={15} strokeWidth={1.8} />
+            </button>
+            {!hostPicks() && (
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  const files = [...(e.target.files ?? [])];
+                  e.target.value = "";
+                  if (files.length) dropFiles(files);
+                }}
+              />
+            )}
+          </>
+        )}
         <ModelChip />
         {/* Over a screen there is something to point at: the pointer marks what the message is about. */}
         {inWindow && (

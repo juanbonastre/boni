@@ -7,6 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 
 /**
  * What the app owns for the page, once per process (the activity and the queue worker share it): the settings,
@@ -167,6 +168,36 @@ class Shell private constructor(context: Context) {
     }
 
     private fun offline(message: String) = JSONObject().put("ok", false).put("offline", true).put("message", message)
+
+    /**
+     * Sends a file chosen on the phone to `POST api/data/files/upload` (task 114, A-24), streamed with the token:
+     * the server's answer `{status, body}` or `{error}` (`UploadAnswer` in uploads.ts), as the desktop's uploads.cjs.
+     */
+    fun upload(name: String, size: Long, open: () -> InputStream, progress: (Long) -> Unit): JSONObject {
+        val error = { code: String -> JSONObject().put("error", code) }
+        val path = Uploads.path(name)
+        if (path == null || !Paths.apiRequest("POST", path)) return error("bad-name")
+        if (size > Uploads.MAX_UPLOAD) return error("too-big")
+        val (server, token) = target() ?: return error("offline")
+        // Gone from the phone, or its grant went with the app's restart since it was chosen: not the network.
+        val input = try {
+            open()
+        } catch (e: Exception) {
+            return error("unreadable")
+        }
+        return try {
+            val r = input.use { Uploads.send("$server/$path", token, size, it, progress) }
+            if (r.status == 401 && !sessionEnded) {
+                sessionEnded = true
+                emitSettings()
+            }
+            JSONObject().put("status", r.status).put("body", r.body)
+        } catch (e: Uploads.Unreadable) {
+            error("unreadable")
+        } catch (e: IOException) {
+            error("offline")
+        }
+    }
 
     /**
      * This phone's UnifiedPush address for Boni's notices, with the keys its connector made (Notices, task 62), told to

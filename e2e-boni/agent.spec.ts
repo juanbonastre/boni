@@ -2528,6 +2528,47 @@ const said = (run: string, text: string) => ({
     },
   ],
 });
+test("«Adjuntar» on the bar (§3.6, task 114): the system's file chooser, and what is chosen goes up as a dropped file does, by reference with the message", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    uploadMs: 600,
+    agent: { "POST api/agent/turn": [said("r1", "El total es 1.234,56 €.")] },
+  });
+  await expect(page.getByRole("button", { name: "Boni · Ctrl+E" })).toBeVisible();
+  await page.keyboard.press("Control+e");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  const chooser = page.waitForEvent("filechooser");
+  await win.getByRole("button", { name: "Adjuntar" }).click();
+  const files = await chooser;
+  expect(files.isMultiple()).toBe(true);
+  await files.setFiles([
+    {
+      name: "Factura FAC-2026-0142.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.7 factura inventada"),
+    },
+  ]);
+  const bar = win.locator(".chat-pointed:not(.turn-pointed)");
+  await expect(bar.locator(".chat-chip.upload.uploading")).toHaveCount(1);
+  const chip = bar.locator('.chat-chip:has([data-boni-action="files.read"])');
+  await expect(chip).toHaveText("Factura FAC-2026-0142.pdf");
+  // The writing box keeps the focus: typing goes on where it was.
+  await expect(box).toBeFocused();
+  expect((await recorded(page)).calls.filter((c) => c.startsWith("upload "))).toEqual([
+    "upload Factura FAC-2026-0142.pdf 26",
+  ]);
+  await box.fill("¿cuánto es el total?");
+  await box.press("Enter");
+  expect((await turnWith(page, "¿cuánto es el total?")).screen.pointed).toEqual([
+    { kind: "row", id: "e_01drop1" },
+  ]);
+  await expect(win.locator(".turn-answer").last()).toContainText("El total es 1.234,56 €.");
+});
+
 /** Files dropped on an element, as the system's file manager drops them. */
 async function dropOn(
   page: Page,
