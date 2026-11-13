@@ -143,12 +143,13 @@ test.afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-type Close = "quit" | "signal" | "window";
+type Close = "quit" | "tray" | "signal" | "sigint" | "window";
 
 /**
- * Closes Boni as Juan can and opens it again: «Salir» of the tray (app.quit; Boni desktop has no Ctrl+Q), a signal
- * from the system (a log-out, a shutdown), or the window alone (Boni goes on in the tray; «Abrir Boni» brings it back).
- * Returns how long the app took to end, for a quit or a signal.
+ * Closes Boni as Juan can and opens it again: quitting (app.quit; Boni desktop has no Ctrl+Q), the tray menu's
+ * «Salir» itself (its item clicked, as the system's tray does), a signal from the system (SIGTERM: a log-out, a
+ * shutdown; SIGINT: Ctrl+C in a terminal), or the window alone (Boni goes on in the tray; «Abrir Boni» brings it
+ * back). Returns how long the app took to end, for a quit or a signal.
  */
 async function close(how: Close): Promise<number> {
   const a = app as ElectronApplication;
@@ -169,7 +170,22 @@ async function close(how: Close): Promise<number> {
   const done = new Promise<void>((resolve) => a.process().once("exit", () => resolve()));
   const from = Date.now();
   if (how === "quit") void a.evaluate(({ app: e }) => e.quit()).catch(() => undefined);
-  else a.process().kill("SIGTERM");
+  else if (how === "tray")
+    // The tray's menu as Boni builds it (rebuilt when the page sends its labels), and its «Salir» clicked.
+    void a
+      .evaluate(({ ipcMain, Tray }) => {
+        const set = Tray.prototype.setContextMenu;
+        Tray.prototype.setContextMenu = function (this: InstanceType<typeof Tray>, menu) {
+          Tray.prototype.setContextMenu = set;
+          set.call(this, menu);
+          const quit = menu?.items.find((i) => i.label === "Salir");
+          if (!quit) throw new Error("no «Salir» in the tray's menu");
+          quit.click();
+        };
+        ipcMain.emit("shell:labels", {}, {});
+      })
+      .catch(() => undefined);
+  else a.process().kill(how === "sigint" ? "SIGINT" : "SIGTERM");
   await within(done, 20_000, `Boni ending (${how})`);
   const took = Date.now() - from;
   app = await launch();
@@ -201,11 +217,16 @@ const PACES = [
   { name: "no pause", delay: 0 },
   { name: "a person's pace", delay: 60 },
 ] as const;
-/** Quitting is tried at both paces; a signal and the window alone with no pause (the narrowest gap). */
+/**
+ * Quitting, a signal and the window alone are tried at both paces; the tray's «Salir» (the same quit, from its menu)
+ * at a person's, and SIGINT (the same as SIGTERM to Electron) with no pause.
+ */
 const WAYS: { how: Close; paces: readonly (typeof PACES)[number][] }[] = [
   { how: "quit", paces: PACES },
-  { how: "signal", paces: [PACES[0]] },
-  { how: "window", paces: [PACES[0]] },
+  { how: "tray", paces: [PACES[1]] },
+  { how: "signal", paces: PACES },
+  { how: "sigint", paces: [PACES[0]] },
+  { how: "window", paces: PACES },
 ];
 
 /** A page's lines of text (TextRun.tsx): each block's text in the page's blocks (a page has no `.doc-editor`, a note's own). */
@@ -261,7 +282,8 @@ for (const { how, paces } of WAYS) {
       let w = await main();
       await openNote(w);
       await w.locator(".row-doc .doc-title").click();
-      await w.keyboard.press("End");
+      // The title's end, not its first line's: each way adds to it, and it wraps.
+      await w.keyboard.press("Control+End");
       await w.keyboard.type(` T${tag}`, { delay: pace.delay });
       await close(how);
       w = await main();
@@ -391,6 +413,133 @@ test("a property kept without the server goes with the note's next write once it
   await openNote(w);
   await expect((await lugar(w)).locator(".db-cell")).toContainText(" kept");
   await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText("Con red otra vez");
+});
+
+/** The peek's page: the small window a note opens in from Boni Calendar (`boni://note?id=…&peek=1`). */
+async function peekPage(): Promise<Page> {
+  const a = app as ElectronApplication;
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const p = a.windows().find((x) => !x.isClosed() && x.url().includes("peek=1"));
+    if (p) return p;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error("no peek window");
+}
+
+/**
+ * Waits until the main process's minute (it tells the main window to send what is kept: 3 s after start, then every
+ * 60 s) is at least `ms` away, so a test that needs what is kept to stay kept is not undone by it.
+ */
+async function awayFromTheMinute(ms: number) {
+  const up = await (app as ElectronApplication).evaluate(() => process.uptime() * 1000);
+  const next = 60_000 - ((((up - 3000) % 60_000) + 60_000) % 60_000);
+  if (next < ms) await new Promise((r) => setTimeout(r, next + 1000));
+}
+
+test("a note's text kept on the device, then the same note written from another window (the peek): the text stays kept, and is there after quitting (task 106)", async () => {
+  let w = await main();
+  // The peek was opened before (Boni Calendar showed a note in it) and stays loaded while hidden: what the main
+  // window keeps from now on is not in its memory.
+  openLink(`boni://note?id=${longId}&peek=1`);
+  const peek = await peekPage();
+  await expect(peek.locator(".row-doc .doc-title")).toHaveValue("Diario de ejemplo");
+  await peek.waitForTimeout(900);
+  openLink("boni://peek?hide=1");
+  await openNote(w);
+  await stopServer();
+  const doc = w.locator(".row-doc .doc-editor");
+  await doc.locator(".doc-tail").click();
+  await w.keyboard.type("Escrito antes del peek");
+  await expect.poll(unsentText, { timeout: 10_000 }).toContain("Escrito antes del peek");
+  await awayFromTheMinute(30_000);
+  await startServer();
+  // The same note, a property written in the peek: its request carries that property only.
+  openLink(`boni://note?id=${noteId}&peek=1`);
+  await expect(peek.locator(".row-doc .doc-title")).toHaveValue(/Reunión de ejemplo/);
+  const prop = peek.locator(".row-prop").filter({ hasText: "lugar" });
+  if (!(await prop.isVisible())) await peek.locator(".row-props-toggle").first().click();
+  await prop.locator(".db-cell").click();
+  await prop.locator("input").press("End");
+  await peek.keyboard.type(" desde el peek");
+  await prop.locator("input").press("Enter");
+  await expect(prop.locator(".db-cell")).toContainText(" desde el peek");
+  // Its answer has reached the main process by now; what the main window typed is still kept.
+  await peek.waitForTimeout(1500);
+  expect(unsentText()).toContain("Escrito antes del peek");
+  await close("quit");
+  expect(unsentText()).toContain("Escrito antes del peek");
+  w = await main();
+  await expect.poll(unsentText, { timeout: 20_000 }).toBe("");
+  await openNote(w);
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText(
+    "Escrito antes del peek",
+  );
+  await expect((await lugar(w)).locator(".db-cell")).toContainText(" desde el peek");
+});
+
+test("a write the server keeps failing (5xx) is said once and then tried once an hour, kept until a start sends it (task 106)", async () => {
+  const a = app as ElectronApplication;
+  let w = await main();
+  await openNote(w);
+  // From now on the server fails every write of this note (a 500), as one with a broken disk would.
+  await a.evaluate(({ net }, id) => {
+    const g = globalThis as { failedWrites?: number; realFetch?: typeof net.fetch };
+    g.failedWrites = 0;
+    g.realFetch = net.fetch;
+    net.fetch = ((url: string, init?: RequestInit) => {
+      if (init?.method === "PUT" && String(url).includes(`/api/data/rows/${id}`)) {
+        g.failedWrites = (g.failedWrites ?? 0) + 1;
+        return Promise.resolve(new Response('{"error":"disk"}', { status: 500 }));
+      }
+      return (g.realFetch as typeof net.fetch).call(net, url, init);
+    }) as typeof net.fetch;
+  }, noteId);
+  const failed = () =>
+    a.evaluate(() => (globalThis as { failedWrites?: number }).failedWrites ?? 0);
+  // The main process's minute, as it sends it to the main window (it resends what is kept).
+  const minute = () =>
+    a.evaluate(({ BrowserWindow }) => {
+      for (const b of BrowserWindow.getAllWindows())
+        if (b.getTitle() === "Boni") b.webContents.send("boni:event", { type: "tick", minute: 1 });
+    });
+  // The test's minutes only: the main process's own would add a resend of its own.
+  await awayFromTheMinute(40_000);
+  const doc = w.locator(".row-doc .doc-editor");
+  await doc.locator(".doc-tail").click();
+  await w.keyboard.type("Escrito con el servidor fallando");
+  await expect.poll(failed).toBeGreaterThan(0);
+  const notice = w.getByText(/^El servidor no guarda «.+»: queda en este equipo$/);
+  // The saves made while typing failed too, and are not counted: only the minute's resends are.
+  await expect(notice).toHaveCount(0);
+  for (let i = 1; i <= 5; i++) {
+    const before = await failed();
+    await minute();
+    await expect.poll(failed).toBeGreaterThan(before);
+    if (i < 5) await expect(notice).toHaveCount(0);
+  }
+  await expect(notice).toBeVisible();
+  expect(unsentText()).toContain("Escrito con el servidor fallando");
+  // From then on the minute's resend leaves it for an hour: no request, no second notice; it stays kept.
+  const n = await failed();
+  await minute();
+  await minute();
+  await w.waitForTimeout(1500);
+  expect(await failed()).toBe(n);
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText(
+    "Escrito con el servidor fallando",
+  );
+  // The server mends; quitting and the next start send it.
+  await a.evaluate(({ net }) => {
+    net.fetch = (globalThis as { realFetch?: typeof net.fetch }).realFetch as typeof net.fetch;
+  });
+  await close("quit");
+  w = await main();
+  await expect.poll(unsentText, { timeout: 20_000 }).toBe("");
+  await openNote(w);
+  await expect(w.locator(".row-doc .doc-editor .blk-input").last()).toHaveText(
+    "Escrito con el servidor fallando",
+  );
 });
 
 test("quitting with a write the server does not answer takes a second or so, and the write is kept for the next start", async () => {

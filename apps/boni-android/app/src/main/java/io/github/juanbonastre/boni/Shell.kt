@@ -225,6 +225,8 @@ class Shell private constructor(context: Context) {
 
     companion object {
         const val QUEUE_FILE = "queue.json"
+        /** What was typed and has no answer yet (the page's `core/unsent.ts`), kept at once by `keepUnsent`. */
+        const val UNSENT_FILE = "unsent.json"
 
         /** Page writes and the worker's flush never interleave inside the process. */
         val QUEUE_LOCK = Any()

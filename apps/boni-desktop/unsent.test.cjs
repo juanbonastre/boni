@@ -13,11 +13,29 @@ const listIn = (dir) => {
     return null;
   }
 };
-const page = (id, at, title) => ({ path: `api/pages/${id}`, at, write: { title } });
+const page = (id, at, title) => ({
+  path: `api/pages/${id}`,
+  at,
+  id,
+  kind: "page",
+  patch: { title },
+});
+const row = (id, at, values, body) => ({
+  path: `api/data/rows/${id}`,
+  at,
+  id,
+  kind: "row",
+  values,
+  ...(body !== undefined ? { body } : {}),
+});
 
 test("only a page's or a row's write is kept until answered", () => {
   const u = createUnsent(folder(), () => 10);
-  assert.deepEqual(u.sending("PUT", "api/pages/p1"), { path: "api/pages/p1", at: 10 });
+  assert.deepEqual(u.sending("PUT", "api/pages/p1", { title: "Uno" }), {
+    path: "api/pages/p1",
+    at: 10,
+    fields: ["patch.title"],
+  });
   assert.ok(u.sending("PUT", "api/data/rows/r1"));
   assert.equal(u.sending("GET", "api/pages/p1"), null);
   assert.equal(u.sending("PUT", "api/data/rows/r1/type"), null);
@@ -29,13 +47,13 @@ test("a write answered after the window went is taken out of the list; a newer o
   let clock = 100;
   const u = createUnsent(dir, () => clock);
   // The page sent «Hola» (kept at 90), then went with «Hola mundo» typed at 120, not yet sent.
-  const ticket = u.sending("PUT", "api/pages/p1");
+  const ticket = u.sending("PUT", "api/pages/p1", { title: "Hola" });
   u.keep(JSON.stringify([page("p1", 90, "Hola"), page("p2", 95, "Otra")]));
   clock = 130;
   u.answered(ticket, true);
   assert.deepEqual(listIn(dir), [page("p2", 95, "Otra")]);
   // A newer write of p1, made after the answered one left, is not taken out by that answer.
-  const second = u.sending("PUT", "api/pages/p2");
+  const second = u.sending("PUT", "api/pages/p2", { title: "Otra" });
   u.keep(JSON.stringify([page("p2", 95, "Otra"), page("p1", 120, "Hola mundo")]));
   u.answered(second, true);
   assert.deepEqual(listIn(dir), [page("p1", 120, "Hola mundo")]);
@@ -44,15 +62,15 @@ test("a write answered after the window went is taken out of the list; a newer o
 test("a list the page keeps after an answer it had not seen yet leaves that write out", () => {
   const dir = folder();
   const u = createUnsent(dir, () => 200);
-  u.answered(u.sending("PUT", "api/data/rows/r1"), true);
-  u.keep(JSON.stringify([{ path: "api/data/rows/r1", at: 150 }]));
+  u.answered(u.sending("PUT", "api/data/rows/r1", { values: {}, body: "Texto" }), true);
+  u.keep(JSON.stringify([row("r1", 150, {}, "Texto")]));
   assert.equal(listIn(dir), null);
 });
 
 test("a server that could not be reached leaves the write kept", () => {
   const dir = folder();
   const u = createUnsent(dir, () => 300);
-  const t = u.sending("PUT", "api/pages/p1");
+  const t = u.sending("PUT", "api/pages/p1", { title: "Sin red" });
   u.keep(JSON.stringify([page("p1", 290, "Sin red")]));
   u.answered(t, false);
   assert.deepEqual(listIn(dir), [page("p1", 290, "Sin red")]);
@@ -61,24 +79,41 @@ test("a server that could not be reached leaves the write kept", () => {
 test("the main window's list and the peek's are kept together, a write's later fields over its earlier ones", () => {
   const dir = folder();
   const u = createUnsent(dir, () => 500);
-  u.keep(
-    JSON.stringify([
-      page("p1", 10, "Uno"),
-      { path: "api/data/rows/r1", at: 20, values: { a: "1" } },
-    ]),
-  );
-  u.keep(JSON.stringify([{ path: "api/data/rows/r1", at: 30, values: { b: "2" }, body: "Texto" }]));
+  u.keep(JSON.stringify([page("p1", 10, "Uno"), row("r1", 20, { a: "1" })]));
+  u.keep(JSON.stringify([row("r1", 30, { b: "2" }, "Texto")]));
   // An older list of the main window does not take back the peek's later text.
-  u.keep(
-    JSON.stringify([
-      page("p1", 10, "Uno"),
-      { path: "api/data/rows/r1", at: 20, values: { a: "1" } },
-    ]),
-  );
+  u.keep(JSON.stringify([page("p1", 10, "Uno"), row("r1", 20, { a: "1" })]));
   assert.deepEqual(listIn(dir), [
     page("p1", 10, "Uno"),
-    { path: "api/data/rows/r1", at: 30, values: { a: "1", b: "2" }, body: "Texto" },
+    row("r1", 30, { a: "1", b: "2" }, "Texto"),
   ]);
+});
+
+test("a request from another part of the app to the same note takes out only the fields it carried (task 106)", () => {
+  const dir = folder();
+  let clock = 400;
+  const u = createUnsent(dir, () => clock);
+  // The main window kept the note's text and a property, typed without the server.
+  u.keep(JSON.stringify([row("r1", 390, { lugar: "Sala 2" }, "Escrito sin red")]));
+  // The peek (or a task ticked) writes the same note: one property only.
+  const peek = u.sending("PUT", "api/data/rows/r1", { values: { lugar: "Sala 3" } });
+  clock = 410;
+  u.answered(peek, true);
+  assert.deepEqual(listIn(dir), [row("r1", 390, {}, "Escrito sin red")]);
+  // The window going keeps its older list again: the answered property does not come back.
+  u.keep(JSON.stringify([row("r1", 390, { lugar: "Sala 2" }, "Escrito sin red")]));
+  assert.deepEqual(listIn(dir), [row("r1", 390, {}, "Escrito sin red")]);
+  // A page moved in the sidebar (its parent, its place) takes nothing typed with it.
+  u.keep(JSON.stringify([page("p1", 395, "Nombre sin red")]));
+  u.answered(u.sending("PUT", "api/pages/p1", { parent: null, position: 2 }), true);
+  assert.equal(listIn(dir).length, 2);
+  // A request whose body cannot be read takes out nothing.
+  u.answered(u.sending("PUT", "api/data/rows/r1"), true);
+  assert.equal(listIn(dir).length, 2);
+  // The note's whole write, sent again, answers for the rest.
+  u.answered(u.sending("PUT", "api/data/rows/r1", { values: {}, body: "Escrito sin red" }), true);
+  u.answered(u.sending("PUT", "api/pages/p1", { title: "Nombre sin red" }), true);
+  assert.equal(listIn(dir), null);
 });
 
 test(`quitting waits for the answers in flight, ${QUIT_WAIT_MS} ms at most`, async () => {

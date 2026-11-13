@@ -15,6 +15,8 @@ import type { ClientSettings, Host, LoginAnswer, ShellEvent } from "./host.ts";
 export interface AndroidNative {
   call(id: string, method: string, args: string): void;
   take(id: string): string;
+  /** Writes `unsent.json` before it returns (task 106); an app built before it has none. */
+  keepUnsent?(text: string): void;
 }
 
 type Answer = { ok: true; value: unknown } | { ok: false; code: string; message: string };
@@ -67,6 +69,8 @@ export function androidHost(native: AndroidNative): Host {
         }
       },
     },
+    // What was typed and has no answer yet, on the phone before the page goes on: the system may end a hidden app.
+    ...(native.keepUnsent ? { keepUnsent: (text: string) => native.keepUnsent?.(text) } : {}),
     store: {
       read: (name) => call<string | null>("storeRead", name),
       write: (name, text) => call<null>("storeWrite", name, text).then(() => undefined),

@@ -707,7 +707,7 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
   }
   if (!settings.serverUrl || !settings.token)
     return { ok: false, offline: false, notConfigured: true };
-  const ticket = unsent.sending(method, apiPath);
+  const ticket = unsent.sending(method, apiPath, body);
   let reached = false;
   try {
     const url = new URL(apiPath, `${settings.serverUrl}/`);

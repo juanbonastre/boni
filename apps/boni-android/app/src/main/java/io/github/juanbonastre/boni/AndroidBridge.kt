@@ -50,6 +50,16 @@ class AndroidBridge(
     @JavascriptInterface
     fun take(id: String): String = answers.remove(id) ?: fail("lost", "No answer for $id")
 
+    /**
+     * Keeps the page's list of what was typed and has no answer yet (`unsent.json`, D-65) before it returns, on the
+     * bridge's own thread: the page calls it as it hides or goes, and the system may end the app a moment later
+     * (task 106). `call("storeWrite")` would return first and write it afterwards, on the pool.
+     */
+    @JavascriptInterface
+    fun keepUnsent(text: String) {
+        if (text == "[]") shell.storeRemove(Shell.UNSENT_FILE) else shell.storeWrite(Shell.UNSENT_FILE, text)
+    }
+
     private fun ok(value: Any?): String =
         JSONObject().put("ok", true).put("value", value ?: JSONObject.NULL).toString()
 
