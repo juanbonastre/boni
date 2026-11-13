@@ -387,6 +387,129 @@ describe("the storage figures (task 43)", () => {
     expect(after.get("t_otra")?.history).toBeGreaterThan(was);
     expect(after.get("t_nota")?.history).toBe(before.get("t_nota")?.history);
   });
+
+  it("are kept as they grow: the figures of summing everything, counted a slice at a time, then only what is new (task 107)", () => {
+    const { s, path } = fresh();
+    s.applySchema(
+      { op: "create_type", type: { ...nota(), id: "t_otra", key: "otra", name: "Otra" } },
+      { actor: "system" },
+    );
+    const ids = Array.from(
+      { length: 60 },
+      (_, i) =>
+        s.create(i % 2 ? "t_otra" : "t_nota", { f_titulo: t(`Nota ${i} ${"ñ".repeat(i)}`) }, me)
+          .entity.id,
+    );
+    for (const id of ids) s.update(id, { f_estado: t("hecha") }, me);
+    const seen = (id: string) => ({
+      entity: id,
+      type: "t_nota",
+      version: 1,
+      fields: ["f_titulo"],
+      shapes: [],
+      body: null,
+      files: [],
+    });
+    const read = (i: number) =>
+      s.audit.record({
+        at: clock + i,
+        by: "model:reader:fake",
+        run: `r${i}`,
+        tool: "mcp.query",
+        target: { i },
+        decision: "allow",
+        result: null,
+        seen: ids.slice(i % 50, (i % 50) + 10).map(seen),
+      });
+    const call = (i: number) =>
+      s.journal.modelCall({
+        run: `r${i}`,
+        role: "reader",
+        provider: "fake",
+        model: "m-ejemplo",
+        promptHash: "h",
+        request: { texto: "x".repeat(500 + i) },
+        response: { ok: true },
+        usage: null,
+        at: clock + i,
+      });
+    s.batch(() => {
+      for (let i = 0; i < 700; i++) read(i);
+      for (let i = 0; i < 450; i++) call(i);
+    });
+    // What the figures were before (task 43): every table summed whole, on another connection.
+    const whole = () => {
+      const db = new DatabaseSync(path, { readOnly: true });
+      try {
+        const history = Object.fromEntries(
+          db
+            .prepare(
+              `SELECT x.type AS type, sum(coalesce(octet_length(o.before), 0) + coalesce(octet_length(o.after), 0)) AS b
+               FROM ops o JOIN entities x ON x.id = o.target GROUP BY x.type`,
+            )
+            .all()
+            .map((r) => [r.type, Number(r.b)]),
+        );
+        const mc = db
+          .prepare(
+            "SELECT count(*) AS n, sum(octet_length(request) + octet_length(response)) AS b FROM model_calls",
+          )
+          .get() as { n: number; b: number };
+        const au = db
+          .prepare(
+            `SELECT (SELECT count(*) FROM actions) AS a, (SELECT count(*) FROM access) AS x,
+               (SELECT sum(octet_length(by) + octet_length(tool) + coalesce(octet_length(target), 0) + 64) FROM actions)
+               + (SELECT sum(octet_length(entity) + octet_length(fields) + octet_length(shapes) + 48) FROM access) AS b`,
+          )
+          .get() as { a: number; x: number; b: number };
+        return {
+          history,
+          modelCalls: { rows: Number(mc.n), bytes: Number(mc.b) },
+          audit: { actions: Number(au.a), access: Number(au.x), bytes: Number(au.b) },
+        };
+      } finally {
+        db.close();
+      }
+    };
+    const figures = (x: UserStore) => {
+      const st = x.audit.storage();
+      return {
+        history: Object.fromEntries(st.types.map((y) => [y.type, y.history])),
+        modelCalls: st.modelCalls,
+        audit: st.audit,
+      };
+    };
+    // A slice per call when no time is left, and each call says whether it is done: the reads (700 actions, 100 per
+    // slice) take seven slices and the calls (450, 100 per slice) five; a slice that finishes its part goes on to the
+    // next part in the same call, so 6 + 4 calls end early and the eleventh finishes.
+    let turns = 1;
+    while (!s.audit.storageCatchUp(0)) turns++;
+    expect(turns).toBe(11);
+    expect(s.audit.storageCatchUp(0)).toBe(true);
+    expect(figures(s)).toEqual(whole());
+    expect(whole().audit).toMatchObject({ actions: 700, access: 7000 });
+    // The files' sizes from their index, never from the rows that sit among their bytes.
+    const plan = new DatabaseSync(path, { readOnly: true });
+    expect(
+      plan
+        .prepare("EXPLAIN QUERY PLAN SELECT coalesce(sum(size), 0) AS s FROM files")
+        .all()
+        .map((r) => r.detail),
+    ).toEqual(["SCAN files USING COVERING INDEX files_size"]);
+    plan.close();
+    // What comes after is added, and only it: a change, a read and a call.
+    s.update(ids[3] as string, { f_estado: t("otra vez") }, me);
+    read(1000);
+    call(1000);
+    expect(figures(s)).toEqual(whole());
+    // Opened again (a restart): the kept sums, nothing to count again.
+    s.close();
+    stores.splice(stores.indexOf(s), 1);
+    const again = openUserStore(path);
+    stores.push(again);
+    expect(again.audit.storageCatchUp(0)).toBe(true);
+    expect(figures(again)).toEqual(whole());
+  });
 });
 
 describe("blame", () => {

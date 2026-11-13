@@ -341,11 +341,38 @@ export function auditRow(store: UserStore, id: string) {
   };
 }
 
+/** How long one turn of the storage figures' catching up may hold the event loop, in ms (task 107, A-28). */
+export const STORAGE_SLICE_MS = 25;
+const catchingUp = new WeakMap<UserStore, Promise<void>>();
+
+/**
+ * The kept storage figures brought up to date a slice at a time, the event loop free between slices (task 107: the
+ * first «Todas las páginas» after this deploy counts the whole history once, which summed at once held the NAS's
+ * server 40 s). Requests at the same time wait for the same catching up.
+ */
+export function storageCaughtUp(store: UserStore, ms = STORAGE_SLICE_MS): Promise<void> {
+  const going = catchingUp.get(store);
+  if (going) return going;
+  const turn = () => new Promise<void>((r) => setImmediate(r));
+  const p = (async () => {
+    // Each slice in a turn of its own: never in the request's turn, nor in the one that answers it (together they
+    // held the loop twice a slice, 2026-11-13).
+    do {
+      await turn();
+    } while (!store.audit.storageCatchUp(ms));
+    await turn();
+  })().finally(() => catchingUp.delete(store));
+  catchingUp.set(store, p);
+  return p;
+}
+
 /**
  * How much each part takes, and what could go when it grows (nothing is deleted by default: Juan, 2026-10-24).
  * Advice is codes and numbers; the app says it in words.
  */
-export function auditStorage(store: UserStore) {
+export async function auditStorage(store: UserStore) {
+  await storageCaughtUp(store);
+  // Caught up: what is left is what arrived in the last turn, and the records' own sizes (thousands of rows).
   const st = store.audit.storage();
   const types = store.schema().types;
   const advice: { code: string; bytes: number; type?: string }[] = [];

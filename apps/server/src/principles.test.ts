@@ -118,4 +118,41 @@ describe("principles (docs/principios.md)", () => {
       "packages/store/src/migrations.ts",
     ]);
   });
+
+  it("A-28: the history, the audit and the models' calls only grow: nothing deletes their rows (the storage figures count each row once)", () => {
+    const root = join(import.meta.dirname, "..", "..", "..");
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.name === "node_modules"
+          ? []
+          : e.isDirectory()
+            ? sources(join(dir, e.name))
+            : /\.(ts|tsx|cjs|mjs)$/.test(e.name) && !/\.test\.|test-util/.test(e.name)
+              ? [join(dir, e.name)]
+              : [],
+      );
+    // Where those tables are written: the server, the packages, and the scripts run by hand.
+    const bad = [
+      join(root, "apps", "server", "src"),
+      ...readdirSync(join(root, "packages")).map((p) => join(root, "packages", p, "src")),
+      join(root, "scripts"),
+    ]
+      .filter((d) => existsSync(d))
+      .flatMap(sources)
+      .filter((f) =>
+        ((text: string) =>
+          // Deleted, replaced, or a text emptied in place (only the hash chain is ever written after the fact).
+          /\b(DELETE\s+FROM|DROP\s+TABLE|REPLACE\s+INTO)\s+(ops|actions|access|model_calls)\b/i.test(
+            text,
+          ) ||
+          /\bUPDATE\s+(ops|actions|access|model_calls)\s+SET\s+(?!hash\s*=\s*\?\s+WHERE)/i.test(
+            text,
+          ))(readFileSync(f, "utf8")),
+      )
+      .map((f) => f.slice(root.length + 1));
+    // Removing them (the advice «model-texts» or «history», if Juan ever says so) must take their kept sums down too.
+    expect(bad, "rows deleted from a table the storage figures keep summed (migration 23)").toEqual(
+      [],
+    );
+  });
 });
