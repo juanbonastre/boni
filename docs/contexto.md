@@ -46,5 +46,6 @@ trabajar en Boni sin que nadie mantenga a mano listas que se quedan viejas. Las 
   cuántos registros tienen (solo lo que ese modelo puede ver) y la lista de herramientas. Todo calculado al momento.
 - Cada colección tiene su descripción, que escriben el usuario o una IA (`set_description`); al crear una colección con
   su descripción (`create_collection`), el índice ya está al día.
+- Una nota larga se lee por partes (tarea 112, A-30): pasados 30.000 caracteres, `read` da su índice, calculado al momento de sus encabezados (nivel, dónde empieza y tamaño), y su comienzo; luego un apartado por su encabezado o un tramo. Así ninguna nota queda sin leer por el límite del cliente (Claude Code rechaza una respuesta de más de 25.000 tokens) y un apartado no cuesta la nota entera. Nada se guarda: el índice sale del texto en cada lectura.
 - Ni README, ni `AGENTS.md`, ni `CLAUDE.md` como notas: son convenciones de un sistema de ficheros.
 - El estado del desarrollo y su Cola son filas (estado, orden, PR); la historia sale de git y del registro de Boni.
