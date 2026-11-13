@@ -47,15 +47,24 @@ const type = (
   ...extra,
 });
 
-/**
- * A store with a task, three movements in three categories and four mails (one of them an attacker's, one a
- * newsletter, one from a secretariat), all invented.
- */
+/** The evaluation's store in `dir`, with its invented data (`seedEval`). */
 function evalStore(dir: string): UserStore {
   // The store's clock: the evaluation's day, moved back only for the mail that came in weeks ago (task 71).
   let clock = EVAL_NOW;
   const store = openUserStore(join(dir, "user.db"), { now: () => clock });
   ensureSystemTypes(store);
+  seedEval(store, (t) => {
+    clock = t;
+  });
+  return store;
+}
+
+/**
+ * A task, three movements in three categories and four mails (one of them an attacker's, one a newsletter, one from
+ * a secretariat), all invented, into `store`; `at` sets the store's clock. The server's conversation evaluation
+ * seeds its own store with them (apps/server/eval/conversation.ts).
+ */
+export function seedEval(store: UserStore, at: (t: number) => void): void {
   const sys = { actor: "import" as const };
   store.applySchema(
     {
@@ -201,7 +210,7 @@ function evalStore(dir: string): UserStore {
   ];
   later.forEach(([asunto, de, cuerpo, daysAgo], i) => {
     const l = label("external", "personal", [{ kind: "mail", id: `t${i}` }], true);
-    clock = EVAL_NOW - daysAgo * 86_400_000;
+    at(EVAL_NOW - daysAgo * 86_400_000);
     store.create(
       "t_correo",
       {
@@ -213,12 +222,11 @@ function evalStore(dir: string): UserStore {
       `e_tutor${i}`,
     );
   });
-  clock = EVAL_NOW;
-  return store;
+  at(EVAL_NOW);
 }
 
 /** The evaluation's day: its store's clock and the agent's «today». */
-const EVAL_NOW = Date.UTC(2026, 9, 20, 10);
+export const EVAL_NOW = Date.UTC(2026, 9, 20, 10);
 
 /** An invented reading guide: what matters to the user in their mail (the server gives the readers Juan's). */
 const EVAL_GUIDE = guideValue({

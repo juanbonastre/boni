@@ -5,12 +5,14 @@
 import type { Role } from "../../src/models.ts";
 import type { ModelProvider } from "../../src/providers.ts";
 import { evalDecider } from "./decider.ts";
-import { evalPlanner } from "./planner.ts";
+import { EVAL_NOW, evalPlanner, seedEval } from "./planner.ts";
 import { evalReader } from "./reader.ts";
 import type { EvalResult } from "./types.ts";
 
+export { capped, maxCostFlag, newSpend, type Spend } from "./budget.ts";
+export { type EvalKeys, evalKeys, evalProvider } from "./providers.ts";
 export type { EvalResult } from "./types.ts";
-export { evalDecider, evalPlanner, evalReader };
+export { EVAL_NOW, evalDecider, evalPlanner, evalReader, seedEval };
 
 /**
  * A role's evaluation with `model` in it (`reader`: the role's current reader, which the planner's cases also

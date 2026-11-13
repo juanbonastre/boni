@@ -12,25 +12,26 @@
  * other planner prompts to compare with today's («base»): each model runs with each prompt. `--guia=con,sin` runs each
  * also without the user's reading guide for mail, to compare (docs/correo.md M2). `--only=<text>` runs only
  * the requests with that text and `--times=<n>` runs each n times (a failure seen once may be the model's mood). A
- * case not as expected prints how it ended and its plan.
+ * case not as expected prints how it ended and its plan. `--max-cost=<dollars>` (1 without it) is a hard cap: once
+ * the calls have spent it, no other call is made (lib/budget.ts).
  *
  * With OPENROUTER_API_KEY (and no ANTHROPIC_API_KEY) the models are OpenRouter's (cheaper for trying
  * things, and any vendor's; how good a plan is depends on the model, never how safe it is).
  */
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { AnthropicProvider } from "../src/anthropic.ts";
-import { OpenAIProvider } from "../src/openai.ts";
 import type { ModelProvider } from "../src/providers.ts";
+import { capped, maxCostFlag, newSpend } from "./lib/budget.ts";
 import { evalPlanner } from "./lib/planner.ts";
+import { evalKeys, evalProvider } from "./lib/providers.ts";
 import type { EvalResult } from "./lib/types.ts";
 
-const key = process.env.ANTHROPIC_API_KEY;
-const routerKey = process.env.OPENROUTER_API_KEY;
-if (!key && !routerKey) {
+const keys = evalKeys();
+if (!keys) {
   console.error("ANTHROPIC_API_KEY or OPENROUTER_API_KEY is not set");
   process.exit(2);
 }
+const key = keys.anthropic;
 const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const flag = (name: string) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) || undefined;
@@ -39,20 +40,10 @@ const models = (args[0] ?? (key ? "claude-opus-5-5" : "anthropic/claude-haiku-5.
   .map((m) => m.trim())
   .filter(Boolean);
 const readerModel = args[1] ?? (key ? "claude-haiku-4-5" : "deepseek/deepseek-v4.1-flash");
+const maxCost = maxCostFlag(process.argv, 1);
+const spend = newSpend();
 const provider = (model: string, planner: boolean): ModelProvider =>
-  key
-    ? new AnthropicProvider({
-        apiKey: key,
-        model,
-        ...(planner ? { effort: "medium" as const, fallbacks: true } : {}),
-      })
-    : new OpenAIProvider({
-        apiKey: routerKey,
-        model,
-        baseURL: "https://openrouter.ai/api/v1",
-        // The reader answers without reasoning first, as Boni asks it (task 29).
-        ...(planner ? {} : { reasoning: "off" as const }),
-      });
+  capped(evalProvider(keys, model, planner), maxCost, spend);
 
 const only = flag("only");
 // `--guia=con,sin`: each column with the user's reading guide for mail and without it (docs/correo.md M2).
@@ -118,3 +109,5 @@ if (columns.length === 1) {
     for (const x of c.r.cases.filter((x) => x.detail))
       console.log(`\n${c.name}: ${x.name}\n     ${x.detail}`);
 }
+// What the whole run spent against its cap: a case stopped by the cap says `over-budget`.
+console.log(`\nspent $${spend.cost.toFixed(4)} of $${maxCost} in ${spend.calls} calls`);
