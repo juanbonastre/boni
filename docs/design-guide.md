@@ -760,10 +760,19 @@ contraseña ni un código aquí» under a question.
   does nothing under Ajustes, the search or the trash. With a panel on the right (the Bandeja, a record), the circle
   and the window stay beside it, never over its cards. Each message goes with what is on the
   screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen, what was
-  pointed at); the phone has no circle yet. What is being written to a conversation (its text and its chips) is its
+  pointed at); on the phone the conversation is the Boni tab, and the circle is on the home screen (below). What is
+  being written to a conversation (its text and its chips) is its
   draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
+  - **On the phone** (task 115; `ChatWidget.kt`): Boni's circle is a home-screen widget, «Conversación» in the
+    launcher's list: one cell, a 56 dp circle in the dark theme's `--accent` with the conversation's icon in white
+    (Lucide's `message-circle`, as the desktop's), and nothing else: no text, no frame, nothing of Juan's, so it never
+    refreshes. A tap opens Boni on the Boni tab, the last conversation, over whatever was open: the settings, a chart
+    on its own, a record from another app and the conversations' drawer close; a record's text is sent first, and a
+    panel with something typed in it asks before it goes (the page's `chat` target). From Android's widget guidelines
+    (a control widget puts an app's frequent action on the home screen, one tap away) and Material 3's FAB (the
+    screen's main action in one shape, here the circle Juan knows from the desktop).
   - **Moved by its bar** (sixth part; `core/boniWindow.ts`; I-35). Floating, the window is dragged by its head, never
     by its buttons: the pointer over the head is `grab`, `grabbing` while it moves, and dragging selects no text. It
     follows the pointer exactly and stays where it is let go, measured from the bottom right (the circle's corner):

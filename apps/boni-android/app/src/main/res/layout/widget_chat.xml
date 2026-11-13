@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Boni's circle on the home screen (ChatWidget): the desktop's circle, an accent circle with the conversation's
+     icon, centred in its cell. Also the widget's preview in the launcher's list. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/chat_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:contentDescription="@string/chat_widget_label">
+
+    <ImageView
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/chat_widget_circle"
+        android:importantForAccessibility="no"
+        android:padding="15dp"
+        android:src="@drawable/ic_chat" />
+</FrameLayout>

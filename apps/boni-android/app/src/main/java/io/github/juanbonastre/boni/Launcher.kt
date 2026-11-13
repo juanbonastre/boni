@@ -19,11 +19,13 @@ import org.json.JSONObject
  */
 object Launcher {
     const val EXTRA_TARGET = "target"
+    /** Boni's conversation (its circle and its home-screen widget, ChatWidget): the last one, over what is open. */
+    const val CHAT = "chat"
     private const val PREFIX = "boni:"
     private val TARGET = Regex("^(shortcut|chart):[A-Za-z0-9_.-]{1,80}$")
 
     /** A target the page may ask for (the launcher hands it back to the app as is). */
-    fun valid(target: String): Boolean = TARGET.matches(target)
+    fun valid(target: String): Boolean = target == CHAT || TARGET.matches(target)
 
     /** The launcher's id of an entry, and back. */
     fun idOf(target: String) = PREFIX + target

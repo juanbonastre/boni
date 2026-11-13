@@ -752,6 +752,7 @@ export function navigate(screen: string) {
     void flushRowBody();
     set({ row: null, rowDoc: null, view: { kind: "home" } });
   } else if (screen === "settings") openSettings();
+  else if (screen === "chat") openChatFromOutside();
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
     const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
@@ -767,6 +768,19 @@ export function navigate(screen: string) {
     const spec = get().chartSpecs.find((c) => c.id === screen.slice(5));
     if (spec) openEditor(spec);
   } else showStart();
+}
+
+/**
+ * Boni's circle and widget on the phone (task 115, F9): the conversation, the last one, over whatever was open, as the
+ * desktop's circle opens it over the screen. What was typed is never dropped: a record's text is sent first, and a
+ * panel with something typed in it asks before it goes.
+ */
+function openChatFromOutside() {
+  void flushRowBody();
+  openSettings(false);
+  set({ chatList: false, findOpen: false });
+  if (get().panel) dismissPanel();
+  showTab("boni");
 }
 
 function onSettingsChanged(s: ClientSettings) {

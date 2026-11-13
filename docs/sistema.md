@@ -1090,10 +1090,19 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   - **lo que no hace aún:** una subida se corta si Android cierra la app mientras sigue en segundo plano , y uno que
     falló («Falló») se elige otra vez (la clave sirve una sola vez); compartir a Boni desde otra app (la hoja «Compartir» de Android) no se pidió: queda en
     la cola.
+- **Novena parte (2026-11-13; la 115): el círculo en el teléfono.** Lo que había: en el escritorio el círculo vive
+  dentro de las ventanas de Boni y abre la conversación encima de lo abierto; en el teléfono la conversación es la
+  pestaña «Boni» (pantalla completa, `MobileApp.tsx`), y la app ya sabía abrir lo que le pide un atajo o una gráfica
+  de la pantalla de inicio (`Launcher.kt`, `navigate` en `store.ts`). Esto lo extiende con un destino más, `chat`:
+  - **el widget** «Conversación» (`ChatWidget.kt`): el círculo del escritorio solo, en una casilla de la pantalla de
+    inicio; un toque abre Boni en la pestaña «Boni», con la última conversación, encima de lo que hubiera abierto
+    (se cierran los ajustes, una gráfica, un registro venido de otra app y la lista de conversaciones; el texto de
+    un registro se manda antes, y un panel con algo escrito pregunta antes de irse). No enseña nada de Juan, así que
+    nunca se refresca ni lee el servidor;
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);
-  - el círculo en el teléfono y como widget del escritorio;
+  - el círculo en el teléfono sobre las demás apps (la 115: su forma, a la espera de Juan);
   - la decisión 3 de `conversacion.md` (la ventana, superficie por defecto): la fila «Conversación» abre aún la
     pantalla entera.
 
