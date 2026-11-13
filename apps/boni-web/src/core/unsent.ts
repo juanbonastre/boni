@@ -124,6 +124,42 @@ export const answered = (
     return left ? [left] : [];
   });
 
+/**
+ * The page's list once it is back on a phone (task 109): with the page hidden, Boni Android's worker sends what was
+ * kept (`keptAt`: when the page last kept its list) and takes out of the device's list (`kept`) what the server
+ * answered. What was kept and the device no longer holds was answered, so it goes here too, field by field: sent again
+ * it could write over what another device changed since. What changed here after `keptAt` stays as it is.
+ */
+export const stillKept = (
+  list: readonly UnsentWrite[],
+  kept: readonly UnsentWrite[],
+  keptAt: number,
+): UnsentWrite[] =>
+  list.flatMap((x) => {
+    if (x.at > keptAt) return [x];
+    const there = kept.find((k) => k.path === x.path && k.kind === x.kind);
+    if (!there) return [];
+    const left = only(x, there);
+    return left ? [left] : [];
+  });
+
+/** `w` with only the fields `k` still holds; null when none is left. */
+function only(w: UnsentWrite, k: UnsentWrite): UnsentWrite | null {
+  if (w.kind === "page" && k.kind === "page") {
+    const patch = Object.fromEntries(
+      Object.entries(w.patch).filter(([f]) => f in k.patch),
+    ) as PagePatch;
+    return Object.keys(patch).length ? { ...w, patch } : null;
+  }
+  if (w.kind === "row" && k.kind === "row") {
+    const values = Object.fromEntries(Object.entries(w.values).filter(([f]) => f in k.values));
+    const body = k.body === undefined ? undefined : w.body;
+    if (!Object.keys(values).length && body === undefined) return null;
+    return rowWrite(w.id, values, body, w.at);
+  }
+  return w;
+}
+
 /** `w` without the fields `c` carries; null when nothing of it is left. */
 function without(w: UnsentWrite, c: UnsentWrite): UnsentWrite | null {
   if (w.kind === "page" && c.kind === "page") {

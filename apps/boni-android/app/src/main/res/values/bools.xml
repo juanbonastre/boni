@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- True only in the test copy (the debug build, src/debug): Boni beside the real app, for tests on a phone. -->
+    <bool name="test_copy">false</bool>
+</resources>

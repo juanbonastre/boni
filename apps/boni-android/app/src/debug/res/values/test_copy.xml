@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The test copy (task 109): installed beside the real Boni (its own id, `.prueba`), pointed at a server made for the
+     test; it never asks for the notices' permission nor registers with the push distributor. -->
+<resources>
+    <string name="app_name">Boni prueba</string>
+    <bool name="test_copy">true</bool>
+</resources>

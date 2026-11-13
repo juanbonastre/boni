@@ -36,6 +36,12 @@ android {
     }
 
     buildTypes {
+        // The test copy (task 109): beside the real app on a phone, never in its place (its own id; the release's
+        // stays). Its name and what it leaves out are in src/debug.
+        debug {
+            applicationIdSuffix = ".prueba"
+            versionNameSuffix = "-prueba"
+        }
         release {
             isMinifyEnabled = false
             signingConfig =

@@ -19,13 +19,20 @@ async function openAndroid(
     examples?: Record<string, string>;
     /** Routes this server does not have yet (an older version): FastAPI's own 404. */
     missing?: string[];
+    /** What the device kept unsent at the start (`unsent.json`). */
+    unsent?: unknown[];
+    /** No connection at the start. */
+    offline?: boolean;
   } = {},
 ) {
   await page.addInitScript(
-    ({ examples, configured, launch, missing }) => {
+    ({ examples, configured, launch, missing, unsent, offline }) => {
       const w = window as unknown as Record<string, unknown>;
       const calls: string[] = [];
       const files = new Map<string, string>();
+      if (unsent) files.set("unsent.json", JSON.stringify(unsent));
+      // No connection while it is true (`__offline`).
+      w.__offline = offline;
       const answers = new Map<string, string>();
       const turns: unknown[] = [];
       const answered: unknown[] = [];
@@ -104,6 +111,7 @@ async function openAndroid(
         switch (method) {
           case "request":
             if (!settings.hasToken) return { ok: false, offline: false, notConfigured: true };
+            if (w.__offline) return { ok: false, offline: true, message: "offline" };
             // A turn of the conversation: kept to be looked at, answered with what a test set (`__nextTurns`, in
             // order) or one line of the model's.
             if (a[0] === "POST" && a[1] === "api/agent/turn") {
@@ -266,6 +274,12 @@ async function openAndroid(
           answers.delete(id);
           return v;
         },
+        // Written before it returns, as the app does (task 106).
+        keepUnsent(text: string) {
+          calls.push(`keepUnsent ${text.slice(0, 120)}`);
+          if (text === "[]") files.delete("unsent.json");
+          else files.set("unsent.json", text);
+        },
       };
       w.__androidCalls = calls;
       w.__turns = turns;
@@ -281,6 +295,8 @@ async function openAndroid(
       configured: opts.configured ?? true,
       launch: opts.launch ?? null,
       missing: opts.missing ?? [],
+      unsent: opts.unsent ?? null,
+      offline: opts.offline ?? false,
     },
   );
   await page.goto(opts.url ?? "/?still");
@@ -658,4 +674,55 @@ test("Boni Calendar's «Abrir en Boni»: its link opens the record as a page; Ba
     await page.evaluate(() => (window as unknown as { __boniBack: () => boolean }).__boniBack()),
   ).toBe(false);
   await expect(page.locator(".m-row")).toHaveCount(0);
+});
+
+test("back from the background, the page does not send again what the app sent while it was hidden (task 109)", async ({
+  page,
+}) => {
+  const write = (id: string, title: string) => ({
+    path: `api/pages/${id}`,
+    at: 1_000,
+    id,
+    kind: "page",
+    patch: { title },
+  });
+  // Offline at the start: what the device kept stays kept.
+  await openAndroid(page, {
+    offline: true,
+    unsent: [write("e_ejemplo_a", "Plan de ejemplo"), write("e_ejemplo_b", "Lista inventada")],
+  });
+  const puts = async (id: string) =>
+    (await calls(page)).filter((c) => c.startsWith(`request ["PUT","api/pages/${id}"`)).length;
+  const shown = (state: "hidden" | "visible") =>
+    page.evaluate((s) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => s });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, state);
+  const tick = () =>
+    page.evaluate(() =>
+      (window as unknown as { __boniEvent: (j: string) => void }).__boniEvent(
+        JSON.stringify({ type: "tick", minute: 1 }),
+      ),
+    );
+  await expect.poll(() => puts("e_ejemplo_a")).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    (window as unknown as { __offline: boolean }).__offline = false;
+  });
+  // The app goes to the background: the page keeps its list; the app's worker sends one of them and takes it out.
+  await shown("hidden");
+  await page.evaluate(() => {
+    const files = (window as unknown as { __androidFiles: Map<string, string> }).__androidFiles;
+    const list = JSON.parse(files.get("unsent.json") ?? "[]") as { id: string }[];
+    files.set("unsent.json", JSON.stringify(list.filter((x) => x.id !== "e_ejemplo_a")));
+  });
+  const [a, b] = [await puts("e_ejemplo_a"), await puts("e_ejemplo_b")];
+  // Back: the next minute sends only what the app did not.
+  await shown("visible");
+  await expect
+    .poll(async () => {
+      await tick();
+      return puts("e_ejemplo_b");
+    })
+    .toBeGreaterThan(b);
+  expect(await puts("e_ejemplo_a")).toBe(a);
 });
