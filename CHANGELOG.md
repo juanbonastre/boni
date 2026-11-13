@@ -5,6 +5,70 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-13 (forty-fourth) — server 0.8.120 · Boni desktop 0.4.88 · Boni Android
+
+Needs:
+- The server, 0.8.120, to deploy first. The block on «Ver en el mapa», the page chat's count and its rows, the routes
+  that run their action, a page's period and its tables filtered by the server, the roles of a collection, and the
+  backups past 4 GB are in it. No store migration.
+- Boni desktop 0.4.88 (`release/boni_0.4.88_amd64.deb`), after the server: what is typed and closed at once is kept,
+  offline too (the desktop's own process keeps it).
+- Boni Calendar desktop stays 0.8.25: nothing it ships changed (`apps/calendar-web`, `apps/calendar-desktop` and
+  `packages/calendar` are as in the forty-third).
+- Boni Android from main, through Obtainium (`boni-android` run on 84bb438, green): it carries the same web as the
+  desktop. Boni Calendar Android: no new APK. `Net.kt` and `paths.cjs` did not change: the only new route,
+  `PUT /api/data/types/:type/roles`, is under `api/data/`, already allowed.
+
+What it brings (#404–#411):
+- **«Ver en el mapa» on a block** (task 87, fourth part; D-62, P27): the map puts a page's block in the centre, with
+  the values that filter it, its collection and who writes there. «Abrir» on a block opens its page.
+- **A page's chat says how many** («en 14 movimientos», from the code) and «Ver las filas» opens those rows with the
+  values it read them with. It may add a block to its page, always with a card first; Undo takes it back with its run.
+- **A page's values, what was missing** (task 102; D-63): a «Periodo» control («Desde» and «Hasta», both days
+  included); a table's rule over a relation («es» or «no es» a record, fixed or from a control); a page's tables are
+  filtered by the server (a year of 4,003 movements: about 56 ms); a link's fixed value is written in its panel.
+- **A collection's roles as tags** (task 4; D-64): on a collection's page, beside «IA», «Calendario», «Tareas» and
+  «Dinero», filled when it has them and faint when it could. Each opens its roles, a field each, chosen in place;
+  «Quitar» takes it away with «Deshacer». What it would hide in Boni Calendar is said before. Also `set_roles` in the
+  MCP.
+- **What is typed and closed at once is not lost** (task 100; D-65): a note's title and a property were lost when the
+  window closed with the cursor in them; offline, everything typed was lost on closing. Now what has no answer yet is
+  kept on the device and sent when the app opens and every minute; offline it stays on the screen with one notice.
+  Quitting waits 1 s at most.
+- **Backups past 4 GB** (task 101; A-27): files up to 1 GB and more than 4 GB in total are exported and imported
+  whole, a part at a time; a file that does not come back is named with the records that point at it.
+- Routes that run their action themselves (task 95, second part; A-26): Boni Calendar's add, split, colour and remove,
+  and a collection's tree. «Buscar», «Añadir paso» and a turn's steps take their icons from the actions; the card of
+  removing a calendar names it, and a Bandeja card says its day and time.
+- Inside: the desktop e2e on a virtual screen here too, and one queue for the e2e and unit tests of every worktree
+  (task 99, T-08); the backup's memory test reads after two collections (task 105).
+
+For Juan to look at, because they change his data or where it goes, or their shape is new:
+- **Make a new backup after this release** (task 101): backups made since files over 50 MB could be dropped (#394) did
+  not give those files back on import. The new one does.
+- **What is typed offline is sent later** (task 100, D-65): the last written wins; another device's version stays in
+  the note's history. Not tried on the phone (Boni Android keeps the list asynchronously).
+- **A collection's roles** (task 4, D-64): «Quitar» on «Calendario» or «Tareas» takes the collection out of Boni
+  Calendar. His account already goes by roles, so for him only the new tags change. Not tried against his server.
+- **The page chat adding a block** (task 87): no real model has answered in it yet (scripted planner only).
+
+Still missing, from each PR's review:
+- Task 87, fourth part: a real model answering in the chat; the AI or the MCP writing «Botón» or «Chat» blocks; more
+  actions for a button; the map test with a button's run; an e2e of the added block's Undo.
+- Task 95, second part: the multi-action routes (pages, the Bandeja, rows by kind, `press`, Boni Calendar's `apply`,
+  v1), `data.ts`'s schema routes, mail, extensions, flows, row-ui and reminders still run their own code after the
+  policy; so do the MCP's `create`, `edit`, `append`, `set_properties`, `trash`, `set_description`,
+  `create_collection`, `upload_file`, `finanzas_*` and the flows' tools. The Bandeja card's date and the icons as
+  drawn have no test.
+- Task 102: a «Página» button's fixed value from its panel; a table cut by the server at 2,000 rows does not say so.
+- Task 101: an entry of 4 GB or more is refused; a type's `.ndjson` is read whole (256 MB at most); after a failed
+  import the files already brought back stay.
+- Task 4: the toast's «Deshacer» leaves `calendar/byRoles` (the MCP's `undo` takes it all back); the money charts and
+  the reconciliation still name Movimiento (step 3c, for a second money collection).
+- Task 100: not tried on Boni Android; a new page closed before the server creates it is not kept (as before); in a
+  browser a write in flight at closing is sent again at the next start.
+- Task 99: sessions on branches cut before #406 do not take the queue.
+
 ## 2026-11-12 (forty-third) — server 0.8.119 · Boni desktop 0.4.87 · Boni Calendar desktop 0.8.25 · Boni Android · Boni Calendar Android
 
 Needs:
