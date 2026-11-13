@@ -204,6 +204,184 @@ test("a note opened, its text clicked, walked with the arrows and selected, then
   await expect.poll(async () => (await writes()).length, { timeout: 400 }).toBe(2);
 });
 
+/** What a line shows a person: its words without the marks hidden around them. */
+const seen = (line: ReturnType<Page["locator"]>) =>
+  line.evaluate((e) => {
+    const copy = e.cloneNode(true) as HTMLElement;
+    for (const m of copy.querySelectorAll(".md-hide")) m.remove();
+    return copy.textContent ?? "";
+  });
+/** The words of the first line from `from`, `n` letters long, selected with the keys. */
+async function selectIn(page: Page, line: ReturnType<Page["locator"]>, from: number, n: number) {
+  await line.click();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < from; i++) await page.keyboard.press("ArrowRight");
+  for (let i = 0; i < n; i++) await page.keyboard.press("Shift+ArrowRight");
+}
+const bar = (page: Page) => page.getByRole("toolbar", { name: "Formato" });
+
+test("inline formats (task 2f): typed Markdown painted, its marks shown only at the caret; Ctrl+B, Ctrl+I, Ctrl+Shift+X, a backtick and the menu put them on and off, each one step of Undo", async ({
+  page,
+}) => {
+  await pageWith(page, ["Una idea suelta"]);
+  const line = lines(page).first();
+  // Typed as Markdown: painted, the marks there while the caret is in it, hidden once it leaves.
+  await page.keyboard.type(" y **negrita**", { delay: 10 });
+  await expect(line.locator(".md-strong")).toHaveText("negrita");
+  await expect(line.locator(".md-mark:not(.md-hide)")).toHaveCount(2);
+  await page.keyboard.press("Home");
+  await expect(line.locator(".md-mark.md-hide")).toHaveCount(2);
+  expect(await seen(line)).toBe("Una idea suelta y negrita");
+  // A selection: Ctrl+B on and off, the selection kept; the menu shows it pressed.
+  await selectIn(page, line, 4, 4);
+  await expect(bar(page)).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Negrita" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  await page.keyboard.press("Control+b");
+  await expect.poll(() => values(page)).toEqual(["Una **idea** suelta y **negrita**"]);
+  await expect(bar(page).getByRole("button", { name: "Negrita" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.keyboard.press("Control+b");
+  await expect.poll(() => values(page)).toEqual(["Una idea suelta y **negrita**"]);
+  // Each a step of Undo of its own, and Redo brings it back.
+  await page.keyboard.press("Control+i");
+  await expect.poll(() => values(page)).toEqual(["Una *idea* suelta y **negrita**"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => values(page)).toEqual(["Una idea suelta y **negrita**"]);
+  await page.keyboard.press("Control+y");
+  await expect.poll(() => values(page)).toEqual(["Una *idea* suelta y **negrita**"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => values(page)).toEqual(["Una idea suelta y **negrita**"]);
+  // Strikethrough by its keys; code by a backtick over the words; the menu's buttons the same.
+  await selectIn(page, line, 4, 4);
+  await page.keyboard.press("Control+Shift+x");
+  await expect.poll(() => values(page)).toEqual(["Una ~~idea~~ suelta y **negrita**"]);
+  await page.keyboard.press("Control+Shift+x");
+  await selectIn(page, line, 9, 6);
+  await page.keyboard.type("`");
+  await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita**"]);
+  await expect(line.locator(".md-code")).toHaveText("suelta");
+  await selectIn(page, line, 4, 4);
+  await bar(page).getByRole("button", { name: "Cursiva" }).click();
+  await expect.poll(() => values(page)).toEqual(["Una *idea* `suelta` y **negrita**"]);
+  await expect(page.locator(".doc-blocks .doc-run")).toBeFocused();
+  await bar(page).getByRole("button", { name: "Cursiva" }).click();
+  await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita**"]);
+  await page.screenshot({ path: `${SHOTS}/editor-format.png` });
+  // With no selection: the marks to type between; inside a format, the format off.
+  await page.keyboard.press("End");
+  await page.keyboard.type(" ", { delay: 10 });
+  await page.keyboard.press("Control+b");
+  await page.keyboard.type("más", { delay: 10 });
+  await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita** **más**"]);
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("Control+b");
+  await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita** más"]);
+  // Across two blocks, each block's words; the second time, off in both.
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Otra línea", { delay: 10 });
+  await lines(page).first().click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+ArrowDown");
+  await page.keyboard.press("Shift+End");
+  await page.keyboard.press("Control+i");
+  await expect
+    .poll(() => values(page))
+    .toEqual(["Una idea `suelta` y **negrita** más", "*Otra línea*"]);
+});
+
+test("links (task 2f): Ctrl+K on words, an address pasted over them; the caret in one shows it to open, change or take off; Ctrl+K elsewhere is the search; HTML pasted is plain text", async ({
+  page,
+}) => {
+  await pageWith(page, ["Mira esta web hoy"]);
+  const line = lines(page).first();
+  await selectIn(page, line, 5, 8);
+  await page.keyboard.press("Control+k");
+  const field = bar(page).getByRole("textbox", { name: "Dirección del enlace" });
+  await expect(field).toBeFocused();
+  await expect(page.locator(".find-box")).toHaveCount(0);
+  // Not an address: said, and nothing written.
+  await field.fill("palabra");
+  await field.press("Enter");
+  await expect(bar(page).getByRole("alert")).toHaveText("No es una dirección");
+  await field.fill("example.com/a");
+  await field.press("Enter");
+  await expect.poll(() => values(page)).toEqual(["Mira [esta web](https://example.com/a) hoy"]);
+  await expect(line.locator(".md-link")).toHaveText("esta web");
+  // The caret in it: its address as text, to open, change or take off.
+  await expect(bar(page).locator(".fmt-url")).toHaveText("https://example.com/a");
+  await bar(page).getByRole("button", { name: "Cambiar" }).click();
+  await expect(field).toHaveValue("https://example.com/a");
+  await field.fill("https://example.org/b");
+  await field.press("Enter");
+  await expect.poll(() => values(page)).toEqual(["Mira [esta web](https://example.org/b) hoy"]);
+  await bar(page).getByRole("button", { name: "Quitar" }).click();
+  await expect.poll(() => values(page)).toEqual(["Mira esta web hoy"]);
+  // An address pasted over words makes them its link; one step of Undo takes it off.
+  await selectIn(page, line, 5, 4);
+  await paste(page, "https://example.com/x");
+  await expect.poll(() => values(page)).toEqual(["Mira [esta](https://example.com/x) web hoy"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => values(page)).toEqual(["Mira esta web hoy"]);
+  // With the caret in plain words Ctrl+K is the search, as everywhere.
+  await page.keyboard.press("End");
+  await page.keyboard.press("Control+k");
+  await expect(page.locator(".find-box")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".find-box")).toHaveCount(0);
+  // HTML from another app comes in as its plain text, never painted.
+  await line.click();
+  await page.keyboard.press("End");
+  await page.evaluate(() => {
+    const data = new DataTransfer();
+    data.setData("text/html", '<b>negrita</b> <a href="https://example.com">enlace</a>');
+    data.setData("text/plain", " negrita enlace");
+    (document.activeElement ?? document.body).dispatchEvent(
+      new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect.poll(() => values(page)).toEqual(["Mira esta web hoy negrita enlace"]);
+  await expect(line.locator("b, a")).toHaveCount(0);
+});
+
+test("a note with every format, opened, clicked, selected and left, is not written (D-66); a format put on writes the same bytes with its marks", async ({
+  page,
+}) => {
+  const body =
+    "Texto con __negrita__, _cursiva_, ~~tachado~~, `código` y [enlace](<https://example.com/a b>).\n\n" +
+    "***Las dos*** y [[Nota enlazada|alias]] y https://example.com/x.\n";
+  await openRayuela(page, body);
+  const text = page.locator(".row-doc .blk-input");
+  await expect(text.first().locator(".md-strong")).toHaveText("negrita");
+  expect(await seen(text.nth(1))).toBe("Las dos y alias y https://example.com/x.");
+  await selectIn(page, text.first(), 10, 12);
+  await expect(bar(page)).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("End");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.locator(".row-doc .doc-title").click();
+  await page.waitForTimeout(900);
+  const writes = async () =>
+    (await recorded(page)).requests.filter((r) => r.startsWith("PUT api/data/rows/r1"));
+  expect(await writes()).toEqual([]);
+  // «Texto» made bold: written once, everything else as it was.
+  await selectIn(page, text.first(), 0, 5);
+  await page.keyboard.press("Control+b");
+  await expect.poll(async () => (await writes()).length, { timeout: 3000 }).toBe(1);
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+      b.startsWith("PUT api/data/rows/r1"),
+    ),
+  );
+  expect(sent.at(-1)).toContain(JSON.stringify(body.replace("Texto", "**Texto**")).slice(1, -1));
+});
+
 /**
  * Twenty letters typed at the end of this line, each shown before the next one is pressed. What is timed is what Juan
  * would feel: from each key to the frame that shows it, as the browser measures it (Event Timing): the usual one (the
@@ -251,7 +429,7 @@ test("a page of a thousand blocks opens and is typed in without lag (A-15)", asy
         : {
             id: `b${i}`,
             type: "text",
-            text: `Párrafo ${i}: lo que se escribió aquel día, con sus detalles.`,
+            text: `Párrafo ${i}: lo que se **escribió** aquel día, con \`sus\` *detalles*.`,
           },
   );
   await openApp(page, "/?still", {
@@ -282,7 +460,7 @@ test("a note of three thousand paragraphs opens and is typed in without lag (A-1
       ? `## Día ${i / 50 + 1}`
       : i % 7 === 0
         ? `- Una cosa que pasó, la número ${i}`
-        : `Párrafo ${i}: lo que se escribió aquel día, con sus detalles.`,
+        : `Párrafo ${i}: lo que se **escribió** aquel día, con [sus](https://example.com) *detalles*.`,
   );
   const started = await openRayuela(page, `${paragraphs.join("\n\n")}\n`);
   const text = page.locator(".row-doc .blk-input");

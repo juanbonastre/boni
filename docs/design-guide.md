@@ -595,7 +595,7 @@ contraseña ni un código aquí» under a question.
   in one line under the fields. No dialog.
 - **Notes as pages** (2026-10-22): a row's text is edited with the page's block editor (headings, lists, to-dos,
   quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
-  an Obsidian embed that found no file, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
+  an Obsidian embed that found no file) shows as written. A note is titled by its first `# Heading`, never its file's slug.
   Its properties start unfolded (Juan, 2026-11-02: they are what the page is about); folded ("Ocultar propiedades",
   a chevron; "12 propiedades" to unfold) they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
   wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
@@ -625,6 +625,28 @@ contraseña ni un código aquí» under a question.
   text, not whole blocks (those are Esc and Shift+arrows); Supr at a block's end joins the next one; the «/» menu shows
   only in the block being written; a block's length is no longer cut while typing; a Markdown shortcut turns a line
   only as it is typed; the text is one field for a screen reader («Texto»), not one per block named by its kind.
+- **Inline format** (task 2f, 2026-11-13; Obsidian's live preview as the reference). Bold, italic, strikethrough,
+  code, links, addresses and mentions of notes are painted in the text: the text stays the Markdown a person writes
+  (`**negrita**`, `__negrita__`, `*cursiva*`, `~~tachado~~`, a backtick, `[palabras](dirección)`, `<https://…>`, a bare
+  `https://…`, `[[Nota]]` and `[[Nota|alias]]`), read as CommonMark reads it, and saved as it was written, byte for
+  byte (D-67). Its marks are hidden, except in the format the caret or a selection's end is in, where they show dimmed
+  (a click shows them after the pointer lifts, so nothing moves under it; with the text not focused, none show).
+  Bold weighs 650; code is monospace on a soft box; links and addresses are the accent, underlined; a mention is the
+  accent on its soft colour. A code block and an image's words are never formatted. Each format comes on by its
+  Markdown typed, by its keys or by the menu over selected text, and the same key or button takes it off:
+  **Ctrl+B** bold, **Ctrl+I** italic, **Ctrl+Shift+X** strikethrough (Slack's; Ctrl+Shift+S is a browser's
+  screenshot), a **backtick** typed over words makes them code (Ctrl+E is Boni's window), **Ctrl+K** with words
+  selected (or the caret in a link) asks for a link's address; elsewhere Ctrl+K is still the search. Ctrl+U does
+  nothing (Markdown has no underline). With no selection a key puts its marks with the caret between them, or, inside
+  a format of its kind, takes it off. Over several blocks, each block's words take it. Each is one step of Ctrl+Z.
+  **The menu** (`FormatBar`): a row of buttons (Negrita, Cursiva, Tachado, Código, Enlace), each pressed when the
+  selection has it, over the selection, below it on a touch screen (the phone's own bar is above it), its buttons
+  40 px there; a press keeps the text's focus and selection. «Enlace» opens a field for the address
+  («Dirección del enlace»: `example.com` becomes `https://example.com`; what is no address says «No es una
+  dirección»; Enter applies, Esc leaves). With the caret in a link the menu shows its address as plain text, «Abrir»
+  (web addresses only), «Cambiar» and «Quitar» (its words stay). **Ctrl+click** on a link opens it; a click alone
+  puts the caret in it. An address pasted over words makes them its link; anything else pasted is plain text, HTML
+  never painted. A mention is painted but opens nothing yet (finding a note by its title needs the server).
 - **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
   from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
   per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the
@@ -662,7 +684,8 @@ contraseña ni un código aquí» under a question.
   each, up to 4), Shift+Tab takes it out; an empty nested list item comes out with Enter before it ends the list; a
   block moves, is dragged and deleted with what is nested under it. Markdown also "1. ", "> " (toggle), `" ` (quote)
   and "```" (code). **Ctrl+Z / Ctrl+Shift+Z** undo and redo the page's changes (typing in one block for a moment is
-  one step). **Ctrl+K** (and "Buscar" at the top of the sidebar) opens Notion's search: a box over the window, pages
+  one step). **Ctrl+K** (and "Buscar" at the top of the sidebar; in the text, with words selected or the caret in a
+  link, it is the link's address instead) opens Notion's search: a box over the window, pages
   matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nuevo flujo (Flujos)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words and its action's icon, read from the definitions, `GET /api/agent/actions`, task 95); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
