@@ -242,7 +242,7 @@ class Shell private constructor(context: Context) {
             !had && next.isNotEmpty()
         }
         // The first kept write, or the last one as the app hides: a job that sends them, also if the app is closed.
-        if ((wrote || !foreground) && hasUnsent()) QueueWorker.schedule(app, 0)
+        if ((wrote || !foreground) && hasUnsent()) QueueWorker.schedule(app, 0, wait = !foreground)
         Log.i(MainActivity.TAG, "unsent: kept ${list.size}, foreground $foreground")
     }
 

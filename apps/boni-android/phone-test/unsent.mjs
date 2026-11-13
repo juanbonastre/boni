@@ -6,13 +6,13 @@
 //   flock -w 3600 "$(git rev-parse --git-common-dir)/boni-phone.lock" node apps/boni-android/phone-test/unsent.mjs <boni-prueba.apk>
 //
 // The APK is CI's `boni-android-test-apk` artifact of a branch (boni-android.yml). The phone must be unlocked, with
-// the screen on. «No connection» is the reverse taken away, so the phone's own network never changes. The page is
+// the screen on. «No connection» is a door on this laptop that closes, so the phone's own network never changes. The page is
 // read through the test copy's WebView devtools (only the test copy has them); every key goes with the test copy in
 // front, checked first. It prints each scenario's result and the app's log lines with their times.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -53,12 +53,21 @@ const versionOf = (pkg) =>
 const realBefore = versionOf(REAL);
 say(`phone user ${user}; Boni (the real app): ${realBefore || "not installed"}`);
 
+/** Whether the screen is on and unlocked: with it off or locked no app is in front, and nothing can be typed. */
+const screenOpen = () =>
+  /mWakefulness=Awake/.test(sh("dumpsys power")) &&
+  !/isKeyguardShowing=true/.test(sh("dumpsys window"));
+const OPEN =
+  "Unlock the phone and keep its screen on for the whole test (Juan sets how long it stays on)";
+if (!screenOpen()) throw new Error(`The screen is off or locked. ${OPEN}`);
+
 /** The test copy is the app in front: every key and tap waits for that. */
 const front = () => sh("dumpsys activity activities").match(/topResumedActivity[^\n]*/)?.[0] ?? "";
 function mustFront() {
   const f = front();
-  if (!f.includes(`${PKG}/`))
-    throw new Error(`The test copy is not in front (${f.trim() || "nothing"})`);
+  if (f.includes(`${PKG}/`)) return;
+  if (!screenOpen()) throw new Error(`The screen went off or locked. ${OPEN}`);
+  throw new Error(`The test copy is not in front (${f.trim() || "nothing"})`);
 }
 const pid = () => sh(`pidof ${PKG} || true`).trim();
 
@@ -94,12 +103,16 @@ const ids = seedAccount(dir, "ejemplo", password, [{ key: "nota", name: "Nota", 
   [NOTE]: "---\nlugar: Sala de ejemplo\n---\n\n# Prueba del telefono\n\nTexto inicial.\n",
 });
 const noteId = ids.get(NOTE);
-const port = await new Promise((done) => {
-  const s = createServer().listen(0, "127.0.0.1", () => {
-    const p = s.address().port;
-    s.close(() => done(p));
+const freePort = () =>
+  new Promise((done) => {
+    const s = createServer().listen(0, "127.0.0.1", () => {
+      const p = s.address().port;
+      s.close(() => done(p));
+    });
   });
-});
+/** The server's own port, and the door's (what the phone reaches through `adb reverse`). */
+const serverPort = await freePort();
+const port = await freePort();
 const url = `http://localhost:${port}`;
 const server = spawn(
   process.execPath,
@@ -109,7 +122,7 @@ const server = spawn(
     env: {
       ...process.env,
       BONI_DB: join(dir, "db.sqlite"),
-      BONI_PORT: String(port),
+      BONI_PORT: String(serverPort),
       BONI_HOST: "127.0.0.1",
       BONI_WRITE: "1",
       // No model is ever called: one would fail at once.
@@ -127,7 +140,7 @@ await new Promise((done, fail) => {
 /** Another device of the same account: the laptop, through the same server. */
 let token = "";
 async function api(method, path, body) {
-  const r = await fetch(`http://127.0.0.1:${port}/${path}`, {
+  const r = await fetch(`http://127.0.0.1:${serverPort}/${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -209,20 +222,48 @@ async function until(what, fn, ms) {
   }
 }
 
-/** The note's text on the phone's screen. */
+/** The note's text on the phone's screen: its lines (the editor's blocks, as e2e-boni/mobile.spec.ts reads them). */
 const shownBody = () =>
   cdp.eval(`(() => {
-    const ed = document.querySelector('.m-row [contenteditable="true"]');
-    return ed ? ed.innerText : null;
+    const lines = [...document.querySelectorAll(".row-doc .blk-input")];
+    return lines.length ? lines.map((l) => l.textContent).join("\\n") : null;
   })()`);
+/** What the test copy shows, to say so when something is not there. */
+const onScreen = () =>
+  cdp
+    .eval(`location.href + " | " + (document.body?.innerText ?? "").slice(0, 300)`)
+    .catch(() => "?");
+
+/** What has the focus on the page, to say so when the keys went nowhere. */
+const focusOf = () =>
+  cdp
+    .eval(`(() => {
+      const a = document.activeElement;
+      return (a ? a.tagName + "." + a.className : "nothing") + (document.querySelector(".modal") ? ", a window open" : "");
+    })()`)
+    .catch(() => "?");
+/** Typed at the end of the note, and on its screen before going on: keys that went nowhere fail here, not later. */
+async function typeInNote(text, shows) {
+  await caretAtEnd();
+  await type(text);
+  await until(
+    "the typed text on the screen",
+    async () => shows.test(await shownBody()),
+    10_000,
+  ).catch(async (e) => {
+    throw new Error(
+      `${e.message}; the screen shows ${JSON.stringify(await shownBody())}, the focus on ${await focusOf()}`,
+    );
+  });
+}
 
 /** The caret at the end of the note's text (a tap on it, as the page takes it). */
 const caretAtEnd = () =>
   cdp.eval(`(() => {
-    const ed = document.querySelector('.m-row [contenteditable="true"]');
-    if (!ed) return false;
-    const blocks = ed.querySelectorAll('.blk-input');
-    const last = blocks.length ? blocks[blocks.length - 1] : ed;
+    const lines = document.querySelectorAll(".row-doc .blk-input");
+    if (!lines.length) return false;
+    const last = lines[lines.length - 1];
+    const ed = last.closest('[contenteditable="true"]') ?? last;
     ed.focus();
     const r = document.createRange();
     r.selectNodeContents(last);
@@ -234,13 +275,68 @@ const caretAtEnd = () =>
   })()`);
 
 function openNote() {
+  // With the app ended, its task would only come back to the front with the intent it started with, not the link's:
+  // a fresh task then, as opening it from the home screen is (the process is gone either way).
+  const fresh = pid() ? "" : "-f 0x10008000 "; // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK
   sh(
-    `am start --user ${user} -n ${ACTIVITY} -a android.intent.action.VIEW -d 'boni://note?id=${noteId}'`,
+    `am start --user ${user} ${fresh}-n ${ACTIVITY} -a android.intent.action.VIEW -d 'boni://note?id=${noteId}'`,
   );
 }
+/** How many jobs the system holds for the test copy (WorkManager's): filtered on the phone, never another app's. */
+const jobsOnPhone = () => sh(`dumpsys jobscheduler | grep -c 'JOB #.*${PKG}/' || true`).trim();
+/** After a kill: what the phone kept and the jobs that will send it, said in the log. */
+async function afterKill(died) {
+  say(
+    `killed at ${died}; kept ${keptOnPhone()}; jobs ${jobsOnPhone()}; the server ${JSON.stringify(await bodyOnServer())}`,
+  );
+}
+/** The server's note to have `shows`, or a failure saying what it has. */
+const serverShows = (shows, ms) =>
+  until("the server to have it", async () => shows.test(await bodyOnServer()), ms).catch(
+    async (e) => {
+      throw new Error(
+        `${e.message}; the server has ${JSON.stringify(await bodyOnServer())}, the phone kept ${keptOnPhone()}, jobs ${jobsOnPhone()}`,
+      );
+    },
+  );
 
-const offline = () => adb("reverse", "--remove", `tcp:${port}`);
-const online = () => adb("reverse", `tcp:${port}`, `tcp:${port}`);
+/** The test copy's kept list on the phone (a debug build: `run-as` reads its files). */
+const keptOnPhone = () =>
+  sh(`run-as ${PKG} --user ${user} cat files/store/unsent.json 2>/dev/null || echo none`).trim();
+
+/**
+ * «No connection» is a door between the phone's tunnel and the server that closes, cutting what is open: an
+ * `adb reverse` taken away leaves the open connections working, and the app reuses them (its first run did so).
+ */
+let up = true;
+const open = new Set();
+const door = createServer((c) => {
+  if (!up) return c.destroy();
+  const s = connect(serverPort, "127.0.0.1");
+  open.add(c);
+  open.add(s);
+  const end = () => {
+    c.destroy();
+    s.destroy();
+    open.delete(c);
+    open.delete(s);
+  };
+  for (const x of [c, s]) {
+    x.on("error", end);
+    x.on("close", end);
+  }
+  c.pipe(s);
+  s.pipe(c);
+});
+await new Promise((done) => door.listen(port, "127.0.0.1", done));
+const offline = () => {
+  up = false;
+  for (const x of open) x.destroy();
+  open.clear();
+};
+const online = () => {
+  up = true;
+};
 
 /** The test copy's own log lines since `since` (only its uid: never another app's). */
 let uid = "";
@@ -269,6 +365,13 @@ async function scenario(name, run) {
   for (const l of logSince(since)) console.log("   ", l);
 }
 
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"])
+  process.on(signal, () => {
+    results.push(`FAIL stopped (${signal})`);
+    cleanUp();
+    process.exit(1);
+  });
+
 try {
   // ---------- the test copy, beside the real app ----------
   let out = spawnSync("adb", ["install", "--user", user, "-r", apk], { encoding: "utf8" });
@@ -284,12 +387,22 @@ try {
     throw new Error(
       "The test copy has no network permission: Juan grants it in its app info, then run again",
     );
+  adb("reverse", `tcp:${port}`, `tcp:${port}`);
   online();
   sh(`am start --user ${user} -n ${ACTIVITY}`);
   await sleep(1500);
   await attach();
   mustFront();
-  // Log in, as the first start asks (the form of «Configurar servidor»).
+  // Log in, as the first start asks (the form of «Configurar servidor»), once the page has drawn it.
+  const setUp = `[...document.querySelectorAll("button")].some((x) => /Configurar servidor|Set up server/.test(x.textContent))`;
+  await until("the first start's «Configurar servidor»", () => cdp.eval(setUp), 30_000).catch(
+    async (e) => {
+      const shown = await cdp
+        .eval(`location.href + " | " + (document.body?.innerText ?? "").slice(0, 300)`)
+        .catch(() => "?");
+      throw new Error(`${e.message}; the test copy shows: ${JSON.stringify(shown)}`);
+    },
+  );
   await cdp.eval(`(async () => {
     const b = [...document.querySelectorAll("button")].find((x) => /Configurar servidor|Set up server/.test(x.textContent));
     b.click();
@@ -310,51 +423,75 @@ try {
     20_000,
   );
   say("logged in to the test server");
+  // The settings window stays open after the login: Back closes it, as a person does (a note opened under it takes
+  // no keys).
+  for (let i = 0; i < 5 && (await cdp.eval(`!!document.querySelector(".modal")`)); i++) {
+    mustFront();
+    sh("input keyevent KEYCODE_BACK");
+    await sleep(700);
+  }
+  if (await cdp.eval(`!!document.querySelector(".modal")`))
+    throw new Error("the settings window did not close");
 
   const ready = async () => {
     await sleep(1500);
     await attach();
     mustFront();
-    await until("the note on the screen", async () => (await shownBody()) !== null, 20_000);
+    await until("the note on the screen", async () => (await shownBody()) !== null, 20_000).catch(
+      async (e) => {
+        throw new Error(`${e.message}; the test copy shows: ${JSON.stringify(await onScreen())}`);
+      },
+    );
   };
 
   await scenario(
     "typed with no connection, hidden and killed at once, opened again: nothing lost",
     async () => {
+      online();
       openNote();
       await ready();
       offline();
-      await caretAtEnd();
-      await type(" uno");
+      await typeInNote(" uno", /uno/i);
       await sleep(4000); // its save failed: kept on the device
+      say(`before Home: the screen ${JSON.stringify(await shownBody())}; kept ${keptOnPhone()}`);
       const died = homeAndKill("dos"); // the last keys, then Home: only the hide notice keeps them
       if (!died) throw new Error("the system did not let the app be killed");
-      say(`killed at ${died}`);
+      const kept = keptOnPhone();
+      const before = await bodyOnServer();
+      say(
+        `killed at ${died}; kept ${kept}; jobs ${jobsOnPhone()}; the server ${JSON.stringify(before)}`,
+      );
+      if (/uno\s*dos/i.test(before))
+        throw new Error("the server had it before the network was back");
+      if (!/uno\s*dos/i.test(kept)) throw new Error("the last keys were not kept on the phone");
+      // Opened again with the network back: a note opens from the server (offline the app says so instead).
+      online();
       openNote();
       await ready();
-      const shown = await shownBody();
-      if (!/uno\s*dos/.test(shown)) throw new Error(`the screen shows ${JSON.stringify(shown)}`);
-      online();
       await until(
-        "the server to have it",
-        async () => /uno\s*dos/.test(await bodyOnServer()),
-        120_000,
-      );
-      return "on the screen offline, and on the server once the network was back";
+        "the screen to show it",
+        async () => /uno\s*dos/i.test(await shownBody()),
+        30_000,
+      ).catch(async (e) => {
+        throw new Error(`${e.message}; the screen shows ${JSON.stringify(await shownBody())}`);
+      });
+      await serverShows(/uno\s*dos/i, 120_000);
+      return "kept on the phone through the kill; on the screen and on the server once opened with the network back";
     },
   );
 
   await scenario(
     "typed with no connection, hidden and killed, never opened again: the app sends it",
     async () => {
+      online();
       openNote();
       await ready();
       offline();
-      await caretAtEnd();
-      await type(" tres");
+      await typeInNote(" tres", /tres/i);
       await sleep(4000);
       const died = homeAndKill();
-      say(`killed at ${died}`);
+      if (!died) throw new Error("the system did not let the app be killed");
+      await afterKill(died);
       online();
       const t0 = Date.now();
       let opened = false;
@@ -362,10 +499,14 @@ try {
         "the server to have it",
         async () => {
           if (front().includes(`${PKG}/`)) opened = true;
-          return /tres/.test(await bodyOnServer());
+          return /tres/i.test(await bodyOnServer());
         },
         8 * 60_000,
-      );
+      ).catch(async (e) => {
+        throw new Error(
+          `${e.message}; the server has ${JSON.stringify(await bodyOnServer())}, the phone kept ${keptOnPhone()}, jobs ${jobsOnPhone()}`,
+        );
+      });
       if (opened) throw new Error("the test copy came to the front");
       return `on the server ${Math.round((Date.now() - t0) / 1000)} s after the network came back, the app closed`;
     },
@@ -374,20 +515,16 @@ try {
   await scenario(
     "hidden, sent by the app meanwhile, changed on another device: back, it is not written over",
     async () => {
+      online();
       openNote();
       await ready();
       offline();
-      await caretAtEnd();
-      await type(" cuatro");
+      await typeInNote(" cuatro", /cuatro/i);
       await sleep(4000);
       mustFront();
       sh("input keyevent KEYCODE_HOME");
       online();
-      await until(
-        "the server to have it",
-        async () => /cuatro/.test(await bodyOnServer()),
-        8 * 60_000,
-      );
+      await serverShows(/cuatro/i, 8 * 60_000);
       if (!pid()) return "inconclusive: the system ended the app meanwhile";
       const other = "Cambiado en otro equipo.";
       await api("PUT", `api/data/rows/${noteId}`, { values: {}, body: other });
@@ -400,26 +537,66 @@ try {
   );
 
   await scenario("typed with a connection, hidden and killed at once: on the server", async () => {
+    online();
     openNote();
     await ready();
-    await caretAtEnd();
-    await type(" cinco");
-    homeAndKill("seis");
-    await until(
-      "the server to have it",
-      async () => /cinco\s*seis/.test(await bodyOnServer()),
-      8 * 60_000,
-    );
+    await typeInNote(" cinco", /cinco/i);
+    const died = homeAndKill("seis");
+    if (!died) throw new Error("the system did not let the app be killed");
+    await afterKill(died);
+    // At the kill it is on the server or kept on the phone; kept, the app sends it, closed.
+    if (!/cinco\s*seis/i.test(`${await bodyOnServer()} ${keptOnPhone()}`))
+      throw new Error("lost: neither on the server nor kept on the phone");
+    await serverShows(/cinco\s*seis/i, 8 * 60_000);
     return "";
   });
 
   await scenario(
+    "the race, again and again: typed, hidden and killed at once, with and without a connection: each time on the server or kept",
+    async () => {
+      const lost = [];
+      const times = [];
+      for (let i = 1; i <= 8; i++) {
+        online();
+        openNote();
+        await ready();
+        if (i % 2) offline();
+        await typeInNote(` w${i}a`, new RegExp(`w${i}a`, "i"));
+        const died = homeAndKill(`w${i}b`);
+        if (!died) throw new Error(`round ${i}: the system did not let the app be killed`);
+        const shows = new RegExp(`w${i}a\\s*w${i}b`, "i");
+        const kept = keptOnPhone();
+        const server = await bodyOnServer();
+        const where = shows.test(server) ? "the server" : shows.test(kept) ? "kept" : "LOST";
+        say(
+          `round ${i} (${i % 2 ? "no connection" : "a connection"}): ${where}; jobs ${jobsOnPhone()}`,
+        );
+        if (where === "LOST")
+          lost.push(`round ${i}: the server ${JSON.stringify(server)}, kept ${kept}`);
+        online();
+        // The next round starts from it: sent by the app (closed) or as it opens again.
+        const t0 = Date.now();
+        await serverShows(shows, 3 * 60_000).catch(() => undefined);
+        times.push(Math.round((Date.now() - t0) / 1000));
+      }
+      if (lost.length) throw new Error(lost.join("; "));
+      return `8 of 8, on the server in ${times.join(", ")} s after each kill`;
+    },
+  );
+
+  await scenario(
     "a new page with no connection, named, killed, never opened again: made once",
     async () => {
+      online();
       sh(`am start --user ${user} -n ${ACTIVITY}`);
       await sleep(1500);
       await attach();
       mustFront();
+      // Its home, where the create button is (a note opened from a link stays on screen as the app comes back).
+      await cdp.eval(
+        `[...document.querySelectorAll("button, a")].find((b) => /^(Inicio|Home)$/.test(b.textContent.trim()))?.click()`,
+      );
+      await sleep(700);
       offline();
       await until(
         "the create button",
@@ -433,8 +610,14 @@ try {
     })()`);
       await sleep(1500);
       await type("Pagina de prueba");
+      const named = `[...document.querySelectorAll("input, textarea, [contenteditable]")].some((e) => (e.value ?? e.textContent ?? "").includes("Pagina de prueba"))`;
+      await until("its name on the screen", () => cdp.eval(named), 10_000).catch(async (e) => {
+        throw new Error(`${e.message}; the focus on ${await focusOf()}`);
+      });
       await sleep(3000);
-      homeAndKill();
+      const died = homeAndKill();
+      if (!died) throw new Error("the system did not let the app be killed");
+      say(`killed at ${died}; kept ${keptOnPhone()}; jobs ${jobsOnPhone()}`);
       online();
       await until(
         "the page on the server",
@@ -447,18 +630,46 @@ try {
       return "one page, with its name";
     },
   );
+} catch (e) {
+  results.push(`FAIL before the scenarios ended: ${e.message}`);
 } finally {
-  cdp?.close();
+  cleanUp();
+}
+process.exit(results.every((r) => r.startsWith("PASS")) && results.length === 6 ? 0 : 1);
+
+/** Everything the run made goes, also when it is stopped (Ctrl-C, a kill): the phone and this laptop as they were. */
+function cleanUp() {
+  if (cleanUp.done) return;
+  cleanUp.done = true;
+  // Each step on its own: a phone gone from adb must not leave the server running or hide the first error.
+  const safely = (what, fn) => {
+    try {
+      return fn();
+    } catch (e) {
+      say(`cleanup: ${what} failed (${e.message.split("\n")[0]})`);
+      return undefined;
+    }
+  };
+  safely("devtools", () => cdp?.close());
+  safely("the door", () => {
+    offline();
+    door.close();
+  });
+  safely("the server", () => server.kill());
+  safely("its data", () => rmSync(dir, { recursive: true, force: true }));
   for (const f of forwards) spawnSync("adb", ["forward", "--remove", `tcp:${f}`]);
   spawnSync("adb", ["reverse", "--remove", `tcp:${port}`]);
-  if (front().includes(`${PKG}/`)) sh("input keyevent KEYCODE_HOME");
-  spawnSync("adb", ["shell", `pm uninstall ${PKG}`]);
-  server.kill();
-  rmSync(dir, { recursive: true, force: true });
-  const realAfter = versionOf(REAL);
+  safely("leaving the test copy", () => {
+    if (front().includes(`${PKG}/`)) sh("input keyevent KEYCODE_HOME");
+  });
+  const gone = spawnSync("adb", ["shell", `pm uninstall ${PKG}`], { encoding: "utf8" });
+  if (/no devices|device offline|not found/.test(gone.stderr ?? ""))
+    say(
+      `cleanup: the phone is not on adb; remove the test copy once it is: adb shell pm uninstall ${PKG}`,
+    );
+  const realAfter = safely("the real app's version", () => versionOf(REAL)) ?? "unknown";
   say(
     `Boni (the real app): ${realAfter}${realAfter === realBefore ? ", as it was" : `, WAS ${realBefore}`}`,
   );
   console.log(results.join("\n"));
 }
-process.exit(results.every((r) => r.startsWith("PASS")) && results.length === 5 ? 0 : 1);

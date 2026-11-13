@@ -1,6 +1,7 @@
 package io.github.juanbonastre.boni
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -52,7 +53,7 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         private const val NAME = "boni-queue"
 
         /** After the page wrote the queue: a job for its next item, if any. */
-        fun scheduleFor(context: Context, text: String) {
+        fun scheduleFor(context: Context, text: String, wait: Boolean = false) {
             val items = try {
                 JSONArray(text)
             } catch (e: Exception) {
@@ -60,18 +61,30 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
             }
             val now = System.currentTimeMillis()
             when {
-                QueueLogic.pendingCount(items, now) > 0 -> schedule(context, 0)
-                else -> QueueLogic.nextHold(items, now)?.let { schedule(context, it - now) }
+                QueueLogic.pendingCount(items, now) > 0 -> schedule(context, 0, wait)
+                else -> QueueLogic.nextHold(items, now)?.let { schedule(context, it - now, wait) }
             }
         }
 
-        fun schedule(context: Context, delayMs: Long) {
+        /**
+         * The job, in `delayMs`. `wait` as the app hides: the system may end it a moment later, and WorkManager takes
+         * out the job it had (REPLACE) before it schedules the new one, so it returns once the new one is scheduled
+         * (on a phone, a kill right after `onStop` left none: task 109). The system ends an app only once `onStop`
+         * has returned.
+         */
+        fun schedule(context: Context, delayMs: Long, wait: Boolean = false) {
             val request = OneTimeWorkRequestBuilder<QueueWorker>()
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setInitialDelay(maxOf(0L, delayMs) + 500, TimeUnit.MILLISECONDS)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
                 .build()
-            WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request)
+            val done = WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request)
+            if (!wait) return
+            try {
+                done.result.get(2, TimeUnit.SECONDS)
+            } catch (e: Exception) {
+                Log.w(MainActivity.TAG, "the queue's job was not scheduled in time: ${e.message}")
+            }
         }
     }
 }

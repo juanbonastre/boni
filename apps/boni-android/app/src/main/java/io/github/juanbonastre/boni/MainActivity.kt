@@ -231,8 +231,9 @@ class MainActivity : ComponentActivity() {
         shell.emit = null
         // Whatever the page left in the queue goes from here, with the network, even if the app is closed; and what
         // was typed and kept unsent (task 109).
-        shell.storeRead(Shell.QUEUE_FILE)?.let { QueueWorker.scheduleFor(this, it) }
-        if (shell.hasUnsent()) QueueWorker.schedule(this, 0)
+        // Both scheduled before onStop returns, after which the system may end the app at once.
+        shell.storeRead(Shell.QUEUE_FILE)?.let { QueueWorker.scheduleFor(this, it, wait = true) }
+        if (shell.hasUnsent()) QueueWorker.schedule(this, 0, wait = true)
         Log.i(TAG, "stop")
     }
 
