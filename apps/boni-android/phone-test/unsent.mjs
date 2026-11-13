@@ -13,10 +13,11 @@
 // front, checked first. It prints each scenario's result and the app's log lines with their times.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const PKG = "io.github.juanbonastre.boni.prueba";
 const REAL = "io.github.juanbonastre.boni";
@@ -296,12 +297,55 @@ const caretAtEnd = () =>
   })()`);
 
 function openNote() {
-  // With the app ended, its task would only come back to the front with the intent it started with, not the link's:
-  // a fresh task then, as opening it from the home screen is (the process is gone either way).
-  const fresh = pid() ? "" : "-f 0x10008000 "; // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK
+  // Not in front, its task would only come back with the intent it started with, not the link's, also with its
+  // process alive for the worker (run 15 came back to «Inicio»): a fresh task then, as opening it from the home
+  // screen is. In front, the link goes to it.
+  const fresh = front().includes(`${PKG}/`) ? "" : "-f 0x10008000 "; // FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TASK
   sh(
     `am start --user ${user} ${fresh}-n ${ACTIVITY} -a android.intent.action.VIEW -d 'boni://note?id=${noteId}'`,
   );
+}
+/**
+ * Why no job is left: the test copy's WorkManager rows (copied out of its own files with `run-as`, read here) and the
+ * system's jobs for it (filtered on the phone, never another app's). State: 0 enqueued, 1 running, 2 succeeded,
+ * 3 failed, 4 blocked, 5 cancelled.
+ */
+function whyNoJob() {
+  const out = join(dir, `work-${Date.now()}`);
+  mkdirSync(out);
+  for (const f of [
+    "androidx.work.workdb",
+    "androidx.work.workdb-wal",
+    "androidx.work.workdb-shm",
+  ]) {
+    const r = spawnSync("adb", [
+      "exec-out",
+      "run-as",
+      PKG,
+      "--user",
+      user,
+      "cat",
+      `databases/${f}`,
+    ]);
+    if (r.status === 0 && r.stdout.length) writeFileSync(join(out, f), r.stdout);
+  }
+  let rows;
+  try {
+    const db = new DatabaseSync(join(out, "androidx.work.workdb"), { readOnly: true });
+    rows = db
+      .prepare(
+        `select n.name, w.state, w.initial_delay, w.run_attempt_count, w.last_enqueue_time, w.schedule_requested_at,
+           s.system_id, w.worker_class_name from WorkSpec w left join WorkName n on n.work_spec_id = w.id
+           left join SystemIdInfo s on s.work_spec_id = w.id order by w.last_enqueue_time`,
+      )
+      .all()
+      .map((r) => ({ ...r, worker_class_name: String(r.worker_class_name).split(".").pop() }));
+    db.close();
+  } catch (e) {
+    rows = `(no rows: ${e.message})`;
+  }
+  const jobs = sh(`dumpsys jobscheduler | grep -A2 'JOB #.*${PKG}/' || true`).trim();
+  return `WorkManager ${JSON.stringify(rows)}; the system's jobs ${JSON.stringify(jobs)}`;
 }
 /** How many jobs the system holds for the test copy (WorkManager's): filtered on the phone, never another app's. */
 const jobsOnPhone = () => sh(`dumpsys jobscheduler | grep -c 'JOB #.*${PKG}/' || true`).trim();
@@ -370,9 +414,10 @@ const online = () => {
 let uid = "";
 function logSince(since) {
   try {
-    return adb("logcat", "-d", "-v", "epoch", "-T", since, `--uid=${uid}`, "Boni:I", "*:S")
+    // The app's own lines and WorkManager's (WM-…), of the test copy only (its uid).
+    return adb("logcat", "-d", "-v", "epoch", "-T", since, `--uid=${uid}`, "*:I")
       .split("\n")
-      .filter((l) => l.includes(" Boni"))
+      .filter((l) => / (Boni|WM-[\w$]+) *:/.test(l))
       .map((l) => l.trim());
   } catch (e) {
     return [`(no log: ${e.message.split("\n")[0]})`];
@@ -416,6 +461,7 @@ try {
   if (out.status !== 0) throw new Error(`install: ${out.stdout}${out.stderr}`);
   uid = sh(`cmd package list packages -U --user ${user} ${PKG}`).match(/uid:(\d+)/)?.[1] ?? "";
   if (!uid) throw new Error("the test copy is not installed");
+  say(`the test copy: ${versionOf(PKG)} (${apk})`);
   if (!/android\.permission\.INTERNET: granted=true/.test(sh(`dumpsys package ${PKG}`)))
     throw new Error(
       "The test copy has no network permission: Juan grants it in its app info, then run again",
@@ -589,7 +635,9 @@ try {
     async () => {
       const lost = [];
       const times = [];
+      const noJob = [];
       for (let i = 1; i <= 8; i++) {
+        const roundStart = phoneClock();
         online();
         openNote();
         await ready();
@@ -601,9 +649,15 @@ try {
         const kept = keptOnPhone();
         const server = await bodyOnServer();
         const where = shows.test(server) ? "the server" : shows.test(kept) ? "kept" : "LOST";
-        say(
-          `round ${i} (${i % 2 ? "no connection" : "a connection"}): ${where}; jobs ${jobsOnPhone()}`,
-        );
+        const jobs = jobsOnPhone();
+        say(`round ${i} (${i % 2 ? "no connection" : "a connection"}): ${where}; jobs ${jobs}`);
+        // Kept with no job, nothing sends it until the app is opened again (round 1 of run 14): why, said at once,
+        // before the phone's log turns over.
+        if (where === "kept" && jobs === "0") {
+          noJob.push(i);
+          say(`round ${i}: ${whyNoJob()}`);
+          for (const l of logSince(roundStart)) console.log("   ", l);
+        }
         if (where === "LOST")
           lost.push(`round ${i}: the server ${JSON.stringify(server)}, kept ${kept}`);
         online();
@@ -613,6 +667,8 @@ try {
         times.push(Math.round((Date.now() - t0) / 1000));
       }
       if (lost.length) throw new Error(lost.join("; "));
+      if (noJob.length)
+        throw new Error(`kept with no job left to send it in round ${noJob.join(", ")}`);
       return `8 of 8, on the server in ${times.join(", ")} s after each kill`;
     },
   );
@@ -651,10 +707,23 @@ try {
     })()`);
       await sleep(1500);
       await type("Pagina de prueba");
-      const named = `[...document.querySelectorAll("input, textarea, [contenteditable]")].some((e) => (e.value ?? e.textContent ?? "").includes("Pagina de prueba"))`;
-      await until("its name on the screen", () => cdp.eval(named), 10_000).catch(async (e) => {
-        throw new Error(`${e.message}; the focus on ${await focusOf()}`);
+      // The phone's keyboard may change what is typed (it wrote «Uno» for «uno» after a full stop), so the name is
+      // read back as the screen shows it, compared without accents or capitals, and looked for on the server as that.
+      const shownName = () =>
+        cdp.eval(`(() => {
+          const plain = (t) => t.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").toLowerCase();
+          const el = [...document.querySelectorAll("input, textarea, [contenteditable]")].find((e) =>
+            plain(e.value ?? e.textContent ?? "").includes("pagina de prueba"),
+          );
+          return el ? (el.value ?? el.textContent).trim() : null;
+        })()`);
+      const name = await until("its name on the screen", shownName, 10_000).catch(async (e) => {
+        const value = await cdp.eval(`document.activeElement?.value ?? null`).catch(() => "?");
+        throw new Error(
+          `${e.message}; the focus on ${await focusOf()}, which has ${JSON.stringify(value)}`,
+        );
       });
+      say(`named ${JSON.stringify(name)}`);
       await sleep(3000);
       const died = homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
@@ -662,11 +731,16 @@ try {
       online();
       await until(
         "the page on the server",
-        async () => (await pagesOnServer()).some((p) => p.title === "Pagina de prueba"),
+        async () => (await pagesOnServer()).some((p) => p.title === name),
         8 * 60_000,
-      );
+      ).catch(async (e) => {
+        const titles = (await pagesOnServer()).map((p) => p.title);
+        throw new Error(
+          `${e.message}; the server has ${JSON.stringify(titles)}, the phone kept ${keptOnPhone()}, jobs ${jobsOnPhone()}`,
+        );
+      });
       await sleep(60_000); // a late resend would make a second one now
-      const n = (await pagesOnServer()).filter((p) => p.title === "Pagina de prueba").length;
+      const n = (await pagesOnServer()).filter((p) => p.title === name).length;
       if (n !== 1) throw new Error(`${n} pages`);
       return "one page, with its name";
     },
