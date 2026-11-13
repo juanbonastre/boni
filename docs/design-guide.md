@@ -189,7 +189,11 @@ slate `#94a3b8`.
   were left. Without a connection, or with a server that fails (5xx), what is typed stays on the screen and on the device: one toast says «Sin conexión:
   lo escrito queda en este equipo y se guardará al volver la red», the page or note opens with it on that device
   (offline too), and it reaches the server when the app opens again or within a minute of the network coming back.
-  Nothing returns to the server's version. Quitting waits a second at most for answers in flight.
+  Nothing returns to the server's version. Quitting waits a second at most for answers in flight. A write the server
+  keeps failing (5xx to five resends in a row, at the start and each minute; the saves made while typing do not count)
+  gets a second toast, once, naming it: «El servidor no guarda «Reunión»: queda en este equipo» (no name at hand: «El
+  servidor no guarda lo escrito: queda en este equipo»); from then on it is tried once an hour and at every start,
+  never every minute, and stays on the screen and on the device (task 106, D-68). Writing the same note from somewhere else (the peek, ticking it in «Hoy») never drops what was typed there.
 
 ## 4b. Quality (learned 2026-10-21)
 Distilled from pbakaus/impeccable (Apache 2.0) and emilkowalski/skills (MIT) at Juan's request; the general version for

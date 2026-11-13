@@ -35,6 +35,8 @@ const es = {
   "submit.queuedServer": "Guardado en el servidor; se escribirá luego",
   "submit.queuedOffline": "Sin conexión: guardado en este equipo, se enviará al volver la red",
   "save.offline": "Sin conexión: lo escrito queda en este equipo y se guardará al volver la red",
+  "save.failing": "El servidor no guarda «{title}»: queda en este equipo",
+  "save.failingAny": "El servidor no guarda lo escrito: queda en este equipo",
   "submit.queuedNoServer": "Guardado en este equipo: se enviará cuando configures el servidor",
   "submit.failed": "No se pudo guardar",
   "chart.loading": "Cargando…",
@@ -2516,6 +2518,8 @@ const en: Record<Key, string> = {
     "Offline: saved on this computer, it will be sent when the network is back",
   "save.offline":
     "Offline: what you write stays on this computer and is saved when the network is back",
+  "save.failing": "The server won't save «{title}»: it stays on this computer",
+  "save.failingAny": "The server won't save what you wrote: it stays on this computer",
   "submit.queuedNoServer": "Saved on this computer: it will be sent once the server is set up",
   "submit.failed": "Could not save",
   "chart.loading": "Loading…",

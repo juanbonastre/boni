@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { DataRow, Page } from "./agent.ts";
 import {
   answered,
+  FAILING_AFTER,
+  FAILING_RETRY_MS,
+  type Failing,
+  failedAgain,
   merged,
   overPage,
   overRow,
@@ -51,6 +55,49 @@ describe("what was typed and has no answer yet (task 100)", () => {
     expect(answered(list, "api/data/rows/r_01", 25)).toEqual([list[1]]);
     expect(answered(list, "api/data/rows/r_01", 15)).toEqual(list);
     expect(answered(list, "api/pages/p_01", 30)).toEqual([list[0]]);
+  });
+
+  it("an answer to another part of the app writing the same note takes out only what it carried (task 106)", () => {
+    const list = [
+      rowWrite("r_01", { lugar: "Sala 2" }, "Dos", 20),
+      pageWrite("p_01", { title: "Mía", icon: "📄" }, 30),
+    ];
+    // A task ticked: its field alone.
+    expect(
+      answered(list, "api/data/rows/r_01", 25, rowWrite("r_01", { hecha: true }, undefined, 25)),
+    ).toEqual(list);
+    expect(
+      answered(
+        list,
+        "api/data/rows/r_01",
+        25,
+        rowWrite("r_01", { lugar: "Sala 3" }, undefined, 25),
+      ),
+    ).toEqual([rowWrite("r_01", {}, "Dos", 20), list[1]]);
+    expect(
+      answered(list, "api/data/rows/r_01", 25, rowWrite("r_01", { lugar: "X" }, "Tres", 25)),
+    ).toEqual([list[1]]);
+    expect(answered(list, "api/pages/p_01", 35, pageWrite("p_01", { icon: "📁" }, 35))).toEqual([
+      list[0],
+      pageWrite("p_01", { title: "Mía" }, 30),
+    ]);
+    // Written here after that request left: all of it stays.
+    expect(
+      answered(list, "api/data/rows/r_01", 15, rowWrite("r_01", { lugar: "X" }, "Tres", 15)),
+    ).toEqual(list);
+  });
+
+  it(`a write the server fails ${FAILING_AFTER} times in a row is said once and tried once an hour (task 106)`, () => {
+    let f: Failing | undefined;
+    const said: number[] = [];
+    for (let i = 1; i <= FAILING_AFTER + 3; i++) {
+      const r = failedAgain(f, i * 60_000);
+      f = r.failing;
+      if (r.say) said.push(i);
+      expect(f.next).toBe(i < FAILING_AFTER ? 0 : i * 60_000 + FAILING_RETRY_MS);
+    }
+    expect(said).toEqual([FAILING_AFTER]);
+    expect(f?.times).toBe(FAILING_AFTER + 3);
   });
 
   it("a page or a note is shown with what was kept over the server's or the device's copy", () => {

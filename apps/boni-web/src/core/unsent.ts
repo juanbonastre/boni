@@ -65,9 +65,69 @@ export function merged(list: readonly UnsentWrite[], w: UnsentWrite): UnsentWrit
   return list.map((x, j) => (j === i ? next : x));
 }
 
-/** The list once the server answered a write of `path` that left at `sent`: what changed after it stays. */
-export const answered = (list: readonly UnsentWrite[], path: string, sent: number) =>
-  list.filter((x) => x.path !== path || x.at > sent);
+/**
+ * The list once the server answered a write of `path` that left at `sent`: what changed after it stays. `carried`:
+ * what that request held when it was not the page's or row's whole kept write (another part of the app writing the
+ * same note, a task ticked: task 106); then only its fields are taken out.
+ */
+export const answered = (
+  list: readonly UnsentWrite[],
+  path: string,
+  sent: number,
+  carried?: UnsentWrite,
+): UnsentWrite[] =>
+  list.flatMap((x) => {
+    if (x.path !== path || x.at > sent) return [x];
+    const left = carried ? without(x, carried) : null;
+    return left ? [left] : [];
+  });
+
+/** `w` without the fields `c` carries; null when nothing of it is left. */
+function without(w: UnsentWrite, c: UnsentWrite): UnsentWrite | null {
+  if (w.kind === "page" && c.kind === "page") {
+    const patch = Object.fromEntries(
+      Object.entries(w.patch).filter(([k]) => !(k in c.patch)),
+    ) as PagePatch;
+    return Object.keys(patch).length ? { ...w, patch } : null;
+  }
+  if (w.kind === "row" && c.kind === "row") {
+    const values = Object.fromEntries(Object.entries(w.values).filter(([k]) => !(k in c.values)));
+    const body = c.body === undefined ? w.body : undefined;
+    if (!Object.keys(values).length && body === undefined) return null;
+    return rowWrite(w.id, values, body, w.at);
+  }
+  return w;
+}
+
+/**
+ * A kept write the server fails (5xx) this many times in a row when it is resent (at the start and every minute: the
+ * saves made while typing do not count, so a server restarting under a burst of saves is not taken for a broken one)
+ * is said once, by its name, and the minute's resend tries it once an hour from then on (task 106); it stays kept, on
+ * the screen and on the device, and goes at every start.
+ */
+export const FAILING_AFTER = 5;
+export const FAILING_RETRY_MS = 60 * 60_000;
+
+/** A kept write's 5xx answers in a row in this run, and when the minute's resend may try it again (0: any minute). */
+export interface Failing {
+  times: number;
+  next: number;
+  said: boolean;
+}
+
+/** One more 5xx for a write at `now`: how it stands, and whether to say it now (once, when it reaches the bound). */
+export function failedAgain(
+  f: Failing | undefined,
+  now: number,
+): { failing: Failing; say: boolean } {
+  const times = (f?.times ?? 0) + 1;
+  const bound = times >= FAILING_AFTER;
+  const say = bound && !f?.said;
+  return {
+    failing: { times, next: bound ? now + FAILING_RETRY_MS : 0, said: Boolean(f?.said) || say },
+    say,
+  };
+}
 
 export function parseUnsent(text: string | null): UnsentWrite[] {
   if (!text) return [];

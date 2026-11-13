@@ -108,6 +108,8 @@ import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
   answered,
+  type Failing,
+  failedAgain,
   merged,
   overPage,
   overRow,
@@ -4735,15 +4737,39 @@ async function sendWrite(w: UnsentWrite, fresh = true): Promise<unknown> {
       const first = !unsentKept;
       keepUnsent();
       if (first) toast(get().t("save.offline"));
+      if (e instanceof ApiError && !fresh) serverFailed(all);
     } else settleUnsent(w.path, sent);
     throw e;
   }
 }
 
-function settleUnsent(path: string, sent: number) {
-  const before = unsent.length;
-  unsent = answered(unsent, path, sent);
-  if (unsentKept && unsent.length !== before) keepUnsent();
+/**
+ * The answer to a write of `path` that left at `sent`. `carried`: what it held, when it was not the whole kept write
+ * (another part of the app writing the same note): only that is taken out of the list (task 106).
+ */
+function settleUnsent(path: string, sent: number, carried?: UnsentWrite) {
+  const before = JSON.stringify(unsent);
+  unsent = answered(unsent, path, sent, carried);
+  // Another part of the app's answer says nothing of the kept write itself, which may still fail.
+  if (!carried) failing.delete(path);
+  if (unsentKept && JSON.stringify(unsent) !== before) keepUnsent();
+}
+
+/** Each kept write's 5xx answers in a row to its resends in this run (core/unsent.ts `failedAgain`). */
+const failing = new Map<string, Failing>();
+
+function serverFailed(w: UnsentWrite) {
+  const { failing: f, say } = failedAgain(failing.get(w.path), Date.now());
+  failing.set(w.path, f);
+  if (!say) return;
+  const s = get();
+  const title =
+    w.kind === "page"
+      ? (s.pages?.find((p) => p.id === w.id)?.title ?? w.patch.title)
+      : s.rowDoc?.id === w.id
+        ? s.rowDoc.title
+        : s.recent.find((r) => r.id === w.id)?.title;
+  toast(title ? s.t("save.failing", { title }) : s.t("save.failingAny"));
 }
 
 /** The pages' list with the names typed here that have not reached the server. */
@@ -4768,11 +4794,12 @@ async function sendUnsent() {
       if (!unsent.some((x) => x.path === w.path && x.at >= w.at)) unsent = merged(unsent, w);
     for (const path of unsent.map((w) => w.path)) {
       const w = unsent.find((x) => x.path === path);
-      if (!w) continue;
+      if (!w || (failing.get(path)?.next ?? 0) > Date.now()) continue;
       try {
         await sendWrite(w, false);
       } catch (e) {
-        if (unreached(e)) break;
+        // No connection: the rest wait too. A server that fails one write still gets the others.
+        if (e instanceof OfflineError) break;
       }
     }
   } finally {
@@ -4803,7 +4830,11 @@ export async function tickToday(item: TodayItem, undo = false) {
     }));
   flip(!item.done);
   try {
-    const saved = await agent.updateRow(item.id, { [item.doneField]: !item.done });
+    const values = { [item.doneField]: !item.done };
+    const tick = rowWrite(item.id, values, undefined, Date.now());
+    const saved = await agent.updateRow(item.id, values);
+    // What was typed in the same note and is kept stays kept: only the ticked field was answered (task 106).
+    settleUnsent(tick.path, tick.at, tick);
     if (saved && get().rows[item.type]) putRow(item.type, saved);
     if (!undo)
       toast(t(item.done ? "today.undone" : "today.done", { title: item.title }), {
