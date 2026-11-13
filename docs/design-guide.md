@@ -907,7 +907,25 @@ contraseña ni un código aquí» under a question.
   line below with «Responder» (Esc closes it). His words end the question and are his next message, run as a turn;
   «Nueva…» shows the collection's name as its placeholder, makes the row with what he typed («Guardando…» on its
   button meanwhile) and answers with it. A yes or no and a confirmation have none. An answered question stays as one
-  line of text: the question in `--muted` and what he chose after it. **A sent message is corrected by editing it**
+  line of text: the question in `--muted` and what he chose after it. **The other kinds of question** (task 27, second
+  part, §3.4; the code draws each from the plan's `control`, never the model): *several*, a box per option (32 px rows,
+  40 px on a phone, the box in the accent), then «Responder (n)» tinted and a quiet «Ninguna» (answering with none is an
+  answer); *a property's options*, the ones the plan suggests (all of them when eight or fewer), then the dashed «Más…»,
+  a line that finds the rest as he types («No hay ninguna con eso»), and «Nueva…» with the property's name as its
+  placeholder, which adds the option as the column's menu does (with its Undo) and answers with it; *a number*, a line
+  that reads it as he writes it in his language («1.250,5»), saying «Eso no es un número» beside «Responder» and sending
+  nothing when it is not; *a day*, the system's date field; *a file*, «Subir un archivo…» with «o arrástralo aquí», the
+  card taking a dashed accent border while a file is over it, the file going up as a dropped one does («Subiendo N %»
+  where «o arrástralo aquí» was) and never as a chip in the bar; on the phone «Subir un archivo…» opens its own picker,
+  as «Adjuntar» does, with nothing to drop on; where the device cannot upload, a muted line says so and «Otra cosa…»
+  stays; *yes or no*, two pills, neither tinted. Number, day and file keep «Otra cosa…». **A rehearsal** shows what
+  the rest of the plan would write, «Cambios que haría: 2», folded under «Revisar» («Ocultar el detalle»): each change a
+  small surface card with its action as a heading and the rows of its card, a muted «· te lo preguntará antes» on what
+  still asks, «· irá a la Bandeja» on what proposes; «Guardar» (tinted) goes on, «Ahora no» saves nothing and the turn
+  says «No se ha guardado nada.»; it fits a 390 px phone without scrolling sideways. **An old card changed since**
+  (rule 3a): answering it answers nothing, and it comes back made again with the state word «Ha cambiado» after its prompt.
+  **«Antes te he dicho X, pero es Y»** (§3.1) is a confirmation, «Deshacer lo que hizo» with «Mensaje» and the old
+  message beside it; said yes, the old turn keeps «Corregido» as when he edits it. **A sent message is corrected by editing it**
   (task 27, §3.1; the pencil ChatGPT and Claude show on a sent message, without their «1/2» branches): a pencil
   appears beside his bubble on hover (always a little on touch), and opens his words in a box with «Cancelar» and
   «Enviar»; sent, what the old turn did is undone and the new words run as a turn after it, the old one keeping a

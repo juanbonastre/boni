@@ -1,6 +1,8 @@
 export {
   Agent,
   type AgentOptions,
+  type AskAnswer,
+  type AskView,
   type Budget,
   checkFlowDef,
   checkPlan,
@@ -18,6 +20,7 @@ export {
   PLANNER_PROMPT_HASH,
   paint,
   proposeFlow,
+  type RehearsalItem,
   type Reply,
   type RowsOf,
   RUN_LIMITS,
@@ -108,6 +111,8 @@ export {
 } from "./models.ts";
 export { type OpenAIOptions, OpenAIProvider } from "./openai.ts";
 export {
+  ASK_CONTROLS,
+  type AskControl,
   type Expr,
   FNS,
   isWholeSpan,
@@ -118,6 +123,7 @@ export {
   READERS,
   type ReaderKind,
   type Step,
+  UNDO_TURN,
   validatePlan,
 } from "./plan.ts";
 export { type Decision, decide, type Origin, type Trust } from "./policy.ts";

@@ -27,6 +27,7 @@ import { withInboxActions } from "./inboxActions.ts";
 import { withPageActions } from "./pageActions.ts";
 import { withPieces } from "./pieces.ts";
 import { withKept } from "./runUndo.ts";
+import { withTurnActions } from "./turnActions.ts";
 
 /**
  * The list of actions (docs/sistema.md §4.1, F10; D-41): one for the app, the planner, the flows and the MCP. The
@@ -44,7 +45,9 @@ export function serverRegistry(): ToolRegistry {
       withInboxActions(
         withFlowActions(
           withFileActions(
-            withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+            withTurnActions(
+              withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+            ),
           ),
         ),
       ),
@@ -465,6 +468,9 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "inbox.pending": "inbox",
   "inbox.accept": { why: "Juan's touch: his card, in his app" },
   "inbox.reject": { why: "Juan's touch: his card, in his app" },
+  "turns.undo": {
+    why: "Juan's touch on a turn of his own conversation (P21): an assistant's turns are its own chat's",
+  },
   "entities.aggregate": "query",
   "entities.search": "search",
   "schema.describe": "collections",

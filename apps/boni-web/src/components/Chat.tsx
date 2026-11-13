@@ -26,13 +26,13 @@ import {
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   type AreaAccuracy,
+  type AskPending,
   type ConfirmView,
   type DataType,
   fillTemplate,
   isProposal,
   lowest,
   type Painted,
-  type Pending,
   type Reply,
   type RowsOf,
   type RunDetail,
@@ -41,6 +41,7 @@ import {
   type StepWords,
   textOf,
 } from "../core/agent.ts";
+import { parseNumber } from "../core/answers.ts";
 import { focusAtEnd } from "../core/caret.ts";
 import { deviceZone, today } from "../core/clock.ts";
 import { pointKey } from "../core/pointing.ts";
@@ -49,15 +50,20 @@ import { filterOf, litKeys, litNames } from "../core/screenReplies.ts";
 import { percent } from "../core/uploads.ts";
 import { catText, type T } from "../i18n.ts";
 import {
+  addFieldOption,
+  addOptionRow,
   agentErrorText,
   answerAsk,
   answerInWords,
+  answerWithFile,
   answerWithNew,
+  answerWithNewOption,
   attachFiles,
   type ChatEntry,
   canAttach,
   canDrop,
   chooseModel,
+  chooseOne,
   confirmPending,
   correctTurn,
   declinePending,
@@ -74,11 +80,13 @@ import {
   loadPlanners,
   loadRunDetail,
   newConversation,
+  type Outgoing,
   openConversation,
   openRecord,
   openRowsOf,
   openSettings,
   openTarget,
+  outgoing,
   pinConversation,
   proposeFromMail,
   removeConversation,
@@ -99,6 +107,7 @@ import {
   useStore,
 } from "../store.ts";
 import { ActionIcon } from "./ActionIcon.tsx";
+import { FileButton } from "./FileButton.tsx";
 import { ProposalCard, RequestCard, useDayFormat, useInboxQueue } from "./InboxCards.tsx";
 import { RunPath } from "./RunPath.tsx";
 
@@ -1060,6 +1069,8 @@ function Turn({ entry }: { entry: ChatEntry }) {
             <button
               type="button"
               className="icon-btn turn-edit-btn"
+              // What the planner asks for with «antes te he dicho X, pero es Y» (C1): the same undo of this turn.
+              data-boni-action="turns.undo"
               title={t("chat.edit")}
               aria-label={t("chat.edit")}
               disabled={busy}
@@ -1076,15 +1087,23 @@ function Turn({ entry }: { entry: ChatEntry }) {
         {r?.replies.map((reply, i) => (
           <ReplyView key={i} reply={reply} />
         ))}
-        {r?.pending?.kind === "ask" && <AskBox entryId={entry.id} pending={r.pending} />}
+        {r?.pending?.kind === "ask" && (
+          <AskBox
+            entryId={entry.id}
+            pending={r.pending}
+            state={r.status === "waiting" ? r.error : null}
+          />
+        )}
         {r?.pending?.kind === "confirm" && <ConfirmCard entryId={entry.id} view={r.pending.view} />}
         {r && <Notices t={t} result={r} />}
         {r?.status === "stopped" &&
           r.error &&
           // Answered in his words (§3.4): the question stays as text, and his words are the turn below.
           r.error !== "answered-in-words" &&
-          (r.error === "stopped-by-juan" ? (
-            <p className="turn-stopped">{t("chat.stopped")}</p>
+          (r.error === "stopped-by-juan" || r.error === "not-saved" ? (
+            <p className="turn-stopped">
+              {r.error === "not-saved" ? t("agent.error.notSaved") : t("chat.stopped")}
+            </p>
           ) : (
             <p className="turn-error">{agentErrorText(t, r.error)}</p>
           ))}
@@ -1501,7 +1520,7 @@ function ReplyView({ reply }: { reply: Reply }) {
           ) : null}
           {d.answer ? (
             <span className="reply-asked-answer">
-              <ValueText p={d.answer} />
+              <AskedAnswer answer={d.answer} control={d.control} />
             </span>
           ) : null}
         </div>
@@ -1578,128 +1597,597 @@ function ReplyView({ reply }: { reply: Reply }) {
   }
 }
 
+/**
+ * What Juan answered, as text (§3.4, rule 3): yes or no, «Guardar» or «Ahora no», «Ninguna» for no box ticked, and
+ * anything else as its value reads (a day in his language, a file by its name, several joined).
+ */
+function AskedAnswer({ answer, control }: { answer: Painted; control?: Painted }) {
+  const t = useStore((s) => s.t);
+  const c = control?.t === "v" && control.integrity === "own" ? control.value : null;
+  if (answer.t === "v" && typeof answer.value === "boolean") {
+    const yes = answer.value;
+    return (
+      <span className="val">
+        {c === "rehearsal" ? t(yes ? "ask.save" : "ask.notNow") : t(yes ? "ask.yes" : "ask.no")}
+      </span>
+    );
+  }
+  if (answer.t === "list" && !answer.items.length)
+    return <span className="val">{t("ask.none")}</span>;
+  if (answer.t === "v" && typeof answer.value === "number") return <NumberText p={answer} />;
+  return <ValueText p={answer} />;
+}
+
+/**
+ * A question's card (docs/conversacion.md §3.4): its control, and a free way out where it makes sense (rule 2):
+ * «Nueva…» among rows or a property's options, «Otra cosa…» among the rest; yes or no and a rehearsal have none. What
+ * it shows the server checks again when it is answered (rule 3a): changed since, it comes back made again, «Ha
+ * cambiado», with nothing answered.
+ */
 function AskBox({
   entryId,
   pending,
+  state,
 }: {
   entryId: string;
-  pending: Extract<Pending, { kind: "ask" }>;
+  pending: AskPending;
+  /** The answer's word, while it still waits: "changed" (made again), "wrong-answer". */
+  state: string | null;
+}) {
+  const t = useStore((s) => s.t);
+  const c = pending.control;
+  return (
+    <div className="ask" data-control={c}>
+      <p className="ask-prompt">
+        <ValueText p={pending.prompt} />
+        {state === "changed" && <span className="turn-state ask-state">{t("ask.changed")}</span>}
+      </p>
+      {state === "wrong-answer" && <p className="turn-error">{t("ask.wrong")}</p>}
+      {c === "choice" || c === "several" ? (
+        <Choices entryId={entryId} pending={pending} several={c === "several"} />
+      ) : c === "yesno" ? (
+        <YesNo entryId={entryId} />
+      ) : c === "rehearsal" ? (
+        <Rehearsal entryId={entryId} pending={pending} />
+      ) : c === "file" ? (
+        <FileAnswer entryId={entryId} />
+      ) : (
+        <Typed entryId={entryId} control={c} />
+      )}
+    </div>
+  );
+}
+
+/** The property a question over categories names, from the schema the app has: its options, as the column's menu. */
+function askField(
+  types: readonly DataType[] | null,
+  f: AskPending["field"],
+): { type: string; field: string; name: string } | null {
+  if (!f || !types) return null;
+  const def = types.find((x) => x.id === f.type);
+  const field = def?.fields.find((x) => x.id === f.field);
+  return def && field && !def.system && !def.readOnly
+    ? { type: def.id, field: field.id, name: field.name }
+    : null;
+}
+
+/**
+ * «Otra cosa…», «Nueva…» or «Más…» open: the line to write in. «Otra cosa…» ends the question with his words (the
+ * next turn); «Nueva…» makes the row or adds the option; «Más…» finds one of the property's other options.
+ */
+type Out = { kind: "other" | "new" | "more"; text: string; saving: boolean };
+
+function OutPill({
+  kind,
+  out,
+  setOut,
+  label,
+}: {
+  kind: Out["kind"];
+  out: Out | null;
+  setOut: (o: Out | null) => void;
+  label: string;
+}) {
+  const busy = useStore((s) => s.chatBusy);
+  return (
+    <button
+      type="button"
+      className={`pill ask-out${out?.kind === kind ? " on" : ""}`}
+      disabled={busy}
+      aria-expanded={out?.kind === kind}
+      onClick={() => setOut(out?.kind === kind ? null : { kind, text: "", saving: false })}
+    >
+      {label}
+    </button>
+  );
+}
+
+function OutLine({
+  out,
+  setOut,
+  label,
+  placeholder,
+  submit,
+}: {
+  out: Out;
+  setOut: (o: Out | null) => void;
+  label: string;
+  placeholder?: string;
+  submit: () => void;
 }) {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
-  const [text, setText] = useState("");
-  // The free ways out of a choice (§3.4, rule 2): «Otra cosa…» answers in his words, «Nueva…» makes the row.
-  const [out, setOut] = useState<{ kind: "other" | "new"; text: string; saving: boolean } | null>(
-    null,
-  );
-  const kind = useStore((s) => newRowType(pending.options, s.dataTypes));
-  const submitOut = () => {
-    if (!out || !out.text.trim() || busy || out.saving) return;
-    if (out.kind === "other") {
-      void answerInWords(entryId, out.text);
-      return;
-    }
-    if (!kind) return;
-    setOut({ ...out, saving: true });
-    void answerWithNew(entryId, kind.id, out.text).finally(() =>
-      setOut((o) => (o ? { ...o, saving: false } : o)),
-    );
-  };
   return (
-    <div className="ask">
-      <p className="ask-prompt">
-        <ValueText p={pending.prompt} />
-      </p>
-      {pending.control === "choice" ? (
-        <>
-          <div className="ask-options">
-            {pending.options.map((o, i) => (
-              <button
-                key={i}
-                type="button"
-                className="pill"
+    <form
+      className="ask-text"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <input
+        type="text"
+        value={out.text}
+        maxLength={out.kind === "other" ? 500 : 200}
+        aria-label={label}
+        placeholder={placeholder}
+        ref={(el) => focusAtEnd(el, { preventScroll: true })}
+        onChange={(e) => setOut({ ...out, text: e.target.value })}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOut(null);
+        }}
+      />
+      {out.kind !== "more" && (
+        <button type="submit" className="btn" disabled={busy || out.saving || !out.text.trim()}>
+          {out.saving ? t("ask.saving") : out.kind === "new" ? t("ask.add") : t("ask.answer")}
+        </button>
+      )}
+    </form>
+  );
+}
+
+/**
+ * Choose one, or several with boxes (§3.4): among the plan's options, rows of a collection («Nueva…» makes one) or a
+ * property's options («Más…» finds the others, «Nueva…» adds one). Several end with «Responder», or «Ninguna».
+ */
+function Choices({
+  entryId,
+  pending,
+  several,
+}: {
+  entryId: string;
+  pending: AskPending;
+  several: boolean;
+}) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.chatBusy);
+  // The types read from the store, the field worked out here: a selector that makes a new object each time would
+  // render without end.
+  const types = useStore((s) => s.dataTypes);
+  const field = askField(types, pending.field);
+  const kind = pending.field ? null : newRowType(pending.options, types);
+  const [out, setOut] = useState<Out | null>(null);
+  // Several: the boxes ticked, and what «Nueva…» or «Más…» added (rows by id, options by name).
+  const [ticked, setTicked] = useState<ReadonlySet<number>>(new Set());
+  const [rows, setRows] = useState<{ id: string; title: string }[]>([]);
+  const [names, setNames] = useState<string[]>([]);
+  const shown = pending.options.map(textOf);
+  const others = (pending.field?.names ?? []).filter(
+    (n) => !shown.includes(n) && !names.includes(n),
+  );
+  const found = out?.kind === "more" ? findNames(others, out.text) : [];
+  const pick = (name: string) => {
+    if (several) {
+      setNames((l) => [...l, name]);
+      setOut(null);
+    } else void answerAsk(entryId, { option: name });
+  };
+  const submitOut = async () => {
+    if (!out?.text.trim() || busy || out.saving) return;
+    if (out.kind === "other") return void answerInWords(entryId, out.text);
+    if (out.kind === "more") return found[0] !== undefined ? pick(found[0]) : undefined;
+    setOut({ ...out, saving: true });
+    try {
+      if (!several) {
+        if (field) await answerWithNewOption(entryId, out.text);
+        else if (kind) await answerWithNew(entryId, kind.id, out.text);
+        return;
+      }
+      if (field) {
+        const name = await addFieldOption(field.type, field.field, out.text);
+        if (name) {
+          setNames((l) => (l.includes(name) ? l : [...l, name]));
+          setOut(null);
+        }
+      } else if (kind) {
+        const id = await addOptionRow(kind.id, out.text);
+        if (id) {
+          setRows((l) => [...l, { id, title: out.text.trim() }]);
+          setOut(null);
+        }
+      }
+    } finally {
+      setOut((o) => (o?.saving ? { ...o, saving: false } : o));
+    }
+  };
+  const toggle = (i: number) =>
+    setTicked((s) => {
+      const next = new Set(s);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  const count = ticked.size + rows.length + names.length;
+  const canNew = !!field || !!kind;
+  return (
+    <>
+      {several ? (
+        <div className="ask-boxes">
+          {pending.options.map((o, i) => (
+            <label key={i} className="ask-box">
+              <input
+                type="checkbox"
+                checked={ticked.has(i)}
                 disabled={busy}
-                onClick={() => void answerAsk(entryId, { choice: i })}
-              >
-                <ValueText p={o} />
-              </button>
-            ))}
-            {kind && (
-              <button
-                type="button"
-                className={`pill ask-out${out?.kind === "new" ? " on" : ""}`}
+                onChange={() => toggle(i)}
+              />
+              <ValueText p={o} />
+            </label>
+          ))}
+          {rows.map((r) => (
+            <label key={`r:${r.id}`} className="ask-box">
+              <input
+                type="checkbox"
+                checked
                 disabled={busy}
-                aria-expanded={out?.kind === "new"}
-                onClick={() =>
-                  setOut(out?.kind === "new" ? null : { kind: "new", text: "", saving: false })
-                }
-              >
-                {t("ask.new")}
-              </button>
-            )}
+                onChange={() => setRows((l) => l.filter((x) => x.id !== r.id))}
+              />
+              <span className="val">{r.title}</span>
+            </label>
+          ))}
+          {names.map((n) => (
+            <label key={`o:${n}`} className="ask-box">
+              <input
+                type="checkbox"
+                checked
+                disabled={busy}
+                onChange={() => setNames((l) => l.filter((x) => x !== n))}
+              />
+              <span className="val">{n}</span>
+            </label>
+          ))}
+        </div>
+      ) : null}
+      <div className="ask-options">
+        {several ? (
+          <>
             <button
               type="button"
-              className={`pill ask-out${out?.kind === "other" ? " on" : ""}`}
-              disabled={busy}
-              aria-expanded={out?.kind === "other"}
+              className="pill"
+              disabled={busy || count === 0}
               onClick={() =>
-                setOut(out?.kind === "other" ? null : { kind: "other", text: "", saving: false })
+                void answerAsk(entryId, {
+                  choices: [...ticked].sort((a, b) => a - b),
+                  ...(rows.length ? { records: rows.map((r) => r.id) } : {}),
+                  ...(names.length ? { options: names } : {}),
+                })
               }
             >
-              {t("ask.other")}
+              {count ? t("ask.answerN", { n: count }) : t("ask.answer")}
             </button>
-          </div>
-          {out && (
-            <form
-              className="ask-text"
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitOut();
-              }}
+            <button
+              type="button"
+              className="pill ask-none"
+              disabled={busy || count > 0}
+              onClick={() => void answerAsk(entryId, { choices: [] })}
             >
-              <input
-                type="text"
-                value={out.text}
-                maxLength={out.kind === "other" ? 500 : 200}
-                aria-label={out.kind === "other" ? t("ask.other") : t("ask.new")}
-                placeholder={out.kind === "new" ? kind?.name : undefined}
-                ref={(el) => focusAtEnd(el, { preventScroll: true })}
-                onChange={(e) => setOut({ ...out, text: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setOut(null);
-                }}
-              />
-              <button
-                type="submit"
-                className="btn"
-                disabled={busy || out.saving || !out.text.trim()}
-              >
-                {out.saving ? t("ask.saving") : t("ask.answer")}
-              </button>
-            </form>
-          )}
-        </>
-      ) : (
-        <form
-          className="ask-text"
-          onSubmit={(e) => {
+              {t("ask.none")}
+            </button>
+          </>
+        ) : (
+          pending.options.map((o, i) => (
+            <button
+              key={i}
+              type="button"
+              className="pill"
+              disabled={busy}
+              onClick={() => void answerAsk(entryId, { choice: i })}
+            >
+              <ValueText p={o} />
+            </button>
+          ))
+        )}
+        {others.length > 0 && (
+          <OutPill kind="more" out={out} setOut={setOut} label={t("ask.more")} />
+        )}
+        {canNew && <OutPill kind="new" out={out} setOut={setOut} label={t("ask.new")} />}
+        <OutPill kind="other" out={out} setOut={setOut} label={t("ask.other")} />
+      </div>
+      {out && (
+        <OutLine
+          out={out}
+          setOut={setOut}
+          label={
+            out.kind === "other"
+              ? t("ask.other")
+              : out.kind === "new"
+                ? t("ask.new")
+                : t("ask.more")
+          }
+          placeholder={
+            out.kind === "new"
+              ? (field?.name ?? kind?.name)
+              : out.kind === "more"
+                ? t("ask.find")
+                : undefined
+          }
+          submit={() => void submitOut()}
+        />
+      )}
+      {out?.kind === "more" && (
+        <div className="ask-options ask-found">
+          {found.map((n) => (
+            <button key={n} type="button" className="pill" disabled={busy} onClick={() => pick(n)}>
+              <span className="val">{n}</span>
+            </button>
+          ))}
+          {!found.length && <span className="muted small">{t("ask.notFound")}</span>}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A property's other options that hold what Juan typed (any case, any accent), the first twelve. */
+function findNames(names: readonly string[], text: string): string[] {
+  const fold = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase();
+  const q = fold(text.trim());
+  return names.filter((n) => !q || fold(n).includes(q)).slice(0, 12);
+}
+
+/** Yes or no (§3.4): two buttons and no free way out (rule 2). */
+function YesNo({ entryId }: { entryId: string }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.chatBusy);
+  return (
+    // Neither is the plan's first: no tint on «Sí».
+    <div className="ask-options even">
+      <button
+        type="button"
+        className="pill"
+        disabled={busy}
+        onClick={() => void answerAsk(entryId, { yes: true })}
+      >
+        {t("ask.yes")}
+      </button>
+      <button
+        type="button"
+        className="pill"
+        disabled={busy}
+        onClick={() => void answerAsk(entryId, { yes: false })}
+      >
+        {t("ask.no")}
+      </button>
+    </div>
+  );
+}
+
+/** Words, a number or a day (§3.4); a number or a day also has «Otra cosa…». */
+function Typed({ entryId, control }: { entryId: string; control: "text" | "number" | "date" }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.chatBusy);
+  const lang = useStore((s) => s.settings.language);
+  const [text, setText] = useState("");
+  const [bad, setBad] = useState(false);
+  const [out, setOut] = useState<Out | null>(null);
+  const value = control === "number" ? parseNumber(text, lang) : null;
+  // Something written is enough to answer: a number that is not one says so (a disabled button would make Enter do
+  // nothing, with no word why).
+  const ready = text.trim() !== "";
+  const submit = () => {
+    if (busy) return;
+    if (control === "number") {
+      if (value === null) return setBad(text.trim() !== "");
+      return void answerAsk(entryId, { number: value });
+    }
+    if (!text.trim()) return;
+    void answerAsk(entryId, control === "date" ? { date: text } : { text });
+  };
+  return (
+    <>
+      <form
+        className="ask-text"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        {/* Never a password field: Boni does not ask for secrets here (docs/nucleo.md, 7.5). */}
+        <input
+          type={control === "date" ? "date" : "text"}
+          inputMode={control === "number" ? "decimal" : undefined}
+          aria-label={
+            control === "number" ? t("ask.number") : control === "date" ? t("ask.date") : undefined
+          }
+          aria-invalid={bad || undefined}
+          value={text}
+          maxLength={control === "date" ? undefined : control === "number" ? 40 : 500}
+          onChange={(e) => {
+            setText(e.target.value);
+            setBad(false);
+          }}
+        />
+        <button type="submit" className="btn" disabled={busy || !ready}>
+          {t("ask.answer")}
+        </button>
+        {control !== "text" && (
+          <span className="ask-options">
+            <OutPill kind="other" out={out} setOut={setOut} label={t("ask.other")} />
+          </span>
+        )}
+      </form>
+      {bad && <p className="turn-error">{t("ask.badNumber")}</p>}
+      {out && (
+        <OutLine
+          out={out}
+          setOut={setOut}
+          label={t("ask.other")}
+          submit={() => {
+            if (out.text.trim() && !busy) void answerInWords(entryId, out.text);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * A file (§3.4: upload it or drop it): it goes up as one dropped on the conversation, or attached on the phone, does,
+ * a row of his files, and that row is the answer. The phone chooses with its own picker and has nothing to drop on.
+ * Where the device cannot send a file, it says so; «Otra cosa…» stays.
+ */
+function FileAnswer({ entryId }: { entryId: string }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.chatBusy);
+  const [up, setUp] = useState<{ sent: number; size: number } | null>(null);
+  const [word, setWord] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  const [out, setOut] = useState<Out | null>(null);
+  const drops = canDrop();
+  const picks = hostPicks();
+  const send = async (f: Outgoing | null) => {
+    if (!f || busy || up) return;
+    setWord(null);
+    setUp({ sent: 0, size: f.size });
+    const failed = await answerWithFile(entryId, f, (sent) => setUp({ sent, size: f.size }));
+    setUp(null);
+    if (failed) setWord(t(`drop.state.${failed}`));
+  };
+  const button = picks ? (
+    <button
+      type="button"
+      className="pill"
+      disabled={busy || !!up}
+      onClick={() => void chooseOne().then(send)}
+    >
+      {t("ask.file")}
+    </button>
+  ) : (
+    <FileButton className="pill" disabled={busy || !!up} onFile={(f) => void send(outgoing(f))}>
+      {t("ask.file")}
+    </FileButton>
+  );
+  const going = up
+    ? `${t("drop.uploading")} ${percent({ key: "", name: "", state: "uploading", ...up })} %`
+    : null;
+  return (
+    <>
+      {drops || picks ? (
+        <div
+          className={`ask-file${over ? " over" : ""}`}
+          onDragOver={(e) => {
+            if (!drops || !e.dataTransfer.types.includes("Files")) return;
+            // Its own drop: the file is the answer, not a chip for the bar.
             e.preventDefault();
-            if (text.trim()) void answerAsk(entryId, { text });
+            e.stopPropagation();
+            setOver(true);
+          }}
+          onDragLeave={() => setOver(false)}
+          onDrop={(e) => {
+            if (!drops) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setOver(false);
+            const f = e.dataTransfer.files[0];
+            if (f) void send(outgoing(f));
           }}
         >
-          {/* Never a password field: Boni does not ask for secrets here (docs/nucleo.md, 7.5). */}
-          <input
-            type="text"
-            value={text}
-            maxLength={500}
-            onChange={(e) => setText(e.target.value)}
-          />
-          <button type="submit" className="btn" disabled={busy || !text.trim()}>
-            {t("ask.answer")}
-          </button>
-        </form>
+          <div className="ask-options">
+            {button}
+            <OutPill kind="other" out={out} setOut={setOut} label={t("ask.other")} />
+          </div>
+          {(going || drops) && <span className="muted small">{going ?? t("ask.fileDrop")}</span>}
+          {word && <span className="turn-state">{word}</span>}
+        </div>
+      ) : (
+        <>
+          <p className="muted small">{t("ask.noFile")}</p>
+          <div className="ask-options">
+            <OutPill kind="other" out={out} setOut={setOut} label={t("ask.other")} />
+          </div>
+        </>
       )}
-    </div>
+      {out && (
+        <OutLine
+          out={out}
+          setOut={setOut}
+          label={t("ask.other")}
+          submit={() => {
+            if (out.text.trim() && !busy) void answerInWords(entryId, out.text);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * A rehearsal (§3.4): what the rest of the turn would write, each with its card's rows, folded until «Revisar»;
+ * «Guardar» does it (a confirmation still asks), «Ahora no» does nothing of it. No free way out (rule 2).
+ */
+function Rehearsal({ entryId, pending }: { entryId: string; pending: AskPending }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.chatBusy);
+  const [open, setOpen] = useState(false);
+  const would = pending.would ?? [];
+  return (
+    <>
+      <p className="muted small">{t("ask.would", { n: would.length })}</p>
+      {open && (
+        <ol className="ask-would">
+          {would.map((w, i) => (
+            <li key={i}>
+              <h4>
+                {w.view.title}
+                {w.decision !== "allow" && (
+                  <span className="turn-state">
+                    {" · "}
+                    {w.decision === "confirm" ? t("ask.willAsk") : t("ask.toInbox")}
+                  </span>
+                )}
+              </h4>
+              <CallRows view={w.view} />
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="ask-options">
+        <button
+          type="button"
+          className="pill"
+          disabled={busy}
+          onClick={() => void answerAsk(entryId, { save: true })}
+        >
+          {t("ask.save")}
+        </button>
+        <button
+          type="button"
+          className="pill ask-out"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {open ? t("ask.hide") : t("ask.review")}
+        </button>
+        <button
+          type="button"
+          className="pill ask-out"
+          disabled={busy}
+          onClick={() => void answerAsk(entryId, { save: false })}
+        >
+          {t("ask.notNow")}
+        </button>
+      </div>
+    </>
   );
 }
 

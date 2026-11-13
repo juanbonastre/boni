@@ -10,6 +10,7 @@ import {
   updateConversation,
 } from "../src/conversations.ts";
 import { fakePlanner, type ModelProvider } from "../src/providers.ts";
+import { codeLabel, leaf, rec } from "../src/values.ts";
 import { type Env, JUAN, makeEnv, PERSONAL } from "./fixture.ts";
 
 /**
@@ -326,6 +327,295 @@ describe("a card with a free way out (§3.4, C3)", () => {
       { trust: "personal" },
     );
     expect(row.error).toBe("wrong-answer");
+  });
+});
+
+/** A question of a kind, and a reply with its answer: what Juan answered reaches the rest of the plan. */
+const asking = (control: string, extra: Record<string, unknown> = {}, answer = ref("$q")) => ({
+  version: 1,
+  steps: [
+    { id: "q", op: "ask", control, prompt: lit("¿Y bien?"), ...extra },
+    {
+      id: "r",
+      op: "reply",
+      component: "text",
+      data: { template: lit("Respuesta: {a}"), a: answer },
+    },
+  ],
+});
+/** A rehearsal before a task is made (§3.4, «Lo que haría»). */
+const REHEARSE = {
+  version: 1,
+  steps: [
+    { id: "q", op: "ask", control: "rehearsal", prompt: lit("¿Lo guardo?") },
+    {
+      id: "c",
+      op: "call",
+      tool: "entities.create",
+      args: {
+        type: lit("tarea"),
+        values: { fn: "obj", args: [lit("titulo"), lit("Llamar a la gestoría")] },
+      },
+    },
+    { id: "r", op: "reply", component: "text", data: { template: lit("Hecho") } },
+  ],
+};
+const AREA = {
+  id: "f_area",
+  key: "area",
+  name: "area",
+  type: "select" as const,
+  label: JUAN,
+  options: [
+    { id: "o_casa", name: "Casa", label: JUAN },
+    { id: "o_trabajo", name: "Trabajo", label: JUAN },
+  ],
+};
+const asked = async (a: ReturnType<Env["agent"]>, c: string, text = "pregúntame") => {
+  const r = await a.turn({ text, origin: PERSONAL, conversation: c });
+  if (r.pending?.kind !== "ask") throw new Error(`expected a question, got ${r.error}`);
+  return { run: r.run, ask: r.pending.id, pending: r.pending };
+};
+const said = (r: { replies: { component: string; data: unknown }[] }) =>
+  JSON.stringify(r.replies.find((x) => x.component === "text")?.data);
+
+describe("every kind of question has its answer (§3.4, C3)", () => {
+  it("several: the ones he ticks, «Ninguna» as none, and a row he made with «Nueva…»", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const plan = asking("several", { options: ref("$l.items") });
+    const several = { ...plan, steps: [PICK.steps[0], ...plan.steps] };
+    const a = env.agent(fakePlanner([several, several, several]));
+    const one = await asked(a, c);
+    expect(one.pending).toMatchObject({ control: "several" });
+    expect((await a.answer(one.run, one.ask, { choice: 0 })).error).toBe("wrong-answer");
+    expect((await a.answer(one.run, one.ask, { choices: [7] })).error).toBe("wrong-answer");
+    const done = await a.answer(one.run, one.ask, { choices: [0, 0] });
+    expect(done.status).toBe("done");
+    expect(said(done)).toContain("Comprar pan");
+
+    const none = await asked(a, c);
+    expect((await a.answer(none.run, none.ask, { choices: [] })).status).toBe("done");
+
+    const more = await asked(a, c);
+    const made = env.store.create(
+      "t_tarea",
+      { f_titulo: { value: "Regar las plantas", label: JUAN } },
+      { actor: "user", device: "movil-ejemplo" },
+    ).entity.id;
+    const both = await a.answer(more.run, more.ask, { choices: [0], records: [made] });
+    expect(both.status).toBe("done");
+    expect(said(both)).toContain("Comprar pan");
+    expect(said(both)).toContain("Regar las plantas");
+  });
+
+  it("a number, a date and yes or no: each takes its own kind and «Otra cosa…» where it has one", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(
+      fakePlanner([asking("number"), asking("date"), asking("yesno"), asking("number")]),
+    );
+    const n = await asked(a, c);
+    expect((await a.answer(n.run, n.ask, { text: "doce" })).error).toBe("wrong-answer");
+    expect((await a.answer(n.run, n.ask, { number: Number.POSITIVE_INFINITY })).error).toBe(
+      "wrong-answer",
+    );
+    const twelve = await a.answer(n.run, n.ask, { number: 12.5 });
+    expect(twelve.status).toBe("done");
+    expect(said(twelve)).toContain("12.5");
+
+    const d = await asked(a, c);
+    expect((await a.answer(d.run, d.ask, { date: "2026-02-30" })).error).toBe("wrong-answer");
+    const day = await a.answer(d.run, d.ask, { date: "2026-11-20" });
+    expect(said(day)).toContain("2026-11-20");
+
+    const y = await asked(a, c);
+    // Yes or no has no other answer: there is nothing to write instead.
+    expect((await a.answer(y.run, y.ask, { words: "quizá" })).error).toBe("wrong-answer");
+    expect((await a.answer(y.run, y.ask, { yes: false })).status).toBe("done");
+
+    const out = await asked(a, c);
+    const words = await a.answer(out.run, out.ask, { words: "no lo sé aún" });
+    expect(words).toMatchObject({ status: "stopped", error: "answered-in-words" });
+  });
+
+  it("a property's options: what he picks or makes with «Nueva…» is read from the schema, never taken as typed", async () => {
+    env = makeEnv();
+    env.store.applySchema(
+      { op: "add_field", type: "t_tarea", field: AREA },
+      { actor: "user", device: "movil-ejemplo" },
+    );
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(
+      fakePlanner([
+        asking("choice", { field: lit("tarea.area") }),
+        asking("choice", {
+          field: lit("tarea.area"),
+          options: { fn: "list", args: [lit("Viaje")] },
+        }),
+        asking("choice", { field: lit("tarea.nada") }),
+      ]),
+    );
+    const q = await asked(a, c);
+    expect(q.pending).toMatchObject({
+      control: "choice",
+      field: { type: "t_tarea", field: "f_area", names: ["Casa", "Trabajo"] },
+    });
+    expect(JSON.stringify((q.pending as { options: unknown }).options)).toContain("Trabajo");
+    expect((await a.answer(q.run, q.ask, { option: "Ocio" })).error).toBe("wrong-answer");
+    // «Nueva…»: the option is added by Juan's change of the property, then it is his answer. The card he saw is the
+    // same: a name added since does not make it «Ha cambiado».
+    env.store.applySchema(
+      {
+        op: "set_options",
+        type: "t_tarea",
+        field: "f_area",
+        options: [...AREA.options, { id: "o_ocio", name: "Ocio", label: JUAN }],
+      },
+      { actor: "user", device: "movil-ejemplo" },
+    );
+    const done = await a.answer(
+      q.run,
+      q.ask,
+      { option: "Ocio" },
+      undefined,
+      undefined,
+      q.pending.seen,
+    );
+    expect(done.error).toBeNull();
+    expect(said(done)).toContain("Ocio");
+
+    // What the planner suggests must be options of it; a property that is not a select is refused.
+    const viaje = await a.turn({ text: "otra", origin: PERSONAL, conversation: c });
+    expect(viaje).toMatchObject({ status: "stopped", error: "ask-bad-options" });
+    const bad = await a.turn({ text: "otra más", origin: PERSONAL, conversation: c });
+    expect(bad).toMatchObject({ status: "stopped", error: "ask-bad-field" });
+  });
+
+  it("a file: the one he uploaded, as the conversation's files are seen; one that is not his file is refused", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const file = rec(
+      { id: leaf("e_archivo", codeLabel("file")), name: leaf("factura.pdf", JUAN) },
+      JUAN,
+    );
+    const a = env.agent(fakePlanner([asking("file", {}, ref("$q.name"))]), undefined, {
+      fileOf: (row) => (row === "e_archivo" ? file : null),
+    });
+    const q = await asked(a, c);
+    expect((await a.answer(q.run, q.ask, { file: "e_otro" })).error).toBe("wrong-answer");
+    const done = await a.answer(q.run, q.ask, { file: "e_archivo" });
+    expect(done.status).toBe("done");
+    expect(said(done)).toContain("factura.pdf");
+  });
+
+  it("a rehearsal: what it would write, and «Guardar» writes it; «Ahora no» writes nothing; with nothing to write, no card", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const titles = () => env.store.list("t_tarea").map((s) => s.entity.values.f_titulo);
+    const nothing = {
+      version: 1,
+      steps: [
+        { id: "q", op: "ask", control: "rehearsal", prompt: lit("¿Lo guardo?") },
+        { id: "r", op: "reply", component: "text", data: { template: lit("Nada") } },
+      ],
+    };
+    const a = env.agent(fakePlanner([REHEARSE, REHEARSE, nothing]));
+    const q = await asked(a, c);
+    const would = (q.pending as { would?: { decision: string; view: unknown }[] }).would ?? [];
+    expect(would).toHaveLength(1);
+    expect(JSON.stringify(would[0]?.view)).toContain("Llamar a la gestoría");
+    // Rehearsed, nothing is written.
+    expect(titles()).toEqual(["Comprar pan"]);
+    expect((await a.answer(q.run, q.ask, { yes: true })).error).toBe("wrong-answer");
+    const saved = await a.answer(q.run, q.ask, { save: true });
+    expect(saved.status).toBe("done");
+    expect(titles().sort()).toEqual(["Comprar pan", "Llamar a la gestoría"]);
+
+    const no = await asked(a, c);
+    const notNow = await a.answer(no.run, no.ask, { save: false });
+    expect(notNow).toMatchObject({ status: "stopped", error: "not-saved" });
+    expect(titles()).toHaveLength(2);
+
+    const none = await a.turn({ text: "nada", origin: PERSONAL, conversation: c });
+    expect(none.pending).toBeNull();
+    expect(none.status).toBe("done");
+  });
+
+  it("a rehearsal says what will still ask, and after «Guardar» it asks: the confirmation is not skipped", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "a", op: "call", tool: "entities.get", args: { id: lit("e_ana") } },
+        ...REHEARSE.steps.slice(0, 2),
+        {
+          id: "m",
+          op: "call",
+          tool: "mail.send",
+          args: {
+            to: { ref: "$a.email" },
+            subject: { quote: "te llamo mañana" },
+            body: { quote: "te llamo mañana" },
+          },
+        },
+        REHEARSE.steps[2],
+      ],
+    };
+    const a = env.agent(fakePlanner([plan]));
+    const q = await asked(a, c, "apunta llamar a la gestoría y escribe a Ana: te llamo mañana");
+    const would = (q.pending as { would?: { decision: string }[] }).would ?? [];
+    expect(would.map((w) => w.decision)).toEqual(["allow", "confirm"]);
+    const saved = await a.answer(q.run, q.ask, { save: true });
+    // What it wrote is written; the mail waits for his yes on its own card.
+    expect(env.store.list("t_tarea").map((s) => s.entity.values.f_titulo)).toContain(
+      "Llamar a la gestoría",
+    );
+    expect(saved.status).toBe("waiting");
+    expect(saved.pending).toMatchObject({ kind: "confirm", view: { tool: "mail.send" } });
+    expect(env.sent).toEqual([]);
+  });
+
+  it("an old card is checked again first (rule 3a): changed since, nothing is answered and it comes back fresh", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([PICK]));
+    const q = await asked(a, c);
+    env.store.update(
+      env.ids.tarea1 as string,
+      { f_titulo: { value: "Comprar pan integral", label: JUAN } },
+      { actor: "user", device: "movil-ejemplo" },
+    );
+    const changed = await a.answer(q.run, q.ask, { choice: 0 });
+    expect(changed).toMatchObject({ status: "waiting", error: "changed" });
+    if (changed.pending?.kind !== "ask") throw new Error("expected the card again");
+    expect(changed.pending.seen).not.toBe(q.pending.seen);
+    expect(JSON.stringify(changed.pending.options)).toContain("Comprar pan integral");
+    // A device that still shows the old card is told so too, before anything is answered.
+    const stale = await a.answer(q.run, q.ask, { choice: 0 }, undefined, undefined, q.pending.seen);
+    expect(stale.error).toBe("changed");
+    const done = await a.answer(
+      q.run,
+      q.ask,
+      { choice: 0 },
+      undefined,
+      undefined,
+      changed.pending.seen,
+    );
+    expect(done.status).toBe("done");
+    expect(said(done)).toContain("Comprar pan integral");
+  });
+
+  it("background work asks only what its Bandeja card can answer: choose one or words", async () => {
+    env = makeEnv();
+    const a = env.agent(fakePlanner([]));
+    for (const control of ["number", "several", "file", "rehearsal"]) {
+      const r = await a.background(
+        asking(control, control === "several" ? { options: { fn: "list", args: [lit("a")] } } : {}),
+      );
+      expect(r, control).toMatchObject({ status: "stopped", error: "ask-only-in-a-turn" });
+    }
   });
 });
 
