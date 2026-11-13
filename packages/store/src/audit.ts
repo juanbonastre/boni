@@ -371,7 +371,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
   }[] = [
     {
       part: "ops",
-      step: 2000,
+      step: 1000,
       last: () =>
         Number((db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n),
       count: (lo, hi) => {
@@ -385,7 +385,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     },
     {
       part: "actions",
-      step: 5000,
+      step: 2000,
       last: () => Number((lastAction.get() as { n: number }).n),
       count: summed(
         `SELECT count(*) AS n, coalesce(sum(octet_length(by) + octet_length(tool) + coalesce(octet_length(target), 0) + 64), 0) AS b
@@ -395,7 +395,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     {
       // By action: an action's reads are written with it, in its transaction.
       part: "access",
-      step: 200,
+      step: 100,
       last: () => Number((lastAction.get() as { n: number }).n),
       count: summed(
         `SELECT count(*) AS n, coalesce(sum(octet_length(entity) + octet_length(fields) + octet_length(shapes) + 48), 0) AS b
@@ -405,7 +405,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     {
       // By rowid: the table has no key of its own, and with nothing ever deleted its rowids only grow.
       part: "model_calls",
-      step: 200,
+      step: 100,
       last: () =>
         Number(
           (

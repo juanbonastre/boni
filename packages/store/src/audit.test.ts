@@ -479,14 +479,24 @@ describe("the storage figures (task 43)", () => {
         audit: st.audit,
       };
     };
-    // A slice per call when no time is left: the reads (700 actions, 200 per slice) and the calls (450, 200 per
-    // slice) take several, and each call says whether it is done.
+    // A slice per call when no time is left, and each call says whether it is done: the reads (700 actions, 100 per
+    // slice) take seven slices and the calls (450, 100 per slice) five; a slice that finishes its part goes on to the
+    // next part in the same call, so 6 + 4 calls end early and the eleventh finishes.
     let turns = 1;
     while (!s.audit.storageCatchUp(0)) turns++;
-    expect(turns).toBeGreaterThanOrEqual(6);
+    expect(turns).toBe(11);
     expect(s.audit.storageCatchUp(0)).toBe(true);
     expect(figures(s)).toEqual(whole());
     expect(whole().audit).toMatchObject({ actions: 700, access: 7000 });
+    // The files' sizes from their index, never from the rows that sit among their bytes.
+    const plan = new DatabaseSync(path, { readOnly: true });
+    expect(
+      plan
+        .prepare("EXPLAIN QUERY PLAN SELECT coalesce(sum(size), 0) AS s FROM files")
+        .all()
+        .map((r) => r.detail),
+    ).toEqual(["SCAN files USING COVERING INDEX files_size"]);
+    plan.close();
     // What comes after is added, and only it: a change, a read and a call.
     s.update(ids[3] as string, { f_estado: t("otra vez") }, me);
     read(1000);

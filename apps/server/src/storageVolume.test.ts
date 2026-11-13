@@ -60,8 +60,10 @@ afterAll(async () => {
 
 /**
  * A store shaped like his and of his size (a year): 3,000 records in ten collections, a fifth with a long text;
- * 80,000 changes of 2.4 KB; 15,000 reads of twenty records each (300,000 rows of the audit); 2,000 model calls of
- * 35 KB. Written in SQL, since writing it a row at a time through the store would take the test's minute.
+ * 80,000 changes; 15,000 reads of twenty records each (300,000 rows of the audit); 2,000 model calls. Written in SQL,
+ * since writing it a row at a time through the store would take the test's minute. The texts are short (a change of
+ * 600 bytes, a call of 4 KB): the sums read a text's length from its row, never the text, so longer ones cost the old
+ * route nothing more and only slowed the tests that run beside this one (a 450 MB store, 2026-11-13).
  */
 function fill(path: string) {
   const sql = new DatabaseSync(path);
@@ -78,7 +80,7 @@ function fill(path: string) {
     WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 80000)
     INSERT INTO ops (at, actor, device, by, kind, target, before, after, hash)
       SELECT 1760000000000 + i * 60000, 'user', 'portatil', 'user:portatil', 'update',
-        printf('e_01m7vol%06d', (i * 7919) % 3000), printf('%.1200c', 'b'), printf('%.1200c', 'a'), 'h' FROM n;
+        printf('e_01m7vol%06d', (i * 7919) % 3000), printf('%.300c', 'b'), printf('%.300c', 'a'), 'h' FROM n;
     WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 15000)
     INSERT INTO actions (seq, at, by, run, tool, target, decision, hash)
       SELECT ${a0} + i, 1760000000000 + i * 30000, 'model:reader:fake', 'r' || i, 'mcp.query', '{}', 'allow', 'h' FROM n;
@@ -88,7 +90,7 @@ function fill(path: string) {
         '["f_titulo","f_x"]', '[]', NULL, '[]' FROM n;
     WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
     INSERT INTO model_calls (run, role, provider, model, prompt_hash, request, response, usage, at)
-      SELECT 'r' || i, 'reader', 'fake', 'm-ejemplo', 'h', printf('%.30000c', 'q'), printf('%.5000c', 'r'), '{}',
+      SELECT 'r' || i, 'reader', 'fake', 'm-ejemplo', 'h', printf('%.3000c', 'q'), printf('%.1000c', 'r'), '{}',
         1760000000000 + i * 600000 FROM n;
     COMMIT;`);
   sql.close();
@@ -136,14 +138,19 @@ type Figures = {
   audit: unknown;
 };
 
-/** The route asked, with the longest the event loop went without a turn while it answered. */
-async function asked(): Promise<{ ms: number; held: number; body: Figures }> {
+/**
+ * The route asked, with the longest the event loop went without a turn while it answered and how many times it was
+ * held 10 ms or more (the slices it was counted in).
+ */
+async function asked(): Promise<{ ms: number; held: number; long: number; body: Figures }> {
   let held = 0;
+  let long = 0;
   let last = performance.now();
   let on = true;
   const tick = () => {
     const now = performance.now();
     held = Math.max(held, now - last);
+    if (now - last >= 10) long++;
     last = now;
     if (on) setTimeout(tick, 0);
   };
@@ -156,7 +163,7 @@ async function asked(): Promise<{ ms: number; held: number; body: Figures }> {
   const ms = performance.now() - t0;
   on = false;
   expect(r.status).toBe(200);
-  return { ms, held, body };
+  return { ms, held, long, body };
 }
 
 describe("the storage figures with Juan's volume (task 107, A-28)", () => {
@@ -164,15 +171,15 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
     host.store(1); // opened, so migrated
     const path = join(dir, "users", "1.db");
     fill(path);
-    // What the old route did at once, timed warm (the best of three): the bound is relative to it, so a loaded runner
-    // slows both alike.
+    // What the old route did at once, timed warm (the best of two, after one to warm it): the bounds are relative to
+    // it, so a loaded runner slows both alike.
     whole(path);
     const before = whole(path);
     const ref = Math.min(before.ms, whole(path).ms);
     const first = await asked();
     const again = await asked();
     console.log(
-      `storage figures with his volume: the whole sum ${ref.toFixed(0)} ms at once; the first answer ${first.ms.toFixed(0)} ms with the loop held at most ${first.held.toFixed(0)} ms; the next ${again.ms.toFixed(0)} ms`,
+      `storage figures with his volume: the whole sum ${ref.toFixed(0)} ms at once; the first answer ${first.ms.toFixed(0)} ms with the loop held at most ${first.held.toFixed(0)} ms, ${first.long} times 10 ms or more; the next ${again.ms.toFixed(0)} ms`,
     );
     const figures = (b: Figures) => ({
       history: Object.fromEntries(b.types.map((x) => [x.type, x.history])),
@@ -184,6 +191,8 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
     expect(figures(again.body)).toEqual(before.figures);
     // The loop is free between slices: never held for the whole sum (the route as it was held it all of `ref`).
     expect(first.held).toBeLessThan(Math.max(80, ref / 2));
+    // And given back between slices: the old route held it once, for all of it.
+    expect(first.long).toBeGreaterThanOrEqual(4);
     // Then only what is new is counted: no table read whole again.
     expect(again.ms).toBeLessThan(Math.max(40, ref / 4));
   }, 120_000);

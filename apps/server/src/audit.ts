@@ -353,8 +353,14 @@ const catchingUp = new WeakMap<UserStore, Promise<void>>();
 export function storageCaughtUp(store: UserStore, ms = STORAGE_SLICE_MS): Promise<void> {
   const going = catchingUp.get(store);
   if (going) return going;
+  const turn = () => new Promise<void>((r) => setImmediate(r));
   const p = (async () => {
-    while (!store.audit.storageCatchUp(ms)) await new Promise<void>((r) => setImmediate(r));
+    // Each slice in a turn of its own: never in the request's turn, nor in the one that answers it (together they
+    // held the loop twice a slice, 2026-11-13).
+    do {
+      await turn();
+    } while (!store.audit.storageCatchUp(ms));
+    await turn();
   })().finally(() => catchingUp.delete(store));
   catchingUp.set(store, p);
   return p;
