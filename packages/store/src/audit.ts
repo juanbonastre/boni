@@ -151,6 +151,12 @@ export interface Audit {
   /** Changes in a period by kind (create, update, delete, restore) and how many undid another. */
   changes(from: number, to: number): { kinds: Record<string, number>; undone: number };
   verify(): Verification;
+  /**
+   * Brings the kept storage sums up to date (migration 23) a slice at a time, for about `ms` of work at most;
+   * true once nothing is left to count. A server calls it between turns of its event loop (task 107).
+   */
+  storageCatchUp(ms?: number): boolean;
+  /** The storage figures: the kept sums brought up to date (all at once: a server catches up first), plus the rest. */
   storage(): Storage;
 }
 
@@ -280,7 +286,7 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     "INSERT INTO actions (at, by, run, tool, target, decision, rule, call, result, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '')",
   );
   const insertAccess = db.prepare(
-    "INSERT OR REPLACE INTO access (action, entity, type, version, fields, shapes, body, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO access (action, entity, type, version, fields, shapes, body, files) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   );
   const setHash = db.prepare("UPDATE actions SET hash = ? WHERE seq = ?");
   const seenMeta = db.prepare(
@@ -328,6 +334,118 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     result: p(r.result),
     hash: r.hash as string,
   });
+
+  // The storage figures as kept (migration 23): each part's sum up to the last row it counted, and the history per
+  // record. A slice is a range of the part's own key, so it reads only its rows (task 107: summing the tables whole
+  // read the history, the audit and every model call, 40 s with the NAS's server held).
+  const sumOf = db.prepare("SELECT upto, rows, bytes FROM storage_sums WHERE part = ?");
+  const addSum = db.prepare(
+    `INSERT INTO storage_sums (part, upto, rows, bytes) VALUES (?, ?, ?, ?)
+     ON CONFLICT(part) DO UPDATE SET upto = excluded.upto, rows = rows + excluded.rows, bytes = bytes + excluded.bytes`,
+  );
+  const addHistory = db.prepare(
+    `INSERT INTO storage_history (target, bytes) VALUES (?, ?)
+     ON CONFLICT(target) DO UPDATE SET bytes = bytes + excluded.bytes`,
+  );
+  const opsSlice = db.prepare(
+    `SELECT target, count(*) AS n,
+       coalesce(sum(coalesce(octet_length(before), 0) + coalesce(octet_length(after), 0)), 0) AS b
+     FROM ops WHERE seq > ? AND seq <= ? GROUP BY target`,
+  );
+  const lastAction = db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions");
+  const summed = (sql: string) => {
+    const q = db.prepare(sql);
+    return (lo: number, hi: number) => {
+      const r = q.get(lo, hi) as { n: number; b: number };
+      return { rows: Number(r.n), bytes: Number(r.b) };
+    };
+  };
+  // Sizes in bytes by `octet_length`, which SQLite answers from each row's header without reading the text (task 43).
+  // The steps are sized so one slice stays in milliseconds with the disk cold: a call is tens of KB, an action's
+  // reads may be thousands of rows.
+  const parts: {
+    part: string;
+    step: number;
+    last: () => number;
+    count: (lo: number, hi: number) => { rows: number; bytes: number };
+  }[] = [
+    {
+      part: "ops",
+      step: 2000,
+      last: () =>
+        Number((db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n),
+      count: (lo, hi) => {
+        let rows = 0;
+        for (const r of opsSlice.all(lo, hi) as { target: string; n: number; b: number }[]) {
+          rows += Number(r.n);
+          addHistory.run(r.target, Number(r.b));
+        }
+        return { rows, bytes: 0 };
+      },
+    },
+    {
+      part: "actions",
+      step: 5000,
+      last: () => Number((lastAction.get() as { n: number }).n),
+      count: summed(
+        `SELECT count(*) AS n, coalesce(sum(octet_length(by) + octet_length(tool) + coalesce(octet_length(target), 0) + 64), 0) AS b
+         FROM actions WHERE seq > ? AND seq <= ?`,
+      ),
+    },
+    {
+      // By action: an action's reads are written with it, in its transaction.
+      part: "access",
+      step: 200,
+      last: () => Number((lastAction.get() as { n: number }).n),
+      count: summed(
+        `SELECT count(*) AS n, coalesce(sum(octet_length(entity) + octet_length(fields) + octet_length(shapes) + 48), 0) AS b
+         FROM access WHERE action > ? AND action <= ?`,
+      ),
+    },
+    {
+      // By rowid: the table has no key of its own, and with nothing ever deleted its rowids only grow.
+      part: "model_calls",
+      step: 200,
+      last: () =>
+        Number(
+          (
+            db.prepare("SELECT coalesce(max(rowid), 0) AS n FROM model_calls").get() as {
+              n: number;
+            }
+          ).n,
+        ),
+      count: summed(
+        `SELECT count(*) AS n, coalesce(sum(coalesce(octet_length(request), 0) + coalesce(octet_length(response), 0)), 0) AS b
+         FROM model_calls WHERE rowid > ? AND rowid <= ?`,
+      ),
+    },
+  ];
+  const kept = (part: string) =>
+    (sumOf.get(part) as { upto: number; rows: number; bytes: number } | undefined) ?? {
+      upto: 0,
+      rows: 0,
+      bytes: 0,
+    };
+  const storageCatchUp = (ms = 25): boolean => {
+    const t0 = performance.now();
+    for (const p of parts) {
+      const last = p.last();
+      for (;;) {
+        // The cursor is read inside the transaction: another connection catching up too never counts a row twice.
+        const done = tx(() => {
+          const upto = Number(kept(p.part).upto);
+          if (upto >= last) return true;
+          const hi = Math.min(last, upto + p.step);
+          const c = p.count(upto, hi);
+          addSum.run(p.part, hi, c.rows, c.bytes);
+          return hi >= last;
+        });
+        if (done) break;
+        if (performance.now() - t0 >= ms) return false;
+      }
+    }
+    return true;
+  };
 
   /** Reads and writes per quarter, actor and type in [from, to), of the actions and operations after the numbers given. */
   const activityRows = (
@@ -629,17 +747,16 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
       }
       return { ok: true, ops, actions, broken: null };
     },
-    // Sizes in bytes by `octet_length`, which SQLite answers from each row's header: `length` counts characters, so
-    // it read every text whole (the models' prompts, the history's values), and on the NAS this took 9.6 s with the
-    // server held (task 43). The history is summed in one pass, not once per collection.
+    storageCatchUp,
     storage: () => {
+      storageCatchUp(Number.POSITIVE_INFINITY);
+      // The history of each collection: its records' kept sums, by the collection each record is in now.
       const history = new Map(
         (
           db
             .prepare(
-              `SELECT x.type AS type,
-                 coalesce(sum(coalesce(octet_length(o.before), 0) + coalesce(octet_length(o.after), 0)), 0) AS b
-               FROM ops o JOIN entities x ON x.id = o.target GROUP BY x.type`,
+              `SELECT x.type AS type, coalesce(sum(h.bytes), 0) AS b
+               FROM storage_history h JOIN entities x ON x.id = h.target GROUP BY x.type`,
             )
             .all() as { type: string; b: number }[]
         ).map((r) => [r.type, Number(r.b)]),
@@ -658,29 +775,21 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
           files: 0,
           filesBytes: 0,
         }));
-      const mc = db
-        .prepare(
-          "SELECT count(*) AS n, coalesce(sum(coalesce(octet_length(request), 0) + coalesce(octet_length(response), 0)), 0) AS b FROM model_calls",
-        )
-        .get() as { n: number; b: number };
-      const au = db
-        .prepare(
-          `SELECT (SELECT count(*) FROM actions) AS a, (SELECT count(*) FROM access) AS x,
-             (SELECT coalesce(sum(octet_length(by) + octet_length(tool) + coalesce(octet_length(target), 0) + 64), 0) FROM actions)
-             + (SELECT coalesce(sum(octet_length(entity) + octet_length(fields) + octet_length(shapes) + 48), 0) FROM access) AS b`,
-        )
-        .get() as { a: number; x: number; b: number };
+      const mc = kept("model_calls");
+      const actions = kept("actions");
+      const access = kept("access");
+      const audit = {
+        actions: Number(actions.rows),
+        access: Number(access.rows),
+        bytes: Number(actions.bytes) + Number(access.bytes),
+      };
+      const modelCalls = { rows: Number(mc.rows), bytes: Number(mc.bytes) };
       const files = Number(
         (db.prepare("SELECT coalesce(sum(size), 0) AS s FROM files").get() as { s: number }).s,
       );
       const total =
-        types.reduce((s, t) => s + t.bytes + t.history, 0) + Number(mc.b) + Number(au.b) + files;
-      return {
-        types,
-        modelCalls: { rows: Number(mc.n), bytes: Number(mc.b) },
-        audit: { actions: Number(au.a), access: Number(au.x), bytes: Number(au.b) },
-        total,
-      };
+        types.reduce((s, t) => s + t.bytes + t.history, 0) + modelCalls.bytes + audit.bytes + files;
+      return { types, modelCalls, audit, total };
     },
   };
 }

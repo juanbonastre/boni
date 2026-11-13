@@ -721,7 +721,8 @@ export function makeApp(opts: ServerOptions): App {
           return a ? send(res, 200, a) : send(res, 404, { error: "not-found" });
         }
         if (route === "GET /api/data/audit/verify") return send(res, 200, store.audit.verify());
-        if (route === "GET /api/data/audit/storage") return send(res, 200, auditStorage(store));
+        if (route === "GET /api/data/audit/storage")
+          return send(res, 200, await auditStorage(store));
         if (route === "GET /api/data/audit/settings") return send(res, 200, auditSettings(store));
         if (route === "PUT /api/data/audit/settings") {
           const r = setAuditSettings(store, await bodyOf(req));

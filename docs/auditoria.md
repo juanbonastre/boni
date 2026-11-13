@@ -35,6 +35,7 @@ sobre todo, pero también el MCP, las extensiones, Boni y las personas) y qué d
   (`audit/userReads`), pensando en un Boni con otras personas.
 - **Nada se borra por defecto**. Boni mide el almacenamiento (`/api/data/audit/storage`) y aconseja qué podría irse
   (los textos completos de las llamadas a modelos, historiales muy largos); borrar es decisión de Juan.
+  Esas cifras se guardan en el almacén y crecen con lo que llega, contadas a trozos sin parar el servidor (A-28).
 
 ## Coste
 

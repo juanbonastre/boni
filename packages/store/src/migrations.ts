@@ -339,6 +339,24 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
      PRIMARY KEY (sha256, n)
    );
    ALTER TABLE files ADD COLUMN parts INTEGER NOT NULL DEFAULT 0;`,
+  // 23: the storage figures kept as they grow (task 107): summing the history, the audit and the models' calls read
+  // those tables whole on every «Todas las páginas», and on the NAS that held the server 40 s. Now each part's sum
+  // lives here with the last row it counted (`upto`: an operation's or an action's seq, a call's rowid), and the
+  // history per record; a request adds only what came after. Those tables only ever grow (nothing deletes from them),
+  // so a row once counted stays counted. The first request after this fills it once, a slice at a time. The files'
+  // sizes are summed from an index of their own: each file's row sits on a page of its own between its bytes, so
+  // summing them from the table was one read of the disk per file.
+  `CREATE INDEX files_size ON files(size);
+   CREATE TABLE storage_sums (
+     part TEXT PRIMARY KEY,
+     upto INTEGER NOT NULL,
+     rows INTEGER NOT NULL,
+     bytes INTEGER NOT NULL
+   ) WITHOUT ROWID;
+   CREATE TABLE storage_history (
+     target TEXT PRIMARY KEY,
+     bytes INTEGER NOT NULL
+   ) WITHOUT ROWID;`,
 ];
 
 export function migrate(db: DatabaseSync): void {
