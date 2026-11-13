@@ -203,7 +203,11 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
 - Se enciende solo con `ANTHROPIC_API_KEY` (la clave, con limite de gasto, en el `.env` del NAS y en Vaultwarden; nunca en
   el repo). Modelos: `BONI_PLANNER_MODEL` (por defecto `claude-opus-5-5`) y `BONI_READER_MODEL` (por defecto
   `claude-haiku-4-5`). Sin clave el log dice "agent off" y las rutas responden 503 `agent-off`.
-- Evaluacion con el modelo real (fuera del CI, con datos inventados): `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`.
+- Evaluación con el modelo real (fuera del CI, con datos inventados, a mano y con un tope de gasto: `--max-cost=<dólares>`;
+  pasado el tope no sale ninguna llamada más): el planificador, `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`;
+  la conversación sobre el agente de este servidor (C1 «antes te he dicho…» con `turns.undo` y cada clase de pregunta,
+  la 27), `ANTHROPIC_API_KEY=... node apps/server/eval/conversation.ts` (`--dry` mide cada petición sin llamar a ningún
+  modelo, para estimar el gasto).
 - La app web de Boni (`apps/boni-web`, compilada) se sirve en `/boni/` solo en la entrada tailnet (`BONI_BONI_WEB`; la
   imagen Docker la lleva). En el navegador habla con este mismo servidor: la API v1 (gráficas, atajos, apuntar gasto) y la
   del agente (la conversación). El calendario sigue en `/`.
