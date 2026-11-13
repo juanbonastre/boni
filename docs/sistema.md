@@ -1099,7 +1099,7 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     (se cierran los ajustes, una gráfica, un registro venido de otra app y la lista de conversaciones; el texto de
     un registro se manda antes, y un panel con algo escrito pregunta antes de irse). No enseña nada de Juan, así que
     nunca se refresca ni lee el servidor;
-  - **la burbuja** (`Bubble.kt`, I-38): el círculo sobre las demás apps es la burbuja de Android 17 (Juan,
+  - **la burbuja** (`Bubble.kt`, I-39): el círculo sobre las demás apps es la burbuja de Android 17 (Juan,
     2026-11-13: «A, la burbuja»). Se pide desde el icono de Boni (mantenerlo pulsado y elegir la burbuja); Boni no
     pide permisos ni deja una notificación fija. Android no da una forma de preguntar si una app es una burbuja, así
     que lo dice la ventana: en el teléfono de Juan (2026-11-13) una burbuja es una tarea de varias ventanas más

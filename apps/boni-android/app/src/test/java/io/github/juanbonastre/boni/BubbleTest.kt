@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Boni's circle on the phone is Android's bubble (task 115, I-38; Juan, 2026-11-13: «A, la burbuja»). */
+/** Boni's circle on the phone is Android's bubble (task 115, I-39; Juan, 2026-11-13: «A, la burbuja»). */
 class BubbleTest {
     private val screen = "Rect(0, 0 - 1080, 2424)"
 
@@ -42,7 +42,7 @@ class BubbleTest {
         assertFalse(Bubble.isBubble(false, "{1.0 ?mcc0mnc [es_ES] sw411dp}"))
     }
 
-    /** I-38: the circle asks for no permission to draw over other apps and keeps no notification of its own. */
+    /** I-39: the circle asks for no permission to draw over other apps and keeps no notification of its own. */
     @Test
     fun theCircleNeedsNoOverlayNorAForegroundService() {
         val manifest = File("src/main/AndroidManifest.xml").readText()

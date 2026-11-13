@@ -765,7 +765,7 @@ contraseña ni un código aquí» under a question.
   draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
-  - **On the phone** (task 115; `Bubble.kt`, `ChatWidget.kt`; I-38). Boni's circle over the other apps is Android's
+  - **On the phone** (task 115; `Bubble.kt`, `ChatWidget.kt`; I-39). Boni's circle over the other apps is Android's
     own bubble (Juan, 2026-11-13: «A, la burbuja»): touch and hold Boni's icon, choose the bubble, and Boni floats as
     a circle that moves over any app and opens Boni in a small window. Boni asks for no permission to draw over other
     apps and keeps no notification of its own. Opened as a bubble, Boni opens on the conversation, the last one:
