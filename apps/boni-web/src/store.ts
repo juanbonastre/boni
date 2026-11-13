@@ -106,6 +106,16 @@ import { filterOf, litKeys, typeOfKey } from "./core/screenReplies.ts";
 import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
+  answered,
+  merged,
+  overPage,
+  overRow,
+  pageWrite,
+  parseUnsent,
+  rowWrite,
+  type UnsentWrite,
+} from "./core/unsent.ts";
+import {
   dropped,
   type Upload,
   type Uploads,
@@ -608,7 +618,7 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
   hostRef = h;
   applySettings(await h.getSettings());
   if (kind !== "widget") window.addEventListener("keydown", zoomKeys);
-  const [widgets, specs, catalog, home, screens, shortcuts, pages, last] = await Promise.all([
+  const [widgets, specs, catalog, home, screens, shortcuts, pages, last, kept] = await Promise.all([
     readJson<{ widgets: Widget[] }>(h.store, FILES.widgets),
     readJson<{ charts: unknown[] }>(h.store, FILES.charts),
     readJson<ChartCatalog>(h.store, FILES.catalog),
@@ -617,7 +627,10 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     readJson<{ shortcuts: unknown[] }>(h.store, FILES.shortcuts),
     readJson<{ pages: PageInfo[] }>(h.store, FILES.pages),
     readJson<{ page: Page }>(h.store, FILES.lastPage),
+    h.store.read(UNSENT_FILE).catch(() => null),
   ]);
+  unsent = parseUnsent(kept);
+  unsentKept = unsent.length > 0;
   void readJson<{ items?: unknown }>(h.store, FILES.recent).then((r) => {
     const ok = (x: unknown): x is Recent => {
       const o = x as Partial<Record<string, unknown>> | null;
@@ -638,8 +651,11 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     if (f) set({ fold: { sections: ids(f.sections), branches: ids(f.branches) } });
   });
   // The device's copy of the pages and of the last one opened: the window opens on it without network.
-  const cachedPages = Array.isArray(pages?.pages) ? pages.pages : null;
-  const lastPage = last?.page && cachedPages?.some((p) => p.id === last.page.id) ? last.page : null;
+  const cachedPages = Array.isArray(pages?.pages) ? pagesOver(pages.pages) : null;
+  const lastPage =
+    last?.page && cachedPages?.some((p) => p.id === last.page.id)
+      ? overPage(last.page, unsent)
+      : null;
   set({
     widgets: widgets?.widgets ?? [],
     chartSpecs: (specs?.charts ?? []).map(parseSpec),
@@ -661,12 +677,25 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     else if (e.type === "settings") onSettingsChanged(e.settings);
   });
   if (role === "main") {
-    // What was typed on a page in the last moment is sent before the window goes.
+    // What was typed in the last moment is sent as the window goes, and kept on the device until it is answered.
     window.addEventListener("pagehide", () => {
+      leaveTyping();
       void flushPage();
       void flushRowBody();
+      keepUnsent();
       flushBoniWindow();
     });
+    // A phone's browser or WebView may drop a tab in the background with no `pagehide`: what is pending goes, and
+    // the list is kept, as it hides. Not on the desktop, whose window hides to the tray and quits with `pagehide`.
+    if (!h.desktop)
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "hidden") return;
+        leaveTyping();
+        void flushPage();
+        void flushRowBody();
+        keepUnsent();
+      });
+    void sendUnsent();
     void restoreBoniWindow();
     void countQueue();
     void reloadAll();
@@ -680,8 +709,12 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
       setInterval(() => void onTick(++minute, role), 60_000);
     }
   } else if (kind === "peek") {
-    // A note's text typed a moment before the peek closes is sent before it goes.
-    window.addEventListener("pagehide", () => void flushRowBody());
+    // A note's text typed a moment before the peek closes is sent as it goes, and kept until it is answered.
+    window.addEventListener("pagehide", () => {
+      leaveTyping();
+      void flushRowBody();
+      keepUnsent();
+    });
     h.desktop?.pageReady?.();
     h.embed?.ready();
   } else {
@@ -773,6 +806,7 @@ async function onChanged(what: string, role: "main" | "widget") {
  */
 async function onTick(minute: number, role: "main" | "widget") {
   await sync().catch(() => 0);
+  if (role === "main") await sendUnsent();
   // The inbox, every minute in the main window: new proposals open its panel.
   if (role === "main" && configured(get().settings)) void loadInbox();
   if (!get().settings.live && minute % RELOAD_EVERY_MINUTES === 0) {
@@ -2792,7 +2826,7 @@ export async function loadPages(): Promise<PageInfo[] | null> {
     const making = (get().pages ?? []).filter(
       (p) => p.id.startsWith("new-") && !pages.some((x) => x.id === p.id),
     );
-    set({ pages: [...pages, ...making] });
+    set({ pages: [...pagesOver(pages), ...making] });
     await keep(FILES.pages, { pages });
     return pages;
   } catch {
@@ -2828,9 +2862,10 @@ export async function openPage(id: string) {
   const same = get().page?.id === id;
   set({ view: { kind: "page", id }, page: same ? get().page : null });
   try {
-    const page = await agent.page(id);
+    const got = await agent.page(id);
     const v = get().view;
-    if (!page || v.kind !== "page" || v.id !== id) return;
+    if (!got || v.kind !== "page" || v.id !== id) return;
+    const page = overPage(got, unsent);
     set({ page });
     noteRecent({ kind: "page", id, title: page.title });
     await keep(FILES.lastPage, { page });
@@ -2940,12 +2975,14 @@ export async function flushPage() {
   pending = null;
   clearTimeout(p.timer);
   try {
-    await agent.updatePage(p.id, p.patch);
+    await sendWrite(pageWrite(p.id, p.patch, Date.now()));
     const page = get().page;
     if (page?.id === p.id) await keep(FILES.lastPage, { page });
     if (p.patch.title !== undefined || p.patch.icon !== undefined)
       await keep(FILES.pages, { pages: get().pages });
-  } catch {
+  } catch (e) {
+    // Without a connection it is kept on this device and goes later: what is on the screen stays.
+    if (unreached(e)) return;
     toast(get().t("page.error"));
     // What the server has is the truth again.
     if (get().page?.id === p.id) await openPage(p.id);
@@ -4311,10 +4348,13 @@ export async function editCell(type: string, id: string, field: string, value: D
   if (!before) return;
   putRow(type, { ...before, values: { ...before.values, [field]: value } });
   try {
-    const saved = await agent.updateRow(id, { [field]: value });
+    const saved = (await sendWrite(rowWrite(id, { [field]: value }, undefined, Date.now()))) as
+      | DataRow
+      | undefined;
     if (saved) putRow(type, saved);
     if (type === MY_DATA) await afterMyData();
   } catch (e) {
+    if (unreached(e)) return;
     putRow(type, before);
     toast(OWN(type) ? myDataError(e) : get().t("db.saveError"));
   }
@@ -4452,7 +4492,8 @@ export async function openRow(type: string, id: string) {
     .catch(() => {});
   if (!get().dataTypes) void loadDataTypes();
   try {
-    const row = await agent.dataRow(id);
+    const got = await agent.dataRow(id);
+    const row = got && overRow(got, unsent);
     const v = get().view;
     if (row && v.kind === "row" && v.id === id) {
       set({ row, rowDoc: rowDocOf(row) });
@@ -4546,9 +4587,9 @@ export async function editRowValue(type: string, id: string, field: string, valu
   if (rowOf(type, id)) await editCell(type, id, field, value);
   else {
     try {
-      await agent.updateRow(id, { [field]: value });
-    } catch {
-      toast(get().t("db.saveError"));
+      await sendWrite(rowWrite(id, { [field]: value }, undefined, Date.now()));
+    } catch (e) {
+      if (!unreached(e)) toast(get().t("db.saveError"));
     }
   }
 }
@@ -4592,9 +4633,103 @@ export async function flushRowBody() {
   bodyPending = null;
   if (!p) return;
   try {
-    await agent.updateRow(p.id, {}, p.body);
-  } catch {
-    toast(get().t("db.saveError"));
+    await sendWrite(rowWrite(p.id, {}, p.body, Date.now()));
+  } catch (e) {
+    if (!unreached(e)) toast(get().t("db.saveError"));
+  }
+}
+
+// ---------- what was typed and has no answer yet (task 100, D-65, core/unsent.ts) ----------
+const UNSENT_FILE = "unsent.json";
+/** The writes of what was typed that the server has not answered: in flight, or kept when it could not be reached. */
+let unsent: UnsentWrite[] = [];
+/** The device's copy holds some: it is written again as they are answered. */
+let unsentKept = false;
+
+/** The list on the device: at once where the host can (the desktop's main process, a browser's localStorage). */
+function keepUnsent() {
+  if (!unsent.length && !unsentKept) return;
+  const text = JSON.stringify(unsent);
+  if (hostRef.keepUnsent) hostRef.keepUnsent(text);
+  else if (unsent.length) void store.write(UNSENT_FILE, text).catch(() => undefined);
+  else void store.remove(UNSENT_FILE).catch(() => undefined);
+  unsentKept = unsent.length > 0;
+}
+
+/** A title or a property being typed in is saved when it is left: the window going leaves it. */
+function leaveTyping() {
+  const el = document.activeElement;
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.blur();
+}
+
+/** The write did not reach the server or the server failed (5xx): it stays kept, and what is on the screen too. */
+const unreached = (e: unknown) =>
+  e instanceof OfflineError || (e instanceof ApiError && e.status >= 500);
+
+/**
+ * Sends a write of what was typed, kept in `unsent` until the server answers it. What goes is the page's or row's
+ * whole kept write, `w` merged in: its answer takes the entry out, so a field kept from before goes with it. Without
+ * a connection it stays, on the device too, and goes later (`sendUnsent`); the first time, a notice says so.
+ * `fresh`: `w` is newer than what the list holds for its page or row (a write sent again is not).
+ */
+async function sendWrite(w: UnsentWrite, fresh = true): Promise<unknown> {
+  if (fresh) unsent = merged(unsent, w);
+  const all = unsent.find((x) => x.path === w.path) ?? w;
+  const sent = Date.now();
+  try {
+    const r =
+      all.kind === "page"
+        ? await agent.updatePage(all.id, all.patch)
+        : await agent.updateRow(all.id, all.values, all.body);
+    settleUnsent(w.path, sent);
+    return r;
+  } catch (e) {
+    if (unreached(e)) {
+      const first = !unsentKept;
+      keepUnsent();
+      if (first) toast(get().t("save.offline"));
+    } else settleUnsent(w.path, sent);
+    throw e;
+  }
+}
+
+function settleUnsent(path: string, sent: number) {
+  const before = unsent.length;
+  unsent = answered(unsent, path, sent);
+  if (unsentKept && unsent.length !== before) keepUnsent();
+}
+
+/** The pages' list with the names typed here that have not reached the server. */
+const pagesOver = <P extends PageInfo>(list: P[]): P[] =>
+  unsent.some((w) => w.kind === "page" && w.patch.title !== undefined)
+    ? list.map((p) => {
+        const w = unsent.find((x) => x.kind === "page" && x.id === p.id);
+        return w?.kind === "page" && w.patch.title !== undefined
+          ? { ...p, title: w.patch.title }
+          : p;
+      })
+    : list;
+
+let resending = false;
+/** What was kept on the device goes to the server, in order, at the start and every minute; offline it waits. */
+async function sendUnsent() {
+  if (resending || !configured(get().settings)) return;
+  resending = true;
+  try {
+    // Another window of the app (the peek) may have kept some too.
+    for (const w of parseUnsent(await store.read(UNSENT_FILE).catch(() => null)))
+      if (!unsent.some((x) => x.path === w.path && x.at >= w.at)) unsent = merged(unsent, w);
+    for (const path of unsent.map((w) => w.path)) {
+      const w = unsent.find((x) => x.path === path);
+      if (!w) continue;
+      try {
+        await sendWrite(w, false);
+      } catch (e) {
+        if (unreached(e)) break;
+      }
+    }
+  } finally {
+    resending = false;
   }
 }
 

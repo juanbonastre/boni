@@ -199,6 +199,12 @@ export interface Host {
    * asks to be put away and to open a note in Boni. The notes to show arrive as `navigate` events.
    */
   embed?: EmbedHost;
+  /**
+   * Keeps the list of what was typed and has no answer yet (`core/unsent.ts`), at once: called as the window goes,
+   * it is on the device before the page is gone (task 100). The desktop's main process writes it synchronously; a
+   * browser, its localStorage. None: the store's write, which may not finish (Android's is a native call).
+   */
+  keepUnsent?: (text: string) => void;
 }
 
 export interface EmbedHost {
@@ -244,6 +250,7 @@ declare global {
         file: File,
         progress: (sent: number, size: number) => void,
       ): Promise<UploadAnswer>;
+      keepUnsent?(text: string): void;
     };
   }
 }
@@ -296,6 +303,8 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
             b.uploadFile?.(file, progress) ?? Promise.resolve({ error: "offline" as const }),
         }
       : {}),
+    // A shell from before 0.4.88 has none: the store's own write keeps the list then.
+    ...(b.keepUnsent ? { keepUnsent: (text: string) => b.keepUnsent?.(text) } : {}),
   };
 }
 
@@ -459,6 +468,7 @@ export function browserHost(): Host {
       write: async (name, text) => safeSet(`${PREFIX}store:${name}`, text),
       remove: async (name) => safeSet(`${PREFIX}store:${name}`, null),
     },
+    keepUnsent: (text) => safeSet(`${PREFIX}store:unsent.json`, text === "[]" ? null : text),
     getSettings: async () => read(),
     async setSettings(patch) {
       const { resetWidgets: _reset, widgetHidden, ...rest } = patch;

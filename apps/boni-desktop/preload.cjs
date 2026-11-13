@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("boniDesktop", {
   storeRead: (name) => ipcRenderer.invoke("store:read", name),
   storeWrite: (name, text) => ipcRenderer.invoke("store:write", name, text),
   storeRemove: (name) => ipcRenderer.invoke("store:remove", name),
+  // Synchronous: done before the window goes on closing (task 100).
+  keepUnsent: (text) => ipcRenderer.sendSync("unsent:keep", text),
   getSettings: () => ipcRenderer.invoke("settings:get"),
   login: (form) => ipcRenderer.invoke("account:login", form),
   logout: () => ipcRenderer.invoke("account:logout"),
