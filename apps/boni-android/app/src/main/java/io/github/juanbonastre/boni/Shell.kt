@@ -128,6 +128,7 @@ class Shell private constructor(context: Context) {
             .apply()
         sessionEnded = false
         live.start()
+        QueueWorker.warm(app)
         emitSettings()
         emit?.invoke(JSONObject().put("type", "changed").put("what", "all"))
         return JSONObject().put("ok", true).put("settings", clientSettings())
@@ -234,14 +235,16 @@ class Shell private constructor(context: Context) {
      */
     fun keepUnsent(text: String) {
         val list = UnsentLogic.parse(text)
+        val front = foreground
         val wrote = synchronized(UNSENT_LOCK) {
             val f = storeFile(UNSENT_FILE)
             val had = f.exists()
             val next = unsentBook.left(list)
             writeUnsent(next, if (UnsentLogic.same(list, next)) text else null)
+            // The backstop while anything is kept (task 121), asked for under the lock: see `QueueWorker.backstop`.
+            if (next.isNotEmpty() && (!had || !front)) QueueWorker.backstop(app)
             !had && next.isNotEmpty()
         }
-        val front = foreground
         // Said first: the system may end the app while the job is asked for.
         Log.i(MainActivity.TAG, "unsent: kept ${list.size}, foreground $front")
         // The first kept write, or the last one as the app hides: a job that sends them, also if the app is closed.
@@ -341,6 +344,7 @@ class Shell private constructor(context: Context) {
                 f.writeText(text)
                 tmp.delete()
             }
+            if (name == QUEUE_FILE && QueueLogic.waiting(text)) QueueWorker.backstop(app)
         }
         if (name == QUEUE_FILE) QueueWorker.ask(app, foreground, true) { QueueWorker.scheduleFor(app, text) }
     }

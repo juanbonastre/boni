@@ -5,13 +5,14 @@
 //
 //   flock -w 3600 "$(git rev-parse --git-common-dir)/boni-phone.lock" node apps/boni-android/phone-test/unsent.mjs <boni-prueba.apk>
 //
-// With ONLY=2,6 it runs those scenarios alone, numbered in the order they are here.
+// With ONLY=2,6 it runs those scenarios alone, numbered in the order they are here; ROUNDS=30 makes the race's round
+// longer (8 kills by default), each one sent with the app closed within three minutes (task 121).
 //
 // The APK is CI's `boni-android-test-apk` artifact of a branch (boni-android.yml). The phone must be unlocked, with
 // the screen on. «No connection» is a door on this laptop that closes, so the phone's own network never changes. The page is
 // read through the test copy's WebView devtools (only the test copy has them); every key goes with the test copy in
 // front, checked first. It prints each scenario's result and the app's log lines with their times.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
@@ -85,16 +86,26 @@ async function type(text, before) {
 }
 
 /**
- * Home, then the app killed the moment the system lets it (`am kill` takes only an app in the background): the
- * worst a phone does, right after onStop. Returns when it died, in the phone's clock (epoch s), or null.
+ * Home, then the app killed the moment the system lets it (`am kill` takes only an app in the background, and not one
+ * running a job: task 121's expedited job runs at once, so the kill comes once it ends): the worst a phone does, right
+ * after onStop. Returns when it died, in the phone's clock (epoch s), or null. Not synchronous: the door to the server
+ * is in this process, and a job sending while the kill waits needs it (task 121's first run hung on it).
  */
-function homeAndKill(lastKeys = "") {
+async function homeAndKill(lastKeys = "") {
   mustFront();
   const typed = lastKeys ? `input text ${lastKeys} && ` : "";
-  const out = sh(
-    `${typed}input keyevent KEYCODE_HOME && for i in $(seq 1 400); do am kill --user ${user} ${PKG}; ` +
-      `pidof ${PKG} >/dev/null || { echo killed; date +%s; break; }; sleep 0.01; done`,
-  ).trim();
+  const out = await new Promise((done, fail) =>
+    execFile(
+      "adb",
+      [
+        "shell",
+        `${typed}input keyevent KEYCODE_HOME && for i in $(seq 1 1200); do am kill --user ${user} ${PKG}; ` +
+          `pidof ${PKG} >/dev/null || { echo killed; date +%s; break; }; sleep 0.01; done`,
+      ],
+      { encoding: "utf8", timeout: 240_000 },
+      (e, stdout) => (e ? fail(e) : done(stdout.trim())),
+    ),
+  );
   return out.startsWith("killed") ? out.split("\n")[1] : null;
 }
 
@@ -296,6 +307,26 @@ const caretAtEnd = () =>
     return true;
   })()`);
 
+/**
+ * The test copy in front, started again if the system dropped the start: right after the race, once, its task was
+ * «brought to the front» and the launcher stayed on top (task 121's long round). Again, a fresh task, as openNote does.
+ */
+async function toFront() {
+  for (const flags of ["", "-f 0x10008000 ", "-f 0x10008000 "]) {
+    sh(`am start --user ${user} ${flags}-n ${ACTIVITY}`);
+    const inFront = await until(
+      "the test copy in front",
+      async () => front().includes(`${PKG}/`),
+      5_000,
+    ).then(
+      () => true,
+      () => false,
+    );
+    if (inFront) return;
+  }
+  mustFront();
+}
+
 function openNote() {
   // Not in front, its task would only come back with the intent it started with, not the link's, also with its
   // process alive for the worker (run 15 came back to «Inicio»): a fresh task then, as opening it from the home
@@ -427,6 +458,7 @@ const phoneClock = () => `${sh("date +%s").trim()}.000`;
 
 const results = [];
 // ONLY=2,6 runs those scenarios alone (by their order here), to try a fix again without the whole run.
+const ROUNDS = Number(process.env.ROUNDS ?? 8);
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",").map(Number)) : null;
 let order = 0;
 async function scenario(name, run) {
@@ -533,7 +565,7 @@ try {
       await typeInNote(" uno", /uno/i);
       await sleep(4000); // its save failed: kept on the device
       say(`before Home: the screen ${JSON.stringify(await shownBody())}; kept ${keptOnPhone()}`);
-      const died = homeAndKill("dos"); // the last keys, then Home: only the hide notice keeps them
+      const died = await homeAndKill("dos"); // the last keys, then Home: only the hide notice keeps them
       if (!died) throw new Error("the system did not let the app be killed");
       const kept = keptOnPhone();
       const before = await bodyOnServer();
@@ -568,7 +600,7 @@ try {
       offline();
       await typeInNote(" tres", /tres/i);
       await sleep(4000);
-      const died = homeAndKill();
+      const died = await homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
       await afterKill(died);
       online();
@@ -620,7 +652,7 @@ try {
     openNote();
     await ready();
     await typeInNote(" cinco", /cinco/i);
-    const died = homeAndKill("seis");
+    const died = await homeAndKill("seis");
     if (!died) throw new Error("the system did not let the app be killed");
     await afterKill(died);
     // At the kill it is on the server or kept on the phone; kept, the app sends it, closed.
@@ -636,14 +668,15 @@ try {
       const lost = [];
       const times = [];
       const noJob = [];
-      for (let i = 1; i <= 8; i++) {
+      const late = [];
+      for (let i = 1; i <= ROUNDS; i++) {
         const roundStart = phoneClock();
         online();
         openNote();
         await ready();
         if (i % 2) offline();
         await typeInNote(` w${i}a`, new RegExp(`w${i}a`, "i"));
-        const died = homeAndKill(`w${i}b`);
+        const died = await homeAndKill(`w${i}b`);
         if (!died) throw new Error(`round ${i}: the system did not let the app be killed`);
         const shows = new RegExp(`w${i}a\\s*w${i}b`, "i");
         const kept = keptOnPhone();
@@ -661,15 +694,36 @@ try {
         if (where === "LOST")
           lost.push(`round ${i}: the server ${JSON.stringify(server)}, kept ${kept}`);
         online();
-        // The next round starts from it: sent by the app (closed) or as it opens again.
+        // Kept, the app sends it closed, within three minutes (task 121: once its job had not run by then); the next
+        // round starts from it, opening the app.
         const t0 = Date.now();
-        await serverShows(shows, 3 * 60_000).catch(() => undefined);
+        let opened = false;
+        const sent = await until(
+          "the server to have it",
+          async () => {
+            if (front().includes(`${PKG}/`)) opened = true;
+            return shows.test(await bodyOnServer());
+          },
+          3 * 60_000,
+        ).then(
+          () => true,
+          () => false,
+        );
         times.push(Math.round((Date.now() - t0) / 1000));
+        if (!sent || opened) {
+          late.push(i);
+          say(`round ${i}: not on the server with the app closed in 3 minutes; ${whyNoJob()}`);
+          for (const l of logSince(roundStart)) console.log("   ", l);
+        }
       }
       if (lost.length) throw new Error(lost.join("; "));
       if (noJob.length)
         throw new Error(`kept with no job left to send it in round ${noJob.join(", ")}`);
-      return `8 of 8, on the server in ${times.join(", ")} s after each kill`;
+      if (late.length)
+        throw new Error(
+          `not sent with the app closed within 3 minutes in round ${late.join(", ")}`,
+        );
+      return `${ROUNDS} of ${ROUNDS}, on the server in ${times.join(", ")} s after each kill`;
     },
   );
 
@@ -677,8 +731,7 @@ try {
     "a new page with no connection, named, killed, never opened again: made once",
     async () => {
       online();
-      sh(`am start --user ${user} -n ${ACTIVITY}`);
-      await sleep(1500);
+      await toFront();
       await attach();
       mustFront();
       // Its home, where the create button is. The task comes back with the note it was opened with, which hides the
@@ -725,7 +778,7 @@ try {
       });
       say(`named ${JSON.stringify(name)}`);
       await sleep(3000);
-      const died = homeAndKill();
+      const died = await homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
       await afterKill(died);
       online();

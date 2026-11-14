@@ -219,6 +219,28 @@ object UnsentLogic {
         else -> Ask.BEHIND
     }
 
+    /**
+     * How long the job made as the app hides waits before it reads what was kept (task 121): until `notBefore`, what the
+     * page keeps just after `onStop` being in it by then, and never more than `max` (a clock moved does not hold it).
+     */
+    fun waitFor(notBefore: Long, now: Long, max: Long): Long = (notBefore - now).coerceIn(0L, max)
+
+    /** The waits between one run's tries when something was left (no server reached, a server failing): task 121. */
+    val AGAIN_MS = listOf(3_000L, 6_000L, 12_000L)
+
+    /**
+     * The wait before try `attempt + 1` of the same run, or null to leave it to WorkManager's backoff: after the
+     * last of `AGAIN_MS`, or when the run must stop (the app back in front, the system's stop, the session gone).
+     */
+    fun againIn(attempt: Int, stopped: Boolean): Long? = if (stopped) null else AGAIN_MS.getOrNull(attempt)
+
+    /**
+     * After a run's last try, how long until the next run, the `round`-th in a row with nothing sent: 30 s, doubling,
+     * never more than 10 minutes. The run asks for it itself before it ends (task 121: a WorkManager retry was lost
+     * to a kill just as the run ended, and only the backstop's 15 minutes were left).
+     */
+    fun laterIn(round: Int): Long = (30_000L shl round.coerceIn(0, 5)).coerceAtMost(600_000L)
+
     /** What one resend of the list did: how many requests were answered, and whether to try again later. */
     data class Flushed(val answered: Int, val retry: Boolean)
 
