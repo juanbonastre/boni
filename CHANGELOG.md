@@ -5,6 +5,36 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-14 (forty-sixth) — server 0.8.122 · Boni Android
+
+Needs:
+- The server, 0.8.122. No store migration: the tables are as in 0.8.121 (a proposal could already be «stale»), so going
+  back to 0.8.121 is safe. With 0.8.121 again, a turn brought back by undoing the correction that took it (below) keeps
+  its data, but its own «Deshacer» may no longer be offered.
+- Boni desktop stays 0.4.89 (`release/boni_0.4.89_amd64.deb`, from the forty-fifth; not yet installed): nothing in
+  `apps/boni-web` or `apps/boni-desktop` changed.
+- Boni Calendar desktop stays 0.8.25: nothing of the calendar changed.
+- Boni Android 0.2.338 from main, through Obtainium (`boni-android` run 338 on 60f3945, green, its GitHub release; it
+  replaces 0.2.333, not yet installed). Boni Calendar Android: no new APK. `Net.kt` and `paths.cjs` did not change.
+
+What it brings (#435–#437):
+- **«Antes te he dicho X, pero es Y» is all or nothing, after his yes too** (task 120; A-31): if the plan that took back
+  the earlier turn stops at any later step (a tool's error, a limit, his «no» to another card, a question he answers in
+  his own words), the earlier turn comes back as it was: its data, its proposals in the Bandeja, its «Deshacer», and no
+  «Corregido». «Deshacer» on a turn whose correction went through also brings the corrected turn back.
+- **A plan names nothing of an earlier turn but its turn** (task 27; A-31): the real-model run of the conversation
+  (Opus 5.5, invented data) got 9 of 10; the one that failed took back the dentist's turn, then stopped on a value
+  copied from the history. Such a plan is now refused and mended before anything runs.
+- **On Android, what was kept is sent with the app closed, every time** (task 121; D-70): a run that sent nothing asks
+  for the next one itself (30 s, doubling to 10 min), the job the app asks for on leaving runs at once, and a
+  15-minute backstop runs while anything is kept. On a Pixel, 30 of 30 kills of the app sent what was kept, in at most
+  145 s. Below Android 12, «Enviando lo guardado…» shows while it sends.
+
+For Juan to look at, because they change his data or where it goes:
+- **Correcting a turn** (task 120): «antes te he dicho…» that stops half-way leaves the earlier turn untouched. Not
+  covered: the pencil (if its new words fail, the old turn stays undone and «Corregido»), and a question the old turn
+  was waiting on does not wait again.
+
 ## 2026-11-14 (forty-fifth) — server 0.8.121 · Boni desktop 0.4.89 · Boni Android
 
 Needs:
