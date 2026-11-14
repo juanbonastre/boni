@@ -283,6 +283,15 @@ export function validatePlan(
       const head = m[1] as string;
       if (head === "item" ? !inEach : head === "zip" ? !(inEach && zipped) : !seen.has(head))
         errors.push(`${where}: ref-to-unknown-step`);
+      // The code binds of each earlier turn only its `turn` (what turns.undo takes back, C1): anything else of the
+      // history the planner sees never resolves, and found while running it would stop the plan after that turn
+      // was taken back, with nothing redone (task 27, the real-model run). Refused here, it is mended first.
+      else if (
+        head === "history" &&
+        bound.includes("history") &&
+        !/^\[\d{1,2}\]\.turn$/.test(m[2] ?? "")
+      )
+        errors.push(`${where}: history-only-turn`);
     } else errors.push(`${where}: bad-expression`);
   };
   const checkExpr = (where: string, e: unknown, inEach: boolean, depth = 0) => {

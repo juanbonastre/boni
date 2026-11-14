@@ -9,8 +9,10 @@
  *   OPENROUTER_API_KEY=... node apps/server/eval/conversation.ts [anthropic/claude-haiku-5.5] [deepseek/deepseek-v4.1-flash]
  *
  * `--max-cost=<dollars>` (2 without it) is a hard cap: once the calls have spent it, no other call is made
- * (`capped`). `--only=<text>` runs the cases whose name has it. `--dry` calls no model and needs no key: a planner
- * that only replies measures how big each request is, for the estimate before a real run.
+ * (`capped`). `--only=<text>` runs the cases whose name has it and `--times=<n>` runs each n times (a failure seen
+ * once may be the model's mood). A case not as expected prints its plan, which holds only the invented data. `--dry`
+ * calls no model and needs no key: a planner that only replies measures how big each request is, for the estimate
+ * before a real run.
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -49,6 +51,8 @@ const anthropic = dry || !!keys.anthropic;
 const plannerModel = args[0] ?? (anthropic ? "claude-opus-5-5" : "anthropic/claude-haiku-5.5");
 const readerModel = args[1] ?? (anthropic ? "claude-haiku-4-5" : "deepseek/deepseek-v4.1-flash");
 const only = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
+const times =
+  Number(process.argv.find((a) => a.startsWith("--times="))?.slice("--times=".length)) || 1;
 const maxCost = maxCostFlag(process.argv, 2);
 const spend = newSpend();
 
@@ -325,6 +329,8 @@ async function runCase(c: Case): Promise<{ ok: boolean; note: string; detail: st
       ...(seen.undo.length ? [`undo: ${JSON.stringify(seen.undo)}`] : []),
       `asked: ${asked.map((a) => a.control + (a.field ? "+field" : "")).join(", ") || "nothing"}`,
       `ended ${end.status}${end.error ? ` (${end.error})` : ""}`,
+      // Why it went otherwise: what the planner wrote (more than one when the agent asked it to mend a plan).
+      ...(wrong ? [`plan: ${JSON.stringify(plans.length === 1 ? plans[0] : plans)}`] : []),
     ].join("; ");
     return { ok: !wrong, note: wrong ?? "", detail };
   } finally {
@@ -333,7 +339,9 @@ async function runCase(c: Case): Promise<{ ok: boolean; note: string; detail: st
   }
 }
 
-const chosen = CASES.filter((c) => !only || c.name.includes(only));
+const chosen = CASES.filter((c) => !only || c.name.includes(only)).flatMap((c) =>
+  Array.from({ length: times }, () => c),
+);
 console.error(dry ? "… dry run: no model is called" : `… ${plannerModel}, reader ${readerModel}`);
 const t0 = Date.now();
 let right = 0;

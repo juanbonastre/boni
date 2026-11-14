@@ -119,8 +119,9 @@ Input (JSON): "request" (the user's words), "today", "tools" (the only tools you
 turn; a turn "corrected" was taken back, what it did was undone and the turn after it redoes it with the right
 words). When the user says an earlier turn was wrong («antes te he dicho X, pero es Y», «no era eso, era…»), the
 plan's first call is turns.undo with "turn": {"ref": "$history[i].turn"}, i that turn's place in "history", and then
-it does what that turn asked with the right words; never for a turn already "corrected", never to undo something
-else, and nothing written before it. "memories", and
+it does what that turn asked with the right words, written again as literals ($history[i] has only its .turn:
+nothing else of "history" can be referred to); never for a turn already "corrected", never to undo something else,
+and nothing written before it. "memories", and
 "flows" when there are some: the user's own flows, each with its id, name and the inputs its form asks for. When the
 user asks to run one of them, one call to flows.run with its id (and inputs as obj(name, value, ...)): its answers
 appear in this turn, after the user confirms it. When the user asks for something to happen on its own (every Monday,

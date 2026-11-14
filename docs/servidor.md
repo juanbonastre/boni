@@ -207,7 +207,7 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
   pasado el tope no sale ninguna llamada más): el planificador, `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`;
   la conversación sobre el agente de este servidor (C1 «antes te he dicho…» con `turns.undo` y cada clase de pregunta,
   la 27), `ANTHROPIC_API_KEY=... node apps/server/eval/conversation.ts` (`--dry` mide cada petición sin llamar a ningún
-  modelo, para estimar el gasto).
+  modelo, para estimar el gasto; `--only=<texto>` y `--times=<n>` repiten un caso, y uno que falla imprime su plan).
 - La app web de Boni (`apps/boni-web`, compilada) se sirve en `/boni/` solo en la entrada tailnet (`BONI_BONI_WEB`; la
   imagen Docker la lleva). En el navegador habla con este mismo servidor: la API v1 (gráficas, atajos, apuntar gasto) y la
   del agente (la conversación). El calendario sigue en `/`.

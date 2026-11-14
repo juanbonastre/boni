@@ -191,8 +191,21 @@ describe("the conversation's questions and the correction of a past turn (§3.4,
     // A turn a model wrote, or anything of the history but its turn, is refused.
     expect(check([undo({ lit: "r_ejemplo" })])).toEqual(["step 1.args: turn-not-from-history"]);
     expect(check([undo({ ref: "$history[0].reply0" })])).toEqual([
+      "step 1.args.turn: history-only-turn",
       "step 1.args: turn-not-from-history",
     ]);
+    // What the turn asked is written again: the code binds of each turn only its `turn`, so a value copied from
+    // the history the planner sees would stop the plan after the turn was taken back (task 27, the real model).
+    const redo = (values: unknown) => ({ ...create, args: { ...create.args, values } });
+    expect(
+      check([undo({ ref: "$history[0].turn" }), redo({ ref: "$history[0].request" })]),
+    ).toEqual(["step 2.args.values: history-only-turn"]);
+    expect(
+      check([
+        undo({ ref: "$history[0].turn" }),
+        redo({ fn: "obj", args: [{ lit: "titulo" }, { ref: "$history[0].replies[0].data.text" }] }),
+      ]),
+    ).toEqual(["step 2.args.values.args[1]: history-only-turn"]);
     // After a write it would leave that write half undone; twice, or per item, it is not one correction.
     expect(check([create, undo({ ref: "$history[0].turn" })])).toEqual(["step 2: undo-not-first"]);
     expect(

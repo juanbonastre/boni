@@ -798,6 +798,23 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     ).json()) as { run: string };
     expect(titles()).toContain("Cita con la dentista");
 
+    // What that turn asked is written again: a plan that copies it from the history (the code binds of each turn
+    // only its `turn`) is mended before anything runs, so nothing is taken back with nothing redone (task 27, the
+    // real model's run, 1 of 3).
+    plans.push({
+      version: 1,
+      steps: [
+        undo,
+        {
+          ...create("x"),
+          args: {
+            type: lit("tarea"),
+            values: { fn: "obj", args: [lit("titulo"), { ref: "$history[0].request" }] },
+          },
+        },
+      ],
+    });
+    asked.length = 0;
     plans.push({ version: 1, steps: [undo, create("Cita con el dentista")] });
     const asks = (await (
       await post(base, token, "/api/agent/turn", {
@@ -811,6 +828,8 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     };
     // Juan's touch (P21): a card first, saying which turn; nothing is taken back before his yes.
     expect(asks).toMatchObject({ status: "waiting", pending: { kind: "confirm" } });
+    expect(asked).toHaveLength(2);
+    expect(JSON.stringify(asked[1])).toContain("history-only-turn");
     expect(JSON.stringify(asks.pending.view)).toContain("apunta la cita con la dentista");
     expect(titles()).toContain("Cita con la dentista");
     const done = (await (
