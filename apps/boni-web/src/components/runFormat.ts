@@ -172,6 +172,21 @@ export const formatPlugin = new Plugin<FormatState>({
   },
 });
 
+/**
+ * What the screen shows and the engine has not read yet, read now: a selection the browser moved (an arrow, Shift+an
+ * arrow) is read only at its `selectionchange`, which comes later than the key, and a word being composed at its end.
+ * An update made before that writes the engine's older selection back onto the screen, and the key is lost (task 117:
+ * the arrows pressed right after a click undone by the repaint when the pointer lifted). So every update the editor
+ * makes on its own, away from a key the engine handles, reads the screen first.
+ */
+export function readScreen(view: EditorView) {
+  try {
+    (view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
+  } catch {
+    // Nothing waiting.
+  }
+}
+
 /** The text's focus, a pointer going down or lifting, or a word composed: what shows near the caret is drawn again. */
 export function formatSeen(view: EditorView, change: Seen) {
   const now = key.getState(view.state);
@@ -182,6 +197,9 @@ export function formatSeen(view: EditorView, change: Seen) {
     (change.held === undefined || change.held === now.held)
   )
     return;
+  // A repaint after the event (a pointer lifted, a word composed: a timer) carries the screen's selection, never one
+  // a key behind it. Not on focus: the engine itself puts back its own selection over the one the browser gives then.
+  if (change.held === false || change.redraw) readScreen(view);
   view.dispatch(view.state.tr.setMeta(key, change).setMeta("addToHistory", false));
 }
 

@@ -25,7 +25,15 @@ import { deviceZone } from "../core/clock.ts";
 import { linkHref, type WrapKind } from "../core/inline.ts";
 import { openUrl } from "../host.ts";
 import { type MentionFound, openMention, openTitled, useStore } from "../store.ts";
-import { formatOn, linkAt, linkSelection, mentionAt, toggleFormat, unlinkAt } from "./runFormat.ts";
+import {
+  formatOn,
+  linkAt,
+  linkSelection,
+  mentionAt,
+  readScreen,
+  toggleFormat,
+  unlinkAt,
+} from "./runFormat.ts";
 
 type T = ReturnType<typeof useStore.getState>["t"];
 
@@ -146,7 +154,11 @@ export function FormatBar({
       aria-pressed={pressed}
       onPointerDown={keep}
       onMouseDown={keep}
-      onClick={run}
+      // On the selection the screen has, even a key after the engine's (task 117).
+      onClick={() => {
+        readScreen(view);
+        run();
+      }}
     >
       {icon}
     </button>
