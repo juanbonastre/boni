@@ -429,8 +429,23 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
     flujo ni en segundo plano.
   - De un turno anterior el plan solo nombra su turno: lo que pidió se escribe otra vez. El código ata de cada turno
     solo `turn`, así que otra cosa del historial (`$history[0].request`, una respuesta) no se resolvería nunca; se
-    rechaza al comprobar el plan (`history-only-turn`) y el planificador lo arregla antes de que corra. Si se viera
-    al correr, el plan pararía con el turno ya deshecho y nada rehecho.
+    rechaza al comprobar el plan (`history-only-turn`) y el planificador lo arregla antes de que corra.
+  - **Todo o nada también después del sí (la 120).** Deshacer aquel turno es parte de la ejecución que lo pidió: sus
+    deshechos en el registro del almacén llevan su ejecución, y también su «Corregido» y la forma de volver a poner lo
+    que cambió fuera del registro (un ajuste, un flujo). Si el plan para en cualquier paso posterior (un error de una
+    herramienta, un tope, el no de Juan a otra tarjeta, una pregunta contestada con sus palabras), se deshace la
+    ejecución entera, como su «Deshacer»: lo que escribió y el deshacer con ello. Aquel turno queda como estaba: sus
+    datos, sus propuestas otra vez en la Bandeja, su «Deshacer» y sin «Corregido»; el aviso dice que no ha quedado
+    nada a medias. Mientras espera otra tarjeta, aquel turno ya está deshecho y se ve «Corregido» (es lo que hay),
+    pero la ejecución aún no lo corrige (`corrects`): eso solo al terminar hecha. Lo que espera se guarda con la
+    ejecución, así que un reinicio del servidor mientras tanto no lo pierde. Hecha, su «Deshacer» también lo devuelve como estaba.
+  - El almacén lo hace con lo que ya tenía: deshacer un deshecho es rehacer, y una operación rehecha se vuelve a
+    deshacer por el final de su cadena (una operación solo se deshace una vez), así que la ejecución de aquel turno
+    conserva su «Deshacer».
+  - Lo que no vuelve: una pregunta que aquel turno aún esperaba termina con el sí y no vuelve a esperar; si un cambio
+    de Juan se pone en medio mientras tanto, nada se deshace y el turno queda corregido, con el «Deshacer» de la
+    ejecución. El lápiz sigue como estaba: deshace antes de que corran las palabras nuevas, y si lo nuevo falla, el
+    turno viejo queda deshecho y «Corregido».
 - **Decidido, y por qué:**
   - Los controles nuevos son de la conversación. El trabajo en segundo plano sigue preguntando solo elegir o escribir,
     lo que contesta su tarjeta de la Bandeja (`ask-only-in-a-turn`).

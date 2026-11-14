@@ -567,6 +567,46 @@ describe("the store", () => {
     expect(store.get(x.entity.id)?.entity.values.f_paginas).toBe(2);
   });
 
+  it("a run undone by another run comes back when that one is undone, and can be undone again (task 120)", () => {
+    const { store } = fresh();
+    const keep = store.create("t_libro", { f_titulo: { value: "Mío", label: JUAN } }, me);
+    const made = store.create(
+      "t_libro",
+      { f_titulo: { value: "Jueves", label: MAIL } },
+      agent("r1"),
+    );
+    store.update(keep.entity.id, { f_paginas: { value: 10, label: MAIL } }, agent("r1"));
+    // A correction: r2 takes r1 back (its undos are r2's) and writes its own.
+    store.undoRun("r1", agent("r2"));
+    const friday = store.create(
+      "t_libro",
+      { f_titulo: { value: "Viernes", label: MAIL } },
+      agent("r2"),
+    );
+    expect(store.runUndoable("r1")).toBe(false);
+    expect(store.runUndoable("r2")).toBe(true);
+    expect(store.get(made.entity.id)?.entity.deleted).toBeDefined();
+    expect(store.get(keep.entity.id)?.entity.values.f_paginas).toBeUndefined();
+
+    // Undoing r2 undoes its own writes and its undos: r1 is as it was, its Undo included.
+    store.undoRun("r2", me);
+    expect(store.get(friday.entity.id)?.entity.deleted).toBeDefined();
+    expect(store.get(made.entity.id)?.entity.deleted).toBeUndefined();
+    expect(store.get(keep.entity.id)?.entity.values.f_paginas).toBe(10);
+    expect(store.runUndoable("r2")).toBe(false);
+    expect(store.runUndoable("r1")).toBe(true);
+    expect(store.runOps("r1").map((o) => o.undone)).toEqual([false, false]);
+    expect(() => store.undoRun("r2", me)).toThrow(/nothing to undo/);
+
+    store.undoRun("r1", me);
+    expect(store.get(made.entity.id)?.entity.deleted).toBeDefined();
+    expect(store.get(keep.entity.id)?.entity.values.f_paginas).toBeUndefined();
+    expect(store.runUndoable("r1")).toBe(false);
+    expect(store.runOps("r1").map((o) => o.undone)).toEqual([true, true]);
+    // A run that never undid another one is undone as before: its own changes only.
+    expect(store.get(keep.entity.id)?.entity.values.f_titulo).toBe("Mío");
+  });
+
   it("random changes undone newest first leave everything as it was", () => {
     for (let seed = 1; seed <= 25; seed++) {
       const { store } = fresh();

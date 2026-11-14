@@ -15,6 +15,7 @@ import {
  * What `turns.undo` runs on, for one run (the server's, `AgentHost`): a turn of the run's own conversation, by its run.
  * `undo` is the same path as Juan's pencil on his message (POST /api/agent/turn with `corrects`): what it changed
  * beside the log is asked first, then the store's log is undone, all or nothing, and the turn is marked corrected.
+ * All of it is the asking run's (task 120): if its plan stops after, undoing that run brings the turn back as it was.
  */
 export interface TurnsService {
   /** What that turn's message said, or null when it is not a turn of this conversation. */

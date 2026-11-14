@@ -107,18 +107,35 @@ export function keptInTheWay(
   });
 }
 
+/** How to put back what taking `k` back changed (`k` was back: it was as the run left it). */
+const inverse = (k: Kept): Kept =>
+  "setting" in k
+    ? { setting: k.setting, before: k.after, after: k.before }
+    : "extension" in k
+      ? { extension: k.extension, enabled: !k.enabled }
+      : k.deleted !== undefined
+        ? { flow: k.flow, deleted: !k.deleted }
+        : { flow: k.flow, enabled: !k.enabled };
+
 /**
  * Takes back what the run kept, newest first: a setting only if it is still as the run left it; a flow by `flow`
  * (the host's, which knows how to switch one back). How many came back; what did not (a change since then stands on
  * it) stays kept, so Undo of the later change first lets this one be taken back after.
+ *
+ * `into`: the run that takes it back (a correction by `turns.undo`, §3.1). It keeps how to put back each thing that
+ * came back, and the run's own list as it was, so its Undo, or its stop after (task 120: all or nothing), leaves
+ * the corrected run as it was, its Undo included.
  */
 export function undoKept(
   store: UserStore,
   run: string,
   flow: (k: Extract<Kept, { flow: string }>) => boolean = () => false,
+  into?: string,
 ): number {
   let n = 0;
   const left: Kept[] = [];
+  const key = `${RUN_UNDO}${run}`;
+  const was = store.setting(key) ?? null;
   for (const k of [...listOf(store, run)].reverse()) {
     let back = false;
     if ("setting" in k) {
@@ -129,9 +146,13 @@ export function undoKept(
       back = !!x && x.enabled !== k.enabled;
       if (back) setEnabled(store, k.extension, k.enabled);
     } else back = flow(k);
-    if (back) n++;
-    else left.unshift(k);
+    if (back) {
+      n++;
+      if (into) keep(store, into, inverse(k));
+    } else left.unshift(k);
   }
-  store.setSetting(`${RUN_UNDO}${run}`, left.length ? JSON.stringify(left) : null);
+  const now = left.length ? JSON.stringify(left) : null;
+  store.setSetting(key, now);
+  if (into && n) keep(store, into, { setting: key, before: was, after: now });
   return n;
 }
