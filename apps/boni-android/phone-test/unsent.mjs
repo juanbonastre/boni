@@ -307,6 +307,26 @@ const caretAtEnd = () =>
     return true;
   })()`);
 
+/**
+ * The test copy in front, started again if the system dropped the start: right after the race, once, its task was
+ * «brought to the front» and the launcher stayed on top (task 121's long round). Again, a fresh task, as openNote does.
+ */
+async function toFront() {
+  for (const flags of ["", "-f 0x10008000 ", "-f 0x10008000 "]) {
+    sh(`am start --user ${user} ${flags}-n ${ACTIVITY}`);
+    const inFront = await until(
+      "the test copy in front",
+      async () => front().includes(`${PKG}/`),
+      5_000,
+    ).then(
+      () => true,
+      () => false,
+    );
+    if (inFront) return;
+  }
+  mustFront();
+}
+
 function openNote() {
   // Not in front, its task would only come back with the intent it started with, not the link's, also with its
   // process alive for the worker (run 15 came back to «Inicio»): a fresh task then, as opening it from the home
@@ -711,8 +731,7 @@ try {
     "a new page with no connection, named, killed, never opened again: made once",
     async () => {
       online();
-      sh(`am start --user ${user} -n ${ACTIVITY}`);
-      await sleep(1500);
+      await toFront();
       await attach();
       mustFront();
       // Its home, where the create button is. The task comes back with the note it was opened with, which hides the
