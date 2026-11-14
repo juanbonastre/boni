@@ -73,6 +73,7 @@ import {
   linkAt,
   linkSelection,
   mentionAt,
+  readScreen,
   toggleFormat,
 } from "./runFormat.ts";
 
@@ -358,13 +359,9 @@ class RunCore {
     this.view.destroy();
   }
 
-  /** What the screen shows and the engine has not read yet (a word being composed) is read now. */
+  /** What the screen shows and the engine has not read yet (a word being composed, a selection a key moved). */
   readScreen() {
-    try {
-      (this.view as unknown as { domObserver: { flush(): void } }).domObserver.flush();
-    } catch {
-      // Nothing waiting.
-    }
+    readScreen(this.view);
   }
 
   apply(tr: Transaction) {

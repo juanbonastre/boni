@@ -642,7 +642,10 @@ contraseña ni un código aquí» under a question.
   a format of its kind, takes it off. Over several blocks, each block's words take it. Each is one step of Ctrl+Z.
   **The menu** (`FormatBar`): a row of buttons (Negrita, Cursiva, Tachado, Código, Enlace), each pressed when the
   selection has it, over the selection, below it on a touch screen (the phone's own bar is above it), its buttons
-  40 px there; a press keeps the text's focus and selection. «Enlace» opens a field for the address
+  40 px there; a press keeps the text's focus and selection, and acts on the selection the screen shows (task 117: a
+  key moved it before the engine read it, and the menu formatted one letter less). The same for every update the
+  editor makes on its own (the marks repainted when a pointer lifts or a word is composed): it reads the screen first,
+  so a key pressed right after a click is never undone. «Enlace» opens a field for the address
   («Dirección del enlace»: `example.com` becomes `https://example.com`; what is no address says «No es una
   dirección»; Enter applies, Esc leaves). With the caret in a link the menu shows its address as plain text, «Abrir»
   (web addresses only), «Cambiar» and «Quitar» (its words stay). **Ctrl+click** on a link opens it; a click alone

@@ -269,7 +269,7 @@ test("inline formats (task 2f): typed Markdown painted, its marks shown only at 
   await page.keyboard.type("`");
   await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita**"]);
   await expect(line.locator(".md-code")).toHaveText("suelta");
-  // The menu's buttons over a selection: in quarantine with task 117, the test after this one.
+  // The menu's buttons over a selection: the test after this one.
   await selectIn(page, line, 4, 4);
   await expect(bar(page).getByRole("button", { name: "Cursiva" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/editor-format.png` });
@@ -296,20 +296,69 @@ test("inline formats (task 2f): typed Markdown painted, its marks shown only at 
     .toEqual(["Una idea `suelta` y **negrita** más", "*Otra línea*"]);
 });
 
-// In quarantine (task 117): in main's CI, three runs of four on 2026-11-13, the menu's «Cursiva» formatted «ide»
-// of «idea», the selection one key short, and reading the screen at the click made it worse (15 of 30 here). It
-// comes back out of quarantine with the cause found and fixed.
-test.fixme("the menu's Cursiva over a selection puts it on and off, the text keeping the focus (task 2f; quarantined, task 117)", async ({
+/**
+ * The browser's `selectionchange` held back until `release` (what a loaded machine does at times): a selection a key
+ * moves is then only on the screen, as it is for the engine between the key and that event.
+ */
+const holdSelection = (page: Page) =>
+  page.evaluate(() => {
+    const w = window as unknown as { __release?: () => void };
+    const stop = (e: Event) => e.stopImmediatePropagation();
+    document.addEventListener("selectionchange", stop, true);
+    w.__release = () => document.removeEventListener("selectionchange", stop, true);
+  });
+const release = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __release?: () => void }).__release?.());
+
+// Task 117: the menu's «Cursiva» once formatted «ide» of «idea» in main's CI (three runs of four, 2026-11-13). The
+// arrows pressed right after the click in the line moved the screen's selection; the repaint when the pointer lifted
+// (a timer) wrote the engine's selection, a key behind, back over it. Every update of the editor's own reads the
+// screen first now, and so does a press on the menu.
+test("the menu's Cursiva over a selection puts it on and off, the text keeping the focus; a key right after a click is never undone (tasks 2f, 117)", async ({
   page,
 }) => {
   await pageWith(page, ["Una idea `suelta` y **negrita**"]);
   const line = lines(page).first();
-  await selectIn(page, line, 4, 4);
+  // A click into a format: its marks stay hidden while the pointer is down and are drawn when it lifts. A selection a
+  // key moved before the engine read it stays through that repaint.
+  await page.keyboard.press("Home");
+  await expect(line.locator(".md-mark:not(.md-hide)")).toHaveCount(0);
+  const [moved, kept] = await line.evaluate(async (el) => {
+    const run = el.closest(".doc-run") as HTMLElement;
+    const sel = document.getSelection() as Selection;
+    const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    run.dispatchEvent(new PointerEvent("pointerdown", { button: 0, bubbles: true }));
+    // Where the press put the caret, read by the engine as it is after a click.
+    const code = el.querySelector(".md-code")?.firstChild as Node;
+    sel.collapse(code, 2);
+    await tick(30);
+    // The pointer lifts; a key moves the selection before the engine has its event.
+    const stop = (e: Event) => e.stopImmediatePropagation();
+    document.addEventListener("selectionchange", stop, true);
+    window.dispatchEvent(new PointerEvent("pointerup", { button: 0 }));
+    for (let i = 0; i < 2; i++) sel.modify("extend", "forward", "character");
+    const moved = sel.toString();
+    await tick(50);
+    document.removeEventListener("selectionchange", stop, true);
+    return [moved, sel.toString()];
+  });
+  expect(moved).toHaveLength(2);
+  expect(kept).toBe(moved);
+  await expect(line.locator(".md-mark:not(.md-hide)")).toHaveCount(2);
+  // The menu formats what the screen has selected, even the key the engine has not read yet.
+  await selectIn(page, line, 4, 3);
+  await expect(bar(page).getByRole("button", { name: "Cursiva" })).toBeVisible();
+  await holdSelection(page);
+  await page.keyboard.press("Shift+ArrowRight");
   await bar(page).getByRole("button", { name: "Cursiva" }).click();
+  await release(page);
   await expect.poll(() => values(page)).toEqual(["Una *idea* `suelta` y **negrita**"]);
   await expect(page.locator(".doc-blocks .doc-run")).toBeFocused();
   await bar(page).getByRole("button", { name: "Cursiva" }).click();
   await expect.poll(() => values(page)).toEqual(["Una idea `suelta` y **negrita**"]);
+  // One step of Undo brings it back, as by its keys.
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => values(page)).toEqual(["Una *idea* `suelta` y **negrita**"]);
 });
 
 test("links (task 2f): Ctrl+K on words, an address pasted over them; the caret in one shows it to open, change or take off; Ctrl+K elsewhere is the search; HTML pasted is plain text", async ({
