@@ -5,6 +5,100 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-14 (forty-fifth) — server 0.8.121 · Boni desktop 0.4.89 · Boni Android
+
+Needs:
+- The server, 0.8.121, to deploy first. It brings store migrations 23 and 24: the storage figures and the thirty
+  days' activity, kept as they grow. Both only add tables and indexes; 24 fills its table once from the kept
+  quarters. Also in it: the route `GET /api/data/titled` (a mention opens what it names), a new page made with the id
+  the app gave it (`POST /api/pages`, D-70), the MCP's `read` by parts, and the card answers of task 27. With an
+  older server the new apps still work, but a mention does not open and a «create» whose answer was lost can still
+  make a page twice.
+- Boni desktop 0.4.89 (`release/boni_0.4.89_amd64.deb`), after the server: the editor on ProseMirror, inline format,
+  images, mentions, the card answers, «Adjuntar», what was left unsent kept and sent, and a quit that always ends.
+- Boni Calendar desktop stays 0.8.25: nothing it ships changed (`apps/calendar-web`, `apps/calendar-desktop` and
+  `packages/calendar` are as in the forty-fourth; only its peek's e2e moved).
+- Boni Android 0.2.333 from main, through Obtainium (`boni-android` run on 681e31c, green, its GitHub release). It
+  carries the same web as the desktop, plus «Adjuntar» from the phone, Boni in Android's bubble and the
+  «Conversación» widget, and what was typed and left unsent sent with the app closed. Boni Calendar Android: no new
+  APK. `Net.kt` and `paths.cjs` did not change: the new `api/data/titled` is under `api/data/`, already allowed.
+
+What it brings (#413–#433):
+- **The note editor is new** (task 2g; D-66): text is selected from one block to another, as in Google Docs, and the
+  same Markdown is saved, byte for byte; opening a note and closing it writes nothing. Dragging selects text (whole
+  blocks with Esc or Shift+arrows); Delete at a block's end joins the next; «/» shows only in the block being typed.
+- **Format inside the text** (task 2f; D-67): bold, italic, strikethrough, code, links and `[[menciones]]`, painted
+  over the Markdown it stays. Ctrl+B, Ctrl+I, Ctrl+Shift+X, Ctrl+K, and a menu over a selection (under it on the
+  phone). Ctrl+click opens a link. Pasting is still plain text. A key pressed during a click's lift is no longer lost
+  (task 117).
+- **Images in the editor** (task 2h; D-69): a corner resizes one, a click shows it large (arrows, Esc), several go in a
+  row (up to eight) and each is cropped in a dialog. The block's menu: «Ver en grande», «Recortar», «Quitar el
+  recorte», «Tamaño original», «Separar las imágenes». Everything goes in the image's link; the file is never touched.
+- **A mention opens what it names** (task 110; D-71): Ctrl+click on `[[Título]]` (a tap on the phone, or the menu's
+  «Abrir») opens the record or the page with that whole title, in any collection. None: «No existe»; several: the list,
+  with each one's collection and last change.
+- **Every kind of card question has its answer** (task 27, second part; I-38, A-31): several boxes («Responder (n)»,
+  «Ninguna»), a property's options («Más…», «Nueva…»), a number written his way («1.250,5»), a day, a file, yes or
+  no; «Cambios que haría: N» before saving. An old card is checked again («Ha cambiado»). «Antes te he dicho X, pero es
+  Y» offers «Deshacer lo que hizo» and takes back the earlier turn, which stays «Corregido».
+- **Boni's circle on the phone** (task 115; I-39): Boni opens in Android's own bubble, from Boni's icon, on the
+  conversation, with no permission asked and no notification kept; and a one-cell «Conversación» widget on the home
+  screen opens it over whatever is open. Fixed with it: coming back to the app no longer put a page's «Atrás» and «…»
+  over the conversation.
+- **«Adjuntar» on the phone** (task 114; A-24, I-36): the phone's picker; a photo or a PDF goes up and with the message
+  as a dropped file does («N %», «Subiendo», «Demasiado grande»). «Adjuntar» is also in the desktop's and the
+  browser's bar.
+- **What is typed is not lost** (tasks 106 and 109; D-68, D-70): another request to the same note no longer drops what
+  was waiting; a server that keeps refusing is said once («El servidor no guarda «Reunión»: queda en este equipo») and
+  tried hourly; a new page closed before the server made it is kept and made once; on Android what was left unsent is
+  sent with the app closed.
+- **Boni desktop always ends when it quits** (task 119; D-65): a window asked for while quitting (the peek made 4 s
+  after a start) kept it running, hidden, through every later quit.
+- **«Todas las páginas» no longer holds the server** (tasks 107 and 108; A-28, A-29): its storage figures and its
+  thirty days' activity are counted from sums kept as they grow (on his NAS the storage alone held it 40 s).
+- **A long note is read in parts from the MCP** (task 112; A-30): over 30,000 characters `read` gives its outline, its
+  start and how to go on; `section` gives one section and `offset`/`length` a range. Shorter notes read as before.
+- Inside: the shared test queue serves runs in the order they came (task 111, T-09); every timed unit test measures the
+  thread's CPU, so a loaded machine no longer fails it (tasks 113 and 116); the desktop suites start their server on a
+  free port and read all it prints (tasks 117 and 118); the conversation's check with a real model, run by hand under
+  a hard cap on its spend (task 27, `--max-cost`).
+
+For Juan to look at, because they change his data or where it goes, or their shape is new:
+- **His notes in the new editor** (2g, 2f, 2h): his notes of 2026-11-14 (the day's backup, 3,875 with text) went
+  through the engine at the release's code and none would change. What looks different without changing a byte: a
+  line with two or more `boni:` images one after the other, drawn as text until now, is drawn as a row.
+- **The first «Todas las páginas» after the deploy** counts the whole history once (task 107): that answer takes tens
+  of seconds; the server stays free meanwhile. «Correos leídos» may go up, on purpose (task 108: it counted only a
+  reader's last 1,000 actions and fell short).
+- **A mention needs its accents** (task 110): `[[Reunion]]` does not open «Reunión»; with several of the same title he
+  chooses.
+- **Over the MCP**, `edit` with `body` is refused on a note over 30,000 characters (task 112): `old_text` or `append`.
+- **Taking back a turn** (task 27): «Deshacer lo que hizo» removes what the earlier turn did, after his confirmation.
+  No real model has answered «antes te he dicho…» or the new controls yet: that run is his, by hand, with his key.
+- **The «Conversación» widget** (task 115): he places it on his home screen; the bubble was tried on his phone.
+
+Still missing, from each PR's review:
+- Tasks 2g, 2f, 2h: the phone's keyboard (composition) in the WebView of a real phone; a backtick with a dead key on
+  a Spanish keyboard; no keys to resize an image or put it in a row; reordering inside a row and moving between rows
+  only have unit tests; a body changed on another device while the note is open (`rowDocOf`) is untested.
+- Task 109 (Android): what was left unsent is not always sent with the app closed: in 33 kills on a phone, once no job
+  after the kill (sent at the next opening) and once a job the system did not run within 3 minutes; nothing was lost.
+- Task 115: no test for a record's text sent first, or a panel with typed text asking, when the widget or the bubble
+  opens the chat; `MainActivity`'s bubble paths are checked by hand only; Boni's own always-on-top circle (B) is not
+  built.
+- Task 114: not tried on Juan's phone with large photos or from Drive; a failed file is chosen again (its chip does
+  not retry); «Compartir» from another app into Boni is not asked yet.
+- Task 110: a mention naming a mail opens without a test; archived collections, the trash and system types are not
+  searched (decided).
+- Task 27: the new controls are not in background work yet (the Bandeja asks choice or text only); rules 2c, 4 and 5
+  go with C6; the real-model run.
+- Tasks 107 and 108: not timed on the NAS; deleted, moved and schema operations equal the old sums by reading the code
+  only.
+- Task 112: the token count is estimated; `search` does not give the part where it found the text; Boni's own
+  assistant (`entities.get`) still gets the whole text.
+- Rolling back to 0.8.120 is safe (it ignores the new tables), but if 0.8.121 comes back after it, the thirty days'
+  activity misses the days 0.8.120 ran (the activity's cursor is shared, and 0.8.120 does not fill `activity_d`).
+
 ## 2026-11-13 (forty-fourth) — server 0.8.120 · Boni desktop 0.4.88 · Boni Android
 
 Needs:
