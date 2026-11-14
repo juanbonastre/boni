@@ -164,13 +164,28 @@ type Close = "quit" | "tray" | "signal" | "sigint" | "window";
 async function close(how: Close): Promise<number> {
   const a = app as ElectronApplication;
   if (how === "window") {
+    // The main window, as Juan closes it. The peek (also «Boni», hidden, `?peek=1`) is not it: Boni makes it 4 s after
+    // the start, so it may come up just after the main window went (task 119). A window whose page is gone is going.
+    // Both run in Boni's process, so each says it: nothing of this file reaches there.
     await a.evaluate(({ BrowserWindow }) => {
-      for (const b of BrowserWindow.getAllWindows()) if (b.getTitle() === "Boni") b.close();
+      for (const b of BrowserWindow.getAllWindows())
+        if (
+          !b.webContents.isDestroyed() &&
+          b.getTitle() === "Boni" &&
+          !b.webContents.getURL().includes("peek=1")
+        )
+          b.close();
     });
     await expect
       .poll(() =>
         a.evaluate(({ BrowserWindow }) =>
-          BrowserWindow.getAllWindows().some((b) => b.getTitle() === "Boni"),
+          BrowserWindow.getAllWindows().some(
+            (b) =>
+              !b.isDestroyed() &&
+              !b.webContents.isDestroyed() &&
+              b.getTitle() === "Boni" &&
+              !b.webContents.getURL().includes("peek=1"),
+          ),
         ),
       )
       .toBe(false);
@@ -693,6 +708,26 @@ test("quitting with a write the server does not answer takes a second or so, and
   await inTree(w).getByRole("button", { name: title, exact: true }).click();
   await expect(pageText(w).first()).toHaveText("Antes sin respuesta");
 });
+
+// Task 119: the peek is made ahead, hidden, 4 s after a start, and a quit right then (a property typed and Boni closed
+// at once) made it while the quit was closing the windows. That window was not one the quit closed, so Boni never
+// ended, nor on a second quit. Here it is asked for as the quit closes the main window (its «close»), from a link to
+// a note (as Boni Calendar's «Abrir en Boni» sends), with no peek made yet; asked for at «before-quit», before the
+// quit starts closing, it would be closed with the rest. `close` fails when Boni does not end within 20 s.
+for (const how of ["quit", "signal"] as const) {
+  test(`a window asked for while Boni quits does not keep it from ending (${how}, task 119)`, async () => {
+    await main();
+    await (app as ElectronApplication).evaluate(({ BrowserWindow, ipcMain }, id) => {
+      for (const b of BrowserWindow.getAllWindows()) {
+        if (b.webContents.getURL().includes("peek=1")) b.destroy();
+        else if (b.getTitle() === "Boni")
+          b.once("close", () => ipcMain.emit("shell:open-peek", {}, `note:${id}`));
+      }
+    }, noteId);
+    await close(how);
+    await main();
+  });
+}
 
 // ---------- the phone-sized web app in a browser, losing its tab ----------
 
