@@ -56,6 +56,20 @@ object QueueLogic {
     fun pendingCount(items: JSONArray, now: Long): Int =
         (0 until items.length()).count { items.optJSONObject(it)?.let { o -> isPending(o, now) } == true }
 
+    /**
+     * Whether anything of the queue `text` is still the worker's to send, now or once held (task 121: the backstop
+     * stays while it is); a rejected item waits for the page, which shows why.
+     */
+    fun waiting(text: String?): Boolean {
+        if (text.isNullOrEmpty()) return false
+        val items = try {
+            JSONArray(text)
+        } catch (e: Exception) {
+            return false
+        }
+        return (0 until items.length()).any { items.optJSONObject(it)?.let { o -> !hasError(o) } == true }
+    }
+
     /** When the first held item may go (epoch ms), or null. */
     fun nextHold(items: JSONArray, now: Long): Long? =
         (0 until items.length())

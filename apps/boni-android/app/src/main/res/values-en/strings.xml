@@ -8,5 +8,7 @@
     <string name="widget_pick_title">Choose a chart</string>
     <string name="widget_no_charts">Open Boni and sign in: your charts will show here.</string>
     <string name="notices_channel">Notices</string>
+    <string name="sending_channel">Sending</string>
+    <string name="sending">Sending what was kept…</string>
     <string name="chat_widget_label">Conversation</string>
 </resources>

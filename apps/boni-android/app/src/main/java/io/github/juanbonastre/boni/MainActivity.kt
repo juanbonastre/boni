@@ -245,7 +245,10 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         Shell.foreground = true
         shell.emit = { e -> main.post { send(e) } }
-        if (shell.configured()) shell.live.start()
+        if (shell.configured()) {
+            shell.live.start()
+            QueueWorker.warm(this)
+        }
         main.removeCallbacks(tick)
         main.postDelayed(tick, 60_000)
     }
@@ -266,8 +269,13 @@ class MainActivity : ComponentActivity() {
         // A job before onStop returns, after which the system may end the app at once: whatever the page left in the
         // queue and what was typed and kept unsent (task 109) go from it, with the network, even if the app is
         // closed. Always, as the page keeps its list just after this (its hide notice) and then only asks for a job
-        // behind this one: on a phone, the job asked for then was not there when the app was ended.
-        if (shell.configured()) QueueWorker.schedule(this, QueueWorker.HIDDEN_MS, wait = true)
+        // behind this one: on a phone, the job asked for then was not there when the app was ended. Expedited, so the
+        // system runs it at once (task 121: once, a delayed one had not run three minutes later); the backstop first,
+        // so the wait covers both (WorkManager does them in order).
+        if (shell.configured()) {
+            if (shell.hasUnsent() || QueueLogic.waiting(shell.storeRead(Shell.QUEUE_FILE))) QueueWorker.backstop(this)
+            QueueWorker.schedule(this, QueueWorker.HIDDEN_MS, wait = true)
+        }
         Log.i(TAG, "stop")
     }
 

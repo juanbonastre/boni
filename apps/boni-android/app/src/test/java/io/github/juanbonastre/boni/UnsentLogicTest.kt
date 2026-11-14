@@ -234,4 +234,21 @@ class UnsentLogicTest {
         assertEquals(emptyList<JSONObject>(), UnsentLogic.parse("no es una lista"))
         assertEquals(1, UnsentLogic.parse("""[{"path":"api/pages/p1"},{"no":"path"},3]""").size)
     }
+
+    @Test
+    fun theJobMadeAsTheAppHidesWaitsForWhatThePageKeepsJustAfterButNeverLong() {
+        // Task 121: an expedited job cannot be delayed, so it waits itself until the moment it was given.
+        assertEquals(1_500L, UnsentLogic.waitFor(notBefore = 2_500, now = 1_000, max = 1_500))
+        assertEquals(500L, UnsentLogic.waitFor(notBefore = 2_500, now = 2_000, max = 1_500))
+        assertEquals(0L, UnsentLogic.waitFor(notBefore = 0, now = 2_000, max = 1_500))
+        // A clock moved back does not hold it.
+        assertEquals(1_500L, UnsentLogic.waitFor(notBefore = 1_000_000, now = 2_000, max = 1_500))
+    }
+
+    @Test
+    fun aRunThatReachedNoServerTriesAgainSoonAFewTimesThenLeavesItToTheBackoff() {
+        // Task 121: once, a job's next try came minutes after the server was back; a few in the same run go first.
+        assertEquals(listOf(3_000L, 6_000L, 12_000L, null), (0..3).map { UnsentLogic.againIn(it, stopped = false) })
+        assertNull(UnsentLogic.againIn(0, stopped = true))
+    }
 }

@@ -69,4 +69,15 @@ class QueueLogicTest {
         val items = JSONArray(file)
         assertEquals(1, QueueLogic.pendingCount(items, System.currentTimeMillis()))
     }
+
+    @Test
+    fun theBackstopStaysWhileAnythingIsStillTheWorkersToSend() {
+        // Task 121: pending or held for its Undo, the worker sends it; a rejected one waits for the page.
+        assertEquals(true, QueueLogic.waiting(JSONArray().put(item("a")).toString()))
+        assertEquals(true, QueueLogic.waiting(JSONArray().put(item("a", holdUntil = Long.MAX_VALUE)).toString()))
+        assertEquals(false, QueueLogic.waiting(JSONArray().put(item("a", error = "no")).toString()))
+        assertEquals(false, QueueLogic.waiting("[]"))
+        assertEquals(false, QueueLogic.waiting(null))
+        assertEquals(false, QueueLogic.waiting("no es una cola"))
+    }
 }

@@ -5,7 +5,8 @@
 //
 //   flock -w 3600 "$(git rev-parse --git-common-dir)/boni-phone.lock" node apps/boni-android/phone-test/unsent.mjs <boni-prueba.apk>
 //
-// With ONLY=2,6 it runs those scenarios alone, numbered in the order they are here.
+// With ONLY=2,6 it runs those scenarios alone, numbered in the order they are here; ROUNDS=30 makes the race's round
+// longer (8 kills by default), each one sent with the app closed within three minutes (task 121).
 //
 // The APK is CI's `boni-android-test-apk` artifact of a branch (boni-android.yml). The phone must be unlocked, with
 // the screen on. «No connection» is a door on this laptop that closes, so the phone's own network never changes. The page is
@@ -427,6 +428,7 @@ const phoneClock = () => `${sh("date +%s").trim()}.000`;
 
 const results = [];
 // ONLY=2,6 runs those scenarios alone (by their order here), to try a fix again without the whole run.
+const ROUNDS = Number(process.env.ROUNDS ?? 8);
 const only = process.env.ONLY ? new Set(process.env.ONLY.split(",").map(Number)) : null;
 let order = 0;
 async function scenario(name, run) {
@@ -636,7 +638,8 @@ try {
       const lost = [];
       const times = [];
       const noJob = [];
-      for (let i = 1; i <= 8; i++) {
+      const late = [];
+      for (let i = 1; i <= ROUNDS; i++) {
         const roundStart = phoneClock();
         online();
         openNote();
@@ -661,15 +664,36 @@ try {
         if (where === "LOST")
           lost.push(`round ${i}: the server ${JSON.stringify(server)}, kept ${kept}`);
         online();
-        // The next round starts from it: sent by the app (closed) or as it opens again.
+        // Kept, the app sends it closed, within three minutes (task 121: once its job had not run by then); the next
+        // round starts from it, opening the app.
         const t0 = Date.now();
-        await serverShows(shows, 3 * 60_000).catch(() => undefined);
+        let opened = false;
+        const sent = await until(
+          "the server to have it",
+          async () => {
+            if (front().includes(`${PKG}/`)) opened = true;
+            return shows.test(await bodyOnServer());
+          },
+          3 * 60_000,
+        ).then(
+          () => true,
+          () => false,
+        );
         times.push(Math.round((Date.now() - t0) / 1000));
+        if (!sent || opened) {
+          late.push(i);
+          say(`round ${i}: not on the server with the app closed in 3 minutes; ${whyNoJob()}`);
+          for (const l of logSince(roundStart)) console.log("   ", l);
+        }
       }
       if (lost.length) throw new Error(lost.join("; "));
       if (noJob.length)
         throw new Error(`kept with no job left to send it in round ${noJob.join(", ")}`);
-      return `8 of 8, on the server in ${times.join(", ")} s after each kill`;
+      if (late.length)
+        throw new Error(
+          `not sent with the app closed within 3 minutes in round ${late.join(", ")}`,
+        );
+      return `${ROUNDS} of ${ROUNDS}, on the server in ${times.join(", ")} s after each kill`;
     },
   );
 
