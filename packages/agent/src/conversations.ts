@@ -203,8 +203,10 @@ export function turnOfRun(
 }
 
 /** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */
-export function markCorrected(store: UserStore, turn: string, device?: string): void {
-  if (hasField(store, TURN, "corrected")) store.update(turn, { f_corrected: v("1") }, meta(device));
+/** `run`: the run that took the turn back (`turns.undo`), whose Undo takes the mark away with the rest (task 120). */
+export function markCorrected(store: UserStore, turn: string, device?: string, run?: string): void {
+  if (hasField(store, TURN, "corrected"))
+    store.update(turn, { f_corrected: v("1") }, { ...meta(device), ...(run ? { run } : {}) });
 }
 
 /** A conversation's turns as a device shows them (the replies painted). */
@@ -262,7 +264,8 @@ export function recordTurn(
     chips?: TurnChip[];
     /**
      * The run of the turn it corrects (§3.1): written when the turn is first kept (Juan edited his message), or once
-     * its plan took that turn back (`turns.undo`, «antes te he dicho X, pero es Y»); never changed after.
+     * its plan, which took that turn back (`turns.undo`, «antes te he dicho X, pero es Y»), ends done (a stop after
+     * brings that turn back: task 120); never changed after.
      */
     corrects?: string;
   },

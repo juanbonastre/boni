@@ -890,6 +890,198 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     expect(titles()).toContain("Cita con el dentista");
   });
 
+  it("a plan that took back an earlier turn and stops after, at any step, leaves that turn as it was: its data, its proposals, its Undo, no «Corregido» (task 120)", async () => {
+    const token = await login(base, "juan");
+    const id = (
+      (await (await post(base, token, "/api/agent/conversations")).json()) as {
+        conversation: { id: string };
+      }
+    ).conversation.id;
+    const store = host.store(1);
+    const create = (titulo: string) => ({
+      id: `c${titulo.length}`,
+      op: "call",
+      tool: "entities.create",
+      args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), lit(titulo)] } },
+    });
+    const undo = {
+      id: "u",
+      op: "call",
+      tool: "turns.undo",
+      args: { turn: { ref: "$history[0].turn" } },
+    };
+    const titles = () =>
+      store
+        .list("t_tarea")
+        .map((x) => x.entity.values.f_titulo)
+        .filter((t) => String(t).startsWith("Revisión"));
+    const turns = async () =>
+      (
+        (await (
+          await fetch(`${base}/api/agent/conversations/${id}`, {
+            headers: { authorization: `Bearer ${token}` },
+          })
+        ).json()) as { turns: { corrected: boolean; corrects: string | null }[] }
+      ).turns.map((t) => [t.corrected, t.corrects]);
+    const yes = async (t: { run: string; pending: { id: string } }) =>
+      (await (
+        await post(base, token, "/api/agent/confirm", { run: t.run, confirmation: t.pending.id })
+      ).json()) as {
+        run: string;
+        status: string;
+        error: string | null;
+        corrects?: string;
+        changed: boolean;
+        notices: { code: string }[];
+        pending: { id: string; kind: string } | null;
+      };
+    const say = async (text: string) =>
+      (await (await post(base, token, "/api/agent/turn", { text, conversation: id })).json()) as {
+        run: string;
+        status: string;
+        pending: { id: string; kind: string };
+      };
+
+    // The turn to correct: a task, a setting it rewrote beside the log, a proposal waiting in the Bandeja.
+    plans.push({ version: 1, steps: [create("Revisión el jueves")] });
+    const first = await say("apunta la revisión el jueves");
+    keep(store, first.run, { setting: "views/t_tarea", before: null, after: "[7]" });
+    store.setSetting("views/t_tarea", "[7]");
+    store.journal.addProposal({
+      id: "p_revision",
+      run: first.run,
+      tool: "entities.create",
+      args: { values: {}, origins: [] },
+      view: { tool: "entities.create", title: "Crear", rows: [], marks: [] } as never,
+      sources: [],
+      created: Date.now(),
+    });
+    const asThen = () => {
+      expect(titles()).toEqual(["Revisión el jueves"]);
+      expect(store.setting("views/t_tarea")).toBe("[7]");
+      expect(store.journal.proposal("p_revision")?.status).toBe("pending");
+    };
+    asThen();
+
+    // A tool fails after Juan's yes: what the plan did is undone, and the turn it took back comes back with it.
+    plans.push({
+      version: 1,
+      steps: [
+        undo,
+        create("Revisión el viernes"),
+        {
+          id: "x",
+          op: "call",
+          tool: "entities.update",
+          args: {
+            id: lit("e_no_existe"),
+            values: { fn: "obj", args: [lit("titulo"), lit("x")] },
+          },
+        },
+      ],
+    });
+    const failed = await yes(await say("antes te he dicho el jueves, pero es el viernes"));
+    expect(failed).toMatchObject({ status: "stopped", changed: false });
+    expect(failed.corrects).toBeUndefined();
+    expect(failed.notices.map((n) => n.code)).toContain("undone");
+    asThen();
+    expect(await turns()).toEqual([
+      [false, null],
+      [false, null],
+    ]);
+
+    // Juan says no to a later card: the same.
+    store.create(
+      "t_tarea",
+      {
+        f_titulo: {
+          value: "Llamar al taller",
+          label: label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]),
+        },
+      },
+      { actor: "user" },
+      "e_taller",
+    );
+    plans.push({
+      version: 1,
+      steps: [
+        undo,
+        create("Revisión el viernes"),
+        { id: "d", op: "call", tool: "entities.delete", args: { id: lit("e_taller") } },
+      ],
+    });
+    const card = await yes(await say("antes te he dicho el jueves, pero es el viernes"));
+    expect(card).toMatchObject({ status: "waiting", pending: { kind: "confirm" } });
+    const declined = (await (
+      await post(base, token, "/api/agent/decline", {
+        run: card.run,
+        confirmation: card.pending?.id,
+      })
+    ).json()) as { status: string; error: string; corrects?: string; notices: { code: string }[] };
+    expect(declined).toMatchObject({ status: "stopped", error: "declined" });
+    expect(declined.corrects).toBeUndefined();
+    expect(declined.notices.map((n) => n.code)).toContain("undone");
+    asThen();
+    expect(store.get("e_taller")?.entity.deleted).toBeUndefined();
+
+    // It stops on a later card (Juan answers a question in his own words): while it waits, the turn is taken
+    // back and marked, but the run does not correct it yet (`corrects`); once it stops, it is as it was.
+    plans.push({
+      version: 1,
+      steps: [
+        undo,
+        create("Revisión el viernes"),
+        {
+          id: "q",
+          op: "ask",
+          control: "choice",
+          prompt: lit("¿A qué hora?"),
+          options: { fn: "list", args: [lit("10:00"), lit("12:00")] },
+        },
+      ],
+    });
+    const waits = await yes(await say("antes te he dicho el jueves, pero es el viernes"));
+    expect(waits).toMatchObject({ status: "waiting", pending: { kind: "ask" } });
+    expect(waits.corrects).toBeUndefined();
+    expect(titles()).toEqual(["Revisión el viernes"]);
+    expect((await turns())[0]).toEqual([true, null]);
+    const words = (await (
+      await post(base, token, "/api/agent/answer", {
+        run: waits.run,
+        ask: waits.pending?.id,
+        words: "mejor otro día",
+      })
+    ).json()) as { status: string; error: string; corrects?: string };
+    expect(words).toMatchObject({ status: "stopped", error: "answered-in-words" });
+    expect(words.corrects).toBeUndefined();
+    asThen();
+    expect((await turns()).map(([corrected]) => corrected)).toEqual([false, false, false, false]);
+
+    // Its own Undo still takes all of it back, the setting beside the log too.
+    const undone = await post(base, token, `/api/agent/runs/${first.run}/undo`, {});
+    expect(undone.status).toBe(200);
+    expect(titles()).toEqual([]);
+    expect(store.setting("views/t_tarea")).toBeNull();
+
+    // A correction that went through is one run: its Deshacer brings the turn it corrected back, unmarked.
+    plans.push({ version: 1, steps: [create("Revisión el lunes")] });
+    const monday = await say("apunta la revisión el lunes");
+    plans.push({
+      version: 1,
+      steps: [
+        { ...undo, args: { turn: { ref: "$history[4].turn" } } },
+        create("Revisión el martes"),
+      ],
+    });
+    const done = await yes(await say("antes te he dicho el lunes, pero es el martes"));
+    expect(done).toMatchObject({ status: "done", corrects: monday.run });
+    expect(titles()).toEqual(["Revisión el martes"]);
+    expect((await turns()).at(-2)).toEqual([true, null]);
+    expect((await post(base, token, `/api/agent/runs/${done.run}/undo`, {})).status).toBe(200);
+    expect(titles()).toEqual(["Revisión el lunes"]);
+    expect((await turns()).at(-2)).toEqual([false, null]);
+  });
+
   it("every kind of answer is checked by the server: its shape here, its kind and its card in the agent (C3)", async () => {
     const token = await login(base, "juan");
     const id = (

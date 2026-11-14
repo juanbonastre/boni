@@ -266,7 +266,10 @@ export interface Journal {
   ): void;
   /** What an earlier proposal of the thread said before this one changed it (null: nothing). */
   setProposalBefore(id: string, before: ProposalBefore | null): void;
-  /** A decided proposal (accepted or rejected) waits again, as if Juan had not decided («Deshacer»). */
+  /**
+   * A decided proposal (accepted or rejected) waits again, as if Juan had not decided («Deshacer»); or one a correction
+   * left stale, when the plan that took its turn back stopped after (task 120).
+   */
   reopenProposal(id: string): void;
   /** A run's decisions judged no more (its proposal was taken back): Juan's next decision judges them. */
   unjudge(run: string): void;
@@ -763,7 +766,7 @@ export function openJournal(db: DatabaseSync): Journal {
     reopenProposal: (id) =>
       void db
         .prepare(
-          "UPDATE proposals SET status = 'pending', decided = NULL, edits = NULL WHERE id = ? AND status IN ('accepted', 'rejected')",
+          "UPDATE proposals SET status = 'pending', decided = NULL, edits = NULL WHERE id = ? AND status IN ('accepted', 'rejected', 'stale')",
         )
         .run(id),
     unjudge: (run) =>

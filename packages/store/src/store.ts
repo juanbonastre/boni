@@ -843,10 +843,27 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
 
   /** Whether an operation's effect is in place: not undone, or undone and that undo itself undone (a redo). */
   function active(seq: number): boolean {
-    const by = db.prepare("SELECT seq FROM ops WHERE undoes = ?").get(seq) as
-      | { seq: number }
-      | undefined;
-    return by ? !active(by.seq) : true;
+    return inPlace(seq) !== null;
+  }
+
+  let undoneByStatement: ReturnType<typeof db.prepare> | null = null;
+  /**
+   * The operation to undo to take an operation's effect away, or null when it is not in place: the operation itself
+   * when nothing undid it, else the last of its chain of undos (an op is undone once: `ops_undoes`), when that chain
+   * is even (undone, then that undo undone: a redo). A run whose undo was itself undone (task 120: a correction
+   * brought back) is undone again through the redo's own undo.
+   */
+  function inPlace(seq: number): number | null {
+    if (!undoneByStatement) undoneByStatement = db.prepare("SELECT seq FROM ops WHERE undoes = ?");
+    let tip = seq;
+    let links = 0;
+    for (;;) {
+      const by = undoneByStatement.get(tip) as { seq: number } | undefined;
+      if (!by) break;
+      tip = Number(by.seq);
+      links++;
+    }
+    return links % 2 === 0 ? tip : null;
   }
 
   /**
@@ -1036,39 +1053,60 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
       };
     },
     undo: (seq, meta) => tx(() => undoOne(seq, meta)),
+    // Every operation of the run whose effect is in place, newest first, each through the end of its chain (`inPlace`):
+    // its own changes and the undos it made of another run's (task 120: a correction's, whose undo brings that run
+    // back). Each is looked at when its turn comes, as undoing a newer one may put an older one back in place.
     undoRun: (run, meta) =>
       tx(() => {
         const seqs = (
-          db
-            .prepare("SELECT seq FROM ops WHERE run = ? AND undoes IS NULL ORDER BY seq DESC")
-            .all(run) as { seq: number }[]
-        )
-          .map((r) => r.seq)
-          .filter((s) => !db.prepare("SELECT 1 FROM ops WHERE undoes = ?").get(s));
-        if (!seqs.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
-        return seqs.map((s) => undoOne(s, meta)); // newest first; any conflict rolls all of it back
+          db.prepare("SELECT seq FROM ops WHERE run = ? ORDER BY seq DESC").all(run) as {
+            seq: number;
+          }[]
+        ).map((r) => Number(r.seq));
+        const done: number[] = [];
+        for (const s of seqs) {
+          const tip = inPlace(s);
+          if (tip !== null) done.push(undoOne(tip, meta)); // any conflict rolls all of it back
+        }
+        if (!done.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
+        return done;
       }),
+    // One that nothing undid, by one query; else one undone and brought back (rare: a redo, task 120).
     runUndoable: (run) =>
       db
         .prepare(
-          `SELECT 1 FROM ops o WHERE o.run = ? AND o.undoes IS NULL
-             AND NOT EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) LIMIT 1`,
+          "SELECT 1 FROM ops o WHERE o.run = ? AND NOT EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) LIMIT 1",
         )
-        .get(run) !== undefined,
+        .get(run) !== undefined ||
+      (
+        db
+          .prepare(
+            "SELECT o.seq FROM ops o JOIN ops u ON u.undoes = o.seq JOIN ops r ON r.undoes = u.seq WHERE o.run = ?",
+          )
+          .all(run) as { seq: number }[]
+      ).some((r) => active(Number(r.seq))),
     // Prepared once: Boni's «Ejecuciones» asks it for every run of the year (thousands; task 35).
     runOps: (run) => {
       if (!runOpsStatement)
         runOpsStatement = db.prepare(
-          `SELECT o.kind, o.target, EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) AS undone
+          `SELECT o.seq, o.kind, o.target, EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) AS undone,
+             EXISTS (SELECT 1 FROM ops u JOIN ops r ON r.undoes = u.seq WHERE u.undoes = o.seq) AS redone
            FROM ops o WHERE o.run = ? AND o.undoes IS NULL AND o.kind <> 'schema' ORDER BY o.seq`,
         );
       return (
         runOpsStatement.all(run) as {
+          seq: number;
           kind: Exclude<OpKind, "schema">;
           target: string;
           undone: number;
+          redone: number;
         }[]
-      ).map((r) => ({ kind: r.kind, target: r.target, undone: r.undone === 1 }));
+      ).map((r) => ({
+        kind: r.kind,
+        target: r.target,
+        // Undone, unless that undo was undone too (a redo, task 120): only those are looked at again.
+        undone: r.undone === 1 && !(r.redone === 1 && active(Number(r.seq))),
+      }));
     },
     aiAccess() {
       const own: Record<TypeId, AiLevel> = {};

@@ -446,6 +446,11 @@ export interface AgentOptions {
    */
   undoable?: (run: string) => boolean;
   /**
+   * Takes back what a run changed outside the store's log, as its Undo does (the server's `undoKept`): how many. A
+   * plan that took back an earlier turn and stops after brings it back with it (task 120).
+   */
+  undoKept?: (run: string) => number;
+  /**
    * A file of his as the answer to a question with a file (§3.4): the row of his files Juan uploaded or dropped, as the
    * screen gives a file he points at (its `at` and its facts); null when it is not one. The server's (A-02).
    */
@@ -546,6 +551,12 @@ interface RunState {
   chips?: TurnChip[];
   /** The run of the turn this one corrects (§3.1): kept with the turn. */
   corrects?: string;
+  /**
+   * The earlier turn its plan took back (`turns.undo`, §3.1, C1) and the proposals of it that were waiting in the
+   * Bandeja then. All or nothing (task 120): the run corrects it (`corrects`) only once it ends done; a stop after
+   * brings that turn back as it was.
+   */
+  tookBack?: { run: string; proposals: string[] };
   /** Who is watching it live (the turn's device), and the planner chosen for its conversation. */
   live?: ((e: LiveEvent) => void) | undefined;
   planner?: ModelProvider | undefined;
@@ -1861,7 +1872,7 @@ export class Agent {
   ): Promise<Val | typeof BLOCKED> {
     const tool = this.o.registry.get(step.tool);
     // A past turn is taken back before this run writes anything, and once (C1): all or nothing, said first.
-    if (tool?.name === UNDO_TURN && (st.counters.writes > 0 || st.corrects))
+    if (tool?.name === UNDO_TURN && (st.counters.writes > 0 || st.corrects || st.tookBack))
       throw new Stop("undo-after-writes");
     const preset = st.preset.get(step.id);
     const raw: Record<string, Val> =
@@ -2092,6 +2103,15 @@ export class Agent {
       ...(tool.effect === "touch" ? { inbox: this.inboxDecider() } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
+    // The proposals the turn it takes back has waiting in the Bandeja: they come back too if this run stops after.
+    const took = tool.name === UNDO_TURN ? plain(args.turn as Val) : null;
+    const waitingThen =
+      typeof took === "string"
+        ? this.o.store.journal
+            .proposalsOf(took)
+            .filter((p) => p.status === "pending")
+            .map((p) => p.id)
+        : [];
     let result: Val;
     try {
       result = await tool.run(capFor as never, args, control ?? neutral);
@@ -2100,11 +2120,8 @@ export class Agent {
       if (e instanceof EndRun && tool.effect !== "piece") throw new ToolError("end-not-allowed");
       throw e;
     }
-    // The turn it took back is the one this turn corrects, as when Juan edits its message (§3.1).
-    if (tool.name === UNDO_TURN) {
-      const back = plain(args.turn as Val);
-      if (typeof back === "string") st.corrects = back;
-    }
+    // The turn it took back is the one this turn corrects, as when Juan edits its message (§3.1), once it ends done.
+    if (typeof took === "string") st.tookBack = { run: took, proposals: waitingThen };
     if (!writes)
       this.audit(st, {
         by: "agent",
@@ -3059,10 +3076,12 @@ export class Agent {
   private finish(st: RunState, status: "done" | "stopped", error: string | null): TurnResult {
     this.runs.delete(st.id);
     if (st.origin.kind === "background") this.o.store.journal.dropRunState(st.id);
+    if (st.tookBack && status === "done") st.corrects = st.tookBack.run;
+    if (st.tookBack && status === "stopped") this.bringBack(st, st.tookBack);
     // A request that fails halfway because a tool could not do its part leaves nothing half done (a type
     // with only some of its fields): what it wrote is undone. A stop Juan or a limit made (he said no, too
     // many confirmations) keeps what he saw done before it.
-    if (status === "stopped" && error?.startsWith("tool-") && st.counters.writes > 0)
+    else if (status === "stopped" && error?.startsWith("tool-") && st.counters.writes > 0)
       try {
         this.o.store.undoRun(st.id, { actor: "agent" });
         st.notices = [
@@ -3086,6 +3105,31 @@ export class Agent {
     this.record(st, status, error);
     this.emit(st, { type: "end", status, error });
     return this.result(st, status, error);
+  }
+
+  /**
+   * A plan that took back an earlier turn (`turns.undo`, §3.1, C1) stopped after it, at whatever step and for
+   * whatever reason (a tool's error, a limit, Juan's no to a later card): all or nothing (task 120), as if he had
+   * never said yes. The whole run is undone as its «Deshacer» would: what it wrote, and the taking back with it, which
+   * is part of the run (its undos in the store's log, the turn's «Corregido», what it changed beside the log:
+   * `correct` with `by`); then the proposals that turn had waiting go back to the Bandeja. A later change of Juan's
+   * in the way leaves it all as it is, the turn taken back, and the run keeps its Undo.
+   */
+  private bringBack(st: RunState, took: { run: string; proposals: string[] }): void {
+    try {
+      if (this.o.store.runUndoable(st.id)) this.o.store.undoRun(st.id, { actor: "agent" });
+    } catch {
+      st.corrects = took.run;
+      return;
+    }
+    this.o.undoKept?.(st.id);
+    const journal = this.o.store.journal;
+    for (const id of took.proposals)
+      if (journal.proposal(id)?.status === "stale") journal.reopenProposal(id);
+    st.notices = [
+      ...st.notices.filter((n) => n.code !== "schema-changed" && n.code !== "memory-unconfirmed"),
+      { code: "undone" },
+    ];
   }
 
   /**
@@ -3441,12 +3485,13 @@ export class Agent {
    * correction with nothing done: "cannot-undo"); then a question or confirmation it waits on ends, and its proposals
    * still in the Bandeja leave it. A run still going is "busy". How many things it took back.
    */
-  correct(run: string): number | "busy" | "cannot-undo" {
+  correct(run: string, by?: string): number | "busy" | "cannot-undo" {
     if (this.active.has(run)) return "busy";
     let n = 0;
     if (this.o.store.runUndoable(run))
       try {
-        n += this.undoRun(run).length;
+        // Asked by a run's plan (`by`, `turns.undo`): the undos are that run's, so its own Undo brings the turn back.
+        n += this.o.store.undoRun(run, { actor: "user", ...(by ? { run: by } : {}) }).length;
       } catch {
         return "cannot-undo";
       }

@@ -328,6 +328,7 @@ export class AgentHost {
         // (its Undo); the flows' and the Bandeja's code, as their routes run it.
         services: (name, run) => this.service(account, name, run),
         undoable: (run) => this.keptUndoable(account, run),
+        undoKept: (run) => this.undoKept(account, run),
         // A file's images for a model that sees them, by the references `files.read` gave (A-24, P23).
         image: (ref) => imageOf(this.store(account), ref),
         // A file of his as the answer to a question with a file (§3.4): as the screen gives one he points at.
@@ -401,7 +402,8 @@ export class AgentHost {
           const t = turnOfRun(store, conversation, r);
           return t ? t.request : null;
         },
-        undo: (r) => this.correctTurn(account, conversation, r, run.device),
+        // The taking back is this run's (its Undo, and its stop after, bring the turn back: task 120).
+        undo: (r) => this.correctTurn(account, conversation, r, run.device, run.run),
       } satisfies TurnsService;
     }
     if (name !== "flows") return null;
@@ -448,40 +450,49 @@ export class AgentHost {
   /**
    * Takes back what a run changed beside the store's log (runUndo.ts): what it switched on or off or deleted in
    * «Flujos» (journal rows) and the settings it rewrote, newest first; how many. Undo of the run
-   * (`POST /api/agent/runs/:id/undo`, the MCP's `undo`) calls it with the store's own.
+   * (`POST /api/agent/runs/:id/undo`, the MCP's `undo`) calls it with the store's own. `into`: the run that takes it
+   * back (a correction by `turns.undo`), which keeps how to put each back, so its own Undo does (task 120).
    */
-  undoKept(account: number, run: string): number {
+  undoKept(account: number, run: string, into?: string): number {
     const store = this.store(account);
-    return undoKept(store, run, (c) => {
-      const f = store.journal.flow(c.flow);
-      if (!f) return false;
-      const live = store.journal.flows().some((x) => x.id === c.flow);
-      // Brought back only if it is still deleted.
-      if (c.deleted !== undefined) {
-        if (live) return false;
-        store.journal.setFlowDeleted(c.flow, c.deleted);
+    return undoKept(
+      store,
+      run,
+      (c) => {
+        const f = store.journal.flow(c.flow);
+        if (!f) return false;
+        const live = store.journal.flows().some((x) => x.id === c.flow);
+        // Brought back (or deleted again, by the undo of a correction) only if it is still as the run left it.
+        if (c.deleted !== undefined) {
+          if (live !== c.deleted) return false;
+          store.journal.setFlowDeleted(c.flow, c.deleted);
+          return true;
+        }
+        // Juan's own change since then wins: only a flow still as the run left it is switched back. Switching one
+        // back on goes through the same checks as his switch.
+        if (c.enabled === undefined || !live || f.enabled === c.enabled) return false;
+        if (c.enabled) return !switchFlow(this, account, c.flow, true);
+        store.journal.setFlowEnabled(c.flow, false);
         return true;
-      }
-      // Juan's own change since then wins: only a flow still as the run left it is switched back. Switching one
-      // back on goes through the same checks as his switch.
-      if (c.enabled === undefined || !live || f.enabled === c.enabled) return false;
-      if (c.enabled) return !switchFlow(this, account, c.flow, true);
-      store.journal.setFlowEnabled(c.flow, false);
-      return true;
-    });
+      },
+      into,
+    );
   }
 
   /**
    * A turn of a conversation taken back (§3.1, C1), whether Juan edited its message or the planner asked for it
    * (`turns.undo`, on his card): what it changed beside the log is asked first, as nothing of the log is undone
    * after; then its run is undone through the store's log, all or nothing, its question ends, its proposals leave the
-   * Bandeja, and the turn is marked corrected. How many things, or why nothing was done.
+   * Bandeja, and the turn is marked corrected. How many things, or why nothing was done. `by`: the run whose plan
+   * asked for it (`turns.undo`): every part of it is that run's, so undoing that run brings the turn back as it was
+   * (task 120: all or nothing, its stop after undoes it; the pencil's has none, its new words run after).
    */
   correctTurn(
     account: number,
     conversation: string,
     run: string,
     device?: string,
+    by?: string,
   ): number | "not-found" | "corrected" | "busy" | "cannot-undo" {
     const store = this.store(account);
     const old = run ? turnOfRun(store, conversation, run) : null;
@@ -489,10 +500,10 @@ export class AgentHost {
     // Corrected already (on another device): its words ran once; a second correction would run them again.
     if (old.corrected) return "corrected";
     if (this.keptInTheWay(account, run)) return "cannot-undo";
-    const back = this.agent(account).correct(run);
+    const back = this.agent(account).correct(run, by);
     if (typeof back === "string") return back;
-    const kept = this.undoKept(account, run);
-    markCorrected(store, old.id, device);
+    const kept = this.undoKept(account, run, by);
+    markCorrected(store, old.id, device, by);
     return back + kept;
   }
 
