@@ -427,6 +427,10 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   - El turno solo puede venir del historial (`$history[i].turn`, el valor del código; nunca uno que escriba el
     modelo), va antes de cualquier otra llamada y una vez por plan; solo en un turno de una conversación, nunca en un
     flujo ni en segundo plano.
+  - De un turno anterior el plan solo nombra su turno: lo que pidió se escribe otra vez. El código ata de cada turno
+    solo `turn`, así que otra cosa del historial (`$history[0].request`, una respuesta) no se resolvería nunca; se
+    rechaza al comprobar el plan (`history-only-turn`) y el planificador lo arregla antes de que corra. Si se viera
+    al correr, el plan pararía con el turno ya deshecho y nada rehecho.
 - **Decidido, y por qué:**
   - Los controles nuevos son de la conversación. El trabajo en segundo plano sigue preguntando solo elegir o escribir,
     lo que contesta su tarjeta de la Bandeja (`ask-only-in-a-turn`).
@@ -435,8 +439,13 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   - La tarjeta vieja usa el trato de la Bandeja (D-57: el dispositivo manda lo que vio, el servidor vuelve a mirar y,
     si cambió, no contesta), no su código: la de la Bandeja juzga una propuesta con el calendario y el buzón; la de
     una pregunta es lo que leyó su plan, así que la vuelve a leer el agente.
-- **Falta:** probar el planificador con un modelo de verdad («antes te he dicho…», cada control): se hace a mano, con
-  presupuesto, y no se ha hecho. Las pruebas son de escenario, con un planificador de guion.
+- **Con el modelo de verdad (2026-11-14, a mano, `apps/server/eval/conversation.ts`):** Opus 5.5 por OpenRouter, diez
+  casos con datos inventados. Pasaron el C1 con un turno anterior, el negativo («apunta también…» no deshace
+  nada) y cada clase de pregunta (varias, opción de una propiedad, número, fecha, archivo, sí o no, ensayo). El C1
+  con dos turnos anteriores falló una vez de tres: el plan copiaba algo del historial además de su turno, así que
+  deshizo el turno del dentista y paró (`bad-ref`) sin apuntarlo el viernes. Desde entonces ese plan se rechaza al
+  comprobarlo (arriba, `history-only-turn`). Gasto, 1,40 $ de un tope de 2 €. Las pruebas del CI siguen siendo de
+  escenario, con un planificador de guion.
 
 La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta
 de modo, las tarjetas con su salida libre, lo agrupado y el bloque «Chat» en Gastos.
