@@ -1090,10 +1090,32 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   - **lo que no hace aún:** una subida se corta si Android cierra la app mientras sigue en segundo plano , y uno que
     falló («Falló») se elige otra vez (la clave sirve una sola vez); compartir a Boni desde otra app (la hoja «Compartir» de Android) no se pidió: queda en
     la cola.
+- **Novena parte (2026-11-13; la 115): el círculo en el teléfono.** Lo que había: en el escritorio el círculo vive
+  dentro de las ventanas de Boni y abre la conversación encima de lo abierto; en el teléfono la conversación es la
+  pestaña «Boni» (pantalla completa, `MobileApp.tsx`), y la app ya sabía abrir lo que le pide un atajo o una gráfica
+  de la pantalla de inicio (`Launcher.kt`, `navigate` en `store.ts`). Esto lo extiende con un destino más, `chat`:
+  - **el widget** «Conversación» (`ChatWidget.kt`): el círculo del escritorio solo, en una casilla de la pantalla de
+    inicio; un toque abre Boni en la pestaña «Boni», con la última conversación, encima de lo que hubiera abierto
+    (se cierran los ajustes, una gráfica, un registro venido de otra app y la lista de conversaciones; el texto de
+    un registro se manda antes, y un panel con algo escrito pregunta antes de irse). No enseña nada de Juan, así que
+    nunca se refresca ni lee el servidor;
+  - **la burbuja** (`Bubble.kt`, I-39): el círculo sobre las demás apps es la burbuja de Android 17 (Juan,
+    2026-11-13: «A, la burbuja»). Se pide desde el icono de Boni (mantenerlo pulsado y elegir la burbuja); Boni no
+    pide permisos ni deja una notificación fija. Android no da una forma de preguntar si una app es una burbuja, así
+    que lo dice la ventana: en el teléfono de Juan (2026-11-13) una burbuja es una tarea de varias ventanas más
+    estrecha y más baja que la pantalla (997 × 1794 de 1080 × 2424, con margen por los cuatro lados), y una pantalla
+    partida, que también es de varias ventanas, ocupa siempre todo el ancho o todo el alto; una ventana de escritorio
+    y una imagen sobre imagen tienen su propio modo. Cuentan también una tarea de varias ventanas siempre encima y la
+    marca de Android `isLaunchedFromBubble`. Boni que empieza en una burbuja abre la conversación (el mismo destino
+    `chat`), y Boni abierto que pasa a ser burbuja también, una vez. A ese tamaño Boni es el del teléfono, con sus
+    pestañas al pie, y se lee bien. Al volver al frente, o al flotar, la conexión en vivo se abre otra vez y la app lo
+    lee todo de nuevo; eso ya no pone la página de inicio bajo la pestaña «Boni» (en el teléfono de Juan ponía sobre
+    la conversación la barra de una página, «Atrás» y «…»);
 - **Falta:**
   - resaltar solo, sin que el plan lo pida, lo que una escritura cambió (hoy el plan lo resalta con
     `screen.highlight` sobre lo que dio la herramienta);
-  - el círculo en el teléfono y como widget del escritorio;
+  - un círculo propio de Boni siempre encima de las demás apps (con «Mostrar sobre otras apps» y una notificación
+    fija), si la burbuja se queda corta: no se pidió (la 115);
   - la decisión 3 de `conversacion.md` (la ventana, superficie por defecto): la fila «Conversación» abre aún la
     pantalla entera.
 

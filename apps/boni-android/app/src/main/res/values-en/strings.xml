@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English, second to Spanish (values/strings.xml), for a phone set in English. -->
+<resources>
+    <string name="widget_description">A chart from Boni</string>
+    <string name="widget_loading">Loading…</string>
+    <string name="widget_failed">The chart could not be drawn</string>
+    <string name="widget_pick">Touch and hold to choose a chart</string>
+    <string name="widget_pick_title">Choose a chart</string>
+    <string name="widget_no_charts">Open Boni and sign in: your charts will show here.</string>
+    <string name="notices_channel">Notices</string>
+    <string name="chat_widget_label">Conversation</string>
+</resources>

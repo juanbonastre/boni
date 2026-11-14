@@ -8,9 +8,12 @@ import org.junit.Test
 
 class LauncherTest {
     @Test
-    fun onlyShortcutsAndChartsCanBeTargets() {
+    fun onlyShortcutsChartsAndTheConversationCanBeTargets() {
         assertTrue(Launcher.valid("shortcut:cafe-2"))
         assertTrue(Launcher.valid("chart:monthly-spending"))
+        // Boni's circle and its home-screen widget (task 115).
+        assertTrue(Launcher.valid("chat"))
+        assertFalse(Launcher.valid("chat:x"))
         assertFalse(Launcher.valid("settings"))
         assertFalse(Launcher.valid("chart:../x"))
         assertFalse(Launcher.valid("shortcut:"))

@@ -8,4 +8,5 @@
     <string name="widget_pick_title">Elige una gráfica</string>
     <string name="widget_no_charts">Abre Boni y entra con tu usuario: aquí saldrán tus gráficas.</string>
     <string name="notices_channel">Avisos</string>
+    <string name="chat_widget_label">Conversación</string>
 </resources>

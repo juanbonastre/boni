@@ -586,6 +586,49 @@ test("a home-screen shortcut opens what it points to: at start, and while the ap
   await expect(page.locator(".toast")).toHaveText("Ese atajo ya no existe");
 });
 
+test("Boni's circle on the home screen opens the conversation: at start, and over what is open", async ({
+  page,
+}) => {
+  const navigate = (screen: string) =>
+    page.evaluate(
+      (s) =>
+        (window as unknown as { __boniEvent: (j: string) => void }).__boniEvent(
+          JSON.stringify({ type: "navigate", screen: s }),
+        ),
+      screen,
+    );
+  const onBoni = async () => {
+    await expect(page.locator(".m-tab.on .m-tab-label")).toHaveText("Boni");
+    await expect(page.locator(".chat-composer textarea")).toBeVisible();
+  };
+  // ChatWidget's tap started the app (Launcher.CHAT).
+  await openAndroid(page, { launch: "chat" });
+  await onBoni();
+  // While the app runs: over a chart on its own, over the settings, over a record from another app.
+  await navigate("chart:eating-out");
+  await expect(page.locator(".m-title")).toHaveText("Comida fuera");
+  await navigate("chat");
+  await onBoni();
+  await expect(page.locator(".m-title")).toHaveText("Boni");
+  await navigate("settings");
+  await expect(page.getByRole("dialog", { name: "Ajustes" })).toBeVisible();
+  await navigate("chat");
+  await expect(page.getByRole("dialog", { name: "Ajustes" })).toHaveCount(0);
+  await onBoni();
+  await navigate("note:e_ejemplo1");
+  await expect(page.locator(".m-row")).toBeVisible();
+  await navigate("chat");
+  await expect(page.locator(".m-row")).toHaveCount(0);
+  await onBoni();
+  // Over the list of conversations: the conversation itself.
+  await page.locator(".m-top").getByRole("button", { name: "Conversaciones" }).click();
+  await expect(page.getByRole("dialog", { name: "Conversaciones" })).toBeVisible();
+  await navigate("chat");
+  await expect(page.getByRole("dialog", { name: "Conversaciones" })).toHaveCount(0);
+  await onBoni();
+  expect(await audit(page, "android widget conversation")).toEqual([]);
+});
+
 test("a home-screen widget's picture: the chart card alone, and the app is told when it is drawn", async ({
   page,
 }) => {

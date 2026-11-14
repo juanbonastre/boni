@@ -120,7 +120,7 @@ Una conversación es la misma esté donde esté; la superficie solo cambia cómo
 | **Pantalla Conversación** | «Ampliar» en la ventana | La conversación entera, con la lista de chats al lado |
 | **Bloque «Chat» en una página** | Una conversación centrada en una extensión (§3.3) | Su bienvenida, sus botones y la barra. Al escribir o pulsar, se abre la ventana con esa conversación, como los agentes incrustados de Notion |
 | **Móvil** | Las mismas entradas | Pantalla completa, con la barra abajo |
-| **Círculo de Boni** (más adelante) | En todas las pantallas y como widget del escritorio, con su atajo | Abre la última conversación o una nueva. Es el «botón abajo a la derecha» de `extensiones.md` §8, con el contexto de la pantalla |
+| **Círculo de Boni** | En las pantallas de Boni en el escritorio (F9, la 85) y, en el teléfono, como la burbuja de Android sobre las demás apps y como widget de la pantalla de inicio (la 115) | Abre la última conversación o una nueva. Es el «botón abajo a la derecha» de `extensiones.md` §8, con el contexto de la pantalla |
 | **Voz** (más adelante) | Desde el círculo | §3.7 |
 
 ### 3.3 Sin «asistentes» aparte: el modo de conversación de una extensión
@@ -327,7 +327,7 @@ pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maquet
 | C4 | **Superficies:** la ventana flotante con su animación y los archivos arrastrados, llevarla a la derecha (aparte de la Bandeja), ampliarla y el móvil | C3 |
 | C5 | **Modos de conversación de las extensiones:** en el manifiesto, la sección Extensiones, el bloque «Chat» y el botón que manda un mensaje | C3 |
 | C6 | **La conciliación en modo conversación** (es E4b): las preguntas de las funciones, las respuestas en `data.answers`, crear una categoría, las reglas (cambiar, esporádica, más general con su prueba) y lo que nota solo | C5, E4a |
-| C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio, pulsar para hablar y después tiempo real | C4 |
+| C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio (en el teléfono, la burbuja de Android y un widget: la 115), pulsar para hablar y después tiempo real | C4 |
 
 **Hecho, C1 y C2 (2026-10-31):**
 - **Las conversaciones se guardan.** Los tipos de sistema `conversation` y `turn` están en el almacén

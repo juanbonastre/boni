@@ -607,6 +607,30 @@ test("Boni on the phone: a greeting with things to try; its conversations in a d
   await expect(drawer).toHaveCount(0);
 });
 
+test("Boni on the phone stays the conversation when the app comes back and reads everything again (task 115)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still");
+  await tab(page, "Boni");
+  const top = page.locator(".m-top");
+  await expect(top.locator(".m-title")).toHaveText("Boni");
+  const before = (await recorded(page)).requests.length;
+  const since = async () => (await recorded(page)).requests.slice(before);
+  // Back in front (or floated as Android's bubble), the phone's live connection opens again and says «all»
+  // (`Live.kt`): everything is read again. On Juan's phone (2026-11-13) that put the start page under the
+  // conversation, with a page's Back and «…» over it.
+  await emit(page, { type: "changed", what: "all" });
+  await expect
+    .poll(async () => (await since()).filter((r) => r === "GET api/pages").length)
+    .toBe(1);
+  // A page that reload opened would be asked for a moment after the list (each answer here takes 20 ms).
+  await page.waitForTimeout(500);
+  await expect(top.locator(".m-title")).toHaveText("Boni");
+  await expect(top.getByRole("button", { name: "Atrás" })).toHaveCount(0);
+  await expect(top.getByRole("button", { name: "Más" })).toHaveCount(0);
+  expect((await since()).filter((r) => /^GET api\/pages\/\S/.test(r))).toEqual([]);
+});
+
 test("«Flujos» on the phone (F8): the map to look at, a flow to try or run, never changed", async ({
   page,
 }) => {

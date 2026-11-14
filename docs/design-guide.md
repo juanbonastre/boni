@@ -760,10 +760,30 @@ contraseña ni un código aquí» under a question.
   does nothing under Ajustes, the search or the trash. With a panel on the right (the Bandeja, a record), the circle
   and the window stay beside it, never over its cards. Each message goes with what is on the
   screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen, what was
-  pointed at); the phone has no circle yet. What is being written to a conversation (its text and its chips) is its
+  pointed at); on the phone the conversation is the Boni tab, and the circle is on the home screen (below). What is
+  being written to a conversation (its text and its chips) is its
   draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
+  - **On the phone** (task 115; `Bubble.kt`, `ChatWidget.kt`; I-39). Boni's circle over the other apps is Android's
+    own bubble (Juan, 2026-11-13: «A, la burbuja»): touch and hold Boni's icon, choose the bubble, and Boni floats as
+    a circle that moves over any app and opens Boni in a small window. Boni asks for no permission to draw over other
+    apps and keeps no notification of its own. Opened as a bubble, Boni opens on the conversation, the last one:
+    when it starts in the bubble and when an open Boni is floated, once (what is opened inside the bubble after that
+    stays). The window is the phone's layout as it is, tabs at its foot: on Juan's phone (2026-11-13) the bubble is
+    997 × 1794 px of 1080 × 2424, inset on every side, and Boni reads well in it with nothing changed. The Boni tab
+    keeps its own top bar (its conversations, «Boni», a new one) when the app comes back or floats and reads
+    everything again: it never gets a page's Back and «…» over the conversation. From Android 17's bubbles (any app
+    can float from its icon; an app meets them by working well in multi-window).
+    Boni's own circle always on top (with that permission and a fixed notification) is not built: a possible next
+    step if the bubble falls short.
+    The widget is «Conversación» in the launcher's list: one cell, a 56 dp circle in the dark theme's `--accent`
+    with the conversation's icon in white (Lucide's `message-circle`, as the desktop's), and nothing else: no text,
+    no frame, nothing of Juan's, so it never refreshes. A tap opens Boni on the Boni tab, the last conversation, over whatever was open: the settings, a chart
+    on its own, a record from another app and the conversations' drawer close; a record's text is sent first, and a
+    panel with something typed in it asks before it goes (the page's `chat` target). From Android's widget guidelines
+    (a control widget puts an app's frequent action on the home screen, one tap away) and Material 3's FAB (the
+    screen's main action in one shape, here the circle Juan knows from the desktop).
   - **Moved by its bar** (sixth part; `core/boniWindow.ts`; I-35). Floating, the window is dragged by its head, never
     by its buttons: the pointer over the head is `grab`, `grabbing` while it moves, and dragging selects no text. It
     follows the pointer exactly and stays where it is let go, measured from the bottom right (the circle's corner):
