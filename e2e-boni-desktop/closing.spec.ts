@@ -165,16 +165,26 @@ async function close(how: Close): Promise<number> {
   const a = app as ElectronApplication;
   if (how === "window") {
     // The main window, as Juan closes it. The peek (also «Boni», hidden, `?peek=1`) is not it: Boni makes it 4 s after
-    // the start, so it may come up just after the main window went (task 119).
+    // the start, so it may come up just after the main window went (task 119). A window whose page is gone is going.
+    // Both run in Boni's process, so each says it: nothing of this file reaches there.
     await a.evaluate(({ BrowserWindow }) => {
       for (const b of BrowserWindow.getAllWindows())
-        if (b.getTitle() === "Boni" && !b.webContents.getURL().includes("peek=1")) b.close();
+        if (
+          !b.webContents.isDestroyed() &&
+          b.getTitle() === "Boni" &&
+          !b.webContents.getURL().includes("peek=1")
+        )
+          b.close();
     });
     await expect
       .poll(() =>
         a.evaluate(({ BrowserWindow }) =>
           BrowserWindow.getAllWindows().some(
-            (b) => b.getTitle() === "Boni" && !b.webContents.getURL().includes("peek=1"),
+            (b) =>
+              !b.isDestroyed() &&
+              !b.webContents.isDestroyed() &&
+              b.getTitle() === "Boni" &&
+              !b.webContents.getURL().includes("peek=1"),
           ),
         ),
       )
