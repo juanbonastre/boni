@@ -22,6 +22,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import org.json.JSONArray
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 /**
  * Sends what the page left for later when the network is there, also with the app closed (WorkManager keeps the job
@@ -41,12 +42,19 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         val later = if (periodic) Result.success() else Result.retry()
         if (Shell.foreground) return later
         val shell = Shell.get(applicationContext)
+        // Signed out, nothing can go: no backstop until something is kept again with a session.
+        if (!shell.configured()) {
+            WorkManager.getInstance(applicationContext).cancelUniqueWork(BACKSTOP)
+            return Result.success()
+        }
         // What the page keeps as it hides comes just after onStop: an expedited job cannot be delayed, so it waits here.
         if (!pause(UnsentLogic.waitFor(inputData.getLong(NOT_BEFORE, 0L), System.currentTimeMillis(), HIDDEN_MS))) {
             return later
         }
-        // One run at a time (the hidden job, the one behind it and the backstop): nothing is sent twice at once.
-        synchronized(SEND_LOCK) {
+        // One run at a time (the hidden job, the one behind it and the backstop): nothing is sent twice at once. The
+        // wait for another run gives way to the app's return and to the system's stop.
+        while (!SEND_LOCK.tryLock(200, TimeUnit.MILLISECONDS)) if (Shell.foreground || isStopped) return later
+        try {
             var attempt = 0
             while (true) {
                 // What was typed first: it is what is not anywhere else.
@@ -65,6 +73,8 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
                 Log.i(MainActivity.TAG, "queue: again in ${wait / 1000} s")
                 if (!pause(wait)) return later
             }
+        } finally {
+            SEND_LOCK.unlock()
         }
     }
 
@@ -131,7 +141,7 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         private const val FOREGROUND_ID = 121
 
         /** The worker's runs never overlap inside the process. */
-        private val SEND_LOCK = Any()
+        private val SEND_LOCK = ReentrantLock()
 
         /** After the page wrote the queue: a job for its next item, if any. */
         fun scheduleFor(context: Context, text: String, wait: Boolean = false) {
@@ -222,8 +232,9 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         }
 
         /**
-         * WorkManager's database opened while the app is in front, so the job `onStop` asks for is scheduled within
-         * its wait (task 121: the one kill with no job left was the first after signing in).
+         * WorkManager's database opened while the app is in front (at its start and at sign-in), so the job `onStop`
+         * asks for is scheduled within its wait. Task 121: the one kill with no job left was the first after signing
+         * in, with no cause found; a first open of the database inside that wait is one that fits.
          */
         fun warm(context: Context) {
             WorkManager.getInstance(context).getWorkInfosForUniqueWork(NAME)

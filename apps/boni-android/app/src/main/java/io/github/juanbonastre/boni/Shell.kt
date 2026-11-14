@@ -128,6 +128,7 @@ class Shell private constructor(context: Context) {
             .apply()
         sessionEnded = false
         live.start()
+        QueueWorker.warm(app)
         emitSettings()
         emit?.invoke(JSONObject().put("type", "changed").put("what", "all"))
         return JSONObject().put("ok", true).put("settings", clientSettings())
