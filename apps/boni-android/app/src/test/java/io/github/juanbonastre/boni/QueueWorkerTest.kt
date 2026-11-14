@@ -29,6 +29,17 @@ class QueueWorkerTest {
     }
 
     @Test
+    fun theRunAfterOneThatSentNothingIsDelayedAndCountsTheRounds() {
+        // Task 121's phone run: asked for by the run itself, not left to WorkManager's retry.
+        val first = QueueWorker.againRequest(0).workSpec
+        assertFalse(first.expedited)
+        assertEquals(30_000L, first.initialDelay)
+        assertEquals(1, first.input.getInt(QueueWorker.ROUND, 0))
+        assertEquals(NetworkType.CONNECTED, first.constraints.requiredNetworkType)
+        assertEquals(60_000L, QueueWorker.againRequest(1).workSpec.initialDelay)
+    }
+
+    @Test
     fun theBackstopRunsEveryFifteenMinutesWithTheNetworkAndKeepsItsPeriod() {
         val r = QueueWorker.backstopRequest().workSpec
         assertTrue(r.isPeriodic)

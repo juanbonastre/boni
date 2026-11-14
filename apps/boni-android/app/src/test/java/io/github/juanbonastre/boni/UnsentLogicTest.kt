@@ -251,4 +251,14 @@ class UnsentLogicTest {
         assertEquals(listOf(3_000L, 6_000L, 12_000L, null), (0..3).map { UnsentLogic.againIn(it, stopped = false) })
         assertNull(UnsentLogic.againIn(0, stopped = true))
     }
+
+    @Test
+    fun theRunAfterOneThatSentNothingComesSoonThenLessOftenNeverPastTenMinutes() {
+        // Task 121's phone run: the retry WorkManager keeps was lost to a kill as the run ended; the run asks itself.
+        assertEquals(
+            listOf(30_000L, 60_000L, 120_000L, 240_000L, 480_000L, 600_000L, 600_000L),
+            listOf(0, 1, 2, 3, 4, 5, 40).map { UnsentLogic.laterIn(it) },
+        )
+        assertEquals(30_000L, UnsentLogic.laterIn(-1))
+    }
 }

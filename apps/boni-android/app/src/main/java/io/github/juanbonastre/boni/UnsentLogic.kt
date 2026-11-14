@@ -234,6 +234,13 @@ object UnsentLogic {
      */
     fun againIn(attempt: Int, stopped: Boolean): Long? = if (stopped) null else AGAIN_MS.getOrNull(attempt)
 
+    /**
+     * After a run's last try, how long until the next run, the `round`-th in a row with nothing sent: 30 s, doubling,
+     * never more than 10 minutes. The run asks for it itself before it ends (task 121: a WorkManager retry was lost
+     * to a kill just as the run ended, and only the backstop's 15 minutes were left).
+     */
+    fun laterIn(round: Int): Long = (30_000L shl round.coerceIn(0, 5)).coerceAtMost(600_000L)
+
     /** What one resend of the list did: how many requests were answered, and whether to try again later. */
     data class Flushed(val answered: Int, val retry: Boolean)
 

@@ -12,7 +12,7 @@
 // the screen on. «No connection» is a door on this laptop that closes, so the phone's own network never changes. The page is
 // read through the test copy's WebView devtools (only the test copy has them); every key goes with the test copy in
 // front, checked first. It prints each scenario's result and the app's log lines with their times.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
@@ -86,16 +86,26 @@ async function type(text, before) {
 }
 
 /**
- * Home, then the app killed the moment the system lets it (`am kill` takes only an app in the background): the
- * worst a phone does, right after onStop. Returns when it died, in the phone's clock (epoch s), or null.
+ * Home, then the app killed the moment the system lets it (`am kill` takes only an app in the background, and not one
+ * running a job: task 121's expedited job runs at once, so the kill comes once it ends): the worst a phone does, right
+ * after onStop. Returns when it died, in the phone's clock (epoch s), or null. Not synchronous: the door to the server
+ * is in this process, and a job sending while the kill waits needs it (task 121's first run hung on it).
  */
-function homeAndKill(lastKeys = "") {
+async function homeAndKill(lastKeys = "") {
   mustFront();
   const typed = lastKeys ? `input text ${lastKeys} && ` : "";
-  const out = sh(
-    `${typed}input keyevent KEYCODE_HOME && for i in $(seq 1 400); do am kill --user ${user} ${PKG}; ` +
-      `pidof ${PKG} >/dev/null || { echo killed; date +%s; break; }; sleep 0.01; done`,
-  ).trim();
+  const out = await new Promise((done, fail) =>
+    execFile(
+      "adb",
+      [
+        "shell",
+        `${typed}input keyevent KEYCODE_HOME && for i in $(seq 1 1200); do am kill --user ${user} ${PKG}; ` +
+          `pidof ${PKG} >/dev/null || { echo killed; date +%s; break; }; sleep 0.01; done`,
+      ],
+      { encoding: "utf8", timeout: 240_000 },
+      (e, stdout) => (e ? fail(e) : done(stdout.trim())),
+    ),
+  );
   return out.startsWith("killed") ? out.split("\n")[1] : null;
 }
 
@@ -535,7 +545,7 @@ try {
       await typeInNote(" uno", /uno/i);
       await sleep(4000); // its save failed: kept on the device
       say(`before Home: the screen ${JSON.stringify(await shownBody())}; kept ${keptOnPhone()}`);
-      const died = homeAndKill("dos"); // the last keys, then Home: only the hide notice keeps them
+      const died = await homeAndKill("dos"); // the last keys, then Home: only the hide notice keeps them
       if (!died) throw new Error("the system did not let the app be killed");
       const kept = keptOnPhone();
       const before = await bodyOnServer();
@@ -570,7 +580,7 @@ try {
       offline();
       await typeInNote(" tres", /tres/i);
       await sleep(4000);
-      const died = homeAndKill();
+      const died = await homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
       await afterKill(died);
       online();
@@ -622,7 +632,7 @@ try {
     openNote();
     await ready();
     await typeInNote(" cinco", /cinco/i);
-    const died = homeAndKill("seis");
+    const died = await homeAndKill("seis");
     if (!died) throw new Error("the system did not let the app be killed");
     await afterKill(died);
     // At the kill it is on the server or kept on the phone; kept, the app sends it, closed.
@@ -646,7 +656,7 @@ try {
         await ready();
         if (i % 2) offline();
         await typeInNote(` w${i}a`, new RegExp(`w${i}a`, "i"));
-        const died = homeAndKill(`w${i}b`);
+        const died = await homeAndKill(`w${i}b`);
         if (!died) throw new Error(`round ${i}: the system did not let the app be killed`);
         const shows = new RegExp(`w${i}a\\s*w${i}b`, "i");
         const kept = keptOnPhone();
@@ -749,7 +759,7 @@ try {
       });
       say(`named ${JSON.stringify(name)}`);
       await sleep(3000);
-      const died = homeAndKill();
+      const died = await homeAndKill();
       if (!died) throw new Error("the system did not let the app be killed");
       await afterKill(died);
       online();

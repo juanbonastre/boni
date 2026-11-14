@@ -31,7 +31,8 @@ import java.util.concurrent.locks.ReentrantLock
  * with the desktop's rules (UnsentLogic). While the app is in front the page sends both itself, so the job waits.
  *
  * Task 121: as the app hides, the job is expedited (the system runs it at once, not minutes later), and it waits for
- * what the page keeps just after `onStop` itself; a server not reached is tried again a few times inside the same run;
+ * what the page keeps just after `onStop` itself; a server not reached is tried again a few times inside the same run,
+ * and then the run asks for the next one itself before it ends (a WorkManager retry was lost to a kill as a run ended);
  * and while anything is kept, a periodic job stays behind them all, never replaced, in case the system dropped the
  * others.
  */
@@ -67,9 +68,15 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
                     settled(applicationContext, shell)
                     return Result.success()
                 }
-                // No server yet: again soon in this run, then later, as WorkManager's backoff says.
-                val wait = UnsentLogic.againIn(attempt++, stopped = Shell.foreground || isStopped || shell.sessionEnded)
-                    ?: return later
+                // No server yet: again soon in this run, then in a run of its own.
+                val stopped = Shell.foreground || isStopped || shell.sessionEnded
+                val wait = UnsentLogic.againIn(attempt++, stopped)
+                if (wait == null) {
+                    if (stopped || periodic) return later
+                    // Asked for while this run still runs (the system ends no app running a job), never left to
+                    // WorkManager's retry: on the phone a kill just as a run ended lost it (task 121).
+                    return if (again(applicationContext, inputData.getInt(ROUND, 0))) Result.success() else later
+                }
                 Log.i(MainActivity.TAG, "queue: again in ${wait / 1000} s")
                 if (!pause(wait)) return later
             }
@@ -137,6 +144,12 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
         /** Set on the backstop's runs. */
         internal const val PERIODIC = "periodic"
 
+        /** The next run a run that sent nothing asks for itself (task 121). */
+        private const val AGAIN = "boni-queue-again"
+
+        /** How many runs in a row before this one sent nothing. */
+        internal const val ROUND = "round"
+
         private const val CHANNEL = "boni-sending"
         private const val FOREGROUND_ID = 121
 
@@ -175,6 +188,29 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
                 b.setInitialDelay(maxOf(0L, delayMs) + 500, TimeUnit.MILLISECONDS)
             }
             return b.build()
+        }
+
+        /** The run after `round` runs in a row that sent nothing, in `UnsentLogic.laterIn(round)`. */
+        internal fun againRequest(round: Int): OneTimeWorkRequest = OneTimeWorkRequestBuilder<QueueWorker>()
+            .setConstraints(network)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .setInitialDelay(UnsentLogic.laterIn(round), TimeUnit.MILLISECONDS)
+            .setInputData(workDataOf(ROUND to round + 1))
+            .build()
+
+        /**
+         * The next run, in place of any asked for before (REPLACE, also when it is this one: its result no longer
+         * counts, and it returns at once). True once it is scheduled, so the run that asks ends only after it.
+         */
+        private fun again(context: Context, round: Int): Boolean = try {
+            WorkManager.getInstance(context)
+                .enqueueUniqueWork(AGAIN, ExistingWorkPolicy.REPLACE, againRequest(round))
+                .result.get(2, TimeUnit.SECONDS)
+            Log.i(MainActivity.TAG, "queue: a run of its own in ${UnsentLogic.laterIn(round) / 1000} s")
+            true
+        } catch (e: Exception) {
+            Log.w(MainActivity.TAG, "the queue's next run was not scheduled: ${e.message}")
+            false
         }
 
         /** The backstop: every 15 minutes (Android's least) with the network, while anything is kept. */
