@@ -684,7 +684,7 @@ describe("the catalogue as data", () => {
     }
   });
 
-  it("every parameter is one of the controls, with a key of its own where it is painted", () => {
+  it("AU-80 · every parameter is one of the controls there are, with a key of its own where it is painted: a step type brings no control of its own", () => {
     for (const { at, params, own, action } of paramLists()) {
       for (const p of params) expect(CONTROLS, `${at}.${p.key}`).toContain(p.control);
       // Two parameters may share a key only if they are never painted together (their `when` differ).
@@ -709,11 +709,38 @@ describe("the catalogue as data", () => {
     }
   });
 
-  it("what gives a step its shape or changes which rows come out is never behind «Añadir opción»", () => {
+  it("AU-77 · what gives a step its shape or changes which rows come out is never behind «Añadir opción»", () => {
     for (const { at, params } of paramLists())
       for (const p of params)
         if (p.shape || p.changesRows || p.required)
           expect(p.place, `${at}.${p.key}`).not.toBe("option");
+  });
+
+  it("AU-75 · no action of any step shows more than seven parameters before «Añadir opción», with any combination of the choices that change its shape", () => {
+    // What the phase's criterion calls «cosas»: the rows of «Parámetros» in sight (`place: "shown"` and its `when`
+    // holding). A list counts as one; an option Juan added is his own, and is not counted here.
+    let most = 0;
+    for (const t of CATALOGUE)
+      for (const action of t.actions) {
+        const fixed = [...t.params, ...action.params].filter(
+          (q): q is ParamSpec & { control: "choice"; options: readonly string[] } =>
+            q.shape === true && q.control === "choice" && Array.isArray(q.options),
+        );
+        // Every combination of its fixed choices: the parameters painted depend only on them (the test above).
+        let shapes: Step["params"][] = [t.actions.length > 1 ? { [ACTION]: action.key } : {}];
+        for (const q of fixed)
+          shapes = shapes.flatMap((s) => q.options.map((v) => ({ ...s, [q.key]: v })));
+        for (const params of shapes) {
+          const step: Step = { id: "s_x", name: "x", type: t.type, params };
+          const shown = paramsOf(step).filter((q) => q.place === "shown");
+          most = Math.max(most, shown.length);
+          expect(
+            shown.length,
+            `${t.type}.${action.key} ${JSON.stringify(params)}: ${shown.map((q) => q.key).join(", ")}`,
+          ).toBeLessThanOrEqual(7);
+        }
+      }
+    expect(most).toBeGreaterThan(2);
   });
 
   it("a choice with a default offers it", () => {

@@ -11,6 +11,13 @@ export {
   type Storage,
   type Verification,
 } from "./audit.ts";
+export type {
+  AutomationDraftRow,
+  AutomationPlace,
+  AutomationRow,
+  AutomationsJournal,
+  AutomationTestRow,
+} from "./automations.ts";
 export { type BlameLine, blame } from "./blame.ts";
 export { type Checkpointed, checkpointOnce, startCheckpoints, walBytes } from "./checkpoint.ts";
 export type {

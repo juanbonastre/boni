@@ -248,6 +248,12 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-05** (F14b, pendiente) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
   una versión ni enciende «Publicar»; un paso sin sitio lo coloca Boni junto al paso del que cuelga; «Ordenar»
   recoloca todo. (Cambia I-26; decisión 2 del §10.)
+  En la F14b: los sitios se guardan en el servidor, por automatización y no por dispositivo, al soltar el paso (una
+  llamada aparte de la del borrador). Mover y «Ordenar» entran en el Deshacer del lienzo (AU-68) como cualquier otro
+  cambio. Un paso sin sitio va a la derecha del paso del que cuelga, a su altura, y debajo si ese hueco está ocupado;
+  un disparador nuevo, debajo del último disparador. Un paso que no cuelga de nada (el «+» de arriba) va a la
+  derecha de la caja más a la derecha de la primera fila; el del clic derecho, donde se hizo el clic. El sitio que
+  Boni le da a un paso al añadirlo se guarda como si Juan lo hubiera soltado: ya no se mueve solo.
 - **AU-06** (F14a, hecho) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
 - **AU-07** (F14a, hecho) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
   tandas será un paso («Por tandas», F18), no un dibujo. En la F14a lo dice la validación (una automatización
@@ -296,9 +302,22 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», dentro del propio control y siempre a
   la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
   resuelve el servidor (AU-162); el JavaScript llega con la F14c (AU-22).
+  En la F14b: soltar un campo en un valor de texto añade la cita donde está el cursor (al final si no lo hay); en un
+  número, una fecha o una opción, la cita sustituye al valor. Pasar a «Expresión» con «{ }» conserva lo escrito,
+  como texto de la expresión; volver a «Fijo» deja el control vacío, y las dos cosas se pueden deshacer. Después de una prueba, debajo de un valor que es una expresión se lee lo que da con la primera fila
+  de la entrada («= 5 · con la fila 1 de 128»); sin prueba no se lee nada debajo.
 - **AU-21** (F14b, pendiente) · Arrastrar un campo de «Entrada» a un parámetro lo cita. Una cita sencilla se ve
   como una ficha con el icono de su paso y el nombre del campo («Importe mínimo»), nunca como código; si dos pasos
   tienen un campo que se llama igual, la ficha lleva también el paso («Buscar gastos › Importe»).
+  En la F14b: se arrastran los campos de la entrada del paso y los de cualquier paso anterior de su camino, que se
+  eligen en la cabecera de ENTRADA (AU-71). Un campo de la entrada directa se cita como `$json.campo`; el de un paso
+  anterior, como `$('Paso').item.campo`, y como `$('Paso').first().campo` cuando entre los dos hay un paso que rehace
+  las filas (AU-13). La ficha enseña el nombre del campo y nunca su clave (AU-25); en un resultado de «Agrupar» o de
+  «Contar o sumar», el nombre se hace con la medida y el nombre del campo («Suma de Importe», «Número de filas»),
+  desde `i18n.ts`. Una cita de un paso o de un campo que ya no existe se ve como una ficha en rojo con lo que citaba.
+  El icono de la ficha es el del paso del que es el campo (en `$json`, el paso del que cuelga). La ficha lleva
+  también el paso cuando otro paso del camino tiene un campo con el mismo nombre. Un paso con dos entradas
+  («Combinar») no tiene fila actual: un campo soltado en un valor suyo se cita por su paso, con `first()`.
 - **AU-22** (F14c, pendiente) · Una expresión es texto con JavaScript entre `{{ }}`:
   `Hola {{ $json.nombre }}, llevas {{ $('Sumar gastos').first().total }} € este mes`. Escribir `{{` en un valor fijo
   lo pasa a expresión.
@@ -447,11 +466,19 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 - **AU-60** (F14b, pendiente) · La sección se llama «Automatizaciones» en la barra lateral, la conversación, el mapa,
   el MCP y la documentación.
+  En la F14b cambia el nombre que se lee: la barra lateral, la página de la colección y sus migas, «Buscar», la
+  conversación, el mapa y los textos del MCP dicen «Automatizaciones» y «automatización». Los nombres de dentro
+  (`flows.*`, las herramientas `flows_*` del MCP) siguen hasta la F16. «Flujo» solo queda en la marca «Formato
+  anterior» (AU-151).
 - **AU-61** (F14b, pendiente) · La lista sigue siendo una página de colección, «Tabla | Mapa», con seis columnas:
   Nombre · Se inicia (su disparador) · Estado («Encendida», «Apagada» o «Sin publicar») · Última ejecución ·
   Ejecuciones · De («Tú», «Boni» o «Página «Gastos»»). «Nueva» abre el lienzo vacío. Las que inicia el usuario llevan
   «Ejecutar» en su fila desde que se puede publicar (AU-97, F14d). Hasta entonces, una del formato nuevo dice «Sin
   publicar» y no tiene ejecuciones; «Encendida» y «Apagada» las dicen solo los flujos de antes (AU-151).
+  En la F14b: «Nueva» abre el lienzo vacío sin guardar nada; la automatización se crea al añadir su primer paso y se
+  llama «Nueva automatización» hasta que Juan le cambie el nombre. Una sin disparador dice «—» en «Se inicia». Sin
+  ninguna automatización, la página dice lo que cualquier colección vacía, con su «Nueva». El «Mapa» enseña lo
+  mismo que hoy, los flujos de antes: una automatización sin publicar no corre, y entra en él al publicarse (F14d).
 
 **El editor** (pantalla 2)
 
@@ -462,23 +489,53 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   lateral y la «Bandeja»). La F14b pone lo que no depende de publicar: volver y el nombre, «Guardado» y «⋯» con
   Duplicar y Eliminar. Las pestañas, el interruptor, «Publicar» y el resto de «⋯» llegan con la F14d (AU-17, AU-95 a
   AU-99), al sitio que aquí tienen.
+  En la F14b, «Guardado» dice una de tres cosas: «Guardando…» mientras sale un cambio, «Guardado» cuando el servidor
+  tiene el último, y «Sin guardar · Reintentar» si no pudo (Boni reintenta solo, como hoy: D-55). Cada cambio sale
+  tras una pausa corta y al salir del editor; no hay botón de guardar. «Duplicar» crea «<nombre> (copia)» con los
+  mismos pasos y sitios y la abre. «Eliminar» la quita de la lista sin preguntar y su aviso lleva «Deshacer».
 - **AU-63** (F14b, pendiente) · El lienzo va de izquierda a derecha. Un paso es una tarjeta con su icono, su nombre y
   una línea que resume lo que hace («Gastos · este mes · hasta 500»). Las salidas están a la derecha con su nombre;
   las conexiones cuelgan debajo (desde la F14c: AU-40).
+  En la F14b: la tarjeta tiene un ancho fijo; el nombre y el resumen ocupan una línea cada uno y se cortan con puntos
+  suspensivos (el texto entero, al pasar el ratón por él y en la vista del paso). El resumen se hace con los
+  parámetros a la vista que tienen valor, en su orden, separados por « · »; una cita se lee por el nombre de su campo.
+  Un paso al que le falta algo obligatorio lleva una marca en la tarjeta desde que se marca el parámetro (AU-83). Un
+  lienzo con solo su disparador no dice nada más: el «+» de su salida es lo que hay que hacer (AU-65).
 - **AU-64** (F14b, pendiente) · Abajo a la izquierda: acercar, alejar, encajar y «Ordenar». Abajo en el centro:
   «Probar», que ensaya la automatización entera. En el editor solo se prueba (entera aquí; un paso, con «Probar
   paso»: AU-66 y AU-73); «Ejecutar», que corre la versión publicada, está en «⋯» (AU-97). Arriba a la derecha: «+».
   Abajo, plegado, el «Registro», que resume la última prueba en una línea (se despliega desde la F14d: AU-101).
+  En la F14b: con un solo disparador, «Probar» empieza en él; con varios, abre un menú para elegir cuál. Si el
+  disparador tiene campos, los pide en un cuadro pequeño junto al botón, con los de la última prueba ya puestos
+  (AU-94). Mientras ensaya dice «Probando…» y no se puede pulsar; el resultado llega entero al acabar (ver cada paso
+  mientras corre llega con las ejecuciones, F14d). Si la automatización tiene problemas, no ensaya: marca cada paso
+  con problema en su tarjeta y el «Registro» dice cuántos hay; un clic en él lleva al primero. El «Registro» dice «Sin
+  probar» antes de la primera prueba; después, «Última prueba hace 2 min · bien · 6 pasos · 4,1 s · no escribió nada»,
+  o «… · falló en «Filtrar»», y un clic selecciona ese paso.
 - **AU-65** (F14b, pendiente) · Un paso se añade de cuatro maneras, y las cuatro abren el mismo panel: el «+» de
   arriba, el «+» de una salida sin conectar (o arrastrar desde ella), el «+» de una flecha seleccionada y el clic
   derecho en el lienzo (I-24 se queda).
 - **AU-66** (F14b, pendiente) · Un paso seleccionado enseña una barra corta: Probar paso · Apagar · Eliminar · ⋯; una
   flecha seleccionada, «+» y eliminar. El clic derecho da lo mismo y poco más (cambiar nombre, duplicar, copiar).
   Nada sale solo al pasar el ratón.
+  En la F14b: el «⋯» de la barra tiene Cambiar nombre · Duplicar · Copiar. El clic derecho en un paso tiene siete
+  cosas: Abrir · Probar paso · Apagar · Cambiar nombre · Duplicar · Copiar · Eliminar. «Apagar» dice «Encender» en un
+  paso apagado. Eliminar un paso que tiene una flecha de entrada y una de salida une a sus dos vecinos; en los demás
+  casos se van sus flechas.
 - **AU-67** (F14b, pendiente) · Después de probar, cada flecha dice cuántas filas pasaron y cada paso cómo acabó. Una
   salida sin conectar también enseña su cuenta: ninguna fila desaparece sin que se vea. Un paso que falló lo dice en
   su tarjeta, con el motivo, y los que colgaban de él quedan «saltados».
+  En la F14b: la cuenta de una flecha se lee en ella («128 filas»); con «0 filas» la flecha se atenúa. El estado de un
+  paso es una marca en su tarjeta (bien, falló, saltado, parado). El motivo de un fallo se lee en tres sitios: en la
+  tarjeta, en dos líneas como mucho; entero, en la SALIDA del paso, en lugar de las filas, con el parámetro que lo
+  causa y «Ir al parámetro» (AU-84); y en el «Registro», que dice en qué paso fue (AU-64).
 - **AU-68** (F14b, pendiente) · Deshacer y rehacer en el lienzo, y copiar y pegar pasos, con las teclas de siempre.
+  En la F14b: `Ctrl`/`⌘`+`Z` deshace y `Ctrl`/`⌘`+`Mayús`+`Z` (o `Ctrl`+`Y`) rehace; `Ctrl`/`⌘`+`C`, `X` y `V` copian,
+  cortan y pegan los pasos seleccionados con las flechas que hay entre ellos; `Supr` elimina lo seleccionado, `Intro`
+  abre el paso y `Esc` cierra. Deshacer alcanza a todo lo que cambia el lienzo o un paso (añadir, eliminar, conectar,
+  mover, cambiar el nombre, los parámetros y los ajustes) desde que se abrió el editor; no se guarda entre sesiones.
+  Lo deshecho se guarda como cualquier otro cambio del borrador. Un paso pegado tiene un id nuevo y, si su nombre ya
+  está, el nombre con un número («Filtrar 2»); se puede pegar en otra automatización.
 
 **Añadir un paso** (pantalla 3: «¿Cómo empieza?» y «Añadir un paso»)
 
@@ -488,27 +545,64 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   «Preguntar o avisar», «Actuar en una página» y «Piezas de Boni»; al final, «Añadir otro disparador». Cada paso
   está en una sola categoría. «Colección» enseña después sus acciones como frases («Buscar filas», «Crear una
   fila»). Al elegir, el paso queda conectado y se abre. Una categoría aparece cuando su fase la construye (§5.10).
+  En la F14b hay un disparador («Disparado por el usuario») y tres categorías: «Leer o escribir en una colección»,
+  «Transformar filas» y «Decidir el camino». El buscador busca en todas a la vez por el nombre del paso y de sus
+  acciones; sin resultados dice «Nada con «…»». Con menos de 1100 px de ancho (AU-74) el panel va encima del
+  lienzo, no al lado.
 
 **La vista del paso** (pantallas 4 a 7 del boceto)
 
 - **AU-70** (F14b, pendiente) · Doble clic o Intro abre el paso encima del lienzo en tres columnas: ENTRADA ·
   «Parámetros | Ajustes» · SALIDA. `Esc` cierra. No hay «Guardar».
+  En la F14b: la vista ocupa la ventana encima del lienzo, que queda atenuado detrás. Su cabecera tiene el icono y el
+  nombre del paso (se edita ahí), «Probar paso» y cerrar. En un disparador, la columna ENTRADA son sus «Datos de
+  prueba»: los campos que pide, con lo de la última prueba (AU-94).
 - **AU-71** (F14b, pendiente) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
   valor de muestra, que se arrastran), «Tabla» o «JSON». Vacía, dice «Prueba los pasos anteriores» con su botón.
+  En la F14b: la cabecera de ENTRADA dice «De «Buscar gastos» · 128 filas» y deja elegir cualquier paso anterior del
+  camino para ver y arrastrar sus campos (AU-21). «Combinar» tiene una pestaña por entrada. «Esquema» lista todos los
+  campos con el valor de la primera fila, cortado a una línea; con más de diez, lleva un buscador encima; un campo que
+  es una fila relacionada o una lista se despliega un nivel. «Tabla» y «JSON» enseñan las primeras 50 filas y, debajo,
+  «N filas más», que trae otras 50 del servidor: nunca llegan todas de golpe (A-15). Una tabla con muchos campos se
+  desplaza de lado y sus celdas se cortan a una línea.
 - **AU-72** (F14b, pendiente) · SALIDA se ve como «Tabla» (por defecto; «Esquema» si sale una sola fila), «Esquema»
   o «JSON», con cuántas filas y una pestaña por salida («sí (3)», «no (125)»). En una prueba, un paso que escribe
   enseña «Haría esto», con el antes y el después de cada fila. Su cabecera lleva «Fijar» desde la F14d (AU-93);
   «Código» añade debajo su «Consola» (AU-33) y «Agente», encima, «Lo que hizo» (AU-54).
+  En la F14b: el pie de SALIDA dice cuándo se probó y cuánto tardó («probado hace 2 min · 0,2 s»), y las filas se
+  piden como en ENTRADA: 50 y «N filas más». Sin prueba dice «Sin probar», con «Probar paso». Un paso saltado dice
+  «Saltado: no le llegaron filas»; uno que falló, el motivo (AU-67); uno que no dio filas, «0 filas». «Haría esto» es
+  una tabla con una fila por fila escrita y, en cada campo que cambia, el valor de antes y el de después; al crear,
+  solo el de después; al eliminar, la fila como estaba (AU-122).
 - **AU-73** (F14b, pendiente) · Arriba a la derecha está «Probar paso». Si no se puede pulsar, dice por qué.
+  En la F14b no se puede pulsar en dos casos, y lo dice al lado: «Falta: Colección» (los parámetros obligatorios
+  vacíos, por su nombre) y «Probando…».
 - **AU-74** (F14b, pendiente) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
   automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan; no se editan (como hoy).
+  En la F14b: con menos de 1100 px de ancho la vista del paso tiene dos columnas, «Entrada | Salida» en pestañas a la
+  izquierda y «Parámetros | Ajustes» a la derecha. En el teléfono (menos de 640 px, la disposición de teléfono de la
+  app) la lista es la página de la colección de siempre, y una automatización abre su lienzo solo para ver: se mueve y
+  se acerca con los dedos, y tocar un paso abre su vista en una columna con tres pestañas, «Entrada | Parámetros |
+  Salida», con los parámetros sin poder cambiarlos y lo que dio la última prueba. No hay «+», ni barras de paso, ni
+  arrastrar, ni menús que cambien algo. Abierto, lo decide Juan: si en el teléfono se puede «Probar» en la F14b (un
+  flujo de hoy sí se prueba ahí); hasta que lo diga, no está, y tampoco «Probar paso» ni los botones de los estados
+  vacíos: en el teléfono una ENTRADA o una SALIDA sin datos dice «Sin probar» y nada más.
 
 **Contra el mar de opciones** (C2 y C8: cada regla con su prueba)
 
 - **AU-75** (F14b, pendiente) · Ninguna acción de ningún paso enseña más de siete parámetros antes de «Añadir
   opción». Una lista (condiciones, los campos de una fila, las conexiones) cuenta como uno, y lo que hay dentro de
   una de sus filas no se ve hasta abrirla. Una prueba recorre el catálogo y falla si alguna se pasa.
+  Una «cosa» (el criterio de la F14b) es una fila del panel «Parámetros»: un parámetro con su control. Cuentan los que
+  se ven a la vez con cualquier combinación de valores del paso, la colección y la acción de «Colección» incluidas;
+  «Añadir opción» no cuenta. Una opción que Juan añadió es una fila más: con ellas un paso puede pasar de siete,
+  porque las puso él. «Ajustes» son siempre sus seis filas (AU-78) y van en su pestaña, aparte. Lo que hay en ENTRADA
+  y SALIDA son datos, no opciones, y no cuenta. Lo cuentan dos pruebas: una recorre el catálogo, acción por acción y
+  con cada combinación de sus parámetros que cambian la forma; la otra abre en la pantalla cada tipo de paso con cada
+  acción y cuenta las filas pintadas.
 - **AU-76** (F14b, pendiente) · Lo opcional se añade con «Añadir opción» y queda como una fila que se puede quitar.
+  En la F14b: «Añadir opción» abre la lista de las opciones de esa acción que aún no están; cuando no queda ninguna,
+  el botón no se ve. Quitar una opción la devuelve a su valor por defecto.
 - **AU-77** (F14b, pendiente) · Una opción que cambia qué filas salen o por dónde nunca está detrás de «Añadir
   opción»: es un parámetro a la vista. El catálogo la marca y una prueba lo comprueba.
 - **AU-78** (F14b, pendiente) · «Ajustes» es igual en todos los pasos y tiene seis filas (pantalla 7): Si falla ·
@@ -519,6 +613,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   paso, como una etiqueta corta («Reintenta 2 veces», «Nota»), y en la pestaña «Ajustes», que cuenta lo cambiado. Si
   además cambia las filas que salen («Solo la primera fila», «Seguir sin filas», «Apagado»), lo dice también encima
   de la salida. Nada cambia lo que hace un paso desde un sitio que no se ve.
+  En la F14b las etiquetas son: «Si falla: seguir» o «Si falla: salir por error», «Reintenta 2 veces», «Sigue sin
+  filas», «Solo la primera fila», «Nota» y «Apagado» (la tarjeta, además, atenuada); una opción añadida se lee por su
+  nombre («Incluir relacionadas»). Van en una línea bajo el resumen; las que no caben se juntan en «+2», que las dice
+  al pasar el ratón.
 - **AU-80** (F14b, pendiente) · Todos los pasos se hacen con los mismos nueve controles: un valor (texto, número,
   fecha), elegir, sí o no, una lista de filas, condiciones, los campos de una fila, un selector (colección, fila,
   paso, automatización, bloque), código y la tabla de conexiones (los dos últimos llegan con la F14c). Un tipo de
@@ -529,13 +627,24 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   comprueba la validación: AU-121).
 - **AU-82** (F14b, pendiente) · Cambiar la acción de un paso conserva lo que las dos comparten y dice lo que se va,
   con Deshacer. Nada escrito se pierde en silencio.
+  En la F14b lo dice un aviso: «Se quitó: Ordenar por, Límite · Deshacer».
 - **AU-83** (F14b, pendiente) · Un parámetro obligatorio vacío no se marca hasta salir de él, probar o publicar.
 - **AU-84** (F14b, pendiente) · Cada estado vacío, viejo o de error dice qué hacer después, y un error nombra el
   parámetro que lo causa.
+  En la F14b: el motivo de un fallo es una clave de una lista cerrada (`STEP_FAILURES`), con el parámetro que lo causa
+  cuando es de uno, y la pantalla lo dice con `i18n.ts`; la frase en inglés del motor es para el registro y no se
+  enseña. Los estados y lo que dice cada uno: la lista vacía, lo de cualquier colección, con «Nueva»; el lienzo
+  vacío, «¿Cómo empieza?»; ENTRADA sin datos, «Prueba los pasos anteriores» con su botón; SALIDA sin probar, «Sin
+  probar» con «Probar paso»; una salida vieja, «puede estar vieja» con «Probar paso»; un fallo, el motivo con «Ir al
+  parámetro»; un buscador sin resultados, «Nada con «…»»; un borrador que no se guardó, «Sin guardar · Reintentar».
 - **AU-85** (F14b, pendiente) · Una palabra por acción: una prueba comprueba que cada acción («Probar paso», «Añadir
   opción» y, cuando lleguen, «Fijar» y «Publicar») sale de una sola clave de `i18n.ts`.
 - **AU-86** (F14b, pendiente) · Un paso nuevo se llama como lo que hace («Buscar filas en Gastos») y el nombre sigue
   a sus parámetros hasta que Juan lo cambia.
+  En la F14b: el nombre sale de `i18n.ts` con la acción y, si la hay, la colección («Buscar filas en Gastos»; sin
+  colección, «Buscar filas»). Dos pasos no se llaman igual, porque se citan por su nombre: al segundo se le añade un
+  número («Filtrar 2»). Cambiar el nombre de un paso cambia las citas que lo nombran. El nombre es el automático
+  mientras sea igual al que saldría de sus parámetros de antes del cambio: no se guarda una marca aparte.
 - **AU-87** (F14b, pendiente) · Boni no mete pasos por su cuenta: lo que hay en el lienzo lo puso Juan o lo aceptó.
 
 ### 5.8 Probar, publicar y ejecuciones
@@ -546,12 +655,23 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-91** (F14b, pendiente) · «Probar paso» ensaya ese paso y solo lo que le falte de los anteriores; reutiliza lo
   ya calculado si no ha cambiado. Qué está viejo lo decide el servidor comparando cada paso con el que produjo los
   datos.
+  En la F14b: un paso «cambió» cuando cambia su tipo, su acción, un parámetro o un ajuste que no sea la «Nota», o
+  cuando cambió alguno de los pasos de los que cuelga o que cita, o los datos con los que se probó el disparador.
+  Mover un paso o cambiarle el nombre no lo cambia: una cita cuenta por el paso al que apunta. Que los datos de una
+  colección sean otros tampoco: la salida dice cuándo se probó (AU-72). «Probar paso» siempre vuelve a ejecutar ese
+  paso. De cada automatización se guarda la última prueba de cada paso; se guarda en el servidor, así que se ve igual
+  en otro dispositivo.
 - **AU-92** (F14b, pendiente) · La salida de un paso que cambió después de probar se marca «puede estar vieja».
+  En la F14b se lee en la cabecera de SALIDA y, en el lienzo, la cuenta de sus flechas queda atenuada. Lo dice el
+  servidor al guardar cada cambio del borrador.
 - **AU-93** (F14d, pendiente) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
   gasta modelo. Lo fijado se ve en la tarjeta («Salida fijada») y nunca vale en una ejecución de verdad. Se suelta en
   el mismo botón.
 - **AU-94** (F14b, pendiente) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
+  En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
+  disparador sin campos empieza sin preguntar. Los campos de la última prueba son la fila que dio el disparador en
+  ella: no se guardan aparte.
 - **AU-95** (F14d, pendiente) · «Publicar» hace del borrador la versión que corre. El borrador, que se guarda solo
   desde la F14b (AU-62), nunca corre de verdad (D-55): lo que escribe de verdad es siempre una versión publicada, así
   que cada escritura tiene su versión.
@@ -749,6 +869,8 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   que no se pueda convertir queda apagado con su aviso; nada se borra.
 - **AU-151** (F14b, pendiente) · Mientras tanto conviven: la lista enseña las dos clases y un flujo de antes abre el
   editor de antes, marcado «formato anterior».
+  En la F14b: «Nueva» crea siempre una automatización del formato nuevo. Un flujo de antes abre su editor de siempre,
+  con «Formato anterior» junto a su nombre, y sigue encendido, apagado y ejecutándose como estaba.
 - **AU-152** (F16, pendiente) · Al terminar se quitan el motor de listas, el editor viejo y sus pruebas, y los
   principios y la guía de diseño se reescriben en el mismo PR.
 
@@ -854,18 +976,30 @@ Lo que cambia, regla por regla:
   lecturas `$col` que la caja pide y el servidor hace (riesgo 4 del §6), la consola recogida, `$now` y el azar
   fijados por ejecución.
 - **`apps/server/src/automations/`**: las tablas (`automations`, `automation_drafts`, `automation_layout`,
-  `automation_pins`, `automation_runs`, `automation_steps`, en el almacén del usuario: D-02), las rutas (todas en
-  `routes.ts` y en la lista de acciones), el que ejecuta (política, diario, lectores, caja), los disparadores, el
-  planificador de horas y la conversión de los flujos de antes.
+  `automation_tests`, `automation_test_rows`, `automation_pins`, `automation_runs`, `automation_steps`, en el almacén
+  del usuario: D-02), las rutas (todas en `routes.ts` y en la lista de acciones), el que ejecuta (política, diario,
+  lectores, caja), los disparadores, el planificador de horas y la conversión de los flujos de antes.
+  La F14b trae las cinco primeras tablas (`packages/store/src/automations.ts`: la automatización, su borrador con su
+  `rev`, el sitio de sus cajas y la última prueba de cada paso, con sus filas aparte y de 50 en 50), las rutas del
+  borrador y de probar (`automations/routes.ts`, cada una con su acción), las `Collections` de verdad sobre el
+  almacén y la `Policy` de verdad sobre `decide`. Nada de ello pasa por el registro de operaciones: el borrador lo
+  deshace el editor (AU-68), «Eliminar» se deshace desde su aviso (AU-62) y una prueba no escribe (AU-90).
 - **`packages/agent`**: `decide` conoce el origen «automatización» y comprueba la conexión; el camino vigilado de
   una llamada queda disponible para los pasos; las rondas del «Agente»; en la F16, la traducción de un plan a pasos.
 - **`packages/views`**: el filtro (`FilterItem`) admite una expresión como valor y es el modelo de condiciones de
   todos los pasos; los bloques de página ganan nombre, eventos y «De una automatización».
 - **`apps/boni-web/src/automations/`**: la lista, el lienzo (con `@xyflow/react`, que ya está), el panel de añadir,
   la vista del paso, las ejecuciones. El editor de código es CodeMirror 6 (nuevo, MIT).
+  La F14b pone ahí la lógica sin pantalla (el estado del editor, los cambios del grafo, el sitio de las cajas, las
+  citas, las filas del panel y las palabras) y, encima, sus componentes. La app importa `@boni/automations`: el
+  catálogo y la validación son el mismo código en la app y en el servidor. De lo de hoy se extiende la página de la
+  colección «Flujos» (la lista y su mapa: `FlowsView.tsx`, `FlowMap.tsx`) y se reutilizan el filtro de las vistas
+  (AU-81), el panel lateral, los menús y `@xyflow/react`; el editor de hoy se queda, sin tocar, para los flujos de
+  antes (AU-151).
 - **Fuera en la F16**: `FlowEditor.tsx`, `FlowStepPanel.tsx`, `ExprField.tsx`, `flowLayout.ts`, `flowEdit.ts` y el
   intérprete de listas para lo guardado. `FlowMap.tsx` se adapta: el mapa se queda.
-- **Las apps**: las rutas nuevas entran en `Net.kt` de Android y en `paths.cjs` del escritorio.
+- **Las apps**: las rutas nuevas entran en `Net.kt` de Android y en `paths.cjs` del escritorio. Las de la F14b
+  están bajo `/api/agent/automations`, que los dos ya dejan pasar: no cambian.
 
 ## 8. Fases
 
@@ -885,7 +1019,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 |---|---|---|---|
 | Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
-| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | pendiente |
+| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en curso |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo | pendiente |
 | **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí | pendiente |
 | **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro | pendiente |

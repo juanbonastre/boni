@@ -49,6 +49,7 @@ import {
   type Policy,
 } from "./effects.ts";
 import { type Citation, CiteError, resolve, type Scope } from "./expression.ts";
+import type { StepFailure } from "./failures.ts";
 import {
   type Automation,
   isExpr,
@@ -85,6 +86,8 @@ export interface StepError {
   rule?: string;
   /** The index, in the step's input, of the row it failed on; absent when the whole step failed. */
   row?: number;
+  /** Why, as a key the screen can say, with the parameter at fault (failures.ts; set from F14b on). */
+  failure?: StepFailure;
 }
 
 /** What is kept of a step in a run (AU-15). What an AI step cost arrives with those steps (F15). */
