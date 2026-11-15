@@ -902,10 +902,15 @@ export class StoreCalendar implements CalendarSource {
   private timer: ReturnType<typeof setInterval> | null = null;
   private daily: ReturnType<typeof setInterval> | null = null;
   private topUpTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Takes back the store's call to close this calendar (`onClose`). */
+  private offStoreClose: () => void;
 
   constructor(store: UserStore, opts: { write?: boolean; pollMs?: number } = {}) {
     this.store = store;
     this.writable = !!opts.write;
+    // The calendar never outlives its store (task 123): closing the store stops the poll first, whoever owns them
+    // and in whatever order they are closed; a poll that found the database closed threw from its timer.
+    this.offStoreClose = store.onClose(() => this.close());
     this.poll();
     // Other writers of the same store (Boni's pages, the agent, the import) reach the devices within a second.
     this.timer = setInterval(() => this.poll(), opts.pollMs ?? 1000);
@@ -1558,6 +1563,7 @@ export class StoreCalendar implements CalendarSource {
   }
 
   close(): void {
+    this.offStoreClose();
     if (this.timer) clearInterval(this.timer);
     if (this.daily) clearInterval(this.daily);
     if (this.topUpTimer) clearTimeout(this.topUpTimer);

@@ -1123,3 +1123,27 @@ describe("a calendar reads its collection's roles (docs/clases.md §6, D-20)", (
     expect(taskDoneField(store, "t_docencia")?.key).toBe("completed");
   });
 });
+
+describe("the calendar never outlives its store (task 123)", () => {
+  it("a store closed while its calendar still polls stops the poll first: its timer finds nothing closed", () => {
+    vi.useFakeTimers();
+    try {
+      const { store, cal } = env();
+      // This test closes the store itself (closing it twice throws): its cleanup closes the calendar alone.
+      cleanups.pop();
+      cleanups.push(() => cal.close());
+      const seen: number[] = [];
+      cal.subscribe((c) => seen.push(c.version));
+      // Closed before its calendar, as a test's or a server's teardown in the wrong order would: «database is not
+      // open» was thrown from the poll's interval (routes.test.ts, 2026-11-15).
+      store.close();
+      expect(() => vi.advanceTimersByTime(5 * 60_000)).not.toThrow();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(seen).toEqual([]);
+      // Closing the calendar afterwards, as its owner still does, is harmless.
+      expect(() => cal.close()).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
