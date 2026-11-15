@@ -69,6 +69,6 @@
     ]
   },
   "expect": {
-    "errors": ["R2-reader-output-invalid", null]
+    "errors": ["reader-failed:extract_tasks:shape", null]
   }
 }

@@ -458,6 +458,17 @@ type Expr =
 - **Un modelo sin herramientas**, con un prompt de sistema fijo por tipo de lector, el contenido no fiable y un
   **esquema de salida fijo** (salida estructurada). El código vuelve a validar la salida: tipos, longitudes máximas,
   valores enumerados, fechas que se pueden leer, sin enlaces ni HTML en el texto.
+- **Una salida que no vale se pide otra vez, una sola vez, con la entrada acortada** (AU-59, tarea 124): la mitad
+  primera de una lista, la mitad primera de un texto largo (cortada en un espacio y acabada en «[…]»; uno de hasta
+  200 caracteres queda entero), los valores de un registro igual; sobre una lista (`summarize_each`, `label_each`),
+  cada texto así, para que siga habiendo uno por texto. Lo acortado es parte de la misma entrada, entre marcadores
+  nuevos, y su salida lleva la misma etiqueta. Si la segunda tampoco vale, el paso para con
+  `reader-failed:<lector>:<motivo>` y la app dice cuál y por qué («Parado: «Resumir» no dio una respuesta válida (era
+  demasiado larga)»); el diario guarda los dos intentos, el segundo con `shortened`. Antes paraba con
+  `R2-reader-output-invalid`, un código sin más. Un paso llama a su lector dos veces como mucho: una segunda respuesta
+  que dice un día relativo (tareas 72 y 73) ya no vuelve una tercera vez, se queda y el diario lo dice (`kept`).
+  Una llamada que el proveedor rechaza no es una salida que no vale: no se repite así, y el paso para con
+  `model-<código>`, que dice por qué (7.10: `no-credit`, `too-long`, `bad-option`…).
 - **Tipos iniciales:**
   - `extract_tasks(correo) → [{título, fecha_límite?, remitente, id_mensaje}]` (desde 15d, `read_message` con
     módulos: 7.4b);
@@ -701,6 +712,23 @@ interface ModelProvider {
   ninguna opción, como «Te piden algo.»). El código las comprueba igual. Y el planificador pregunta con `ask` solo
   cuando un paso posterior necesita la respuesta: una pregunta de cortesía al final de una respuesta va en el texto,
   porque un `ask` sin nada detrás deja el turno esperando y la respuesta de Juan no sirve para nada.
+- **Una llamada que el proveedor rechaza para con un código fijo que dice por qué** (tarea 124; antes todo era
+  `model-http-400` y el motivo se perdía). `refusedCode` (`anthropic.ts`) lo decide por código con el estado HTTP, el
+  tipo de error de la API y unas pocas frases fijas de su mensaje (documentación de la API, 2026-11-15). La lista es
+  cerrada:
+  - `no-credit`, sin saldo (402, o «credit balance» en un 400) · `spend-limit`, el límite de gasto de la cuenta;
+  - `too-long`, la petición no cabe (413, o «prompt is too long» en un 400);
+  - `bad-option`, una opción que el modelo no acepta (un 400 con «not supported», «extra inputs»…) · `no-model`, un
+    modelo que no existe o no está disponible (404);
+  - `bad-key` (401) · `forbidden` (403);
+  - `rate-limit` (429) · `overloaded` (529) · `timeout` (504) · `server-error` (500).
+
+  Lo demás queda `http-<estado>-<tipo>` (por ejemplo `http-400-invalid-request`). El paso para con `model-<código>`, la
+  app lo dice en palabras («el modelo no respondió (la cuenta del proveedor no tiene saldo)») y el chat dice el motivo
+  cuando Juan puede hacer algo, y «inténtalo otra vez» cuando es pasajero. El texto del proveedor no sale de
+  `ProviderError.detail`: ni en el registro, ni en la app, ni en el log del servidor. Es texto de fuera, y puede
+  devolver lo que se le mandó. Pruebas: `anthropic.test.ts` («why the API refused a call»), con una respuesta
+  inventada por código.
 - **Propuesta para el NAS:**
   - planificador `claude-opus-5-5`, con salida estructurada y esfuerzo `medium`, `high` si las pruebas lo piden;
   - lectores `claude-haiku-4-5` (barato y suficiente para extraer con esquema), o `claude-sonnet-5-5` si la calidad

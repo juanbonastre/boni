@@ -6,7 +6,17 @@ import { marksOf } from "../src/confirm.ts";
 import { callFn } from "../src/fns.ts";
 import { isWholeSpan, validatePlan } from "../src/plan.ts";
 import { decide, type Origin } from "../src/policy.ts";
-import { checkReader, checkReaderOutput, READER_PROMPTS, readerSchema } from "../src/readers.ts";
+import {
+  checkReader,
+  checkReaderOutput,
+  READER_PROMPTS,
+  readerFailure,
+  readerSchema,
+  SHORT_KEEP,
+  SHORT_MARK,
+  shortenInput,
+  shortenText,
+} from "../src/readers.ts";
 import { coreTools, neutralize, type ToolDef, ToolRegistry } from "../src/tools.ts";
 import { at, atOrNull, leaf, list, rec, type Val } from "../src/values.ts";
 import { toPlannerView } from "../src/view.ts";
@@ -659,6 +669,39 @@ describe("confirmations against visual deception", () => {
 });
 
 describe("readers and functions", () => {
+  it("shortens a refused reader's input the same way every time: a part of it, never more (AU-59, task 124)", () => {
+    // A short text (a title, a name, a date) stays whole.
+    expect(shortenText("Comprar pan")).toBe("Comprar pan");
+    expect(shortenText("a".repeat(SHORT_KEEP))).toBe("a".repeat(SHORT_KEEP));
+    // A long one keeps its first half, back to a space so no word is cut, and says it was cut.
+    const long = "palabra ".repeat(100).trim();
+    const half = shortenText(long);
+    expect(half.endsWith(SHORT_MARK)).toBe(true);
+    expect(long.startsWith(half.slice(0, -SHORT_MARK.length))).toBe(true);
+    expect(half.slice(0, -SHORT_MARK.length).endsWith("palabra")).toBe(true);
+    expect([...half].length).toBeLessThanOrEqual(Math.ceil(long.length / 2) + SHORT_MARK.length);
+    // Never below SHORT_KEEP, and by characters, not code units.
+    expect([...shortenText("ñ".repeat(300))].length).toBe(SHORT_KEEP + SHORT_MARK.length);
+    // A list keeps its first half (one stays one), each item as it was; a record shortens each value.
+    expect(shortenInput([1, 2, 3, 4, 5])).toEqual([1, 2, 3]);
+    expect(shortenInput([{ t: "x".repeat(500) }])).toEqual([{ t: "x".repeat(500) }]);
+    expect(shortenInput({ asunto: "Hola", cuerpo: long, n: 3, a: [1, 2] })).toEqual({
+      asunto: "Hola",
+      cuerpo: half,
+      n: 3,
+      a: [1],
+    });
+    // Deterministic: the same input, the same shortened input.
+    expect(shortenInput({ cuerpo: long })).toEqual(shortenInput({ cuerpo: long }));
+    // Why it failed, as the app says it, from the rule it broke.
+    expect(readerFailure("text-too-long")).toBe("too-long");
+    expect(readerFailure("line-too-long")).toBe("too-long");
+    expect(readerFailure("count")).toBe("count");
+    expect(readerFailure("text-link-or-html")).toBe("link");
+    expect(readerFailure("keys")).toBe("shape");
+    expect(readerFailure(null)).toBe("shape");
+  });
+
   it("checks a reader's answer again: links, HTML, dates and options", () => {
     expect(checkReaderOutput("summarize", { text: "Un resumen." })).not.toBeNull();
     expect(checkReaderOutput("summarize", { text: "mira https://x.example" })).toBeNull();

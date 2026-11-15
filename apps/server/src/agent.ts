@@ -294,6 +294,8 @@ export class AgentHost {
       if (!p) throw new Error("agent-off");
       a = new Agent({
         store: this.store(account),
+        // What the engine does again on its own (a reader asked again, AU-59): codes only.
+        log: (line) => console.log(`agent ${account}: ${line}`),
         registry: this.registry,
         planner: p.planner,
         reader: p.reader,

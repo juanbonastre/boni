@@ -1,7 +1,8 @@
 import { label } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProviderError } from "../src/anthropic.ts";
-import { fakePlanner } from "../src/providers.ts";
+import { fakePlanner, ScriptedProvider } from "../src/providers.ts";
+import { READER_RETRIES, SHORTENED_FIX } from "../src/readers.ts";
 import { guideValue } from "../src/reading.ts";
 import { makeCaps, ToolError } from "../src/tools.ts";
 import { codeLabel, leaf, list, plain, rec } from "../src/values.ts";
@@ -1028,8 +1029,8 @@ describe("the agent, with a planner that behaves", () => {
     const res = await env
       .agent(fakePlanner([plan]), fakePlanner([{ items: [{ line: "Una tienda y Lucía" }] }]))
       .turn({ text: "Resume mis correos", origin: PERSONAL });
-    expect(res.error).toBe("R2-reader-output-invalid");
-    const denied = env.store.journal.steps(res.run).find((x) => x.rule === "R2");
+    expect(res.error).toBe("reader-failed:summarize_each:count");
+    const denied = env.store.journal.steps(res.run).find((x) => x.decision === "deny");
     expect((denied?.detail as { why?: unknown } | undefined)?.why).toEqual({
       fault: "count",
       keys: ["items"],
@@ -1062,8 +1063,8 @@ describe("the agent, with a planner that behaves", () => {
     const kinds = await env
       .agent(fakePlanner([sorted]), variant)
       .turn({ text: "Resume mis correos", origin: PERSONAL });
-    expect(kinds.error).toBe("R2-reader-output-invalid");
-    const why = env.store.journal.steps(kinds.run).find((x) => x.rule === "R2")?.detail as {
+    expect(kinds.error).toBe("reader-failed:summarize_each:shape");
+    const why = env.store.journal.steps(kinds.run).find((x) => x.decision === "deny")?.detail as {
       why?: { fault?: string };
     };
     expect(why.why?.fault).toBe("kind");
@@ -1087,6 +1088,162 @@ describe("the agent, with a planner that behaves", () => {
         .map((a) => a.result)
         .find((r) => (r as { error?: string } | null)?.error === "model-max-tokens"),
     ).toEqual({ error: "model-max-tokens", output: 4000, reasoning: 3900 });
+  });
+
+  it("a reader refused once is asked again with its input shortened; refused twice, the step says which reader and why (AU-59, task 124)", async () => {
+    // Ten records, one with a long text: enough that the shortened input is visibly a part of the first.
+    env = makeEnv(
+      Array.from({ length: 10 }, (_, i) => ({
+        asunto: `Aviso ${i + 1}`,
+        de: `ejemplo.${i + 1}@example.com`,
+        cuerpo: i === 0 ? "Texto largo del aviso. ".repeat(40) : `Cuerpo ${i + 1}`,
+      })),
+    );
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize", input: ref("$m.items") },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: { template: lit("{a}"), a: ref("$s.text") },
+        },
+      ],
+    };
+    type Input = { content: string; shortened?: boolean; refused?: string; fix?: string };
+    // What the reader reads: the records between the markers.
+    const items = (c: string) => JSON.parse(c.split("\n").slice(1, -1).join("\n")) as unknown[];
+    // Too long over the ten records (the code holds a summary to 2000 characters), valid over fewer: the stub looks
+    // at what it reads, not at the flag the code adds.
+    const reader = new ScriptedProvider("reader", (req) =>
+      items((req.input as Input).content).length < 10
+        ? { text: "Diez avisos, uno largo." }
+        : { text: "x ".repeat(1500) },
+    );
+    const lines: string[] = [];
+    const ok = await env
+      .agent(fakePlanner([plan]), reader, { log: (l: string) => lines.push(l) })
+      .turn({ text: "Resume", origin: PERSONAL });
+    expect(ok.status).toBe("done");
+    expect(reader.requests).toHaveLength(2);
+    // The server's log says it, with codes only.
+    expect(lines).toEqual([
+      "reader summarize refused (text-too-long): asked again with its input shortened",
+    ]);
+    const [first, second] = reader.requests.map((r) => r.input as Input);
+    expect(first?.shortened).toBeUndefined();
+    expect(second).toMatchObject({ shortened: true, refused: "text-too-long", fix: SHORTENED_FIX });
+    // The shortened input is the first half of the list, each record as it was, between new markers.
+    const all = items(first?.content ?? "");
+    expect(all).toHaveLength(10);
+    expect(items(second?.content ?? "")).toEqual(all.slice(0, 5));
+    const markerOf = (c?: string) => c?.split("\n")[0];
+    expect(markerOf(second?.content)).not.toBe(markerOf(first?.content));
+    // The run keeps both attempts: the refused one with its rule, the second saying it read a shortened input.
+    const logged = env.store.journal.steps(ok.run).filter((x) => x.step === "s");
+    expect(logged.map((x) => [x.decision, x.rule])).toEqual([
+      ["retry", "R2"],
+      ["allow", "P1"],
+    ]);
+    expect(logged[0]?.detail).toMatchObject({ attempt: 1, why: { fault: "text-too-long" } });
+    expect(logged[1]?.detail).toMatchObject({ attempt: 2, shortened: true });
+    expect(
+      env.store.audit.actions({ run: ok.run }).filter((a) => a.tool === "model.reader"),
+    ).toHaveLength(2);
+
+    // Refused twice: two calls and never a third (READER_RETRIES), and the step fails naming the reader and why.
+    const stubborn = new ScriptedProvider("reader", () => ({ text: "x ".repeat(1500) }));
+    lines.length = 0;
+    const failed = await env
+      .agent(fakePlanner([plan]), stubborn, { log: (l: string) => lines.push(l) })
+      .turn({ text: "Resume", origin: PERSONAL });
+    expect(lines).toEqual([
+      "reader summarize refused (text-too-long): asked again with its input shortened",
+      "reader summarize refused again (text-too-long): the step stops",
+    ]);
+    expect(READER_RETRIES).toBe(1);
+    expect(stubborn.requests).toHaveLength(2);
+    expect(failed.error).toBe("reader-failed:summarize:too-long");
+    const last = env.store.journal.steps(failed.run).filter((x) => x.step === "s");
+    expect(last.map((x) => x.decision)).toEqual(["retry", "deny", "stopped"]);
+    expect(last[1]?.detail).toMatchObject({
+      attempt: 2,
+      shortened: true,
+      why: { fault: "text-too-long" },
+    });
+    expect(last[2]?.detail).toEqual({ code: "reader-failed:summarize:too-long" });
+    // The refused answers' words never go into the run's record, only their shape.
+    expect(JSON.stringify(last)).not.toContain("x x x");
+  });
+
+  it("a reader asked again with its input shortened is not asked a third time for a relative day: its relative day is kept (AU-59)", async () => {
+    env = makeEnv([
+      { asunto: "Comida", de: "ejemplo.1@example.com", cuerpo: "¿Comemos el jueves?" },
+      { asunto: "Aviso", de: "ejemplo.2@example.com", cuerpo: "Aviso de prueba." },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize", input: ref("$m.items") },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: { template: lit("{a}"), a: ref("$s.text") },
+        },
+      ],
+    };
+    // Too long first; the shortened answer is valid but says «mañana»; a third answer would fix it.
+    const reader = fakePlanner([
+      { text: "x ".repeat(1500) },
+      { text: "Te proponen comer mañana." },
+      { text: "Te proponen comer el jueves." },
+    ]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "Resume", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    expect(reader.requests).toHaveLength(2);
+    const logged = env.store.journal.steps(res.run).filter((x) => x.step === "s");
+    expect(logged.map((x) => x.decision)).toEqual(["retry", "allow"]);
+    expect(logged[1]?.detail).toMatchObject({ attempt: 2, shortened: true, relativeDay: "kept" });
+  });
+
+  it("a reader over a list asked again shortens each text, so its answer still has one line per text (AU-59)", async () => {
+    env = makeEnv([
+      { asunto: "Rebajas", de: "tienda@example.com", cuerpo: "Rebajas de otoño. ".repeat(30) },
+      { asunto: "Comida", de: "lucia@example.com", cuerpo: "¿Comemos el jueves?" },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items") },
+        { id: "r", op: "reply", component: "list", data: { items: ref("$s.items") } },
+      ],
+    };
+    // One line for two mails first (refused: `count`), then one per mail.
+    const reader = fakePlanner([
+      { items: [{ line: "Una tienda y Lucía" }] },
+      {
+        items: [{ line: "Una tienda anuncia rebajas" }, { line: "Lucía propone comer el jueves" }],
+      },
+    ]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "Resume", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    const [first, second] = reader.requests.map(
+      (r) => r.input as { content: string; count: number },
+    );
+    expect(second?.count).toBe(2);
+    expect(second?.content).toContain("[2]\n");
+    expect(second?.content).toContain("¿Comemos el jueves?");
+    expect(second?.content).toContain("[…]");
+    expect((second?.content.length ?? 0) < (first?.content.length ?? 0)).toBe(true);
   });
 
   it("a reader of mail in the conversation gets the user's reading guide, bound by the code (task 23)", async () => {
@@ -1132,8 +1289,10 @@ describe("the agent, with a planner that behaves", () => {
     await env
       .agent(fakePlanner([plan("tarea")]), other, { readingGuide: () => guide })
       .turn({ text: "Resume mis tareas", origin: PERSONAL });
-    expect(other.requests).toHaveLength(1);
-    expect((other.requests[0]?.input as { guide?: unknown } | undefined)?.guide).toBeUndefined();
+    // Asked once, or twice with its input shortened when the code refused the first (AU-59): never with the guide.
+    expect(other.requests.length).toBeGreaterThan(0);
+    for (const r of other.requests)
+      expect((r.input as { guide?: unknown } | undefined)?.guide).toBeUndefined();
     // A «guide» the plan writes itself is never one: the run stops before any reader sees it.
     const forged = {
       version: 1,

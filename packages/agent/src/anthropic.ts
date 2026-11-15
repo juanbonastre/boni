@@ -13,7 +13,7 @@ import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./
  * schema. `apiSchema` reduces a reader's schema to what the API accepts; `checkReaderOutput` checks
  * the answer again anyway.
  *
- * Errors become fixed codes (`http-400`, `refusal`...). The API's own message is kept in `detail`
+ * Errors become fixed codes (`refusedCode`, `refusal`...). The API's own message is kept in `detail`
  * for whoever runs the server or the evaluation, and never goes into a plan, a reply or the log.
  */
 export class ProviderError extends Error {
@@ -26,6 +26,53 @@ export class ProviderError extends Error {
     this.code = code;
     this.detail = detail;
   }
+}
+
+/**
+ * Why the API refused a call, as a fixed code from a closed list (task 124: the run said `http-400` and nothing
+ * more, though a 400 can be an account that cannot pay, a request too long or an option the API does not take).
+ * The status and the error's type decide where they can (the API's documentation, 2026-11-15: 401 authentication,
+ * 402 billing, 403 permission, 404 not found, 413 too large, 429 rate limit, 500 api, 504 timeout, 529 overloaded);
+ * a 400 `invalid_request_error` covers several causes (a spend limit reached among them), so its message is matched
+ * against fixed patterns here, by code, and only the code goes on: the message is text from outside. Anything
+ * else is `http-<status>-<type>`, the type without `_error`.
+ */
+export function refusedCode(
+  status: number | undefined,
+  type: string | null | undefined,
+  message: string,
+): string {
+  const m = message.slice(0, 2000);
+  if (status === 402 || type === "billing_error" || /credit balance|purchase credits/i.test(m))
+    return "no-credit";
+  if (/\bspend(?:ing)? (?:limit|cap)\b/i.test(m)) return "spend-limit";
+  if (status === 401 || type === "authentication_error") return "bad-key";
+  if (status === 403 || type === "permission_error") return "forbidden";
+  if (status === 404 || type === "not_found_error") return "no-model";
+  if (
+    status === 413 ||
+    type === "request_too_large" ||
+    /prompt is too long|input is too long|too many (?:input )?tokens|context window/i.test(m)
+  )
+    return "too-long";
+  if (status === 429 || type === "rate_limit_error") return "rate-limit";
+  if (status === 529 || type === "overloaded_error") return "overloaded";
+  if (status === 504 || type === "timeout_error") return "timeout";
+  if (status === 500 || type === "api_error") return "server-error";
+  if (
+    status === 400 &&
+    /not supported|does not support|not permitted|unexpected value|extra inputs|unknown (?:parameter|field)/i.test(
+      m,
+    )
+  )
+    return "bad-option";
+  const kind = (type ?? "")
+    .toLowerCase()
+    .replace(/_error$/, "")
+    .replace(/_/g, "-")
+    .replace(/[^a-z-]/g, "")
+    .slice(0, 16);
+  return `http-${status ?? "error"}${kind ? `-${kind}` : ""}`;
 }
 
 /** Keywords the structured outputs schemas do not accept. */
@@ -165,8 +212,13 @@ export class AnthropicProvider implements ModelProvider {
       if (call.signal?.aborted) throw new ProviderError("aborted");
       if (e instanceof Anthropic.APIConnectionTimeoutError) throw new ProviderError("timeout");
       if (e instanceof Anthropic.APIConnectionError) throw new ProviderError("network");
-      if (e instanceof Anthropic.APIError)
-        throw new ProviderError(`http-${e.status ?? "error"}`, e.message);
+      if (e instanceof Anthropic.APIError) {
+        const body = (e.error as { error?: { type?: unknown; message?: unknown } } | undefined)
+          ?.error;
+        const type = typeof body?.type === "string" ? body.type : (e.type ?? null);
+        const message = typeof body?.message === "string" ? body.message : e.message;
+        throw new ProviderError(refusedCode(e.status, type, message), e.message);
+      }
       throw new ProviderError("failed");
     }
     if (res.stop_reason === "max_tokens") throw new ProviderError("max-tokens");

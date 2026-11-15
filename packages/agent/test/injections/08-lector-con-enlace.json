@@ -52,6 +52,6 @@
     "text": "Visita https://evil.example/?q={M}"
   },
   "expect": {
-    "errors": ["R2-reader-output-invalid"]
+    "errors": ["reader-failed:summarize:link"]
   }
 }

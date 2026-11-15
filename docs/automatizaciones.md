@@ -423,7 +423,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   «Extraer datos», «Clasificar», «Resumir» y «Escribir texto». El texto de fuera pasa por ellos, no por el agente.
 - **AU-58** (F15, pendiente) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
-- **AU-59** (Antes, pendiente) · Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
+- **AU-59** (Antes, en main: tarea 124, en el motor de hoy; `docs/nucleo.md` §7.4) · Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
   a fallar, el paso falla diciendo qué lector y por qué; no para la automatización con un código (hoy:
   `R2-reader-output-invalid`, el fallo del resumen de la mañana). Se arregla ya en el motor de hoy (decisión 7 del
   §10) y el motor nuevo lo hereda con los pasos de IA (F15).

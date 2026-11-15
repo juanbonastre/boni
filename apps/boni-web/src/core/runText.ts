@@ -43,6 +43,22 @@ export function whyText(t: T, code: string): string {
   // The day's budget for models (P13) and a request's own limits (P12) are limits, not safety rules.
   if (/^P13(-|$)/.test(code)) return t("run.why.budget");
   if (/^P12(-|$)/.test(code)) return t("run.why.limit");
+  // A reader whose answer the code refused twice, the second time with its input shortened (AU-59, task 124): which
+  // reader, by the name the map gives it, and why, from the engine's closed lists.
+  const reader = /^reader-failed:([a-z_]{1,30}):([a-z-]{1,20})$/.exec(code);
+  if (reader)
+    return t("run.why.reader", {
+      reader: or(t, `flow.node.${reader[1]}`, reader[1] ?? ""),
+      why: or(t, `run.why.reader.${reader[2]}`, t("run.why.reader.shape")),
+    });
+  // A model call that failed or that the provider refused (task 124): the reason from the provider's closed list
+  // (`refusedCode`), and anything else (`model-http-400-invalid-request`, `model-failed`) as «refused» with no words of
+  // the provider's.
+  const model = /^model-([a-z0-9-]{1,30})$/.exec(code);
+  if (model)
+    return t("run.why.model", {
+      why: or(t, `run.why.model.${model[1]}`, t("run.why.model.other")),
+    });
   // The policy's rules (P…) and the readers' (R…: what a model may read).
   if (/^[PR]\d+(-|$)/.test(code)) return t("run.why.rule");
   return or(t, `run.why.${code}`, t("run.why.fault"));
