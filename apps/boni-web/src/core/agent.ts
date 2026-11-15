@@ -1688,6 +1688,14 @@ export function parseModels(b: unknown): ModelsView | null {
                 name: s200(x.name, 300),
                 ok: x.ok === true,
                 note: s200(x.note, 200),
+                // Who failed and what, as fixed codes (task 132): only short codes are kept; `evalFailText` maps them.
+                ...(isObj(x.failed) &&
+                typeof x.failed.who === "string" &&
+                typeof x.failed.what === "string" &&
+                /^[a-z0-9-]{1,30}$/.test(x.failed.who) &&
+                /^[a-z0-9-]{1,30}$/.test(x.failed.what)
+                  ? { failed: { who: x.failed.who, what: x.failed.what } }
+                  : {}),
               })),
             ...(Array.isArray(e.calibration)
               ? {

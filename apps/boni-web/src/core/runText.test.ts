@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import { agentErrorText } from "../store.ts";
-import type { RunDetail, RunStep } from "./agent.ts";
+import { parseModels, type RunDetail, type RunStep } from "./agent.ts";
 import {
   evalFailText,
   moneyText,
@@ -274,6 +274,31 @@ describe("a failed case of an evaluation, in words (task 132)", () => {
     expect(evalFailText(en, { who: "provider", what: "no-credit" })).toBe(
       "Provider: the provider's account has no credit",
     );
+  });
+
+  it("the page keeps a case's codes from the server, and nothing else in their place", () => {
+    const view = parseModels({
+      evaluations: [
+        {
+          role: "reader",
+          connection: "openrouter",
+          model: "ejemplo/modelo",
+          cases: [
+            { name: "a", ok: false, note: "wrong day", failed: { who: "reader", what: "wrong" } },
+            { name: "b", ok: false, note: "", failed: { who: "reader", what: "Texto del modelo" } },
+            { name: "c", ok: false, note: "", failed: "wrong" },
+            { name: "d", ok: true, note: "" },
+          ],
+        },
+      ],
+    });
+    const cases = view?.evaluations[0]?.cases ?? [];
+    expect(cases.map((c) => c.failed)).toEqual([
+      { who: "reader", what: "wrong" },
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 
   it("nothing that is not a fixed code is painted", () => {
