@@ -37,6 +37,7 @@ import {
   paramsOf,
   paramValue,
 } from "./catalogue.ts";
+import { COLLECTION } from "./collection.ts";
 import {
   type Asked,
   type Clock,
@@ -555,6 +556,7 @@ class Run {
       destroys: action.destroys,
       control,
       test: this.input.test,
+      own: this.deps.own,
     });
     return {
       shape: (c) => g.shape(c),
@@ -659,10 +661,13 @@ export type Executor =
     };
 
 /**
- * One executor per action of the catalogue, by `executorKey`. The builder fills it; its mode is the catalogue's.
- * A trigger has none: the engine gives its row.
+ * One executor per action of the catalogue, by `executorKey`, in the catalogue's mode. A trigger has none: the
+ * engine gives its row.
  */
-export const EXECUTORS: Readonly<Record<string, Executor>> = { ...TRANSFORM_AND_LOGIC };
+export const EXECUTORS: Readonly<Record<string, Executor>> = {
+  ...TRANSFORM_AND_LOGIC,
+  ...COLLECTION,
+};
 
 /** The key of an action's executor in `EXECUTORS`. */
 export const executorKey = (type: string, action: string): string => `${type}.${action}`;

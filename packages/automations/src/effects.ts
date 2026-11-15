@@ -7,10 +7,9 @@
  * engine is its only caller, and a step's executor receives the gate and never the collections. Every read and every
  * write asks `Policy.decide` first, in a test too, so there is no path that skips the policy to forget.
  */
-import type { FieldType, Label, Labeled } from "@boni/entities";
+import { type FieldType, join, type Label, type Labeled } from "@boni/entities";
 import type { FilterItem } from "@boni/views";
-import { notBuilt } from "./pending.ts";
-import type { Cell, Row, RowOrigin } from "./rows.ts";
+import type { Cell, FieldLabel, Row, RowOrigin } from "./rows.ts";
 
 // ---------------------------------------------------------------- the policy
 
@@ -172,6 +171,8 @@ export interface GateUnit {
   destroys: boolean;
   control: Label | null;
   test: boolean;
+  /** The label of what the automation itself wrote: of a new row in a test whose fields are none. */
+  own: Label;
 }
 
 /**
@@ -179,8 +180,98 @@ export interface GateUnit {
  * would make comes back); `propose` and `confirm` apply nothing and give it back as `asked`; `deny` throws.
  * The engine calls this and nobody else does.
  */
-export function guard(_policy: Policy, _collections: Collections, _unit: GateUnit): Gate {
-  return notBuilt("guard");
+export function guard(policy: Policy, collections: Collections, unit: GateUnit): Gate {
+  const ask = (
+    effect: "read" | "write",
+    collection: string,
+    values: Labelled,
+    rows?: number,
+  ): Decision =>
+    policy.decide({
+      automation: unit.automation,
+      step: unit.step,
+      type: unit.type,
+      action: unit.action,
+      effect,
+      // A read destroys nothing, even the search of «Eliminar filas»: what destroys is its write.
+      destroys: effect === "write" && unit.destroys,
+      collection,
+      values,
+      control: unit.control,
+      ...(rows === undefined ? {} : { rows }),
+      test: unit.test,
+    });
+  /** A read goes on only with `allow`: it cannot wait for Juan, so `confirm` and `propose` are a no as well. */
+  const read = (collection: string, values: Labelled, rows?: number): void => {
+    const d = ask("read", collection, values, rows);
+    if (d.kind === "deny") throw new Denied(d.rule, d.reason);
+    if (d.kind !== "allow") throw new Denied(d.rule, `a read cannot wait for Juan (${d.kind})`);
+  };
+  return {
+    // The fields of a collection are no data of Juan's: validation reads them too, with no policy.
+    shape: (collection) => collections.shape(collection),
+    async find(query, values) {
+      read(query.collection, values);
+      return collections.find(query);
+    },
+    async get(collection, id) {
+      read(collection, { id }, 1);
+      return typeof id.value === "string" ? collections.get(collection, id.value) : undefined;
+    },
+    async aggregate(query, values) {
+      read(query.collection, values);
+      return collections.aggregate(query);
+    },
+    async write(change, values) {
+      const collection = change.kind === "create" ? change.collection : change.row.collection;
+      const d = ask("write", collection, values, change.kind === "create" ? undefined : 1);
+      if (d.kind === "deny") throw new Denied(d.rule, d.reason);
+      if (d.kind !== "allow")
+        return { kind: "asked", asked: { step: unit.step, kind: d.kind, rule: d.rule, change } };
+      if (!unit.test) return { kind: "applied", row: await collections.apply(change) };
+      return { kind: "tested", row: await wouldBe(collections, change, values, unit.own) };
+    },
+  };
+}
+
+/**
+ * What a write allowed in a test would leave, with nothing written: a new row with the fields given, each with the
+ * label of its value; a modified row as it is saved with those fields over it; a row to the trash as it is. Reading
+ * the saved row here is part of the write the policy just allowed, not a read of its own.
+ */
+async function wouldBe(
+  collections: Collections,
+  change: Change,
+  values: Labelled,
+  own: Label,
+): Promise<Omit<StoredRow, "origin"> & { origin?: RowOrigin }> {
+  if (change.kind === "create") {
+    const labels = Object.values(values).map((v) => v.label);
+    const [first, ...rest] = [...new Set(labels)];
+    return over({ json: {}, label: first ? join(first, ...rest) : own }, change.fields, values);
+  }
+  const saved = await collections.get(change.row.collection, change.row.id);
+  if (!saved || saved.origin.version !== change.row.version)
+    throw new Error(`the row ${change.row.id} changed since it was read`);
+  return change.kind === "trash" ? saved : over(saved, change.fields, values);
+}
+
+/** A row with some fields written over it: each one keeps its value's label where it is not the row's. */
+function over<R extends Pick<Row, "json" | "label" | "fields">>(
+  row: R,
+  fields: Record<string, Cell>,
+  values: Labelled,
+): R {
+  const json = { ...row.json, ...fields };
+  const labels: Record<string, FieldLabel> = { ...(row.fields ?? {}) };
+  for (const key of Object.keys(fields)) {
+    const v = values[key];
+    if (v && (v.label !== row.label || v.derived))
+      labels[key] = { label: v.label, derived: v.derived };
+    else delete labels[key];
+  }
+  const { fields: _, ...rest } = row;
+  return { ...rest, json, ...(Object.keys(labels).length ? { fields: labels } : {}) } as R;
 }
 
 // ---------------------------------------------------------------- time

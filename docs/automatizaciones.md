@@ -243,7 +243,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   «error» si se pide). A una entrada pueden llegar varias flechas y de una salida pueden salir varias. Las
   excepciones las dice el catálogo: un disparador no tiene entrada, «Combinar» tiene dos con nombre (AU-124) y
   «Parar con error» no tiene salida.
-- **AU-04** (F14a, pendiente) · Por las flechas pasan filas: objetos con campos. Una fila leída de una colección
+- **AU-04** (F14a, hecho) · Por las flechas pasan filas: objetos con campos. Una fila leída de una colección
   recuerda de qué fila guardada viene, para poder modificarla o eliminarla después sin buscarla otra vez.
 - **AU-05** (F14b, pendiente) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
   una versión ni enciende «Publicar»; un paso sin sitio lo coloca Boni junto al paso del que cuelga; «Ordenar»
@@ -268,7 +268,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-13** (F14a, hecho) · Cada tipo de paso dice si trabaja «por fila» o «con todas», y el motor da la vuelta.
   Cada fila que sale de un paso «por fila» sabe de qué fila de entrada viene, así que `$('Otro paso').item` siempre
   encuentra la suya; tras un paso «con todas» que rehace las filas, dice que no puede y propone `.first()` o `.all()`.
-- **AU-14** (F14a, pendiente) · Una flecha sin filas no arranca lo que sigue. El ajuste «Seguir sin filas» de un paso
+- **AU-14** (F14a, hecho) · Una flecha sin filas no arranca lo que sigue. El ajuste «Seguir sin filas» de un paso
   hace que lo que sigue corra con una lista vacía (para decir «no hay nada», por ejemplo). No se inventa una fila
   vacía, como hace n8n. Con una lista vacía, un paso «por fila» que lee o escribe («Crear una fila») corre una vez
   sin fila actual: sus valores fijos valen, y citar `$json` falla diciendo que no hay fila; uno que solo cambia o
@@ -285,7 +285,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   límite dice cuál fue y lleva a ese ajuste.
 - **AU-18** (F14d, pendiente) · Todo lo que una ejecución escribe es un solo grupo en el diario: se deshace entero
   desde la ejecución.
-- **AU-19** (F14a, pendiente) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
+- **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
   En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
   las rutas llegan con sus fases y leen lo mismo.
@@ -632,14 +632,14 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 | Página | Leer valores · Poner valor · Mostrar en un bloque · Abrir página | F17 |
 | Boni | Las piezas de Boni («Leer correo» y las demás) | F16 |
 
-- **AU-120** (F14a, pendiente) · En «Colección» se eligen primero la colección y la acción, y de ellas salen los
+- **AU-120** (F14a, hecho) · En «Colección» se eligen primero la colección y la acción, y de ellas salen los
   demás parámetros. «Buscar filas»: «Solo estas filas», «Ordenar por» y «Límite» (50); como opción, «Incluir
   relacionadas» (un nivel: `$json.categoria.nombre`).
-- **AU-121** (F14a, pendiente) · Crear y modificar enseñan el formulario de la fila: solo los campos que Juan añade,
+- **AU-121** (F14a, hecho) · Crear y modificar enseñan el formulario de la fila: solo los campos que Juan añade,
   cada uno con el control de su tipo. Modificar y eliminar actúan sobre «Las filas que llegan» (por defecto si
   vienen de esa colección) o sobre «Las que cumplan…», que pide al menos una condición: sin ella la automatización
   no es válida.
-- **AU-122** (F14a, pendiente) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
+- **AU-122** (F14a, hecho) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
   automatización.
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
@@ -779,7 +779,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   marcado como derivado: nunca vale como destino (P14).
 - **AU-163** (F14c, pendiente) · Qué recibe una evaluación lo decide el servidor leyendo el código antes de correrlo:
   los pasos y los campos que cita. Un paso citado con un nombre calculado no se admite.
-- **AU-164** (F14a, pendiente) · Las filas llevan también la etiqueta del camino: lo que sale de una condición o de
+- **AU-164** (F14a, hecho) · Las filas llevan también la etiqueta del camino: lo que sale de una condición o de
   unas filas que dependen de algo de fuera se trata como de fuera (P15).
 - **AU-165** (F15, pendiente) · La política es el suelo. Una conexión, un ajuste o un «Sí» nunca dejan hacer lo que
   `decide` no deja: lo de fuera se propone (P4), un destino nunca sale de un dato de fuera ni de un modelo (P2),
@@ -788,7 +788,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
 - **AU-167** (F14d, pendiente) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
-- **AU-168** (F14a, pendiente) · Todas las rutas y herramientas de automatizaciones pasan por `decide` desde el
+- **AU-168** (F14a, hecho) · Todas las rutas y herramientas de automatizaciones pasan por `decide` desde el
   primer día (A-26). En la F14a todavía no hay rutas ni herramientas: es el motor el que no tiene otro camino a las
   colecciones que la política, y cada lectura y cada escritura le pregunta antes, en una prueba también.
 
@@ -867,7 +867,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | Fase | Qué | Criterio de hecho (lo que verá Juan) | Estado |
 |---|---|---|---|
 | Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
-| **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en curso |
+| **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | pendiente |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo | pendiente |
 | **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí | pendiente |
