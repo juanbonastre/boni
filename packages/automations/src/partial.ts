@@ -160,7 +160,7 @@ const citeById = (c: Citation, idOf: ReadonlyMap<string, string>) => ({
  */
 export function staleSteps(
   prints: Readonly<Record<string, Print>>,
-  kept: Readonly<Record<string, Kept>>,
+  kept: Readonly<Record<string, Pick<Kept, "print">>>,
 ): string[] {
   return Object.keys(kept)
     .filter((id) => prints[id] !== undefined && kept[id]?.print !== prints[id])

@@ -1,10 +1,12 @@
+import type { DatabaseSync } from "node:sqlite";
+
 /**
  * Where an automation lives (docs/automatizaciones.md §7; phase F14b): in the user's store (D-02), next to the
  * flows of before, as tables of the journal side, reached through `store.journal`. Like a flow, an automation is no
- * entity: no collection lists it but Boni's own «Automatizaciones», which is made on each read. A contract: the
- * builder's first server PR adds the migration and makes `Journal` extend `AutomationsJournal`.
+ * entity: no collection lists it but Boni's own «Automatizaciones», which is made on each read. `Journal` extends
+ * `AutomationsJournal`, and `automationsJournal` is its part of `openJournal`.
  *
- * The migration (one entry of `MIGRATIONS`, after the last one there is then):
+ * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`):
  *
  *   CREATE TABLE automations (
  *     id TEXT PRIMARY KEY, by TEXT NOT NULL, created INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
@@ -116,4 +118,188 @@ export interface AutomationsJournal {
     offset: number,
     limit: number,
   ): string[];
+}
+
+/** Migration 25 (see the top of this file). It may run again on a database that has it (a test rewinds
+ * `user_version` to before 24), so each table is made only if it is not there. */
+export const AUTOMATIONS_MIGRATION = `CREATE TABLE IF NOT EXISTS automations (
+     id TEXT PRIMARY KEY, by TEXT NOT NULL, created INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TABLE IF NOT EXISTS automation_drafts (
+     id TEXT PRIMARY KEY, rev INTEGER NOT NULL, name TEXT NOT NULL, doc TEXT NOT NULL,
+     device TEXT, updated INTEGER NOT NULL
+   );
+   CREATE TABLE IF NOT EXISTS automation_layout (
+     id TEXT NOT NULL, step TEXT NOT NULL, x REAL NOT NULL, y REAL NOT NULL, PRIMARY KEY (id, step)
+   ) WITHOUT ROWID;
+   CREATE TABLE IF NOT EXISTS automation_tests (
+     id TEXT NOT NULL, step TEXT NOT NULL, print TEXT NOT NULL, at INTEGER NOT NULL, record TEXT NOT NULL,
+     PRIMARY KEY (id, step)
+   ) WITHOUT ROWID;
+   CREATE TABLE IF NOT EXISTS automation_test_rows (
+     id TEXT NOT NULL, step TEXT NOT NULL, output TEXT NOT NULL, chunk INTEGER NOT NULL, rows TEXT NOT NULL,
+     PRIMARY KEY (id, step, output, chunk)
+   ) WITHOUT ROWID;`;
+
+/** How many rows of a kept test one chunk holds: one page of the step view (AU-71, AU-72). */
+export const TEST_ROWS_CHUNK = 50;
+
+/** The steps of a draft's document, read by SQLite from its JSON: what a save keeps places and tests for. */
+const STEPS_OF = "SELECT json_extract(value, '$.id') FROM json_each(?, '$.steps')";
+
+/** The journal's part for automations, over the user's database (one savepoint per change of several rows). */
+export function automationsJournal(db: DatabaseSync): AutomationsJournal {
+  let n = 0;
+  const atomic = <T>(fn: () => T): T => {
+    const name = `automations_${++n}`;
+    db.exec(`SAVEPOINT ${name}`);
+    try {
+      const out = fn();
+      db.exec(`RELEASE ${name}`);
+      return out;
+    } catch (e) {
+      db.exec(`ROLLBACK TO ${name}`);
+      db.exec(`RELEASE ${name}`);
+      throw e;
+    }
+  };
+  const row = (r: Record<string, unknown>): AutomationRow => ({
+    id: r.id as string,
+    by: r.by as string,
+    created: Number(r.created),
+    deleted: Number(r.deleted) === 1,
+  });
+  return {
+    automations: () =>
+      (
+        db
+          .prepare(
+            `SELECT a.id, a.by, a.created, a.deleted, d.name, d.rev, d.updated
+             FROM automations a JOIN automation_drafts d ON d.id = a.id
+             WHERE a.deleted = 0 ORDER BY a.created DESC, a.id DESC`,
+          )
+          .all() as Record<string, unknown>[]
+      ).map((r) => ({
+        ...row(r),
+        name: r.name as string,
+        rev: Number(r.rev),
+        updated: Number(r.updated),
+      })),
+    automation: (id) => {
+      const r = db.prepare("SELECT * FROM automations WHERE id = ?").get(id) as
+        | Record<string, unknown>
+        | undefined;
+      return r ? row(r) : null;
+    },
+    createAutomation: (a, d) =>
+      atomic(() => {
+        db.prepare("INSERT INTO automations (id, by, created) VALUES (?, ?, ?)").run(
+          a.id,
+          a.by,
+          a.created,
+        );
+        db.prepare(
+          "INSERT INTO automation_drafts (id, rev, name, doc, device, updated) VALUES (?, 1, ?, ?, ?, ?)",
+        ).run(a.id, d.name, d.doc, d.device, d.updated);
+      }),
+    setAutomationDeleted: (id, deleted) =>
+      void db.prepare("UPDATE automations SET deleted = ? WHERE id = ?").run(deleted ? 1 : 0, id),
+    automationDraft: (id) => {
+      const r = db.prepare("SELECT * FROM automation_drafts WHERE id = ?").get(id) as
+        | Record<string, unknown>
+        | undefined;
+      return r
+        ? {
+            id: r.id as string,
+            rev: Number(r.rev),
+            name: r.name as string,
+            doc: r.doc as string,
+            device: (r.device as string | null) ?? null,
+            updated: Number(r.updated),
+          }
+        : null;
+    },
+    saveAutomationDraft: (d) =>
+      atomic(() => {
+        const r = db
+          .prepare(
+            `UPDATE automation_drafts SET rev = rev + 1, name = ?, doc = ?, device = ?, updated = ?
+             WHERE id = ? RETURNING rev`,
+          )
+          .get(d.name, d.doc, d.device, d.updated, d.id) as { rev: number } | undefined;
+        if (!r) throw new Error(`no draft of automation ${d.id}`);
+        // What the draft no longer has loses its place and its test.
+        for (const table of ["automation_layout", "automation_tests", "automation_test_rows"])
+          db.prepare(`DELETE FROM ${table} WHERE id = ? AND step NOT IN (${STEPS_OF})`).run(
+            d.id,
+            d.doc,
+          );
+        return Number(r.rev);
+      }),
+    automationLayout: (id) =>
+      (
+        db
+          .prepare("SELECT step, x, y FROM automation_layout WHERE id = ? ORDER BY step")
+          .all(id) as Record<string, unknown>[]
+      ).map((r) => ({ step: r.step as string, x: Number(r.x), y: Number(r.y) })),
+    placeAutomationSteps: (id, places) =>
+      atomic(() => {
+        const put = db.prepare(
+          `INSERT INTO automation_layout (id, step, x, y) VALUES (?, ?, ?, ?)
+           ON CONFLICT(id, step) DO UPDATE SET x = excluded.x, y = excluded.y`,
+        );
+        for (const p of places) put.run(id, p.step, p.x, p.y);
+      }),
+    automationTests: (id) =>
+      (
+        db.prepare("SELECT * FROM automation_tests WHERE id = ? ORDER BY step").all(id) as Record<
+          string,
+          unknown
+        >[]
+      ).map((r) => ({
+        id: r.id as string,
+        step: r.step as string,
+        print: r.print as string,
+        at: Number(r.at),
+        record: r.record as string,
+      })),
+    keepAutomationTests: (id, steps) =>
+      atomic(() => {
+        const drop = db.prepare("DELETE FROM automation_test_rows WHERE id = ? AND step = ?");
+        const put = db.prepare(
+          `INSERT INTO automation_tests (id, step, print, at, record) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(id, step) DO UPDATE SET print = excluded.print, at = excluded.at, record = excluded.record`,
+        );
+        const chunk = db.prepare(
+          "INSERT INTO automation_test_rows (id, step, output, chunk, rows) VALUES (?, ?, ?, ?, ?)",
+        );
+        for (const s of steps) {
+          drop.run(id, s.step);
+          put.run(id, s.step, s.print, s.at, s.record);
+          for (const [output, rows] of Object.entries(s.rows))
+            for (let i = 0; i * TEST_ROWS_CHUNK < rows.length; i++)
+              chunk.run(
+                id,
+                s.step,
+                output,
+                i,
+                JSON.stringify(rows.slice(i * TEST_ROWS_CHUNK, (i + 1) * TEST_ROWS_CHUNK)),
+              );
+        }
+      }),
+    automationTestRows: (id, step, output, offset, limit) => {
+      if (limit <= 0 || offset < 0) return [];
+      const first = Math.floor(offset / TEST_ROWS_CHUNK);
+      const last = Math.floor((offset + limit - 1) / TEST_ROWS_CHUNK);
+      const chunks = db
+        .prepare(
+          `SELECT chunk, rows FROM automation_test_rows
+           WHERE id = ? AND step = ? AND output = ? AND chunk BETWEEN ? AND ? ORDER BY chunk`,
+        )
+        .all(id, step, output, first, last) as { chunk: number; rows: string }[];
+      const rows = chunks.flatMap((c) => JSON.parse(c.rows) as string[]);
+      const from = offset - first * TEST_ROWS_CHUNK;
+      return rows.slice(from, from + limit);
+    },
+  };
 }

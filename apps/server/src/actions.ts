@@ -329,7 +329,7 @@ export const MCP_MODULES: Readonly<Record<string, string>> = {
 };
 
 /** Juan's words, typed on his device: what a route's arguments are labelled as for the policy. */
-const handLabel = (device: string): Label =>
+export const handLabel = (device: string): Label =>
   label("user", "personal", [{ kind: "user-edit", id: `device:${device}` }]);
 
 /** The store as Juan's own hand reads it: all of it (the models' view hides what is closed to them). */

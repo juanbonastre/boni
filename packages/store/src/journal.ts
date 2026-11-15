@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { type AutomationsJournal, automationsJournal } from "./automations.ts";
 
 /**
  * The agent's journal in the user's database (docs/nucleo.md, 7.6 and 7.7): runs and what each step
@@ -185,7 +186,7 @@ export interface ConfirmationRow {
   used: number | null;
 }
 
-export interface Journal {
+export interface Journal extends AutomationsJournal {
   startRun(
     r: Omit<
       RunRow,
@@ -419,6 +420,7 @@ export function openJournal(db: DatabaseSync): Journal {
     resultAt: (r.result_at as number | null) ?? null,
   });
   return {
+    ...automationsJournal(db),
     addDecision: (d) =>
       void db
         .prepare(

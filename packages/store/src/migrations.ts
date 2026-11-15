@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { chainExisting } from "./audit.ts";
+import { AUTOMATIONS_MIGRATION } from "./automations.ts";
 
 /**
  * The per-user database's tables (docs/nucleo.md, 5.1). Numbered migrations, as in the calendar
@@ -373,6 +374,9 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
    ) WITHOUT ROWID;
    INSERT INTO activity_d (day, by, type, reads, writes)
      SELECT q / 96, by, type, sum(reads), sum(writes) FROM activity_q GROUP BY q / 96, by, type;`,
+  // 25: «Automatizaciones» (docs/automatizaciones.md §7, F14b): an automation, its draft, where its boxes are and the
+  // last test of each step, its rows 50 to a chunk (automations.ts).
+  AUTOMATIONS_MIGRATION,
 ];
 
 export function migrate(db: DatabaseSync): void {

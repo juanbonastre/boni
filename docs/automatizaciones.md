@@ -649,10 +649,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 ### 5.8 Probar, publicar y ejecuciones
 
-- **AU-90** (F14b, pendiente) · «Probar» ensaya el borrador entero desde un disparador: lee y calcula de verdad,
+- **AU-90** (F14b, hecho) · «Probar» ensaya el borrador entero desde un disparador: lee y calcula de verdad,
   llama a los modelos de verdad, y no escribe, no avisa y no propone (D-43). Un paso que escribiría saca la fila que
   crearía, para que lo que sigue continúe.
-- **AU-91** (F14b, pendiente) · «Probar paso» ensaya ese paso y solo lo que le falte de los anteriores; reutiliza lo
+- **AU-91** (F14b, hecho) · «Probar paso» ensaya ese paso y solo lo que le falte de los anteriores; reutiliza lo
   ya calculado si no ha cambiado. Qué está viejo lo decide el servidor comparando cada paso con el que produjo los
   datos.
   En la F14b: un paso «cambió» cuando cambia su tipo, su acción, un parámetro o un ajuste que no sea la «Nota», o
@@ -724,7 +724,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   cadena, una automatización no se repite en su cadena, unas pocas ejecuciones por minuto.
 - **AU-114** (F14d, pendiente) · «Programada» tiene una o más reglas. Si el servidor estaba apagado a su hora, corre
   una vez al volver (lo que queda de D-44).
-- **AU-115** (F14b, pendiente) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
+- **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
 - **AU-116** (F17, pendiente) · El panel de un disparador lista quién la inicia hoy: qué botones de qué páginas y
   qué automatizaciones. Se calcula, no se declara (A-16).
 - **AU-117** (F18, pendiente) · «Al subir un archivo» elige una colección y, si se quiere, la clase de archivo. Da
