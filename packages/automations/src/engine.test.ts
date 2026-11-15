@@ -70,7 +70,7 @@ describe("how an automation runs", () => {
       .step("Buscar", "collection", { collection: items.key, action: "find" })
       .step("Agrupar", "group", {
         by: [{ field: n }],
-        measures: [{ to: "filas", measure: "count" }],
+        measures: [{ measure: "count" }],
       })
       .step("Modificar", "collection", {
         collection: items.key,
@@ -271,12 +271,12 @@ describe("how an automation runs", () => {
 
     // After «Agrupar», `.item` cannot pair: validation says which step stands between, and `.first()` works.
     const grouped = numbers(sketch(), [1, 2, 3])
-      .step("Agrupar", "group", { measures: [{ to: "total", measure: "sum", field: "n" }] })
+      .step("Agrupar", "group", { measures: [{ measure: "sum", field: "n" }] })
       .step("Tras", "edit", { fields: [{ field: "de", value: cite("$('Partir').first().n") }] })
       .arrow("Partir", "Agrupar")
       .arrow("Agrupar", "Tras");
     const g = await start(grouped.build(), grouped.id("Inicio"));
-    expect(outOf(g, grouped.id("Tras"))).toEqual([{ total: 6, de: 1 }]);
+    expect(outOf(g, grouped.id("Tras"))).toEqual([{ sum_n: 6, de: 1 }]);
     const bad = grouped.build();
     (bad.steps.find((x) => x.name === "Tras") as (typeof bad.steps)[number]).params.fields = [
       { field: "de", value: cite("$('Partir').item.n") },
@@ -598,19 +598,16 @@ describe("how an automation runs", () => {
         })
         .step("Agrupar", "group", {
           by: [{ field: kind }],
-          measures: [
-            { to: "total", measure: "sum", field: amount },
-            { to: "filas", measure: "count" },
-          ],
+          measures: [{ measure: "sum", field: amount }, { measure: "count" }],
         })
-        .step("Si", "if", { where: [{ field: "filas", op: "gt", value: 200 }] })
+        .step("Si", "if", { where: [{ field: "count", op: "gt", value: 200 }] })
         .step("Crear", "collection", {
           collection: totals.key,
           action: "create",
           fields: [
             { field: tKind, value: cite(`$json.${kind}`) },
-            { field: tSum, value: cite("$json.total") },
-            { field: tCount, value: cite("$json.filas") },
+            { field: tSum, value: cite(`$json.sum_${amount}`) },
+            { field: tCount, value: cite("$json.count") },
           ],
         })
         .arrow("Inicio", "Buscar")

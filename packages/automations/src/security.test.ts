@@ -307,4 +307,74 @@ describe("labels and the policy", () => {
     await start(closed.build(), closed.id("Inicio"), {}, quiet.over);
     expect(quiet.log).toEqual([]);
   });
+  it("AU-168 · what a write step gives carries the labels a read of it would: each stored field its own, each field written its value's, in a run and in a test alike", async () => {
+    const next = ids(171);
+    const items = collection(next, ["text", "text", "number"]);
+    const [note, mine, n] = items.fields.map((f) => f.key) as [string, string, string];
+    const outside = { label: OUTSIDE, derived: false };
+    /** A saved row whose `note` came from outside. */
+    const saved = () => {
+      const db = store([items], {}, ids(172));
+      db.rows(items.key).push({
+        json: { [note]: "de fuera", [mine]: "mía", [n]: 1 },
+        label: OWN,
+        fields: { [note]: outside },
+        origin: { collection: items.key, id: "o_guardada", version: 1 },
+      });
+      return db;
+    };
+    const target = { target: "matching", where: [{ field: n, op: "is", value: 1 }] };
+    const steps = {
+      // A fixed value in another field: the field from outside is still from outside.
+      Modificar: { [ACTION]: "update", ...target, fields: [{ field: mine, value: "otra" }] },
+      // A value from outside into Juan's field: that field is from outside now.
+      "Modificar de fuera": {
+        [ACTION]: "update",
+        ...target,
+        fields: [{ field: mine, value: cite("$json.llega") }],
+      },
+      // A fixed value over the field from outside: it is Juan's now.
+      "Modificar encima": {
+        [ACTION]: "update",
+        ...target,
+        fields: [{ field: note, value: "mía" }],
+      },
+      "Crear o modificar": {
+        [ACTION]: "upsert",
+        match: [{ field: n }],
+        fields: [
+          { field: n, value: 1 },
+          { field: mine, value: "otra" },
+        ],
+      },
+      Eliminar: { [ACTION]: "trash", ...target },
+    };
+    for (const test of [false, true])
+      for (const [name, params] of Object.entries(steps)) {
+        const s = sketch()
+          .step("Inicio", "manual", { fields: [{ key: "llega", name: "Llega", type: "text" }] })
+          .step(name, "collection", { collection: items.key, ...params })
+          .arrow("Inicio", name);
+        const e = await run(
+          {
+            automation: s.build(),
+            trigger: s.id("Inicio"),
+            fields: { json: { llega: "x" }, label: OWN, fields: { llega: outside } },
+            test,
+          },
+          deps({ collections: saved() }),
+        );
+        const why = `${name}${test ? " (test)" : ""}`;
+        expect(e.state, why).toBe("done");
+        const [row] = e.steps[s.id(name)]?.out.main ?? [];
+        expect(row?.label, why).toBe(OWN);
+        expect(row?.fields, why).toEqual(
+          name === "Modificar de fuera"
+            ? { [note]: outside, [mine]: outside }
+            : name === "Modificar encima"
+              ? undefined
+              : { [note]: outside },
+        );
+      }
+  });
 });

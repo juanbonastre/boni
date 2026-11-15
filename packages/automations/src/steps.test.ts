@@ -100,7 +100,7 @@ describe("Transformar", () => {
     expect(byA[MAIN]?.map((r) => r.from)).toEqual([0]);
   });
 
-  it("groups in the order groups first appear, with every measure; with nothing to group by, one row even with none", async () => {
+  it("groups in the order groups first appear, with every measure named <measure>_<field> (a count of rows is count); with nothing to group by, one row even with none", async () => {
     const eur = (amount: number) => ({ amount, currency: "EUR" });
     const rows = [
       row({ k: "b", n: 4, m: eur(1), t: "x" }, { n: { label: OUTSIDE, derived: false } }),
@@ -108,51 +108,51 @@ describe("Transformar", () => {
       row({ k: "b", n: 2, m: eur(3), t: "y" }),
     ];
     const measures: ParamValue[] = [
-      { to: "filas", measure: "count" },
-      { to: "con t", measure: "count", field: "t" },
-      { to: "suma", measure: "sum", field: "n" },
-      { to: "media", measure: "average", field: "n" },
-      { to: "menor", measure: "min", field: "n" },
-      { to: "mayor", measure: "max", field: "n" },
-      { to: "dinero", measure: "sum", field: "m" },
-      { to: "todas", measure: "list", field: "t" },
+      { measure: "count" },
+      { measure: "count", field: "t" },
+      { measure: "sum", field: "n" },
+      { measure: "average", field: "n" },
+      { measure: "min", field: "n" },
+      { measure: "max", field: "n" },
+      { measure: "sum", field: "m" },
+      { measure: "list", field: "t" },
     ];
     const out = await exec("group", { by: [{ field: "k" }], measures }, rows);
     expect(jsons(out)).toEqual([
       {
         k: "b",
-        filas: 2,
-        "con t": 2,
-        suma: 6,
-        media: 3,
-        menor: 2,
-        mayor: 4,
-        dinero: eur(4),
-        todas: ["x", "y"],
+        count: 2,
+        count_t: 2,
+        sum_n: 6,
+        average_n: 3,
+        min_n: 2,
+        max_n: 4,
+        sum_m: eur(4),
+        list_t: ["x", "y"],
       },
       {
         k: "a",
-        filas: 1,
-        "con t": 0,
-        suma: 1,
-        media: 1,
-        menor: 1,
-        mayor: 1,
-        dinero: eur(2),
-        todas: [null],
+        count: 1,
+        count_t: 0,
+        sum_n: 1,
+        average_n: 1,
+        min_n: 1,
+        max_n: 1,
+        sum_m: eur(2),
+        list_t: [null],
       },
     ]);
     // What was computed from a field from outside carries its label, and is derived.
-    expect(out[MAIN]?.[0]?.fields?.suma).toEqual({ label: join(OWN, OUTSIDE), derived: true });
-    expect(out[MAIN]?.[1]?.fields?.suma).toEqual({ label: OWN, derived: true });
+    expect(out[MAIN]?.[0]?.fields?.sum_n).toEqual({ label: join(OWN, OUTSIDE), derived: true });
+    expect(out[MAIN]?.[1]?.fields?.sum_n).toEqual({ label: OWN, derived: true });
 
-    expect(
-      jsons(await exec("group", { measures: [{ to: "filas", measure: "count" }] }, [])),
-    ).toEqual([{ filas: 0 }]);
+    expect(jsons(await exec("group", { measures: [{ measure: "count" }] }, []))).toEqual([
+      { count: 0 },
+    ]);
     expect(jsons(await exec("group", { by: [{ field: "k" }], measures }, []))).toEqual([]);
     const mixed = [row({ m: eur(1) }), row({ m: { amount: 1, currency: "USD" } })];
     await expect(
-      exec("group", { measures: [{ to: "s", measure: "sum", field: "m" }] }, mixed),
+      exec("group", { measures: [{ measure: "sum", field: "m" }] }, mixed),
     ).rejects.toThrow(/currencies/);
   });
 

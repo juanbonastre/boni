@@ -114,6 +114,14 @@ export const IN = { main: MAIN, a: "a", b: "b" } as const;
 const INPUT: FieldsOf = { of: "input", input: MAIN };
 const COLLECTION: FieldsOf = { of: "collection" };
 const MEASURES = ["count", "sum", "average", "min", "max"] as const;
+
+/**
+ * The field a measure's result goes in, in «Agrupar» and «Contar o sumar» alike: `<measure>_<field>` (`sum_importe`,
+ * `max_fecha`), and the measure alone with no field (`count`, a count of rows). Two results of one step with one name,
+ * or a result named like a field it groups by, make the automation invalid (`param.sameName`, AU-120).
+ */
+export const resultName = (measure: string, field?: string): string =>
+  field === undefined ? measure : `${measure}_${field}`;
 const WITH_FIELD = ["sum", "average", "min", "max"] as const;
 const DIRECTION: ParamSpec = {
   key: "direction",
@@ -471,8 +479,7 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
       place: "shown",
       required: true,
       columns: [
-        // The field of the row out that holds the result.
-        { key: "to", control: "value", of: "text", place: "shown", required: true, shape: true },
+        // Its result goes in the field `resultName` gives.
         {
           key: "measure",
           control: "choice",

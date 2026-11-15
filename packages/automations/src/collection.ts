@@ -5,6 +5,7 @@
  * keeps its `origin`, so a later step modifies it or sends it to the trash without searching again (AU-04).
  */
 import type { Labeled } from "@boni/entities";
+import { resultName } from "./catalogue.ts";
 import type { Change, Labelled, StoredRow, WriteResult } from "./effects.ts";
 import type { Executor, RowOut, StepContext, StepOutput } from "./engine.ts";
 import { MAIN, type ParamValue } from "./format.ts";
@@ -187,8 +188,13 @@ const upsert: Executor = {
       { collection, where, sort: [], limit: 2, related: false },
       read,
     );
-    if (found.length > 1)
-      throw new Error(`more than one row of the collection ${collection} matches`);
+    if (found.length > 1) {
+      // It never picks one: it fails saying how many match, which needs a count (only here, not on every row).
+      const [count] = await ctx.gate.aggregate({ collection, where, measure: "count" }, read);
+      throw new Error(
+        `${count?.value ?? found.length} rows of the collection ${collection} match: it modifies one or none`,
+      );
+    }
     const [match] = found;
     return writeAll(
       ctx,
@@ -215,7 +221,8 @@ const trash: Executor = {
   },
 };
 
-// «Contar o sumar»: one row with the result in a field named by the measure, or one per value of `groupBy`.
+// «Contar o sumar»: one row with the result in the field `resultName` gives (as «Agrupar»), or one per value of
+// `groupBy`.
 const aggregate: Executor = {
   mode: "perRow",
   async run(ctx) {
@@ -224,6 +231,10 @@ const aggregate: Executor = {
     const measure = String(raw(ctx, "measure")) as "count" | "sum" | "average" | "min" | "max";
     const field = raw(ctx, "field");
     const groupBy = raw(ctx, "groupBy");
+    const name = resultName(
+      measure,
+      measure !== "count" && typeof field === "string" ? field : undefined,
+    );
     const results = await ctx.gate.aggregate(
       {
         collection: collectionOf(ctx),
@@ -239,7 +250,7 @@ const aggregate: Executor = {
         const out: RowOut = { json: {}, label: r.label };
         if (typeof groupBy === "string")
           setField(out, groupBy, { value: r.group ?? null, label: r.label, derived: false });
-        setField(out, measure, { value: r.value, label: r.label, derived: true });
+        setField(out, name, { value: r.value, label: r.label, derived: true });
         return out;
       }),
     );

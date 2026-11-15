@@ -7,7 +7,7 @@
  * engine is its only caller, and a step's executor receives the gate and never the collections. Every read and every
  * write asks `Policy.decide` first, in a test too, so there is no path that skips the policy to forget.
  */
-import { type FieldType, join, type Label, type Labeled } from "@boni/entities";
+import type { FieldType, Label, Labeled } from "@boni/entities";
 import type { FilterItem } from "@boni/views";
 import type { Cell, FieldLabel, Row, RowOrigin } from "./rows.ts";
 
@@ -228,16 +228,25 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       if (d.kind === "deny") throw new Denied(d.rule, d.reason);
       if (d.kind !== "allow")
         return { kind: "asked", asked: { step: unit.step, kind: d.kind, rule: d.rule, change } };
-      if (!unit.test) return { kind: "applied", row: await collections.apply(change) };
+      if (!unit.test) {
+        const saved = await collections.apply(change);
+        // A change carries values, not their labels: each field written comes out with its value's label, the rest
+        // with the stored row's (what a read of it would give).
+        return {
+          kind: "applied",
+          row: change.kind === "trash" ? saved : over(saved, change.fields, values),
+        };
+      }
       return { kind: "tested", row: await wouldBe(collections, change, values, unit.own) };
     },
   };
 }
 
 /**
- * What a write allowed in a test would leave, with nothing written: a new row with the fields given, each with the
- * label of its value; a modified row as it is saved with those fields over it; a row to the trash as it is. Reading
- * the saved row here is part of the write the policy just allowed, not a read of its own.
+ * What a write allowed in a test would leave, with nothing written: a new row (Juan's, as the store makes it) with
+ * the fields given, each with the label of its value; a modified row as it is saved with those fields over it; a row
+ * to the trash as it is. The labels are the ones a real run gives. Reading the saved row here is part of the write
+ * the policy just allowed, not a read of its own.
  */
 async function wouldBe(
   collections: Collections,
@@ -245,11 +254,7 @@ async function wouldBe(
   values: Labelled,
   own: Label,
 ): Promise<Omit<StoredRow, "origin"> & { origin?: RowOrigin }> {
-  if (change.kind === "create") {
-    const labels = Object.values(values).map((v) => v.label);
-    const [first, ...rest] = [...new Set(labels)];
-    return over({ json: {}, label: first ? join(first, ...rest) : own }, change.fields, values);
-  }
+  if (change.kind === "create") return over({ json: {}, label: own }, change.fields, values);
   const saved = await collections.get(change.row.collection, change.row.id);
   if (!saved || saved.origin.version !== change.row.version)
     throw new Error(`the row ${change.row.id} changed since it was read`);
