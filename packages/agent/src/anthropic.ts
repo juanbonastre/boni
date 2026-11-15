@@ -36,16 +36,28 @@ export class ProviderError extends Error {
  * a 400 `invalid_request_error` covers several causes (a spend limit reached among them), so its message is matched
  * against fixed patterns here, by code, and only the code goes on: the message is text from outside. Anything
  * else is `http-<status>-<type>`, the type without `_error`.
+ *
+ * A spend limit is decided before the status, because it comes as a 400 (a limit the account set: «You have reached
+ * your specified [workspace] API usage limits…») or as a 429 (the tier's monthly limit: «You have reached your API
+ * usage limits…», with `details.error_code` `enforced_spend_limit_reached`), and it does not pass by trying again in
+ * a moment as a rate limit does (the API's rate-limits page, 2026-11-15). Used-up credit is «Your credit balance is
+ * too low…» in a 400 (public reports; the docs do not quote it) or a 402.
  */
 export function refusedCode(
   status: number | undefined,
   type: string | null | undefined,
   message: string,
+  /** The error's `details.error_code`, when the API gives one. */
+  errorCode?: string | null,
 ): string {
   const m = message.slice(0, 2000);
   if (status === 402 || type === "billing_error" || /credit balance|purchase credits/i.test(m))
     return "no-credit";
-  if (/\bspend(?:ing)? (?:limit|cap)\b/i.test(m)) return "spend-limit";
+  if (
+    errorCode === "enforced_spend_limit_reached" ||
+    /\busage limits?\b|\bspend(?:ing)? (?:limit|cap)\b/i.test(m)
+  )
+    return "spend-limit";
   if (status === 401 || type === "authentication_error") return "bad-key";
   if (status === 403 || type === "permission_error") return "forbidden";
   if (status === 404 || type === "not_found_error") return "no-model";
@@ -213,11 +225,16 @@ export class AnthropicProvider implements ModelProvider {
       if (e instanceof Anthropic.APIConnectionTimeoutError) throw new ProviderError("timeout");
       if (e instanceof Anthropic.APIConnectionError) throw new ProviderError("network");
       if (e instanceof Anthropic.APIError) {
-        const body = (e.error as { error?: { type?: unknown; message?: unknown } } | undefined)
-          ?.error;
+        const body = (
+          e.error as
+            | { error?: { type?: unknown; message?: unknown; details?: { error_code?: unknown } } }
+            | undefined
+        )?.error;
         const type = typeof body?.type === "string" ? body.type : (e.type ?? null);
         const message = typeof body?.message === "string" ? body.message : e.message;
-        throw new ProviderError(refusedCode(e.status, type, message), e.message);
+        const errorCode =
+          typeof body?.details?.error_code === "string" ? body.details.error_code : null;
+        throw new ProviderError(refusedCode(e.status, type, message, errorCode), e.message);
       }
       throw new ProviderError("failed");
     }

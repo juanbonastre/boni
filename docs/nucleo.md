@@ -716,7 +716,10 @@ interface ModelProvider {
   `model-http-400` y el motivo se perdía). `refusedCode` (`anthropic.ts`) lo decide por código con el estado HTTP, el
   tipo de error de la API y unas pocas frases fijas de su mensaje (documentación de la API, 2026-11-15). La lista es
   cerrada:
-  - `no-credit`, sin saldo (402, o «credit balance» en un 400) · `spend-limit`, el límite de gasto de la cuenta;
+  - `no-credit`, sin saldo (402, o «credit balance» en un 400);
+  - `spend-limit`, el límite de gasto: uno que puso la cuenta o su espacio de trabajo (un 400 con «usage limits»), o
+    el mensual de su nivel (un 429 con «usage limits» o con `enforced_spend_limit_reached`). Se decide antes que el
+    estado, para que ese 429 no sea `rate-limit`: no pasa por volver a probar en un momento;
   - `too-long`, la petición no cabe (413, o «prompt is too long» en un 400);
   - `bad-option`, una opción que el modelo no acepta (un 400 con «not supported», «extra inputs»…) · `no-model`, un
     modelo que no existe o no está disponible (404);
