@@ -1,12 +1,15 @@
 # Automatizaciones: los flujos, rehechos como en n8n
 
-**Propuesta (2026-11-15). Nada construido.** Juan, 2026-11-15: «quiero algo muy similar a n8n, tanto en funcionalidad
-como manera de interaccionar… que dé mucho control al usuario pero que al mismo tiempo sea usable, no un mar de
-opciones y desplegables arbitrarios… la interfaz es muy importante». Lo que decide él está en el §10; hasta entonces
-nada de esto se construye y la cola no se toca.
+**Decidido por Juan el 2026-11-15: «Sí, las recomendadas»** (las nueve del §10). Nada construido todavía. El arreglo
+de «Antes» es la tarea 124 y las fases son las tareas 125 a 130 (F14a a F16), la 87 (F17), la 88 (F18) y la 89
+(F19) (§8); la cola quedó adaptada ese día como dice el §9.
+
+Propuesta (2026-11-15). Juan: «quiero algo muy similar a n8n, tanto en funcionalidad como manera de interaccionar…
+que dé mucho control al usuario pero que al mismo tiempo sea usable, no un mar de opciones y desplegables
+arbitrarios… la interfaz es muy importante». Lo que decidió está en el §10.
 
 Sustituye el editor y el motor de `docs/flujos.md` (F1–F6) y rehace la parte de flujos de `docs/sistema.md` (F7–F13);
-lo que se queda de los dos está en el §2. Cinco decisiones anteriores cambian, y cada una se pregunta en el §10: el
+lo que se queda de los dos está en el §2. Cinco decisiones anteriores cambian, y cada una está en el §10: el
 JavaScript libre, el sitio de las cajas en el lienzo, que un flujo llame a otro, la forma de «Función» y lo que un
 flujo escribe solo en segundo plano. El resto de la seguridad del núcleo (`docs/nucleo.md` §7) no cambia: el modelo
 sigue sin ser de fiar y toda escritura la sigue decidiendo el código (§6).
@@ -49,7 +52,7 @@ cuando cada punto suyo tiene su prueba.
   páginas; más disparadores y automatizaciones que llaman a otras; paquetes y la IA que propone. Antes, un arreglo
   pequeño: el resumen de la mañana que falla (§8).
 - **Salir fuera no está en estas fases** (peticiones HTTP, webhooks, credenciales, enviar un correo). Es mucho de lo
-  que se hace con n8n y aquí queda para después, con su diseño: lo decide Juan (decisión 9 del §10).
+  que se hace con n8n y aquí queda para después, en una fase propia (F20) con su diseño (decisión 9 del §10).
 
 ## 1. Lo que pidió Juan (2026-11-15)
 
@@ -170,8 +173,8 @@ textos ni iconos: de aquí salen ideas y maneras de trabajar, escritas de nuevo.
 - **Nodos de cientos de servicios**: no se hacen.
 - **Peticiones HTTP, webhooks, credenciales y enviar un correo**: no en estas fases. Una automatización no llama a
   servicios de fuera ni envía un correo hasta que eso tenga su diseño; cuando llegue, entra por la política: el
-  destino lo escribe Juan y se confirma. Es mucho de lo que se hace con n8n, así que lo decide él (decisión 9 del
-  §10).
+  destino lo escribe Juan y se confirma. Es mucho de lo que se hace con n8n: irá después, en una fase propia (F20)
+  con su diseño (decisión 9 del §10).
 - **El bucle clásico del agente**, donde el modelo ve tal cual lo que devuelve cada herramienta: en Boni el modelo
   escribe planes que el código interpreta, y el texto de fuera solo lo leen los lectores en cuarentena (A-01).
 - **Que probar escriba de verdad**: en n8n ejecutar el borrador envía y escribe. En Boni «Probar» ensaya (D-43).
@@ -636,9 +639,9 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
   configuran con lo que hoy dejan cambiar. Por dentro siguen siendo código de Boni (decisión 3a de la tarea 103).
 - **AU-128** (sin fase) · Lo que sale fuera (una petición HTTP, un webhook, enviar un correo) no entra en estas
-  fases: es la decisión 9 del §10. Cuando entre, el destino lo escribe Juan y nunca sale de un dato ni de un modelo
-  (P2), lo que vuelve cuenta como de fuera, y las claves se guardan en el servidor sin que el código ni un modelo las
-  vean.
+  fases: va después, en la F20 (decisión 9 del §10). Cuando entre, el destino lo escribe Juan y nunca sale de un
+  dato ni de un modelo (P2), lo que vuelve cuenta como de fuera, y las claves se guardan en el servidor sin que el
+  código ni un modelo las vean.
 
 ### 5.11 Páginas y toda la app
 
@@ -745,7 +748,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
 | C8 | Control y usable | Las reglas con prueba (AU-75 a AU-87); el boceto; el lienzo se construye primero y Juan lo prueba antes de seguir (F14b) |
 | C9 | La cola | §9 |
 | C10 | Rehacer sin forzar | Formato y motor nuevos (§5.1, §5.2, §7); migración (§5.13) |
-| C11 | Estudiar n8n | §3: lo que se toma, lo que se mejora y lo que no; lo que queda fuera se pregunta (decisión 9 del §10) |
+| C11 | Estudiar n8n | §3: lo que se toma, lo que se mejora y lo que no; lo que queda fuera va después, en una fase propia (decisión 9 del §10) |
 
 ## 6. Seguridad: qué aguanta y qué cambia
 
@@ -856,12 +859,15 @@ sesiones vale Fable o mucho esfuerzo; se usa Fable para abrir cada fase y para l
 El lienzo (F14b) se enseña a Juan en cuanto se puede tocar, antes de seguir: si la forma no le vale, se cambia ahí y
 no cuatro fases después.
 
-Lo que sale fuera (peticiones HTTP, webhooks, credenciales, enviar un correo) no está en estas fases: es la decisión
-9 del §10. Si Juan lo quiere dentro de este bloque, es una fase más junto a la F18, con su diseño antes.
+Lo que sale fuera (peticiones HTTP, webhooks, credenciales, enviar un correo) no está en estas fases (decisión 9 del
+§10): irá después, en una fase propia (F20), con su diseño antes.
+
+Las tareas de la cola (2026-11-15): «Antes» es la 124; la F14a, la 125; la F14b, la 126; la F14c, la 127; la F14d,
+la 128; la F15, la 129; la F16, la 130; la F17, lo abierto de la 87; la F18, la 88; la F19, la 89.
 
 ## 9. La cola, adaptada
 
-Propuesta. No se toca nada hasta que Juan decida.
+Decidido por Juan el 2026-11-15 (decisión 8 del §10) y aplicado a la cola ese día.
 
 | Tarea | Qué le pasa |
 |---|---|
@@ -878,14 +884,17 @@ Propuesta. No se toca nada hasta que Juan decida.
 | **104** Resaltar lo que cambió una escritura | Sigue, después de la F15: cada ejecución ya sabe qué filas tocó (AU-18), que es lo que le faltaba |
 | **11** El Diseñador de páginas | Se aplaza a después de la F17 y se reescribe: será un «Agente» con los pasos de «Página» |
 | **66** Diseños con puntos numerados | Sale del bloque. Este diseño ya está escrito así; la comprobación en `make check` se construye con la F14a |
-| **94**, **81**, **4b** | No son de este bloque. «Traer del banco» (4b) será una automatización de un paquete cuando toque; como sale fuera, depende de la decisión 9 |
+| **94**, **81**, **4b** | No son de este bloque. «Traer del banco» (4b) será una automatización de un paquete cuando toque; como sale fuera, espera a la F20 (decisión 9) |
 
-Tareas nuevas, si Juan dice que sí: el arreglo de «Antes» y una por fase (F14a, F14b, F14c, F14d, F15, F16, F17, F18,
-F19), cada una con su criterio del §8 en la primera línea.
+Tareas nuevas (2026-11-15), cada una con su criterio del §8 en la primera línea: la 124 («Antes») y las 125 a 130
+(F14a, F14b, F14c, F14d, F15 y F16). La F17 es lo abierto de la 87; la F18, la 88; la F19, la 89.
 
 **Orden**: «Antes» → F14a → F14b (Juan prueba el lienzo) → F14c → F14d → F15 → F16 → F17 → F18 → F19.
 
 ## 10. Decisiones de Juan
+
+**Decididas el 2026-11-15: «Sí, las recomendadas».** En las nueve vale la recomendada; la otra se queda escrita para
+que conste lo que se descartó.
 
 Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo que ya decidió.
 
@@ -953,11 +962,11 @@ Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo 
      puede salir de Boni, y se construiría antes de haber probado con sus datos las conexiones y la regla de segundo
      plano.
 
-Menores; si no dice nada, van así: los nombres del código son los de n8n (`$json`, `$input`, `$now`) y los datos
-conservan sus nombres en español; «Publicar» sustituye a «Guardar»; lo que pasa por una flecha se llama «fila»; en
-el teléfono las automatizaciones se ven y se ejecutan, no se editan, como hoy (AU-74).
+Menores; no dijo nada de ellas, así que van así: los nombres del código son los de n8n (`$json`, `$input`, `$now`) y
+los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar»; lo que pasa por una flecha se llama
+«fila»; en el teléfono las automatizaciones se ven y se ejecutan, no se editan, como hoy (AU-74).
 
-## 11. Principios que entrarían o cambiarían (cada uno con su prueba, en el PR de su fase)
+## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
 | Principio | Su prueba | Fase |
 |---|---|---|

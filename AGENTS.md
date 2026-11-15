@@ -12,8 +12,8 @@ Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent
 each thing lives), `docs/fiabilidad.md` (decisions by confidence and cost: do, ask or nothing), `docs/flujos.md` (flows
 as data, F1–F6), `docs/sistema.md` (Boni as a system of flows: what Boni does on its own as flows, the map, one list of
 actions for the app, the AI and the MCP, extensions as packages, pages with values, Boni over the screen; F7–F13),
-`docs/automatizaciones.md` (a proposal, nothing built: flows remade as «Automatizaciones», a graph of steps that pass
-rows, with expressions, code and connections to collections, in the editor and inside pages; F14–F19),
+`docs/automatizaciones.md` (decided 2026-11-15, being built by phases: flows remade as «Automatizaciones», a graph of
+steps that pass rows, with expressions, code and connections to collections, in the editor and inside pages; F14–F19),
 `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
 
 ## Where things are

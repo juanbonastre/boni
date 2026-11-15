@@ -1,5 +1,10 @@
 # Flujos: lo que Boni hace con los modelos, como datos que el usuario edita
 
+**Se sustituye por fases (Juan, 2026-11-15).** Los flujos se rehacen como «Automatizaciones»
+(`docs/automatizaciones.md`, fases F14 a F19): un grafo de pasos por el que pasan filas, con otro editor y otro
+motor. Este documento describe lo que corre hasta que la F16 convierta los flujos; lo que se queda de él está en el
+§2 de aquel.
+
 Propuesta (2026-11-05), a raíz de la vuelta que pidió Juan a «Mis datos» y «Modelos» (tareas 59a y 59b): «todo lo que
 pueda hacer la IA debería ser hecho, eliminado, replicado o modificado por el usuario; estas vistas de diagrama
 deberían permitirle hacer modificaciones del pipeline de los modelos, y lo mismo para la vista de datos»; y, elegida
