@@ -259,7 +259,13 @@ export function citeValue(c: Citation, scope: Scope): Labeled<Cell> {
   if (c.step === null) {
     if (!scope.current) throw new CiteError("noCurrentRow", c);
     row = scope.current;
-  } else row = scope.row(c.step, c.pick);
+  } else
+    try {
+      row = scope.row(c.step, c.pick);
+    } catch (e) {
+      // The scope knows why; the citation is this one.
+      throw e instanceof CiteError ? new CiteError(e.failure, c) : e;
+    }
   return cellOf(row, c.path) ?? { value: null, label: row.label, derived: false };
 }
 

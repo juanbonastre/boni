@@ -248,7 +248,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-05** (F14b, pendiente) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
   una versión ni enciende «Publicar»; un paso sin sitio lo coloca Boni junto al paso del que cuelga; «Ordenar»
   recoloca todo. (Cambia I-26; decisión 2 del §10.)
-- **AU-06** (F14a, pendiente) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
+- **AU-06** (F14a, hecho) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
 - **AU-07** (F14a, hecho) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
   tandas será un paso («Por tandas», F18), no un dibujo. En la F14a lo dice la validación (una automatización
   con un ciclo no es válida) y el motor da la pregunta que el lienzo hará en la F14b: «¿esta flecha cerraría un
@@ -258,14 +258,14 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 
 ### 5.2 Cómo se ejecuta
 
-- **AU-10** (F14a, pendiente) · Un paso se decide cuando han terminado todos los pasos de los que le llega una
+- **AU-10** (F14a, hecho) · Un paso se decide cuando han terminado todos los pasos de los que le llega una
   flecha. Se ejecuta si alguna trae filas; si no, queda «saltado», y lo que cuelga solo de él también. Un paso al
   que no se llega desde el disparador de esta ejecución cuenta como terminado sin filas (AU-06).
-- **AU-11** (F14a, pendiente) · Si a un paso le llegan filas por varias flechas, se juntan en un orden fijo y el paso
+- **AU-11** (F14a, hecho) · Si a un paso le llegan filas por varias flechas, se juntan en un orden fijo y el paso
   corre una vez. No hace falta ningún paso para volver a juntar ramas.
-- **AU-12** (F14a, pendiente) · El orden de ejecución no depende de dónde está dibujado cada paso: dos
+- **AU-12** (F14a, hecho) · El orden de ejecución no depende de dónde está dibujado cada paso: dos
   automatizaciones iguales con las cajas en otro sitio hacen lo mismo, en el mismo orden.
-- **AU-13** (F14a, pendiente) · Cada tipo de paso dice si trabaja «por fila» o «con todas», y el motor da la vuelta.
+- **AU-13** (F14a, hecho) · Cada tipo de paso dice si trabaja «por fila» o «con todas», y el motor da la vuelta.
   Cada fila que sale de un paso «por fila» sabe de qué fila de entrada viene, así que `$('Otro paso').item` siempre
   encuentra la suya; tras un paso «con todas» que rehace las filas, dice que no puede y propone `.first()` o `.all()`.
 - **AU-14** (F14a, pendiente) · Una flecha sin filas no arranca lo que sigue. El ajuste «Seguir sin filas» de un paso
@@ -273,11 +273,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   vacía, como hace n8n. Con una lista vacía, un paso «por fila» que lee o escribe («Crear una fila») corre una vez
   sin fila actual: sus valores fijos valen, y citar `$json` falla diciendo que no hay fila; uno que solo cambia o
   reparte las filas que le llegan («Si», «Filtrar») no da ninguna.
-- **AU-15** (F14a, pendiente) · De cada ejecución se guarda, por paso: su estado (en cola, en marcha, hecho, falló,
+- **AU-15** (F14a, hecho) · De cada ejecución se guarda, por paso: su estado (en cola, en marcha, hecho, falló,
   saltado, parado, esperando), cuántas filas entraron y salieron por cada salida, cuánto tardó, lo que salió y, en
   los pasos de IA, lo que costó. En la F14a el motor devuelve ese registro; guardarlo es de la F14d, el coste
   llega con los pasos de IA (F15) y «esperando», con los pasos que esperan (F15, F18).
-- **AU-16** (F14a, pendiente) · Si falla un paso: «Parar» (por defecto), «Seguir» o «Salir por error», que le añade
+- **AU-16** (F14a, hecho) · Si falla un paso: «Parar» (por defecto), «Seguir» o «Salir por error», que le añade
   una salida «error» con las filas que fallaron y el motivo. Reintentar hasta 5 veces con espera. Lo dice el paso en
   «Ajustes».
 - **AU-17** (F14d, pendiente) · Los límites de una ejecución (pasos, llamadas a modelos, filas escritas, tiempo)
@@ -589,7 +589,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 | «Al subir un archivo» | Un archivo entra en una colección | El archivo | F18 |
 | «Falla una automatización» | Otra falla | Cuál, en qué paso y por qué | F18 |
 
-- **AU-110** (F14a, pendiente) · Un disparador es un paso más, el primero. «Disparado por el usuario» puede declarar
+- **AU-110** (F14a, hecho) · Un disparador es un paso más, el primero. «Disparado por el usuario» puede declarar
   «Campos que pide» (nombre y tipo): son el formulario que sale al ejecutarla y lo que le pasan un botón u otra
   automatización. El formato y el motor lo tienen desde la F14a (con él empiezan sus pruebas); el lienzo lo dibuja
   en la F14b.
@@ -641,9 +641,9 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   no es válida.
 - **AU-122** (F14a, pendiente) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
   automatización.
-- **AU-123** (F14a, pendiente) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
+- **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
-- **AU-124** (F14a, pendiente) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
+- **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
   con todas. Solo hace falta para cruzar; para juntar ramas, no (AU-11).
 - **AU-125** (F15, pendiente) · «Preguntar» pregunta a Juan (opciones o texto). En segundo plano espera con un
   «Límite de espera» a la vista; nunca espera para siempre.
@@ -772,7 +772,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   un intérprete que no guarda nada de una evaluación a otra.
 - **AU-161** (F14c, pendiente) · El código solo lee por las conexiones de su paso. Cada lectura la hace el servidor,
   que comprueba la conexión y su filtro, la cuenta y la etiqueta.
-- **AU-162** (F14a, pendiente) · Una cita sencilla (un campo de la fila actual o de un paso anterior: `$json.importe`,
+- **AU-162** (F14a, hecho) · Una cita sencilla (un campo de la fila actual o de un paso anterior: `$json.importe`,
   `$('Buscar gastos').first().total`; lo que deja arrastrar un campo) la resuelve el servidor, sin caja, y conserva
   la etiqueta exacta de ese campo.
 - **AU-169** (F14c, pendiente) · Todo lo calculado lleva la peor etiqueta de lo que recibió esa evaluación y queda
