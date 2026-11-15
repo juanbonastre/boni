@@ -22,6 +22,14 @@ let dir: string;
 let db: Db;
 let host: AgentHost;
 const servers: Server[] = [];
+/** The apps behind them: `serve` does not close an app, so the teardown does, before the stores (task 123). */
+const apps: { close(): void }[] = [];
+/** An app made here, kept to be closed at the end (its calendars poll their stores every second). */
+function app(o: Parameters<typeof makeApp>[0]): ReturnType<typeof makeApp> {
+  const a = makeApp(o);
+  apps.push(a);
+  return a;
+}
 let tailnet: string;
 let pub: string;
 let pubWithPrivateMe: string;
@@ -65,11 +73,11 @@ beforeAll(async () => {
     boniWebDir: join(dir, "boni-web"),
     guard: new LoginGuard({ perUser: 3, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
   };
-  const app = makeApp(opts);
-  tailnet = await listen(serve(app, "tailnet"));
-  pub = await listen(serve(app, "public"));
+  const main = app(opts);
+  tailnet = await listen(serve(main, "tailnet"));
+  pub = await listen(serve(main, "public"));
   // A second app whose allow-list leaves one route out, to see what the public entry does with it.
-  const strict = makeApp({
+  const strict = app({
     ...opts,
     guard: new LoginGuard(),
     routes: { ...ROUTES, "GET /api/me": "tailnet" },
@@ -77,7 +85,7 @@ beforeAll(async () => {
   pubWithPrivateMe = await listen(serve(strict, "public"));
   noActions = await listen(
     serve(
-      makeApp({ ...opts, guard: new LoginGuard(), actions: new ToolRegistry().freeze() }),
+      app({ ...opts, guard: new LoginGuard(), actions: new ToolRegistry().freeze() }),
       "tailnet",
     ),
   );
@@ -88,6 +96,8 @@ afterAll(async () => {
     s.closeAllConnections();
     await new Promise((r) => s.close(r));
   }
+  // Their calendars before their stores, as the server stops (main.ts).
+  for (const a of apps) a.close();
   host.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });

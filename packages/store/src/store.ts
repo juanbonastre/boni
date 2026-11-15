@@ -291,6 +291,11 @@ export interface UserStore {
   journal: Journal;
   /** Who did and saw what (audit.ts): never readable by `readQuery` nor by any tool of a model. */
   audit: Audit;
+  /**
+   * Runs `fn` when the store closes, before its database does: whatever watches the store on a timer (the calendar's
+   * poll) stops there, so no timer finds the store closed (task 123). Returns a function that takes `fn` back.
+   */
+  onClose(fn: () => void): () => void;
   close(): void;
 }
 
@@ -335,6 +340,8 @@ export interface StoreOptions {
 export function openUserStore(path: string, opts: StoreOptions = {}): UserStore {
   const now = opts.now ?? Date.now;
   const db = new DatabaseSync(path);
+  /** What runs when the store closes, before its database does (`onClose`). */
+  const closers = new Set<() => void>();
   // Another process (the import, a command) may be writing: wait for it instead of failing at once.
   // WAL with synchronous NORMAL: never corrupt, and a commit does not wait for the disk (on the NAS's
   // encrypted volume FULL made the vault import take most of an hour); a power cut can lose the last
@@ -1431,7 +1438,15 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
     },
     journal: openJournal(db),
     audit: openAudit(db, tx),
-    close: () => db.close(),
+    onClose: (fn) => {
+      closers.add(fn);
+      return () => closers.delete(fn);
+    },
+    close: () => {
+      for (const fn of [...closers]) fn();
+      closers.clear();
+      db.close();
+    },
   };
 }
 
