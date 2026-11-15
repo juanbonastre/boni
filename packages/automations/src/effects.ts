@@ -112,9 +112,10 @@ export interface Collections {
   /**
    * Does it and gives the row as saved (for `trash`, as it was). Throws `StepFault` with `row.changed` when the row
    * changed since `row.version`.
-   * All or nothing: when it throws, nothing was written, so trying again (AU-16) never writes twice.
+   * All or nothing: when it throws, nothing was written, so trying again (AU-16) never writes twice. `values`: the
+   * fields written with their labels, as the gate judged them, so each is kept with its own (P17).
    */
-  apply(change: Change): Promise<StoredRow>;
+  apply(change: Change, values: Labelled): Promise<StoredRow>;
 }
 
 // ---------------------------------------------------------------- the gate
@@ -235,7 +236,7 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       if (d.kind !== "allow")
         return { kind: "asked", asked: { step: unit.step, kind: d.kind, rule: d.rule, change } };
       if (!unit.test) {
-        const saved = await collections.apply(change);
+        const saved = await collections.apply(change, values);
         // A change carries values, not their labels: each field written comes out with its value's label, the rest
         // with the stored row's (what a read of it would give).
         return {

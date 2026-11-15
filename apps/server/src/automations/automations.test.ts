@@ -2,10 +2,48 @@
 // real `Collections` and `Policy`, and the test run. Pending: the first PR of the phase brings one test per rule,
 // and the builder turns each into a real one, keeping the rule's id in its name (`make check` reads them). Real
 // tests open a store with the repo's invented seeds (seed.test-util.ts: generated ids, keys and names like Juan's)
-// and, where a rule is about volume, thousands of rows.
-import { describe, expect, it } from "vitest";
+// and, where a rule is about volume, thousands of rows. Bounds on time are in this thread's CPU time (cpu.test-util.ts).
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { decide, type Origin } from "@boni/agent";
+import {
+  type Automation,
+  cellOf,
+  FORMAT,
+  type PolicyCall,
+  renameStep,
+  runTest,
+  StepFault,
+  stepPrints,
+} from "@boni/automations";
+import { label, newId } from "@boni/entities";
+import { openUserStore, type UserStore } from "@boni/store";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { ACTIONS } from "../actions.ts";
+import { cpu } from "../cpu.test-util.ts";
+import { seed } from "../seed.test-util.ts";
+import { storeCollections } from "./collections.ts";
+import { serverDates } from "./dates.ts";
+import { ACTS, actOf, argsOf, runPolicy } from "./policy.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES } from "./routes.ts";
 import * as service from "./service.ts";
+import {
+  automationLabel,
+  automationView,
+  createAutomation,
+  DRAFT_MAX,
+  duplicateAutomation,
+  keepDraft,
+  placeSteps,
+  ROWS_PAGE,
+  type ServiceError,
+  setDeleted,
+  type TestAnswer,
+  testAutomation,
+  testRows,
+  testSample,
+} from "./service.ts";
 
 describe("the contract of the routes (it holds today)", () => {
   it("every route is under the path the apps already allow, runs an action there is, and names a function of the service", () => {
@@ -24,6 +62,162 @@ describe("the contract of the routes (it holds today)", () => {
   });
 });
 
+// ---------------------------------------------------------------- the store and the drafts, as Juan's
+
+const NOW = Date.UTC(2026, 10, 15, 9, 0);
+const HAND = { device: "d_portatil", now: NOW };
+const JUAN = { ...HAND, trust: "personal" as const, zone: "Europe/Madrid" };
+const SEED = label("imported", "public", [{ kind: "vault", id: "seed" }]);
+const OUTSIDE = label("external", "personal", [{ kind: "mail", id: "m_ejemplo" }]);
+const GASTO = "t_gasto";
+
+const dir = mkdtempSync(join(tmpdir(), "boni-automatizaciones-"));
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+let store: UserStore;
+let n = 0;
+beforeEach(() => {
+  store = openUserStore(join(dir, `u${++n}.db`), { now: () => NOW });
+  seed(
+    store,
+    [
+      {
+        key: "gasto",
+        name: "Gasto",
+        folder: "gastos/",
+        fields: { fecha: "date", importe: "number", concepto: "text" },
+      },
+      { key: "proyecto", name: "Proyecto", folder: "proyectos/" },
+    ],
+    {
+      "gastos/cafe.md": '---\nfecha: "2026-11-02"\nimporte: 3\nconcepto: "café"\n---\n# Café\n',
+      "gastos/pan.md": '---\nfecha: "2026-11-03"\nimporte: 2\nconcepto: "pan"\n---\n# Pan\n',
+      "gastos/libro.md": '---\nfecha: "2026-11-04"\nimporte: 18\nconcepto: "libro"\n---\n# Libro\n',
+      "proyectos/casa.md": "# Casa\n",
+    },
+  );
+});
+
+const fieldId = (key: string) => {
+  const f = store.schema().types[GASTO]?.fields.find((x) => x.key === key);
+  if (!f) throw new Error(`no field ${key}`);
+  return f.id;
+};
+
+/** `count` more records of «Gasto», made in one batch as an import would. */
+function bulk(count: number) {
+  const [fecha, importe, concepto] = ["fecha", "importe", "concepto"].map(fieldId) as string[];
+  store.batch(() => {
+    for (let i = 0; i < count; i++)
+      store.create(
+        GASTO,
+        {
+          [fecha as string]: {
+            value: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
+            label: SEED,
+          },
+          [importe as string]: { value: (i * 7) % 100, label: SEED },
+          [concepto as string]: { value: `gasto ${i}`, label: SEED },
+        },
+        { actor: "import", device: "seed" },
+      );
+  });
+}
+
+const stepId = () => newId("o").replace(/^o_/, "s_");
+
+interface Draft {
+  doc: Automation;
+  id(name: string): string;
+}
+
+/** A draft from steps by name and arrows between names, the way the canvas would send it. */
+function draft(
+  steps: readonly [string, string, Record<string, unknown>?, Record<string, unknown>?][],
+  arrows: readonly [string, string, string?, string?][],
+  name = "Revisar gastos",
+): Draft {
+  const ids = new Map(steps.map(([n]) => [n, stepId()]));
+  const id = (n: string) => {
+    const s = ids.get(n);
+    if (!s) throw new Error(`no step ${n}`);
+    return s;
+  };
+  return {
+    id,
+    doc: {
+      format: FORMAT,
+      id: "",
+      version: 0,
+      name,
+      steps: steps.map(([n, type, params, settings]) => ({
+        id: id(n),
+        name: n,
+        type,
+        params: (params ?? {}) as Automation["steps"][number]["params"],
+        ...(settings ? { settings } : {}),
+      })),
+      arrows: arrows.map(([from, to, output, input]) => ({
+        from: { step: id(from), output: output ?? "main" },
+        to: { step: id(to), input: input ?? "main" },
+      })),
+      settings: {},
+    },
+  };
+}
+
+/** «Inicio» (asks for «Mínimo») → «Buscar» (gastos over 10) → «Marcar» (writes «revisado» in each). */
+const reviewing = () =>
+  draft(
+    [
+      ["Inicio", "manual", { fields: [{ key: "minimo", name: "Mínimo", type: "number" }] }],
+      [
+        "Buscar",
+        "collection",
+        {
+          collection: "gasto",
+          action: "find",
+          where: [{ field: "importe", op: "gt", value: 10 }],
+          sort: [{ field: "importe", direction: "desc" }],
+          limit: 5000,
+        },
+      ],
+      [
+        "Marcar",
+        "collection",
+        {
+          collection: "gasto",
+          action: "update",
+          target: "incoming",
+          fields: [{ field: "concepto", value: "revisado" }],
+        },
+      ],
+    ],
+    [
+      ["Inicio", "Buscar"],
+      ["Buscar", "Marcar"],
+    ],
+  );
+
+function ok<T>(x: T | ServiceError): T {
+  if (x && typeof x === "object" && "error" in x && Object.keys(x).length === 1)
+    throw new Error(`service error: ${(x as ServiceError).error}`);
+  return x as T;
+}
+
+/** A new automation with this draft: its view, and its steps by name. */
+function made(d: Draft = reviewing()) {
+  const view = ok(createAutomation(store, d.doc, HAND));
+  return { view, id: view.id, step: d.id, doc: { ...d.doc, id: view.id } };
+}
+
+const opLog = () => store.logPage(0, 1_000_000).length;
+
+/** Timings for the PR (A-15), when BONI_TIMINGS names a file. */
+const timing = (what: string, ms: number) => {
+  if (process.env.BONI_TIMINGS)
+    appendFileSync(process.env.BONI_TIMINGS, `${what}: ${ms.toFixed(1)} ms\n`);
+};
+
 describe("the routes and the list of actions", () => {
   it.todo(
     "AU-168 · every route of AUTOMATION_ROUTES is in ROUTES as tailnet and in ROUTE_RUNS with its action; with a list of actions that lacks it the route is refused (403, P0) before anything runs, the reads too",
@@ -40,18 +234,134 @@ describe("the routes and the list of actions", () => {
 });
 
 describe("where an automation lives", () => {
-  it.todo(
-    "AU-62 · the draft saves itself: the first step creates the automation with its draft, each later save keeps the whole document over the last and answers its new rev, and another device reads what the last one saved",
-  );
-  it.todo(
-    "AU-62 · a draft that is not the format, has another's id or is over 200,000 characters is refused, and one with problems of validate is kept all the same",
-  );
-  it.todo(
-    "AU-62 · «Duplicar» makes a new automation named as told with the same steps, arrows and places and no tests; «Eliminar» takes it off the list and restore brings it back with its draft, places and tests",
-  );
-  it.todo(
-    "AU-05 · the places of the boxes are kept apart from the draft: placing steps changes no rev and makes no test stale, a step with no place has no entry, and a step the draft no longer has loses its place",
-  );
+  it("AU-62 · the draft saves itself: the first step creates the automation with its draft, each later save keeps the whole document over the last and answers its new rev, and another device reads what the last one saved", () => {
+    const first = draft([["Inicio", "manual"]], [], "Nueva automatización");
+    const { view, id, doc } = made(first);
+    expect(view.rev).toBe(1);
+    expect(view.id).toMatch(/^a_[0-9a-z]{26}$/);
+    expect(view.automation.steps.map((s) => s.name)).toEqual(["Inicio"]);
+    expect(view.device).toBe(HAND.device);
+
+    // Each change is the whole document; the answer is the next rev.
+    const named = { ...doc, name: "Revisar gastos" };
+    expect(ok(keepDraft(store, id, named, HAND))).toEqual({ rev: 2, stale: [] });
+    const more = {
+      ...named,
+      steps: [...named.steps, { id: stepId(), name: "Buscar", type: "collection", params: {} }],
+    };
+    expect(ok(keepDraft(store, id, more, { device: "d_telefono", now: NOW + 1000 })).rev).toBe(3);
+
+    // The other device reads what the last save kept, all of it.
+    const read = ok(automationView(store, id));
+    expect(read.rev).toBe(3);
+    expect(read.automation).toEqual(more);
+    expect(read.device).toBe("d_telefono");
+    expect(read.updated).toBe(NOW + 1000);
+    expect(store.journal.automations().map((a) => [a.id, a.name, a.rev])).toEqual([
+      [id, "Revisar gastos", 3],
+    ]);
+  });
+
+  it("AU-62 · a draft that is not the format, has another's id or is over 200,000 characters is refused, and one with problems of validate is kept all the same", () => {
+    const { id, doc } = made();
+    expect(keepDraft(store, id, { ...doc, format: "uno" }, HAND)).toEqual({ error: "bad-request" });
+    expect(keepDraft(store, id, { ...doc, steps: "no" }, HAND)).toEqual({ error: "bad-request" });
+    expect(keepDraft(store, id, null, HAND)).toEqual({ error: "bad-request" });
+    const other = made();
+    expect(keepDraft(store, id, other.doc, HAND)).toEqual({ error: "bad-request" });
+    const huge = { ...doc, name: "x".repeat(DRAFT_MAX) };
+    expect(keepDraft(store, id, huge, HAND)).toEqual({ error: "too-large" });
+    expect(createAutomation(store, huge, HAND)).toEqual({ error: "too-large" });
+    expect(keepDraft(store, "a_nadie", doc, HAND)).toEqual({ error: "not-found" });
+    // Nothing refused was kept.
+    expect(ok(automationView(store, id)).rev).toBe(1);
+
+    // Half made: a «Colección» with no collection and an arrow to nowhere useful is kept.
+    const half = {
+      ...doc,
+      steps: [...doc.steps, { id: stepId(), name: "Sin hacer", type: "collection", params: {} }],
+    };
+    expect(ok(keepDraft(store, id, half, HAND)).rev).toBe(2);
+    expect(ok(automationView(store, id)).automation.steps.map((s) => s.name)).toContain(
+      "Sin hacer",
+    );
+  });
+
+  it("AU-62 · «Duplicar» makes a new automation named as told with the same steps, arrows and places and no tests; «Eliminar» takes it off the list and restore brings it back with its draft, places and tests", async () => {
+    const { id, step } = made();
+    ok(placeSteps(store, id, [{ step: step("Buscar"), x: 300, y: 40 }]));
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    const original = ok(automationView(store, id));
+    expect(Object.keys(original.tests)).toHaveLength(3);
+
+    const copy = ok(duplicateAutomation(store, id, "Revisar gastos (copia)", HAND));
+    expect(copy.id).not.toBe(id);
+    expect(copy.rev).toBe(1);
+    expect(copy.automation.name).toBe("Revisar gastos (copia)");
+    expect(copy.automation.steps).toEqual(original.automation.steps);
+    expect(copy.automation.arrows).toEqual(original.automation.arrows);
+    expect(copy.places).toEqual(original.places);
+    expect(copy.tests).toEqual({});
+    expect(copy.tested).toEqual({});
+
+    ok(setDeleted(store, id, true));
+    expect(store.journal.automations().map((a) => a.id)).toEqual([copy.id]);
+    expect(automationView(store, id)).toEqual({ error: "not-found" });
+    expect(keepDraft(store, id, original.automation, HAND)).toEqual({ error: "not-found" });
+
+    ok(setDeleted(store, id, false));
+    expect(
+      store.journal
+        .automations()
+        .map((a) => a.id)
+        .sort(),
+    ).toEqual([id, copy.id].sort());
+    expect(ok(automationView(store, id))).toEqual(original);
+    expect(setDeleted(store, "a_nadie", true)).toEqual({ error: "not-found" });
+  });
+
+  it("AU-05 · the places of the boxes are kept apart from the draft: placing steps changes no rev and makes no test stale, a step with no place has no entry, and a step the draft no longer has loses its place", async () => {
+    const { id, step, doc } = made();
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    ok(
+      placeSteps(store, id, [
+        { step: step("Inicio"), x: 0, y: 0 },
+        { step: step("Marcar"), x: 600, y: 0 },
+      ]),
+    );
+    ok(placeSteps(store, id, [{ step: step("Marcar"), x: 640, y: 80 }]));
+    const view = ok(automationView(store, id));
+    expect(view.rev).toBe(1);
+    expect(Object.values(view.tests).some((t) => t.stale)).toBe(false);
+    expect(view.places).toEqual(
+      [
+        { step: step("Inicio"), x: 0, y: 0 },
+        { step: step("Marcar"), x: 640, y: 80 },
+      ].sort((a, b) => (a.step < b.step ? -1 : 1)),
+    );
+    // A step the draft lacks is refused, and nothing is placed.
+    expect(placeSteps(store, id, [{ step: "s_nadie", x: 1, y: 1 }])).toEqual({
+      error: "bad-request",
+    });
+    expect(placeSteps(store, id, [{ step: step("Buscar"), x: Number.NaN, y: 1 }])).toEqual({
+      error: "bad-request",
+    });
+
+    // «Marcar» taken away: its place and its test go with it.
+    const without = {
+      ...doc,
+      steps: doc.steps.filter((s) => s.name !== "Marcar"),
+      arrows: doc.arrows.filter((a) => a.to.step !== step("Marcar")),
+    };
+    ok(keepDraft(store, id, without, HAND));
+    const after = ok(automationView(store, id));
+    expect(after.places.map((p) => p.step)).toEqual([step("Inicio")]);
+    expect(Object.keys(after.tests).sort()).toEqual([step("Inicio"), step("Buscar")].sort());
+  });
+
+  // The list is Boni's collection «Flujos» extended with a row per automation (flowsCollection.ts). Its page is
+  // `FlowsView.tsx`, outside `apps/boni-web/src/automations`: a row of an automation there would open today's flow
+  // editor until C1 changes that page, and its six columns and their words are the screen's. So these stay for C1.
   it.todo(
     "AU-61 · the collection «Automatizaciones» has six columns (name, what starts it, state, last run, runs, whose); an automation of the new format says «Sin publicar» with no runs, and one with no trigger says none",
   );
@@ -75,56 +385,836 @@ describe("where an automation lives", () => {
   );
 });
 
+// ---------------------------------------------------------------- the real Collections and the real Policy
+
+const collections = () =>
+  storeCollections(store, { actor: "user", device: HAND.device, zone: JUAN.zone, own: SEED });
+
 describe("the real Collections and the real Policy", () => {
-  it.todo(
-    "AU-04 · a row read from the store knows its record and the version it was read at, and a change to a row that changed since is refused whole",
-  );
-  it.todo(
-    "AU-162 · a row read from the store has its record's label and each field that differs its own: a value that came from outside is still from outside in the row, field by field",
-  );
-  it.todo(
-    "AU-164 · rows read from the store come in the same order twice (the sort, then the id), and a search with conditions over thousands of rows is one query, timed (A-15)",
-  );
-  it.todo(
-    "AU-19 · for each action of «Colección» the real policy answers what decide answers for the list's action that does the same to a record, with the same labelled arguments and origin: the trash is asked about (P5)",
-  );
-  it.todo(
-    "AU-168 · one policy per run counts over the whole run: the policy's own limit of writes stops a test that would write past it",
-  );
+  it("AU-04 · a row read from the store knows its record and the version it was read at, and a change to a row that changed since is refused whole", async () => {
+    const c = collections();
+    const [libro] = await c.find({
+      collection: "gasto",
+      where: [{ field: "importe", op: "gt", value: 10 }],
+      sort: [],
+      limit: 10,
+      related: false,
+    });
+    if (!libro?.origin) throw new Error("no row");
+    const saved = store.get(libro.origin.id);
+    expect(libro.origin).toEqual({
+      collection: "gasto",
+      id: saved?.entity.id,
+      version: saved?.entity.version,
+    });
+    expect(libro.json.concepto).toBe("libro");
+
+    // Juan changes it elsewhere; the automation's change, made from what it read, is refused and writes nothing.
+    store.update(
+      libro.origin.id,
+      { [fieldId("importe")]: { value: 20, label: SEED } },
+      { actor: "user", device: "d_telefono" },
+    );
+    const before = opLog();
+    const change = {
+      kind: "update" as const,
+      row: libro.origin,
+      fields: { concepto: "revisado", importe: 1 },
+    };
+    const refused = await c.apply(change, {}).catch((e) => e);
+    expect(refused).toBeInstanceOf(StepFault);
+    expect((refused as StepFault).failure.code).toBe("row.changed");
+    expect(opLog()).toBe(before);
+    expect(store.get(libro.origin.id)?.entity.values[fieldId("concepto")]).toBe("libro");
+
+    // Read again, at its version, the same change is done.
+    const again = await c.get("gasto", libro.origin.id);
+    if (!again?.origin) throw new Error("no row");
+    const written = await c.apply({ ...change, row: again.origin }, {});
+    expect(written.json).toMatchObject({ concepto: "revisado", importe: 1 });
+    expect(written.origin.version).toBe(again.origin.version + 1);
+  });
+
+  it("AU-162 · a row read from the store has its record's label and each field that differs its own: a value that came from outside is still from outside in the row, field by field", async () => {
+    const [cafe] = store.list(GASTO).filter((e) => e.entity.values[fieldId("concepto")] === "café");
+    if (!cafe) throw new Error("no café");
+    store.update(
+      cafe.entity.id,
+      { [fieldId("concepto")]: { value: "café del correo", label: OUTSIDE } },
+      { actor: "agent" },
+    );
+    const rows = await collections().find({
+      collection: "gasto",
+      where: [],
+      sort: [],
+      limit: 10,
+      related: false,
+    });
+    const row = rows.find((r) => r.origin.id === cafe.entity.id);
+    if (!row) throw new Error("no row");
+    const asRow = { ...row, path: null, parent: null };
+    expect(cellOf(asRow, ["concepto"])?.label.integrity).toBe("external");
+    expect(cellOf(asRow, ["concepto"])?.label.sources).toEqual(OUTSIDE.sources);
+    expect(cellOf(asRow, ["importe"])?.label.integrity).toBe("imported");
+    expect(cellOf(asRow, ["fecha"])?.label.integrity).toBe("imported");
+    // The rows that have the same label share one object (3,000 rows do not make 3,000 labels).
+    bulk(5);
+    const more = await collections().find({
+      collection: "gasto",
+      where: [],
+      sort: [],
+      limit: 50,
+      related: false,
+    });
+    const byLabel = new Map<string, unknown[]>();
+    for (const r of more)
+      byLabel.set(JSON.stringify(r.label), [
+        ...(byLabel.get(JSON.stringify(r.label)) ?? []),
+        r.label,
+      ]);
+    const shared = [...byLabel.values()].filter((ls) => ls.length > 1);
+    expect(shared.length).toBeGreaterThan(0);
+    for (const ls of shared) expect(ls.every((l) => l === ls[0])).toBe(true);
+  });
+
+  it("AU-164 · rows read from the store come in the same order twice (the sort, then the id), and a search with conditions over thousands of rows is one query, timed (A-15)", async () => {
+    bulk(3000);
+    let lists = 0;
+    const counted = new Proxy(store, {
+      get(target, key, receiver) {
+        if (key === "list") lists++;
+        if (key === "get") throw new Error("a search reads no record one by one");
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    const c = storeCollections(counted, {
+      actor: "user",
+      device: HAND.device,
+      zone: JUAN.zone,
+      own: SEED,
+    });
+    const query = {
+      collection: "gasto",
+      where: [
+        { field: "importe", op: "gt" as const, value: 50 },
+        { field: "fecha", op: "after" as const, value: "2026-10-09" },
+      ],
+      sort: [{ field: "importe", direction: "desc" as const }],
+      limit: 5000,
+      related: false,
+    };
+    const start = cpu();
+    const first = await c.find(query);
+    const ms = cpu() - start;
+    timing("a search with two conditions over 3,000 rows", ms);
+    expect(lists).toBe(1);
+    expect(first.length).toBeGreaterThan(500);
+    expect(
+      first.every((r) => Number(r.json.importe) > 50 && String(r.json.fecha) >= "2026-10-10"),
+    ).toBe(true);
+    // By the sort, then by id.
+    for (let i = 1; i < first.length; i++) {
+      const [a, b] = [first[i - 1], first[i]];
+      const d = Number(a?.json.importe) - Number(b?.json.importe);
+      expect(d > 0 || (d === 0 && String(a?.origin.id) < String(b?.origin.id))).toBe(true);
+    }
+    const second = await c.find(query);
+    expect(second.map((r) => r.origin.id)).toEqual(first.map((r) => r.origin.id));
+    expect(ms).toBeLessThan(1500);
+  }, 120_000);
+
+  it("AU-19 · for each action of «Colección» the real policy answers what decide answers for the list's action that does the same to a record, with the same labelled arguments and origin: the trash is asked about (P5)", () => {
+    // Each act is told to the policy as the list's action it mirrors: the same effect, roles, undo and confirmation.
+    for (const [act, tool] of Object.entries(ACTS)) {
+      const listed = ACTIONS.get(tool.name);
+      if (!listed) throw new Error(`no action ${tool.name}`);
+      expect(tool.effect, act).toBe(listed.effect);
+      expect(tool.area, act).toBe(listed.area);
+      expect(tool.alwaysConfirm ?? false, act).toBe(listed.alwaysConfirm ?? false);
+      expect(tool.undo ?? [], act).toEqual(listed.undo ?? []);
+      for (const [arg, spec] of Object.entries(tool.args))
+        expect(listed.args[arg]?.role, `${act}.${arg}`).toBe(spec.role);
+    }
+    const own = automationLabel("a_ejemplo");
+    const call = (over: Partial<PolicyCall>): PolicyCall => ({
+      automation: { id: "a_ejemplo", version: 0 },
+      step: "s_ejemplo",
+      type: "collection",
+      action: "find",
+      effect: "read",
+      destroys: false,
+      collection: "gasto",
+      values: {},
+      control: null,
+      test: true,
+      ...over,
+    });
+    const juan = label("user", "personal", [{ kind: "user-edit", id: "device:d_portatil" }]);
+    const calls: Record<string, PolicyCall> = {
+      find: call({ values: { "where.0": { value: 10, label: juan, derived: false } } }),
+      get: call({
+        action: "get",
+        values: { id: { value: "e_ejemplo", label: own, derived: false } },
+      }),
+      create: call({
+        action: "create",
+        effect: "write",
+        values: { concepto: { value: "café", label: juan, derived: false } },
+      }),
+      createFromOutside: call({
+        action: "create",
+        effect: "write",
+        values: { concepto: { value: "café", label: OUTSIDE, derived: false } },
+      }),
+      update: call({
+        action: "update",
+        effect: "write",
+        rows: 1,
+        values: { concepto: { value: "revisado", label: own, derived: false } },
+      }),
+      updateUnderOutside: call({
+        action: "update",
+        effect: "write",
+        rows: 1,
+        control: OUTSIDE,
+        values: { concepto: { value: "revisado", label: own, derived: false } },
+      }),
+      trash: call({ action: "trash", effect: "write", destroys: true, rows: 1 }),
+    };
+    const origins: Origin[] = [
+      { kind: "hand", trust: "personal", device: "d_portatil" },
+      { kind: "turn", trust: "personal" },
+      { kind: "turn", trust: "shared" },
+      { kind: "background", trust: "ambient" },
+      { kind: "assistant", trust: "personal" },
+      { kind: "miniapp", trust: "personal" },
+    ];
+    const seen = new Set<string>();
+    for (const origin of origins)
+      for (const [what, c] of Object.entries(calls)) {
+        const real = runPolicy(origin, own).decide(c);
+        const listed = ACTIONS.get(ACTS[actOf(c)].name);
+        if (!listed) throw new Error("no action");
+        const same = decide(
+          {
+            tool: listed,
+            args: argsOf(c, own),
+            control: c.control,
+            flow: true,
+            dry: c.test,
+            ...(c.rows !== undefined ? { rows: c.rows } : {}),
+          },
+          origin,
+          { writes: 0, sensitiveReads: 0 } as Parameters<typeof decide>[2],
+        );
+        expect(real, `${origin.kind}/${origin.trust} ${what}`).toEqual(same);
+        seen.add(`${what}:${real.kind}`);
+      }
+    // Not one answer for everything: the trash is asked about where it is not Juan's own tap.
+    expect(
+      runPolicy({ kind: "turn", trust: "personal" }, own).decide(calls.trash as PolicyCall).kind,
+    ).toBe("confirm");
+    expect(seen.size).toBeGreaterThan(Object.keys(calls).length);
+  });
+
+  it("AU-168 · one policy per run counts over the whole run: the policy's own limit of writes stops a test that would write past it", async () => {
+    // By Juan's hand the policy answers P25 and counts nothing (his tap is the confirmation): a run that is not his
+    // hand is where the limit is, so the test is run as a turn of his would be.
+    bulk(30);
+    const own = automationLabel("a_ejemplo");
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          { collection: "gasto", action: "find", where: [], sort: [], limit: 100 },
+        ],
+        [
+          "Marcar",
+          "collection",
+          {
+            collection: "gasto",
+            action: "update",
+            target: "incoming",
+            fields: [{ field: "concepto", value: "x" }],
+          },
+          { onError: "continue" },
+        ],
+      ],
+      [
+        ["Inicio", "Buscar"],
+        ["Buscar", "Marcar"],
+      ],
+    );
+    const a = { ...d.doc, id: "a_ejemplo" };
+    const policy = runPolicy({ kind: "turn", trust: "personal" }, own);
+    const before = opLog();
+    const e = await runTest(
+      {
+        automation: a,
+        trigger: d.id("Inicio"),
+        fields: { json: {}, label: own },
+        prints: stepPrints(a, {}, (t) => t),
+      },
+      {
+        policy,
+        collections: collections(),
+        clock: { now: () => NOW, zone: JUAN.zone, sleep: async () => {} },
+        dates: serverDates,
+        own,
+        locale: "es",
+      },
+    );
+    const marcar = e.steps[d.id("Marcar")];
+    // 33 rows; the run's limit lets 20 through, and the rest wait for Juan: none is written.
+    expect(marcar?.in.main).toBe(33);
+    expect(marcar?.out.main).toHaveLength(20);
+    expect(marcar?.asked).toBe(13);
+    expect(e.asked).toHaveLength(13);
+    expect(policy.count.writes).toBe(20);
+    expect(opLog()).toBe(before);
+  });
 });
 
+// ---------------------------------------------------------------- «Probar» and «Probar paso»
+
+const tested = async (id: string, request: Parameters<typeof testAutomation>[2]) =>
+  ok(await testAutomation(store, id, request, JUAN)) as TestAnswer;
+
 describe("«Probar» and «Probar paso»", () => {
-  it.todo(
-    "AU-90 · «Probar» reads and computes for real on the store and writes nothing: the operation log is as long after it as before, nothing is proposed or notified and no run is left in the journal",
-  );
-  it.todo(
-    "AU-90 · a step that would write gives the row it would make, with the saved row as it is now for «Haría esto», and what follows goes on with it",
-  );
-  it.todo(
-    "AU-91 · «Probar paso» runs that step and what it lacks, takes the rest from the kept tests, and answers which ran and which were reused; the kept test of a step that did not run is untouched",
-  );
-  it.todo(
-    "AU-92 · a save of the draft answers the steps whose kept test is stale, and the view marks them; moving a box or renaming a step marks none",
-  );
-  it.todo(
-    "AU-94 · a test of «Disparado por el usuario» takes the fields it declares, labelled as Juan's from his device: one it lacks is null, one it does not declare is refused, and the view offers the last ones again, read from the row the trigger gave in its kept test",
-  );
-  it.todo(
-    "AU-115 · an automation is tested by hand whatever its trigger: the test starts in the trigger named, with the fields that trigger declares",
-  );
-  it.todo(
-    "AU-64 · an automation with problems is not tested: the answer is invalid with each problem's step and parameter, and nothing kept changes",
-  );
-  it.todo(
-    "AU-67 · after a test every step the trigger reaches has its state and its rows in and out by output, an unconnected output too; a step that failed says why and the ones that hung from it are skipped",
-  );
-  it.todo(
-    "AU-71 · the rows that came into a step are served 50 at a time with their total, each with its label and the fields that came from outside",
-  );
-  it.todo(
-    "AU-72 · the rows of each output of a step are served 50 at a time from the kept chunks: a page of a test of 3,000 rows does not read the other rows, timed (A-15)",
-  );
-  it.todo(
-    "AU-84 · a step that fails because of a parameter names it: the error carries the parameter's path as validation writes one",
-  );
+  it("AU-90 · «Probar» reads and computes for real on the store and writes nothing: the operation log is as long after it as before, nothing is proposed or notified and no run is left in the journal", async () => {
+    bulk(3000);
+    const { id, step } = made();
+    const log = opLog();
+    const values = store.list(GASTO).map((e) => JSON.stringify(e.entity.values));
+    const start = cpu();
+    const answer = await tested(id, { trigger: step("Inicio"), fields: { minimo: 10 } });
+    timing(
+      "«Probar» of «Buscar» → «Marcar» over 3,000 rows (reads, would-writes, kept)",
+      cpu() - start,
+    );
+    expect(answer.state).toBe("done");
+    // It read for real: every «Gasto» over 10, sorted.
+    const over = store
+      .list(GASTO)
+      .filter((e) => Number(e.entity.values[fieldId("importe")]) > 10).length;
+    expect(answer.tests[step("Buscar")]?.out.main).toBe(over);
+    expect(answer.tests[step("Marcar")]?.wouldWrite).toBe(over);
+    // And wrote nothing, proposed nothing and left no run.
+    expect(opLog()).toBe(log);
+    expect(store.list(GASTO).map((e) => JSON.stringify(e.entity.values))).toEqual(values);
+    expect(store.journal.proposals()).toEqual([]);
+    expect(store.journal.runs()).toEqual([]);
+  }, 120_000);
+
+  it("AU-90 · a step that would write gives the row it would make, with the saved row as it is now for «Haría esto», and what follows goes on with it", async () => {
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          {
+            collection: "gasto",
+            action: "find",
+            where: [{ field: "importe", op: "gt", value: 10 }],
+            sort: [],
+            limit: 10,
+          },
+        ],
+        [
+          "Marcar",
+          "collection",
+          {
+            collection: "gasto",
+            action: "update",
+            target: "incoming",
+            fields: [{ field: "concepto", value: "revisado" }],
+          },
+        ],
+        [
+          "Nuevo",
+          "collection",
+          {
+            collection: "gasto",
+            action: "create",
+            fields: [
+              { field: "concepto", value: "nuevo" },
+              { field: "importe", value: 1 },
+            ],
+          },
+        ],
+        ["Después", "edit", { fields: [{ field: "visto", value: "sí" }] }],
+      ],
+      [
+        ["Inicio", "Buscar"],
+        ["Buscar", "Marcar"],
+        ["Marcar", "Después"],
+        ["Inicio", "Nuevo"],
+      ],
+    );
+    const { id, step } = made(d);
+    const answer = await tested(id, { trigger: step("Inicio"), fields: {} });
+    expect(answer.state).toBe("done");
+    const out = ok(
+      testRows(store, id, {
+        step: step("Marcar"),
+        side: "out",
+        name: "main",
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    expect(out.total).toBe(1);
+    expect(out.rows[0]).toMatchObject({
+      json: { concepto: "revisado", importe: 18 },
+      would: "update",
+      before: { concepto: "libro", importe: 18, fecha: "2026-11-04" },
+    });
+    const created = ok(
+      testRows(store, id, { step: step("Nuevo"), side: "out", name: "main", offset: 0, limit: 50 }),
+    );
+    expect(created.rows[0]).toMatchObject({
+      json: { concepto: "nuevo", importe: 1 },
+      would: "create",
+      before: null,
+    });
+    // What follows goes on with the row as it would be.
+    const after = ok(
+      testRows(store, id, {
+        step: step("Después"),
+        side: "out",
+        name: "main",
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    expect(after.rows[0]?.json).toMatchObject({ concepto: "revisado", visto: "sí" });
+    expect(after.rows[0]?.would).toBeUndefined();
+    // The saved one is as it was.
+    const libro = store.list(GASTO).find((e) => e.entity.values[fieldId("importe")] === 18);
+    expect(libro?.entity.values[fieldId("concepto")]).toBe("libro");
+  });
+
+  it("AU-91 · «Probar paso» runs that step and what it lacks, takes the rest from the kept tests, and answers which ran and which were reused; the kept test of a step that did not run is untouched", async () => {
+    const { id, step, doc } = made();
+    const first = await tested(id, { trigger: step("Inicio"), fields: { minimo: 5 } });
+    expect(first.ran).toEqual([step("Inicio"), step("Buscar"), step("Marcar")]);
+    const keptBuscar = store.journal.automationTests(id).find((t) => t.step === step("Buscar"));
+
+    // «Marcar» changes, and is tested alone, later: «Inicio» and «Buscar» are taken as they were.
+    const changed = structuredClone(doc);
+    const marcar = changed.steps.find((s) => s.name === "Marcar");
+    if (!marcar) throw new Error("no step");
+    marcar.params.fields = [{ field: "concepto", value: "visto" }];
+    ok(keepDraft(store, id, changed, HAND));
+    let reads = 0;
+    const realList = store.list.bind(store);
+    store.list = ((...args: Parameters<UserStore["list"]>) => {
+      reads++;
+      return realList(...args);
+    }) as UserStore["list"];
+    const second = ok(
+      await testAutomation(
+        store,
+        id,
+        { trigger: step("Inicio"), fields: { minimo: 5 }, step: step("Marcar") },
+        { ...JUAN, now: NOW + 60_000 },
+      ),
+    ) as TestAnswer;
+    expect(second.ran).toEqual([step("Marcar")]);
+    expect(second.reused).toEqual([step("Inicio"), step("Buscar")]);
+    expect(reads).toBe(0);
+    expect(store.journal.automationTests(id).find((t) => t.step === step("Buscar"))).toEqual(
+      keptBuscar,
+    );
+    const rows = ok(
+      testRows(store, id, { step: step("Marcar"), side: "out", name: "main", offset: 0, limit: 1 }),
+    );
+    expect(rows.rows[0]?.json.concepto).toBe("visto");
+    expect(second.tests[step("Marcar")]?.at).toBe(NOW + 60_000);
+    expect(second.tests[step("Buscar")]?.at).toBe(NOW);
+
+    // Other fields for the trigger: its print changes, so everything runs again.
+    const third = await tested(id, {
+      trigger: step("Inicio"),
+      fields: { minimo: 7 },
+      step: step("Marcar"),
+    });
+    expect(third.ran).toEqual([step("Inicio"), step("Buscar"), step("Marcar")]);
+    expect(third.reused).toEqual([]);
+  });
+
+  it("AU-92 · a save of the draft answers the steps whose kept test is stale, and the view marks them; moving a box or renaming a step marks none", async () => {
+    // 300 steps: «Inicio», «Buscar» and a chain of 298 «Editar campos».
+    bulk(3000);
+    const chain: [string, string, Record<string, unknown>][] = Array.from(
+      { length: 298 },
+      (_, i) => [`Paso ${i + 1}`, "edit", { fields: [{ field: `campo${i + 1}`, value: i + 1 }] }],
+    );
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          { collection: "gasto", action: "find", where: [], sort: [], limit: 50 },
+        ],
+        ...chain,
+      ],
+      [
+        ["Inicio", "Buscar"],
+        ["Buscar", "Paso 1"],
+        ...chain.slice(1).map((c, i) => [`Paso ${i + 1}`, c[0]] as [string, string]),
+      ],
+    );
+    const { id, step, doc } = made(d);
+    expect(doc.steps).toHaveLength(300);
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+
+    // Moving a box and renaming a step (its citations rewritten) make nothing stale.
+    ok(placeSteps(store, id, [{ step: step("Paso 5"), x: 10, y: 10 }]));
+    const renamed = renameStep(doc, step("Paso 5"), "Quinto");
+    expect(ok(keepDraft(store, id, renamed, HAND)).stale).toEqual([]);
+
+    // A parameter of «Paso 150» changes: it and every step after it are stale, the ones before are not.
+    const changed = structuredClone(renamed);
+    const p150 = changed.steps.find((s) => s.name === "Paso 150");
+    if (!p150) throw new Error("no step");
+    p150.params.fields = [{ field: "campo150", value: "otro" }];
+    const start = cpu();
+    const saved = ok(keepDraft(store, id, changed, HAND));
+    const ms = cpu() - start;
+    timing("a save of a draft of 300 steps, with the stale steps it answers", ms);
+    const expected = Array.from({ length: 149 }, (_, i) => step(`Paso ${i + 150}`)).sort();
+    expect(saved.stale).toEqual(expected);
+    const view = ok(automationView(store, id));
+    expect(
+      Object.entries(view.tests)
+        .filter(([, t]) => t.stale)
+        .map(([s]) => s)
+        .sort(),
+    ).toEqual(expected);
+    expect(ms).toBeLessThan(1000);
+  }, 120_000);
+
+  it("AU-94 · a test of «Disparado por el usuario» takes the fields it declares, labelled as Juan's from his device: one it lacks is null, one it does not declare is refused, and the view offers the last ones again, read from the row the trigger gave in its kept test", async () => {
+    const d = draft(
+      [
+        [
+          "Inicio",
+          "manual",
+          {
+            fields: [
+              { key: "minimo", name: "Mínimo", type: "number" },
+              { key: "nota", name: "Nota", type: "text" },
+            ],
+          },
+        ],
+      ],
+      [],
+    );
+    const { id, step } = made(d);
+    const answer = await tested(id, { trigger: step("Inicio"), fields: { minimo: 12 } });
+    expect(answer.state).toBe("done");
+    const [row] = ok(
+      testRows(store, id, { step: step("Inicio"), side: "out", name: "main", offset: 0, limit: 1 }),
+    ).rows;
+    expect(row?.json).toEqual({ minimo: 12, nota: null });
+    expect(row?.label).toEqual(
+      label("user", "personal", [{ kind: "user-edit", id: "device:d_portatil" }]),
+    );
+    expect(ok(automationView(store, id)).tested).toEqual({
+      [step("Inicio")]: { minimo: 12, nota: null },
+    });
+
+    // A field it does not declare: nothing runs and nothing kept changes.
+    const refused = await tested(id, { trigger: step("Inicio"), fields: { otro: 1 } });
+    expect(refused.state).toBe("invalid");
+    expect(refused.ran).toEqual([]);
+    expect(ok(automationView(store, id)).tested).toEqual({
+      [step("Inicio")]: { minimo: 12, nota: null },
+    });
+  });
+
+  it("AU-115 · an automation is tested by hand whatever its trigger: the test starts in the trigger named, with the fields that trigger declares", async () => {
+    const d = draft(
+      [
+        ["Desde el móvil", "manual", { fields: [{ key: "a", name: "A", type: "text" }] }],
+        ["Desde el portátil", "manual", { fields: [{ key: "b", name: "B", type: "number" }] }],
+        ["Juntar", "edit", { fields: [{ field: "visto", value: true }] }],
+      ],
+      [
+        ["Desde el móvil", "Juntar"],
+        ["Desde el portátil", "Juntar"],
+      ],
+    );
+    const { id, step } = made(d);
+    const answer = await tested(id, { trigger: step("Desde el portátil"), fields: { b: 2 } });
+    expect(answer.state).toBe("done");
+    expect(answer.ran).toEqual([step("Desde el portátil"), step("Juntar")]);
+    expect(answer.tests[step("Desde el móvil")]).toBeUndefined();
+    const [row] = ok(
+      testRows(store, id, { step: step("Juntar"), side: "out", name: "main", offset: 0, limit: 1 }),
+    ).rows;
+    expect(row?.json).toEqual({ b: 2, visto: true });
+    // The other trigger's field is not this one's.
+    expect(
+      (await tested(id, { trigger: step("Desde el portátil"), fields: { a: "x" } })).state,
+    ).toBe("invalid");
+    expect(
+      await testAutomation(store, id, { trigger: step("Juntar"), fields: {} }, JUAN),
+    ).toMatchObject({ state: "invalid" });
+  });
+
+  it("AU-64 · an automation with problems is not tested: the answer is invalid with each problem's step and parameter, and nothing kept changes", async () => {
+    const { id, step, doc } = made();
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    const kept = store.journal.automationTests(id);
+    const broken = structuredClone(doc);
+    const buscar = broken.steps.find((s) => s.name === "Buscar");
+    if (!buscar) throw new Error("no step");
+    delete buscar.params.collection;
+    ok(keepDraft(store, id, broken, HAND));
+    const keptAfterSave = store.journal.automationTests(id);
+    const answer = await tested(id, { trigger: step("Inicio"), fields: {} });
+    expect(answer.state).toBe("invalid");
+    expect(answer.ran).toEqual([]);
+    expect(
+      answer.problems.some(
+        (p) => p.step === step("Buscar") && p.param === "collection" && p.severity === "error",
+      ),
+    ).toBe(true);
+    expect(store.journal.automationTests(id)).toEqual(keptAfterSave);
+    expect(keptAfterSave).toEqual(kept);
+  });
+
+  it("AU-67 · after a test every step the trigger reaches has its state and its rows in and out by output, an unconnected output too; a step that failed says why and the ones that hung from it are skipped", async () => {
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          { collection: "gasto", action: "find", where: [], sort: [], limit: 10 },
+        ],
+        ["Si", "if", { where: [{ field: "importe", op: "gt", value: 10 }] }],
+        ["Caros", "edit", { fields: [{ field: "caro", value: true }] }],
+        [
+          "Leer",
+          "collection",
+          { collection: "gasto", action: "get", row: "e_00000000000000000000000000" },
+        ],
+        ["Tras leer", "edit", { fields: [{ field: "x", value: 1 }] }],
+      ],
+      [
+        ["Inicio", "Buscar"],
+        ["Buscar", "Si"],
+        ["Si", "Caros", "yes"],
+        ["Caros", "Leer"],
+        ["Leer", "Tras leer"],
+      ],
+    );
+    const { id, step } = made(d);
+    const answer = await tested(id, { trigger: step("Inicio"), fields: {} });
+    const t = answer.tests;
+    expect(t[step("Buscar")]).toMatchObject({ state: "done", in: { main: 1 }, out: { main: 3 } });
+    // «no» goes nowhere: its count is still there.
+    expect(t[step("Si")]).toMatchObject({ state: "done", in: { main: 3 }, out: { yes: 1, no: 2 } });
+    expect(t[step("Caros")]).toMatchObject({ state: "done", in: { main: 1 }, out: { main: 1 } });
+    expect(answer.state).toBe("failed");
+    expect(answer.failedAt).toBe(step("Leer"));
+    expect(t[step("Leer")]?.state).toBe("failed");
+    expect(t[step("Leer")]?.error?.failure?.code).toBe("row.missing");
+    // The run stops at the failure: the step that hung from it was not decided. The engine (F14a) calls that
+    // «stopped» («parado»); the design's word in this sentence is «saltado» (see the PR).
+    expect(t[step("Tras leer")]?.state).toBe("stopped");
+    expect(t[step("Tras leer")]?.out).toEqual({});
+  });
+
+  it("AU-71 · the rows that came into a step are served 50 at a time with their total, each with its label and the fields that came from outside", async () => {
+    bulk(120);
+    const [cafe] = store.list(GASTO).filter((e) => e.entity.values[fieldId("concepto")] === "café");
+    if (!cafe) throw new Error("no café");
+    store.update(
+      cafe.entity.id,
+      { [fieldId("concepto")]: { value: "café del correo", label: OUTSIDE } },
+      { actor: "agent" },
+    );
+    const { id, step } = made();
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    const into = (offset: number, limit = 50) =>
+      ok(testRows(store, id, { step: step("Marcar"), side: "in", name: "main", offset, limit }));
+    const total = ok(automationView(store, id)).tests[step("Marcar")]?.in.main ?? 0;
+    expect(total).toBeGreaterThan(ROWS_PAGE * 2);
+    const pages = [into(0), into(50), into(100)];
+    expect(pages.map((p) => p.total)).toEqual([total, total, total]);
+    expect(pages.map((p) => p.rows.length)).toEqual([50, 50, total - 100]);
+    // Never more than a page, whatever is asked.
+    expect(into(0, 500).rows).toHaveLength(ROWS_PAGE);
+    // The same rows «Buscar» gave, in its order.
+    const out = ok(
+      testRows(store, id, {
+        step: step("Buscar"),
+        side: "out",
+        name: "main",
+        offset: 50,
+        limit: 50,
+      }),
+    );
+    expect(pages[1]?.rows).toEqual(out.rows);
+    const all = pages.flatMap((p) => p.rows);
+    expect(all.every((r) => r.label.integrity === "imported")).toBe(true);
+    // «Café» is under 10 and not here; «Libro» is, all its own. A field from outside is marked as such.
+    const ownMarked = all.filter((r) => r.fields);
+    expect(ownMarked).toEqual([]);
+    bulk(0);
+    store.update(
+      (
+        store.list(GASTO).find((e) => e.entity.values[fieldId("concepto")] === "libro") as {
+          entity: { id: string };
+        }
+      ).entity.id,
+      { [fieldId("concepto")]: { value: "libro del correo", label: OUTSIDE } },
+      { actor: "agent" },
+    );
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    const marked = [into(0), into(50), into(100)]
+      .flatMap((p) => p.rows)
+      .filter((r) => r.fields?.concepto);
+    expect(marked.map((r) => [r.json.concepto, r.fields?.concepto?.integrity])).toEqual([
+      ["libro del correo", "external"],
+    ]);
+  });
+
+  it("AU-72 · the rows of each output of a step are served 50 at a time from the kept chunks: a page of a test of 3,000 rows does not read the other rows, timed (A-15)", async () => {
+    bulk(3000);
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          { collection: "gasto", action: "find", where: [], sort: [], limit: 5000 },
+        ],
+      ],
+      [["Inicio", "Buscar"]],
+    );
+    const { id, step } = made(d);
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: {} }, JUAN));
+    const total = 3003;
+    // Each output's rows are kept in chunks of 50.
+    expect(store.journal.automationTestRows(id, step("Buscar"), "main", 0, 10_000)).toHaveLength(
+      total,
+    );
+    // Timed over 100 pages, as one is under the clock's grain.
+    const start = cpu();
+    for (let i = 0; i < 100; i++)
+      testRows(store, id, {
+        step: step("Buscar"),
+        side: "out",
+        name: "main",
+        offset: (i * 29) % 2950,
+        limit: 50,
+      });
+    const ms = (cpu() - start) / 100;
+    timing("a page of 50 rows of a kept test of 3,003 rows (mean of 100)", ms);
+    const page = ok(
+      testRows(store, id, {
+        step: step("Buscar"),
+        side: "out",
+        name: "main",
+        offset: 2950,
+        limit: 50,
+      }),
+    );
+    expect(page.total).toBe(total);
+    expect(page.rows).toHaveLength(50);
+    // The last page: what is left.
+    expect(
+      ok(
+        testRows(store, id, {
+          step: step("Buscar"),
+          side: "out",
+          name: "main",
+          offset: 3000,
+          limit: 50,
+        }),
+      ).rows,
+    ).toHaveLength(3);
+    // One chunk read for a page that falls in one: the store's read is by chunk.
+    let parsed = 0;
+    const realParse = JSON.parse;
+    JSON.parse = ((text: string, ...rest: []) => {
+      parsed += text.length;
+      return realParse(text, ...rest);
+    }) as typeof JSON.parse;
+    try {
+      testRows(store, id, {
+        step: step("Buscar"),
+        side: "out",
+        name: "main",
+        offset: 1500,
+        limit: 50,
+      });
+    } finally {
+      JSON.parse = realParse;
+    }
+    const keptRecords = store.journal.automationTests(id).reduce((n, t) => n + t.record.length, 0);
+    const oneChunk = JSON.stringify(
+      store.journal.automationTestRows(id, step("Buscar"), "main", 1500, 50),
+    ).length;
+    expect(parsed).toBeLessThan((oneChunk + keptRecords) * 3);
+    expect(ms).toBeLessThan(20);
+  }, 120_000);
+
+  it("AU-84 · a step that fails because of a parameter names it: the error carries the parameter's path as validation writes one", async () => {
+    const [libro] = store
+      .list(GASTO)
+      .filter((e) => e.entity.values[fieldId("concepto")] === "libro");
+    if (!libro) throw new Error("no libro");
+    store.remove(libro.entity.id, { actor: "user" });
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        ["Leer", "collection", { collection: "gasto", action: "get", row: libro.entity.id }],
+      ],
+      [["Inicio", "Leer"]],
+    );
+    const { id, step } = made(d);
+    const answer = await tested(id, { trigger: step("Inicio"), fields: {} });
+    expect(answer.state).toBe("failed");
+    expect(answer.tests[step("Leer")]?.error?.failure).toMatchObject({
+      code: "row.missing",
+      param: "row",
+    });
+    // Kept: the editor reads it again from the view.
+    expect(ok(automationView(store, id)).tests[step("Leer")]?.error?.failure?.param).toBe("row");
+  });
+
+  it("the sample of a step («Probar paso»'s expressions) is its first row in and, for each step before it, the row it comes from and the first and last", async () => {
+    const { id, step } = made();
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: { minimo: 1 } }, JUAN));
+    const sample = ok(testSample(store, id, step("Marcar")));
+    const buscar = ok(
+      testRows(store, id, {
+        step: step("Buscar"),
+        side: "out",
+        name: "main",
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    expect(sample.total).toBe(buscar.total);
+    expect(sample.current).toEqual(buscar.rows[0]);
+    expect(sample.steps.Buscar?.item).toEqual(buscar.rows[0]);
+    expect(sample.steps.Buscar?.first).toEqual(buscar.rows[0]);
+    expect(sample.steps.Buscar?.last).toEqual(buscar.rows[buscar.total - 1]);
+    // Each row «Buscar» gives comes from «Inicio»'s one row.
+    expect(sample.steps.Inicio?.item?.json).toEqual({ minimo: 1 });
+    expect(sample.steps.Inicio?.first?.json).toEqual({ minimo: 1 });
+    expect(sample.steps.Marcar).toBeUndefined();
+    expect(testSample(store, id, "s_nadie")).toEqual({ error: "bad-request" });
+  });
 });
