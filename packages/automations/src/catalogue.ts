@@ -1,0 +1,818 @@
+/**
+ * The catalogue of step types, as data (docs/automatizaciones.md §5.10): what each type is, its actions, what each
+ * action does to the data (reads, writes, destroys: AU-19), whether it works row by row or with all the rows (AU-13),
+ * its inputs and outputs (AU-03) and its parameters, declared so that the canvas can paint them with the same few
+ * controls (AU-80) and a test can count them (AU-75). There is no other list: the policy's effect, the map and the
+ * list of actions are read from here.
+ *
+ * F14a: «Disparado por el usuario» and the steps of Datos, Transformar and Lógica. Nothing here is text for a person:
+ * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
+ */
+import { ACTION, MAIN, OUT, type Step } from "./format.ts";
+import { notBuilt } from "./pending.ts";
+
+export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+/**
+ * The controls every step is made of (AU-80). Seven of the nine: F14c adds the code editor and the connections'
+ * table. A step type cannot bring a control of its own.
+ */
+export const CONTROLS = [
+  "value",
+  "choice",
+  "toggle",
+  "list",
+  "conditions",
+  "fields",
+  "picker",
+] as const;
+export type Control = (typeof CONTROLS)[number];
+
+/** Where a field to choose or to fill comes from: the step's collection, or the rows that arrive by an input. */
+export type FieldsOf = { of: "collection" } | { of: "input"; input: string };
+
+interface ParamBase {
+  key: string;
+  /**
+   * `shown`: in sight when the step opens. `option`: behind «Añadir opción» (AU-76). `hidden`: never painted (the
+   * fixed id of a list's row).
+   */
+  place: "shown" | "option" | "hidden";
+  /** Without it the step is not valid. */
+  required?: true;
+  /**
+   * It gives the step its shape: a fixed value, never an expression, so the map knows it before any run (AU-26).
+   * On a list: its rows are fixed (how many, and their `shape` columns); the other columns may hold expressions.
+   */
+  shape?: true;
+  /** It changes which rows come out or where: never `option` (AU-77), and what it reads marks the path (AU-164). */
+  changesRows?: true;
+  /** Painted, and counted, only while that parameter (a `shape` one) holds one of these values. */
+  when?: { param: string; in: readonly string[] };
+  /** What it holds in a new step. */
+  default?: string | number | boolean;
+}
+
+export type ParamSpec = ParamBase &
+  (
+    | { control: "value"; of: "text" | "number" | "date" | "any" }
+    /** One of `options` (keys), or one field. */
+    | { control: "choice"; options: readonly string[] | FieldsOf }
+    | { control: "toggle" }
+    /** Rows that Juan adds, each with these columns; `min` rows at least. */
+    | { control: "list"; columns: readonly ParamSpec[]; min?: number }
+    /** The views' filter (AU-81) over those fields; `min` conditions at least (AU-121). */
+    | { control: "conditions"; over: FieldsOf; min?: number }
+    /** The fields of a row: only the ones Juan adds, each with the control of its type (AU-121). */
+    | { control: "fields"; over: FieldsOf }
+    /** A selector (F17 and F18 add `automation` and `block`). */
+    | { control: "picker"; of: "collection" | "row" | "step" }
+  );
+
+export interface ActionSpec {
+  /** `RUN` in a type with one action. */
+  key: string;
+  /** What it does to the saved data: nothing (it works on the rows that pass), read or write. */
+  effect: "none" | "read" | "write";
+  /** A write that takes something away (to the trash: AU-122). The policy asks before (P5). */
+  destroys: boolean;
+  /**
+   * `perRow`: the engine calls it once per row that arrives, and each row out knows the one it comes from.
+   * `all`: once, with every row (AU-13).
+   */
+  mode: "perRow" | "all";
+  /**
+   * Whether a row out still knows its input row, so `$('Step').item` finds its own across this step: always in
+   * `perRow`; in `all`, only where the same rows pass on (sort, limit, remove duplicates), not where they are remade.
+   */
+  pairs: boolean;
+  /**
+   * Its outputs, in order. `rules`: one per row of the parameter `rules` (by its `id`), then `OUT.other` when
+   * `fallback` says so («Elegir rama»). «error» is not listed: any step gains it with «Salir por error» (AU-16).
+   */
+  outputs: readonly string[] | "rules";
+  /** After the type's own, in the order they are painted. */
+  params: readonly ParamSpec[];
+}
+
+export interface StepTypeSpec {
+  type: string;
+  category: Category;
+  /** Its inputs: none for a trigger, `MAIN` for the rest, two with names for «Combinar» (AU-124). */
+  inputs: readonly string[];
+  /** Parameters every action shares, painted first («Colección»: the collection, AU-120). */
+  params: readonly ParamSpec[];
+  /** One or more. With several, the step has one more `shape` parameter, `ACTION`, painted after `params`. */
+  actions: readonly ActionSpec[];
+}
+
+/** The key of the only action of a type with one. */
+export const RUN = "run";
+/** The two inputs of «Combinar». */
+export const IN = { main: MAIN, a: "a", b: "b" } as const;
+
+const INPUT: FieldsOf = { of: "input", input: MAIN };
+const COLLECTION: FieldsOf = { of: "collection" };
+const MEASURES = ["count", "sum", "average", "min", "max"] as const;
+const WITH_FIELD = ["sum", "average", "min", "max"] as const;
+const DIRECTION: ParamSpec = {
+  key: "direction",
+  control: "choice",
+  options: ["asc", "desc"],
+  place: "shown",
+  default: "asc",
+};
+/** Where a «Fecha» action leaves its result: a field of the row, the rest of the row as it was. */
+const TO: ParamSpec = { key: "to", control: "value", of: "text", place: "shown", required: true };
+const DATE: ParamSpec = {
+  key: "date",
+  control: "value",
+  of: "date",
+  place: "shown",
+  required: true,
+};
+const UNITS = ["minutes", "hours", "days", "weeks", "months", "years"] as const;
+/**
+ * «Las filas que llegan» or «Las que cumplan…» (AU-121): fixed, so validation can ask for the condition. Like every
+ * action of «Colección» it works row by row: «Las que cumplan…» searches once per row that arrives (its conditions
+ * may cite it), and once with no row when the step runs with an empty list (AU-14).
+ */
+const TARGET: ParamSpec = {
+  key: "target",
+  control: "choice",
+  options: ["incoming", "matching"],
+  place: "shown",
+  shape: true,
+  changesRows: true,
+  default: "incoming",
+};
+const TARGET_WHERE: ParamSpec = {
+  key: "where",
+  control: "conditions",
+  over: COLLECTION,
+  min: 1,
+  place: "shown",
+  required: true,
+  changesRows: true,
+  when: { param: "target", in: ["matching"] },
+};
+
+const transform = (
+  type: string,
+  mode: ActionSpec["mode"],
+  pairs: boolean,
+  params: readonly ParamSpec[],
+): StepTypeSpec => ({
+  type,
+  category: "transform",
+  inputs: [MAIN],
+  params: [],
+  actions: [{ key: RUN, effect: "none", destroys: false, mode, pairs, outputs: [MAIN], params }],
+});
+
+const dateAction = (key: string, params: readonly ParamSpec[]): ActionSpec => ({
+  key,
+  effect: "none",
+  destroys: false,
+  mode: "perRow",
+  pairs: true,
+  outputs: [MAIN],
+  params,
+});
+
+const collectionAction = (
+  key: string,
+  effect: "read" | "write",
+  params: readonly ParamSpec[],
+  destroys = false,
+): ActionSpec => ({ key, effect, destroys, mode: "perRow", pairs: true, outputs: [MAIN], params });
+
+export const CATALOGUE: readonly StepTypeSpec[] = [
+  // ------------------------------------------------------------ Disparadores (§5.9)
+  {
+    // «Disparado por el usuario» (AU-110). It gives one row: the «Campos que pide», with what it was started with.
+    type: "manual",
+    category: "trigger",
+    inputs: [],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "all",
+        pairs: false,
+        outputs: [MAIN],
+        params: [
+          {
+            key: "fields",
+            control: "list",
+            place: "shown",
+            shape: true,
+            columns: [
+              {
+                key: "key",
+                control: "value",
+                of: "text",
+                place: "hidden",
+                required: true,
+                shape: true,
+              },
+              {
+                key: "name",
+                control: "value",
+                of: "text",
+                place: "shown",
+                required: true,
+                shape: true,
+              },
+              {
+                key: "type",
+                control: "choice",
+                options: ["text", "number", "checkbox", "date", "datetime"],
+                place: "shown",
+                required: true,
+                shape: true,
+                default: "text",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ Datos
+  {
+    // «Colección»: the collection and the action first, and from them the rest (AU-120).
+    type: "collection",
+    category: "data",
+    inputs: [MAIN],
+    params: [
+      {
+        key: "collection",
+        control: "picker",
+        of: "collection",
+        place: "shown",
+        required: true,
+        shape: true,
+      },
+    ],
+    actions: [
+      // «Buscar filas»
+      collectionAction("find", "read", [
+        {
+          key: "where",
+          control: "conditions",
+          over: COLLECTION,
+          place: "shown",
+          changesRows: true,
+        },
+        {
+          key: "sort",
+          control: "list",
+          place: "shown",
+          columns: [
+            {
+              key: "field",
+              control: "choice",
+              options: COLLECTION,
+              place: "shown",
+              required: true,
+            },
+            DIRECTION,
+          ],
+        },
+        {
+          key: "limit",
+          control: "value",
+          of: "number",
+          place: "shown",
+          required: true,
+          changesRows: true,
+          default: 50,
+        },
+        // «Incluir relacionadas»: one level.
+        { key: "related", control: "toggle", place: "option", default: false },
+      ]),
+      // «Leer una fila»
+      collectionAction("get", "read", [
+        {
+          key: "row",
+          control: "picker",
+          of: "row",
+          place: "shown",
+          required: true,
+          changesRows: true,
+        },
+      ]),
+      // «Crear una fila»
+      collectionAction("create", "write", [
+        { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+      ]),
+      // «Modificar filas»
+      collectionAction("update", "write", [
+        TARGET,
+        TARGET_WHERE,
+        { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+      ]),
+      // «Crear o modificar»: the row whose `match` fields hold the same values is modified; with none, one is created.
+      collectionAction("upsert", "write", [
+        {
+          key: "match",
+          control: "list",
+          min: 1,
+          place: "shown",
+          required: true,
+          changesRows: true,
+          columns: [
+            {
+              key: "field",
+              control: "choice",
+              options: COLLECTION,
+              place: "shown",
+              required: true,
+            },
+          ],
+        },
+        { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+      ]),
+      // «Eliminar filas»: to the trash, always (AU-122).
+      collectionAction("trash", "write", [TARGET, TARGET_WHERE], true),
+      // «Contar o sumar»: one row with the result, or one per value of `groupBy`.
+      collectionAction("aggregate", "read", [
+        {
+          key: "where",
+          control: "conditions",
+          over: COLLECTION,
+          place: "shown",
+          changesRows: true,
+        },
+        {
+          key: "measure",
+          control: "choice",
+          options: MEASURES,
+          place: "shown",
+          required: true,
+          shape: true,
+          default: "count",
+        },
+        {
+          key: "field",
+          control: "choice",
+          options: COLLECTION,
+          place: "shown",
+          required: true,
+          when: { param: "measure", in: WITH_FIELD },
+        },
+        {
+          key: "groupBy",
+          control: "choice",
+          options: COLLECTION,
+          place: "shown",
+          changesRows: true,
+        },
+      ]),
+    ],
+  },
+
+  // ------------------------------------------------------------ Transformar
+  // «Editar campos»: sets fields of each row; `keep` says whether the other fields stay.
+  transform("edit", "perRow", true, [
+    { key: "fields", control: "fields", over: INPUT, place: "shown", required: true },
+    { key: "keep", control: "choice", options: ["all", "none"], place: "shown", default: "all" },
+  ]),
+  // «Filtrar»
+  transform("filter", "perRow", true, [
+    {
+      key: "where",
+      control: "conditions",
+      over: INPUT,
+      min: 1,
+      place: "shown",
+      required: true,
+      changesRows: true,
+    },
+  ]),
+  // «Ordenar»
+  transform("sort", "all", true, [
+    {
+      key: "by",
+      control: "list",
+      min: 1,
+      place: "shown",
+      required: true,
+      columns: [
+        { key: "field", control: "choice", options: INPUT, place: "shown", required: true },
+        DIRECTION,
+      ],
+    },
+  ]),
+  // «Limitar»
+  transform("limit", "all", true, [
+    {
+      key: "count",
+      control: "value",
+      of: "number",
+      place: "shown",
+      required: true,
+      changesRows: true,
+    },
+    {
+      key: "from",
+      control: "choice",
+      options: ["first", "last"],
+      place: "shown",
+      changesRows: true,
+      default: "first",
+    },
+  ]),
+  // «Quitar duplicados»: rows equal in every field, or in the ones named.
+  transform("dedupe", "all", true, [
+    {
+      key: "by",
+      control: "choice",
+      options: ["all", "fields"],
+      place: "shown",
+      shape: true,
+      changesRows: true,
+      default: "all",
+    },
+    {
+      key: "fields",
+      control: "list",
+      min: 1,
+      place: "shown",
+      required: true,
+      changesRows: true,
+      when: { param: "by", in: ["fields"] },
+      columns: [
+        { key: "field", control: "choice", options: INPUT, place: "shown", required: true },
+      ],
+    },
+  ]),
+  // «Agrupar»: one row per group, with the fields grouped by and one field per measure. With no `by`, one row.
+  transform("group", "all", false, [
+    {
+      key: "by",
+      control: "list",
+      place: "shown",
+      changesRows: true,
+      columns: [
+        { key: "field", control: "choice", options: INPUT, place: "shown", required: true },
+      ],
+    },
+    {
+      key: "measures",
+      control: "list",
+      min: 1,
+      place: "shown",
+      required: true,
+      columns: [
+        // The field of the row out that holds the result.
+        { key: "to", control: "value", of: "text", place: "shown", required: true, shape: true },
+        {
+          key: "measure",
+          control: "choice",
+          options: [...MEASURES, "list"],
+          place: "shown",
+          required: true,
+          shape: true,
+          default: "count",
+        },
+        // Not for `count`.
+        { key: "field", control: "choice", options: INPUT, place: "shown" },
+      ],
+    },
+  ]),
+  // «Separar una lista»: one row per item of a field that holds a list, each knowing the row it comes from.
+  transform("split", "perRow", true, [
+    {
+      key: "field",
+      control: "choice",
+      options: INPUT,
+      place: "shown",
+      required: true,
+      changesRows: true,
+    },
+    { key: "keep", control: "choice", options: ["all", "none"], place: "shown", default: "all" },
+  ]),
+  // «Juntar en una»: one row; each field holds the list of its values, or one field holds every row.
+  transform("join", "all", false, [
+    {
+      key: "into",
+      control: "choice",
+      options: ["fields", "rows"],
+      place: "shown",
+      shape: true,
+      default: "fields",
+    },
+    {
+      key: "to",
+      control: "value",
+      of: "text",
+      place: "shown",
+      required: true,
+      shape: true,
+      when: { param: "into", in: ["rows"] },
+    },
+  ]),
+  {
+    // «Fecha»: date arithmetic, done by the injected `Dates` (effects.ts), with Juan's time zone.
+    type: "date",
+    category: "transform",
+    inputs: [MAIN],
+    params: [],
+    actions: [
+      // «Sumar o restar»
+      dateAction("add", [
+        DATE,
+        { key: "amount", control: "value", of: "number", place: "shown", required: true },
+        {
+          key: "unit",
+          control: "choice",
+          options: UNITS,
+          place: "shown",
+          required: true,
+          default: "days",
+        },
+        TO,
+      ]),
+      // «Diferencia»
+      dateAction("diff", [
+        DATE,
+        { key: "until", control: "value", of: "date", place: "shown", required: true },
+        {
+          key: "unit",
+          control: "choice",
+          options: UNITS,
+          place: "shown",
+          required: true,
+          default: "days",
+        },
+        TO,
+      ]),
+      // «Principio de»
+      dateAction("startOf", [
+        DATE,
+        {
+          key: "unit",
+          control: "choice",
+          options: ["day", "week", "month", "year"],
+          place: "shown",
+          required: true,
+          default: "month",
+        },
+        TO,
+      ]),
+      // «Sacar una parte»
+      dateAction("part", [
+        DATE,
+        {
+          key: "part",
+          control: "choice",
+          options: ["year", "month", "day", "weekday", "week", "hour", "minute"],
+          place: "shown",
+          required: true,
+          default: "month",
+        },
+        TO,
+      ]),
+      // «Dar formato»
+      dateAction("format", [
+        DATE,
+        {
+          key: "format",
+          control: "choice",
+          options: ["date", "dateLong", "time", "dateTime", "weekday", "month", "iso"],
+          place: "shown",
+          required: true,
+          default: "date",
+        },
+        TO,
+      ]),
+    ],
+  },
+  {
+    // «Combinar»: only to cross two lists of rows; joining branches needs no step (AU-11, AU-124).
+    type: "combine",
+    category: "transform",
+    inputs: [IN.a, IN.b],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "all",
+        pairs: false,
+        outputs: [MAIN],
+        params: [
+          // By a field, by position, or every row with every row.
+          {
+            key: "by",
+            control: "choice",
+            options: ["field", "position", "all"],
+            place: "shown",
+            required: true,
+            shape: true,
+            changesRows: true,
+            default: "field",
+          },
+          {
+            key: "fieldA",
+            control: "choice",
+            options: { of: "input", input: IN.a },
+            place: "shown",
+            required: true,
+            changesRows: true,
+            when: { param: "by", in: ["field"] },
+          },
+          {
+            key: "fieldB",
+            control: "choice",
+            options: { of: "input", input: IN.b },
+            place: "shown",
+            required: true,
+            changesRows: true,
+            when: { param: "by", in: ["field"] },
+          },
+          // Which rows come out: only the ones that match, every row of «a», or every row of both.
+          {
+            key: "keep",
+            control: "choice",
+            options: ["matches", "a", "both"],
+            place: "shown",
+            changesRows: true,
+            default: "matches",
+            when: { param: "by", in: ["field", "position"] },
+          },
+        ],
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------ Lógica
+  {
+    // «Si»: two outputs, «sí» and «no» (AU-123).
+    type: "if",
+    category: "logic",
+    inputs: [MAIN],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "perRow",
+        pairs: true,
+        outputs: [OUT.yes, OUT.no],
+        params: [
+          {
+            key: "where",
+            control: "conditions",
+            over: INPUT,
+            min: 1,
+            place: "shown",
+            required: true,
+            changesRows: true,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // «Elegir rama»: one output per rule and, in sight, what happens when none matches and whether the first
+    // rule that matches takes the row or all of them do (AU-123).
+    type: "switch",
+    category: "logic",
+    inputs: [MAIN],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "perRow",
+        pairs: true,
+        outputs: "rules",
+        params: [
+          {
+            key: "rules",
+            control: "list",
+            min: 1,
+            place: "shown",
+            required: true,
+            shape: true,
+            changesRows: true,
+            columns: [
+              // The output's name in the arrows: fixed, like a step's id.
+              {
+                key: "id",
+                control: "value",
+                of: "text",
+                place: "hidden",
+                required: true,
+                shape: true,
+              },
+              {
+                key: "name",
+                control: "value",
+                of: "text",
+                place: "shown",
+                required: true,
+                shape: true,
+              },
+              {
+                key: "where",
+                control: "conditions",
+                over: INPUT,
+                min: 1,
+                place: "shown",
+                required: true,
+              },
+            ],
+          },
+          {
+            key: "fallback",
+            control: "choice",
+            options: ["none", "other"],
+            place: "shown",
+            shape: true,
+            changesRows: true,
+            default: "none",
+          },
+          {
+            key: "match",
+            control: "choice",
+            options: ["first", "all"],
+            place: "shown",
+            shape: true,
+            changesRows: true,
+            default: "first",
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // «Parar con error»: the run stops there, failed, with this message.
+    type: "stop",
+    category: "logic",
+    inputs: [MAIN],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "all",
+        pairs: false,
+        outputs: [],
+        params: [{ key: "message", control: "value", of: "text", place: "shown", required: true }],
+      },
+    ],
+  },
+];
+
+// ---------------------------------------------------------------- reading it
+
+/** A type of the catalogue by its key. */
+export const stepType = (type: string): StepTypeSpec | undefined =>
+  CATALOGUE.find((t) => t.type === type);
+
+/**
+ * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when
+ * its type is not in the catalogue, or its action is missing, an expression (AU-26) or not one of its type's.
+ */
+export function actionOf(step: Step): ActionSpec | undefined {
+  const spec = stepType(step.type);
+  if (!spec) return undefined;
+  if (spec.actions.length === 1) return spec.actions[0];
+  const key = step.params[ACTION];
+  return typeof key === "string" ? spec.actions.find((a) => a.key === key) : undefined;
+}
+
+/**
+ * The parameters a step shows as it is now: its type's, `ACTION` where there are several, then its action's whose
+ * `when` holds. What AU-75 counts (`place: "shown"`) and what validation walks.
+ */
+export function paramsOf(_step: Step): ParamSpec[] {
+  return notBuilt("paramsOf");
+}
+
+/**
+ * The names of a step's outputs as it is now, in the catalogue's order: its action's (for `rules`, the rules' ids and
+ * then `OUT.other` when `fallback` is "other"), and last `OUT.error` when its settings say «Salir por error» (AU-16).
+ * Empty when the step has no valid action.
+ */
+export function outputsOf(_step: Step): string[] {
+  return notBuilt("outputsOf");
+}
+
+/** The names of a step's inputs: its type's. Empty for a trigger or an unknown type. */
+export const inputsOf = (step: Step): readonly string[] => stepType(step.type)?.inputs ?? [];
+
+/** Whether a step starts an automation (AU-110): a step of the category `trigger`. */
+export const isTrigger = (step: Step): boolean => stepType(step.type)?.category === "trigger";

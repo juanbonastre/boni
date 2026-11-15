@@ -57,6 +57,9 @@ with the same click fixed twice, was «todo un poco liado»):
    - Before a phase or task is called finished (its PR, the design's phase table, the CHANGELOG), an agent that did
      not build it compares the design's section with the change, point by point: done, partly, missing. Its table
      goes in the PR; what is missing goes in the CHANGELOG and into the queue. How: `docs/agents/conformance.md`.
+   - A design with numbered rules (`docs/automatizaciones.md`) says each rule's phase and state and each phase's
+     «Estado», and `make check` holds them to the tests (T-10; `make rules` lists what is left): a phase's first PR
+     brings one pending test per rule, the rule's id in its name, and a rule is «hecho» only with a test that runs.
    - Merged with CI green, a phase or task is «en main». There is no list of things for Juan to try (Juan,
      2026-11-11: he tries the whole app when it is ready): a task whose only thing left is his trial leaves the
      queue as hecha, its state saying «en main; Juan la prueba con la app entera». Only something important (it
@@ -109,7 +112,7 @@ calls for five messages, context near a million; the cost was re-reading, not te
   `packages/calendar/src/time.ts`; no `Date` local getters in UI code.
 - The model is untrusted: it writes plans that code interprets, and every call goes through the policy engine (A-01).
   Text from a model or from outside is painted as plain text, never as HTML, Markdown or links.
-- The core (`packages/entities`, `store`, `agent`, `views`) depends on no app (A-02).
+- The core (`packages/entities`, `store`, `agent`, `views`, `automations`) depends on no app (A-02).
 - Server: every route is listed in `apps/server/src/routes.ts` and is tailnet-only unless made public on purpose
   (A-03). Node only strips types there, so no parameter properties or enums in the files it loads (`write.test.ts`).
   Files and copies are streamed, never read whole into memory (the container has 384 MB). Every download made on
