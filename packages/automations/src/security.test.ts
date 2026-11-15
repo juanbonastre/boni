@@ -348,6 +348,14 @@ describe("labels and the policy", () => {
         ],
       },
       Eliminar: { [ACTION]: "trash", ...target },
+      // A new row with a fixed value and one from outside: only that one has a label of its own.
+      Crear: {
+        [ACTION]: "create",
+        fields: [
+          { field: mine, value: "nueva" },
+          { field: note, value: cite("$json.llega") },
+        ],
+      },
     };
     for (const test of [false, true])
       for (const [name, params] of Object.entries(steps)) {
@@ -375,6 +383,7 @@ describe("labels and the policy", () => {
               ? undefined
               : { [note]: outside },
         );
+        if (name === "Crear") expect(row?.json, why).toEqual({ [mine]: "nueva", [note]: "x" });
       }
   });
 });
