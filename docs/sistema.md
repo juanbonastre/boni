@@ -5,6 +5,11 @@ pantalla es `Ctrl+E`, no `Ctrl+J` (§4.7). Las fases F7 a F13 son las tareas 83 
 en main desde el 2026-11-05 y F8 (el mapa) en main y hecha desde el 2026-11-06, con lo que Juan vio al probarla (la
 90; §4.4, «Cómo quedó»).
 
+**Su parte de flujos se rehace (Juan, 2026-11-15)** como «Automatizaciones» (`docs/automatizaciones.md`, fases F14 a
+F19). Lo que este documento dice de los flujos describe lo que corre hasta que llegue cada fase, y lo que se queda
+de él está en el §2 de aquel. De sus fases: lo abierto de la F11 (tarea 87) es la F17 de allí; la F12 (tarea 88), la
+F18; la F13 (tarea 89), la F19.
+
 Propuesta (2026-11-05). Juan: «Creo que la aplicación de Boni ha crecido bastante y de una forma poco
 planificada, sobre todo por mi parte… Hasta ahora hemos metido la vista de flujos y modelos de la aplicación pero no
 me convence». Y durante la revisión: «también quiero que pienses si tiene sentido hablar de extensiones como tal, ya
