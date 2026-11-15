@@ -16,6 +16,7 @@ import type {
   StoredRow,
 } from "./effects.ts";
 import { type Execution, type RunDeps, run } from "./engine.ts";
+import { StepFault } from "./failures.ts";
 import { type Automation, MAIN } from "./format.ts";
 import type { Cell, Row } from "./rows.ts";
 import { compare, measure } from "./steps.ts";
@@ -247,7 +248,9 @@ export function store(
       const { rows, i } = find(collection, change.row.id);
       const saved = rows[i];
       if (!saved || saved.origin.version !== change.row.version)
-        throw new Error(`the row ${change.row.id} changed since it was read`);
+        throw new StepFault(`the row ${change.row.id} changed since it was read`, {
+          code: "row.changed",
+        });
       applied.push(change);
       if (change.kind === "trash") {
         rows.splice(i, 1);

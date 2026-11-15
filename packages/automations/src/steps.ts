@@ -9,6 +9,7 @@ import { type DatabaseFilter, type FilterItem, matchesFilters } from "@boni/view
 import { IN, paramsOf, paramValue, resultName } from "./catalogue.ts";
 import type { DateUnit } from "./effects.ts";
 import type { Executor, RowOut, StepContext, StepOutput } from "./engine.ts";
+import { StepFault } from "./failures.ts";
 import { isExpr, MAIN, OUT, type ParamValue } from "./format.ts";
 import type { Cell, FieldLabel, Row } from "./rows.ts";
 
@@ -195,10 +196,17 @@ export function measure(m: Measure, values: readonly Cell[]): Cell {
         : [],
     ),
   );
-  if (currencies.size > 1) throw new Error(`cannot ${m} amounts in different currencies`);
+  if (currencies.size > 1)
+    throw new StepFault(`cannot ${m} amounts in different currencies`, {
+      code: "value.type",
+      detail: { needs: "sameCurrency" },
+    });
   for (const v of present)
     if (typeof v !== "number" && !currencies.size)
-      throw new Error(`cannot ${m} a value that is not a number`);
+      throw new StepFault(`cannot ${m} a value that is not a number`, {
+        code: "value.type",
+        detail: { needs: "number" },
+      });
   const total = present.reduce<number>((s, v) => s + amountOf(v), 0);
   const result = m === "sum" ? total : present.length ? total / present.length : null;
   const [currency] = [...currencies];
@@ -265,7 +273,11 @@ const limit: Executor = {
     const rows = input[MAIN] ?? [];
     const count = param(ctx, "count").value;
     if (typeof count !== "number" || !Number.isInteger(count) || count < 0)
-      throw new Error("the count is not a whole number of rows");
+      throw new StepFault("the count is not a whole number of rows", {
+        code: "value.type",
+        param: "count",
+        detail: { needs: "whole" },
+      });
     const start = raw(ctx, "from") === "last" ? Math.max(0, rows.length - count) : 0;
     return one(rows.slice(start, start + count).map((r, k) => copy(r, start + k)));
   },
@@ -348,7 +360,12 @@ const split: Executor = {
     const field = String(raw(ctx, "field"));
     const list = row.json[field];
     if (list === undefined || list === null) return one([]);
-    if (!Array.isArray(list)) throw new Error(`the field ${field} does not hold a list`);
+    if (!Array.isArray(list))
+      throw new StepFault(`the field ${field} does not hold a list`, {
+        code: "value.type",
+        param: "field",
+        detail: { needs: "list", field },
+      });
     const keep = raw(ctx, "keep") === "all";
     const label = fieldLabel(row, field);
     return one(
@@ -427,7 +444,12 @@ const unit = (ctx: StepContext) => String(raw(ctx, "unit")) as DateUnit;
 const DATE_ACTIONS: Record<string, Executor> = {
   add: dateAction((ctx, d) => {
     const amount = param(ctx, "amount");
-    if (typeof amount.value !== "number") throw new Error("the amount is not a number");
+    if (typeof amount.value !== "number")
+      throw new StepFault("the amount is not a number", {
+        code: "value.type",
+        param: "amount",
+        detail: { needs: "number" },
+      });
     return derivedOf(ctx.dates.add(d.value, amount.value, unit(ctx), ctx.zone), d, amount);
   }),
   diff: dateAction((ctx, d) => {

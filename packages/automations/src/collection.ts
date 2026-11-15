@@ -8,6 +8,7 @@ import type { Labeled } from "@boni/entities";
 import { resultName } from "./catalogue.ts";
 import type { Change, Labelled, StoredRow, WriteResult } from "./effects.ts";
 import type { Executor, RowOut, StepContext, StepOutput } from "./engine.ts";
+import { StepFault } from "./failures.ts";
 import { MAIN, type ParamValue } from "./format.ts";
 import type { Cell, Row, RowOrigin } from "./rows.ts";
 import { filterOf, raw, setField } from "./steps.ts";
@@ -56,9 +57,13 @@ function fieldsOf(ctx: StepContext): { fields: Record<string, Cell>; values: Lab
 }
 
 /** A count that is a whole number, zero or more. */
-function wholeNumber(v: Cell, what: string): number {
+function wholeNumber(v: Cell, what: string, param: string): number {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 0)
-    throw new Error(`${what} is not a whole number`);
+    throw new StepFault(`${what} is not a whole number`, {
+      code: "value.type",
+      param,
+      detail: { needs: "whole" },
+    });
   return v;
 }
 
@@ -80,7 +85,11 @@ async function targets(ctx: StepContext, row: Row | null): Promise<RowOrigin[]> 
   // With an empty list there is no row to act on (AU-14).
   if (!row) return [];
   if (row.origin?.collection !== collection)
-    throw new Error(`the row that arrives is not a saved row of the collection ${collection}`);
+    throw new StepFault(`the row that arrives is not a saved row of the collection ${collection}`, {
+      code: "row.notSaved",
+      param: "target",
+      detail: { collection },
+    });
   return [row.origin];
 }
 
@@ -116,7 +125,7 @@ const find: Executor = {
         collection: collectionOf(ctx),
         where,
         sort,
-        limit: wholeNumber(limit.value, "the limit"),
+        limit: wholeNumber(limit.value, "the limit", "limit"),
         related: raw(ctx, "related") === true,
       },
       values,
@@ -131,10 +140,19 @@ const get: Executor = {
   async run(ctx) {
     const id = ctx.value(raw(ctx, "row") ?? null);
     if (typeof id.value !== "string" || !id.value)
-      throw new Error("the row to read is not a row id");
+      throw new StepFault("the row to read is not a row id", {
+        code: "value.type",
+        param: "row",
+        detail: { needs: "rowId" },
+      });
     const collection = collectionOf(ctx);
     const r = await ctx.gate.get(collection, id);
-    if (!r) throw new Error(`the row ${id.value} is not in the collection ${collection}`);
+    if (!r)
+      throw new StepFault(`the row ${id.value} is not in the collection ${collection}`, {
+        code: "row.missing",
+        param: "row",
+        detail: { collection },
+      });
     return one([stored(r)]);
   },
 };
@@ -175,7 +193,12 @@ const upsert: Executor = {
     const read: Labelled = {};
     const where = keys.map((field, i) => {
       const v = values[field];
-      if (!v) throw new Error(`the field ${field} to match by is not among the fields written`);
+      if (!v)
+        throw new StepFault(`the field ${field} to match by is not among the fields written`, {
+          code: "row.matchUnwritten",
+          param: "match",
+          detail: { field },
+        });
       read[`match.${i}`] = v;
       if (v.value === null) return { field, op: "empty" as const };
       return {
@@ -191,8 +214,10 @@ const upsert: Executor = {
     if (found.length > 1) {
       // It never picks one: it fails saying how many match, which needs a count (only here, not on every row).
       const [count] = await ctx.gate.aggregate({ collection, where, measure: "count" }, read);
-      throw new Error(
-        `${count?.value ?? found.length} rows of the collection ${collection} match: it modifies one or none`,
+      const many = typeof count?.value === "number" ? count.value : found.length;
+      throw new StepFault(
+        `${many} rows of the collection ${collection} match: it modifies one or none`,
+        { code: "row.many", param: "match", detail: { count: many } },
       );
     }
     const [match] = found;
