@@ -436,7 +436,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   «Extraer datos», «Clasificar», «Resumir» y «Escribir texto». El texto de fuera pasa por ellos, no por el agente.
 - **AU-58** (F15, pendiente) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
-- **AU-59** (Antes, en main: tarea 124, en el motor de hoy; `docs/nucleo.md` §7.4) · Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
+- **AU-59** (Antes, hecho) · Tarea 124, en el motor de hoy (`docs/nucleo.md` §7.4). Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
   a fallar, el paso falla diciendo qué lector y por qué; no para la automatización con un código (hoy:
   `R2-reader-output-invalid`, el fallo del resumen de la mañana). Se arregla ya en el motor de hoy (decisión 7 del
   §10) y el motor nuevo lo hereda con los pasos de IA (F15).
@@ -866,7 +866,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 
 | Fase | Qué | Criterio de hecho (lo que verá Juan) | Estado |
 |---|---|---|---|
-| Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | pendiente |
+| Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en curso |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | pendiente |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo | pendiente |
