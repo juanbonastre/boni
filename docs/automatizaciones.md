@@ -216,6 +216,7 @@ el usuario   ──▶  (Colección)    ──▶  categoría      ──▶  (A
 
 ```ts
 interface Automation {
+  format: number;                     // the version of this format: a deploy migrates what was saved (AU-08)
   id: string; version: number; name: string;
   steps: Step[];
   arrows: Arrow[];                    // from one output of a step to one input of another
@@ -233,11 +234,15 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 ```
 
 - **AU-01** (F14a, pendiente) · Una automatización es un grafo de pasos y flechas guardado como datos, con versiones.
+  En la F14a es el formato: lo guardado se lee y se vuelve a escribir igual, y lleva su número de versión. Publicar
+  y guardar cada versión es de la F14d (AU-95, AU-98).
 - **AU-02** (F14a, pendiente) · Cada paso tiene un identificador fijo que no se ve y un nombre único que se ve. Las
   flechas y lo guardado usan el identificador; las expresiones citan el nombre. Cambiar el nombre reescribe las
   expresiones que lo citan (y el código, desde la F14c), y nada se rompe.
 - **AU-03** (F14a, pendiente) · Un paso tiene una entrada y una o más salidas con nombre («sí» y «no» en «Si»,
-  «error» si se pide). A una entrada pueden llegar varias flechas y de una salida pueden salir varias.
+  «error» si se pide). A una entrada pueden llegar varias flechas y de una salida pueden salir varias. Las
+  excepciones las dice el catálogo: un disparador no tiene entrada, «Combinar» tiene dos con nombre (AU-124) y
+  «Parar con error» no tiene salida.
 - **AU-04** (F14a, pendiente) · Por las flechas pasan filas: objetos con campos. Una fila leída de una colección
   recuerda de qué fila guardada viene, para poder modificarla o eliminarla después sin buscarla otra vez.
 - **AU-05** (F14b, pendiente) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
@@ -245,14 +250,17 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   recoloca todo. (Cambia I-26; decisión 2 del §10.)
 - **AU-06** (F14a, pendiente) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
 - **AU-07** (F14a, pendiente) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
-  tandas será un paso («Por tandas», F18), no un dibujo.
+  tandas será un paso («Por tandas», F18), no un dibujo. En la F14a lo dice la validación (una automatización
+  con un ciclo no es válida) y el motor da la pregunta que el lienzo hará en la F14b: «¿esta flecha cerraría un
+  ciclo?».
 - **AU-08** (F14a, pendiente) · Cada tipo de paso existe una sola vez. Cuando cambia, el despliegue migra las
   automatizaciones guardadas; no hay pasos «de una versión anterior».
 
 ### 5.2 Cómo se ejecuta
 
 - **AU-10** (F14a, pendiente) · Un paso se decide cuando han terminado todos los pasos de los que le llega una
-  flecha. Se ejecuta si alguna trae filas; si no, queda «saltado», y lo que cuelga solo de él también.
+  flecha. Se ejecuta si alguna trae filas; si no, queda «saltado», y lo que cuelga solo de él también. Un paso al
+  que no se llega desde el disparador de esta ejecución cuenta como terminado sin filas (AU-06).
 - **AU-11** (F14a, pendiente) · Si a un paso le llegan filas por varias flechas, se juntan en un orden fijo y el paso
   corre una vez. No hace falta ningún paso para volver a juntar ramas.
 - **AU-12** (F14a, pendiente) · El orden de ejecución no depende de dónde está dibujado cada paso: dos
@@ -262,10 +270,13 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   encuentra la suya; tras un paso «con todas» que rehace las filas, dice que no puede y propone `.first()` o `.all()`.
 - **AU-14** (F14a, pendiente) · Una flecha sin filas no arranca lo que sigue. El ajuste «Seguir sin filas» de un paso
   hace que lo que sigue corra con una lista vacía (para decir «no hay nada», por ejemplo). No se inventa una fila
-  vacía, como hace n8n.
+  vacía, como hace n8n. Con una lista vacía, un paso «por fila» que lee o escribe («Crear una fila») corre una vez
+  sin fila actual: sus valores fijos valen, y citar `$json` falla diciendo que no hay fila; uno que solo cambia o
+  reparte las filas que le llegan («Si», «Filtrar») no da ninguna.
 - **AU-15** (F14a, pendiente) · De cada ejecución se guarda, por paso: su estado (en cola, en marcha, hecho, falló,
   saltado, parado, esperando), cuántas filas entraron y salieron por cada salida, cuánto tardó, lo que salió y, en
-  los pasos de IA, lo que costó.
+  los pasos de IA, lo que costó. En la F14a el motor devuelve ese registro; guardarlo es de la F14d, el coste
+  llega con los pasos de IA (F15) y «esperando», con los pasos que esperan (F15, F18).
 - **AU-16** (F14a, pendiente) · Si falla un paso: «Parar» (por defecto), «Seguir» o «Salir por error», que le añade
   una salida «error» con las filas que fallaron y el motivo. Reintentar hasta 5 veces con espera. Lo dice el paso en
   «Ajustes».
@@ -276,6 +287,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   desde la ejecución.
 - **AU-19** (F14a, pendiente) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
+  En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
+  las rutas llegan con sus fases y leen lo mismo.
 
 ### 5.3 Los valores: fijo o expresión
 
@@ -776,7 +789,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
 - **AU-167** (F14d, pendiente) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
 - **AU-168** (F14a, pendiente) · Todas las rutas y herramientas de automatizaciones pasan por `decide` desde el
-  primer día (A-26).
+  primer día (A-26). En la F14a todavía no hay rutas ni herramientas: es el motor el que no tiene otro camino a las
+  colecciones que la política, y cada lectura y cada escritura le pregunta antes, en una prueba también.
 
 Lo que cambia, regla por regla:
 
@@ -843,18 +857,25 @@ prueba pendiente por cada punto AU suyo (tarea 66, medida B), y antes de darla p
 construyó compara el §5 con el cambio, punto por punto (`docs/agents/conformance.md`). Juan, 2026-11-15: para estas
 sesiones vale Fable o mucho esfuerzo; se usa Fable para abrir cada fase y para lo difícil, y Opus alto para construir.
 
-| Fase | Qué | Criterio de hecho (lo que verá Juan) |
-|---|---|---|
-| Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas |
-| **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos |
-| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están |
-| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo |
-| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí |
-| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro |
-| **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» |
-| **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página |
-| **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar |
-| **F19** Lo demás | Paquetes (tarea 89), «Pedir a Boni», «Escribir con IA», plantillas, funciones guardadas | Pide en el editor «añade un aviso si se pasa del presupuesto» y acepta el cambio marcado paso a paso |
+El estado de cada fase está en la columna «Estado» de la tabla (pendiente, en curso desde su primer PR, en main,
+hecha) y el de cada punto, en su etiqueta: `(F14a, pendiente)`, y después `en parte` (el punto dice qué falta),
+`hecho` o `descartado` (dice por qué). `make check` los compara con las pruebas (T-10, `scripts/design-rules.mjs`):
+un punto «hecho» o «en parte» sin una prueba que corra con su número en el nombre falla, una fase «en main» o
+«hecha» con un punto «pendiente» falla, y una fase «en curso» con un punto sin prueba, pendiente o no, también.
+`make rules` dice lo que queda de cada fase.
+
+| Fase | Qué | Criterio de hecho (lo que verá Juan) | Estado |
+|---|---|---|---|
+| Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | pendiente |
+| **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en curso |
+| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | pendiente |
+| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo | pendiente |
+| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí | pendiente |
+| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro | pendiente |
+| **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |
+| **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |
+| **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar | pendiente |
+| **F19** Lo demás | Paquetes (tarea 89), «Pedir a Boni», «Escribir con IA», plantillas, funciones guardadas | Pide en el editor «añade un aviso si se pasa del presupuesto» y acepta el cambio marcado paso a paso | pendiente |
 
 El lienzo (F14b) se enseña a Juan en cuanto se puede tocar, antes de seguir: si la forma no le vale, se cambia ahí y
 no cuatro fases después.

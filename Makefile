@@ -28,6 +28,9 @@ check: ## Lint, type-check and run unit tests (the tests wait for another worktr
 map: ## Every package and app with what it is for; P=<path> lists its files (docs/principios.md T-02)
 	@node scripts/map.mjs $(P)
 
+rules: ## What is left of each phase of a design with numbered rules, and what does not hold (T-10)
+	@node scripts/design-rules.mjs
+
 conciliacion: ## Build the reconciliation's functions into the file the box runs (apps/server/src/money/conciliacion.gen.js)
 	node --disable-warning=ExperimentalWarning apps/server/src/money/build.ts
 

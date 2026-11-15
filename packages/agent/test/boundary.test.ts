@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
  * the server uses them, the core never does.
  */
 const PACKAGES = join(import.meta.dirname, "..", "..");
-const CORE = ["entities", "store", "agent", "views"];
+const CORE = ["entities", "store", "agent", "views", "automations"];
 const CORE_NAMES = new Set(CORE.map((p) => `@boni/${p}`));
 const ALLOWED_OUTSIDE = new Set(["@anthropic-ai/sdk"]);
 

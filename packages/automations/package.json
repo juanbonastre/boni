@@ -1,0 +1,24 @@
+{
+  "name": "@boni/automations",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Boni's automations (docs/automatizaciones.md): the format (a graph of steps and arrows), its validation, the catalogue of step types and the pure core of the engine, with every effect injected",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@boni/entities": "workspace:*",
+    "@boni/views": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "5.0.4"
+  }
+}
