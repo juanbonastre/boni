@@ -5,6 +5,42 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-15 (forty-seventh) — server 0.8.123 · Boni desktop 0.4.90 · Boni Android
+
+Needs:
+- The server, 0.8.123, to deploy first. It brings store migration 25: five new tables for «Automatizaciones»
+  (`automations`, `automation_drafts`, `automation_layout`, `automation_tests`, `automation_test_rows`), made empty;
+  nothing of his data changes. Going back to 0.8.122 is safe: it ignores the new tables.
+- Boni desktop 0.4.90 (`release/boni_0.4.90_amd64.deb`), after the server: the run's and the models' new texts (below).
+  It replaces 0.4.89.
+- Boni Calendar desktop stays 0.8.25: nothing of the calendar changed (`apps/calendar-web`, `apps/calendar-desktop` and
+  `packages/calendar` are as in the forty-sixth).
+- Boni Android 0.2.344 from main, through Obtainium (`boni-android` run 344 on 0fdb438, green, its GitHub release; it
+  replaces 0.2.338). It carries the same web as the desktop. Boni Calendar Android: no new APK. `Net.kt` and
+  `paths.cjs` did not change: no route the apps use is new.
+
+What it brings (#439–#455):
+- **A reader whose answer is refused is asked once more** (task 124; AU-59): with its input shortened. Refused twice,
+  the run says which reader and why («no respondía a cada elemento», «traía enlaces o HTML»…), and a step shows «Se
+  volvió a preguntar».
+- **A provider's rejection says why** (tasks 124 and 131): from fixed codes, never the provider's own text: «la cuenta
+  del proveedor no tiene saldo», «se llegó al límite de gasto…» (a 429 among them), «la clave del proveedor no es
+  válida», «el modelo no existe o no está disponible», «tardó demasiado»…
+- **The planner on an OpenAI-compatible API** (task 132): it is asked for JSON, and asked once more when its plan is
+  not JSON. In Ajustes › Modelos, «Evaluar» runs the planner's cases with an empty inbox, and a failed case says in
+  words who failed («Proveedor» or the model) and what («no devolvió un plan», «respuesta equivocada»…).
+- **«Automatizaciones»** (tasks 122, 125 and 126; F14a and F14b): the design, the engine and the server's service
+  below the routes. Nothing of it can be seen yet: no route, no screen.
+- Inside: a calendar's poll never finds its store closed (task 123), and every `onClose` callback runs even when one
+  throws.
+
+For Juan to look at, because they change his data or where it goes:
+- **«Evaluar» again with his OpenRouter models** (tasks 131 and 132): what it says when a case fails is new.
+- **His morning flow**: the first real run of the reader's second ask.
+
+Still missing:
+- «Automatizaciones» has no screen nor route yet (F14b's canvas is being built).
+
 ## 2026-11-14 (forty-sixth) — server 0.8.122 · Boni Android
 
 Needs:
