@@ -202,6 +202,8 @@ export type DateUnit = "minutes" | "hours" | "days" | "weeks" | "months" | "year
  * ms); a civil day stays a civil day. Each throws on a value that is neither.
  */
 export interface Dates {
+  /** The civil day ("YYYY-MM-DD") an instant falls on in `zone`: «hoy» for a condition (AU-11). */
+  day(instant: number, zone: string): string;
   add(date: Cell, amount: number, unit: DateUnit, zone: string): Cell;
   /** Whole units from `date` until `until`, negative when `until` is before. */
   diff(date: Cell, until: Cell, unit: DateUnit, zone: string): number;
