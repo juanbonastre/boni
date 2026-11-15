@@ -17,10 +17,9 @@
  * inside `{{ }}`, do not count. Anything else between `{{ }}` is `code`: `.all()` too, which gives a list of rows
  * and not a field (it works from F14c; what the app says for `noPair` names it, AU-13).
  */
-import type { Label, Labeled } from "@boni/entities";
-import type { ParamValue } from "./format.ts";
-import { notBuilt } from "./pending.ts";
-import type { Cell, Row } from "./rows.ts";
+import { join, type Label, type Labeled } from "@boni/entities";
+import { isExpr, type ParamValue } from "./format.ts";
+import { type Cell, cellOf, type Row } from "./rows.ts";
 
 export interface Citation {
   /** The step cited, by its name; null for the current row (`$json`). */
@@ -37,24 +36,151 @@ export type ExprPart =
   /** Not a simple citation. F14c: JavaScript for the sandbox. Until then, the problem `expr.code`. */
   | { kind: "code"; source: string };
 
-/** An expression's text in parts, in order. Never throws: what it cannot read as a citation is `code`. */
-export function parseExpression(_expr: string): ExprPart[] {
-  return notBuilt("parseExpression");
+/** A part with where it is in the text: for a citation, the span of the citation itself (not of its `{{ }}`). */
+type Spanned = ExprPart & { start: number; end: number };
+
+const IDENT = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*$/u;
+const IDENT_AT = /[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*/uy;
+const SPACE = /\s*/y;
+
+/** A quoted text at `i` (' or ", with \ before a quote or a backslash): its value and where it ends, or null. */
+function quoted(s: string, i: number): { value: string; end: number } | null {
+  const q = s[i];
+  if (q !== "'" && q !== '"') return null;
+  let value = "";
+  for (let j = i + 1; j < s.length; j++) {
+    const c = s[j];
+    if (c === q) return { value, end: j + 1 };
+    if (c === "\\") {
+      const next = s[j + 1];
+      if (next !== q && next !== "\\") return null;
+      value += next;
+      j++;
+    } else value += c;
+  }
+  return null;
 }
 
+const skip = (s: string, i: number) => {
+  SPACE.lastIndex = i;
+  SPACE.exec(s);
+  return SPACE.lastIndex;
+};
+
+/** A citation starting at `i`, or null: its value and where it ends. */
+function citation(s: string, i: number): { cite: Citation; end: number } | null {
+  let step: string | null = null;
+  let pick: Citation["pick"] = "item";
+  let j: number;
+  if (s.startsWith("$json", i)) {
+    j = i + 5;
+  } else if (s.startsWith("$(", i)) {
+    const q = quoted(s, skip(s, i + 2));
+    if (!q) return null;
+    j = skip(s, q.end);
+    if (s[j] !== ")") return null;
+    step = q.value;
+    j++;
+    if (s.startsWith(".item", j)) j += 5;
+    else if (s.startsWith(".first()", j)) [pick, j] = ["first", j + 8];
+    else if (s.startsWith(".last()", j)) [pick, j] = ["last", j + 7];
+    else return null;
+  } else return null;
+  const path: string[] = [];
+  for (;;) {
+    if (s[j] === ".") {
+      IDENT_AT.lastIndex = j + 1;
+      const m = IDENT_AT.exec(s);
+      if (!m) break;
+      path.push(m[0]);
+      j = IDENT_AT.lastIndex;
+    } else if (s[j] === "[") {
+      const q = quoted(s, j + 1);
+      if (!q || s[q.end] !== "]") break;
+      path.push(q.value);
+      j = q.end + 1;
+    } else break;
+  }
+  // What follows a citation is the end of its `{{ }}`, or it is code (a call, an operator, `.all()`).
+  if (!path.length) return null;
+  return { cite: { step, pick, path }, end: j };
+}
+
+function parse(expr: string): Spanned[] {
+  const parts: Spanned[] = [];
+  const text = (t: string, start: number) => {
+    if (!t) return;
+    const last = parts[parts.length - 1];
+    if (last?.kind === "text") {
+      last.text += t;
+      last.end = start + t.length;
+    } else parts.push({ kind: "text", text: t, start, end: start + t.length });
+  };
+  let i = 0;
+  while (i < expr.length) {
+    const open = expr.indexOf("{{", i);
+    if (open < 0) break;
+    const inner = skip(expr, open + 2);
+    const c = citation(expr, inner);
+    const after = c ? skip(expr, c.end) : -1;
+    if (c && expr.startsWith("}}", after)) {
+      text(expr.slice(i, open), i);
+      parts.push({ kind: "cite", cite: c.cite, start: inner, end: c.end });
+      i = after + 2;
+      continue;
+    }
+    const close = expr.indexOf("}}", open + 2);
+    // An unclosed `{{` is text.
+    if (close < 0) break;
+    text(expr.slice(i, open), i);
+    parts.push({
+      kind: "code",
+      source: expr.slice(open + 2, close).trim(),
+      start: open,
+      end: close + 2,
+    });
+    i = close + 2;
+  }
+  text(expr.slice(i), i);
+  return parts;
+}
+
+/** An expression's text in parts, in order. Never throws: what it cannot read as a citation is `code`. */
+export function parseExpression(expr: string): ExprPart[] {
+  return parse(expr).map(({ start: _s, end: _e, ...part }) => part as ExprPart);
+}
+
+const quote = (t: string, q: string) =>
+  `${q}${t.replace(/[\\'"]/g, (c) => (c === q || c === "\\" ? `\\${c}` : c))}${q}`;
+
 /** A citation as it is written, in its shortest form (a dot where the key is an identifier, `["…"]` where not). */
-export function printCitation(_cite: Citation): string {
-  return notBuilt("printCitation");
+export function printCitation(cite: Citation): string {
+  const head =
+    cite.step === null
+      ? "$json"
+      : `$(${quote(cite.step, "'")})${cite.pick === "item" ? ".item" : cite.pick === "first" ? ".first()" : ".last()"}`;
+  return head + cite.path.map((k) => (IDENT.test(k) ? `.${k}` : `[${quote(k, '"')}]`)).join("");
 }
 
 /** Every citation in a parameter's value, however deep (a list's rows, a condition's values), in order. */
-export function citationsIn(_value: ParamValue): Citation[] {
-  return notBuilt("citationsIn");
+export function citationsIn(value: ParamValue): Citation[] {
+  if (isExpr(value))
+    return parseExpression(value.expr).flatMap((p) => (p.kind === "cite" ? [p.cite] : []));
+  if (Array.isArray(value)) return value.flatMap(citationsIn);
+  if (typeof value === "object" && value !== null) return Object.values(value).flatMap(citationsIn);
+  return [];
 }
 
 /** An expression's text with every citation of the step named `from` citing `to` instead; the rest untouched (AU-02). */
-export function renameInExpression(_expr: string, _from: string, _to: string): string {
-  return notBuilt("renameInExpression");
+export function renameInExpression(expr: string, from: string, to: string): string {
+  let out = "";
+  let i = 0;
+  for (const p of parse(expr)) {
+    if (p.kind !== "cite" || p.cite.step !== from) continue;
+    out += expr.slice(i, p.start) + printCitation({ ...p.cite, step: to });
+    i = p.end;
+  }
+  return out + expr.slice(i);
 }
 
 // ---------------------------------------------------------------- resolving
@@ -106,6 +232,58 @@ export interface Scope {
  * - a structure: each value inside it, resolved the same way; its label is the join of them all.
  * Throws `CiteError`, and an Error for a `code` part (F14c).
  */
-export function resolve(_value: ParamValue, _scope: Scope): Labeled<Cell> {
-  return notBuilt("resolve");
+export function resolve(value: ParamValue, scope: Scope): Labeled<Cell> {
+  if (isExpr(value)) return resolveExpr(value.expr, scope);
+  if (Array.isArray(value)) {
+    const items = value.map((v) => resolve(v, scope));
+    return {
+      value: items.map((x) => x.value),
+      label: join(scope.literal, ...items.map((x) => x.label)),
+      derived: items.some((x) => x.derived),
+    };
+  }
+  if (typeof value === "object" && value !== null) {
+    const entries = Object.entries(value).map(([k, v]) => [k, resolve(v, scope)] as const);
+    return {
+      value: Object.fromEntries(entries.map(([k, x]) => [k, x.value])),
+      label: join(scope.literal, ...entries.map(([, x]) => x.label)),
+      derived: entries.some(([, x]) => x.derived),
+    };
+  }
+  return { value, label: scope.literal, derived: false };
+}
+
+/** The field a citation names, with its label: null with the row's label when the row does not have it. */
+export function citeValue(c: Citation, scope: Scope): Labeled<Cell> {
+  let row: Row;
+  if (c.step === null) {
+    if (!scope.current) throw new CiteError("noCurrentRow", c);
+    row = scope.current;
+  } else row = scope.row(c.step, c.pick);
+  return cellOf(row, c.path) ?? { value: null, label: row.label, derived: false };
+}
+
+/** A value in text, as it is joined with the text around it. */
+const asText = (v: Cell): string =>
+  v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+
+function resolveExpr(expr: string, scope: Scope): Labeled<Cell> {
+  const parts = parseExpression(expr);
+  for (const p of parts)
+    if (p.kind === "code")
+      throw new Error("expr.code: JavaScript in an expression arrives in F14c");
+  const only = parts.length === 1 ? parts[0] : undefined;
+  if (only?.kind === "cite") return citeValue(only.cite, scope);
+  const cited = parts.flatMap((p) => (p.kind === "cite" ? [citeValue(p.cite, scope)] : []));
+  if (!cited.length)
+    return {
+      value: parts.map((p) => (p.kind === "text" ? p.text : "")).join(""),
+      label: scope.literal,
+      derived: false,
+    };
+  let k = 0;
+  const value = parts
+    .map((p) => (p.kind === "text" ? p.text : asText((cited[k++] as Labeled<Cell>).value)))
+    .join("");
+  return { value, label: join(scope.literal, ...cited.map((c) => c.label)), derived: true };
 }

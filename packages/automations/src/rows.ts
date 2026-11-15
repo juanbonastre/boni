@@ -5,7 +5,6 @@
  * makes new ones, so a run can be read afterwards step by step.
  */
 import type { Label, Labeled } from "@boni/entities";
-import { notBuilt } from "./pending.ts";
 
 /** A field's value: what JSON holds. A date is "YYYY-MM-DD", an instant epoch ms, money `{ amount, currency }`. */
 export type Cell = string | number | boolean | null | Cell[] | { [key: string]: Cell };
@@ -48,6 +47,15 @@ export interface Row {
 }
 
 /** A field of a row with its exact label (AU-162): `path` is the field's key and then keys inside it. */
-export function cellOf(_row: Row, _path: readonly string[]): Labeled<Cell> | undefined {
-  return notBuilt("cellOf");
+export function cellOf(row: Row, path: readonly string[]): Labeled<Cell> | undefined {
+  const [key, ...rest] = path;
+  if (key === undefined || !Object.hasOwn(row.json, key)) return undefined;
+  let v: Cell = row.json[key] as Cell;
+  for (const k of rest) {
+    if (typeof v !== "object" || v === null || Array.isArray(v) || !Object.hasOwn(v, k))
+      return undefined;
+    v = v[k] as Cell;
+  }
+  const own = row.fields?.[key];
+  return { value: v, label: own?.label ?? row.label, derived: own?.derived ?? false };
 }

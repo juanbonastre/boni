@@ -6,9 +6,21 @@
  *
  * It needs no run and no data: only the automation, the catalogue and the shape of the collections it names.
  */
+import { FILTER_OPS } from "@boni/views";
+import {
+  actionOf,
+  inputsOf,
+  isTrigger,
+  OUTPUT_BRANCHES,
+  outputsOf,
+  type ParamSpec,
+  paramsOf,
+  stepType,
+} from "./catalogue.ts";
 import type { CollectionShape } from "./effects.ts";
-import type { Automation } from "./format.ts";
-import { notBuilt } from "./pending.ts";
+import { parseExpression } from "./expression.ts";
+import { type Automation, isExpr, MAX_RETRIES, type ParamValue, type Step } from "./format.ts";
+import { byCodeUnit, downstream, findCycle } from "./graph.ts";
 
 /**
  * Every problem there is. A code is a key: each app says it to Juan in its `i18n.ts`, with what `detail` carries.
@@ -82,8 +94,345 @@ export interface ValidationContext {
  * the order its steps were saved in. Empty when it can be published. Never throws on an automation `parseAutomation`
  * gave.
  */
-export function validate(_automation: Automation, _context: ValidationContext): Problem[] {
-  return notBuilt("validate");
+export function validate(automation: Automation, context: ValidationContext): Problem[] {
+  const problems: Problem[] = [];
+  const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
+    problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
+
+  // The steps in id order; two saved with one id, in a fixed order too.
+  const steps = [...automation.steps].sort(
+    (a, b) => byCodeUnit(a.id, b.id) || byCodeUnit(JSON.stringify(a), JSON.stringify(b)),
+  );
+  const byId = new Map<string, Step>();
+  const byName = new Map<string, Step[]>();
+  for (const s of steps) {
+    if (!byId.has(s.id)) byId.set(s.id, s);
+    byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
+  }
+  const down = downstream(automation);
+  const reached = new Set<string>();
+  for (const s of byId.values())
+    if (isTrigger(s)) for (const id of [s.id, ...(down.get(s.id) ?? [])]) reached.add(id);
+
+  if (!steps.some(isTrigger)) add("trigger.none");
+
+  const done = new Set<string>();
+  for (const step of steps) {
+    if (done.has(step.id)) {
+      if (
+        byId.get(step.id) !== step &&
+        !problems.some((p) => p.code === "step.duplicateId" && p.step === step.id)
+      )
+        add("step.duplicateId", { step: step.id });
+      continue;
+    }
+    done.add(step.id);
+    const at = { step: step.id };
+    if (!step.name.trim()) add("step.emptyName", at);
+    else if ((byName.get(step.name)?.length ?? 0) > 1)
+      add("step.duplicateName", { ...at, detail: { name: step.name } });
+    if (!stepType(step.type)) {
+      add("step.unknownType", { ...at, detail: { type: step.type } });
+      continue;
+    }
+    const retry = step.settings?.retry;
+    if (
+      retry &&
+      (!Number.isInteger(retry.times) ||
+        retry.times < 0 ||
+        retry.times > MAX_RETRIES ||
+        retry.waitMs < 0)
+    )
+      add("step.settings", { ...at, param: "retry" });
+    if (!isTrigger(step) && !reached.has(step.id)) add("step.unreachable", at);
+    new StepCheck(step, context, byId, byName, down, add).run();
+    for (const out of outputsOf(step))
+      if (
+        OUTPUT_BRANCHES.has(step.type) &&
+        out !== "error" &&
+        !automation.arrows.some((a) => a.from.step === step.id && a.from.output === out)
+      )
+        add("output.unconnected", { ...at, detail: { output: out } });
+  }
+
+  const cycle = findCycle(automation);
+  const inCycle = (from: string, to: string) => {
+    if (!cycle) return false;
+    const i = cycle.indexOf(from);
+    return i >= 0 && cycle[(i + 1) % cycle.length] === to;
+  };
+  const seen = new Set<string>();
+  automation.arrows.forEach((arrow, i) => {
+    const from = byId.get(arrow.from.step);
+    const to = byId.get(arrow.to.step);
+    if (!from || !to) {
+      add("arrow.unknownStep", { arrow: i, ...(from ? { step: from.id } : {}) });
+      return;
+    }
+    const at = { arrow: i, step: from.id };
+    // A step of a type the catalogue lacks has no known outputs or inputs: its own problem says so, once.
+    if (stepType(from.type) && !outputsOf(from).includes(arrow.from.output))
+      add("arrow.unknownOutput", { ...at, detail: { output: arrow.from.output } });
+    if (isTrigger(to)) add("arrow.intoTrigger", at);
+    else if (stepType(to.type) && !inputsOf(to).includes(arrow.to.input))
+      add("arrow.unknownInput", { ...at, detail: { input: arrow.to.input } });
+    const key = JSON.stringify([arrow.from.step, arrow.from.output, arrow.to.step, arrow.to.input]);
+    if (seen.has(key)) add("arrow.duplicate", at);
+    seen.add(key);
+    if (inCycle(from.id, to.id)) add("arrow.cycle", at);
+  });
+  return problems;
+}
+
+type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
+
+/** The parameters of one step, in the catalogue's order, then the keys it does not declare. */
+class StepCheck {
+  private readonly step: Step;
+  private readonly context: ValidationContext;
+  private readonly byId: Map<string, Step>;
+  private readonly byName: Map<string, Step[]>;
+  private readonly down: Map<string, Set<string>>;
+  private readonly add: Add;
+  private readonly shape: CollectionShape | undefined;
+  private readonly perRow: boolean;
+
+  constructor(
+    step: Step,
+    context: ValidationContext,
+    byId: Map<string, Step>,
+    byName: Map<string, Step[]>,
+    down: Map<string, Set<string>>,
+    add: Add,
+  ) {
+    this.step = step;
+    this.context = context;
+    this.byId = byId;
+    this.byName = byName;
+    this.down = down;
+    this.add = add;
+    const c = step.params.collection;
+    this.shape = typeof c === "string" ? context.collection(c) : undefined;
+    this.perRow = actionOf(step)?.mode === "perRow";
+  }
+
+  run(): void {
+    const shown = paramsOf(this.step);
+    for (const p of shown) this.param(p, this.step.params[p.key], p.key);
+    // With no valid action, its parameters are not known yet: only keys no action of its type has are unknown.
+    const spec = stepType(this.step.type);
+    const known = new Set(
+      actionOf(this.step) || !spec
+        ? shown.map((p) => p.key)
+        : [...shown.map((p) => p.key), ...spec.actions.flatMap((a) => a.params.map((p) => p.key))],
+    );
+    for (const k of Object.keys(this.step.params).sort(byCodeUnit))
+      if (!known.has(k)) this.problem("param.unknown", k);
+  }
+
+  private problem(code: ProblemCode, param: string, detail?: Problem["detail"]): void {
+    this.add(code, { step: this.step.id, param, ...(detail ? { detail } : {}) });
+  }
+
+  private param(p: ParamSpec, saved: ParamValue | undefined, path: string): void {
+    const v = saved ?? p.default;
+    if (v === undefined || v === null || v === "") {
+      if (p.required)
+        this.problem(p.control === "conditions" ? "param.condition" : "param.required", path);
+      return;
+    }
+    if (isExpr(v)) {
+      if (p.shape) this.problem("param.shape", path);
+      else if (p.control === "list" || p.control === "conditions" || p.control === "fields")
+        this.problem("param.value", path);
+      else this.expression(v.expr, path);
+      return;
+    }
+    switch (p.control) {
+      case "value": {
+        const ok =
+          p.of === "any" ||
+          (p.of === "number"
+            ? typeof v === "number"
+            : p.of === "date"
+              ? typeof v === "string" || typeof v === "number"
+              : typeof v === "string");
+        if (!ok) this.problem("param.value", path);
+        else this.nested(v, path);
+        return;
+      }
+      case "toggle":
+        if (typeof v !== "boolean") this.problem("param.value", path);
+        return;
+      case "choice":
+        if (typeof v !== "string") this.problem("param.value", path);
+        else if ("of" in p.options) this.field(p.options.of === "collection", v, path);
+        else if (!p.options.includes(v)) this.problem("param.value", path);
+        return;
+      case "picker":
+        if (typeof v !== "string") this.problem("param.value", path);
+        else if (p.of === "collection" && !this.context.collection(v))
+          this.problem("collection.unknown", path, { collection: v });
+        return;
+      case "list":
+        this.list(p, v, path);
+        return;
+      case "conditions":
+        this.conditions(p.over.of === "collection", p.min ?? 0, v, path);
+        return;
+      case "fields":
+        this.fields(p.over.of === "collection", v, path);
+        return;
+    }
+  }
+
+  /** A field of the step's collection, when it names one it knows. */
+  private field(ofCollection: boolean, key: string, path: string): void {
+    if (ofCollection && this.shape && !this.shape.fields.some((f) => f.key === key))
+      this.problem("field.unknown", path, { field: key });
+  }
+
+  private list(p: Extract<ParamSpec, { control: "list" }>, v: ParamValue, path: string): void {
+    if (!Array.isArray(v)) {
+      this.problem("param.value", path);
+      return;
+    }
+    if (v.length < (p.min ?? 0)) this.problem("param.value", path);
+    // A hidden fixed column is the row's id (a rule's output, a field's key): one per row.
+    const ids = p.columns.filter((c) => c.place === "hidden" && c.shape).map((c) => c.key);
+    const seen = new Map<string, Set<string>>(ids.map((k) => [k, new Set()]));
+    for (const [i, row] of v.entries()) {
+      const at = `${path}.${i}`;
+      if (typeof row !== "object" || row === null || Array.isArray(row) || isExpr(row)) {
+        this.problem("param.value", at);
+        continue;
+      }
+      for (const c of p.columns) this.param(c, row[c.key], `${at}.${c.key}`);
+      for (const k of Object.keys(row).sort(byCodeUnit))
+        if (!p.columns.some((c) => c.key === k)) this.problem("param.unknown", `${at}.${k}`);
+      for (const k of ids) {
+        const id = row[k];
+        if (typeof id !== "string") continue;
+        if (seen.get(k)?.has(id)) this.problem("param.value", `${at}.${k}`);
+        seen.get(k)?.add(id);
+      }
+    }
+  }
+
+  private conditions(ofCollection: boolean, min: number, v: ParamValue, path: string): void {
+    if (!Array.isArray(v)) {
+      this.problem("param.value", path);
+      return;
+    }
+    if (v.length < min) this.problem("param.condition", path);
+    for (const [i, item] of v.entries()) {
+      const at = `${path}.${i}`;
+      if (typeof item !== "object" || item === null || Array.isArray(item) || isExpr(item)) {
+        this.problem("param.value", at);
+        continue;
+      }
+      if ("join" in item) {
+        const rules = item.rules;
+        if (
+          (item.join !== "and" && item.join !== "or") ||
+          !Array.isArray(rules) ||
+          Object.keys(item).length !== 2
+        ) {
+          this.problem("param.value", at);
+          continue;
+        }
+        for (const [j, r] of rules.entries()) {
+          if (typeof r === "object" && r !== null && !Array.isArray(r) && "join" in r)
+            this.problem("param.value", `${at}.rules.${j}`);
+          else this.rule(ofCollection, r, `${at}.rules.${j}`);
+        }
+      } else this.rule(ofCollection, item, at);
+    }
+  }
+
+  private rule(ofCollection: boolean, r: ParamValue, at: string): void {
+    if (typeof r !== "object" || r === null || Array.isArray(r) || isExpr(r)) {
+      this.problem("param.value", at);
+      return;
+    }
+    for (const k of Object.keys(r).sort(byCodeUnit))
+      if (k !== "field" && k !== "op" && k !== "value") this.problem("param.unknown", `${at}.${k}`);
+    if (typeof r.field !== "string" || !r.field) this.problem("param.value", `${at}.field`);
+    else this.field(ofCollection, r.field, `${at}.field`);
+    if (!FILTER_OPS.includes(r.op as (typeof FILTER_OPS)[number]))
+      this.problem("param.value", `${at}.op`);
+    const value = r.value;
+    if (value === undefined) return;
+    if (isExpr(value)) this.expression(value.expr, `${at}.value`);
+    else if (typeof value !== "string" && typeof value !== "number")
+      this.problem("param.value", `${at}.value`);
+  }
+
+  private fields(ofCollection: boolean, v: ParamValue, path: string): void {
+    if (!Array.isArray(v)) {
+      this.problem("param.value", path);
+      return;
+    }
+    const seen = new Set<string>();
+    for (const [i, item] of v.entries()) {
+      const at = `${path}.${i}`;
+      if (typeof item !== "object" || item === null || Array.isArray(item) || isExpr(item)) {
+        this.problem("param.value", at);
+        continue;
+      }
+      for (const k of Object.keys(item).sort(byCodeUnit))
+        if (k !== "field" && k !== "value") this.problem("param.unknown", `${at}.${k}`);
+      const field = item.field;
+      if (typeof field !== "string" || !field || seen.has(field))
+        this.problem("param.value", `${at}.field`);
+      else {
+        seen.add(field);
+        this.field(ofCollection, field, `${at}.field`);
+      }
+      if (item.value !== undefined) this.nested(item.value, `${at}.value`);
+    }
+  }
+
+  /** Every expression inside a value of free shape. */
+  private nested(v: ParamValue, path: string): void {
+    if (isExpr(v)) this.expression(v.expr, path);
+    else if (Array.isArray(v)) for (const [i, x] of v.entries()) this.nested(x, `${path}.${i}`);
+    else if (typeof v === "object" && v !== null)
+      for (const [k, x] of Object.entries(v)) this.nested(x, `${path}.${k}`);
+  }
+
+  private expression(expr: string, path: string): void {
+    for (const part of parseExpression(expr)) {
+      if (part.kind === "code") this.problem("expr.code", path);
+      if (part.kind !== "cite") continue;
+      const { step: name, pick } = part.cite;
+      if (name === null) {
+        if (!this.perRow) this.problem("expr.noCurrentRow", path);
+        continue;
+      }
+      const cited = this.byName.get(name)?.[0];
+      if (!cited) {
+        this.problem("expr.unknownStep", path, { name });
+        continue;
+      }
+      if (!this.down.get(cited.id)?.has(this.step.id)) {
+        this.problem("expr.notBefore", path, { name });
+        continue;
+      }
+      if (pick !== "item") continue;
+      if (!this.perRow) {
+        this.problem("expr.noCurrentRow", path);
+        continue;
+      }
+      // A step between the two that remakes the rows: the current row does not come from one of the cited step's.
+      const by = [...(this.down.get(cited.id) ?? [])]
+        .filter((id) => id !== this.step.id && this.down.get(id)?.has(this.step.id))
+        .sort(byCodeUnit)
+        .map((id) => this.byId.get(id))
+        .find((s) => s && actionOf(s)?.pairs === false);
+      if (by) this.problem("expr.cannotPair", path, { name, by: by.name });
+    }
+  }
 }
 
 /** Whether a list of problems lets the automation run: no errors (warnings do not count). */

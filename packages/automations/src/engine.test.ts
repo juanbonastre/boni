@@ -2,8 +2,12 @@
 // the builder turns each into a real one, keeping the rule's id in its name (`make check` reads them). Real tests
 // use the repo's invented seeds and fakes of `Policy`, `Collections`, `Clock` and `Dates`: never a store.
 import { describe, expect, it } from "vitest";
+import { knowing, sketch } from "./automation.test-util.ts";
 import { CATALOGUE } from "./catalogue.ts";
 import { EXECUTORS, executorKey, STEP_STATES } from "./engine.ts";
+import { MAIN } from "./format.ts";
+import { executionOrder, findCycle, wouldCycle } from "./graph.ts";
+import { canRun, validate } from "./validate.ts";
 
 describe("how an automation runs", () => {
   it.todo(
@@ -12,9 +16,42 @@ describe("how an automation runs", () => {
   it.todo(
     "AU-06 · with two triggers a run starts in one: the steps that hang only from the other have no record and do not hold back a step both reach",
   );
-  it.todo(
-    "AU-07 · an arrow that goes back is a cycle: wouldCycle says so before it is added and validation refuses the automation",
-  );
+  it("AU-07 · an arrow that goes back is a cycle: wouldCycle says so before it is added and validation refuses the automation", () => {
+    const s = sketch()
+      .step("Inicio", "manual")
+      .step("Uno", "limit", { count: 3 })
+      .step("Dos", "limit", { count: 2 })
+      .step("Tres", "limit", { count: 1 })
+      .arrow("Inicio", "Uno")
+      .arrow("Uno", "Dos")
+      .arrow("Dos", "Tres");
+    const a = s.build();
+    const back = {
+      from: { step: s.id("Tres"), output: MAIN },
+      to: { step: s.id("Uno"), input: MAIN },
+    };
+    const self = {
+      from: { step: s.id("Dos"), output: MAIN },
+      to: { step: s.id("Dos"), input: MAIN },
+    };
+    const ahead = {
+      from: { step: s.id("Uno"), output: MAIN },
+      to: { step: s.id("Tres"), input: MAIN },
+    };
+    expect(wouldCycle(a, back)).toBe(true);
+    expect(wouldCycle(a, self)).toBe(true);
+    expect(wouldCycle(a, ahead)).toBe(false);
+    expect(findCycle(a)).toBeNull();
+    expect(validate(a, knowing())).toEqual([]);
+
+    a.arrows.push(back);
+    expect(findCycle(a)).toEqual([s.id("Uno"), s.id("Dos"), s.id("Tres")]);
+    const cycle = validate(a, knowing()).filter((p) => p.code === "arrow.cycle");
+    // Every arrow of the cycle is marked, and none outside it.
+    expect(cycle.map((p) => p.arrow)).toEqual([1, 2, 3]);
+    expect(canRun(validate(a, knowing()))).toBe(false);
+    expect(() => executionOrder(a, s.id("Inicio"))).toThrow(/cycle/);
+  });
   it.todo(
     "AU-10 · a step is decided when every step that reaches it has finished: it runs if some arrow brings rows, and if none does it is skipped with what hangs only from it",
   );
