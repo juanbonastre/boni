@@ -799,6 +799,15 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   prueba, una escritura permitida no escribe: da la fila como quedaría, y para eso lee la fila guardada sin otra
   pregunta a la política, porque es parte de la escritura que ya se permitió. Lo que sale de un paso que escribe
   lleva las etiquetas que daría leerlo: cada campo guardado la suya, cada campo escrito la del valor que se escribió.
+- **AU-170** (F14d, pendiente) · Lo que una automatización guarda conserva de dónde vino: un campo escrito con un
+  valor de fuera queda guardado como de fuera, y cualquier lectura posterior (otra ejecución, otra automatización,
+  el asistente) lo da como de fuera. Guardar y volver a leer nunca limpia una etiqueta. En la F14a el motor ya
+  etiqueta lo que sale del paso que escribe; falta que el almacén lo guarde, porque el cambio que recibe lleva
+  valores y no etiquetas.
+- **AU-171** (F15, pendiente) · Lo que devuelve una escritura pasa por los límites de lectura de quien la pide: solo
+  las filas y los campos que su conexión le deja leer. Sin permiso de leer, devuelve lo que escribió y nada más, en
+  una prueba también. Hasta la F15 solo escriben los pasos de «Colección» que pone Juan, que no llevan límites de
+  conexión.
 
 Lo que cambia, regla por regla:
 
