@@ -344,3 +344,58 @@ export function delimit(content: string): { marker: string; text: string } {
       return { marker, text: `<<${marker}>>\n${content}\n<<${marker}>>` };
   }
 }
+
+/**
+ * How many times a reader whose answer the code refused is asked again (AU-59, task 124): once, never more. It is
+ * code that calls a model on its own, so its cap is here and tests hold it (`agent.test.ts`, «a reader refused once is
+ * asked again…» and «…its relative day is kept»): a step makes two calls to its reader at most, the first answer and
+ * one more, never both a shortened retry and a re-ask for a relative day.
+ */
+export const READER_RETRIES = 1;
+
+/** What a text keeps whole when a reader's input is shortened: a title, a name, a date. */
+export const SHORT_KEEP = 200;
+/** The mark a shortened text ends with: the reader sees that something was cut. */
+export const SHORT_MARK = " […]";
+
+/** One text shortened for the retry: its first half (at least SHORT_KEEP characters), cut back to a space near it. */
+export function shortenText(s: string): string {
+  const chars = [...s];
+  if (chars.length <= SHORT_KEEP) return s;
+  const half = Math.max(SHORT_KEEP, Math.ceil(chars.length / 2));
+  const head = chars.slice(0, half).join("");
+  // Back to the last space in the half's last fifth, so a word is not cut in two; none there, the half as it is.
+  const space = Math.max(head.lastIndexOf(" "), head.lastIndexOf("\n"));
+  const cut = space >= Math.floor(head.length * 0.8) ? head.slice(0, space) : head;
+  return `${cut.trimEnd()}${SHORT_MARK}`;
+}
+
+/**
+ * A reader's input shortened for its one retry (AU-59, task 124), the same way every time: a list keeps its first
+ * half (rounded up, so one item stays one), each item as it was; a text keeps its first half (shortenText); a
+ * record (an object) keeps every key, each value shortened by the same rule. Nothing is added but the mark, nothing
+ * reordered, nothing else read: the shortened input is a part of the input, so what the reader sees can only shrink.
+ */
+export function shortenInput(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") return shortenText(v);
+  if (Array.isArray(v)) return v.slice(0, Math.ceil(v.length / 2));
+  if (depth < 4 && v && typeof v === "object")
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, shortenInput(x, depth + 1)]),
+    );
+  return v;
+}
+
+/** Why a reader's answer was refused, as the app says it: a closed list, from the rule it broke. */
+export type ReaderFailure = "too-long" | "count" | "link" | "shape";
+export function readerFailure(fault: string | null): ReaderFailure {
+  if (!fault) return "shape";
+  if (fault.endsWith("too-long")) return "too-long";
+  if (fault === "count") return "count";
+  if (fault.endsWith("link-or-html")) return "link";
+  return "shape";
+}
+
+/** Told a reader asked again with its input shortened (AU-59): the code's words, never the refused answer's. */
+export const SHORTENED_FIX =
+  "Your previous answer was refused by the code's checks (`refused` names the rule it broke). The content between the markers is now shorter (a list keeps its first half; a long text its first half, ending with […]). Answer only with the schema; keep every text short (a summary or an answer in at most 2000 characters, a line in at most 200).";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { AnthropicProvider, apiSchema, ProviderError } from "../src/anthropic.ts";
+import { AnthropicProvider, apiSchema, ProviderError, refusedCode } from "../src/anthropic.ts";
 import { planSchema } from "../src/plan.ts";
 import { fakePlanner } from "../src/providers.ts";
 import { READER_SCHEMAS } from "../src/readers.ts";
@@ -120,8 +120,8 @@ describe("the Anthropic provider", () => {
         },
       );
     for (const [answers, code] of [
-      [[apiError(400)], "http-400"],
-      [[apiError(401)], "http-401"],
+      [[apiError(400)], "http-400-invalid-request"],
+      [[apiError(401)], "bad-key"],
       [[() => new Error(`connect ${KEY}`)], "network"],
       [[() => ok("no es json")], "not-json"],
       [[() => ok("{}", { stop_reason: "max_tokens" })], "max-tokens"],
@@ -191,6 +191,101 @@ describe("the Anthropic provider", () => {
       .all()
       .flatMap((t) => Object.keys(t.args));
     expect(count(apiSchema(planSchema(names))).unions).toBeGreaterThan(16);
+  });
+});
+
+describe("why the API refused a call (task 124)", () => {
+  // Invented answers in the API's documented shape; the messages are made up, only their kind is the API's.
+  const refused = (status: number, type: string, message: string) => () =>
+    new Response(JSON.stringify({ type: "error", error: { type, message }, request_id: "req_x" }), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  it("says each kind with a fixed code the run can keep, and never the API's words", async () => {
+    for (const [answer, code] of [
+      [
+        refused(400, "invalid_request_error", "Your credit balance is too low to call the API."),
+        "no-credit",
+      ],
+      [refused(402, "billing_error", "There is a problem with the payment method."), "no-credit"],
+      [
+        refused(400, "invalid_request_error", "You have reached your workspace spend limit."),
+        "spend-limit",
+      ],
+      [refused(429, "rate_limit_error", "Monthly spend cap reached."), "spend-limit"],
+      [
+        refused(400, "invalid_request_error", "prompt is too long: 250000 tokens > 200000 maximum"),
+        "too-long",
+      ],
+      [refused(413, "request_too_large", "Request exceeds the maximum size"), "too-long"],
+      [
+        refused(
+          400,
+          "invalid_request_error",
+          '"thinking.type.disabled" is not supported for this model.',
+        ),
+        "bad-option",
+      ],
+      [
+        refused(
+          400,
+          "invalid_request_error",
+          "output_config.format: Extra inputs are not permitted",
+        ),
+        "bad-option",
+      ],
+      [refused(404, "not_found_error", "model: ejemplo-modelo"), "no-model"],
+      [refused(401, "authentication_error", "invalid x-api-key"), "bad-key"],
+      [refused(403, "permission_error", "Your key cannot use this model."), "forbidden"],
+      [
+        refused(429, "rate_limit_error", "Number of requests has exceeded your rate limit."),
+        "rate-limit",
+      ],
+      [refused(529, "overloaded_error", "Overloaded"), "overloaded"],
+      [refused(500, "api_error", "Internal server error"), "server-error"],
+      [refused(504, "timeout_error", "Request timed out"), "timeout"],
+      [
+        refused(400, "invalid_request_error", "messages: roles must alternate"),
+        "http-400-invalid-request",
+      ],
+      [refused(409, "conflict_error", "conflict"), "http-409-conflict"],
+    ] as const) {
+      const s = stub([answer]);
+      const e = await new AnthropicProvider({ apiKey: KEY, model: "m", fetch: s.f, maxRetries: 0 })
+        .complete(req)
+        .catch((x) => x);
+      expect(e).toBeInstanceOf(ProviderError);
+      expect(e.code).toBe(code);
+      // A code the agent keeps as it is (`model-<code>`), never the message.
+      expect(e.code).toMatch(/^[a-z0-9-]{1,30}$/);
+    }
+    // A body with no error object: the status alone, still a code.
+    expect(refusedCode(418, null, "")).toBe("http-418");
+    expect(refusedCode(undefined, "Weird_Type!", "")).toBe("http-error-weird-type");
+  });
+
+  it("a reader step the API refuses stops with that code in the run, and its words never reach the run", async () => {
+    const env = makeEnv([{ asunto: "Aviso", de: "ejemplo@example.com", cuerpo: "Cuerpo" }]);
+    try {
+      const s = stub([
+        refused(400, "invalid_request_error", "Your credit balance is too low (texto-de-fuera)."),
+      ]);
+      const reader = new AnthropicProvider({ apiKey: KEY, model: "m", fetch: s.f, maxRetries: 0 });
+      const plan = {
+        version: 1,
+        steps: [
+          { id: "m", op: "call", tool: "entities.query", args: { type: { lit: "correo" } } },
+          { id: "s", op: "read", reader: "summarize", input: { ref: "$m.items" } },
+        ],
+      };
+      const r = await env
+        .agent(fakePlanner([plan]), reader)
+        .turn({ text: "Resume", origin: PERSONAL });
+      expect([r.status, r.error]).toEqual(["stopped", "model-no-credit"]);
+      expect(JSON.stringify(env.store.journal.steps(r.run))).not.toContain("texto-de-fuera");
+    } finally {
+      env.close();
+    }
   });
 });
 

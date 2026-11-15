@@ -45,7 +45,17 @@ import {
 } from "./plan.ts";
 import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts";
 import type { ModelProvider, ModelRequest } from "./providers.ts";
-import { checkReader, delimit, READER_PROMPTS, readerSchema } from "./readers.ts";
+import {
+  checkReader,
+  delimit,
+  READER_PROMPTS,
+  READER_RETRIES,
+  readerFailure,
+  readerSchema,
+  SHORTENED_FIX,
+  shortenInput,
+  shortenText,
+} from "./readers.ts";
 import {
   checkReadMessage,
   type ReadingModule,
@@ -463,6 +473,11 @@ export interface AgentOptions {
    * it; whoever answers starts nothing of its own for a test, D-43).
    */
   overBudget?: (asking: { dry: boolean }) => boolean;
+  /**
+   * A line for the server's log when the engine calls a model again on its own (a reader asked again, AU-59): the
+   * reader's kind and the rule's code, never a text.
+   */
+  log?: (line: string) => void;
   now?: () => number;
   /** Juan's zone: the civil day `today()` gives. */
   tz?: string;
@@ -2515,17 +2530,19 @@ export class Agent {
       : raw;
     // A reader over a list (summarize_each, label_each) reads every text in one call, each under its number.
     const batch = step.reader === "summarize_each" || step.reader === "label_each";
-    const texts = batch ? (Array.isArray(content) ? content : [content]).map(readerText) : null;
+    let texts = batch ? (Array.isArray(content) ? content : [content]).map(readerText) : null;
     if (texts && (texts.length === 0 || texts.length > 50)) {
       this.log(st, step, "read", "deny", "R2", { reason: "reader-input-invalid", n: texts.length });
       throw new Stop("R2-reader-input-invalid");
     }
-    const flat = texts
-      ? texts.map((c, i) => `[${i + 1}]\n${c}`).join("\n\n")
-      : typeof content === "string"
-        ? content
-        : JSON.stringify(content);
-    const { marker, text } = delimit(flat);
+    const frame = (c: unknown, ts: string[] | null) =>
+      ts
+        ? ts.map((x, i) => `[${i + 1}]\n${x}`).join("\n\n")
+        : typeof c === "string"
+          ? c
+          : JSON.stringify(c);
+    const flat = frame(content, texts);
+    let { marker, text } = delimit(flat);
     // The images in what it reads that a tool that sees gave in this run (A-24), at most so many per reading and
     // per turn; any other ref, a plan's own, is not an image to show.
     const images: NonNullable<ModelRequest["images"]> = [];
@@ -2585,8 +2602,44 @@ export class Agent {
     let fault: string | null = null;
     // A prose answer sent back for a relative day (task 72): fixed by the second answer, or kept.
     let relative: "fixed" | "kept" | null = null;
+    // AU-59 (task 124): a first answer the code refuses goes back to the reader with its input shortened
+    // (shortenInput: a list's first half, a text's first half, a record's values so), at most READER_RETRIES times
+    // in the step, whatever reads it does; the second answer stands or the step fails saying which reader and why.
+    // The shortened input is a part of the same input, between new markers, with the same label for what comes out.
+    // A step makes at most two calls to its reader: an answer asked again for a relative day (tasks 72, 73) is not
+    // asked again after a shortened one, its relative day is kept and said so in the journal.
+    let retries = 0;
+    const retried = () => retries > 0;
+    const readChecked = async <T>(
+      sys: string,
+      schema: object,
+      extra: Record<string, unknown>,
+      check: (out: unknown) => { ok: T } | { fault: string },
+    ): Promise<{ ok: T } | { fault: string }> => {
+      const first = check(await read(sys, schema, extra));
+      if ("ok" in first || retries >= READER_RETRIES) return first;
+      retries++;
+      this.log(st, step, "read", "retry", "R2", {
+        reason: "reader-output-invalid",
+        attempt: 1,
+        why: { fault: first.fault, ...(lastReaderShape ?? {}) },
+      });
+      this.o.log?.(
+        `reader ${step.reader} refused (${first.fault}): asked again with its input shortened`,
+      );
+      if (texts) texts = texts.map(shortenText);
+      ({ marker, text } = delimit(frame(shortenInput(content), texts)));
+      return check(
+        await read(sys, schema, {
+          ...extra,
+          shortened: true,
+          refused: first.fault,
+          fix: SHORTENED_FIX,
+        }),
+      );
+    };
     if (step.reader === "fill")
-      checked = await this.fill(st, fields, flat, read, seen, (r) => {
+      checked = await this.fill(st, fields, flat, read, readChecked, retried, seen, (r) => {
         relative = r;
       });
     else {
@@ -2624,8 +2677,14 @@ export class Agent {
         // Its titles are read in the Bandeja another day (task 73): one with a relative day goes back once, as a
         // prose answer does (task 72); the second stands if it is valid.
         const schema = readMessageSchema(mods);
-        let r = checkReadMessage(await read(system, schema), mods);
-        if (r && relativeDayInProposal(r)) {
+        const first = await readChecked(system, schema, {}, (o) => {
+          const x = checkReadMessage(o, mods);
+          return x ? { ok: x } : { fault: "reading" };
+        });
+        let r = "ok" in first ? first.ok : null;
+        if ("fault" in first) fault = first.fault;
+        if (r && relativeDayInProposal(r) && retried()) relative = "kept";
+        else if (r && relativeDayInProposal(r)) {
           const again = checkReadMessage(await read(system, schema, { fix: RELATIVE_FIX }), mods);
           if (again) r = again;
           relative = relativeDayInProposal(r) ? "kept" : "fixed";
@@ -2634,16 +2693,17 @@ export class Agent {
       } else {
         const schema = readerSchema(step.reader, options);
         const extra = texts ? { count: texts.length } : {};
-        let r = checkReader(
-          step.reader,
-          await read(system, schema, extra),
-          options,
-          texts?.length ?? 0,
+        const kind = step.reader;
+        let r = await readChecked(system, schema, extra, (o) =>
+          checkReader(kind, o, options, texts?.length ?? 0),
         );
         // A prose reader never writes a relative day (task 72: read another day, «hoy» says another day): its answer
         // goes back to it once, saying so; the second answer stands if it is valid. The step's entry in the journal
         // says it happened and whether one still came through (an answer that insists, or a second that is invalid).
-        if ("ok" in r && PROSE_READERS.has(String(step.reader)) && relativeDayIn(r.ok)) {
+        const isRelative =
+          "ok" in r && PROSE_READERS.has(String(step.reader)) && relativeDayIn(r.ok);
+        if (isRelative && retried()) relative = "kept";
+        else if (isRelative) {
           const again = checkReader(
             step.reader,
             await read(system, schema, { ...extra, fix: RELATIVE_FIX }),
@@ -2660,9 +2720,13 @@ export class Agent {
     if (!checked) {
       this.log(st, step, "read", "deny", "R2", {
         reason: "reader-output-invalid",
+        ...(retries ? { attempt: 2, shortened: true } : {}),
         why: { ...(fault ? { fault } : {}), ...(lastReaderShape ?? {}) },
       });
-      throw new Stop("R2-reader-output-invalid");
+      if (retries)
+        this.o.log?.(`reader ${step.reader} refused again (${fault ?? "invalid"}): the step stops`);
+      // Which reader and why, from closed lists (its kind, the rule's family): the app says it in words (AU-59).
+      throw new Stop(`reader-failed:${step.reader}:${readerFailure(fault)}`);
     }
     const paramLabels = Object.values(params).map(deepLabel);
     // External in, external out; Juan's own text read by a model is the model's (never a destination).
@@ -2672,6 +2736,7 @@ export class Agent {
     this.log(st, step, "read", "allow", "P1", {
       reader: step.reader,
       ...(relative ? { relativeDay: relative } : {}),
+      ...(retries ? { attempt: 2, shortened: true } : {}),
       // What it gave the next step, cut to what the map's panel shows (task 91: «lo que ha enviado al siguiente paso»);
       // a mail's reading by its kinds of thing, without `all`, which repeats them.
       out: smallJson(
@@ -2767,6 +2832,15 @@ export class Agent {
     fields: FillField[],
     state: string,
     read: (sys: string, schema: object, extra?: Record<string, unknown>) => Promise<unknown>,
+    /** `read` and its check, asked once more with the input shortened when the check refuses it (AU-59). */
+    readChecked: <T>(
+      sys: string,
+      schema: object,
+      extra: Record<string, unknown>,
+      check: (out: unknown) => { ok: T } | { fault: string },
+    ) => Promise<{ ok: T } | { fault: string }>,
+    /** Whether `readChecked` already asked again: then no answer goes back for a relative day (two calls at most). */
+    retried: () => boolean,
     seen: Seen[],
     /** Its note said a relative day and went back once (task 73): fixed by the second answer, or kept. */
     onRelative: (r: "fixed" | "kept") => void = () => {},
@@ -2806,11 +2880,15 @@ export class Agent {
           )
             ? undefined
             : cleanNote((out as { note: unknown }).note);
-        const first = noteOf(await read(NOTE_PROMPT, NOTE_SCHEMA));
-        if (first === undefined) return null;
-        note = first;
+        const first = await readChecked<string | null>(NOTE_PROMPT, NOTE_SCHEMA, {}, (o) => {
+          const n = noteOf(o);
+          return n === undefined ? { fault: "note" } : { ok: n };
+        });
+        if (!("ok" in first)) return null;
+        note = first.ok;
         // A note with a relative day goes back once (task 73); the second stands if it is valid.
-        if (relativeDayInProposal({ note })) {
+        if (relativeDayInProposal({ note }) && retried()) onRelative("kept");
+        else if (relativeDayInProposal({ note })) {
           const again = noteOf(await read(NOTE_PROMPT, NOTE_SCHEMA, { fix: RELATIVE_FIX }));
           if (again !== undefined) note = again;
           onRelative(relativeDayInProposal({ note }) ? "kept" : "fixed");
@@ -2819,8 +2897,13 @@ export class Agent {
       return { values, note };
     }
     const extra = { fields: fieldsForReader(fields) };
-    let r = checkFill(await read(READER_PROMPTS.fill, fillSchema(fields), extra), fields);
-    if (r && relativeDayInProposal(r)) {
+    const first = await readChecked(READER_PROMPTS.fill, fillSchema(fields), extra, (o) => {
+      const x = checkFill(o, fields);
+      return x ? { ok: x } : { fault: "fill" };
+    });
+    let r = "ok" in first ? first.ok : null;
+    if (r && relativeDayInProposal(r) && retried()) onRelative("kept");
+    else if (r && relativeDayInProposal(r)) {
       const again = checkFill(
         await read(READER_PROMPTS.fill, fillSchema(fields), { ...extra, fix: RELATIVE_FIX }),
         fields,

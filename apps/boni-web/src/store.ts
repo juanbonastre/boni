@@ -106,6 +106,7 @@ import {
   visibleRefs,
 } from "./core/pointing.ts";
 import { isPending, OfflineQueue, type QueuedAction } from "./core/queue.ts";
+import { whyText } from "./core/runText.ts";
 import { filterOf, litKeys, typeOfKey } from "./core/screenReplies.ts";
 import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
@@ -1543,7 +1544,15 @@ export function agentErrorText(t: T, code: string): string {
     code === "tool-not-found"
   )
     return t("agent.error.undoTurn");
-  if (code.startsWith("model-")) return t("agent.error.model");
+  // A known reason the provider gave (task 124) is said; the rest is the generic «didn't answer, try again».
+  if (code.startsWith("model-"))
+    return /^model-(?:no-credit|spend-limit|too-long|bad-option|no-model|bad-key|forbidden)$/.test(
+      code,
+    )
+      ? t("agent.error.reader", { why: whyText(t, code) })
+      : t("agent.error.model");
+  // A reader refused twice (AU-59): which one and why, as the Registro says it.
+  if (code.startsWith("reader-failed:")) return t("agent.error.reader", { why: whyText(t, code) });
   // The limits of one request (P12) are not a security rule: say which one was hit.
   if (code.startsWith("P12-")) return t(`agent.error.limit.${code.slice(4)}`);
   const rule = /^(P\d{1,2}|R\d)/.exec(code)?.[1];

@@ -1,6 +1,7 @@
 /** A run in words (task 90, I-27): every place names a step the same, and no tool id, `$` reference or rule code shows. */
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
+import { agentErrorText } from "../store.ts";
 import type { RunDetail, RunStep } from "./agent.ts";
 import {
   moneyText,
@@ -91,6 +92,54 @@ describe("a run in words", () => {
     expect(whyText(t, "R1-private-data-to-reader")).toBe("una regla de seguridad lo impide");
     expect(whyText(t, "P13-daily-budget")).toBe("se llegó al límite de gasto de hoy");
     expect(whyText(t, "P12-steps")).toBe("se llegó a un límite de la petición");
+    // A reader refused twice (AU-59): which reader, by its name, and why; an unknown reason says the shape.
+    expect(whyText(t, "reader-failed:summarize:too-long")).toBe(
+      "«Resumir» no dio una respuesta válida (era demasiado larga)",
+    );
+    expect(whyText(t, "reader-failed:read_message:shape")).toBe(
+      "«Lectora» no dio una respuesta válida (no tenía la forma pedida)",
+    );
+    expect(whyText(t, "reader-failed:summarize_each:count")).toBe(
+      "«Resumir cada uno» no dio una respuesta válida (no respondía a cada elemento)",
+    );
+    expect(whyText(t, "reader-failed:fill:other")).toBe(
+      "«Rellenadora» no dio una respuesta válida (no tenía la forma pedida)",
+    );
+    expect(runStatusLine(t, "stopped:reader-failed:summarize:too-long")).toBe(
+      "Parado: «Resumir» no dio una respuesta válida (era demasiado larga)",
+    );
+    // A model call the provider refused (task 124): its reason from the closed list; an unknown one, «refused».
+    expect(whyText(t, "model-no-credit")).toBe(
+      "el modelo no respondió (la cuenta del proveedor no tiene saldo)",
+    );
+    expect(whyText(t, "model-too-long")).toBe(
+      "el modelo no respondió (la petición era demasiado larga)",
+    );
+    expect(whyText(t, "model-bad-option")).toBe(
+      "el modelo no respondió (se pidió una opción que el modelo no acepta)",
+    );
+    expect(whyText(t, "model-bad-key")).toBe(
+      "el modelo no respondió (la clave del proveedor no es válida)",
+    );
+    expect(whyText(t, "model-rate-limit")).toBe(
+      "el modelo no respondió (demasiadas peticiones seguidas)",
+    );
+    expect(whyText(t, "model-overloaded")).toBe(
+      "el modelo no respondió (el proveedor estaba saturado)",
+    );
+    expect(whyText(t, "model-http-400-invalid-request")).toBe(
+      "el modelo no respondió (el proveedor rechazó la llamada)",
+    );
+    expect(whyText(t, "model-failed")).toBe(
+      "el modelo no respondió (el proveedor rechazó la llamada)",
+    );
+    // In the chat, a reason Juan can act on is said; a passing one is «try again».
+    expect(agentErrorText(t, "model-no-credit")).toBe(
+      "No se ha podido hacer: el modelo no respondió (la cuenta del proveedor no tiene saldo).",
+    );
+    expect(agentErrorText(t, "model-overloaded")).toBe(
+      "El modelo no ha respondido. Inténtalo otra vez en un momento.",
+    );
     // A whole run: in words on screen, with its code only in «Copiar».
     expect(runStatusLine(t, "done")).toBe("Hecho");
     expect(runStatusLine(t, "stopped")).toBe("Parado");
