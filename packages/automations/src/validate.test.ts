@@ -178,7 +178,7 @@ describe("validation", () => {
   it("expressions: code, a step that does not exist or does not come before, no current row, .item across rows remade", () => {
     const s = sketch()
       .step("Inicio", "manual", { fields: [{ key: "n", name: "N", type: "number" }] })
-      .step("Agrupar", "group", { measures: [{ to: "cuantas", measure: "count" }] })
+      .step("Agrupar", "group", { measures: [{ measure: "count" }] })
       .step("Después", "edit", {
         fields: [
           { field: "a", value: cite("$json.n * 2") },
@@ -186,7 +186,7 @@ describe("validation", () => {
           { field: "c", value: cite("$('Al lado').item.n") },
           { field: "d", value: cite("$('Inicio').item.n") },
           { field: "e", value: cite("$('Inicio').first().n") },
-          { field: "f", value: cite("$('Agrupar').item.cuantas") },
+          { field: "f", value: cite("$('Agrupar').item.count") },
         ],
       })
       .step("Al lado", "limit", { count: cite("$('Inicio').first().n") })
@@ -213,6 +213,45 @@ describe("validation", () => {
     expect(by("Todas")).toEqual([["expr.noCurrentRow", "count", undefined]]);
   });
 
+  it("results: «Agrupar» and «Contar o sumar» name each <measure>_<field>; two with one name, or one named like a field grouped by, do not validate", () => {
+    const s = sketch()
+      .step("Inicio", "manual")
+      .step("Bien", "group", {
+        by: [{ field: "k" }],
+        measures: [
+          { measure: "count" },
+          { measure: "count", field: "n" },
+          { measure: "sum", field: "n" },
+        ],
+      })
+      .step("Dos veces", "group", {
+        measures: [
+          { measure: "sum", field: "n" },
+          { measure: "sum", field: "n" },
+        ],
+      })
+      .step("Como un campo", "group", {
+        by: [{ field: "count" }],
+        measures: [{ measure: "count" }],
+      })
+      .step("Contar", "collection", {
+        collection: items.key,
+        action: "aggregate",
+        measure: "sum",
+        field: TOTAL,
+        groupBy: NAME,
+      })
+      .arrow("Inicio", "Bien")
+      .arrow("Inicio", "Dos veces")
+      .arrow("Inicio", "Como un campo")
+      .arrow("Inicio", "Contar");
+    const found = validate(s.build(), knowing(items)).filter((p) => p.code === "param.sameName");
+    expect(found.map((p) => [p.step, p.param, p.detail])).toEqual([
+      [s.id("Dos veces"), "measures.1", { name: "sum_n" }],
+      [s.id("Como un campo"), "measures.0", { name: "count" }],
+    ]);
+    expect(found.every((p) => p.severity === "error")).toBe(true);
+  });
   it("warnings: a step no trigger reaches, a branch left unconnected; neither stops a run", () => {
     const s = sketch()
       .step("Inicio", "manual")

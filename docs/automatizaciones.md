@@ -634,13 +634,18 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 - **AU-120** (F14a, hecho) · En «Colección» se eligen primero la colección y la acción, y de ellas salen los
   demás parámetros. «Buscar filas»: «Solo estas filas», «Ordenar por» y «Límite» (50); como opción, «Incluir
-  relacionadas» (un nivel: `$json.categoria.nombre`).
+  relacionadas» (un nivel: `$json.categoria.nombre`). «Leer una fila» con una fila que no está falla el paso: no
+  da una salida vacía, y «Si falla» decide qué pasa después. «Contar o sumar» da una fila por grupo y llama a cada
+  resultado por su medida y su campo (`sum_importe`; contar filas es `count`), como «Agrupar»; dos resultados con el
+  mismo nombre, o uno que se llama como un campo por el que agrupa, hacen que la automatización no sea válida.
 - **AU-121** (F14a, hecho) · Crear y modificar enseñan el formulario de la fila: solo los campos que Juan añade,
   cada uno con el control de su tipo. Modificar y eliminar actúan sobre «Las filas que llegan» (por defecto si
   vienen de esa colección) o sobre «Las que cumplan…», que pide al menos una condición: sin ella la automatización
-  no es válida.
+  no es válida. «Las que cumplan…» alcanza a todas las filas que cumplen la condición; el tope lo ponen los límites
+  de la ejecución (AU-17). «Crear o modificar» con más de una fila que coincide falla el paso y dice cuántas: no
+  elige una.
 - **AU-122** (F14a, hecho) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
-  automatización.
+  automatización. El paso da las filas como estaban antes de ir a la papelera.
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
 - **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
@@ -790,7 +795,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   decisión 5 del §10.
 - **AU-168** (F14a, hecho) · Todas las rutas y herramientas de automatizaciones pasan por `decide` desde el
   primer día (A-26). En la F14a todavía no hay rutas ni herramientas: es el motor el que no tiene otro camino a las
-  colecciones que la política, y cada lectura y cada escritura le pregunta antes, en una prueba también.
+  colecciones que la política, y cada lectura y cada escritura le pregunta antes, en una prueba también. En una
+  prueba, una escritura permitida no escribe: da la fila como quedaría, y para eso lee la fila guardada sin otra
+  pregunta a la política, porque es parte de la escritura que ya se permitió. Lo que sale de un paso que escribe
+  lleva las etiquetas que daría leerlo: cada campo guardado la suya, cada campo escrito la del valor que se escribió.
 
 Lo que cambia, regla por regla:
 

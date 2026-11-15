@@ -15,6 +15,7 @@ import {
   outputsOf,
   type ParamSpec,
   paramsOf,
+  resultName,
   stepType,
 } from "./catalogue.ts";
 import type { CollectionShape } from "./effects.ts";
@@ -48,6 +49,7 @@ export const PROBLEMS = [
   "param.shape", // a `shape` parameter holds an expression (AU-26)
   "param.value", // not what its control takes: not one of the options, not a number, a list with too few rows
   "param.condition", // «Las que cumplan…» with no condition (AU-121)
+  "param.sameName", // two results of «Agrupar» or «Contar o sumar» get one name, or one is named like a field it groups by (AU-120). detail: name
   // An expression (`param` is the path to it)
   "expr.code", // not a simple citation: JavaScript arrives in F14c (AU-22)
   "expr.unknownStep", // cites a name no step has. detail: name
@@ -228,6 +230,40 @@ class StepCheck {
     );
     for (const k of Object.keys(this.step.params).sort(byCodeUnit))
       if (!known.has(k)) this.problem("param.unknown", k);
+    this.results();
+  }
+
+  /** The fields «Agrupar» and «Contar o sumar» give: what they group by, then each result by `resultName`. */
+  private results(): void {
+    const p = this.step.params;
+    const text = (v: ParamValue | undefined) => (typeof v === "string" ? v : undefined);
+    const rows = (v: ParamValue | undefined) =>
+      (Array.isArray(v) ? v : []).map((x) =>
+        typeof x === "object" && x !== null && !Array.isArray(x) && !isExpr(x) ? x : {},
+      );
+    let grouped: (string | undefined)[] = [];
+    let results: { name: string; at: string }[] = [];
+    if (this.step.type === "group") {
+      grouped = rows(p.by).map((b) => text(b.field));
+      results = rows(p.measures).map((m, i) => ({
+        name: resultName(text(m.measure) ?? "count", text(m.field)),
+        at: `measures.${i}`,
+      }));
+    } else if (this.step.type === "collection" && actionOf(this.step)?.key === "aggregate") {
+      const measure = text(p.measure) ?? "count";
+      grouped = [text(p.groupBy)];
+      results = [
+        {
+          name: resultName(measure, measure === "count" ? undefined : text(p.field)),
+          at: "measure",
+        },
+      ];
+    }
+    const taken = new Set(grouped.filter((g) => g !== undefined));
+    for (const r of results) {
+      if (taken.has(r.name)) this.problem("param.sameName", r.at, { name: r.name });
+      taken.add(r.name);
+    }
   }
 
   private problem(code: ProblemCode, param: string, detail?: Problem["detail"]): void {

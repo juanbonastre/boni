@@ -513,7 +513,7 @@ describe("«Colección», action by action", () => {
       .step("Paso", "collection", { collection: items.key, ...params })
       .arrow("Inicio", "Paso");
 
-  it("«Crear o modificar» modifies the one row that matches, makes one when none does, and fails when more than one does", async () => {
+  it("«Crear o modificar» modifies the one row that matches, makes one when none does, and fails when more than one does, saying how many", async () => {
     const upsert = (value: string) =>
       one({
         [ACTION]: "upsert",
@@ -535,17 +535,48 @@ describe("«Colección», action by action", () => {
       ["dos", 3],
       ["tres", 9],
     ]);
+    // Three rows match (more than the two it reads to know): it fails, and says how many.
+    db.rows(items.key).push({
+      json: { [name]: "dos", [n]: 4, [kind]: "b" },
+      label: OWN,
+      origin: { collection: items.key, id: "o_tercera", version: 1 },
+    });
     const twice = upsert("dos");
     const e = await start(twice.build(), twice.id("Inicio"), {}, { collections: db });
-    expect(e.error?.message).toBe(`more than one row of the collection ${items.key} matches`);
+    expect(e.error?.message).toBe(
+      `3 rows of the collection ${items.key} match: it modifies one or none`,
+    );
+  });
+
+  it("«Las que cumplan…» reaches every row that matches, more than a search's 50", async () => {
+    const db = store(
+      [items],
+      {
+        [items.key]: Array.from({ length: 70 }, (_, i) => ({
+          [name]: `fila ${i}`,
+          [n]: i,
+          [kind]: "a",
+        })),
+      },
+      ids(127),
+    );
+    const s = one({
+      [ACTION]: "update",
+      target: "matching",
+      where: [{ field: n, op: "gt", value: 4 }],
+      fields: [{ field: kind, value: "b" }],
+    });
+    expect((await start(s.build(), s.id("Inicio"), {}, { collections: db })).state).toBe("done");
+    expect(db.applied).toHaveLength(65);
+    expect(db.rows(items.key).filter((r) => r.json[kind] === "b")).toHaveLength(65);
   });
 
   it("«Contar o sumar» gives one row, or one per group, with its result derived; «Leer una fila» fails on a row that is not there", async () => {
     const count = one({ [ACTION]: "aggregate", measure: "sum", field: n, groupBy: kind });
     const e = await start(count.build(), count.id("Inicio"), {}, { collections: fresh() });
     expect(e.steps[count.id("Paso")]?.out.main?.map((r) => [r.json, r.fields])).toEqual([
-      [{ [kind]: "a", sum: 4 }, { sum: { label: OWN, derived: true } }],
-      [{ [kind]: "b", sum: 2 }, { sum: { label: OWN, derived: true } }],
+      [{ [kind]: "a", [`sum_${n}`]: 4 }, { [`sum_${n}`]: { label: OWN, derived: true } }],
+      [{ [kind]: "b", [`sum_${n}`]: 2 }, { [`sum_${n}`]: { label: OWN, derived: true } }],
     ]);
     const all = one({ [ACTION]: "aggregate", where: [{ field: n, op: "gt", value: 1 }] });
     const e2 = await start(all.build(), all.id("Inicio"), {}, { collections: fresh() });

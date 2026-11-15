@@ -6,7 +6,7 @@
  */
 import { join, type Label, type Labeled } from "@boni/entities";
 import { type DatabaseFilter, type FilterItem, matchesFilters } from "@boni/views";
-import { IN, paramsOf, paramValue } from "./catalogue.ts";
+import { IN, paramsOf, paramValue, resultName } from "./catalogue.ts";
 import type { DateUnit } from "./effects.ts";
 import type { Executor, RowOut, StepContext, StepOutput } from "./engine.ts";
 import { isExpr, MAIN, OUT, type ParamValue } from "./format.ts";
@@ -328,7 +328,7 @@ const group: Executor = {
           field === undefined
             ? members.map((r) => r.label)
             : members.map((r) => fieldLabel(r, field));
-        setField(row, String(m.to), {
+        setField(row, resultName(kind, field), {
           // «Contar» with no field counts the rows; with one, the rows that have a value in it.
           value: kind === "count" && field === undefined ? members.length : measure(kind, values),
           label: joinAll(labels, label),
