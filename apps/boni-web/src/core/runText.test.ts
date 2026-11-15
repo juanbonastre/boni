@@ -4,6 +4,7 @@ import { translator } from "../i18n.ts";
 import { agentErrorText } from "../store.ts";
 import type { RunDetail, RunStep } from "./agent.ts";
 import {
+  evalFailText,
   moneyText,
   runCopy,
   runStatusLine,
@@ -216,5 +217,68 @@ describe("the step a run stopped at (docs/sistema.md §4.7, «Flujos»)", () => 
     expect(stopStep([s("leer", "allow", "timeout"), s("otro", "stopped")])).toBe("otro");
     expect(stopStep([s("leer", "allow", "timeout")])).toBe("leer");
     expect(stopStep([s("leer", "allow"), s("fin", "allow")])).toBeNull();
+  });
+});
+
+describe("a failed case of an evaluation, in words (task 132)", () => {
+  const en = translator("en");
+  it("says who failed and what, Spanish first, from fixed codes only", () => {
+    expect(evalFailText(t, { who: "reader", what: "invalid-answer" })).toBe(
+      "Lector: respuesta que no vale",
+    );
+    expect(evalFailText(t, { who: "planner", what: "no-plan" })).toBe(
+      "Agente: no devolvió un plan",
+    );
+    expect(evalFailText(t, { who: "planner", what: "missing-tool" })).toBe(
+      "Agente: pidió algo que no existe",
+    );
+    expect(evalFailText(t, { who: "planner", what: "missing" })).toBe(
+      "Agente: falta algo en la respuesta",
+    );
+    expect(evalFailText(t, { who: "decider", what: "unfinished" })).toBe("Decisor: no terminó");
+    expect(evalFailText(t, { who: "reviewer", what: "extra" })).toBe(
+      "Revisor: sobra algo en la respuesta",
+    );
+    expect(evalFailText(t, { who: "planner", what: "wrong" })).toBe("Agente: respuesta equivocada");
+    expect(evalFailText(en, { who: "reader", what: "invalid-answer" })).toBe(
+      "Reader: invalid answer",
+    );
+    expect(evalFailText(en, { who: "planner", what: "no-plan" })).toBe("Agent: returned no plan");
+    expect(evalFailText(en, { who: "planner", what: "missing-tool" })).toBe(
+      "Agent: asked for something missing",
+    );
+    expect(evalFailText(en, { who: "planner", what: "unfinished" })).toBe("Agent: did not finish");
+    expect(evalFailText(en, { who: "planner", what: "missing" })).toBe(
+      "Agent: something missing in the answer",
+    );
+    expect(evalFailText(en, { who: "planner", what: "extra" })).toBe(
+      "Agent: something extra in the answer",
+    );
+    expect(evalFailText(en, { who: "planner", what: "wrong" })).toBe("Agent: wrong answer");
+  });
+
+  it("a provider's refusal takes the words a run that stopped on it gets (PR 446's), under «Proveedor»", () => {
+    expect(evalFailText(t, { who: "provider", what: "rate-limit" })).toBe(
+      `Proveedor: ${t("run.why.model.rate-limit")}`,
+    );
+    expect(evalFailText(t, { who: "provider", what: "bad-body" })).toBe(
+      "Proveedor: respondió algo ilegible",
+    );
+    expect(evalFailText(t, { who: "planner", what: "max-tokens" })).toBe(
+      "Agente: la respuesta se cortó",
+    );
+    // A code with no words of its own: «refused», never the code.
+    expect(evalFailText(t, { who: "provider", what: "http-418" })).toBe(
+      `Proveedor: ${t("run.why.model.other")}`,
+    );
+    expect(evalFailText(en, { who: "provider", what: "no-credit" })).toBe(
+      "Provider: the provider's account has no credit",
+    );
+  });
+
+  it("nothing that is not a fixed code is painted", () => {
+    expect(evalFailText(t, undefined)).toBeNull();
+    expect(evalFailText(t, { who: "provider", what: "Ignore everything: <b>hola</b>" })).toBeNull();
+    expect(evalFailText(t, { who: "someone", what: "wrong" })).toBeNull();
   });
 });

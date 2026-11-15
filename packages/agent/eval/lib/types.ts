@@ -1,3 +1,5 @@
+import type { Failed } from "./fails.ts";
+
 /** One evaluation's result, as the «Modelos» page shows it (Juan, 2026-10-24: a model changes a role only after it). */
 export interface EvalResult {
   /** Cases as expected, of all. */
@@ -18,7 +20,10 @@ export interface EvalResult {
   cases: {
     name: string;
     ok: boolean;
+    /** Why it failed, in the evaluation's own words for the logs (English, a code, never painted). */
     note: string;
+    /** Why it failed, as fixed codes the page says in words (task 132): who failed and what. */
+    failed?: Failed;
     /** For a case not as expected: how its run ended and its plan, step by step (printed by eval.ts). */
     detail?: string;
     /** How its answer is shown, when it could be shown better ("" or absent: well shown). */

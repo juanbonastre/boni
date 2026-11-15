@@ -1,7 +1,8 @@
 import { checkAnswers, type DecisionQuestion } from "../../src/decider.ts";
 import { levelsOf, type Outcome } from "../../src/decisions.ts";
-import type { ModelProvider } from "../../src/providers.ts";
+import type { ModelProvider, Usage } from "../../src/providers.ts";
 import { COLLECTIONS, DECIDER_CASES, NAMES } from "./deciderCases.ts";
+import { callFail, type Failed } from "./fails.ts";
 import type { EvalResult } from "./types.ts";
 
 const QUESTION =
@@ -31,6 +32,7 @@ export async function evalDecider(
       if (!c.goes) continue;
       out.total++;
       let note = "";
+      let failed: Failed | undefined;
       let ok = false;
       try {
         const r = await p.complete({
@@ -45,11 +47,15 @@ export async function evalDecider(
         const a = checkAnswers(r.json, questions);
         const x = a?.c;
         const y = a?.r;
-        if (x?.type !== "choice" || y?.type !== "choice") note = "invalid answer";
-        else {
+        if (x?.type !== "choice" || y?.type !== "choice") {
+          note = "invalid answer";
+          failed = { who: "decider", what: "invalid-answer" };
+        } else {
           const p = x.choice === y.choice ? Math.min(x.confidence, y.confidence) : 0;
           if (p < 0.6) {
             note = "would ask Juan";
+            // It would not decide alone: the case did not finish as expected.
+            failed = { who: "decider", what: "unfinished" };
             decided.push({ p, outcome: "ask", result: null });
           } else {
             ok = x.choice === c.goes;
@@ -57,14 +63,27 @@ export async function evalDecider(
             if (!ok) {
               out.wrong++;
               note = `chose ${x.choice}`;
+              failed = { who: "decider", what: "wrong" };
             }
           }
         }
       } catch (e) {
         note = String((e as { code?: string }).code ?? "failed");
+        failed = callFail(note, "decider");
+        // An answer that came back but could not be read was paid for all the same (task 132).
+        const u = (e as { usage?: Usage }).usage;
+        if (u) {
+          out.tokens += u.input + u.output;
+          out.cost += u.cost ?? 0;
+        }
       }
       if (ok) out.right++;
-      out.cases.push({ name: c.mail.split("\n")[2]?.replace("Asunto: ", "") ?? "", ok, note });
+      out.cases.push({
+        name: c.mail.split("\n")[2]?.replace("Asunto: ", "") ?? "",
+        ok,
+        note,
+        ...(!ok && failed ? { failed } : {}),
+      });
     }
   out.calibration = levelsOf(decided).filter((l) => l.judged > 0);
   return out;

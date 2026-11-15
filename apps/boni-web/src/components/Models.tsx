@@ -22,6 +22,7 @@ import {
 } from "../core/agent.ts";
 import { ApiError } from "../core/api.ts";
 import { shortModel } from "../core/audit.ts";
+import { evalFailText } from "../core/runText.ts";
 import { agentApi, errorText, toast, useStore } from "../store.ts";
 
 type T = ReturnType<typeof useStore.getState>["t"];
@@ -235,15 +236,23 @@ function Calibration({ ev }: { ev: ModelEvaluation }) {
   );
 }
 
+/**
+ * The evaluation's cases, each failed one with who failed and what, in words (task 132): only from fixed codes, never
+ * the evaluation's own note (a code or English, for the logs).
+ */
 function Cases({ ev }: { ev: ModelEvaluation }) {
+  const t = useStore((s) => s.t);
   return (
     <ul className="models-cases">
-      {ev.cases.map((c, i) => (
-        <li key={i} className={c.ok ? "ok" : "fail"}>
-          <span>{c.ok ? "✓" : "✕"}</span> <span className="models-case">{c.name}</span>
-          {c.note && <span className="muted small"> · {c.note}</span>}
-        </li>
-      ))}
+      {ev.cases.map((c, i) => {
+        const why = c.ok ? null : evalFailText(t, c.failed);
+        return (
+          <li key={i} className={c.ok ? "ok" : "fail"}>
+            <span>{c.ok ? "✓" : "✕"}</span> <span className="models-case">{c.name}</span>
+            {why && <span className="muted small"> · {why}</span>}
+          </li>
+        );
+      })}
     </ul>
   );
 }

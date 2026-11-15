@@ -64,6 +64,29 @@ export function whyText(t: T, code: string): string {
   return or(t, `run.why.${code}`, t("run.why.fault"));
 }
 
+/**
+ * Why an evaluation's case failed, in words (task 132): «<who>: <what>», who the use whose call failed by the label the
+ * page gives it («Agente», «Lector»…) or «Proveedor», what from the evaluation's closed list, or for a provider (and a
+ * call cut off or refused) the words a run that stopped on that code gets (`run.why.model.*`). Only fixed codes are
+ * mapped: anything else, a model's or a provider's text included, is never painted (null).
+ */
+export function evalFailText(t: T, f: { who: string; what: string } | undefined): string | null {
+  if (!f || !/^[a-z0-9-]{1,30}$/.test(f.what)) return null;
+  const who =
+    f.who === "provider"
+      ? t("models.fail.provider")
+      : ["planner", "reader", "decider", "reviewer"].includes(f.who)
+        ? t(`models.role.${f.who}`)
+        : null;
+  if (!who) return null;
+  const own = t(`models.fail.${f.what}`);
+  const what =
+    own !== `models.fail.${f.what}`
+      ? own
+      : or(t, `run.why.model.${f.what}`, t("run.why.model.other"));
+  return `${who}: ${what}`;
+}
+
 /** What came of a whole run, in a word or two: «Hecho», «Parado: …» (its code only where it helps, `withCode`). */
 export function runStatusLine(t: T, status: string, withCode = false): string {
   if (status === "done") return t("run.node.allow");

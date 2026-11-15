@@ -732,6 +732,33 @@ interface ModelProvider {
   `ProviderError.detail`: ni en el registro, ni en la app, ni en el log del servidor. Es texto de fuera, y puede
   devolver lo que se le mandó. Pruebas: `anthropic.test.ts` («why the API refused a call»), con una respuesta
   inventada por código.
+- **Un plan que no llega como JSON no para el turno a la primera** (tarea 132, A-33; Kimi K3.1 por OpenRouter
+  contestó «Ponme al día» con algo que no era JSON y el turno paró con `model-not-json`):
+  - a un planificador compatible con OpenAI (`openai.ts`) se le pide `response_format: json_object`, como preferencia:
+    sin `require_parameters`, así que en OpenRouter una ruta que no lo admite contesta como antes y el código saca el
+    JSON del texto. Un servidor propio configurado con `readerFormat: "none"` no recibe formato, y uno que lo rechaza
+    (un 400 o un 422 que lo nombra) se pregunta otra vez sin él, una vez, y desde entonces sin él (una petición
+    rechazada no se cobra). No se le pide `json_schema` estricto, porque el lenguaje de los planes pasa de lo que admite la salida
+    estructurada; el código valida el plan igual que siempre. Lo que se manda a Anthropic no cambia, y los lectores
+    se piden y se leen igual (`openai.test.ts`, «a reader is asked and read as before task 132»);
+  - si la respuesta no es JSON (prosa, un objeto cortado, nada) o el cuerpo HTTP no lo es (`bad-body`, que es del
+    proveedor y no del modelo), se pide **otra vez una sola vez**, con `previous_errors: ["not-json"]` (un código,
+    nunca el texto del modelo). Es el mismo reintento que el de un plan que no vale (`PLANNER_RETRIES`, 1), así que
+    una planificación son dos llamadas como mucho, y los topes del turno y de la ejecución (P12) siguen mandando;
+  - una respuesta que no se puede leer también se cobró: `ProviderError.usage` lleva su gasto, el paso la escribe en
+    el diario (`modelCall`, con `response: {error}`) y cuenta en el gasto del mes. Pruebas: `plannerJson.test.ts`.
+- **La evaluación del planificador** corre con los servicios del asistente que están en el núcleo: `origin`, sin nada
+  pendiente (`evalOrigin`), de modo que «¿Qué me han propuesto…?» ya no para con `tool-not-available`. Quedan fuera,
+  porque la evaluación usa solo `coreTools()` y el núcleo no depende de la app (A-02), las herramientas del servidor
+  con sus `services`, `pieces` y `functions`; el decisor y el revisor caen en el lector como en el servidor sin ellos;
+  `overBudget` no aplica a una ejecución que pide Juan; `notify`, `onRequest`, `image`, `fileOf`, `undoable` y
+  `undoKept` no los alcanza ningún caso del núcleo, y `net`, `log`, `tz` y `limits` se quedan en lo que toman por
+  omisión (sin red, sin registro, la zona de la evaluación y los topes de siempre).
+- **Un caso fallido dice qué uso falló y qué, con códigos fijos** (`eval/lib/fails.ts`, I-40): `failed: {who, what}`,
+  con `who` el papel (`planner`, `reader`, `decider`, `reviewer`) o `provider`, y `what` uno de `invalid-answer`,
+  `no-plan`, `missing-tool`, `unfinished`, `missing`, `extra`, `wrong`, o el código del rechazo del proveedor. La
+  página «Modelos» lo dice en palabras; el detalle de quien califica, en inglés, queda en `note` para los registros y
+  no se pinta.
 - **Propuesta para el NAS:**
   - planificador `claude-opus-5-5`, con salida estructurada y esfuerzo `medium`, `high` si las pruebas lo piden;
   - lectores `claude-haiku-4-5` (barato y suficiente para extraer con esquema), o `claude-sonnet-5-5` si la calidad

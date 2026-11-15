@@ -909,7 +909,11 @@ export interface ModelEvaluation extends ModelChoice {
   total: number;
   wrong: number;
   cost: number;
-  cases: { name: string; ok: boolean; note: string }[];
+  /**
+   * `note`: the evaluation's own words for the logs (a code or English), never painted. `failed`: who failed and what,
+   * as fixed codes (task 132), painted in words by `evalFailText`; absent from an evaluation made before it.
+   */
+  cases: { name: string; ok: boolean; note: string; failed?: { who: string; what: string } }[];
   /** The decider's calibration by level of confidence, when the evaluation measured it (docs/fiabilidad.md §3.3). */
   calibration?: { from: number; to: number; judged: number; right: number }[];
 }

@@ -44,7 +44,7 @@ import {
   validatePlan,
 } from "./plan.ts";
 import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts";
-import type { ModelProvider, ModelRequest } from "./providers.ts";
+import type { ModelProvider, ModelRequest, Usage } from "./providers.ts";
 import {
   checkReader,
   delimit,
@@ -286,6 +286,12 @@ export interface RunLimits {
   maxWrites: number;
   maxSensitiveReadsBeforeEgress: number;
 }
+/**
+ * How many times the planner is asked again in one planning (task 132): once, for a plan the code refused or an answer
+ * that was not JSON. So a planning calls the model twice at most, each call in the journal with what it cost.
+ */
+export const PLANNER_RETRIES = 1;
+
 export const RUN_LIMITS: RunLimits = {
   maxStepRuns: 200,
   // A mail with several items: one reading, the collection, and filling each item (docs/extensiones.md 9).
@@ -1545,10 +1551,32 @@ export class Agent {
       // What was sent counts as seen even if no answer came back.
       // Numbers only: how much it wrote when it ran out of room (the evaluation says it).
       const tokens = (e as { tokens?: { output: number; reasoning: number } }).tokens;
+      // An answer that came back and was charged but could not be read (`not-json`, task 132): in the journal with
+      // what it cost, like any call, so the month's spending counts it; its response is the code, never its text.
+      const usage = (e as { usage?: Usage }).usage;
+      const paid =
+        usage && Number.isFinite(usage.input) && Number.isFinite(usage.output) ? usage : null;
+      let call: number | undefined;
+      if (paid) {
+        st.counters.tokens += paid.input + paid.output;
+        call = this.o.store.journal.modelCall({
+          run: st.id,
+          role: req.role,
+          provider: provider.id,
+          model: provider.id,
+          promptHash,
+          request: kept(req),
+          response: { error: stop },
+          usage: paid,
+          at: this.now(),
+          step: st.stepNow ?? null,
+        });
+      }
       this.audit(st, {
         by: `model:${req.role}:${provider.id}`,
         tool: `model.${req.role}`,
         decision: "allow",
+        ...(call !== undefined ? { call } : {}),
         result: {
           error: stop,
           ...(tokens && Number.isFinite(tokens.output) && Number.isFinite(tokens.reasoning)
@@ -1625,14 +1653,31 @@ export class Agent {
     // gets every tool it may use, with its arguments.
     // What the code bound for this turn (the screen, F9) the plan may name.
     const bound = ["screen", "history"].filter((k) => st.env.has(k));
-    let out = await ask({});
-    let v = this.checkPlanned(st, out, bound);
-    if (!v.ok) {
-      out = await ask({ previous_errors: v.errors });
-      v = this.checkPlanned(st, out, bound);
+    // One second ask at most (PLANNER_RETRIES), for a plan that is not valid or an answer that is not JSON at all
+    // (task 132: a model that is not Claude answered in prose; a provider's body was not JSON). The model is told why
+    // by fixed codes, never by its own words; the run's limits still hold over it (P12).
+    const again = (e: unknown) =>
+      e instanceof Stop && (e.code === "model-not-json" || e.code === "model-bad-body");
+    let extra: Record<string, unknown> = {};
+    for (let i = 0; ; i++) {
+      const last = i >= PLANNER_RETRIES;
+      let why: string;
+      let errors: string[];
+      try {
+        const v = this.checkPlanned(st, await ask(extra), bound);
+        if (v.ok) return v.plan;
+        if (last) throw new Stop("plan-invalid");
+        why = "plan-invalid";
+        errors = v.errors;
+      } catch (e) {
+        if (last || !again(e)) throw e;
+        why = (e as Stop).code.slice("model-".length);
+        errors = [why];
+      }
+      // The server's log says the engine called a model again on its own, by its code only (as AU-59 does).
+      this.o.log?.(`planner asked again (${why})`);
+      extra = { previous_errors: errors };
     }
-    if (!v.ok) throw new Stop("plan-invalid");
-    return v.plan;
   }
 
   // ------------------------------------------------------------ the interpreter

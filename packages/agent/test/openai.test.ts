@@ -87,13 +87,52 @@ describe("the OpenAI-compatible provider", () => {
     expect(s.calls[1]?.body.provider).toEqual({ zdr: true, data_collection: "deny" });
   });
 
-  it("the planner answers in text: the plan is taken from it, nothing forced", async () => {
+  it("the planner is asked for a JSON object, nothing forced, and the plan is still taken from text", async () => {
     const s = stub(() => ok('Aquí está:\n```json\n{"version":1,"steps":[]}\n```'));
     const p = new OpenAIProvider({ apiKey: KEY, model: "m", baseURL: OR, fetch: s.f });
     const r = await p.complete({ ...reader, role: "planner", structured: false });
     expect(r.json).toEqual({ version: 1, steps: [] });
-    expect(s.calls[0]?.body.response_format).toBeUndefined();
+    // Task 132: a JSON object as a preference; no `require_parameters`, so a route without it is still taken.
+    expect(s.calls[0]?.body.response_format).toEqual({ type: "json_object" });
     expect(s.calls[0]?.body.provider).toBeUndefined();
+  });
+
+  it("a server that takes no format: the planner is asked with none, configured or learned from its refusal (task 132)", async () => {
+    const plan = '{"version":1,"steps":[]}';
+    const planner = { ...reader, role: "planner" as const, structured: false };
+    // Configured: a server whose readers are asked in plain text asks its planner in plain text too.
+    const plain = stub(() => ok(plan));
+    await new OpenAIProvider({
+      model: "m",
+      baseURL: "http://127.0.0.1:8080/v1",
+      readerFormat: "none",
+      fetch: plain.f,
+    }).complete(planner);
+    expect(plain.calls[0]?.body.response_format).toBeUndefined();
+    // Learned: a 400 that names the format is asked again without it, once, and from then on without it.
+    let n = 0;
+    const s = stub(() =>
+      n++ === 0
+        ? new Response('{"error":{"message":"response_format is not supported"}}', { status: 400 })
+        : ok(plan),
+    );
+    const p = new OpenAIProvider({ model: "m", baseURL: "http://127.0.0.1:8080/v1", fetch: s.f });
+    expect((await p.complete(planner)).json).toEqual({ version: 1, steps: [] });
+    await p.complete(planner);
+    expect(s.calls.map((c) => "response_format" in c.body)).toEqual([true, false, false]);
+    // A reader is not affected by what the planner learned, and another 400 is not asked again.
+    await p.complete(reader);
+    expect(s.calls[3]?.body.response_format).toMatchObject({ type: "json_schema" });
+    const other = stub(
+      () => new Response('{"error":{"message":"prompt is too long"}}', { status: 400 }),
+    );
+    const q = new OpenAIProvider({
+      model: "m",
+      baseURL: "http://127.0.0.1:8080/v1",
+      fetch: other.f,
+    });
+    await expect(q.complete(planner)).rejects.toMatchObject({ code: "http-400" });
+    expect(other.calls.length).toBe(1);
   });
 
   it("a local model needs no key and is local; json_object puts the schema in the prompt", async () => {
@@ -187,6 +226,71 @@ describe("the OpenAI-compatible provider", () => {
       "upstream",
     ]);
     expect(await fails(() => ok("no es json"))).toEqual(["not-json", ""]);
+    // The body itself not JSON is the provider's, apart from the model's answer (task 132).
+    expect(await fails(() => new Response("<html>", { status: 200 }))).toEqual([
+      "bad-body",
+      "<html>",
+    ]);
     expect(await fails(() => new TypeError("fetch failed"))).toEqual(["network", ""]);
+  });
+
+  it("an answer that is not JSON carries what it cost (task 132), numbers only", async () => {
+    const p = new OpenAIProvider({
+      apiKey: KEY,
+      model: "m",
+      baseURL: OR,
+      fetch: stub(() =>
+        ok("prosa", { usage: { prompt_tokens: 7, completion_tokens: 3, cost: 0.01 } }),
+      ).f,
+    });
+    const e = (await p.complete(reader).catch((x) => x)) as ProviderError;
+    expect([e.code, e.usage]).toEqual(["not-json", { input: 7, output: 3, cost: 0.01 }]);
+  });
+
+  it("a reader is asked and read as before task 132: only the planner's request changed", async () => {
+    const s = stub(() => ok('Aquí va: {"a": "sí"}'));
+    const p = new OpenAIProvider({
+      apiKey: KEY,
+      model: "m",
+      baseURL: OR,
+      zdr: true,
+      reasoning: "off",
+      fetch: s.f,
+    });
+    expect((await p.complete(reader)).json).toEqual({ a: "sí" });
+    expect(s.calls[0]?.body).toEqual({
+      model: "m",
+      max_tokens: 100,
+      messages: [
+        { role: "system", content: "s" },
+        { role: "user", content: JSON.stringify({ text: "hola" }) },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "reader",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] } },
+            additionalProperties: false,
+          },
+        },
+      },
+      reasoning: { enabled: false },
+      provider: { require_parameters: true, zdr: true, data_collection: "deny" },
+    });
+    // A reader with no format reads the JSON out of its text, as it did.
+    const t = stub(() => ok('Aquí va: {"a": "no"} y nada más'));
+    const none = new OpenAIProvider({
+      apiKey: KEY,
+      model: "m",
+      baseURL: OR,
+      readerFormat: "none",
+      fetch: t.f,
+    });
+    expect((await none.complete(reader)).json).toEqual({ a: "no" });
+    expect(t.calls[0]?.body.response_format).toBeUndefined();
+    expect(t.calls[0]?.body.provider).toBeUndefined();
   });
 });

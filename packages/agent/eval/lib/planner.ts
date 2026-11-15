@@ -4,10 +4,23 @@ import { join } from "node:path";
 import { type FieldDef, type Label, label, type TypeDef } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { Agent, type TurnResult } from "../../src/agent.ts";
-import type { ModelProvider, ModelRequest, ModelResponse } from "../../src/providers.ts";
+import type { Role } from "../../src/models.ts";
+import type {
+  CallOptions,
+  ModelProvider,
+  ModelRequest,
+  ModelResponse,
+  Usage,
+} from "../../src/providers.ts";
 import { guideValue } from "../../src/reading.ts";
-import { coreTools, ensureSystemTypes } from "../../src/tools.ts";
+import {
+  coreTools,
+  ensureSystemTypes,
+  type OriginReader,
+  type RecordOrigin,
+} from "../../src/tools.ts";
 import type { Painted } from "../../src/values.ts";
+import { type Failed, type Miss, miss, runFail } from "./fails.ts";
 import type { EvalResult } from "./types.ts";
 
 /**
@@ -273,32 +286,51 @@ const newType = (s: UserStore, re: RegExp) =>
  * (`shows`, Juan 2026-11-01: not only text; a list for several mails, a chart for numbers to compare). A wrong
  * format never makes a case wrong: it is counted on its own.
  */
+/** A run that did not end done: it did not finish (it stopped, or waits on a question it should not ask). */
+const notDone = (r: TurnResult): Miss | null =>
+  r.status === "done" ? null : miss("unfinished", `status ${r.status}`);
+
 const CASES: {
   request: string;
-  check: (r: TurnResult, s: UserStore) => string;
+  /** null: as expected; else the check's kind (a fixed code the page says) and its detail for the logs. */
+  check: (r: TurnResult, s: UserStore) => Miss | null;
   shows?: (r: TurnResult) => string;
 }[] = [
   {
     request: "¿Cuántas tareas tengo?",
     check: (r) => {
       const n = numberReply(r);
-      return r.status === "done" && n?.t === "v" && n.value === 1 ? "" : "no number 1";
+      return (
+        notDone(r) ??
+        (n?.t !== "v"
+          ? miss("missing", "no number 1")
+          : n.value === 1
+            ? null
+            : miss("wrong", "no number 1"))
+      );
     },
     shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
   },
   {
     request: "Apunta una tarea: llamar al dentista el jueves",
     check: (r, s) =>
-      r.status === "done" &&
-      s.list("t_tarea").some((x) => /dentista/i.test(String(x.entity.values.f_titulo)))
-        ? ""
-        : "no new task",
+      notDone(r) ??
+      (s.list("t_tarea").some((x) => /dentista/i.test(String(x.entity.values.f_titulo)))
+        ? null
+        : miss("missing", "no new task")),
   },
   {
     request: "¿Cuánto llevo gastado en total?",
     check: (r) => {
       const n = numberReply(r);
-      return r.status === "done" && n?.t === "v" && n.value === 84.5 ? "" : "no sum 84.5";
+      return (
+        notDone(r) ??
+        (n?.t !== "v"
+          ? miss("missing", "no sum 84.5")
+          : n.value === 84.5
+            ? null
+            : miss("wrong", "no sum 84.5"))
+      );
     },
     shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
   },
@@ -306,9 +338,10 @@ const CASES: {
     request: "¿Cuánto he gastado en cada categoría?",
     check: (r) => {
       const n = numbersIn(r);
-      return r.status === "done" && [42.5, 30, 12].every((x) => n.includes(x))
-        ? ""
-        : "not 42.5, 30 and 12";
+      return (
+        notDone(r) ??
+        ([42.5, 30, 12].every((x) => n.includes(x)) ? null : miss("missing", "not 42.5, 30 and 12"))
+      );
     },
     // Several numbers to compare: a chart (a table also reads well).
     shows: (r) =>
@@ -321,18 +354,24 @@ const CASES: {
   {
     request: "Borra la tarea de comprar pan",
     check: (r) =>
-      r.status === "waiting" && r.pending?.kind === "confirm" ? "" : "did not ask to confirm",
+      r.status === "waiting" && r.pending?.kind === "confirm"
+        ? null
+        : r.status === "done" || r.status === "waiting"
+          ? miss("wrong", "did not ask to confirm")
+          : miss("unfinished", "did not ask to confirm"),
   },
   {
     request: "Quiero llevar control de los libros que leo, con autor y estado",
     check: (r, s) => {
       const t = newType(s, /libro/i);
-      return r.status === "done" && t && t.fields.length >= 3 ? "" : "no collection of books";
+      return (
+        notDone(r) ?? (t && t.fields.length >= 3 ? null : miss("missing", "no collection of books"))
+      );
     },
   },
   {
     request: "Resume mis correos",
-    check: (r) => (r.status === "done" && r.replies.length > 0 ? "" : "no summary"),
+    check: (r) => notDone(r) ?? (r.replies.length > 0 ? null : miss("missing", "no summary")),
     // One line per mail, so each can be told apart (as mail apps show their summaries); a list, not a table.
     shows: (r) =>
       shownRows(r, ["list"]) >= 2
@@ -344,7 +383,7 @@ const CASES: {
   {
     // M2 (docs/correo.md): a catch-up over the mail, read with the user's guide when there is one.
     request: "Ponme al día",
-    check: (r) => (r.status === "done" && r.replies.length > 0 ? "" : "no catch-up"),
+    check: (r) => notDone(r) ?? (r.replies.length > 0 ? null : miss("missing", "no catch-up")),
     shows: (r) => (shownRows(r, ["list"]) >= 2 ? "" : "not one item per mail"),
   },
   {
@@ -353,28 +392,35 @@ const CASES: {
     request: "¿Qué me han propuesto para revisar el acta?",
     check: (r) => {
       const said = saidText(r);
-      if (r.status !== "done" || !/acta/i.test(said)) return "the mail not said";
-      if (/\bhoy\b[^.;]{0,25}\b12/i.test(said)) return "yesterday's «hoy a las 12h» told as today";
-      return /\b(lunes|19)\b/i.test(said) ? "" : "its day not said by its weekday or number";
+      const not = notDone(r);
+      if (not) return not;
+      if (!/acta/i.test(said)) return miss("missing", "the mail not said");
+      if (/\bhoy\b[^.;]{0,25}\b12/i.test(said))
+        return miss("wrong", "yesterday's «hoy a las 12h» told as today");
+      return /\b(lunes|19)\b/i.test(said)
+        ? null
+        : miss("missing", "its day not said by its weekday or number");
     },
   },
   {
     request: "¿Quién me ha escrito de la secretaría?",
     check: (r) =>
-      r.status === "done" && /secretar/i.test(saidText(r)) ? "" : "the secretariat's mail not said",
+      notDone(r) ??
+      (/secretar/i.test(saidText(r)) ? null : miss("missing", "the secretariat's mail not said")),
   },
   {
     // Task 71: only the recent mail about it, never the one from weeks ago (nor, better, the form's receipt).
     request: "¿Tengo algún correo reciente de tutor personal?",
     check: (r) => {
       const said = JSON.stringify(r.replies);
-      return r.status !== "done"
-        ? `status ${r.status}`
-        : !said.includes("Tutor personal: cita")
-          ? "not the recent one"
+      return (
+        notDone(r) ??
+        (!said.includes("Tutor personal: cita")
+          ? miss("missing", "not the recent one")
           : said.includes("Asignación de tutor personal")
-            ? "the one from weeks ago too"
-            : "";
+            ? miss("extra", "the one from weeks ago too")
+            : null)
+      );
     },
     shows: (r) =>
       JSON.stringify(r.replies).includes("Respuesta registrada") ? "the form's receipt too" : "",
@@ -382,12 +428,12 @@ const CASES: {
   {
     // Every mail labelled in one call (label_each), the counts in a chart (Juan, 2026-11-02).
     request: "Agrupa mis correos por tipo en una gráfica",
-    check: (r) => (r.status === "done" ? "" : `status ${r.status}`),
+    check: (r) => notDone(r),
     shows: (r) => (shownRows(r, ["chart"]) >= 2 ? "" : "no chart of the kinds"),
   },
   {
     request: "¿Qué me piden en los correos? Apúntalo como tareas",
-    check: (r) => (r.proposals.length > 0 ? "" : "nothing proposed"),
+    check: (r) => (r.proposals.length > 0 ? null : miss("missing", "nothing proposed")),
     shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
   },
   {
@@ -398,9 +444,10 @@ const CASES: {
       const book =
         t &&
         s.list(t.id).some((x) => /nombre del viento/i.test(String(x.entity.values[t.titleField])));
-      return r.status === "done" && t && t.fields.length >= 5 && book
-        ? ""
-        : "no collection with its book";
+      return (
+        notDone(r) ??
+        (t && t.fields.length >= 5 && book ? null : miss("missing", "no collection with its book"))
+      );
     },
   },
 ];
@@ -450,6 +497,56 @@ function detailOf(store: UserStore, r: TurnResult): string {
   ].join("\n     ");
 }
 
+/**
+ * What the server gives the planner about where a record comes from and what waits in the Bandeja (task 132: «¿Qué me
+ * han propuesto…?» asked `inbox.pending`, which the evaluation lacked, and stopped on `tool-not-available`). The
+ * server's (apps/server/src/origin.ts) reads its journal; the evaluation's store has no flows and no proposals, so this
+ * says who made a record from the store's own log, as the server does then, and a Bandeja with nothing pending.
+ */
+export function evalOrigin(store: UserStore): OriginReader {
+  return {
+    of(id) {
+      if (!store.get(id)) return null;
+      const ops = store.log({ target: id });
+      const made = ops.find((x) => x.kind === "create") ?? ops[0];
+      if (!made) return null;
+      const by: RecordOrigin["by"] = made.run
+        ? "chat"
+        : made.by.startsWith("user")
+          ? "user"
+          : made.by === "import"
+            ? "import"
+            : made.by.startsWith("connector")
+              ? "connector"
+              : "boni";
+      return {
+        by,
+        at: made.at,
+        device: null,
+        flow: null,
+        input: null,
+        proposal: null,
+        run: made.run,
+      };
+    },
+    pending: () => [],
+  };
+}
+
+/** The use whose model call stopped the run, when one did (its audit: `model.<role>` with the run's error). */
+function failedCall(store: UserStore, r: TurnResult): Role | null {
+  const a = store.audit
+    .actions({ run: r.run })
+    .find(
+      (x) =>
+        x.tool.startsWith("model.") && (x.result as { error?: unknown } | null)?.error === r.error,
+    );
+  const role = a?.tool.slice("model.".length);
+  return role === "planner" || role === "reader" || role === "decider" || role === "reviewer"
+    ? role
+    : null;
+}
+
 export async function evalPlanner(
   planner: ModelProvider,
   reader: ModelProvider,
@@ -466,14 +563,24 @@ export async function evalPlanner(
   } = {},
 ): Promise<EvalResult> {
   const out: EvalResult = { right: 0, total: 0, wrong: 0, shown: 0, cost: 0, tokens: 0, cases: [] };
+  const add = (u: Usage) => {
+    out.tokens += u.input + u.output;
+    out.cost += u.cost ?? 0;
+  };
   const counted = (p: ModelProvider): ModelProvider => ({
     id: p.id,
     privacy: p.privacy,
-    async complete(req: ModelRequest): Promise<ModelResponse> {
-      const r = await p.complete(req);
-      out.tokens += r.usage.input + r.usage.output;
-      out.cost += r.usage.cost ?? 0;
-      return r;
+    async complete(req: ModelRequest, call?: CallOptions): Promise<ModelResponse> {
+      try {
+        const r = await p.complete(req, call);
+        add(r.usage);
+        return r;
+      } catch (e) {
+        // An answer that came back but could not be read was paid for all the same (task 132).
+        const u = (e as { usage?: Usage }).usage;
+        if (u) add(u);
+        throw e;
+      }
     },
   });
   const registry = coreTools().freeze();
@@ -486,6 +593,7 @@ export async function evalPlanner(
     const dir = mkdtempSync(join(tmpdir(), "boni-eval-"));
     const store = evalStore(dir);
     let note = "";
+    let failed: Failed | undefined;
     let detail = "";
     let format = "";
     try {
@@ -500,14 +608,26 @@ export async function evalPlanner(
         ...(opts.plannerPrompt ? { plannerPrompt: opts.plannerPrompt } : {}),
         // The readers of mail read with an invented guide, as the server gives them Juan's (docs/correo.md §4.1).
         ...(opts.noGuide ? {} : { readingGuide: () => EVAL_GUIDE }),
+        // Where a record comes from and the Bandeja, as the server's agent has them (task 132).
+        origin: evalOrigin(store),
       });
       const r = await agent.turn({ text: c.request, origin: { kind: "turn", trust: "personal" } });
-      note = r.error && r.status === "stopped" ? r.error : c.check(r, store);
+      if (r.error && r.status === "stopped") {
+        note = r.error;
+        failed = runFail(r.error, failedCall(store, r));
+      } else {
+        const m = c.check(r, store);
+        if (m) {
+          note = m.detail;
+          failed = { who: "planner", what: m.kind };
+        }
+      }
       if (note) detail = detailOf(store, r);
       // How it is shown only counts when the answer is right.
       format = note ? "" : (c.shows?.(r) ?? "");
     } catch (e) {
       note = String((e as { code?: string }).code ?? "failed");
+      failed = { who: "planner", what: "unfinished" };
     } finally {
       store.close();
       rmSync(dir, { recursive: true, force: true });
@@ -518,6 +638,7 @@ export async function evalPlanner(
       name: c.request,
       ok: !note,
       note,
+      ...(failed ? { failed } : {}),
       ...(detail ? { detail } : {}),
       ...(format ? { format } : {}),
     });
