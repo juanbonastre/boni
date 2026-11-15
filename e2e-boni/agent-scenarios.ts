@@ -1260,7 +1260,9 @@ const evaluation = (role: string, c: ReturnType<typeof choice>, right: number, t
   cases: Array.from({ length: total }, (_, i) => ({
     name: `Caso inventado ${i + 1}: «Reunión de ejemplo»`,
     ok: i < right,
-    note: i < right ? "" : "puso la tarea en la colección equivocada",
+    // The grader's detail, never painted; the page says `failed` in words (task 132, I-40).
+    note: i < right ? "" : "put the task in the wrong collection",
+    ...(i < right ? {} : { failed: { who: role, what: "wrong" } }),
   })),
 });
 const READER = choice("openrouter", "deepseek/deepseek-v4.1-flash", true);
