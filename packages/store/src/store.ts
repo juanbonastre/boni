@@ -293,9 +293,14 @@ export interface UserStore {
   audit: Audit;
   /**
    * Runs `fn` when the store closes, before its database does: whatever watches the store on a timer (the calendar's
-   * poll) stops there, so no timer finds the store closed (task 123). Returns a function that takes `fn` back.
+   * poll) stops there, so no timer finds the store closed (task 123). Returns a function that takes `fn` back. On a
+   * store already closed nothing is kept: there is no close left for `fn` to run at.
    */
   onClose(fn: () => void): () => void;
+  /**
+   * Runs every `onClose` callback, then closes the database. A callback that throws stops neither the others nor the
+   * close: its error is thrown once the database is closed (several: an AggregateError). Closing twice throws.
+   */
   close(): void;
 }
 
@@ -342,6 +347,7 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
   const db = new DatabaseSync(path);
   /** What runs when the store closes, before its database does (`onClose`). */
   const closers = new Set<() => void>();
+  let closing = false;
   // Another process (the import, a command) may be writing: wait for it instead of failing at once.
   // WAL with synchronous NORMAL: never corrupt, and a commit does not wait for the disk (on the NAS's
   // encrypted volume FULL made the vault import take most of an hour); a power cut can lose the last
@@ -1439,13 +1445,24 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
     journal: openJournal(db),
     audit: openAudit(db, tx),
     onClose: (fn) => {
+      if (closing) return () => false;
       closers.add(fn);
       return () => closers.delete(fn);
     },
     close: () => {
-      for (const fn of [...closers]) fn();
+      closing = true;
+      const errors: unknown[] = [];
+      for (const fn of [...closers]) {
+        try {
+          fn();
+        } catch (e) {
+          errors.push(e); // thrown below, once the database is closed
+        }
+      }
       closers.clear();
       db.close();
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "store close: callbacks failed");
     },
   };
 }

@@ -1161,3 +1161,72 @@ describe("collections as classes (docs/clases.md; D-11, D-12, A-06)", () => {
     expect(store.aiAccess()).toMatchObject({ t_tarea: "opaque", t_evento: "private" });
   });
 });
+
+describe("what runs when a store closes (onClose, task 123)", () => {
+  it("runs before the database closes: a callback can still read the store", () => {
+    const store = openUserStore(":memory:");
+    const seen: number[] = [];
+    store.onClose(() => seen.push(store.version()));
+    store.close();
+    expect(seen).toEqual([0]);
+    expect(() => store.version()).toThrow(/not open/);
+  });
+
+  it("a callback taken back does not run", () => {
+    const store = openUserStore(":memory:");
+    const ran: string[] = [];
+    const off = store.onClose(() => ran.push("taken back"));
+    store.onClose(() => ran.push("kept"));
+    off();
+    store.close();
+    expect(ran).toEqual(["kept"]);
+  });
+
+  it("a callback that throws stops neither the others nor the close, and its error comes out of close()", () => {
+    const store = openUserStore(":memory:");
+    const ran: string[] = [];
+    store.onClose(() => ran.push("first"));
+    store.onClose(() => {
+      throw new Error("a callback failed");
+    });
+    store.onClose(() => ran.push("last"));
+    expect(() => store.close()).toThrow("a callback failed");
+    expect(ran).toEqual(["first", "last"]);
+    expect(() => store.version()).toThrow(/not open/);
+  });
+
+  it("several that throw come out together, once the database is closed", () => {
+    const store = openUserStore(":memory:");
+    store.onClose(() => {
+      throw new Error("one");
+    });
+    store.onClose(() => {
+      throw new Error("two");
+    });
+    let caught: unknown;
+    try {
+      store.close();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect((caught as AggregateError).errors.map((e) => (e as Error).message)).toEqual([
+      "one",
+      "two",
+    ]);
+    expect(() => store.version()).toThrow(/not open/);
+  });
+
+  it("on a store already closed, nothing is kept: there is no close left to run at", () => {
+    const store = openUserStore(":memory:");
+    store.close();
+    let ran = false;
+    const off = store.onClose(() => {
+      ran = true;
+    });
+    expect(() => off()).not.toThrow();
+    // A second close throws, as it always did; what was registered after the first one does not run.
+    expect(() => store.close()).toThrow(/not open/);
+    expect(ran).toBe(false);
+  });
+});
