@@ -18,7 +18,7 @@ import {
   stepType,
 } from "./catalogue.ts";
 import type { CollectionShape } from "./effects.ts";
-import { parseExpression } from "./expression.ts";
+import { parseExpression, printCitation } from "./expression.ts";
 import { type Automation, isExpr, MAX_RETRIES, type ParamValue, type Step } from "./format.ts";
 import { byCodeUnit, downstream, findCycle } from "./graph.ts";
 
@@ -52,7 +52,7 @@ export const PROBLEMS = [
   "expr.code", // not a simple citation: JavaScript arrives in F14c (AU-22)
   "expr.unknownStep", // cites a name no step has. detail: name
   "expr.notBefore", // cites a step that does not always run before this one. detail: name
-  "expr.cannotPair", // `.item` across a step that remakes the rows (AU-13). detail: name, by (the step between)
+  "expr.cannotPair", // `.item` across a step that remakes the rows (AU-13). detail: name, by (the step between), first and all (the citations it proposes instead)
   "expr.noCurrentRow", // `$json` or `.item` in a parameter of a step that works with all the rows
   // The collections
   "collection.unknown", // detail: collection
@@ -430,7 +430,15 @@ class StepCheck {
         .sort(byCodeUnit)
         .map((id) => this.byId.get(id))
         .find((s) => s && actionOf(s)?.pairs === false);
-      if (by) this.problem("expr.cannotPair", path, { name, by: by.name });
+      // What it proposes instead, written as Juan would cite it: the first row, or all of them (AU-13).
+      const instead = printCitation({ ...part.cite, pick: "first" });
+      if (by)
+        this.problem("expr.cannotPair", path, {
+          name,
+          by: by.name,
+          first: instead,
+          all: `${printCitation({ ...part.cite, pick: "first", path: [] }).slice(0, -".first()".length)}.all()`,
+        });
     }
   }
 }

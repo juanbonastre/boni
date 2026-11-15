@@ -82,25 +82,39 @@ function filterValue(v: Cell): string | number | undefined {
   return JSON.stringify(v);
 }
 
-/** Conditions with their values resolved for the row in hand: the views' filter (validation checked their shape). */
-export function filterOf(ctx: StepContext, where: ParamValue | undefined): FilterItem[] {
+/**
+ * Conditions with their values resolved for the row in hand: the views' filter (validation checked their shape).
+ * `values`, when given, receives each resolved value with its label by its place («where.0», «where.1.rules.0»):
+ * what a read tells the policy (`PolicyCall.values`).
+ */
+export function filterOf(
+  ctx: StepContext,
+  where: ParamValue | undefined,
+  values?: Record<string, Labeled<Cell>>,
+  at = "where",
+): FilterItem[] {
   if (!Array.isArray(where)) return [];
-  const rule = (r: ParamValue): DatabaseFilter => {
+  const rule = (r: ParamValue, place: string): DatabaseFilter => {
     const o = r as Record<string, ParamValue>;
-    const value = o.value === undefined ? undefined : filterValue(ctx.value(o.value).value);
+    const resolved = o.value === undefined ? undefined : ctx.value(o.value);
+    if (resolved && values) values[place] = resolved;
+    const value = resolved === undefined ? undefined : filterValue(resolved.value);
     return {
       field: String(o.field),
       op: String(o.op) as DatabaseFilter["op"],
       ...(value === undefined ? {} : { value }),
     };
   };
-  return where.map((item): FilterItem => {
+  return where.map((item, i): FilterItem => {
     const o = item as Record<string, ParamValue>;
     if (typeof o === "object" && o !== null && !isExpr(o) && "join" in o) {
       const rules = Array.isArray(o.rules) ? o.rules : [];
-      return { join: o.join === "or" ? "or" : "and", rules: rules.map(rule) };
+      return {
+        join: o.join === "or" ? "or" : "and",
+        rules: rules.map((r, j) => rule(r, `${at}.${i}.rules.${j}`)),
+      };
     }
-    return rule(item);
+    return rule(item, `${at}.${i}`);
   });
 }
 

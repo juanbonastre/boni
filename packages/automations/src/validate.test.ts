@@ -203,7 +203,11 @@ describe("validation", () => {
       ["expr.code", "fields.0.value", undefined],
       ["expr.unknownStep", "fields.1.value", { name: "Nadie" }],
       ["expr.notBefore", "fields.2.value", { name: "Al lado" }],
-      ["expr.cannotPair", "fields.3.value", { name: "Inicio", by: "Agrupar" }],
+      [
+        "expr.cannotPair",
+        "fields.3.value",
+        { name: "Inicio", by: "Agrupar", first: "$('Inicio').first().n", all: "$('Inicio').all()" },
+      ],
     ]);
     expect(by("Al lado")).toEqual([]);
     expect(by("Todas")).toEqual([["expr.noCurrentRow", "count", undefined]]);

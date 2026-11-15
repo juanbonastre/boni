@@ -402,6 +402,8 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
       min: 1,
       place: "shown",
       required: true,
+      // What decides the order decides which rows a later «Limitar» keeps (AU-164).
+      changesRows: true,
       columns: [
         { key: "field", control: "choice", options: INPUT, place: "shown", required: true },
         DIRECTION,
