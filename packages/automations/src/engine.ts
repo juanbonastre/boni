@@ -48,8 +48,8 @@ import {
   guard,
   type Policy,
 } from "./effects.ts";
-import { type Citation, CiteError, resolve, type Scope } from "./expression.ts";
-import type { StepFailure } from "./failures.ts";
+import { type Citation, CiteError, citationsIn, resolve, type Scope } from "./expression.ts";
+import { type StepFailure, StepFault } from "./failures.ts";
 import {
   type Automation,
   isExpr,
@@ -169,6 +169,31 @@ export async function run(input: RunInput, deps: RunDeps): Promise<Execution> {
   return new Run(input, deps, triggerRow(trigger, input.fields)).go();
 }
 
+/**
+ * What a test of part of a draft decides (partial.ts): the steps in the order they are decided, and the records
+ * taken as they were kept instead of running their steps. Each reused step comes before what hangs from it, and
+ * everything it hangs from is reused too, so its rows keep their lineage.
+ */
+export interface Plan {
+  order: string[];
+  reuse: ReadonlyMap<string, StepRecord>;
+}
+
+/** `run` for a test: the same run, from a trigger checked by the caller, with the order and the reuse of `plan`. */
+export function runPlanned(
+  input: RunInput,
+  deps: RunDeps,
+  trigger: Step,
+  plan: Plan,
+): Promise<Execution> {
+  return new Run(input, deps, triggerRow(trigger, input.fields), plan).go();
+}
+
+/** The trigger's row a run would start with, or `CannotRun` (AU-110): what `run` checks before any effect. */
+export function checkTriggerRow(step: Step, given: RunInput["fields"]): void {
+  triggerRow(step, given);
+}
+
 /** Why a run did not start: the automation's errors, or a trigger or a row it cannot start with. Nothing was done. */
 export class CannotRun extends Error {
   readonly problems: readonly Problem[];
@@ -267,10 +292,64 @@ const hasExpr = (v: ParamValue | undefined): boolean =>
     ? v.some(hasExpr)
     : typeof v === "object" && v !== null && Object.values(v).some(hasExpr));
 
-const messageOf = (e: unknown): StepError => ({
-  message: e instanceof Error ? e.message : String(e),
-  ...(e instanceof Denied ? { rule: e.rule } : {}),
-});
+/** A step's failure for the log and for the screen: the English message, the policy's rule and its code (AU-84). */
+function stepErrorOf(e: unknown, step: Step): StepError {
+  return {
+    message: e instanceof Error ? e.message : String(e),
+    ...(e instanceof Denied ? { rule: e.rule } : {}),
+    failure: failureOf(e, step),
+  };
+}
+
+function failureOf(e: unknown, step: Step): StepFailure {
+  if (e instanceof StepFault) return e.failure;
+  if (e instanceof StopRun) return { code: "stopped", detail: { message: e.message } };
+  if (e instanceof Denied) return { code: e.waits ? "policy.waits" : "policy.denied" };
+  if (e instanceof CiteError) {
+    const param = citedIn(step, e.cite);
+    return {
+      code: `cite.${e.failure}`,
+      ...(param ? { param } : {}),
+      ...(e.cite.step === null ? {} : { detail: { step: e.cite.step } }),
+    };
+  }
+  return { code: "other" };
+}
+
+/** The parameter a citation is written in, as `Problem.param` writes one («where.0.value»); the first that has it. */
+function citedIn(step: Step, cite: Citation): string | undefined {
+  const same = (c: Citation) =>
+    c.step === cite.step &&
+    c.pick === cite.pick &&
+    c.path.length === cite.path.length &&
+    c.path.every((k, i) => k === cite.path[i]);
+  const walk = (v: ParamValue, at: string): string | undefined => {
+    if (isExpr(v)) return citationsIn(v).some(same) ? at : undefined;
+    if (Array.isArray(v)) {
+      for (const [i, x] of v.entries()) {
+        const found = walk(x, `${at}.${i}`);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    if (typeof v === "object" && v !== null)
+      for (const [k, x] of Object.entries(v)) {
+        const found = walk(x, `${at}.${k}`);
+        if (found) return found;
+      }
+    return undefined;
+  };
+  for (const p of paramsOf(step)) {
+    const v = step.params[p.key];
+    const found = v === undefined ? undefined : walk(v, p.key);
+    if (found) return found;
+  }
+  for (const [k, v] of Object.entries(step.params)) {
+    const found = walk(v, k);
+    if (found) return found;
+  }
+  return undefined;
+}
 
 /** One run: its records, and which step and input rows made each row (for `$('Step').item`, AU-13). */
 class Run {
@@ -282,12 +361,14 @@ class Run {
   readonly made = new WeakMap<Row, { step: string; inputs: readonly Row[] }>();
   readonly byId: Map<string, Step>;
   readonly byName: Map<string, Step>;
+  readonly plan: Plan | undefined;
   order: string[] = [];
 
-  constructor(input: RunInput, deps: RunDeps, first: Row) {
+  constructor(input: RunInput, deps: RunDeps, first: Row, plan?: Plan) {
     this.input = input;
     this.deps = deps;
     this.first = first;
+    this.plan = plan;
     this.byId = new Map(input.automation.steps.map((s) => [s.id, s]));
     this.byName = new Map(input.automation.steps.map((s) => [s.name, s]));
   }
@@ -295,12 +376,21 @@ class Run {
   async go(): Promise<Execution> {
     const { automation, trigger, test } = this.input;
     const started = this.deps.clock.now();
-    this.order = executionOrder(automation, trigger);
+    this.order = this.plan?.order ?? executionOrder(automation, trigger);
     let error: Execution["error"];
     for (const id of this.order) {
       const step = this.byId.get(id) as Step;
       if (error) {
         this.records[id] = { ...blank(), state: "stopped" };
+        continue;
+      }
+      const kept = this.plan?.reuse.get(id);
+      if (kept) {
+        // Taken as it was kept: its rows are remembered as this step's, made from what its arrows bring now.
+        this.records[id] = kept;
+        const inputs = id === trigger ? [] : this.arriving(step);
+        for (const rows of Object.values(kept.out))
+          for (const r of rows) this.made.set(r, { step: id, inputs });
         continue;
       }
       if (id === trigger) {
@@ -427,13 +517,16 @@ class Run {
         } catch (e) {
           // «Parar con error» ends the run there, with no retry and no «Si falla» (AU-16).
           if (e instanceof StopRun) {
-            stop = { message: e.message };
+            stop = stepErrorOf(e, step);
             return;
           }
           lastError = e;
         }
       }
-      const failure: StepError = { ...messageOf(lastError), ...(row ? { row: index } : {}) };
+      const failure: StepError = {
+        ...stepErrorOf(lastError, step),
+        ...(row ? { row: index } : {}),
+      };
       if (settings.onError === "stop") {
         stop = failure;
         return;
@@ -486,6 +579,17 @@ class Run {
     }
     finish("done");
     return;
+  }
+
+  /** Every row that reaches a step, input by input in the order of `arrowsInto`, as `step` puts them together. */
+  arriving(step: Step): Row[] {
+    const firstOnly = step.settings?.firstRowOnly ?? SETTINGS_DEFAULTS.firstRowOnly;
+    return inputsOf(step).flatMap((name) => {
+      const rows = arrowsInto(this.input.automation, this.order, step.id, name).flatMap(
+        (a) => this.records[a.from.step]?.out[a.from.output] ?? [],
+      );
+      return firstOnly ? rows.slice(0, 1) : rows;
+    });
   }
 
   /** A row out, with its parent and path, remembered as this step's. */

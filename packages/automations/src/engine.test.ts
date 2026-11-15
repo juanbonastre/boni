@@ -85,6 +85,7 @@ describe("how an automation runs", () => {
       step: grouped.id("Modificar"),
       message: `the row that arrives is not a saved row of the collection ${items.key}`,
       row: 0,
+      failure: { code: "row.notSaved", param: "target", detail: { collection: items.key } },
     });
   });
   it("AU-06 · with two triggers a run starts in one: the steps that hang only from the other have no record and do not hold back a step both reach", async () => {
@@ -311,7 +312,11 @@ describe("how an automation runs", () => {
     ]);
     expect(junta?.failed).toBe(1);
     // «Si» comes before «Marca» (AU-11): its row is the first of «Junta».
-    expect(junta?.error).toEqual({ message: "noPair: Marca", row: 0 });
+    expect(junta?.error).toEqual({
+      message: "noPair: Marca",
+      row: 0,
+      failure: { code: "cite.noPair", param: "fields.0.value", detail: { step: "Marca" } },
+    });
   });
   it("AU-14 · an arrow with no rows does not start what follows; with «Seguir sin filas» what follows runs with an empty list, never with an invented row: a step that writes runs once with no current row", async () => {
     const next = ids(14);
@@ -465,7 +470,12 @@ describe("how an automation runs", () => {
     const s = failing();
     const stop = await start(s.build(), s.id("Inicio"), { t: "no es una lista" });
     expect(stop.state).toBe("failed");
-    expect(stop.error).toEqual({ step: s.id("Partir"), message: reason, row: 0 });
+    expect(stop.error).toEqual({
+      step: s.id("Partir"),
+      message: reason,
+      row: 0,
+      failure: { code: "value.type", param: "field", detail: { needs: "list", field: "t" } },
+    });
     expect(stop.steps[s.id("Partir")]?.state).toBe("failed");
     expect(stop.steps[s.id("Después")]?.state).toBe("stopped");
 
@@ -542,7 +552,11 @@ describe("how an automation runs", () => {
       .arrow("Inicio", "Basta");
     const halted = await start(halt.build(), halt.id("Inicio"));
     expect(halted.state).toBe("failed");
-    expect(halted.error).toEqual({ step: halt.id("Basta"), message: "Basta" });
+    expect(halted.error).toEqual({
+      step: halt.id("Basta"),
+      message: "Basta",
+      failure: { code: "stopped", detail: { message: "Basta" } },
+    });
     expect(halted.steps[halt.id("Basta")]?.retries).toBe(0);
   });
 

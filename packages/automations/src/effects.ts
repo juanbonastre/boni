@@ -9,6 +9,7 @@
  */
 import type { FieldType, Label, Labeled } from "@boni/entities";
 import type { FilterItem } from "@boni/views";
+import { StepFault } from "./failures.ts";
 import type { Cell, FieldLabel, Row, RowOrigin } from "./rows.ts";
 
 // ---------------------------------------------------------------- the policy
@@ -109,7 +110,8 @@ export interface Collections {
   get(collection: string, id: string): Promise<StoredRow | undefined>;
   aggregate(query: AggregateQuery): Promise<AggregateResult[]>;
   /**
-   * Does it and gives the row as saved (for `trash`, as it was). Throws when the row changed since `row.version`.
+   * Does it and gives the row as saved (for `trash`, as it was). Throws `StepFault` with `row.changed` when the row
+   * changed since `row.version`.
    * All or nothing: when it throws, nothing was written, so trying again (AU-16) never writes twice.
    */
   apply(change: Change): Promise<StoredRow>;
@@ -120,10 +122,13 @@ export interface Collections {
 /** The policy said no: the step fails with this, and «Si falla» decides what follows (AU-16). */
 export class Denied extends Error {
   readonly rule: string;
-  constructor(rule: string, reason: string) {
+  /** A read the policy would only confirm or propose: it cannot wait for Juan (`policy.waits`). */
+  readonly waits: boolean;
+  constructor(rule: string, reason: string, waits = false) {
     super(reason);
     this.name = "Denied";
     this.rule = rule;
+    this.waits = waits;
   }
 }
 
@@ -205,7 +210,8 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
   const read = (collection: string, values: Labelled, rows?: number): void => {
     const d = ask("read", collection, values, rows);
     if (d.kind === "deny") throw new Denied(d.rule, d.reason);
-    if (d.kind !== "allow") throw new Denied(d.rule, `a read cannot wait for Juan (${d.kind})`);
+    if (d.kind !== "allow")
+      throw new Denied(d.rule, `a read cannot wait for Juan (${d.kind})`, true);
   };
   return {
     // The fields of a collection are no data of Juan's: validation reads them too, with no policy.
@@ -257,7 +263,9 @@ async function wouldBe(
   if (change.kind === "create") return over({ json: {}, label: own }, change.fields, values);
   const saved = await collections.get(change.row.collection, change.row.id);
   if (!saved || saved.origin.version !== change.row.version)
-    throw new Error(`the row ${change.row.id} changed since it was read`);
+    throw new StepFault(`the row ${change.row.id} changed since it was read`, {
+      code: "row.changed",
+    });
   return change.kind === "trash" ? saved : over(saved, change.fields, values);
 }
 
