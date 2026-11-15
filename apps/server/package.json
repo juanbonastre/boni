@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@boni/agent": "workspace:*",
+    "@boni/automations": "workspace:*",
     "@boni/calendar": "workspace:*",
     "@boni/calendar-web": "workspace:*",
     "@boni/entities": "workspace:*",

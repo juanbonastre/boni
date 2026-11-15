@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@boni/automations": "workspace:*",
     "@boni/entities": "workspace:*",
     "@boni/views": "workspace:*",
     "@dagrejs/dagre": "3.1.3",

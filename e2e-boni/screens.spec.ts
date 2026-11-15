@@ -130,3 +130,12 @@ test("a block's panel", async ({ page }) => {
   await page.locator(".blk-number .kpi-value").filter({ hasText: "3" }).waitFor();
   await shot(page, "panel-bloque");
 });
+
+// «Automatizaciones» (docs/automatizaciones.md F14b): pending until each screen exists; the builder makes each
+// capture with the «screens» workflow in the PR that builds its screen. The list keeps its capture «flujos», made
+// again when its words change (AU-60).
+test.fixme("AU-63 · the canvas of an automation after a test: its cards, its arrows with their rows, «Registro» (automatizaciones-lienzo)", async () => {});
+test.fixme("AU-69 · «Añadir un paso» beside the canvas (automatizaciones-anadir)", async () => {});
+test.fixme("AU-70 · the step's view in three columns, with rows in and out (automatizaciones-paso)", async () => {});
+test.fixme("AU-78 · the step's view on «Ajustes» (automatizaciones-ajustes)", async () => {});
+test.fixme("AU-74 · the step's view under 1100 px, and the canvas on the phone (automatizaciones-estrecho, automatizaciones-telefono)", async () => {});

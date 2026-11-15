@@ -187,6 +187,9 @@ importers:
 
   apps/boni-web:
     dependencies:
+      '@boni/automations':
+        specifier: workspace:*
+        version: link:../../packages/automations
       '@boni/entities':
         specifier: workspace:*
         version: link:../../packages/entities
@@ -313,6 +316,9 @@ importers:
       '@boni/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@boni/automations':
+        specifier: workspace:*
+        version: link:../../packages/automations
       '@boni/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
