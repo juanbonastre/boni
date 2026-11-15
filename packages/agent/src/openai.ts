@@ -1,4 +1,4 @@
-import { apiSchema, jsonIn, ProviderError } from "./anthropic.ts";
+import { apiSchema, charged, jsonIn, ProviderError } from "./anthropic.ts";
 import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
 
 /**
@@ -7,6 +7,13 @@ import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./
  * like the Anthropic one: the planner answers with the plan as JSON text (`validatePlan` decides), a
  * reader fills its schema through `response_format` when the model supports it, and the code checks
  * every answer again anyway (`checkReaderOutput`).
+ *
+ * The planner is asked for a JSON object (`response_format: json_object`, task 132: a model that is not Claude
+ * answered «Ponme al día» in prose), never its schema: the plan language is beyond what strict structured outputs
+ * take (anthropic.ts). On OpenRouter it is a preference, not a requirement (no `require_parameters`): a route that
+ * takes no format is still taken, and the JSON is read from the text as before. A server configured with
+ * `readerFormat: "none"` is asked for none, and one that refuses the format (a 400 that names it) is asked again
+ * without it, once, and from then on (a refused request is not charged).
  *
  * The address and key are Juan's configuration, not something a request asks for, so this does not go
  * through @boni/net (a local model lives on a private address).
@@ -47,6 +54,8 @@ export class OpenAIProvider implements ModelProvider {
   private o: OpenAIOptions;
   /** Learned: no provider of this model takes `reasoning`, so it is not asked for again. */
   private noReasoning = false;
+  /** Learned: this server refused the planner's `json_object`, so the planner is asked with no format. */
+  private noPlannerFormat = false;
 
   constructor(o: OpenAIOptions) {
     const url = new URL(o.baseURL);
@@ -58,9 +67,15 @@ export class OpenAIProvider implements ModelProvider {
   }
 
   async complete(req: ModelRequest, call: CallOptions = {}): Promise<ModelResponse> {
-    const format = req.structured === false ? "none" : (this.o.readerFormat ?? "json_schema");
+    // The planner (`structured: false`): a JSON object, as a preference. A reader: its schema, as configured.
+    const planner = req.structured === false;
+    const format = planner
+      ? this.o.readerFormat === "none" || this.noPlannerFormat
+        ? "none"
+        : "json_object"
+      : (this.o.readerFormat ?? "json_schema");
     const system =
-      format === "json_object"
+      format === "json_object" && !planner
         ? `${req.system}\n\nAnswer with one JSON object that follows this JSON Schema:\n${JSON.stringify(req.schema)}`
         : req.system;
     const body: Record<string, unknown> = {
@@ -95,11 +110,11 @@ export class OpenAIProvider implements ModelProvider {
       ...(this.id === "openrouter" && this.o.reasoning === "off" && !this.noReasoning
         ? { reasoning: { enabled: false } }
         : {}),
-      // OpenRouter: only to a provider that honours the format asked for, and (zdr) keeps nothing.
-      ...(this.id === "openrouter" && (format !== "none" || this.o.zdr)
+      // OpenRouter: only to a provider that honours a reader's format, and (zdr) keeps nothing.
+      ...(this.id === "openrouter" && ((format !== "none" && !planner) || this.o.zdr)
         ? {
             provider: {
-              ...(format !== "none" ? { require_parameters: true } : {}),
+              ...(format !== "none" && !planner ? { require_parameters: true } : {}),
               ...(this.o.zdr ? { zdr: true, data_collection: "deny" } : {}),
             },
           }
@@ -136,6 +151,16 @@ export class OpenAIProvider implements ModelProvider {
       this.noReasoning = true;
       return this.complete(req, call);
     }
+    // A server that does not take the planner's format (task 132): asked again without it, and never again with it.
+    if (
+      planner &&
+      format === "json_object" &&
+      (res.status === 400 || res.status === 422) &&
+      /response_format|json_object|not supported|unsupported/i.test(text)
+    ) {
+      this.noPlannerFormat = true;
+      return this.complete(req, call);
+    }
     if (!res.ok) throw new ProviderError(`http-${res.status}`, text.slice(0, 500));
     let data: {
       choices?: {
@@ -154,7 +179,8 @@ export class OpenAIProvider implements ModelProvider {
     try {
       data = JSON.parse(text);
     } catch {
-      throw new ProviderError("not-json", text.slice(0, 500));
+      // The provider's body, not the model's answer (task 132): the evaluation says it under «Proveedor».
+      throw new ProviderError("bad-body", text.slice(0, 500));
     }
     // OpenRouter can answer 200 with an error from the provider it routed to.
     if (data.error)
@@ -171,25 +197,28 @@ export class OpenAIProvider implements ModelProvider {
     }
     if (choice?.message?.refusal) throw new ProviderError("refusal");
     const content = choice?.message?.content ?? "";
-    let json: unknown;
-    if (format === "json_schema")
-      try {
-        json = JSON.parse(content);
-      } catch {
-        json = jsonIn(content);
-      }
-    else json = jsonIn(content);
-    return {
-      json,
-      usage: {
-        input: data.usage?.prompt_tokens ?? 0,
-        output: data.usage?.completion_tokens ?? 0,
-        // OpenRouter says what it charged (credits = dollars).
-        ...(typeof data.usage?.cost === "number" && Number.isFinite(data.usage.cost)
-          ? { cost: data.usage.cost }
-          : {}),
-      },
-      model: data.model ?? this.o.model,
+    const usage = {
+      input: data.usage?.prompt_tokens ?? 0,
+      output: data.usage?.completion_tokens ?? 0,
+      // OpenRouter says what it charged (credits = dollars).
+      ...(typeof data.usage?.cost === "number" && Number.isFinite(data.usage.cost)
+        ? { cost: data.usage.cost }
+        : {}),
     };
+    let json: unknown;
+    try {
+      // A reader's as before; the planner's JSON object read whole first, like a reader's schema.
+      if (format !== "json_schema" && !planner) json = jsonIn(content);
+      else
+        try {
+          json = JSON.parse(content);
+        } catch {
+          json = jsonIn(content);
+        }
+    } catch (e) {
+      // Charged all the same: the journal counts it (task 132).
+      throw e instanceof ProviderError ? charged(e, usage) : e;
+    }
+    return { json, usage, model: data.model ?? this.o.model };
   }
 }

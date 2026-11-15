@@ -1,6 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicCost } from "./models.ts";
-import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
+import type {
+  CallOptions,
+  ModelProvider,
+  ModelRequest,
+  ModelResponse,
+  Usage,
+} from "./providers.ts";
 
 /**
  * The Anthropic provider (docs/nucleo.md, 7.10), on the official SDK, never with tools: the planner
@@ -21,6 +27,11 @@ export class ProviderError extends Error {
   detail: string;
   /** When it ran out of room: how many tokens it wrote, and how many went to reasoning (numbers only). */
   tokens?: { output: number; reasoning: number };
+  /**
+   * An answer that came back and was charged but could not be read (`not-json`): what it cost, so the journal and the
+   * month's spending count it like any call (task 132). Numbers only.
+   */
+  usage?: Usage;
   constructor(code: string, detail = "") {
     super(code);
     this.code = code;
@@ -122,6 +133,12 @@ export function apiSchema(schema: unknown): unknown {
   }
   if (out.type === "object" && !("additionalProperties" in out)) out.additionalProperties = false;
   return out;
+}
+
+/** `e` with what its answer cost (an answer that came back but could not be read is paid for all the same). */
+export function charged(e: ProviderError, usage: Usage): ProviderError {
+  e.usage = usage;
+  return e;
 }
 
 /** The JSON object in a model's text answer (it may come between code fences or with a line around it). */
@@ -244,22 +261,17 @@ export class AnthropicProvider implements ModelProvider {
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")
       .join("");
-    let json: unknown;
-    if (structured)
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new ProviderError("not-json");
-      }
-    else json = jsonIn(text);
-    return {
-      json,
-      usage: {
-        input: res.usage.input_tokens,
-        output: res.usage.output_tokens,
-        cost: anthropicCost(res.model, res.usage.input_tokens, res.usage.output_tokens),
-      },
-      model: res.model,
+    const usage = {
+      input: res.usage.input_tokens,
+      output: res.usage.output_tokens,
+      cost: anthropicCost(res.model, res.usage.input_tokens, res.usage.output_tokens),
     };
+    let json: unknown;
+    try {
+      json = structured ? JSON.parse(text) : jsonIn(text);
+    } catch {
+      throw charged(new ProviderError("not-json"), usage);
+    }
+    return { json, usage, model: res.model };
   }
 }

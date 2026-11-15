@@ -909,7 +909,11 @@ export interface ModelEvaluation extends ModelChoice {
   total: number;
   wrong: number;
   cost: number;
-  cases: { name: string; ok: boolean; note: string }[];
+  /**
+   * `note`: the evaluation's own words for the logs (a code or English), never painted. `failed`: who failed and what,
+   * as fixed codes (task 132), painted in words by `evalFailText`; absent from an evaluation made before it.
+   */
+  cases: { name: string; ok: boolean; note: string; failed?: { who: string; what: string } }[];
   /** The decider's calibration by level of confidence, when the evaluation measured it (docs/fiabilidad.md §3.3). */
   calibration?: { from: number; to: number; judged: number; right: number }[];
 }
@@ -1684,6 +1688,14 @@ export function parseModels(b: unknown): ModelsView | null {
                 name: s200(x.name, 300),
                 ok: x.ok === true,
                 note: s200(x.note, 200),
+                // Who failed and what, as fixed codes (task 132): only short codes are kept; `evalFailText` maps them.
+                ...(isObj(x.failed) &&
+                typeof x.failed.who === "string" &&
+                typeof x.failed.what === "string" &&
+                /^[a-z0-9-]{1,30}$/.test(x.failed.who) &&
+                /^[a-z0-9-]{1,30}$/.test(x.failed.what)
+                  ? { failed: { who: x.failed.who, what: x.failed.what } }
+                  : {}),
               })),
             ...(Array.isArray(e.calibration)
               ? {

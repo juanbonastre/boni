@@ -1,4 +1,5 @@
-import type { ModelProvider } from "../../src/providers.ts";
+import type { Role } from "../../src/models.ts";
+import type { ModelProvider, Usage } from "../../src/providers.ts";
 import { delimit } from "../../src/readers.ts";
 import {
   checkReadMessage,
@@ -7,6 +8,7 @@ import {
   readMessageSchema,
   weekdayOf,
 } from "../../src/reading.ts";
+import { callFail, type Failed, miss } from "./fails.ts";
 import { DAYS, KNOWN, ME, READER_CASES, type ReaderCase, TODAY } from "./readerCases.ts";
 import type { EvalResult } from "./types.ts";
 
@@ -16,7 +18,12 @@ import type { EvalResult } from "./types.ts";
  * does not depend on it (the code keeps only what the recipient does; everything is proposed): it measures
  * whether a model reads well enough for the role.
  */
-export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): Promise<EvalResult> {
+export async function evalReader(
+  p: ModelProvider,
+  /** `who`: the use measured (the reviewer reads the reader's cases), the one a failed case names. */
+  o: { runs?: number; who?: Role } = {},
+): Promise<EvalResult> {
+  const who = o.who ?? "reader";
   const runs = o.runs ?? 1;
   const system = readMessagePrompt(MODULES);
   const where = (c: ReaderCase) => (c.to.includes(ME) ? "to" : c.cc?.includes(ME) ? "cc" : "group");
@@ -37,6 +44,7 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
         end: string | null;
       }[] = [];
       let problem = "";
+      let failed: Failed | undefined;
       try {
         const r = await p.complete({
           role: "reader",
@@ -55,10 +63,19 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
         out.tokens += r.usage.input + r.usage.output;
         out.cost += r.usage.cost ?? 0;
         const checked = checkReadMessage(r.json, MODULES);
-        if (!checked) problem = "invalid answer";
-        else kept = checked.all;
+        if (!checked) {
+          problem = "invalid answer";
+          failed = { who, what: "invalid-answer" };
+        } else kept = checked.all;
       } catch (e) {
         problem = String((e as { code?: string }).code ?? "failed");
+        failed = callFail(problem, who);
+        // An answer that came back but could not be read was paid for all the same (task 132).
+        const u = (e as { usage?: Usage }).usage;
+        if (u) {
+          out.tokens += u.input + u.output;
+          out.cost += u.cost ?? 0;
+        }
       }
       const titles = (m: string) => kept.filter((k) => k.module === m).map((k) => k.title);
       const missing = [
@@ -76,14 +93,22 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
       const ok = !problem && !missing.length && !wrong.length && !badDay && !badTime;
       if (ok) out.right++;
       else if (wrong.length) out.wrong++;
+      // The grader's kind, a fixed code the page says in words; the English detail is for the logs.
+      const graded = badDay
+        ? miss("wrong", badDay)
+        : badTime
+          ? miss("wrong", badTime)
+          : wrong.length
+            ? miss("extra", "kept what it should not")
+            : missing.length
+              ? miss("missing", "missed one")
+              : null;
+      if (!failed && graded) failed = { who, what: graded.kind };
       out.cases.push({
         name: c.name,
         ok,
-        note:
-          problem ||
-          badDay ||
-          badTime ||
-          (wrong.length ? "kept what it should not" : missing.length ? "missed one" : ""),
+        note: problem || graded?.detail || "",
+        ...(!ok && failed ? { failed } : {}),
       });
     }
   return out;

@@ -132,7 +132,11 @@ test("«Modelos» in Ajustes: each use with its model, the month's spending and 
   await expect(panel).toContainText("Evaluación: 19 de 20 bien");
   await panel.getByRole("button", { name: "Ver los casos" }).click();
   await expect(panel.locator(".models-cases li.fail")).toHaveCount(1);
-  await expect(panel.locator(".models-cases li.fail")).toContainText("colección equivocada");
+  // Who failed and what, in words (task 132, I-40); the grader's detail is not painted.
+  await expect(panel.locator(".models-cases li.fail")).toContainText(
+    "· Lector: respuesta equivocada",
+  );
+  await expect(panel.locator(".models-cases li.fail")).not.toContainText("wrong collection");
   await page.screenshot({ path: `${SHOTS}/models-use.png` });
   // Escape closes the use, not Ajustes.
   await page.keyboard.press("Escape");

@@ -25,5 +25,5 @@ export function evalRole(
 ): Promise<EvalResult> {
   if (role === "planner") return evalPlanner(model, reader);
   if (role === "decider") return evalDecider(model);
-  return evalReader(model);
+  return evalReader(model, { who: role });
 }

@@ -1395,7 +1395,10 @@ contraseña ni un código aquí» under a question.
   «Borra lo que recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use in
   place of the list (Esc or its close button goes back to the list, not out of Ajustes): the model and its route, what
   the use does, the privacy in a sentence, whose choice it is, this month's spending, the last evaluation with «Ver
-  los casos», «Volver al del servidor» and «Cambiar», which shows the models to choose (search, OpenRouter's models
+  los casos» (each case's text, and a failed one followed by who failed and what (a use's miss in at most five words): «· Agente:
+  no devolvió un plan», «· Lector: respuesta que no vale», «· Proveedor: la cuenta del proveedor no tiene saldo», a provider's refusal in the words a run that stopped on it gets; from fixed codes only, never
+  the grader's detail nor a model's or a provider's text, and nothing when the code is unknown or the evaluation is
+  from before task 132; I-40), «Volver al del servidor» and «Cambiar», which shows the models to choose (search, OpenRouter's models
   some provider serves keeping nothing, cheapest first, a box each with its name, price per million tokens and
   providers; readers only those that answer a fixed form, the Decisor only Jev) and under the list, fixed while it
   scrolls, «Ahora» and «Nuevo» with their scores, «Evaluar» and «Usar este modelo» (enabled only with a recent
