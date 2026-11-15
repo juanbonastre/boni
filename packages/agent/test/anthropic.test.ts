@@ -196,11 +196,16 @@ describe("the Anthropic provider", () => {
 
 describe("why the API refused a call (task 124)", () => {
   // Invented answers in the API's documented shape; the messages are made up, only their kind is the API's.
-  const refused = (status: number, type: string, message: string) => () =>
-    new Response(JSON.stringify({ type: "error", error: { type, message }, request_id: "req_x" }), {
-      status,
-      headers: { "content-type": "application/json" },
-    });
+  const refused =
+    (status: number, type: string, message: string, details?: Record<string, string>) => () =>
+      new Response(
+        JSON.stringify({
+          type: "error",
+          error: { type, message, ...(details ? { details } : {}) },
+          request_id: "req_inventado",
+        }),
+        { status, headers: { "content-type": "application/json" } },
+      );
   it("says each kind with a fixed code the run can keep, and never the API's words", async () => {
     for (const [answer, code] of [
       [
@@ -213,6 +218,47 @@ describe("why the API refused a call (task 124)", () => {
         "spend-limit",
       ],
       [refused(429, "rate_limit_error", "Monthly spend cap reached."), "spend-limit"],
+      // The API's own texts (public error strings), task 131's likeliest causes: a limit the account set, its
+      // workspace's, the tier's monthly one as a 429 (not a rate limit: it does not pass in a moment), the credit.
+      [
+        refused(
+          400,
+          "invalid_request_error",
+          "You have reached your specified API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.",
+        ),
+        "spend-limit",
+      ],
+      [
+        refused(
+          400,
+          "invalid_request_error",
+          "You have reached your specified workspace API usage limits. You will regain access on 2026-12-01 at 00:00 UTC.",
+        ),
+        "spend-limit",
+      ],
+      [
+        refused(
+          429,
+          "rate_limit_error",
+          "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-12-01 at 00:00 UTC.",
+          { error_code: "enforced_spend_limit_reached" },
+        ),
+        "spend-limit",
+      ],
+      [
+        refused(429, "rate_limit_error", "Limit reached.", {
+          error_code: "enforced_spend_limit_reached",
+        }),
+        "spend-limit",
+      ],
+      [
+        refused(
+          400,
+          "invalid_request_error",
+          "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+        ),
+        "no-credit",
+      ],
       [
         refused(400, "invalid_request_error", "prompt is too long: 250000 tokens > 200000 maximum"),
         "too-long",
