@@ -9,7 +9,6 @@
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
 import { ACTION, MAIN, OUT, type Step } from "./format.ts";
-import { notBuilt } from "./pending.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -798,18 +797,69 @@ export function actionOf(step: Step): ActionSpec | undefined {
  * The parameters a step shows as it is now: its type's, `ACTION` where there are several, then its action's whose
  * `when` holds. What AU-75 counts (`place: "shown"`) and what validation walks.
  */
-export function paramsOf(_step: Step): ParamSpec[] {
-  return notBuilt("paramsOf");
+export function paramsOf(step: Step): ParamSpec[] {
+  const spec = stepType(step.type);
+  if (!spec) return [];
+  const params: ParamSpec[] = [...spec.params];
+  if (spec.actions.length > 1) params.push(actionParam(spec));
+  const action = actionOf(step);
+  if (!action) return params;
+  const all = [...spec.params, ...action.params];
+  for (const p of action.params) if (holds(p, step, all)) params.push(p);
+  return params;
 }
+
+/** The parameter `ACTION` of a type with several actions: a fixed choice among them. */
+export const actionParam = (spec: StepTypeSpec): ParamSpec => ({
+  key: ACTION,
+  control: "choice",
+  options: spec.actions.map((a) => a.key),
+  place: "shown",
+  required: true,
+  shape: true,
+});
+
+/** Whether a parameter's `when` holds for this step: the parameter it names holds one of its values (or its default). */
+export function holds(p: ParamSpec, step: Step, among: readonly ParamSpec[]): boolean {
+  if (!p.when) return true;
+  const on = among.find((q) => q.key === p.when?.param);
+  const v = step.params[p.when.param] ?? on?.default;
+  return typeof v === "string" && p.when.in.includes(v);
+}
+
+/** A parameter's value in a step: what it holds, or its default. */
+export const paramValue = (step: Step, p: ParamSpec): Step["params"][string] | undefined =>
+  step.params[p.key] ?? p.default;
 
 /**
  * The names of a step's outputs as it is now, in the catalogue's order: its action's (for `rules`, the rules' ids and
  * then `OUT.other` when `fallback` is "other"), and last `OUT.error` when its settings say «Salir por error» (AU-16).
  * Empty when the step has no valid action.
  */
-export function outputsOf(_step: Step): string[] {
-  return notBuilt("outputsOf");
+export function outputsOf(step: Step): string[] {
+  const action = actionOf(step);
+  if (!action) return [];
+  const out: string[] = [];
+  if (action.outputs === "rules") {
+    const rules = step.params.rules;
+    if (Array.isArray(rules))
+      for (const r of rules)
+        if (
+          typeof r === "object" &&
+          r !== null &&
+          !Array.isArray(r) &&
+          "id" in r &&
+          typeof r.id === "string"
+        )
+          out.push(r.id);
+    if (step.params.fallback === "other") out.push(OUT.other);
+  } else out.push(...action.outputs);
+  if (step.settings?.onError === "errorOutput") out.push(OUT.error);
+  return out;
 }
+
+/** The types whose outputs are branches: one left unconnected is probably a mistake (`output.unconnected`). */
+export const OUTPUT_BRANCHES: ReadonlySet<string> = new Set(["if", "switch"]);
 
 /** The names of a step's inputs: its type's. Empty for a trigger or an unknown type. */
 export const inputsOf = (step: Step): readonly string[] => stepType(step.type)?.inputs ?? [];

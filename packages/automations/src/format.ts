@@ -6,7 +6,7 @@
  * Contracts of phase F14a: the types are final, the functions marked «not built» are the builder's.
  */
 import type { FILTER_OPS } from "@boni/views";
-import { notBuilt } from "./pending.ts";
+import { renameInExpression } from "./expression.ts";
 
 /**
  * The version of this format. A saved automation carries the one it was written with, and a deploy migrates it to
@@ -175,12 +175,152 @@ export const MIGRATIONS: readonly Migration[] = [];
  * shape (the keys of an automation, a step, an arrow and the settings, and their types; nothing else). Throws
  * `FormatError`. It does not judge whether the automation makes sense: that is `validate`, and a draft that does not
  * validate is still read and saved. What it returns survives `JSON.stringify` and reads back equal (AU-01).
+ * A migration's result is taken as written in `from + 1`.
  */
 export function parseAutomation(
-  _saved: unknown,
-  _migrations: readonly Migration[] = MIGRATIONS,
+  saved: unknown,
+  migrations: readonly Migration[] = MIGRATIONS,
 ): Automation {
-  return notBuilt("parseAutomation");
+  let obj = record(saved, "");
+  const format = obj.format;
+  if (typeof format !== "number" || !Number.isInteger(format) || format < 0)
+    throw new FormatError("format", "not a format version");
+  if (format > FORMAT) throw new FormatError("format", `newer than this code (${FORMAT})`);
+  for (let at = format; at < FORMAT; at++) {
+    const m = migrations.find((x) => x.from === at);
+    if (!m) throw new FormatError("format", `no migration from ${at}`);
+    obj = record(m.apply(structuredClone(obj)), "");
+  }
+  closed(obj, "", ["format", "id", "version", "name", "steps", "arrows", "settings"], []);
+  const version = obj.version;
+  if (typeof version !== "number" || !Number.isInteger(version) || version < 0)
+    throw new FormatError("version", "not a version");
+  return {
+    format: FORMAT,
+    id: text(obj.id, "id"),
+    version,
+    name: text(obj.name, "name"),
+    steps: list(obj.steps, "steps").map((s, i) => parseStep(s, `steps.${i}`)),
+    arrows: list(obj.arrows, "arrows").map((a, i) => parseArrow(a, `arrows.${i}`)),
+    settings: parseSettings(obj.settings, "settings"),
+  };
+}
+
+const at = (path: string, key: string | number) => (path ? `${path}.${key}` : String(key));
+
+function record(v: unknown, path: string): Record<string, unknown> {
+  if (typeof v !== "object" || v === null || Array.isArray(v))
+    throw new FormatError(path || "(root)", "not an object");
+  return v as Record<string, unknown>;
+}
+
+/** The keys of `v` are among `required` and `optional`, and every one of `required` is there. */
+function closed(
+  v: Record<string, unknown>,
+  path: string,
+  required: readonly string[],
+  optional: readonly string[],
+): void {
+  for (const k of Object.keys(v))
+    if (!required.includes(k) && !optional.includes(k))
+      throw new FormatError(at(path, k), "not a key of this format");
+  for (const k of required) if (v[k] === undefined) throw new FormatError(at(path, k), "missing");
+}
+
+function text(v: unknown, path: string): string {
+  if (typeof v !== "string") throw new FormatError(path, "not a text");
+  return v;
+}
+
+function list(v: unknown, path: string): unknown[] {
+  if (!Array.isArray(v)) throw new FormatError(path, "not a list");
+  return v;
+}
+
+function count(v: unknown, path: string): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) throw new FormatError(path, "not a number");
+  return v;
+}
+
+function parseStep(v: unknown, path: string): Step {
+  const s = record(v, path);
+  closed(s, path, ["id", "name", "type", "params"], ["settings"]);
+  const params = record(s.params, at(path, "params"));
+  const step: Step = {
+    id: text(s.id, at(path, "id")),
+    name: text(s.name, at(path, "name")),
+    type: text(s.type, at(path, "type")),
+    params: Object.fromEntries(
+      Object.entries(params).map(([k, p]) => [k, parseParam(p, at(at(path, "params"), k))]),
+    ),
+  };
+  if (s.settings !== undefined) step.settings = parseStepSettings(s.settings, at(path, "settings"));
+  return step;
+}
+
+function parseParam(v: unknown, path: string): ParamValue {
+  if (v === null || typeof v === "string" || typeof v === "boolean") return v;
+  if (typeof v === "number") return count(v, path);
+  if (Array.isArray(v)) return v.map((x, i) => parseParam(x, at(path, i)));
+  const o = record(v, path);
+  return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, parseParam(x, at(path, k))]));
+}
+
+const ON_ERROR = ["stop", "continue", "errorOutput"] as const;
+
+function parseStepSettings(v: unknown, path: string): StepSettings {
+  const s = record(v, path);
+  closed(s, path, [], ["onError", "retry", "continueEmpty", "firstRowOnly", "note", "off"]);
+  const out: StepSettings = {};
+  if (s.onError !== undefined) {
+    if (!ON_ERROR.includes(s.onError as (typeof ON_ERROR)[number]))
+      throw new FormatError(at(path, "onError"), "not one of its options");
+    out.onError = s.onError as StepSettings["onError"];
+  }
+  if (s.retry !== undefined) {
+    const r = record(s.retry, at(path, "retry"));
+    closed(r, at(path, "retry"), ["times", "waitMs"], []);
+    out.retry = {
+      times: count(r.times, at(path, "retry.times")),
+      waitMs: count(r.waitMs, at(path, "retry.waitMs")),
+    };
+  }
+  for (const k of ["continueEmpty", "firstRowOnly", "off"] as const) {
+    if (s[k] === undefined) continue;
+    if (typeof s[k] !== "boolean") throw new FormatError(at(path, k), "not true or false");
+    out[k] = s[k] as boolean;
+  }
+  if (s.note !== undefined) out.note = text(s.note, at(path, "note"));
+  return out;
+}
+
+function parseArrow(v: unknown, path: string): Arrow {
+  const a = record(v, path);
+  closed(a, path, ["from", "to"], []);
+  const from = record(a.from, at(path, "from"));
+  closed(from, at(path, "from"), ["step", "output"], []);
+  const to = record(a.to, at(path, "to"));
+  closed(to, at(path, "to"), ["step", "input"], []);
+  return {
+    from: {
+      step: text(from.step, at(path, "from.step")),
+      output: text(from.output, at(path, "from.output")),
+    },
+    to: { step: text(to.step, at(path, "to.step")), input: text(to.input, at(path, "to.input")) },
+  };
+}
+
+const LIMITS = ["steps", "modelCalls", "rowsWritten", "ms"] as const;
+
+function parseSettings(v: unknown, path: string): AutomationSettings {
+  const s = record(v, path);
+  closed(s, path, [], ["limits"]);
+  if (s.limits === undefined) return {};
+  const l = record(s.limits, at(path, "limits"));
+  closed(l, at(path, "limits"), [], LIMITS);
+  const limits: Partial<RunLimits> = {};
+  for (const k of LIMITS) if (l[k] !== undefined) limits[k] = count(l[k], at(path, `limits.${k}`));
+  return { limits };
 }
 
 /**
@@ -188,6 +328,23 @@ export function parseAutomation(
  * `renameInExpression`; F14c adds the code of «Código» steps), and nothing else changes: arrows use ids (AU-02).
  * Throws when no step has that id; the new name's uniqueness is `validate`'s.
  */
-export function renameStep(_automation: Automation, _step: string, _name: string): Automation {
-  return notBuilt("renameStep");
+export function renameStep(automation: Automation, step: string, name: string): Automation {
+  const target = automation.steps.find((s) => s.id === step);
+  if (!target) throw new Error(`no step has the id ${step}`);
+  const from = target.name;
+  const rewrite = (v: ParamValue): ParamValue => {
+    if (isExpr(v)) return { expr: renameInExpression(v.expr, from, name) };
+    if (Array.isArray(v)) return v.map(rewrite);
+    if (typeof v === "object" && v !== null)
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rewrite(x)]));
+    return v;
+  };
+  return {
+    ...automation,
+    steps: automation.steps.map((s) => ({
+      ...s,
+      ...(s.id === step ? { name } : {}),
+      params: Object.fromEntries(Object.entries(s.params).map(([k, v]) => [k, rewrite(v)])),
+    })),
+  };
 }

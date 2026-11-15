@@ -233,13 +233,13 @@ interface Step {
 interface Arrow { from: { step: string; output: string }; to: { step: string; input: string } }
 ```
 
-- **AU-01** (F14a, pendiente) · Una automatización es un grafo de pasos y flechas guardado como datos, con versiones.
+- **AU-01** (F14a, hecho) · Una automatización es un grafo de pasos y flechas guardado como datos, con versiones.
   En la F14a es el formato: lo guardado se lee y se vuelve a escribir igual, y lleva su número de versión. Publicar
   y guardar cada versión es de la F14d (AU-95, AU-98).
-- **AU-02** (F14a, pendiente) · Cada paso tiene un identificador fijo que no se ve y un nombre único que se ve. Las
+- **AU-02** (F14a, hecho) · Cada paso tiene un identificador fijo que no se ve y un nombre único que se ve. Las
   flechas y lo guardado usan el identificador; las expresiones citan el nombre. Cambiar el nombre reescribe las
   expresiones que lo citan (y el código, desde la F14c), y nada se rompe.
-- **AU-03** (F14a, pendiente) · Un paso tiene una entrada y una o más salidas con nombre («sí» y «no» en «Si»,
+- **AU-03** (F14a, hecho) · Un paso tiene una entrada y una o más salidas con nombre («sí» y «no» en «Si»,
   «error» si se pide). A una entrada pueden llegar varias flechas y de una salida pueden salir varias. Las
   excepciones las dice el catálogo: un disparador no tiene entrada, «Combinar» tiene dos con nombre (AU-124) y
   «Parar con error» no tiene salida.
@@ -249,11 +249,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   una versión ni enciende «Publicar»; un paso sin sitio lo coloca Boni junto al paso del que cuelga; «Ordenar»
   recoloca todo. (Cambia I-26; decisión 2 del §10.)
 - **AU-06** (F14a, pendiente) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
-- **AU-07** (F14a, pendiente) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
+- **AU-07** (F14a, hecho) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
   tandas será un paso («Por tandas», F18), no un dibujo. En la F14a lo dice la validación (una automatización
   con un ciclo no es válida) y el motor da la pregunta que el lienzo hará en la F14b: «¿esta flecha cerraría un
   ciclo?».
-- **AU-08** (F14a, pendiente) · Cada tipo de paso existe una sola vez. Cuando cambia, el despliegue migra las
+- **AU-08** (F14a, hecho) · Cada tipo de paso existe una sola vez. Cuando cambia, el despliegue migra las
   automatizaciones guardadas; no hay pasos «de una versión anterior».
 
 ### 5.2 Cómo se ejecuta
@@ -314,7 +314,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
   es donde hace falta para citarlo. Un campo que nace en un «Código» o en una expresión no tiene más nombre que el
   que ahí se le dio, y con ese se ve en los pasos siguientes (`gastado`).
-- **AU-26** (F14a, pendiente) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
+- **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, pendiente) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
   enseña la vista previa es lo que saldrá.
@@ -647,7 +647,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   con todas. Solo hace falta para cruzar; para juntar ramas, no (AU-11).
 - **AU-125** (F15, pendiente) · «Preguntar» pregunta a Juan (opciones o texto). En segundo plano espera con un
   «Límite de espera» a la vista; nunca espera para siempre.
-- **AU-126** (F14a, pendiente) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
+- **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
   configuran con lo que hoy dejan cambiar. Por dentro siguen siendo código de Boni (decisión 3a de la tarea 103).
