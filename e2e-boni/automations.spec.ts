@@ -2413,6 +2413,17 @@ test.describe("the step's view", () => {
       await expect(view(page).locator("[contenteditable=true]")).toHaveCount(0);
       await expect(view(page).getByRole("button", { name: "Probar paso" })).toHaveCount(0);
       expect(await sideways(page)).toEqual([]);
+      // The condition's trash is on its value's line, beside «{ }» (AU-20).
+      const line = (l: ReturnType<Page["locator"]>) =>
+        l.evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          return Math.round(r.top + r.height / 2);
+        });
+      const where = param(page, "where");
+      const toggleAt = await line(where.locator(".auto-expr-toggle"));
+      expect(
+        Math.abs((await line(where.locator(".db-filter-row > .icon-btn"))) - toggleAt),
+      ).toBeLessThan(4);
       await page.screenshot({ path: `${SHOTS}/phone-automation-params.png` });
       // Not tested: ENTRADA and SALIDA say «Sin probar», and nothing else.
       for (const side of ["Entrada", "Salida"]) {
