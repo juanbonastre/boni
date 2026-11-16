@@ -8,11 +8,11 @@
  * The parser is acorn (MIT, no dependencies): it gives the tree with every node's place, and nothing here walks text.
  */
 import { type Options, parse, parseExpressionAt } from "acorn";
-import type { CodeProblem } from "./code.ts";
+import { COL_METHODS, type CodeProblem, WRITE_ACTIONS, type WriteAction } from "./code.ts";
 import type { Automation, Step } from "./format.ts";
 import type { ValidationContext } from "./validate.ts";
 // writes.ts imports readCode back: both modules use each other's values only inside functions, never at the top.
-import { COL_METHODS, WRITE_ACTIONS, type WriteAction, type WriteSite } from "./writes.ts";
+import type { WriteSite } from "./writes.ts";
 
 /**
  * Everything code can name that is not JavaScript's own, the same in an expression and in «Código» (AU-24); `$col`

@@ -17,6 +17,9 @@ export {
   type WireConsoleLine,
   type WireEvaluated,
   type WireRead,
+  type WireWrite,
+  WRITE_ACTIONS,
+  type WriteAction,
   ZONE_YEARS,
   type ZoneTable,
 } from "./evaluate.ts";

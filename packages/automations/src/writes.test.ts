@@ -3,9 +3,19 @@
 // into a real one, keeping the rule's id in its name (`make check` reads them). Every rule holds against code written
 // to get around it (A-01): the rules such code could get around have their attack here. Real tests use the fakes of
 // run.test-util.ts; collection and field names in them are invented («Gastos», «Categorías», «Notas»).
+import type { Label } from "@boni/entities";
+import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { collection, ids, knowing, sketch } from "./automation.test-util.ts";
-import { CODE_FAILURES, CODE_LIMITS, CODE_PROBLEMS, CODE_TYPE } from "./code.ts";
+import type { Box, BoxJob, Evaluated, Fields } from "./box.ts";
+import {
+  CODE_FAILURES,
+  CODE_LIMITS,
+  CODE_PROBLEMS,
+  CODE_TYPE,
+  CodeFault,
+  type WriteAction,
+} from "./code.ts";
 import {
   allowing,
   CONNECTION_ACTIONS,
@@ -14,22 +24,43 @@ import {
   newConnection,
   permissions,
 } from "./connections.ts";
-import { STEP_FAILURES, StepFault } from "./failures.ts";
-import type { Step } from "./format.ts";
+import { type GateUnit, guard, type StoredRow } from "./effects.ts";
+import { run, type StepRecord } from "./engine.ts";
+import { STEP_FAILURES } from "./failures.ts";
+import type { Step, StepSettings } from "./format.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
+import type { Cell } from "./rows.ts";
+import {
+  deps,
+  type FakePolicy,
+  type FakeStore,
+  OUTSIDE,
+  OWN,
+  outOf,
+  policy,
+  store,
+} from "./run.test-util.ts";
 import { canRun, PROBLEMS, validate } from "./validate.ts";
 import {
+  applyWrites,
   COL_METHODS,
+  CONNECTION_ASKS,
   connectionUses,
+  consentOf,
   grantsOf,
+  insideConnection,
   readWrites,
+  stepChanges,
   WRITE_ACTIONS,
   WRITE_FAILURES,
   WRITE_LIMITS,
   WRITE_MODES,
   WRITE_PROBLEMS,
-  WriteFault,
+  type WriteGate,
+  type WriteInput,
+  type WriteRequest,
   writeProblems,
+  YES_SAVES,
 } from "./writes.ts";
 
 const next = ids(13);
@@ -48,18 +79,27 @@ const ctx: CodeContext = {
   collectionName: (key) => Object.entries(NAMES).find(([, k]) => k === key)?.[0],
 };
 
-/** A trigger, a search, then a «Código» with that source and those connections. */
-function withCode(source: string, connections: Connection[]) {
+/** A trigger, a search of «Gastos», then a «Código» with that source and those connections. */
+function withCode(
+  source: string,
+  connections: Connection[],
+  more: { mode?: "all" | "perRow"; onError?: StepSettings["onError"] } = {},
+) {
   const s = sketch(5)
     .step("Inicio", "manual", { fields: [] })
     .step("Buscar", "collection", { collection: expenses.key, action: "find" })
-    .step("Código", CODE_TYPE, { mode: "all", source })
+    .step(
+      "Código",
+      CODE_TYPE,
+      { mode: more.mode ?? "all", source },
+      more.onError ? { onError: more.onError } : undefined,
+    )
     .arrow("Inicio", "Buscar")
     .arrow("Buscar", "Código");
   const a = s.build();
   const step = a.steps.find((x) => x.name === "Código") as Step;
   step.connections = connections;
-  return { a, step };
+  return { a, s, step };
 }
 const codes = (problems: readonly { code: string }[]) => problems.map((p) => p.code);
 const ofStep = <P extends { step?: string }>(problems: readonly P[], step: Step) =>
@@ -73,12 +113,191 @@ const toExpenses = (cells: Partial<Pick<Connection, "create" | "update" | "remov
 const cut = (source: string, at: { from: number | string; to: number | string }) =>
   source.slice(Number(at.from), Number(at.to));
 
+// ---------------------------------------------------------------- a box that asks to save, and a run through it
+
+const [amount, note] = expenses.fields.map((f) => f.key) as [string, string];
+const [title] = categories.fields.map((f) => f.key) as [string];
+/** `n` rows of «Gastos»: the amount is the row's place; the note «abierto» on the odd ones, «cerrado» on the even. */
+const ROWS = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ [amount]: i, [note]: i % 2 ? "abierto" : "cerrado" }));
+const db = (n = 4, of: Label = OWN) =>
+  store(
+    [expenses, categories, notes],
+    { [expenses.key]: ROWS(n), [categories.key]: [{ [title]: "Casa" }] },
+    ids(14),
+    of,
+  );
+/** The ids of a collection's rows, in the order a search gives them. */
+const idsOf = (st: FakeStore, key = expenses.key) =>
+  st
+    .rows(key)
+    .map((r) => r.origin.id)
+    .sort() as [string, string, ...string[]];
+/** A row's id at a place, which a test knows is there. */
+const at = (list: readonly string[], i: number) => list[i] as string;
+
+interface Seen {
+  /** The row of this evaluation, as sent; undefined in «Una vez con todas las filas». */
+  row: Fields | undefined;
+  /** The row's place in the step's whole input. */
+  at: number;
+  job: BoxJob;
+}
+interface WritingBox extends Box {
+  /** Every job it was sent, as it was sent. */
+  jobs: BoxJob[];
+}
+/** A box that answers each evaluation by `answer`, requests to save among it: a real interpreter's answer, without one. */
+function writingBox(answer: (s: Seen) => Evaluated): WritingBox {
+  const jobs: BoxJob[] = [];
+  return {
+    jobs,
+    async run(job) {
+      jobs.push(structuredClone(job));
+      const all = job.kind === "code" && job.mode === "all";
+      const evaluations = Array.from({ length: all ? 1 : job.input.length }, (_, j) =>
+        answer({ row: all ? undefined : job.input[j], at: job.from + j, job }),
+      );
+      return { evaluations, console: [], dropped: 0, ms: 1 };
+    },
+  };
+}
+/** An evaluation that gave `value` and asked for `writes`. */
+const done = (value: Cell, writes: readonly WriteRequest[] = []): Evaluated => ({
+  state: "done",
+  values: [value],
+  clock: false,
+  random: false,
+  ...(writes.length ? { writes } : {}),
+});
+/** It stopped at a read of «Gastos» it does not have yet; `key` is the box's. */
+const needs = (key: string): Evaluated => ({
+  state: "needs",
+  key,
+  read: { collection: "Gastos", op: "count" },
+});
+const update = (id: Cell, fields: Cell, more: Partial<WriteRequest> = {}): WriteRequest => ({
+  collection: "Gastos",
+  action: "update",
+  id,
+  fields,
+  ...more,
+});
+const create = (fields: Cell, more: Partial<WriteRequest> = {}): WriteRequest => ({
+  collection: "Gastos",
+  action: "create",
+  fields,
+  ...more,
+});
+const remove = (id: Cell, more: Partial<WriteRequest> = {}): WriteRequest => ({
+  collection: "Gastos",
+  action: "remove",
+  id,
+  ...more,
+});
+
+/** A source the analysis reads as asking for each write action of «Gastos». */
+const SAVES_ALL = [
+  "$col('Gastos').create({ a: 1 })",
+  "$col('Gastos').update('x', { a: 1 })",
+  "$col('Gastos').remove('x')",
+  "return []",
+].join("\n");
+/** One that asks only to modify «Gastos». */
+const UPDATES = "$col('Gastos').update('x', { a: 1 })\nreturn []";
+const YES = { mode: "yes" } as const;
+const ASK = { mode: "ask" } as const;
+const ALL_YES = toExpenses({ create: YES, update: YES, remove: YES });
+/** «Solo estas filas»: the rows of «Gastos» whose note is «abierto». */
+const onlyOpen = (cells: Partial<Pick<Connection, "create" | "update" | "remove">>) => ({
+  ...toExpenses(cells),
+  read: { where: [{ field: note, op: "is" as const, value: "abierto" }] },
+});
+
+/** Runs `withCode(source, connections)` over the store (a test when `test`), its box answering by `answer`. */
+async function saving(
+  source: string,
+  connections: Connection[],
+  answer: (s: Seen) => Evaluated,
+  more: {
+    test?: boolean;
+    store?: FakeStore;
+    policy?: FakePolicy;
+    mode?: "all" | "perRow";
+    onError?: StepSettings["onError"];
+  } = {},
+) {
+  const { a, s, step } = withCode(source, connections, more);
+  const st = more.store ?? db();
+  const box = writingBox(answer);
+  const p = more.policy ?? policy();
+  const e = await run(
+    {
+      automation: a,
+      trigger: s.id("Inicio"),
+      fields: { json: {}, label: OWN },
+      test: more.test ?? false,
+    },
+    deps({ collectionNamed: named, collections: st, box, policy: p }),
+  );
+  return { a, e, rec: e.steps[step.id] as StepRecord, st, box, p, step };
+}
+const whyOf = (rec: StepRecord) => rec.error?.why;
+/** What the policy was asked of writes, as action, destroys and collection. */
+const writeCalls = (p: FakePolicy) =>
+  p.calls.filter((c) => c.effect === "write").map((c) => [c.action, c.destroys, c.collection]);
+/** The rows a step's change touches, as kind and id. */
+const touched = (rec: StepRecord) =>
+  rec.writes?.records.map((r) => [r.action, r.id ?? null]) ?? "nothing";
+
+/** The unit of a «Código» saving, for the gate alone. */
+const UNIT: GateUnit = {
+  automation: { id: "e_ejemplo", version: 1 },
+  step: "s_ejemplo",
+  type: CODE_TYPE,
+  action: "",
+  effect: "write",
+  destroys: false,
+  control: null,
+  test: false,
+  own: OWN,
+};
+/** The gate of saving over a store, through `guard` as the engine builds it. */
+const writer = (st: FakeStore, p: FakePolicy = policy(), test = false): WriteGate => {
+  const g = guard(p, st, { ...UNIT, test });
+  return {
+    shape: (c) => st.shape(c),
+    get: (c, id) => st.get(c, id),
+    decideAll: (cs) => g.decideAll(cs),
+    writeAll: (cs) => g.writeAll(cs),
+  };
+};
+/** A gate that fails if it is asked anything but the collections' fields. */
+const untouched: WriteGate = {
+  shape: (c) => [expenses, categories, notes].find((x) => x.key === c),
+  get: () => Promise.reject(new Error("read")),
+  decideAll: () => Promise.reject(new Error("decided")),
+  writeAll: () => Promise.reject(new Error("written")),
+};
+/** What `applyWrites` is given for these requests of `SAVES_ALL` with every cell «Sí», unless `more` says else. */
+const writeInput = (requests: WriteRequest[], more: Partial<WriteInput> = {}): WriteInput => ({
+  step: "s_ejemplo",
+  requests,
+  labels: requests.map(() => OWN),
+  grants: grantsOf(readWrites(SAVES_ALL, "code"), named),
+  connections: [ALL_YES],
+  collectionNamed: named,
+  today: "2026-11-16",
+  test: false,
+  ...more,
+});
+
 describe("the lists of saving from code", () => {
-  it("every limit of saving is a whole number over zero, and none has the key of a limit of `CODE_LIMITS`", () => {
+  it("every limit of saving is a whole number over zero, and is the one of `CODE_LIMITS` by the same key", () => {
     for (const [key, value] of Object.entries(WRITE_LIMITS)) {
       expect(Number.isInteger(value), key).toBe(true);
       expect(value, key).toBeGreaterThan(0);
-      expect(key in CODE_LIMITS, key).toBe(false);
+      expect(CODE_LIMITS[key as keyof typeof CODE_LIMITS], key).toBe(value);
     }
   });
 
@@ -89,11 +308,21 @@ describe("the lists of saving from code", () => {
     expect(WRITE_LIMITS.stepWriteBytes).toBeLessThanOrEqual(CODE_LIMITS.outputBytes);
   });
 
-  it("no failure or problem of saving is one the engine or validation already has, so the lists can be joined", () => {
-    const failures = new Set<string>([...STEP_FAILURES, ...CODE_FAILURES, ...WRITE_FAILURES]);
-    expect(failures.size).toBe(STEP_FAILURES.length + CODE_FAILURES.length + WRITE_FAILURES.length);
-    const problems = new Set<string>([...PROBLEMS, ...CODE_PROBLEMS, ...WRITE_PROBLEMS]);
-    expect(problems.size).toBe(PROBLEMS.length + CODE_PROBLEMS.length + WRITE_PROBLEMS.length);
+  it("the failures and problems of saving are joined into `CODE_FAILURES` and `CODE_PROBLEMS`, each once, and none is one the engine or validation has of its own", () => {
+    for (const code of WRITE_FAILURES)
+      expect(
+        CODE_FAILURES.filter((c) => c === code),
+        code,
+      ).toHaveLength(1);
+    for (const code of WRITE_PROBLEMS)
+      expect(
+        CODE_PROBLEMS.filter((c) => c === code),
+        code,
+      ).toHaveLength(1);
+    const failures = new Set<string>([...STEP_FAILURES, ...CODE_FAILURES]);
+    expect(failures.size).toBe(STEP_FAILURES.length + CODE_FAILURES.length);
+    const problems = new Set<string>([...PROBLEMS, ...CODE_PROBLEMS]);
+    expect(problems.size).toBe(PROBLEMS.length + CODE_PROBLEMS.length);
   });
 
   it("the write actions are the connection's, each takes «Preguntar» or «Sí» on its own, and `$col` has no other method", () => {
@@ -104,14 +333,18 @@ describe("the lists of saving from code", () => {
     expect(new Set(COL_METHODS).size).toBe(COL_METHODS.length);
   });
 
-  it("a failure of saving is a `StepFault` that says which", () => {
-    const fault = new WriteFault("not allowed", {
+  it("a failure of saving is a `CodeFault` of the source that says which, as any failure of a «Código»", async () => {
+    const fault = await applyWrites(
+      writeInput([update("e_ejemplo", { [amount]: 1 })], { connections: [toExpenses()] }),
+      untouched,
+    ).catch((e: unknown) => e);
+    expect(fault).toBeInstanceOf(CodeFault);
+    expect((fault as CodeFault).failure).toEqual({ code: "other", param: "source" });
+    expect((fault as CodeFault).why).toEqual({
       code: "code.write.notAllowed",
-      detail: { collection: "gastos", action: "update" },
+      param: "source",
+      detail: { collection: expenses.key, action: "update" },
     });
-    expect(fault).toBeInstanceOf(StepFault);
-    expect(fault.failure).toEqual({ code: "other", param: "source" });
-    expect(fault.why.code).toBe("code.write.notAllowed");
   });
 });
 
@@ -147,45 +380,323 @@ describe("asking to save", () => {
     expect(read.writes).toEqual(reading.writes);
     expect(read.collections.map((c) => c.name)).toEqual(["Gastos", "Notas"]);
   });
-  it.todo(
-    "AU-172 · `$col('Gastos').update(id, { categoria })`, `.create({ … })` and `.remove(id)` return `undefined` and save nothing while the code runs: the evaluation's result lists them as requests, in the order asked",
-  );
-  it.todo(
-    "AU-172 · a read after a request does not see it: `update` then `find` of the same row gives the row as saved, in a run and in «Probar»",
-  );
-  it.todo(
-    "AU-172 · an id is data: `update` with a number, an object or an id of another collection's row fails at save (`code.write.request` or `row.missing`), never earlier and never by luck",
-  );
-  it.todo(
-    "AU-173 · the requests are applied when the step ends, in the order asked within an evaluation and in the order of the rows in «Una vez por fila»; only the last complete pass of an evaluation repeated for its reads counts, so a pass stopped at a read adds none",
-  );
-  it.todo(
-    "AU-173 · `update` and `remove` read the saved row once for the limits, «Haría esto» and the version: a row changed between that read and the write fails the step with `row.changed` and saves nothing",
-  );
+  it("AU-172 · `.create({ … })`, `.update(id, { … })` and `.remove(id)` save nothing while the code runs: the evaluation's result lists them as requests, in the order asked, and the box gets only the methods granted", async () => {
+    // That each call gives `undefined` and copies its arguments at the call is the box's: apps/sandbox's «saving».
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    const only = await saving(
+      "$col('Gastos').update('x', { a: 1 })\nreturn [{ n: $col('Notas').count() }]",
+      [ALL_YES, { ...newConnection(notes.key), create: YES }],
+      () => done([], [update(first, { [amount]: 9 })]),
+      { store: st },
+    );
+    // Only what the analysis found and the connection allows: «Notas» creates nowhere in the code.
+    expect(only.box.jobs[0]?.writes).toEqual({ Gastos: ["update"] });
+    const asked = [remove(second), create({ [amount]: 5 }), update(first, { [amount]: 9 })];
+    const { e, rec, box } = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), {
+      store: st,
+    });
+    expect([...(box.jobs[0]?.writes?.Gastos ?? [])].sort()).toEqual(["create", "remove", "update"]);
+    expect(st.calls.filter((c) => c.method === "apply" || c.method === "applyAll")).toEqual([]);
+    expect(st.applied).toEqual([]);
+    expect(rec.state).toBe("done");
+    expect(touched(rec)).toEqual([
+      ["remove", second],
+      ["create", null],
+      ["update", first],
+    ]);
+    expect(e.asked.map((a) => a.change.kind)).toEqual(["trash", "create", "update"]);
+  });
+  it("AU-172 · a read after a request does not see it: `update` then `get` of the same row gives the row as saved, in a run and in «Probar»", async () => {
+    for (const test of [false, true]) {
+      const st = db(2);
+      const first = at(idsOf(st), 0);
+      const { e, step } = await saving(
+        "$col('Gastos').update('x', { a: 1 })\nreturn [{ visto: $col('Gastos').get('x') }]",
+        [toExpenses({ update: YES })],
+        ({ job }) =>
+          "k" in job.reads
+            ? done(
+                [{ visto: (job.reads.k as Fields)[amount] ?? null }],
+                [update(first, { [amount]: 99 })],
+              )
+            : { state: "needs", key: "k", read: { collection: "Gastos", op: "get", id: first } },
+        { store: st, test },
+      );
+      expect(outOf(e, step.id), String(test)).toEqual([{ visto: 0 }]);
+      expect(st.rows(expenses.key)[0]?.json[amount]).toBe(0);
+    }
+  });
+  it("AU-172 · an id is data: `update` with a number, an object or an id of another collection's row fails at save (`code.write.request`, or `code.write.outside` as a row that is not there), never earlier and never by luck", async () => {
+    const st = db(2);
+    const first = at(idsOf(st), 0);
+    const other = at(idsOf(st, categories.key), 0);
+    for (const [id, why] of [
+      [5, { code: "code.write.request", detail: { why: "id" } }],
+      [{ id: first }, { code: "code.write.request", detail: { why: "id" } }],
+      ["", { code: "code.write.request", detail: { why: "id" } }],
+      [other, { code: "code.write.outside", detail: { why: "row" } }],
+    ] as const) {
+      const { e, rec, box } = await saving(
+        UPDATES,
+        [toExpenses({ update: YES })],
+        () => done([], [update(id, { [amount]: 1 })]),
+        { store: st },
+      );
+      expect(box.jobs, JSON.stringify(id)).toHaveLength(1);
+      expect(whyOf(rec), JSON.stringify(id)).toMatchObject({
+        ...why,
+        detail: { ...why.detail, collection: expenses.key },
+      });
+      expect(rec.writes).toBeUndefined();
+      expect(e.asked).toEqual([]);
+    }
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-173 · the requests are applied when the step ends, in the order asked within an evaluation and in the order of the rows in «Una vez por fila»; only the last complete pass of an evaluation repeated for its reads counts, so a pass stopped at a read adds none", async () => {
+    const st = db(3);
+    const all = idsOf(st);
+    const { rec } = await saving(
+      SAVES_ALL,
+      [ALL_YES],
+      ({ at: i, job }) =>
+        "k" in job.reads
+          ? done({ n: i }, [update(at(all, i), { [amount]: 10 + i }), create({ [amount]: i })])
+          : needs("k"),
+      { store: st, mode: "perRow" },
+    );
+    expect(rec.writes?.records.map((r) => [r.action, r.id ?? null, r.after?.[amount]])).toEqual([
+      ["update", all[0], 10],
+      ["create", null, 0],
+      ["update", all[1], 11],
+      ["create", null, 1],
+      ["update", all[2], 12],
+      ["create", null, 2],
+    ]);
+  });
+  it("AU-173 · `update` and `remove` read the saved row once for the limits, «Haría esto» and the version: a row changed between that read and the write fails the step with `row.changed` and saves nothing", async () => {
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    const { rec } = await saving(
+      SAVES_ALL,
+      [ALL_YES],
+      () => done([], [update(first, { [amount]: 7 }), remove(second), create({ [amount]: 1 })]),
+      { store: st },
+    );
+    // One read of each row, with no other question to the policy, and the change carries the version it read.
+    expect(st.calls.filter((c) => c.method === "get")).toHaveLength(2);
+    const asked = rec.writes?.kind === "asked" ? rec.writes.asked : [];
+    expect(asked.map((a) => (a.change.kind === "create" ? null : a.change.row.version))).toEqual([
+      1,
+      1,
+      null,
+    ]);
+    // Written later, as a whole: a row changed since that read takes back the whole change.
+    const read = (await st.get(expenses.key, at(idsOf(st), 2))) as StoredRow;
+    await st.apply({ kind: "update", row: read.origin, fields: { [amount]: 50 } }, {});
+    const before = structuredClone(st.rows(expenses.key));
+    const changes = asked.map((a) => ({ change: a.change, values: {} }));
+    await expect(
+      writer(st).writeAll([
+        ...changes,
+        { change: { kind: "update", row: read.origin, fields: { [amount]: 8 } }, values: {} },
+      ]),
+    ).rejects.toMatchObject({ failure: { code: "row.changed" } });
+    expect(st.rows(expenses.key)).toEqual(before);
+    expect(st.applied).toHaveLength(1);
+  });
 });
 
 describe("all or nothing", () => {
-  it.todo(
-    "AU-174 · the policy is asked for every request before any is written: one refused fails the step with `policy.denied` and none of the others is saved",
-  );
-  it.todo(
-    "AU-174 · a step's requests are written in one transaction of the store: a failure in the middle (the 3,000th of 3,000) leaves every row as it was",
-  );
-  it.todo(
-    "AU-174 · a «Preguntar» on any action asked for makes the whole step's change wait as one proposal («todo junto», Juan, 2026-11-16): modifying 12 rows with «Sí» and removing one with «Preguntar» proposes 13, and saves none",
-  );
-  it.todo(
-    "AU-174 · a code that throws after its requests, or a step that fails for any other reason, saves nothing; under «Si falla: seguir» the requests of the failed row are dropped and the others are saved",
-  );
+  it("AU-174 · the policy is asked for every request before any is written, each as the «Colección» action that makes it: one refused fails the step with `policy.denied` and none of the others is saved", async () => {
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    let writes = 0;
+    const p = policy((c) =>
+      c.effect === "write" && ++writes === 3
+        ? { kind: "deny", rule: "test.deny", reason: "no" }
+        : { kind: "allow", rule: "test.allow" },
+    );
+    const { e, rec } = await saving(
+      SAVES_ALL,
+      [ALL_YES],
+      () => done([], [create({ [amount]: 1 }), update(first, { [amount]: 2 }), remove(second)]),
+      { store: st, policy: p },
+    );
+    expect(writeCalls(p)).toEqual([
+      ["create", false, expenses.key],
+      ["update", false, expenses.key],
+      ["trash", true, expenses.key],
+    ]);
+    expect(rec.error?.failure?.code).toBe("policy.denied");
+    expect(rec.writes).toBeUndefined();
+    expect(e.asked).toEqual([]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-174 · a step's requests are written in one transaction of the store: a failure in the middle (the 3,000th of 3,000) leaves every row as it was", async () => {
+    const st = store([expenses], { [expenses.key]: ROWS(3000) }, ids(15));
+    const rows = [...st.rows(expenses.key)];
+    const last = rows[2999] as StoredRow;
+    await st.apply({ kind: "update", row: last.origin, fields: { [amount]: -1 } }, {});
+    const before = structuredClone(st.rows(expenses.key));
+    const changes = rows.map((r) => ({
+      change: { kind: "update" as const, row: r.origin, fields: { [amount]: 1 } },
+      values: {},
+    }));
+    await expect(writer(st).writeAll(changes)).rejects.toMatchObject({
+      failure: { code: "row.changed" },
+    });
+    expect(st.rows(expenses.key)).toEqual(before);
+    expect(st.applied).toHaveLength(1);
+    // The server's store does the same in one transaction: apps/server/src/automations.test.ts (AU-174).
+  });
+  it("AU-174 · a «Preguntar» on any action asked for makes the whole step's change wait as one proposal («todo junto», Juan, 2026-11-16): modifying 12 rows with «Sí» and removing one with «Preguntar» proposes 13, and saves none", async () => {
+    const st = db(13);
+    const all = idsOf(st);
+    const { e, rec } = await saving(
+      "$col('Gastos').update('x', { a: 1 })\n$col('Gastos').remove('x')\nreturn []",
+      [toExpenses({ update: YES, remove: ASK })],
+      () =>
+        done(
+          [],
+          [...all.slice(0, 12).map((id) => update(id, { [amount]: 1 })), remove(at(all, 12))],
+        ),
+      { store: st },
+    );
+    expect(rec.writes?.kind).toBe("asked");
+    expect(rec.asked).toBe(13);
+    expect(e.asked.map((a) => a.kind)).toEqual([...Array(12).fill("propose"), "confirm"]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-176 · until F14d (AU-186 to AU-188) a «Sí» saves nothing without asking: a step whose every cell is «Sí» waits as one proposal, as with «Preguntar» (`YES_SAVES`)", async () => {
+    expect(YES_SAVES).toBe(false);
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    const { e, rec, step } = await saving(
+      SAVES_ALL,
+      [ALL_YES],
+      () => done([], [create({ [amount]: 1 }), update(first, { [amount]: 2 }), remove(second)]),
+      { store: st },
+    );
+    expect(rec.writes?.kind).toBe("asked");
+    expect(e.asked.map((a) => [a.step, a.kind, a.rule])).toEqual([
+      [step.id, "propose", CONNECTION_ASKS],
+      [step.id, "propose", CONNECTION_ASKS],
+      [step.id, "confirm", CONNECTION_ASKS],
+    ]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-174 · a code that throws after its requests, or a step that fails for any other reason, saves nothing; under «Si falla: seguir» the requests of the failed row are dropped and the others are saved", async () => {
+    // Row 1 throws (its requests never leave the box); row 2 asks and then gives what is not rows.
+    const answer =
+      (all: readonly string[]) =>
+      ({ at: i }: Seen): Evaluated =>
+        i === 1
+          ? {
+              state: "failed",
+              failure: { code: "code.threw", param: "source", detail: { message: "después" } },
+              source: 0,
+            }
+          : done(i === 2 ? "texto" : { n: i }, [update(at(all, i), { [amount]: 100 + i })]);
+    for (const onError of ["continue", "errorOutput"] as const) {
+      const st = db(4);
+      const all = idsOf(st);
+      const { e, rec } = await saving(UPDATES, [toExpenses({ update: YES })], answer(all), {
+        store: st,
+        mode: "perRow",
+        onError,
+      });
+      expect(touched(rec), onError).toEqual([
+        ["update", all[0]],
+        ["update", all[3]],
+      ]);
+      expect(e.asked).toHaveLength(2);
+    }
+    const st = db(4);
+    const stopped = await saving(UPDATES, [toExpenses({ update: YES })], answer(idsOf(st)), {
+      store: st,
+      mode: "perRow",
+    });
+    expect(stopped.e.state).toBe("failed");
+    expect(stopped.rec.writes).toBeUndefined();
+    expect(stopped.e.asked).toEqual([]);
+    // All the rows at once: what is not rows fails the step, and what it asked goes with it.
+    const whole = await saving(
+      UPDATES,
+      [toExpenses({ update: YES })],
+      () => done("texto", [update(at(idsOf(st), 0), { [amount]: 1 })]),
+      { store: st },
+    );
+    expect(whyOf(whole.rec)?.code).toBe("code.result");
+    expect(whole.rec.writes).toBeUndefined();
+    expect(whole.e.asked).toEqual([]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-174 · a request the policy refuses fails the whole step even under «Si falla: seguir» or «salir por error»: the refusal is the step's change, not a row's, so no other row's request is saved", async () => {
+    for (const onError of ["continue", "errorOutput"] as const) {
+      const st = db(4);
+      const all = idsOf(st);
+      let writes = 0;
+      const p = policy((c) =>
+        c.effect === "write" && ++writes === 2
+          ? { kind: "deny", rule: "test.deny", reason: "no" }
+          : { kind: "allow", rule: "test.allow" },
+      );
+      const { e, rec } = await saving(
+        UPDATES,
+        [toExpenses({ update: YES })],
+        ({ at: i }: Seen) => done({ n: i }, [update(at(all, i), { [amount]: 100 + i })]),
+        { store: st, policy: p, mode: "perRow", onError },
+      );
+      expect(rec.error?.failure?.code, onError).toBe("policy.denied");
+      expect(rec.writes, onError).toBeUndefined();
+      expect(e.asked, onError).toEqual([]);
+      expect(st.applied, onError).toEqual([]);
+    }
+  });
   it.todo(
     "AU-174 · every operation of the step carries the run, so undoing the run undoes all of them and nothing else",
   );
-  it.todo(
-    "AU-175 · more than `WRITE_LIMITS.writes` requests stops the box with `code.limit` (`writes`) even inside an endless loop; over `stepWrites`, `writeBytes` or `stepWriteBytes` fails the step and saves nothing, never a part",
-  );
-  it.todo(
-    "AU-175 · the requests count towards the output that AU-17 limits: a step cannot pass `CODE_LIMITS.outputBytes` by asking instead of returning",
-  );
+  it("A-15 · 5,000 requests, as many as a step may make, are checked, read, judged and proposed over 5,000 rows in a moment", async () => {
+    const st = store([expenses], { [expenses.key]: ROWS(WRITE_LIMITS.stepWrites) }, ids(16));
+    const requests = idsOf(st).map((id) => update(id, { [amount]: 1 }));
+    const t0 = now();
+    const out = await applyWrites(writeInput(requests), writer(st));
+    const ms = now() - t0;
+    expect(out.kind).toBe("asked");
+    expect(out.records).toHaveLength(WRITE_LIMITS.stepWrites);
+    under(ms, 1500, "clock", "5,000 requests to save");
+  });
+  it("AU-175 · over `stepWrites`, `writeBytes` or `stepWriteBytes` fails the step with `code.limit` and saves nothing, never a part, before any row is read or the policy asked (one evaluation's `writes`, inside the box, is apps/sandbox's)", async () => {
+    const over = async (requests: WriteRequest[], limit: string) => {
+      const fault = await applyWrites(writeInput(requests), untouched).catch((e: unknown) => e);
+      expect(fault, limit).toBeInstanceOf(CodeFault);
+      expect((fault as CodeFault).why, limit).toMatchObject({
+        code: "code.limit",
+        detail: { limit },
+      });
+    };
+    const many = (n: number, text = "") =>
+      Array.from({ length: n }, () => create({ [amount]: 1, [note]: text }));
+    await over(many(WRITE_LIMITS.stepWrites + 1), "stepWrites");
+    await over(many(1, "x".repeat(WRITE_LIMITS.writeBytes)), "writeBytes");
+    const half = Math.floor(WRITE_LIMITS.writeBytes / 2);
+    await over(
+      many(Math.ceil(WRITE_LIMITS.stepWriteBytes / half) + 1, "x".repeat(half)),
+      "stepWriteBytes",
+    );
+    // In a run: two rows that ask for 2,501 each pass the step's limit together.
+    const st = db(2);
+    const { e, rec } = await saving(
+      "$col('Gastos').create({ a: 1 })\nreturn []",
+      [toExpenses({ create: YES })],
+      () => done({ n: 1 }, many(WRITE_LIMITS.stepWrites / 2 + 1)),
+      { store: st, mode: "perRow" },
+    );
+    expect(whyOf(rec)).toMatchObject({ code: "code.limit", detail: { limit: "stepWrites" } });
+    expect(e.asked).toEqual([]);
+    expect(st.applied).toEqual([]);
+  });
 });
 
 describe("the connection's permission", () => {
@@ -255,15 +766,115 @@ describe("the connection's permission", () => {
       "code.notConnected",
     ]);
   });
-  it.todo(
-    "AU-176 · a connection changed after the code was checked is what counts: the engine holds each request to the connection as saved, and one it no longer allows fails with `code.write.notAllowed` and saves nothing",
-  );
-  it.todo(
-    "AU-177 · with «Solo estas filas» a code cannot modify or remove a row outside it (`code.write.outside`, `row`), nor create one that would not pass it with the collection's defaults (`created`); a modify may take a row out of it",
-  );
-  it.todo(
-    "AU-177 · with «Solo estos campos» a code cannot set a field outside them (`code.write.hidden`), even one it never read, and creating fills the rest with the collection's defaults",
-  );
+  it("AU-176 · a connection changed after the code was checked is what counts: the engine holds each request to the connection as saved, and one it no longer allows fails with `code.write.notAllowed` and saves nothing", async () => {
+    const st = db(2);
+    const p = policy();
+    const first = at(idsOf(st), 0);
+    for (const connections of [[toExpenses()], [toExpenses({ create: YES, remove: YES })], []]) {
+      const fault = await applyWrites(
+        writeInput([update(first, { [amount]: 1 }, { line: 2 })], { connections }),
+        writer(st, p),
+      ).catch((e: unknown) => e);
+      expect(fault, JSON.stringify(connections)).toBeInstanceOf(CodeFault);
+      expect((fault as CodeFault).why).toEqual({
+        code: "code.write.notAllowed",
+        param: "source",
+        detail: { collection: expenses.key, action: "update", line: 2 },
+      });
+    }
+    expect(writeCalls(p)).toEqual([]);
+    expect(st.calls).toEqual([]);
+  });
+  it("AU-177 · with «Solo estas filas» a code cannot modify or remove a row outside it (`code.write.outside`, `row`), nor create one that would not pass it with the fields it gives (`created`: the store gives no defaults); a modify may take a row out of it", async () => {
+    const connection = onlyOpen({ create: YES, update: YES, remove: YES });
+    const st = db(4);
+    const [shut, open] = idsOf(st);
+    for (const [request, why] of [
+      [update(shut, { [amount]: 1 }), "row"],
+      [remove(shut), "row"],
+      [create({ [note]: "cerrado" }), "created"],
+      [create({ [amount]: 1 }), "created"],
+    ] as const) {
+      const { e, rec } = await saving(SAVES_ALL, [connection], () => done([], [request]), {
+        store: st,
+      });
+      expect(whyOf(rec), JSON.stringify(request)).toMatchObject({
+        code: "code.write.outside",
+        detail: { collection: expenses.key, why },
+      });
+      expect(e.asked).toEqual([]);
+    }
+    const { rec } = await saving(
+      SAVES_ALL,
+      [connection],
+      () => done([], [update(open, { [note]: "cerrado" }), create({ [note]: "abierto" })]),
+      { store: st },
+    );
+    expect(rec.writes?.records.map((r) => r.after?.[note])).toEqual(["cerrado", "abierto"]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-177 · a row that is not there and one the connection leaves out fail the same way: the same code, detail, words and record, so code cannot learn whether a row it may not see exists", async () => {
+    const connection = onlyOpen({ update: YES });
+    const st = db(4);
+    const shut = at(idsOf(st), 0);
+    const nowhere = ids(99)("o");
+    const fails = (id: string) =>
+      saving(UPDATES, [connection], () => done([], [update(id, { [amount]: 1 }, { line: 1 })]), {
+        store: st,
+      });
+    const missing = await fails(nowhere);
+    const outside = await fails(shut);
+    expect(missing.rec.error).toMatchObject({
+      why: { code: "code.write.outside", detail: { why: "row", line: 1 } },
+    });
+    expect(missing.rec).toEqual(outside.rec);
+    expect(missing.e.error).toEqual(outside.e.error);
+    // And the fault itself, words and all.
+    const faultOf = (id: string) =>
+      applyWrites(
+        writeInput([update(id, { [amount]: 1 })], { connections: [connection] }),
+        writer(st),
+      ).then(
+        () => undefined,
+        (e: unknown) => e as CodeFault,
+      );
+    const [a, b] = [await faultOf(nowhere), await faultOf(shut)];
+    expect(a).toBeInstanceOf(CodeFault);
+    expect([a?.message, a?.why]).toEqual([b?.message, b?.why]);
+  });
+  it("AU-177 · with «Solo estos campos» a code cannot set a field outside them (`code.write.hidden`), even one it never read; creating gives the row only the fields it sets", async () => {
+    const connection = { ...toExpenses({ create: YES, update: YES }), read: { fields: [amount] } };
+    const st = db(2);
+    const first = at(idsOf(st), 0);
+    const source =
+      "$col('Gastos').create({ a: 1 })\n$col('Gastos').update('x', { a: 1 })\nreturn []";
+    for (const request of [update(first, { [note]: "x" }), create({ [amount]: 1, [note]: "x" })]) {
+      const { rec } = await saving(source, [connection], () => done([], [request]), { store: st });
+      expect(whyOf(rec), request.action).toMatchObject({
+        code: "code.write.hidden",
+        detail: { collection: expenses.key, field: note },
+      });
+    }
+    const { rec } = await saving(
+      source,
+      [connection],
+      () => done([], [update(first, { [amount]: 2 }), create({ [amount]: 1 })]),
+      { store: st },
+    );
+    expect(rec.writes?.records.map((r) => r.after)).toEqual([
+      { [amount]: 2, [note]: "cerrado" },
+      { [amount]: 1 },
+    ]);
+    // A field the collection does not have is not one: the request is wrong, whatever the connection.
+    const unknown = await saving(source, [connection], () => done([], [create({ otro: 1 })]), {
+      store: st,
+    });
+    expect(whyOf(unknown.rec)).toMatchObject({
+      code: "code.write.request",
+      detail: { why: "field", field: "otro" },
+    });
+    expect(st.applied).toEqual([]);
+  });
   it("AU-178 · AU-189 · `permissions` gives each write the connection allows with its mode, which is all the chip, the sentence and «sin preguntar» need: «Solo lee» has only `read`; a removal with «Sí» is told apart from one that asks, and creating or modifying with «Sí» carry the same mode", () => {
     expect(permissions([newConnection(expenses.key)]).map((p) => p.action)).toEqual(["read"]);
     const said = (c: Connection) => permissions([c]).map((p) => `${p.action}:${p.mode}`);
@@ -313,18 +924,120 @@ describe("the connection's permission", () => {
 });
 
 describe("what the person sees", () => {
-  it.todo(
-    "AU-180 · `stepChanges` gives the collections and actions a step can change: a «Colección» step's action, a «Código»'s analysis whether its connection allows it yet or not, nothing for a code that changes only the rows it received in memory",
-  );
+  it("AU-180 · `stepChanges` gives the collections and actions a step can change: a «Colección» step's action, a «Código»'s analysis whether its connection allows it yet or not, nothing for a code that changes only the rows it received in memory; `consentOf` reads one cell of it", () => {
+    const action = (key: string) =>
+      sketch(6).step("Cambiar", "collection", { collection: expenses.key, action: key }).build()
+        .steps[0] as Step;
+    expect(stepChanges(action("update"), ctx)).toEqual([
+      { collection: expenses.key, actions: [{ action: "update", mode: "yes" }] },
+    ]);
+    expect(stepChanges(action("upsert"), ctx)).toEqual([
+      {
+        collection: expenses.key,
+        actions: [
+          { action: "create", mode: "yes" },
+          { action: "update", mode: "yes" },
+        ],
+      },
+    ]);
+    expect(stepChanges(action("trash"), ctx)).toEqual([
+      { collection: expenses.key, actions: [{ action: "remove", mode: "ask" }] },
+    ]);
+    expect(stepChanges(action("find"), ctx)).toEqual([]);
+    expect(consentOf(action("trash"), expenses.key, "remove")).toBe("ask");
+    expect(consentOf(action("update"), expenses.key, "remove")).toBe(false);
+
+    const { step } = withCode(
+      [
+        "$col('Notas').create({ texto: 'x' })",
+        "$col('Gastos').remove('x')",
+        "$col('Gastos').update('x', { a: 1 })",
+        "return []",
+      ].join("\n"),
+      [toExpenses({ update: ASK, remove: YES })],
+    );
+    expect(stepChanges(step, ctx)).toEqual([
+      { collection: notes.key, actions: [{ action: "create", mode: false }] },
+      {
+        collection: expenses.key,
+        actions: [
+          { action: "update", mode: "ask" },
+          { action: "remove", mode: "yes" },
+        ],
+      },
+    ]);
+    expect(consentOf(step, expenses.key, "update")).toBe("ask");
+    expect(consentOf(step, expenses.key, "create")).toBe(false);
+    expect(consentOf(step, notes.key, "create")).toBe(false);
+    const inMemory = withCode("const all = $input.all(); all[0].json.x = 1; return all", []);
+    expect(stepChanges(inMemory.step, ctx)).toEqual([]);
+  });
   it.todo(
     "AU-180 · the card's mark says what the step changes («Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas»), the same mark for a «Colección» step and a «Código», and none for one that only reads",
   );
-  it.todo(
-    "AU-181 · «Probar» and «Probar paso» check every request as a run would and save none: «Haría esto» lists them («Modificaría 12 filas en Gastos») with each row before and after, and a request that would fail fails the test the same way",
-  );
-  it.todo(
-    "AU-181 · the record of a real run lists what the step saved or proposed, row by row, and nothing for a step that failed",
-  );
+  it("AU-181 · «Probar» and «Probar paso» check every request as a run would and save none: «Haría esto» lists them with each row before and after, says whether a run would ask, and a request that would fail fails the test the same way", async () => {
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    const asked = [
+      update(first, { [amount]: 9 }),
+      create({ [amount]: 5, [note]: "nuevo" }),
+      remove(second),
+    ];
+    const t = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), { store: st, test: true });
+    expect(t.rec.writes).toMatchObject({ kind: "tested", asks: true });
+    expect(t.rec.writes?.records).toEqual([
+      {
+        collection: expenses.key,
+        action: "update",
+        id: first,
+        before: { [amount]: 0, [note]: "cerrado" },
+        after: { [amount]: 9, [note]: "cerrado" },
+      },
+      { collection: expenses.key, action: "create", after: { [amount]: 5, [note]: "nuevo" } },
+      {
+        collection: expenses.key,
+        action: "remove",
+        id: second,
+        before: { [amount]: 1, [note]: "abierto" },
+      },
+    ]);
+    expect(t.e.asked).toEqual([]);
+    expect(st.applied).toEqual([]);
+    expect(st.calls.filter((c) => c.method === "applyAll")).toEqual([]);
+    // Nothing asked: nothing to say.
+    const none = await saving(SAVES_ALL, [ALL_YES], () => done([]), { store: st, test: true });
+    expect(none.rec.writes).toBeUndefined();
+    // What would fail fails the same in a test as in a run.
+    const bad = (test: boolean) =>
+      saving(UPDATES, [toExpenses({ update: YES })], () => done([], [update(5, { [amount]: 1 })]), {
+        store: st,
+        test,
+      });
+    const [inTest, inRun] = [await bad(true), await bad(false)];
+    expect(inTest.rec.error).toEqual(inRun.rec.error);
+    expect(whyOf(inTest.rec)?.code).toBe("code.write.request");
+  });
+  it("AU-181 · the record of a real run lists what the step saved or proposed, row by row, as «Probar» does, and nothing for a step that failed", async () => {
+    const st = db(3);
+    const [first, second] = idsOf(st);
+    const asked = [update(first, { [amount]: 9 }), create({ [amount]: 5 }), remove(second)];
+    const tested = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), {
+      store: st,
+      test: true,
+    });
+    const ran = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), { store: st });
+    expect(ran.rec.writes?.kind).toBe("asked");
+    expect(ran.rec.writes?.records).toEqual(tested.rec.writes?.records);
+    const failed = await saving(
+      SAVES_ALL,
+      [ALL_YES],
+      () => done([], [...asked, update(5, { [amount]: 1 })]),
+      { store: st },
+    );
+    expect(failed.rec.state).toBe("failed");
+    expect(failed.rec.writes).toBeUndefined();
+    expect(failed.rec.asked).toBe(0);
+  });
   it.todo(
     "AU-182 · «Lo que podrá hacer» in Publicar, and every proposal of an automation Juan did not write, list what each «Código» can change before he accepts it; a code that saves never runs before it is published",
   );
@@ -404,9 +1117,37 @@ describe("the analysis binds", () => {
   it.todo(
     "AU-183 · `$col` reached any other way (`globalThis['$c' + 'ol']`, `this`, `eval`, `Function`, a getter, a `Proxy`) gives no method the grants do not have: in the box, `$col` of a collection has only the write methods granted",
   );
-  it.todo(
-    "AU-183 · a request the analysis did not see fails the step with `code.write.unseen` and saves nothing, even when the box's answer is forged to carry it; the server reads the grants from the code as saved at every run, never from the box or a browser",
-  );
+  it("AU-183 · a request the analysis did not see fails the step with `code.write.unseen` and saves nothing, even when the box's answer is forged to carry it; the server reads the grants from the code as saved at every run, never from the box or a browser", async () => {
+    const st = db(2);
+    const first = at(idsOf(st), 0);
+    const connections = [ALL_YES, { ...newConnection(notes.key), create: YES }];
+    for (const forged of [
+      remove(first),
+      create({ [amount]: 1 }),
+      { collection: "Notas", action: "create", fields: {} } as WriteRequest,
+      { collection: "Gastos", action: "drop" as WriteAction, id: first },
+      { collection: "Otra", action: "update", id: first, fields: {} } as WriteRequest,
+    ])
+      for (const test of [false, true]) {
+        const p = policy();
+        const { e, rec, box } = await saving(
+          UPDATES,
+          connections,
+          () => done([], [update(first, { [amount]: 1 }), forged]),
+          { store: st, policy: p, test },
+        );
+        const what = `${JSON.stringify(forged)} ${test}`;
+        expect(box.jobs[0]?.writes, what).toEqual({ Gastos: ["update"] });
+        expect(whyOf(rec), what).toMatchObject({
+          code: "code.write.unseen",
+          detail: { collection: forged.collection, action: forged.action, where: "code" },
+        });
+        expect(writeCalls(p), what).toEqual([]);
+        expect(rec.writes).toBeUndefined();
+        expect(e.asked).toEqual([]);
+      }
+    expect(st.applied).toEqual([]);
+  });
   it("AU-184 · an expression never saves: `{{ $col('Gastos').update(…) }}` is `code.readInExpression`, to read or to save, and the analysis gives it no request", () => {
     for (const expr of [
       "$col('Gastos').update('r_1', { importe: 1 })",
@@ -432,12 +1173,75 @@ describe("the analysis binds", () => {
     expect(codes(problems)).toEqual(["code.readInExpression"]);
     expect(canRun(problems)).toBe(false);
   });
-  it.todo(
-    "AU-184 · an evaluation of expressions whose answer carries a request fails the step with `code.write.unseen` (`expression`) and saves nothing",
-  );
-  it.todo(
-    "AU-185 · a code's write is a change of its step: it carries the run, the version and the step, and its label (AU-169), so a value from outside is proposed (P4) and stored as from outside (AU-170)",
-  );
+  it("AU-184 · an evaluation of expressions whose answer carries a request fails the step with `code.write.unseen` (`expression`) and saves nothing", async () => {
+    const st = db(2);
+    const first = at(idsOf(st), 0);
+    const s = sketch(5)
+      .step("Inicio", "manual", { fields: [] })
+      .step("Buscar", "collection", { collection: expenses.key, action: "find" })
+      .step("Editar", "edit", { fields: [{ field: "nuevo", value: { expr: "{{ 1 + 1 }}" } }] })
+      .arrow("Inicio", "Buscar")
+      .arrow("Buscar", "Editar");
+    const p = policy();
+    const box = writingBox(({ job }) =>
+      done(2, job.kind === "expressions" ? [update(first, { [amount]: 1 })] : []),
+    );
+    const e = await run(
+      {
+        automation: s.build(),
+        trigger: s.id("Inicio"),
+        fields: { json: {}, label: OWN },
+        test: false,
+      },
+      deps({ collectionNamed: named, collections: st, box, policy: p }),
+    );
+    expect(box.jobs.map((j) => j.kind)).toEqual(["expressions"]);
+    expect(e.steps[s.id("Editar")]?.error?.why).toMatchObject({
+      code: "code.write.unseen",
+      detail: { collection: "Gastos", action: "update", where: "expression" },
+    });
+    expect(writeCalls(p)).toEqual([]);
+    expect(e.asked).toEqual([]);
+    expect(st.applied).toEqual([]);
+  });
+  it("AU-185 · a code's write is a change of its step: it carries the version and the step, and the label of what its evaluation received (AU-169), so a value from outside is proposed (P4); that it carries the run and is stored as from outside (AU-170) is the server's (S1)", async () => {
+    const st = db(2, OUTSIDE);
+    const first = at(idsOf(st), 0);
+    const p = policy((c) =>
+      c.effect === "write" &&
+      Object.values(c.values).some((v) => v.label.integrity === OUTSIDE.integrity)
+        ? { kind: "propose", rule: "test.outside" }
+        : { kind: "allow", rule: "test.allow" },
+    );
+    const { a, e, step } = await saving(
+      UPDATES,
+      [toExpenses({ update: YES })],
+      () => done([], [update(first, { [amount]: 3 })]),
+      { store: st, policy: p },
+    );
+    const call = p.calls.find((c) => c.effect === "write");
+    expect(call).toMatchObject({
+      automation: { id: a.id, version: a.version },
+      step: step.id,
+      type: CODE_TYPE,
+      action: "update",
+      collection: expenses.key,
+    });
+    expect(call?.values[amount]).toMatchObject({ value: 3, derived: true });
+    expect(call?.values[amount]?.label.integrity).toBe(OUTSIDE.integrity);
+    expect(e.asked).toEqual([
+      {
+        step: step.id,
+        kind: "propose",
+        rule: "test.outside",
+        change: {
+          kind: "update",
+          row: (st.rows(expenses.key)[0] as StoredRow).origin,
+          fields: { [amount]: 3 },
+        },
+      },
+    ]);
+  });
   it.todo(
     "AU-185 · until F18 no automation starts on a change of a row, so a code's write starts nothing; F18's loop guard (AU-113) counts it as any write of a «Colección» step",
   );

@@ -116,6 +116,17 @@ export interface Collections {
    * fields written with their labels, as the gate judged them, so each is kept with its own (P17).
    */
   apply(change: Change, values: Labelled): Promise<StoredRow>;
+  /**
+   * Every change, in order, in one transaction (AU-174): each as `apply` does it, and the rows as saved in the same
+   * order. All or nothing: when one throws (`row.changed` among them), none was written.
+   */
+  applyAll(changes: readonly ChangeWith[]): Promise<StoredRow[]>;
+}
+
+/** A change with the labels of the values it writes, as `apply` takes them. */
+export interface ChangeWith {
+  change: Change;
+  values: Labelled;
 }
 
 // ---------------------------------------------------------------- the gate
@@ -165,6 +176,17 @@ export interface Gate {
   aggregate(query: AggregateQuery, values: Labelled): Promise<AggregateResult[]>;
   /** `values`: the fields written with their labels (empty for `trash`). */
   write(change: Change, values: Labelled): Promise<WriteResult>;
+  /**
+   * A step's changes judged together (AU-174): the policy is asked for each before anything is written, as the
+   * «Colección» action that makes that change would be (`create`, `update`, `trash`). `allow` only when it allows
+   * every one; else the ones it would ask Juan about, in order. Throws `Denied` when it refuses any.
+   */
+  decideAll(changes: readonly ChangeWith[]): Promise<"allow" | Asked[]>;
+  /**
+   * Writes changes `decideAll` allowed, all or nothing, in one transaction of the store; it asks the policy nothing
+   * more. In a test nothing is written and each comes back `tested`, with the row as it would be.
+   */
+  writeAll(changes: readonly ChangeWith[]): Promise<WriteResult[]>;
 }
 
 /** Which step and row a gate works for: what every `PolicyCall` of it carries. */
@@ -192,15 +214,16 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
     collection: string,
     values: Labelled,
     rows?: number,
+    as?: { action: string; destroys: boolean },
   ): Decision =>
     policy.decide({
       automation: unit.automation,
       step: unit.step,
       type: unit.type,
-      action: unit.action,
+      action: as?.action ?? unit.action,
       effect,
       // A read destroys nothing, even the search of «Eliminar filas»: what destroys is its write.
-      destroys: effect === "write" && unit.destroys,
+      destroys: as?.destroys ?? (effect === "write" && unit.destroys),
       collection,
       values,
       control: unit.control,
@@ -246,8 +269,43 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       }
       return { kind: "tested", row: await wouldBe(collections, change, values, unit.own) };
     },
+    async decideAll(changes) {
+      const asked: Asked[] = [];
+      for (const { change, values } of changes) {
+        const d = ask("write", collectionOfChange(change), values, rowsOf(change), {
+          action: change.kind,
+          destroys: change.kind === "trash",
+        });
+        if (d.kind === "deny") throw new Denied(d.rule, d.reason);
+        if (d.kind !== "allow") asked.push({ step: unit.step, kind: d.kind, rule: d.rule, change });
+      }
+      return asked.length ? asked : "allow";
+    },
+    async writeAll(changes) {
+      if (unit.test) {
+        const out: WriteResult[] = [];
+        for (const { change, values } of changes)
+          out.push({ kind: "tested", row: await wouldBe(collections, change, values, unit.own) });
+        return out;
+      }
+      const saved = changes.length ? await collections.applyAll(changes) : [];
+      return saved.map((row, i) => {
+        const { change, values } = changes[i] as ChangeWith;
+        return {
+          kind: "applied",
+          row: change.kind === "trash" ? row : over(row, change.fields, values),
+        };
+      });
+    },
   };
 }
+
+/** The collection a change writes in. */
+export const collectionOfChange = (change: Change): string =>
+  change.kind === "create" ? change.collection : change.row.collection;
+
+/** How many saved rows a change touches, as `PolicyCall.rows` says it: none known for a new one. */
+const rowsOf = (change: Change): number | undefined => (change.kind === "create" ? undefined : 1);
 
 /**
  * What a write allowed in a test would leave, with nothing written: a new row (Juan's, as the store makes it) with

@@ -163,6 +163,37 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
     return e;
   };
 
+  /** One change, inside the caller's transaction: the row as saved (for `trash`, as it was). */
+  const one = (change: Change, values: Labelled): StoredRow => {
+    const key = change.kind === "create" ? change.collection : change.row.collection;
+    const t = typeByKey(key);
+    if (!t) throw new StepFault(`no collection ${key}`, { code: "other" });
+    if (change.kind === "create")
+      return rowOf(t, store.create(t.id, writesOf(t, change.fields, values), meta()));
+    const before = current(change.row);
+    if (change.kind === "trash") {
+      store.remove(before.entity.id, meta());
+      return rowOf(t, before);
+    }
+    try {
+      return rowOf(
+        t,
+        store.update(
+          before.entity.id,
+          writesOf(t, change.fields, values),
+          meta(),
+          change.row.version,
+        ),
+      );
+    } catch (e) {
+      if (e instanceof StoreError && e.code === "conflict")
+        throw new StepFault(`the row ${change.row.id} changed since it was read`, {
+          code: "row.changed",
+        });
+      throw e;
+    }
+  };
+
   return {
     shape(key) {
       const t = typeByKey(key);
@@ -242,34 +273,24 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
       });
     },
     async apply(change: Change, values: Labelled = {}) {
-      const key = change.kind === "create" ? change.collection : change.row.collection;
-      const t = typeByKey(key);
-      if (!t) throw new StepFault(`no collection ${key}`, { code: "other" });
+      return store.batch(() => one(change, values));
+    },
+    async applyAll(changes) {
+      // One transaction: a change that throws takes back every one before it (AU-174). A row changed earlier in the
+      // same call is checked against the version that change left, so two requests for one row apply in order.
       return store.batch(() => {
-        if (change.kind === "create")
-          return rowOf(t, store.create(t.id, writesOf(t, change.fields, values), meta()));
-        const before = current(change.row);
-        if (change.kind === "trash") {
-          store.remove(before.entity.id, meta());
-          return rowOf(t, before);
-        }
-        try {
-          return rowOf(
-            t,
-            store.update(
-              before.entity.id,
-              writesOf(t, change.fields, values),
-              meta(),
-              change.row.version,
-            ),
+        const left = new Map<string, number>();
+        return changes.map(({ change, values }) => {
+          const version = change.kind === "create" ? undefined : left.get(change.row.id);
+          const row = one(
+            version === undefined || change.kind === "create"
+              ? change
+              : { ...change, row: { ...change.row, version } },
+            values,
           );
-        } catch (e) {
-          if (e instanceof StoreError && e.code === "conflict")
-            throw new StepFault(`the row ${change.row.id} changed since it was read`, {
-              code: "row.changed",
-            });
-          throw e;
-        }
+          left.set(row.origin.id, row.origin.version);
+          return row;
+        });
       });
     },
   };

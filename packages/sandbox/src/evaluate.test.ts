@@ -122,6 +122,22 @@ describe("protocol 2: an evaluation's request", () => {
     expect(errorsWith({ mode: "all" })).toEqual(["mode"]);
     expect(errorsWith({ kind: "code", sources: ["return 1"], mode: "perRow" })).toEqual([]);
   });
+  it("AU-183 · `writes` names, by the collection's name as the code writes it, which of the three actions its `$col` has: only in a «Código», only the three, each once; expressions never ask to save (AU-184)", () => {
+    const code = { kind: "code", mode: "all", sources: ["return 1"] };
+    expect(errorsWith({ ...code, writes: { Gastos: ["update", "remove"], Notas: [] } })).toEqual(
+      [],
+    );
+    expect(errorsWith({ writes: { Gastos: ["update"] } })).toEqual(["writes"]);
+    expect(errorsWith({ ...code, writes: [] })).toEqual(["writes"]);
+    expect(errorsWith({ ...code, writes: { Gastos: ["insert"] } })).toEqual(["writes.Gastos"]);
+    expect(errorsWith({ ...code, writes: { Gastos: ["update", "update"] } })).toEqual([
+      "writes.Gastos",
+    ]);
+    expect(errorsWith({ ...code, writes: { Gastos: "update" } })).toEqual(["writes.Gastos"]);
+    expect(errorsWith({ ...code, writes: { "": ["create"] } })).toEqual(["writes."]);
+    expect(evalLimitsOf({}).writes).toBe(5_000);
+    expect(evalLimitsOf({ limits: { writes: 10 ** 9 } }).writes).toBe(EVAL_MAX_LIMITS.writes);
+  });
   it("AU-35 · `evalLimitsOf` gives a request's limits where it says them and the defaults where it does not, never over the most the box allows (`MAX_LIMITS`), and a limit of zero or less is not one", () => {
     expect(evalLimitsOf({})).toEqual(EVAL_DEFAULT_LIMITS);
     const asked = evalLimitsOf({

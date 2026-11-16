@@ -10,11 +10,30 @@
  * (the screen has words for each entry).
  */
 import type { Label } from "@boni/entities";
-import type { Fields } from "./box.ts";
-import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
+import { matchesFilters } from "@boni/views";
+import { type Fields, jsonBytes } from "./box.ts";
+import { actionOf } from "./catalogue.ts";
+import {
+  CODE_LIMITS,
+  CODE_PARAMS,
+  CODE_TYPE,
+  type CodeFailureCode,
+  CodeFault,
+  type CodeLimit,
+  type CodeProblemCode,
+  WRITE_ACTIONS,
+  type WriteAction,
+} from "./code.ts";
 import type { Connection } from "./connections.ts";
-import type { Asked, Change, Labelled, StoredRow, WriteResult } from "./effects.ts";
-import { type StepFailure, StepFault } from "./failures.ts";
+import type {
+  Asked,
+  Change,
+  ChangeWith,
+  CollectionShape,
+  Gate,
+  Labelled,
+  StoredRow,
+} from "./effects.ts";
 import type { Automation, Step } from "./format.ts";
 import { type CodeContext, type CodeReading, readCode, type Span } from "./javascript.ts";
 import { notBuilt } from "./pending.ts";
@@ -23,17 +42,8 @@ import type { Problem } from "./validate.ts";
 
 // ---------------------------------------------------------------- what code may ask
 
-/**
- * The three write actions, by the keys `Connection` and the «Colección» step already use, and so their words (AU-85:
- * Crear, Modificar, Eliminar). They are also the names of `$col('…')`'s methods that ask to save (AU-172):
- * `.create({ field: value })`, `.update(id, { field: value })`, `.remove(id)` (to the trash, AU-122).
- */
-export const WRITE_ACTIONS = ["create", "update", "remove"] as const;
-export type WriteAction = (typeof WRITE_ACTIONS)[number];
-
-/** `$col('…')`'s methods: the four that read (AU-31) and the three that ask to save. Any other does not validate. */
-export const COL_METHODS = ["find", "get", "count", "sum", ...WRITE_ACTIONS] as const;
-export type ColMethod = (typeof COL_METHODS)[number];
+// The write actions and `$col`'s methods are code.ts's, so the analysis reads them without importing saving.
+export { COL_METHODS, type ColMethod, WRITE_ACTIONS, type WriteAction } from "./code.ts";
 
 /**
  * The cells of each write action in a «Código»'s connection, the same as the «Agente»'s (AU-41, AU-176): `false` is
@@ -74,105 +84,40 @@ export interface EvaluatedWrites {
   writes: readonly WriteRequest[];
 }
 
-// ---------------------------------------------------------------- the limits
-
-const KB = 1024;
-const MB = 1024 * KB;
+// ---------------------------------------------------------------- the limits, failures and problems
 
 /**
- * The limits of asking to save, by their key (AU-175): the key is what `code.limit` says (`detail.limit`) once these
- * join `CODE_LIMITS`. Passing one fails the step and saves nothing: never cut, since half of a change is another
- * change. Reasoned, not measured (as `CODE_LIMITS`): a builder may lower one after measuring, never remove it.
+ * The limits of asking to save, by their key (AU-175): `CODE_LIMITS`'s, where `code.limit` says them
+ * (`detail.limit`). Passing one fails the step and saves nothing: never cut, since half of a change is another
+ * change.
  */
 export const WRITE_LIMITS = {
-  /**
-   * Requests one evaluation may make. As many as a step: «Una vez con todas las filas» is one evaluation. It is
-   * apart so the box stops a loop that never ends as soon as it passes it, inside the box.
-   */
-  writes: 5_000,
-  /**
-   * Requests a step may make in a run, all its evaluations together. `CODE_LIMITS.readRows`: what one read gives can
-   * be written back at once, so a step over Juan's thousands of rows of one collection fits.
-   */
-  stepWrites: 5_000,
-  /** Bytes of one request, as JSON: a row's fields, a long text among them. */
-  writeBytes: 64 * KB,
-  /** Bytes of all of a step's requests, as JSON: the server holds them until the step ends (384 MB in all). */
-  stepWriteBytes: 4 * MB,
-} as const;
+  writes: CODE_LIMITS.writes,
+  stepWrites: CODE_LIMITS.stepWrites,
+  writeBytes: CODE_LIMITS.writeBytes,
+  stepWriteBytes: CODE_LIMITS.stepWriteBytes,
+} as const satisfies Partial<Record<CodeLimit, number>>;
 export type WriteLimit = keyof typeof WRITE_LIMITS;
 
-// ---------------------------------------------------------------- what goes wrong while running
-
 /**
- * Why a step's requests were not saved (AU-174, AU-177, AU-183, AU-184), as keys; whichever it is, nothing of the
- * step was saved. A request the policy refuses keeps `policy.denied`; a row that changed since it was read,
- * `row.changed`; an id no row of that collection has, `row.missing`; a value the field does not take, `value.type`
- * (the «Colección» executor's own codes). A limit is `code.limit` with a key of `WRITE_LIMITS`.
+ * Why a step's requests were not saved (AU-174, AU-177, AU-183, AU-184), as `CODE_FAILURES`'s keys, where each says
+ * its detail: whichever it is, nothing of the step was saved. A request the policy refuses keeps `policy.denied`; a
+ * row that changed since it was read, `row.changed`; a value the field does not take, `value.type`.
  */
 export const WRITE_FAILURES = [
-  /**
-   * The analysis of the saved code did not find that collection with that action (AU-183), or it came from an
-   * evaluation of expressions (AU-184). `detail.collection` (as written), `detail.action`, `detail.where`: "code" or
-   * "expression".
-   */
   "code.write.unseen",
-  /** The step's connection, as saved, does not give that action (AU-176). `detail.collection` (its key), `detail.action`. */
   "code.write.notAllowed",
-  /**
-   * Outside «Solo estas filas» (AU-177). `detail.why`: "row" (the row to modify or remove is not one the connection
-   * lets the step see) or "created" (the row as it would be created does not pass the filter). `detail.collection`.
-   */
   "code.write.outside",
-  /** A field «Solo estos campos» does not let the step see (AU-177). `detail.collection`, `detail.field`. */
   "code.write.hidden",
-  /**
-   * A request that is not one. `detail.why`: "id" (not a text), "fields" (not an object of fields), "field" (the
-   * collection has no such field: `detail.field`), "empty" (`update` with no field).
-   */
   "code.write.request",
-] as const;
+] as const satisfies readonly CodeFailureCode[];
 export type WriteFailureCode = (typeof WRITE_FAILURES)[number];
 
-export interface WriteFailure {
-  code: WriteFailureCode;
-  detail?: Record<string, string | number>;
-}
-
-/**
- * A failure of a step's requests: a `StepFault`, so the engine records it as any other. As `CodeFault`: until
- * `STEP_FAILURES` takes these codes, `failure.code` is `other`, `failure.param` is the code's source and `why` says
- * which it is.
- */
-export class WriteFault extends StepFault {
-  readonly why: WriteFailure;
-  constructor(message: string, why: WriteFailure) {
-    const failure: StepFailure = { code: "other", param: "source" };
-    super(message, failure);
-    this.name = "WriteFault";
-    this.why = why;
-  }
-}
-
-// ---------------------------------------------------------------- what is wrong before running
-
-/**
- * The problems these rules add to validation, with their place in the code (`detail.line`, `.column`, `.from`, `.to`)
- * so the editor marks them (AU-36).
- */
+/** The problems saving adds to validation, as `CODE_PROBLEMS`'s keys, with their place in the code (AU-36). */
 export const WRITE_PROBLEMS = [
-  /**
-   * `$col('…')` not called at once by one of `COL_METHODS` written by its name (AU-183), for reading and for saving
-   * alike. `detail.why`: "kept" (kept in a variable, passed, returned), "computed" (`$col('Gastos')[accion](…)`),
-   * "unknown" (a method it does not have: `detail.method`). The fix is always the same form: `$col('Gastos').update(…)`.
-   */
   "code.colUse",
-  /**
-   * The code asks for an action its connection does not give (AU-176). `detail.collection` (its key),
-   * `detail.action`: the button sets that cell to «Preguntar».
-   */
   "code.write.notAllowed",
-] as const;
+] as const satisfies readonly CodeProblemCode[];
 export type WriteProblemCode = (typeof WRITE_PROBLEMS)[number];
 
 /** A `Problem` with one of these codes. `$col` of a collection that is not connected keeps `code.notConnected`. */
@@ -344,26 +289,80 @@ export interface StepChange {
   actions: readonly StepAction[];
 }
 
+/** What each write action of «Colección» (AU-120) asks of a collection: «Crear o modificar» asks both. */
+const COLLECTION_WRITES: Record<string, readonly WriteAction[]> = {
+  create: ["create"],
+  update: ["update"],
+  upsert: ["create", "update"],
+  trash: ["remove"],
+};
+
 /**
  * What a step can change, whatever its type, from one place: a «Colección» step's write action (from the catalogue,
  * AU-19: creating and modifying `yes`, as the rule of the background says of what is its own, decision 5; removing
- * its «Permiso», AU-187), a «Código»'s analysis with its connection's cells (whether its connection allows it yet or
- * not: that is a problem apart), and from F15 an «Agente»'s write permissions. Empty for a step that only reads or
- * calculates. Changing in memory the rows that reach the code (AU-37) is never in it.
+ * `ask`, until its «Permiso» arrives, AU-187), a «Código»'s analysis with its connection's cells (whether its
+ * connection allows it yet or not: that is a problem apart), and from F15 an «Agente»'s write permissions. Empty for
+ * a step that only reads or calculates. Changing in memory the rows that reach the code (AU-37) is never in it. In
+ * the order of the code's calls, or of the connections; each collection's actions in the order of `WRITE_ACTIONS`.
  */
-export function stepChanges(step: Step, context: CodeContext): StepChange[] {
-  return notBuilt(`stepChanges(${step.id}, ${typeof context})`);
+export function stepChanges(
+  step: Step,
+  context: Pick<CodeContext, "collectionNamed">,
+): StepChange[] {
+  if (step.type === CODE_TYPE) {
+    const source = step.params[CODE_PARAMS.source];
+    if (typeof source !== "string") return [];
+    const asked = new Map<string, Set<WriteAction>>();
+    for (const site of readWrites(source, "code").writes) {
+      const key = context.collectionNamed(site.name);
+      if (key === undefined) continue;
+      const set = asked.get(key) ?? new Set<WriteAction>();
+      set.add(site.action);
+      asked.set(key, set);
+    }
+    return [...asked].map(([collection, set]) => {
+      const connection = (step.connections ?? []).find((c) => c.collection === collection);
+      return {
+        collection,
+        actions: WRITE_ACTIONS.filter((a) => set.has(a)).map((action) => {
+          const cell = connection?.[action];
+          return { action, mode: cell ? cell.mode : false };
+        }),
+      };
+    });
+  }
+  const action = actionOf(step);
+  const collection = step.params.collection;
+  const writes = action?.effect === "write" ? COLLECTION_WRITES[action.key] : undefined;
+  if (!writes || typeof collection !== "string") return [];
+  return [
+    {
+      collection,
+      actions: writes.map((a) => ({ action: a, mode: a === "remove" ? "ask" : "yes" })),
+    },
+  ];
 }
 
 /**
  * What a published version's step says for one collection and one action (AU-186): its connection's cell, or for a
  * «Colección» step what `stepChanges` gives. What the server tells `decide` with each write of a run, read from the
  * version as saved: never from the box, a browser or a model. A `yes` is not yet a write without asking: the policy
- * still proposes one with something from outside (P4, P15).
+ * still proposes one with something from outside (P4, P15), and until AU-186 to AU-188 (F14d) a «Código» asks
+ * anyway (`YES_SAVES`).
  */
 export function consentOf(step: Step, collection: string, action: WriteAction): false | WriteMode {
-  return notBuilt(`consentOf(${step.id}, ${collection}, ${action})`);
+  if (step.type === CODE_TYPE) {
+    const cell = (step.connections ?? []).find((c) => c.collection === collection)?.[action];
+    return cell ? cell.mode : false;
+  }
+  for (const change of stepChanges(step, NO_NAMES))
+    if (change.collection === collection)
+      for (const a of change.actions) if (a.action === action) return a.mode;
+  return false;
 }
+
+/** No collection by name: a «Colección» step names its collection by key. */
+const NO_NAMES = { collectionNamed: () => undefined };
 
 /**
  * An automation that arrives not written by the person (AU-188: the assistant's proposal, «Pedir a Boni», «Escribir
@@ -379,25 +378,37 @@ export function lowerYes(proposed: Automation, current?: Automation): Automation
 
 /**
  * Whether a row, as it is or as it would be saved, passes the connection's «Solo estas filas» (AU-177): what modify
- * and remove ask of the saved row, and create of the new row with the collection's defaults. The same filter, and
- * the same evaluation of it, as `narrow` puts on a read.
+ * and remove ask of the saved row, and create of the new row as it would be (the store gives a field not written no
+ * value: the collection has no defaults of its own). The same filter, and the same evaluation of it, as a read's
+ * `get` puts on its row: a field the filter names that the collection does not have leaves the row out.
  */
-export function insideConnection(row: Fields, connection: Connection): boolean {
-  return notBuilt(`insideConnection(${Object.keys(row).length}, ${connection.collection})`);
+export function insideConnection(
+  row: Fields,
+  connection: Connection,
+  typeOf: (field: string) => string | undefined,
+  today: string,
+): boolean {
+  const where = connection.read === false ? [] : (connection.read.where ?? []);
+  return !where.length || matchesFilters(row, typeOf, where, today, "fail");
 }
 
 /**
- * The gate as saving a step's requests needs it (AU-174): the saved row with no other question to the policy (as
- * AU-168 reads it in a test), every change decided before any is written, and all of them written in one
- * transaction of the store. The build adds `decideAll` and `writeAll` to `Gate` (effects.ts) and `applyAll` to
- * `Collections`, which the server implements with `UserStore.batch`, each operation with the run (`OpMeta.run`).
+ * Whether a connection's «Sí» saves without asking. Not until AU-186 to AU-188 land (F14d: what does not ask, «Sí»
+ * by the person's hand only, `lowerYes`): until then a «Sí» asks as «Preguntar» does, so nothing a model wrote can
+ * save on its own (W2's brief, 2026-11-16).
+ */
+export const YES_SAVES: boolean = false;
+
+/**
+ * The gate as saving a step's requests needs it (AU-174): the collections' fields, the saved row with no other
+ * question to the policy (as AU-168 reads it in a test), every change decided before any is written, and all of them
+ * written in one transaction of the store (`Gate.decideAll` and `Gate.writeAll`, effects.ts).
  */
 export interface WriteGate {
+  shape(collection: string): CollectionShape | undefined;
   get(collection: string, id: string): Promise<StoredRow | undefined>;
-  /** Asks the policy for every change. `allow` only when it allows all; else what waits for Juan. Throws `Denied`. */
-  decideAll(changes: readonly { change: Change; values: Labelled }[]): Promise<"allow" | Asked[]>;
-  /** All or nothing. In a test nothing is written and each result is `tested`, with the row as it would be. */
-  writeAll(changes: readonly { change: Change; values: Labelled }[]): Promise<WriteResult[]>;
+  decideAll: Gate["decideAll"];
+  writeAll: Gate["writeAll"];
 }
 
 export interface WriteInput {
@@ -412,6 +423,8 @@ export interface WriteInput {
   /** The step's connections, as saved. */
   connections: readonly Connection[];
   collectionNamed(name: string): string | undefined;
+  /** The civil day of the run in Juan's zone: «hoy» of a connection's filter. */
+  today: string;
   /** «Probar» or «Probar paso»: nothing is saved (AU-181). */
   test: boolean;
 }
@@ -421,7 +434,7 @@ export interface WriteRecord {
   /** The collection's key. */
   collection: string;
   action: WriteAction;
-  /** The row's id; absent for a row created in a test. */
+  /** The row's id; absent for a row created in a test, or one that waits for Juan. */
   id?: string;
   /** As it was: absent for `create`. */
   before?: Fields;
@@ -439,16 +452,194 @@ export type StepWrites =
   | { kind: "tested"; records: readonly WriteRecord[]; asks: boolean }
   /**
    * Nothing saved: the whole change waits for Juan as one proposal: a «Preguntar» on an action asked for, something
-   * from outside (P4, P15), or a removal without what AU-186 asks (P5).
+   * from outside (P4, P15), or a removal without what AU-186 asks (P5). `asked` holds every change of the step.
    */
   | { kind: "asked"; records: readonly WriteRecord[]; asked: readonly Asked[] };
 
+/** The rule of an `Asked` that waits because the step's connection asks (AU-176), not because the policy did. */
+export const CONNECTION_ASKS = "connection.ask";
+
 /**
- * Saves a step's requests when it ends (AU-173 to AU-177): checks each against the grants, the connection and its
- * limits, builds the same `Change` a «Colección» action builds and validates it the same way, asks the policy for
- * all, and writes all or none. Rejects with `WriteFault`, `Denied` or the executor's `StepFault`, and then nothing
- * was saved. A connection's «Preguntar» on any action asked for makes the whole change `asked`.
+ * Saves a step's requests when it ends (AU-173 to AU-177), all of them as one change: checks each, in order, against
+ * the step's limits, the analysis of the code as saved (`grants`), the connection as saved and its limits, and the
+ * collection's fields; reads each row it modifies or removes (with no other question to the policy); builds the same
+ * `Change` a «Colección» action builds, its values with the label of what the evaluation received (AU-169, AU-185);
+ * asks the policy for all; and writes all or none. Rejects with `CodeFault`, `Denied` or the store's `StepFault`
+ * (`row.changed`, `value.type`), and then nothing was saved. A row that is not there and one the connection leaves
+ * out fail the same way, so code cannot learn from a failure whether a row it may not see exists.
  */
-export function applyWrites(input: WriteInput, gate: WriteGate): Promise<StepWrites> {
-  return notBuilt(`applyWrites(${input.step}, ${input.requests.length}, ${typeof gate})`);
+export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<StepWrites> {
+  const fail = (message: string, code: WriteFailureCode, detail: Record<string, string | number>) =>
+    new CodeFault(message, { code, param: CODE_PARAMS.source, detail });
+  const limit = (key: WriteLimit, got: number) =>
+    new CodeFault(`over the limit ${key} (${WRITE_LIMITS[key]})`, {
+      code: "code.limit",
+      param: CODE_PARAMS.source,
+      detail: { limit: key, max: WRITE_LIMITS[key], got },
+    });
+  if (input.requests.length > WRITE_LIMITS.stepWrites)
+    throw limit("stepWrites", input.requests.length);
+  let total = 0;
+  for (const r of input.requests) {
+    const bytes = jsonBytes(r);
+    if (bytes > WRITE_LIMITS.writeBytes) throw limit("writeBytes", bytes);
+    total += bytes;
+  }
+  if (total > WRITE_LIMITS.stepWriteBytes) throw limit("stepWriteBytes", total);
+
+  const changes: ChangeWith[] = [];
+  const records: WriteRecord[] = [];
+  const cells: WriteMode[] = [];
+  for (const [i, r] of input.requests.entries()) {
+    const at: Record<string, number> = r.line === undefined ? {} : { line: r.line };
+    const action = r.action;
+    const key = input.collectionNamed(r.collection);
+    if (
+      !(WRITE_ACTIONS as readonly string[]).includes(action) ||
+      key === undefined ||
+      !input.grants.some((g) => g.collection === key && g.action === action)
+    )
+      throw fail(
+        `the code as saved does not ask to ${String(action)} in ${r.collection}`,
+        "code.write.unseen",
+        {
+          collection: r.collection,
+          action: String(action),
+          where: "code",
+          ...at,
+        },
+      );
+    const connection = input.connections.find((c) => c.collection === key);
+    const cell = connection?.[action];
+    const shape = gate.shape(key);
+    if (!connection || !cell || !shape)
+      throw fail(
+        `the step's connection does not let it ${action} in ${key}`,
+        "code.write.notAllowed",
+        {
+          collection: key,
+          action,
+          ...at,
+        },
+      );
+    const types = new Map(shape.fields.map((f) => [f.key, f.type]));
+    const typeOf = (f: string) => types.get(f);
+    const request = (why: string, more: Record<string, string> = {}) =>
+      fail(`a request to ${action} in ${key} that is not one (${why})`, "code.write.request", {
+        collection: key,
+        why,
+        ...more,
+        ...at,
+      });
+
+    // The fields, by key: an object of fields the collection has and the connection lets the step see.
+    let fields: Record<string, Cell> = {};
+    if (action !== "remove") {
+      const given = r.fields;
+      if (typeof given !== "object" || given === null || Array.isArray(given))
+        throw request("fields");
+      fields = given;
+      const keys = Object.keys(fields);
+      if (action === "update" && !keys.length) throw request("empty");
+      const seen = connection.read === false ? undefined : connection.read.fields;
+      for (const field of keys) {
+        if (!types.has(field)) throw request("field", { field });
+        if (seen && !seen.includes(field))
+          throw fail(`${field} is not seen in ${key}`, "code.write.hidden", {
+            collection: key,
+            field,
+            ...at,
+          });
+      }
+    }
+    const label = input.labels[i] as Label;
+    const values: Labelled = {};
+    for (const [field, value] of Object.entries(fields))
+      Object.defineProperty(values, field, {
+        value: { value, label, derived: true },
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+
+    // The row it changes: one of that collection the connection lets the step see. Not there and left out are said
+    // the same way, with the same words: code may not learn whether a row outside its filter exists.
+    if (action === "create") {
+      if (!insideConnection(fields, connection, typeOf, input.today))
+        throw fail(
+          `the row asked for in ${key} is not one the connection lets the step change`,
+          "code.write.outside",
+          {
+            collection: key,
+            why: "created",
+            ...at,
+          },
+        );
+      changes.push({ change: { kind: "create", collection: key, fields }, values });
+      records.push({ collection: key, action, after: { ...fields } });
+    } else {
+      if (typeof r.id !== "string" || !r.id) throw request("id");
+      const saved = await gate.get(key, r.id);
+      if (!saved || !insideConnection(saved.json, connection, typeOf, input.today))
+        throw fail(
+          `the row asked for in ${key} is not one the connection lets the step change`,
+          "code.write.outside",
+          {
+            collection: key,
+            why: "row",
+            ...at,
+          },
+        );
+      const change: Change =
+        action === "update"
+          ? { kind: "update", row: saved.origin, fields }
+          : { kind: "trash", row: saved.origin };
+      changes.push({ change, values });
+      records.push({
+        collection: key,
+        action,
+        id: saved.origin.id,
+        before: saved.json,
+        ...(action === "update" ? { after: { ...saved.json, ...fields } } : {}),
+      });
+    }
+    cells.push(cell.mode);
+  }
+  if (!changes.length)
+    return input.test ? { kind: "tested", records, asks: false } : { kind: "applied", records };
+
+  // The policy is asked for every one before any is written; a no to one is the whole step's.
+  const decided = await gate.decideAll(changes);
+  const asks = decided !== "allow" || !YES_SAVES || cells.includes("ask");
+  if (input.test) {
+    const tested = await gate.writeAll(changes);
+    tested.forEach((t, i) => {
+      const rec = records[i] as WriteRecord;
+      if (t.kind === "tested" && rec.action !== "remove") rec.after = t.row.json;
+    });
+    return { kind: "tested", records, asks };
+  }
+  if (asks) {
+    const byPolicy = decided === "allow" ? [] : decided;
+    const asked = changes.map(({ change }): Asked => {
+      const policy = byPolicy.find((a) => a.change === change);
+      return (
+        policy ?? {
+          step: input.step,
+          kind: change.kind === "trash" ? "confirm" : "propose",
+          rule: CONNECTION_ASKS,
+          change,
+        }
+      );
+    });
+    return { kind: "asked", records, asked };
+  }
+  const written = await gate.writeAll(changes);
+  written.forEach((w, i) => {
+    const rec = records[i] as WriteRecord;
+    if (w.kind !== "applied") return;
+    rec.id = w.row.origin.id;
+    if (rec.action !== "remove") rec.after = w.row.json;
+  });
+  return { kind: "applied", records };
 }

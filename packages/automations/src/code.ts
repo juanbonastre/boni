@@ -7,7 +7,6 @@
  */
 import { type StepFailure, StepFault } from "./failures.ts";
 import type { Problem } from "./validate.ts";
-import type { WriteProblemCode } from "./writes.ts";
 
 // ---------------------------------------------------------------- the step
 
@@ -69,6 +68,22 @@ export const CODE_LIMITS = {
   consoleLines: 200,
   /** Characters of one line of «Consola»; a longer one is cut. Never a failure. */
   consoleLineChars: 2_000,
+  // Saving from code (AU-175, `WRITE_LIMITS` in writes.ts). Passing one fails the step and saves nothing: never cut,
+  // since half of a change is another change. Reasoned, not measured: a builder may lower one, never remove it.
+  /**
+   * Requests one evaluation may make. As many as a step: «Una vez con todas las filas» is one evaluation. It is
+   * apart so the box stops a loop that never ends as soon as it passes it, inside the box.
+   */
+  writes: 5_000,
+  /**
+   * Requests a step may make in a run, all its evaluations together. `readRows`: what one read gives can be written
+   * back at once, so a step over Juan's thousands of rows of one collection fits.
+   */
+  stepWrites: 5_000,
+  /** Bytes of one request, as JSON: a row's fields, a long text among them. */
+  writeBytes: 64 * KB,
+  /** Bytes of all of a step's requests, as JSON: the server holds them until the step ends (384 MB in all). */
+  stepWriteBytes: 4 * MB,
 } as const;
 export type CodeLimit = keyof typeof CODE_LIMITS;
 
@@ -76,6 +91,18 @@ export type CodeLimit = keyof typeof CODE_LIMITS;
 export const HARD_LIMITS: readonly CodeLimit[] = (Object.keys(CODE_LIMITS) as CodeLimit[]).filter(
   (k) => k !== "consoleLines" && k !== "consoleLineChars",
 );
+
+/**
+ * The three write actions, by the keys `Connection` and the «Colección» step already use, and so their words (AU-85:
+ * Crear, Modificar, Eliminar). They are also the names of `$col('…')`'s methods that ask to save (AU-172):
+ * `.create({ field: value })`, `.update(id, { field: value })`, `.remove(id)` (to the trash, AU-122).
+ */
+export const WRITE_ACTIONS = ["create", "update", "remove"] as const;
+export type WriteAction = (typeof WRITE_ACTIONS)[number];
+
+/** `$col('…')`'s methods: the four that read (AU-31) and the three that ask to save. Any other does not validate. */
+export const COL_METHODS = ["find", "get", "count", "sum", ...WRITE_ACTIONS] as const;
+export type ColMethod = (typeof COL_METHODS)[number];
 
 // ---------------------------------------------------------------- what goes wrong while running
 
@@ -117,6 +144,31 @@ export const CODE_FAILURES = [
   "code.read.query",
   /** There is no box to run it, or it is busy. `detail.why`: "unavailable" or "busy". Nothing ran. */
   "code.unavailable",
+  // Why a step's requests to save were not saved (AU-174, AU-177, AU-183, AU-184; `WRITE_FAILURES` in writes.ts):
+  // whichever it is, nothing of the step was saved. A request the policy refuses keeps `policy.denied`; a row that
+  // changed since it was read, `row.changed`; a value the field does not take, `value.type` (the «Colección»
+  // executor's own codes). A limit is `code.limit` with `writes`, `stepWrites`, `writeBytes` or `stepWriteBytes`.
+  /**
+   * The analysis of the saved code did not find that collection with that action (AU-183), or it came from an
+   * evaluation of expressions (AU-184). `detail.collection` (as written), `detail.action`, `detail.where`: "code" or
+   * "expression".
+   */
+  "code.write.unseen",
+  /** The step's connection, as saved, does not give that action (AU-176). `detail.collection` (its key), `detail.action`. */
+  "code.write.notAllowed",
+  /**
+   * Outside «Solo estas filas» (AU-177). `detail.why`: "row" (the row to modify or remove is not one the connection
+   * lets the step see: it does not exist, or the filter leaves it out, said the same way so code cannot tell which)
+   * or "created" (the row as it would be created does not pass the filter). `detail.collection` (its key).
+   */
+  "code.write.outside",
+  /** A field «Solo estos campos» does not let the step see (AU-177). `detail.collection`, `detail.field`. */
+  "code.write.hidden",
+  /**
+   * A request that is not one. `detail.why`: "id" (not a text), "fields" (not an object of fields), "field" (the
+   * collection has no such field: `detail.field`), "empty" (`update` with no field).
+   */
+  "code.write.request",
 ] as const;
 export type CodeFailureCode = (typeof CODE_FAILURES)[number];
 
@@ -182,6 +234,18 @@ export const CODE_PROBLEMS = [
   "connection.many",
   /** A limit that is not one: a field the collection does not have (`detail.field`), a filter that is not the views', a limit that is not a whole number from 1 to `CODE_LIMITS.readRows`. `detail.why`: "field", "where", "limit". */
   "connection.limits",
+  // Saving from code (`WRITE_PROBLEMS` in writes.ts), with their place in the code.
+  /**
+   * `$col('…')` not called at once by one of `COL_METHODS` written by its name (AU-183), for reading and for saving
+   * alike. `detail.why`: "kept" (kept in a variable, passed, returned), "computed" (`$col('Gastos')[accion](…)`),
+   * "unknown" (a method it does not have: `detail.method`). The fix is always the same form: `$col('Gastos').update(…)`.
+   */
+  "code.colUse",
+  /**
+   * The code asks for an action its connection does not give (AU-176). `detail.collection` (its key),
+   * `detail.action`: the button sets that cell to «Preguntar».
+   */
+  "code.write.notAllowed",
 ] as const;
 export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
 
@@ -189,8 +253,7 @@ export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
 export const CODE_WARNINGS: readonly CodeProblemCode[] = ["code.fieldNotGiven"];
 
 /**
- * A `Problem` with one of F14c's codes: these, and those of saving from code (`WRITE_PROBLEMS`, writes.ts), which the
- * build of saving joins to this list with their words. Citations of steps keep the codes they have
+ * A `Problem` with one of F14c's codes, saving's among them. Citations of steps keep the codes they have
  * (`expr.unknownStep`, `expr.notBefore`, `expr.cannotPair`, `expr.noCurrentRow`).
  */
-export type CodeProblem = Omit<Problem, "code"> & { code: CodeProblemCode | WriteProblemCode };
+export type CodeProblem = Omit<Problem, "code"> & { code: CodeProblemCode };
