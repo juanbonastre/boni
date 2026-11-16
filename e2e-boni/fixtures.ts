@@ -38,8 +38,17 @@ export interface Options {
    * Automations of the new format the account has (F14b, docs/automatizaciones.md §5.7): served by the routes of
    * apps/server/src/automations/routes.ts as the server keeps them (made, read, kept, duplicated, deleted and
    * restored here) and listed in «Automatizaciones» before the flows of before. `trigger`: its first step's type.
+   * `steps` and `arrows`, a whole draft instead (C2); `places`, the boxes the server keeps of it (AU-05).
    */
-  automations?: { id: string; name: string; trigger?: string | null; updated?: number }[];
+  automations?: {
+    id: string;
+    name: string;
+    trigger?: string | null;
+    updated?: number;
+    steps?: Record<string, unknown>[];
+    arrows?: Record<string, unknown>[];
+    places?: { step: string; x: number; y: number }[];
+  }[];
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
    * api/agent/turn"); the last one repeats. */
   agent?: Record<string, unknown[]>;
@@ -854,7 +863,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       type AutoHere = {
         id: string;
         rev: number;
-        doc: { name: string; steps: { type: string }[] } & Record<string, unknown>;
+        doc: { name: string; steps: { id: string; type: string }[] } & Record<string, unknown>;
+        places: { step: string; x: number; y: number }[];
         updated: number;
         deleted: boolean;
       };
@@ -872,7 +882,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       const autos: AutoHere[] = (opts.automations ?? []).map((a) => ({
         id: a.id,
         rev: 1,
-        doc: autoDoc(a.id, a.name, a.trigger),
+        doc: a.steps
+          ? ({
+              ...autoDoc(a.id, a.name),
+              steps: a.steps,
+              arrows: a.arrows ?? [],
+            } as AutoHere["doc"])
+          : autoDoc(a.id, a.name, a.trigger),
+        places: a.places ?? [],
         updated: a.updated ?? 0,
         deleted: false,
       }));
@@ -886,7 +903,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           id: a.id,
           rev: a.rev,
           automation: a.doc,
-          places: [],
+          places: a.places,
           tests: {},
           tested: {},
           device: "d_portatil",
@@ -902,7 +919,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         // `window.__automationsDown` set, the server is down and each is answered 503.
         record("__automations", `${method} ${[id, rest].filter(Boolean).join("")}`.trim());
         if (w.__automationsDown) return [503, '{"error":"unavailable"}'];
-        const b = (body ?? {}) as { automation?: AutoHere["doc"]; name?: string };
+        const b = (body ?? {}) as {
+          automation?: AutoHere["doc"];
+          name?: string;
+          places?: AutoHere["places"];
+        };
         const bad: [number, string] = [400, '{"error":"bad-request"}'];
         const gone: [number, string] = [404, '{"error":"not-found"}'];
         if (!id) {
@@ -912,6 +933,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             id: made,
             rev: 1,
             doc: { ...b.automation, id: made },
+            places: [],
             updated: Date.now(),
             deleted: false,
           };
@@ -938,6 +960,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           a.updated = Date.now();
           return [200, JSON.stringify({ rev: a.rev, stale: [] })];
         }
+        // The boxes (AU-05): kept apart from the draft, so its `rev` stays; a box of a step it has not, refused.
+        if (rest === "/layout" && method === "PUT") {
+          const ids = new Set(a.doc.steps.map((s) => s.id));
+          if (!Array.isArray(b.places) || b.places.some((p) => !ids.has(p.step))) return bad;
+          const by = new Map(a.places.map((p) => [p.step, p]));
+          for (const p of b.places) by.set(p.step, { step: p.step, x: p.x, y: p.y });
+          a.places = [...by.values()].filter((p) => ids.has(p.step));
+          return [200, '{"ok":true}'];
+        }
         if (rest === "/duplicate" && method === "POST") {
           if (typeof b.name !== "string" || !b.name.trim()) return bad;
           const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
@@ -945,6 +976,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             id: made,
             rev: 1,
             doc: { ...JSON.parse(JSON.stringify(a.doc)), id: made, name: b.name },
+            places: JSON.parse(JSON.stringify(a.places)),
             updated: Date.now(),
             deleted: false,
           };
@@ -1649,7 +1681,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/duplicate|\/restore)?$/.exec(p);
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore)?$/.exec(
+            p,
+          );
         if (automation) return automationAnswer(method, automation[1], automation[2], body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];

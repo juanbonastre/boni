@@ -1,7 +1,7 @@
-// «Automatizaciones» over HTTP in C1 of F14b (docs/automatizaciones.md §7, AU-168, AU-62): the six routes C1 adds,
-// as the app calls them, each running its action through `runAction` (actions.ts in this folder). Without the list
+// «Automatizaciones» over HTTP in C1 and C2 of F14b (docs/automatizaciones.md §7, AU-168, AU-62, AU-05): the six
+// routes C1 adds and C2's layout («Ordenar» and a box dropped), as the app calls them, each running its action through `runAction` (actions.ts in this folder). Without the list
 // of actions each is refused by the policy (P0) before anything runs, the read too. The rest of AU-168 (what an
-// origin that is not Juan's hand reads; «Probar», «Ordenar» and the rows) stays pending in automations.test.ts.
+// origin that is not Juan's hand reads; «Probar» and the rows) stays pending in automations.test.ts.
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
@@ -22,11 +22,12 @@ import { ROUTES } from "../routes.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES } from "./routes.ts";
 
 const SIGN_IN = "una contraseña larga de ejemplo";
-/** C1's routes: the ones that are in ROUTES today. «Probar», «Ordenar» and the rows arrive with C2 and E. */
-const C1 = [
+/** The editor's routes that are in ROUTES today: C1's six and C2's layout. «Probar» and the rows arrive with E. */
+const EDITOR = [
   "POST /api/agent/automations",
   "GET /api/agent/automations/:id",
   "PUT /api/agent/automations/:id/draft",
+  "PUT /api/agent/automations/:id/layout",
   "POST /api/agent/automations/:id/duplicate",
   "DELETE /api/agent/automations/:id",
   "POST /api/agent/automations/:id/restore",
@@ -90,9 +91,9 @@ const first = {
   settings: {},
 };
 
-describe("C1's routes (AU-168, AU-62)", () => {
+describe("C1's and C2's routes (AU-168, AU-62, AU-05)", () => {
   it("AU-168 · C1's routes are in ROUTES as tailnet and in ROUTE_RUNS with their action; with a list of actions that lacks them each is refused (403, P0) before anything runs, the read too", async () => {
-    for (const route of C1) {
+    for (const route of EDITOR) {
       expect(ROUTES[route], route).toBe("tailnet");
       const { action } = AUTOMATION_ROUTES[route] as { action: string };
       expect(ACTIONS.get(action)?.name, route).toBe(action);
@@ -134,7 +135,7 @@ describe("C1's routes (AU-168, AU-62)", () => {
     }
   });
 
-  it("AU-62 · create, read, keep the draft, duplicate, delete and restore, as the editor calls them", async () => {
+  it("AU-62 · create, read, keep the draft and its boxes, duplicate, delete and restore, as the editor calls them", async () => {
     const call = await signedIn(await start());
     const made = await call("POST", "/api/agent/automations", { automation: first });
     expect(made.status).toBe(200);
@@ -149,6 +150,23 @@ describe("C1's routes (AU-168, AU-62)", () => {
     ).toEqual({ status: 200, body: { rev: 2, stale: [] } });
     expect(
       (await call("PUT", `/api/agent/automations/${id}/draft`, { automation: { nada: 1 } })).status,
+    ).toBe(400);
+    // Where the boxes are (AU-05): kept apart from the draft, whose rev does not move; a step it lacks is refused.
+    const step = first.steps[0]?.id as string;
+    expect(
+      await call("PUT", `/api/agent/automations/${id}/layout`, {
+        places: [{ step, x: 40, y: 80 }],
+      }),
+    ).toEqual({ status: 200, body: { ok: true } });
+    const placed = await call("GET", `/api/agent/automations/${id}`);
+    expect(placed.body.places).toEqual([{ step, x: 40, y: 80 }]);
+    expect(placed.body.rev).toBe(2);
+    expect(
+      (
+        await call("PUT", `/api/agent/automations/${id}/layout`, {
+          places: [{ step: "s_nadie", x: 0, y: 0 }],
+        })
+      ).status,
     ).toBe(400);
     const copy = await call("POST", `/api/agent/automations/${id}/duplicate`, {
       name: "Revisar gastos (copia)",

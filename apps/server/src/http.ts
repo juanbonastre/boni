@@ -458,6 +458,10 @@ export function makeApp(opts: ServerOptions): App {
           const b = await bodyOf(req);
           return automation("automations.edit", { id, automation: b.automation });
         }
+        case "PUT /api/agent/automations/:id/layout": {
+          const b = await bodyOf(req);
+          return automation("automations.arrange", { id, places: b.places });
+        }
         case "POST /api/agent/automations/:id/duplicate": {
           const b = await bodyOf(req);
           return automation("automations.duplicate", { id, name: b.name });

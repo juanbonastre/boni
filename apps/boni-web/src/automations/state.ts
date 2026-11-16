@@ -10,6 +10,7 @@
 import { type Arrow, type Automation, type Cell, FORMAT, type Problem } from "@boni/automations";
 import type { Opened, Place, StepTest, TestAnswer } from "./client.ts";
 import { notBuilt } from "./pending.ts";
+import { type Places, placeFor, withPlaces } from "./places.ts";
 
 /**
  * Where a new step will go: the four ways of AU-65. Its box is placed once, as it is added (`placeFor` of
@@ -127,29 +128,134 @@ const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.s
 export function change(state: EditorState, next: Partial<Snapshot>): EditorState {
   const draft = next.draft ?? state.draft;
   const places = next.places ?? state.places;
-  const drafted = !same(draft, state.draft);
-  const moved = Object.keys(places).filter((k) => !same(places[k], state.places[k]));
-  if (!drafted && !moved.length) return state;
-  const owesDraft = state.owed.draft || (drafted && (state.id !== null || draft.steps.length > 0));
-  const owesPlaces = state.id === null ? [] : [...new Set([...state.owed.places, ...moved])];
+  const owed = owing(state, draft, places);
+  if (!owed) return state;
   return {
     ...state,
     draft,
     places,
     past: [...state.past, { draft: state.draft, places: state.places }],
     future: [],
-    owed: { draft: owesDraft, places: owesPlaces },
-    save: owesDraft ? "saving" : state.save,
+    owed,
+    save: owed.draft ? "saving" : state.save,
   };
 }
 
+/** What is owed once the state holds `draft` and `places`; null when neither differs from what it holds now. */
+function owing(
+  state: EditorState,
+  draft: Automation,
+  places: Snapshot["places"],
+): EditorState["owed"] | null {
+  const drafted = !same(draft, state.draft);
+  const moved = Object.keys(places).filter((k) => !same(places[k], state.places[k]));
+  if (!drafted && !moved.length) return null;
+  const owesDraft = state.owed.draft || (drafted && (state.id !== null || draft.steps.length > 0));
+  const owesPlaces = state.id === null ? [] : [...new Set([...state.owed.places, ...moved])];
+  return { draft: owesDraft, places: owesPlaces };
+}
+
 /** Deshacer and Rehacer (AU-68): what comes back is owed to the server like any other change. */
-export function undo(_state: EditorState): EditorState {
-  return notBuilt("undo (AU-68)");
+export function undo(state: EditorState): EditorState {
+  const back = state.past.at(-1);
+  if (!back) return state;
+  return walked(state, back, {
+    past: state.past.slice(0, -1),
+    future: [{ draft: state.draft, places: state.places }, ...state.future],
+  });
 }
-export function redo(_state: EditorState): EditorState {
-  return notBuilt("redo (AU-68)");
+export function redo(state: EditorState): EditorState {
+  const ahead = state.future[0];
+  if (!ahead) return state;
+  return walked(state, ahead, {
+    past: [...state.past, { draft: state.draft, places: state.places }],
+    future: state.future.slice(1),
+  });
 }
+/** The state at `to`, with the history given: what is selected or open of a step that is gone is let go. */
+function walked(
+  state: EditorState,
+  to: Snapshot,
+  history: Pick<EditorState, "past" | "future">,
+): EditorState {
+  const owed = owing(state, to.draft, to.places) ?? state.owed;
+  const ids = new Set(to.draft.steps.map((s) => s.id));
+  return {
+    ...state,
+    ...history,
+    draft: to.draft,
+    places: to.places,
+    owed,
+    save: owed.draft ? "saving" : state.save,
+    selected: state.selected.filter((id) => ids.has(id)),
+    arrow: null,
+    open: state.open && ids.has(state.open) ? state.open : null,
+  };
+}
+
+/**
+ * A step added (AU-05, AU-65, AU-69): its box goes where the right click was or where `placeFor` says, and that
+ * place is kept like one Juan dropped, as are those of the boxes it was placed beside, so no later step moves any
+ * of them. The step is selected and opened; the panel closes. One change: one Deshacer takes it away.
+ */
+export function added(
+  state: EditorState,
+  made: { draft: Automation; step: string },
+  at: AddAt,
+): EditorState {
+  const shown = withPlaces(state.draft, state.places);
+  const place =
+    at.from === "canvas" ? { x: at.x, y: at.y } : placeFor(made.draft, shown, made.step);
+  return {
+    ...change(state, { draft: made.draft, places: { ...shown, [made.step]: place } }),
+    selected: [made.step],
+    arrow: null,
+    open: made.step,
+    adding: null,
+  };
+}
+
+/**
+ * The first step made the automation (AU-61): the editor over what the server answered, with the boxes, the
+ * history and what was selected kept, the boxes owed (the server had none to keep before), and what changed while
+ * the first step was on its way still owed.
+ */
+export function created(was: EditorState, made: Opened, sent: Automation): EditorState {
+  const opened = openedEditor(made);
+  const withId = (d: Automation): Automation => ({ ...d, id: made.id });
+  const base = same(was.draft, sent) ? opened : change(opened, { draft: withId(was.draft) });
+  return {
+    ...base,
+    places: was.places,
+    past: was.past.map((p) => ({ ...p, draft: withId(p.draft) })),
+    future: was.future.map((p) => ({ ...p, draft: withId(p.draft) })),
+    selected: was.selected,
+    open: was.open,
+    adding: was.adding,
+    owed: { ...base.owed, places: Object.keys(was.places) },
+  };
+}
+
+/** The boxes that moved, as `automations.arrange` takes them: the ones owed, where they are now. */
+export function owedPlaces(state: EditorState): Place[] {
+  return state.owed.places.flatMap((step) => {
+    const p = state.places[step];
+    return p && state.draft.steps.some((s) => s.id === step) ? [{ step, x: p.x, y: p.y }] : [];
+  });
+}
+
+/** The server kept these boxes: they are owed no more, but one moved again while they were on their way. */
+export function placesKept(state: EditorState, sent: readonly Place[]): EditorState {
+  const kept = new Set(
+    sent.filter((p) => same(state.places[p.step], { x: p.x, y: p.y })).map((p) => p.step),
+  );
+  // A box of a step that is gone is no longer owed either: the server would refuse it.
+  const ids = new Set(state.draft.steps.map((s) => s.id));
+  const places = state.owed.places.filter((s) => !kept.has(s) && ids.has(s));
+  return { ...state, owed: { ...state.owed, places } };
+}
+
+export type { Places };
 
 /**
  * The server kept the draft: its `rev`, and the steps whose test it says is stale (AU-92). `sent`: the draft that

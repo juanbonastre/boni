@@ -1153,12 +1153,41 @@ contraseña ni un código aquí» under a question.
   link retries now) when it could not: Boni tries again by itself, 2 s, then 4 s, up to a minute, as the flow editor
   does (D-55); a refusal (a shared device, an automation gone) waits for the next change. Each change goes out 0.8 s
   after the last one and at once on leaving the editor or hiding the window, one request at a time. On the empty canvas
-  of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its middle asks «¿Cómo empieza?» with a
-  row per trigger of the catalogue («Disparado por el usuario» in F14b), and choosing one makes the automation.
-  «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not ask: it goes
-  back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of the
-  header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d; the
-  canvas itself, its steps and «Probar», with C2 and after.
+  of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its panel «Añadir un paso» asks «¿Cómo
+  empieza?» with a row per trigger of the catalogue («Disparado por el usuario» in F14b), and choosing one makes the
+  automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
+  ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of
+  the header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d;
+  «Probar» and the step's view with C2's next PRs (D, E).
+- **The canvas** (F14b C2, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
+  sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
+  right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
+  catalogue has none), its name in 13 px semibold and one line of summary in `--muted`, each cut with an ellipsis and
+  whole in its tooltip. The summary is the parameters in sight that have a value, in their order, joined by « · »
+  («Libros · Límite 10»; a collection by its name, a citation by its field, a number with its parameter's name, a
+  list by how many). Inputs are dots on the left (Combinar's say A and B), outputs on the right with their names
+  (none when the only one is «Salida»; a rule of «Elegir rama» by its own); an output with no arrow has a small «+»
+  beside its dot. Selected, a card has the accent's border and ring; an off step is dimmed with a dashed border.
+  Nothing appears on hover. One step selected shows a bar above it: Probar paso (there, not usable until E) · Apagar
+  («Encender» on an off step) · Eliminar · «⋯» with Cambiar nombre · Duplicar · Copiar; a selected arrow, in the
+  accent, «+» and a cross («Quitar la flecha») at its middle. The right click on a step: Abrir · Probar paso · Apagar ·
+  Cambiar nombre · Duplicar · Copiar · Eliminar (danger). Cambiar nombre edits the name on the card (Intro keeps it,
+  Esc or an empty box leaves it); Duplicar puts the copy one box below. Bottom left, in one small bar: zoom in, zoom
+  out, fit and «Ordenar» (it places every box again, columns by the longest way from a trigger, and fits); top right,
+  «+». A step is added four ways, which open the same panel: the «+» of the top, the «+» of an output with no arrow
+  (or dragging from it and letting go on the canvas), the «+» of a selected arrow (the step goes between its ends)
+  and a right click on the canvas (its box goes there). The panel, 300 px at the right, beside the canvas from 1100 px
+  and over it below that: the search on top («Buscar un paso», focused), then the three categories of F14b by what
+  one wants to do, each a small uppercase `--muted` header over its rows (icon and name; «Colección» as its actions,
+  «Buscar filas», «Crear una fila»…), and «Añadir otro disparador» last, in the accent; the search looks in every
+  category at once, by the name of a step and of its actions, and with nothing says «Nada con «…»». The step chosen
+  is selected, hangs from where it was asked and is named by what it does («Buscar filas», «Filtrar 2» when the name
+  is taken). A box is placed once, as it is added (to the right of the one it hangs from, below if taken), and then
+  only moves when Juan drags it: dropped, it goes to the server on its own (never per pixel, never «Guardando…»).
+  Keys: Ctrl/⌘+Z and Ctrl/⌘+Mayús+Z (or Ctrl+Y), Ctrl/⌘+C, X, V (pasted at the pointer, with the arrows between the
+  steps), Supr, Intro and Esc (the menu, the panel, then what is selected; with nothing of those, the
+  app's Esc leaves the editor); a key typed in a field is the field's. Shift+click adds a step to what is selected. A
+  step added or pasted out of sight is brought into it, at the same zoom.
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

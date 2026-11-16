@@ -21,7 +21,7 @@ import { label, newId } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACTIONS } from "../actions.ts";
+import { ACTIONS, runAction } from "../actions.ts";
 import { cpu } from "../cpu.test-util.ts";
 import { DataError, listRows } from "../data.ts";
 import { flowMap } from "../flowMap.ts";
@@ -241,9 +241,52 @@ describe("the routes and the list of actions", () => {
   it.todo(
     "AU-168 · asked by an origin that is not Juan's hand, automations.read and automations.test answer the states and the counts and never a row or a field's value",
   );
-  it.todo(
-    "AU-87 · no action of the list adds, removes or changes a step of a draft but automations.create and automations.edit, and neither runs for an origin that is not Juan's hand or his card",
-  );
+  it("AU-87 · no action of the list adds, removes or changes a step of a draft but automations.create and automations.edit, and neither runs for an origin that is not Juan's hand or his card", async () => {
+    const { id, step } = made();
+    const before = ok(automationView(store, id)).automation;
+    const hand = { store, trust: "personal" as const, device: "d_portatil" };
+    // Every action of the list there is today, as his hand runs it (E registers «Probar»: it joins this list then).
+    const args: Record<string, Record<string, unknown>> = {
+      "automations.arrange": { id, places: [{ step: step("Buscar"), x: 300, y: 40 }] },
+      "automations.duplicate": { id, name: "Revisar gastos (copia)" },
+    };
+    const others = Object.keys(AUTOMATION_ACTIONS).filter(
+      (a) => a !== "automations.create" && a !== "automations.edit" && ACTIONS.get(a),
+    );
+    expect(others).toEqual(
+      expect.arrayContaining([
+        "automations.read",
+        "automations.arrange",
+        "automations.duplicate",
+        "automations.delete",
+        "automations.restore",
+      ]),
+    );
+    // «Eliminar» before «restore», so each runs on the automation as it is.
+    const order = [...others].sort(
+      (a, b) => Number(a === "automations.restore") - Number(b === "automations.restore"),
+    );
+    for (const name of order) {
+      const r = await runAction(name, args[name] ?? { id }, hand);
+      expect("refused" in r, name).toBe(false);
+      // The draft as the store has it, deleted or not.
+      const row = store.journal.automationDraft(id);
+      const now = row ? (JSON.parse(row.doc) as Automation) : null;
+      expect(now?.steps, name).toEqual(before.steps);
+      expect(now?.arrows, name).toEqual(before.arrows);
+    }
+    // The two that change steps: his hand runs them; his own turn only as a card he confirms; nothing else at all.
+    for (const name of ["automations.create", "automations.edit"]) {
+      const tool = ACTIONS.get(name);
+      const at = (origin: Origin) =>
+        decide({ tool, args: {}, control: null }, origin, { writes: 0, sensitiveReads: 0 }).kind;
+      expect(at({ kind: "hand", trust: "personal", device: "d_portatil" }), name).toBe("allow");
+      expect(at({ kind: "turn", trust: "personal" }), name).toBe("confirm");
+      for (const kind of ["background", "miniapp", "accepted", "assistant"] as const)
+        expect(at({ kind, trust: "personal" }), `${name} ${kind}`).toBe("deny");
+      expect(at({ kind: "turn", trust: "ambient" }), name).toBe("deny");
+    }
+  });
 });
 
 describe("where an automation lives", () => {

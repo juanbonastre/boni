@@ -1,8 +1,10 @@
 // What the step's view and its card show of a step (docs/automatizaciones.md §5.7, «Contra el mar de opciones»).
 // Pending but the first: see edit.test.ts.
-import { SETTINGS_DEFAULTS } from "@boni/automations";
+import { SETTINGS_DEFAULTS, type Step } from "@boni/automations";
 import { describe, expect, it } from "vitest";
-import { SETTINGS_ROWS } from "./panel.ts";
+import { translator } from "../i18n.ts";
+import { SETTINGS_ROWS, summaryOf } from "./panel.ts";
+import { summaryWords } from "./words.ts";
 
 describe("«Ajustes»", () => {
   it("AU-78 · «Ajustes» has six rows, the six settings the format has, for every step", () => {
@@ -39,9 +41,58 @@ describe("«Parámetros»", () => {
   it.todo(
     "AU-73 · «Probar paso» cannot be pressed with a required parameter empty, naming each, nor while a test runs; otherwise it can",
   );
-  it.todo(
-    "AU-63 · the card's summary is made of the shown parameters that have a value, in their order; a citation is read by its field's name and an empty step has no summary",
-  );
+  it("AU-63 · the card's summary is made of the shown parameters that have a value, in their order; a citation is read by its field's name and an empty step has no summary", () => {
+    const t = translator("es");
+    const summary = (step: Step) => summaryOf(step, summaryWords(t, { gastos: "Gastos" }, step));
+    const find: Step = {
+      id: "s_buscar",
+      name: "Buscar filas en Gastos",
+      type: "collection",
+      // Written in another order than the panel's: the summary follows the panel.
+      params: {
+        limit: 10,
+        sort: [{ field: "fecha", direction: "desc" }],
+        where: [
+          { field: "importe", op: "gt", value: 50 },
+          {
+            join: "or",
+            rules: [
+              { field: "concepto", op: "contains", value: "luz" },
+              { field: "concepto", op: "contains", value: "agua" },
+            ],
+          },
+        ],
+        action: "find",
+        collection: "gastos",
+      },
+    };
+    expect(summary(find)).toEqual(["Gastos", "3 condiciones", "Ordenar por: 1", "Límite 10"]);
+    // A citation by its field; an option (not shown) and an empty value say nothing.
+    const cited: Step = {
+      ...find,
+      params: {
+        action: "find",
+        collection: "gastos",
+        where: [],
+        limit: { expr: "{{ $json.cuantos }}" },
+        related: true,
+      },
+    };
+    expect(summary(cited)).toEqual(["Gastos", "cuantos"]);
+    // A list by how many it holds.
+    const sort: Step = {
+      id: "s_o",
+      name: "Ordenar",
+      type: "sort",
+      params: { by: [{ field: "fecha", direction: "asc" }] },
+    };
+    expect(summary(sort)).toEqual(["Ordenar por: 1"]);
+    // A new step, with its action alone: no summary.
+    expect(
+      summary({ id: "s_n", name: "Buscar filas", type: "collection", params: { action: "find" } }),
+    ).toEqual([]);
+    expect(summary({ id: "s_f", name: "Filtrar", type: "filter", params: {} })).toEqual([]);
+  });
 });
 
 describe("what the output says in place of rows", () => {

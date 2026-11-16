@@ -1,8 +1,29 @@
 // The editor's own state (docs/automatizaciones.md §5.7). Pending but AU-62's: see edit.test.ts.
 import { FORMAT } from "@boni/automations";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n.ts";
 import type { Opened } from "./client.ts";
-import { change, emptyEditor, openedEditor, saved, saveFailed } from "./state.ts";
+import { addStep, connect, removeSteps, rename, setParam, setSetting } from "./edit.ts";
+import {
+  added,
+  change,
+  created,
+  emptyEditor,
+  openedEditor,
+  owedPlaces,
+  placesKept,
+  redo,
+  saved,
+  saveFailed,
+  undo,
+} from "./state.ts";
+import { namer } from "./words.ts";
+
+const names = namer(translator("es"), { gastos: "Gastos" });
+const ids = () => {
+  let n = 0;
+  return () => `s_nuevo${++n}`;
+};
 
 const trigger = { id: "s_inicio", name: "Disparado por el usuario", type: "manual", params: {} };
 const opened: Opened = {
@@ -70,21 +91,164 @@ describe("the draft saves itself", () => {
     expect(last.owed.draft).toBe(false);
     expect(last.rev).toBe(5);
   });
-  it.todo(
-    "AU-05 · moving a box is owed as its place and not as a draft: the draft's rev does not change and no test becomes stale",
-  );
-  it.todo(
-    "AU-05 · a step added has its place from then on, owed to the server like one Juan dropped: where the right click was, or where placeFor says; a later step never moves it",
-  );
+  it("AU-05 · moving a box is owed as its place and not as a draft: the draft's rev does not change and no test becomes stale", () => {
+    const s = { ...openedEditor(opened), tests: { s_inicio: { ok: true } as never } };
+    const moved = change(s, { places: { s_inicio: { x: 40, y: 80 } } });
+    expect(moved.owed).toEqual({ draft: false, places: ["s_inicio"] });
+    expect(moved.save).toBe("saved");
+    expect(moved.rev).toBe(3);
+    expect(moved.tests).toBe(s.tests);
+    expect(owedPlaces(moved)).toEqual([{ step: "s_inicio", x: 40, y: 80 }]);
+    // Kept: owed no more; moved again while it was on its way: still owed, where it is now.
+    expect(placesKept(moved, owedPlaces(moved)).owed.places).toEqual([]);
+    const again = change(moved, { places: { s_inicio: { x: 60, y: 80 } } });
+    const kept = placesKept(again, owedPlaces(moved));
+    expect(kept.owed.places).toEqual(["s_inicio"]);
+    expect(owedPlaces(kept)).toEqual([{ step: "s_inicio", x: 60, y: 80 }]);
+  });
+  it("AU-05 · a step added has its place from then on, owed to the server like one Juan dropped: where the right click was, or where placeFor says; a later step never moves it", () => {
+    const s = openedEditor(opened);
+    const one = addStep(
+      s.draft,
+      "filter",
+      undefined,
+      { from: "output", step: "s_inicio", output: "main" },
+      names,
+      ids(),
+    );
+    const a = added(s, one, { from: "output", step: "s_inicio", output: "main" });
+    expect(a.places.s_nuevo1).toEqual({ x: 300, y: 0 });
+    expect(a.owed.places).toEqual(["s_nuevo1"]);
+    expect(a.owed.draft).toBe(true);
+    expect(a.selected).toEqual(["s_nuevo1"]);
+    expect(a.open).toBe("s_nuevo1");
+    expect(a.adding).toBeNull();
+    // Right click: where it was.
+    const two = addStep(
+      a.draft,
+      "sort",
+      undefined,
+      { from: "canvas", x: 40, y: 500 },
+      names,
+      () => "s_nuevo2",
+    );
+    const b = added(a, two, { from: "canvas", x: 40, y: 500 });
+    expect(b.places.s_nuevo2).toEqual({ x: 40, y: 500 });
+    // A later step moves none of them.
+    const three = addStep(
+      b.draft,
+      "limit",
+      undefined,
+      { from: "output", step: "s_inicio", output: "main" },
+      names,
+      () => "s_nuevo3",
+    );
+    const c = added(b, three, { from: "output", step: "s_inicio", output: "main" });
+    expect(c.places.s_inicio).toEqual(b.places.s_inicio);
+    expect(c.places.s_nuevo1).toEqual(b.places.s_nuevo1);
+    expect(c.places.s_nuevo2).toEqual(b.places.s_nuevo2);
+    expect(c.places.s_nuevo3).toEqual({ x: 300, y: 104 });
+    // One change each: one Deshacer takes the last away.
+    expect(undo(c).draft).toEqual(b.draft);
+  });
+  it("AU-05 · on an empty canvas the first step makes the automation, and the boxes placed before the server answered are owed to it", () => {
+    const empty = emptyEditor("Nueva automatización");
+    const first = addStep(
+      empty.draft,
+      "manual",
+      undefined,
+      { from: "top" },
+      names,
+      () => "s_inicio",
+    );
+    const a = added(empty, first, { from: "top" });
+    expect(a.owed).toEqual({ draft: true, places: [] });
+    const made = created(a, { ...opened, places: [] }, a.draft);
+    expect(made.id).toBe("a_01jexample");
+    expect(made.places).toEqual({ s_inicio: { x: 0, y: 0 } });
+    expect(owedPlaces(made)).toEqual([{ step: "s_inicio", x: 0, y: 0 }]);
+    expect(made.selected).toEqual(["s_inicio"]);
+    expect(made.past).toHaveLength(1);
+    expect(made.past[0]?.draft.id).toBe("a_01jexample");
+  });
 });
 
 describe("undo", () => {
-  it.todo(
-    "AU-68 · Deshacer walks back every change since the editor opened (a step added or removed, an arrow, a box moved, a name, a parameter, a setting) and Rehacer forward; a new change empties what could be redone",
-  );
-  it.todo(
-    "AU-68 · what Deshacer brings back is owed to the server like any other change, and opening a step or selecting one is not a change",
-  );
+  it("AU-68 · Deshacer walks back every change since the editor opened (a step added or removed, an arrow, a box moved, a name, a parameter, a setting) and Rehacer forward; a new change empties what could be redone", () => {
+    let s = openedEditor(opened);
+    const states = [s];
+    const step = (next: Parameters<typeof change>[1]) => {
+      s = change(s, next);
+      states.push(s);
+    };
+    const made = addStep(
+      s.draft,
+      "collection",
+      "find",
+      { from: "output", step: "s_inicio", output: "main" },
+      names,
+      () => "s_b",
+    );
+    s = added(s, made, { from: "output", step: "s_inicio", output: "main" });
+    states.push(s);
+    step({ places: { ...s.places, s_b: { x: 320, y: 40 } } });
+    step({ draft: rename(s.draft, "s_b", "Los gastos") });
+    step({ draft: setParam(s.draft, "s_b", "collection", "gastos", names) });
+    step({ draft: setSetting(s.draft, "s_b", "off", true) });
+    const extra = addStep(s.draft, "filter", undefined, { from: "top" }, names, () => "s_c");
+    s = added(s, extra, { from: "top" });
+    states.push(s);
+    const joined = connect(s.draft, {
+      from: { step: "s_b", output: "main" },
+      to: { step: "s_c", input: "main" },
+    });
+    if ("refused" in joined) throw new Error(joined.refused);
+    step({ draft: joined });
+    step({ draft: removeSteps(s.draft, ["s_c"]) });
+    // Back, one by one, to the editor as it opened; then forward again to the end.
+    for (let i = states.length - 2; i >= 0; i--) {
+      s = undo(s);
+      expect(s.draft).toEqual(states[i]?.draft);
+      expect(s.places).toEqual(states[i]?.places);
+    }
+    expect(undo(s)).toBe(s);
+    for (let i = 1; i < states.length; i++) {
+      s = redo(s);
+      expect(s.draft).toEqual(states[i]?.draft);
+    }
+    expect(redo(s)).toBe(s);
+    // Two back and a new change: nothing to redo.
+    s = change(undo(undo(s)), { draft: rename(s.draft, "s_b", "Otro") });
+    expect(s.future).toEqual([]);
+    expect(redo(s)).toBe(s);
+  });
+  it("AU-68 · what Deshacer brings back is owed to the server like any other change, and opening a step or selecting one is not a change", () => {
+    const s = openedEditor(opened);
+    const made = addStep(
+      s.draft,
+      "filter",
+      undefined,
+      { from: "output", step: "s_inicio", output: "main" },
+      names,
+      () => "s_b",
+    );
+    const a = added(s, made, { from: "output", step: "s_inicio", output: "main" });
+    const kept = placesKept(saved(a, { rev: 4, stale: [] }, a.draft), owedPlaces(a));
+    expect(kept.owed).toEqual({ draft: false, places: [] });
+    const back = undo(kept);
+    expect(back.draft).toEqual(opened.automation);
+    expect(back.owed.draft).toBe(true);
+    expect(back.save).toBe("saving");
+    // What was selected or open of the step that is gone is let go.
+    expect(back.selected).toEqual([]);
+    expect(back.open).toBeNull();
+    // Selecting and opening are no change: nothing to undo, nothing owed.
+    const looked = { ...s, selected: ["s_inicio"], open: "s_inicio" };
+    expect(looked.past).toEqual([]);
+    expect(undo(looked)).toBe(looked);
+    // Forward again: owed again too.
+    expect(redo(back).owed.draft).toBe(true);
+  });
   it.todo(
     "AU-82 · the notice of what a change of action took away undoes it in one step, parameters and name together",
   );

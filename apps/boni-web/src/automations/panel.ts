@@ -4,7 +4,15 @@
  * not at its default, the summary line, and why «Probar paso» cannot be pressed. The components paint these and
  * decide nothing: what a test counts on the screen (AU-75) is `rowsOf`.
  */
-import type { ParamSpec, ParamValue, Step, StepFailure, StepSettings } from "@boni/automations";
+import {
+  ACTION,
+  type ParamSpec,
+  type ParamValue,
+  paramsOf,
+  type Step,
+  type StepFailure,
+  type StepSettings,
+} from "@boni/automations";
 import type { StepTest } from "./client.ts";
 import { notBuilt } from "./pending.ts";
 
@@ -71,10 +79,19 @@ export function settingsChanged(_step: Step): number {
  * conditions how many. `say` words what needs i18n or a name (words.ts).
  */
 export function summaryOf(
-  _step: Step,
-  _say: (param: ParamSpec, value: ParamValue) => string,
+  step: Step,
+  say: (param: ParamSpec, value: ParamValue) => string,
 ): string[] {
-  return notBuilt("summaryOf (AU-63)");
+  const parts: string[] = [];
+  for (const p of paramsOf(step)) {
+    // The action is the step's name already (AU-86): the summary says what it works on.
+    if (p.place !== "shown" || p.key === ACTION) continue;
+    const v = step.params[p.key];
+    if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) continue;
+    const part = say(p, v);
+    if (part) parts.push(part);
+  }
+  return parts;
 }
 
 /** The required parameters of the step that are empty, in the panel's order. */

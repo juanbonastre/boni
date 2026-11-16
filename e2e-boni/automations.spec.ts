@@ -80,6 +80,161 @@ const head = (page: Page) => page.locator(".auto-head");
 const saved = (page: Page) => head(page).getByRole("status");
 const nameBox = (page: Page) => page.getByRole("textbox", { name: "Nombre de la automatización" });
 
+/** Steps and arrows as the app writes them, for the automations of the canvas's tests. */
+const step = (id: string, name: string, type: string, params: Record<string, unknown> = {}) => ({
+  id,
+  name,
+  type,
+  params,
+});
+const arrow = (from: string, to: string, output = "main") => ({
+  from: { step: from, output },
+  to: { step: to, input: "main" },
+});
+/** «Libros por leer»: a trigger and three steps in a row, each box where the server keeps it. */
+const CHAIN = {
+  id: "a_01jx8q4m6p8r0t2v4x6z8b0d2f",
+  name: "Libros por leer",
+  updated: 1761950000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual"),
+    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+      action: "find",
+      collection: "libros",
+      limit: 10,
+    }),
+    step("s_01jfiltrar", "Filtrar", "filter"),
+    step("s_01jordenar", "Ordenar", "sort"),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jbuscar"),
+    arrow("s_01jbuscar", "s_01jfiltrar"),
+    arrow("s_01jfiltrar", "s_01jordenar"),
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jfiltrar", x: 600, y: 0 },
+    { step: "s_01jordenar", x: 900, y: 0 },
+  ],
+};
+const CHAIN_IDS = CHAIN.steps.map((s) => s.id);
+/** «Separar por estado»: a «Si» with both its outputs in use, and no box kept (Boni places them). */
+const BRANCH = {
+  id: "a_01jx8r5n7q9s1u3w5y7a9c1e3g",
+  name: "Separar por estado",
+  updated: 1761940000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual"),
+    step("s_01jsi", "Si", "if"),
+    step("s_01jfiltrar", "Filtrar", "filter"),
+    step("s_01jordenar", "Ordenar", "sort"),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jsi"),
+    arrow("s_01jsi", "s_01jfiltrar", "yes"),
+    arrow("s_01jsi", "s_01jordenar", "no"),
+  ],
+};
+const CANVAS = [...AUTOMATIONS, CHAIN, BRANCH];
+const node = (page: Page, id: string) => page.locator(`[data-testid="rf__node-${id}"]`);
+const card = (page: Page, id: string) => page.locator(`.auto-card[data-step="${id}"]`);
+const cards = (page: Page) => page.locator(".auto-card");
+const panel = (page: Page) => page.locator(".auto-panel");
+const bar = (page: Page) => page.locator(".auto-bar");
+/** Where a box is on the canvas, in the canvas's units (what the server keeps). */
+const at = (page: Page, id: string) =>
+  node(page, id).evaluate((el) => {
+    const m = /translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\)/.exec(
+      (el as HTMLElement).style.transform,
+    );
+    return { x: Math.round(Number(m?.[1])), y: Math.round(Number(m?.[2])) };
+  });
+const placesOf = async (page: Page, ids: string[]) =>
+  Object.fromEntries(await Promise.all(ids.map(async (id) => [id, await at(page, id)] as const)));
+/** Opens `name` from the list and waits for its canvas. */
+async function openCanvas(page: Page, name: string, steps: number) {
+  const rows = await list(page);
+  await rows.getByText(name, { exact: true }).click();
+  await expect(nameBox(page)).toHaveValue(name);
+  await expect(cards(page)).toHaveCount(steps);
+  return rows;
+}
+/** A person's drag: pressed, moved in small steps over about half a second, let go. */
+async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let i = 1; i <= 25; i++) {
+    await page.mouse.move(from.x + ((to.x - from.x) * i) / 25, from.y + ((to.y - from.y) * i) / 25);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+}
+const xy = (p: { x: number; y: number }) => [p.x, p.y] as const;
+async function middle(l: ReturnType<Page["locator"]>) {
+  const b = await l.boundingBox();
+  if (!b) throw new Error("not on the screen");
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+/** The middle of the arrow from step `from` to step `to` on the screen, where a click selects it. */
+const arrowMiddle = (page: Page, from: string, to: string) =>
+  page
+    .locator(
+      `[data-testid^="rf__edge-${from}:"][data-testid*=">${to}:"] .react-flow__edge-interaction`,
+    )
+    .evaluate((el) => {
+      const path = el as SVGPathElement;
+      const p = path.getPointAtLength(path.getTotalLength() / 2);
+      const m = path.getScreenCTM();
+      const s = m ? p.matrixTransform(m) : p;
+      return { x: s.x, y: s.y };
+    });
+/** The arrows of the canvas as "from>to" by step id, sorted. */
+const arrowsSeen = (page: Page) =>
+  page.locator(".react-flow__edge").evaluateAll((els) =>
+    els
+      .map((e) => {
+        const id = (e.getAttribute("data-testid") ?? "").replace("rf__edge-", "");
+        const [from, to] = id.split(">");
+        return `${from?.split(":")[0]}>${to?.split(":")[0]}`;
+      })
+      .sort(),
+  );
+const cardNames = (page: Page) => page.locator(".auto-card-name").allTextContents();
+type Sent = {
+  steps: { id: string; name: string; type: string; params: Record<string, unknown> }[];
+  arrows: ReturnType<typeof arrow>[];
+};
+/** The last draft sent of automation `id`. */
+const lastDraft = async (page: Page, id: string) =>
+  (await sent(page, `PUT api/agent/automations/${id}/draft `)).at(-1)?.automation as
+    | Sent
+    | undefined;
+/** The boxes sent of automation `id`, one list per request. */
+const layouts = async (page: Page, id: string) =>
+  (await sent(page, `PUT api/agent/automations/${id}/layout `)).map(
+    (b) => b.places as { step: string; x: number; y: number }[],
+  );
+/** Once the canvas has stopped moving (a fit is animated). */
+const settled = async (page: Page) => {
+  let last: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const now = await page.locator(".auto-flow .react-flow__viewport").getAttribute("style");
+        const same = now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [120] },
+    )
+    .toBe(true);
+};
+/** Chooses `name` in «Añadir un paso». */
+const choose = (page: Page, name: string) =>
+  panel(page).getByRole("button", { name, exact: true }).click();
+const press = (page: Page, keys: string) => page.keyboard.press(keys);
+
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
@@ -193,11 +348,17 @@ test.describe("the list", () => {
     await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
     await page.getByRole("button", { name: "Disparado por el usuario" }).click();
     await expect(saved(page)).toHaveText("Guardado");
-    expect(await asked(page)).toEqual(["POST"]);
+    // The automation, then the box of its first step (AU-05): the server had none to keep before.
+    await expect
+      .poll(() => asked(page))
+      .toEqual(["POST", expect.stringMatching(/^PUT a_\w+\/layout$/)]);
     const [made] = await sent(page, "POST api/agent/automations ");
-    const first = made?.automation as { name: string; steps: { type: string }[] };
+    const first = made?.automation as { name: string; steps: { id: string; type: string }[] };
     expect(first.name).toBe("Nueva automatización");
     expect(first.steps.map((x) => x.type)).toEqual(["manual"]);
+    const id = (await asked(page))[1]?.split(" ")[1]?.split("/")[0] as string;
+    const [box] = await layouts(page, id);
+    expect(box?.map((p) => p.step)).toEqual([first.steps[0]?.id]);
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     await expect(rows).toHaveCount(2);
     for (const text of ["Nueva automatización", "Disparado por el usuario", "Sin publicar"])
@@ -344,23 +505,623 @@ test.describe("the editor", () => {
     await expect(rows.getByText("Revisar gastos", { exact: true })).toHaveCount(1);
   });
 
-  test.fixme("AU-62 · on the canvas, the copy of «Duplicar» has each step of the original in the same place (C2)", async () => {});
-  test.fixme("AU-63 · the canvas reads left to right: each step a card of one width with its icon, its name and one line of summary, both cut with an ellipsis and whole on hover and in the step's view; the outputs on the right with their names; a canvas with only its trigger says nothing more", async () => {});
+  test("AU-62 · on the canvas, the copy of «Duplicar» has each step of the original in the same place", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await expect
+      .poll(() => placesOf(page, CHAIN_IDS))
+      .toEqual(Object.fromEntries(CHAIN.places.map((p) => [p.step, { x: p.x, y: p.y }])));
+    const was = await placesOf(page, CHAIN_IDS);
+    await head(page).getByRole("button", { name: "Más" }).click();
+    await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
+    await expect(nameBox(page)).toHaveValue("Libros por leer (copia)");
+    await expect(cards(page)).toHaveCount(4);
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(was);
+    await expect
+      .poll(() => arrowsSeen(page))
+      .toEqual(CHAIN.arrows.map((a) => `${a.from.step}>${a.to.step}`).sort());
+  });
+  test("AU-63 · the canvas reads left to right: each step a card of one width with its icon, its name and one line of summary, both cut with an ellipsis and whole on hover; the outputs on the right with their names; a canvas with only its trigger says nothing more", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    // Left to right, in the order of the arrows.
+    const xs = await Promise.all(CHAIN_IDS.map(async (id) => (await middle(card(page, id))).x));
+    expect([...xs].sort((a, z) => a - z)).toEqual(xs);
+    for (const id of CHAIN_IDS) {
+      const c = card(page, id);
+      expect(await c.evaluate((el) => getComputedStyle(el).width)).toBe("220px");
+      await expect(c.locator(".auto-card-icon svg")).toHaveCount(1);
+    }
+    // The summary: the parameters in sight that have a value, in their order, « · » between them.
+    const summary = card(page, "s_01jbuscar").locator(".auto-card-summary");
+    await expect(summary).toHaveText("Libros · Límite 10");
+    await expect(summary).toHaveAttribute("title", "Libros · Límite 10");
+    // One line each, cut with an ellipsis; the whole text on hover (its title).
+    const name = card(page, "s_01jbuscar").locator(".auto-card-name");
+    await expect(name).toHaveAttribute("title", "Buscar filas en Libros");
+    for (const line of [name, summary])
+      expect(
+        await line.evaluate((el) => {
+          const s = getComputedStyle(el);
+          return [s.whiteSpace, s.textOverflow, s.overflow];
+        }),
+      ).toEqual(["nowrap", "ellipsis", "hidden"]);
+    // A step not given a value says only its name.
+    await expect(card(page, "s_01jfiltrar").locator(".auto-card-summary")).toHaveCount(0);
+    // The only output says no name; a «Si» says «sí» and «no», on its right.
+    await expect(card(page, "s_01jbuscar").locator(".auto-out-label")).toHaveCount(0);
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Separar por estado", 4);
+    const si = card(page, "s_01jsi");
+    await expect(si.locator(".auto-out-label")).toHaveText(["sí", "no"]);
+    const centre = (await middle(si)).x;
+    for (const out of await si.locator(".auto-out").all())
+      expect((await middle(out)).x).toBeGreaterThan(centre);
+    await page.screenshot({ path: `${SHOTS}/automation-canvas.png` });
+    // A canvas with only its trigger: its card, the «+» of its output and nothing else.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Revisar gastos", 1);
+    await expect(page.locator(".auto-card-summary, .auto-out-label, .auto-start")).toHaveCount(0);
+    await expect(panel(page)).toHaveCount(0);
+    await expect(
+      card(page, "s_inicio").getByRole("button", { name: "Añadir un paso" }),
+    ).toBeVisible();
+  });
+  test.fixme("AU-63 · the whole name and summary in the step's view, and the mark on the card of a step that lacks something required once the parameter is marked (D: the step's view, AU-83)", async () => {});
   test.fixme("AU-64 · bottom left: zoom in, zoom out, fit and «Ordenar»; bottom centre: «Probar»; top right: «+»; at the bottom «Registro», folded, with one line: «Sin probar», then the last test", async () => {});
   test.fixme("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async () => {});
-  test.fixme("AU-65 · a step is added from the «+» of the top, the «+» of an output with no arrow (or dragging from it), the «+» of a selected arrow and a right click on the canvas: the four open the same panel, and the step chosen ends connected, selected and open", async () => {});
-  test.fixme("AU-66 · a selected step shows a short bar, Probar paso · Apagar · Eliminar · ⋯ (Cambiar nombre · Duplicar · Copiar); a selected arrow, «+» and delete; the right click on a step has seven things; nothing appears on hover; an off step says «Encender»", async () => {});
-  test.fixme("AU-66 · deleting a step between two others joins them with one arrow; deleting one with two outputs in use takes its arrows", async () => {});
+  test("AU-65 · a step is added from the «+» of the top, the «+» of an output with no arrow (or dragging from it), the «+» of a selected arrow and a right click on the canvas: the four open the same panel, and the step chosen ends connected and selected", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    const selected = page.locator(".auto-card.selected");
+    // The «+» of the top: connected to nothing.
+    await page.locator(".auto-add-top").click();
+    await expect(panel(page)).toBeVisible();
+    await expect(panel(page).locator("h3").first()).toHaveText("Leer o escribir en una colección");
+    await choose(page, "Filtrar");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(cards(page)).toHaveCount(5);
+    await expect(selected).toHaveCount(1);
+    await expect(selected.locator(".auto-card-name")).toHaveText("Filtrar 2");
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(3);
+    // The «+» of an output with no arrow: the new step hangs from it.
+    await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
+    await expect(panel(page)).toBeVisible();
+    await choose(page, "Ordenar");
+    await expect(selected.locator(".auto-card-name")).toHaveText("Ordenar 2");
+    const second = (await selected.getAttribute("data-step")) as string;
+    await expect.poll(() => arrowsSeen(page)).toContain(`s_01jordenar>${second}`);
+    // Dragging from that output and letting go on the canvas: the same panel, and the step hangs from it.
+    const out = node(page, second).locator(".react-flow__handle.source");
+    const from = await middle(out);
+    await drag(page, from, { x: from.x + 160, y: from.y + 140 });
+    await expect(panel(page)).toBeVisible();
+    await choose(page, "Limitar");
+    await expect(selected.locator(".auto-card-name")).toHaveText("Limitar");
+    const third = (await selected.getAttribute("data-step")) as string;
+    await expect.poll(() => arrowsSeen(page)).toContain(`${second}>${third}`);
+    // The «+» of a selected arrow: the new step goes between its two ends.
+    // (The step added was brought into sight: fitted again first, as Juan would.)
+    await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).click();
+    await settled(page);
+    await page.mouse.click(...xy(await arrowMiddle(page, "s_01jbuscar", "s_01jfiltrar")));
+    const arrowBar = page.locator(".auto-arrow-bar");
+    await expect(arrowBar).toBeVisible();
+    await arrowBar.getByRole("button", { name: "Añadir un paso" }).click();
+    await expect(panel(page)).toBeVisible();
+    await choose(page, "Quitar duplicados");
+    const between = (await selected.getAttribute("data-step")) as string;
+    await expect.poll(() => arrowsSeen(page)).toContain(`s_01jbuscar>${between}`);
+    const seen = await arrowsSeen(page);
+    expect(seen).toContain(`${between}>s_01jfiltrar`);
+    expect(seen).not.toContain("s_01jbuscar>s_01jfiltrar");
+    // A right click on the canvas: connected to nothing, its box where the click was.
+    const flow = await page.locator(".auto-flow").boundingBox();
+    if (!flow) throw new Error("no canvas");
+    const click = { x: flow.x + 120, y: flow.y + flow.height - 90 };
+    await page.mouse.click(click.x, click.y, { button: "right" });
+    await expect(panel(page)).toBeVisible();
+    await choose(page, "Agrupar");
+    const placed = await selected.boundingBox();
+    expect(Math.abs((placed?.x ?? 0) - click.x)).toBeLessThan(4);
+    expect(Math.abs((placed?.y ?? 0) - click.y)).toBeLessThan(4);
+    const lone = (await selected.getAttribute("data-step")) as string;
+    expect((await arrowsSeen(page)).some((a) => a.includes(lone))).toBe(false);
+    // Each of them one change, saved as the draft.
+    await expect(saved(page)).toHaveText("Guardado");
+    expect((await lastDraft(page, CHAIN.id))?.steps).toHaveLength(9);
+  });
+  test.fixme("AU-65 · the step chosen ends open: its view opens as it is added (D: the step's view, AU-70)", async () => {});
+  test("AU-66 · a selected step shows a short bar, Probar paso · Apagar · Eliminar · ⋯ (Cambiar nombre · Duplicar · Copiar); a selected arrow, «+» and delete; the right click on a step has seven things; nothing appears on hover; an off step says «Encender»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    // Nothing on hover.
+    await card(page, "s_01jfiltrar").hover();
+    await page.waitForTimeout(300);
+    await expect(bar(page)).toHaveCount(0);
+    await expect(page.locator(".auto-arrow-bar")).toHaveCount(0);
+    // Selected: the bar.
+    await card(page, "s_01jfiltrar").click();
+    await expect(bar(page).getByRole("button")).toHaveText([
+      "Probar paso",
+      "Apagar",
+      "Eliminar",
+      "",
+    ]);
+    await expect(bar(page).getByRole("button", { name: "Probar paso" })).toBeDisabled();
+    await bar(page).getByRole("button", { name: "Más" }).click();
+    await expect(page.locator(".pop-box .menu-item")).toHaveText([
+      "Cambiar nombre",
+      "Duplicar",
+      "Copiar",
+    ]);
+    await page.screenshot({ path: `${SHOTS}/automation-step-bar.png` });
+    await press(page, "Escape");
+    // Off: dimmed, and the bar says «Encender».
+    await bar(page).getByRole("button", { name: "Apagar" }).click();
+    await expect(card(page, "s_01jfiltrar")).toHaveClass(/\boff\b/);
+    await expect(bar(page).getByRole("button", { name: "Encender" })).toBeVisible();
+    await expect(saved(page)).toHaveText("Guardado");
+    const off = (await lastDraft(page, CHAIN.id))?.steps.find((s) => s.id === "s_01jfiltrar");
+    expect((off as { settings?: { off?: boolean } } | undefined)?.settings?.off).toBe(true);
+    // Two selected: no bar.
+    await card(page, "s_01jordenar").click({ modifiers: ["Shift"] });
+    await expect(page.locator(".auto-card.selected")).toHaveCount(2);
+    await expect(bar(page)).toHaveCount(0);
+    // The right click on a step: seven things, «Encender» on an off step.
+    await card(page, "s_01jfiltrar").click({ button: "right" });
+    await expect(page.locator(".pop-box .menu-item")).toHaveText([
+      "Abrir",
+      "Probar paso",
+      "Encender",
+      "Cambiar nombre",
+      "Duplicar",
+      "Copiar",
+      "Eliminar",
+    ]);
+    await press(page, "Escape");
+    await expect(page.locator(".pop-box")).toHaveCount(0);
+    // A selected arrow: «+» and the cross.
+    await page.mouse.click(...xy(await arrowMiddle(page, "s_inicio", "s_01jbuscar")));
+    const arrowBar = page.locator(".auto-arrow-bar");
+    await expect(arrowBar.getByRole("button")).toHaveCount(2);
+    await expect(arrowBar.getByRole("button", { name: "Añadir un paso" })).toBeVisible();
+    await arrowBar.getByRole("button", { name: "Quitar la flecha" }).click();
+    await expect.poll(() => arrowsSeen(page)).not.toContain("s_inicio>s_01jbuscar");
+  });
+  test("AU-66 · deleting a step between two others joins them with one arrow; deleting one with two outputs in use takes its arrows", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await card(page, "s_01jbuscar").click();
+    await bar(page).getByRole("button", { name: "Eliminar" }).click();
+    await expect(cards(page)).toHaveCount(3);
+    await expect
+      .poll(() => arrowsSeen(page))
+      .toEqual(["s_01jfiltrar>s_01jordenar", "s_inicio>s_01jfiltrar"]);
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Separar por estado", 4);
+    await card(page, "s_01jsi").click({ button: "right" });
+    await page.getByRole("menuitemradio", { name: "Eliminar" }).click();
+    await expect(cards(page)).toHaveCount(3);
+    await expect.poll(() => arrowsSeen(page)).toEqual([]);
+  });
+  test("AU-68 · Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+Y redoes a step added, removed, connected, moved and renamed; Ctrl+C, X and V copy, cut and paste the selected steps with the arrows between them; Supr deletes, Esc closes; what was undone is saved; a key typed in a field is the field's; after a reload there is nothing to undo", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    const chain = CHAIN.arrows.map((a) => `${a.from.step}>${a.to.step}`).sort();
+    // Removed with Supr, joined; undone and redone both ways.
+    await card(page, "s_01jfiltrar").click();
+    await press(page, "Delete");
+    await expect(cards(page)).toHaveCount(3);
+    await press(page, "Control+z");
+    await expect(cards(page)).toHaveCount(4);
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
+    await press(page, "Control+Shift+z");
+    await expect(cards(page)).toHaveCount(3);
+    await press(page, "Control+z");
+    await press(page, "Control+y");
+    await expect(cards(page)).toHaveCount(3);
+    await press(page, "Control+z");
+    await expect(cards(page)).toHaveCount(4);
+    // Added.
+    await page.locator(".auto-add-top").click();
+    await choose(page, "Filtrar");
+    await expect(cards(page)).toHaveCount(5);
+    await page.locator(".auto-flow .react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await press(page, "Control+z");
+    await expect(cards(page)).toHaveCount(4);
+    // Moved (the step added was brought into sight: fitted again first, as Juan would).
+    await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).click();
+    await settled(page);
+    const was = await at(page, "s_01jbuscar");
+    const c = await middle(card(page, "s_01jbuscar"));
+    await drag(page, c, { x: c.x + 40, y: c.y + 120 });
+    await expect.poll(() => at(page, "s_01jbuscar")).not.toEqual(was);
+    await press(page, "Control+z");
+    await expect.poll(() => at(page, "s_01jbuscar")).toEqual(was);
+    // Renamed.
+    await card(page, "s_01jordenar").click({ button: "right" });
+    await page.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+    const box = page.getByRole("textbox", { name: "Cambiar nombre" });
+    await box.fill("Ordenar por título");
+    await box.press("Enter");
+    await expect(card(page, "s_01jordenar").locator(".auto-card-name")).toHaveText(
+      "Ordenar por título",
+    );
+    await press(page, "Control+z");
+    await expect(card(page, "s_01jordenar").locator(".auto-card-name")).toHaveText("Ordenar");
+    // Disconnected and connected again by dragging from an output to an input.
+    await page.mouse.click(...xy(await arrowMiddle(page, "s_01jfiltrar", "s_01jordenar")));
+    await page.locator(".auto-arrow-bar").getByRole("button", { name: "Quitar la flecha" }).click();
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(2);
+    await drag(
+      page,
+      await middle(node(page, "s_01jfiltrar").locator(".react-flow__handle.source")),
+      await middle(node(page, "s_01jordenar").locator(".react-flow__handle.target")),
+    );
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
+    await press(page, "Control+z");
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(2);
+    await press(page, "Control+z");
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
+    // What was undone is saved: the draft as it was opened.
+    await expect(saved(page)).toHaveText("Guardado");
+    const back = await lastDraft(page, CHAIN.id);
+    expect(back?.steps).toEqual(CHAIN.steps);
+    expect(back?.arrows).toEqual(CHAIN.arrows);
+    // Copied and pasted, with the arrow between them, under the pointer; names that are taken get a number.
+    await card(page, "s_01jbuscar").click();
+    await card(page, "s_01jfiltrar").click({ modifiers: ["Shift"] });
+    await press(page, "Control+c");
+    const flow = await page.locator(".auto-flow").boundingBox();
+    if (!flow) throw new Error("no canvas");
+    await page.mouse.move(flow.x + flow.width / 2, flow.y + flow.height - 120);
+    await press(page, "Control+v");
+    await expect(cards(page)).toHaveCount(6);
+    await expect
+      .poll(() => cardNames(page))
+      .toEqual(expect.arrayContaining(["Buscar filas en Libros 2", "Filtrar 2"]));
+    const pasted = await page
+      .locator(".auto-card.selected")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-step") as string));
+    expect(pasted).toHaveLength(2);
+    await expect.poll(() => arrowsSeen(page)).toContain(`${pasted[0]}>${pasted[1]}`);
+    // Cut: gone, and pasted again.
+    await press(page, "Control+x");
+    await expect(cards(page)).toHaveCount(4);
+    await press(page, "Control+v");
+    await expect(cards(page)).toHaveCount(6);
+    // Esc closes: the menu, the panel, then what is selected.
+    await page.locator(".auto-add-top").click();
+    await expect(panel(page)).toBeVisible();
+    await press(page, "Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await press(page, "Escape");
+    await expect(page.locator(".auto-card.selected")).toHaveCount(0);
+    // A key typed in a field is the field's.
+    await nameBox(page).click();
+    await press(page, "Control+z");
+    await expect(cards(page)).toHaveCount(6);
+    // After a reload there is nothing to undo.
+    await expect(saved(page)).toHaveText("Guardado");
+    await page.reload();
+    await openCanvas(page, "Libros por leer", 4);
+    const before = (await asked(page)).length;
+    await page.locator(".auto-flow .react-flow__pane").click({ position: { x: 20, y: 20 } });
+    await press(page, "Control+z");
+    await page.waitForTimeout(1500);
+    await expect(cards(page)).toHaveCount(4);
+    expect((await asked(page)).slice(before)).toEqual([]);
+  });
+  test("AU-68 · steps copied in one automation are pasted in another, with new ids and the arrows between them", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await card(page, "s_01jbuscar").click();
+    await card(page, "s_01jfiltrar").click({ modifiers: ["Shift"] });
+    await press(page, "Control+c");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Revisar gastos", 1);
+    await page.locator(".auto-flow .react-flow__pane").click({ position: { x: 40, y: 40 } });
+    await press(page, "Control+v");
+    await expect(cards(page)).toHaveCount(3);
+    const pasted = await page
+      .locator(".auto-card.selected")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-step") as string));
+    expect(pasted).toHaveLength(2);
+    expect(pasted).not.toContain("s_01jbuscar");
+    expect(pasted).not.toContain("s_01jfiltrar");
+    await expect.poll(() => arrowsSeen(page)).toEqual([`${pasted[0]}>${pasted[1]}`]);
+    await expect
+      .poll(() => cardNames(page))
+      .toEqual(expect.arrayContaining(["Buscar filas en Libros", "Filtrar"]));
+  });
+  test.fixme("AU-68 · Ctrl+Z undoes a parameter or a setting changed in the step's view, and Intro opens the selected step (D: the step's view, AU-70)", async () => {});
+  test("AU-05 · a box stays where it is dropped, opened again too, and moving it does not say «Guardando…» nor send the draft; a new step goes to the right of the one it hangs from and no other box moves; «Ordenar» moves them all and Ctrl+Z puts them back", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    const rows = await openCanvas(page, "Libros por leer", 4);
+    await expect(saved(page)).toHaveText("Guardado");
+    const c = await middle(card(page, "s_01jfiltrar"));
+    await drag(page, c, { x: c.x + 30, y: c.y + 150 });
+    await expect.poll(async () => (await at(page, "s_01jfiltrar")).y).toBeGreaterThan(100);
+    const dropped = await at(page, "s_01jfiltrar");
+    // Never «Guardando…»: the draft did not change. One request when it is dropped, with that box alone.
+    await expect(saved(page)).toHaveText("Guardado");
+    await expect
+      .poll(() => layouts(page, CHAIN.id))
+      .toEqual([[{ step: "s_01jfiltrar", ...dropped }]]);
+    await page.waitForTimeout(1500);
+    expect(await sent(page, `PUT api/agent/automations/${CHAIN.id}/draft `)).toEqual([]);
+    expect(await layouts(page, CHAIN.id)).toHaveLength(1);
+    // Opened again: where it was dropped.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await rows.getByText("Libros por leer", { exact: true }).click();
+    await expect(cards(page)).toHaveCount(4);
+    await expect.poll(() => at(page, "s_01jfiltrar")).toEqual(dropped);
+    // A new step: to the right of the one it hangs from, at its height; no other box moves.
+    const before = await placesOf(page, CHAIN_IDS);
+    await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
+    await choose(page, "Limitar");
+    const made = (await page.locator(".auto-card.selected").getAttribute("data-step")) as string;
+    await expect
+      .poll(() => at(page, made))
+      .toEqual({
+        x: before.s_01jordenar.x + 300,
+        y: before.s_01jordenar.y,
+      });
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(before);
+    // Its box is kept like one dropped, once the server has the step.
+    await expect
+      .poll(async () => (await layouts(page, CHAIN.id)).at(-1))
+      .toEqual([{ step: made, x: before.s_01jordenar.x + 300, y: before.s_01jordenar.y }]);
+    // «Ordenar» places them all again; Ctrl+Z puts them back.
+    const all = [...CHAIN_IDS, made];
+    const untidy = await placesOf(page, all);
+    await page.locator(".auto-zoom").getByRole("button", { name: "Ordenar" }).click();
+    await expect.poll(() => at(page, "s_01jfiltrar")).not.toEqual(dropped);
+    const tidy = await placesOf(page, all);
+    expect(new Set(Object.values(tidy).map((p) => p.y)).size).toBe(1);
+    await press(page, "Control+z");
+    await expect.poll(() => placesOf(page, all)).toEqual(untidy);
+    await expect(saved(page)).toHaveText("Guardado");
+  });
+  test.fixme("AU-05 · over the real server, a box dropped is there after a reload and in another window, (G: the desktop app); moving it ages no test (E: AU-92)", async () => {});
+  test("AU-87 · adding a step puts that step and nothing else: no other step, arrow or option appears, and nothing changes on the canvas that Juan did not do", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    // Opened and left alone: nothing is sent, nothing moves.
+    const opened = await placesOf(page, CHAIN_IDS);
+    await page.waitForTimeout(1500);
+    expect(await asked(page)).toEqual([`GET ${CHAIN.id}`]);
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(opened);
+    // One step added: that step, its one arrow, and nothing else.
+    await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
+    await choose(page, "Filtrar");
+    await expect(saved(page)).toHaveText("Guardado");
+    const after = await lastDraft(page, CHAIN.id);
+    expect(after?.steps.slice(0, 4)).toEqual(CHAIN.steps);
+    expect(after?.steps).toHaveLength(5);
+    const made = after?.steps[4];
+    expect(made).toEqual({ id: made?.id, name: "Filtrar 2", type: "filter", params: {} });
+    expect(after?.arrows).toEqual([...CHAIN.arrows, arrow("s_01jordenar", made?.id as string)]);
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(opened);
+    // A step of «Colección» carries its action and nothing more.
+    await page.locator(".auto-add-top").click();
+    await choose(page, "Buscar filas");
+    await expect(saved(page)).toHaveText("Guardado");
+    expect((await lastDraft(page, CHAIN.id))?.steps.at(-1)?.params).toEqual({ action: "find" });
+  });
   test.fixme("AU-67 · after a test each arrow says how many rows passed («128 filas»; «0 filas» dimmed), an output with no arrow its count too, and each step how it ended (bien, falló, saltado, parado); a step that failed says why on its card in two lines at most, whole in its SALIDA with «Ir al parámetro», and in «Registro»; the ones that hung from it are «saltados»", async () => {});
-  test.fixme("AU-68 · Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+Y redoes a step added, removed, connected, moved, renamed and a parameter changed; Ctrl+C, X and V copy, cut and paste the selected steps with the arrows between them; Supr deletes, Intro opens, Esc closes; what was undone is saved; a key typed in a field is the field's; after a reload there is nothing to undo", async () => {});
-  test.fixme("AU-05 · a box stays where it is dropped: after a reload and in another window it is there, and moving it does not say «Guardando…» of the draft nor age any test; a new step goes to the right of the one it hangs from and no other box moves; «Ordenar» moves them all and Ctrl+Z puts them back", async () => {});
-  test.fixme("AU-87 · adding a step puts that step and nothing else: no other step, arrow or option appears, and nothing changes on the canvas that Juan did not do", async () => {});
 });
 
 test.describe("adding a step", () => {
-  test.fixme("AU-69 · the panel is on the right with its search on top: on an empty canvas it asks «¿Cómo empieza?» and lists the triggers; then the three categories of F14b by what one wants to do, and «Añadir otro disparador» last; «Colección» shows its actions as phrases", async () => {});
-  test.fixme("AU-69 · the search looks in every category at once by a step's name and its actions', and with nothing found says «Nada con «…»»; under 1100 px the panel goes over the canvas", async () => {});
-  test.fixme("AU-86 · a new step is named by what it does («Buscar filas en Gastos») and the name follows its collection until Juan renames it; a second «Filtrar» is «Filtrar 2»; renaming a step changes the chips that cite it", async () => {});
+  test("AU-69 · the panel is on the right with its search on top: on an empty canvas it asks «¿Cómo empieza?» and lists the triggers; then the three categories of F14b by what one wants to do, and «Añadir otro disparador» last; «Colección» shows its actions as phrases", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { agent: BEFORE() });
+    await list(page);
+    await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
+    // On an empty canvas: «¿Cómo empieza?» and the triggers, at the right, the search on top.
+    const p = panel(page);
+    await expect(p.locator("h2")).toHaveText("¿Cómo empieza?");
+    await expect(p.locator(".auto-start-row")).toHaveText(["Disparado por el usuario"]);
+    await expect(
+      p.locator("> *").first().getByRole("textbox", { name: "Buscar un paso" }),
+    ).toBeVisible();
+    const canvas = await page.locator(".auto-canvas").boundingBox();
+    const side = await p.boundingBox();
+    expect(
+      Math.abs((side?.x ?? 0) + (side?.width ?? 0) - ((canvas?.x ?? 0) + (canvas?.width ?? 0))),
+    ).toBeLessThan(2);
+    await p.getByRole("button", { name: "Disparado por el usuario" }).click();
+    await expect(cards(page)).toHaveCount(1);
+    await expect(panel(page)).toHaveCount(0);
+    // Then: the three categories, said by what one wants to do, each step in one; «Añadir otro disparador» last.
+    await page.locator(".auto-add-top").click();
+    await expect(p.locator("h3")).toHaveText([
+      "Leer o escribir en una colección",
+      "Transformar filas",
+      "Decidir el camino",
+    ]);
+    const all = await p.locator(".auto-start-row").allTextContents();
+    expect(new Set(all).size).toBe(all.length);
+    await expect(p.locator(".auto-panel-section").first().locator(".auto-start-row")).toHaveText([
+      "Buscar filas",
+      "Leer una fila",
+      "Crear una fila",
+      "Modificar filas",
+      "Crear o modificar",
+      "Eliminar filas",
+      "Contar o sumar",
+    ]);
+    await expect(p.locator("> *").last()).toHaveText("Añadir otro disparador");
+    await page.screenshot({ path: `${SHOTS}/automation-add.png` });
+    await p.getByRole("button", { name: "Añadir otro disparador" }).click();
+    await expect(p.locator(".auto-start-row")).toHaveText(["Disparado por el usuario"]);
+  });
+  test("AU-69 · the search looks in every category at once by a step's name and its actions', and with nothing found says «Nada con «…»»; under 1100 px the panel goes over the canvas", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await page.locator(".auto-add-top").click();
+    const find = panel(page).getByRole("textbox", { name: "Buscar un paso" });
+    await expect(find).toBeFocused();
+    // By a step's name, in every category at once.
+    await find.pressSequentially("una", { delay: 60 });
+    const rows = panel(page).locator(".auto-start-row");
+    await expect(rows).toContainText(["Leer una fila", "Crear una fila", "Separar una lista"]);
+    await expect(panel(page).locator("h3")).toHaveCount(0);
+    // By an action's name: «Diferencia» is an action of «Fecha».
+    await find.fill("");
+    await find.pressSequentially("diferencia", { delay: 60 });
+    await expect(rows).toHaveText(["Fecha"]);
+    // Nothing found.
+    await find.fill("");
+    await find.pressSequentially("zzz", { delay: 60 });
+    await expect(rows).toHaveCount(0);
+    await expect(panel(page)).toContainText("Nada con «zzz»");
+    // Under 1100 px: over the canvas, which keeps its width.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    const flow = await page.locator(".auto-flow").boundingBox();
+    const canvas = await page.locator(".auto-canvas").boundingBox();
+    const over = await panel(page).boundingBox();
+    expect(Math.abs((flow?.width ?? 0) - (canvas?.width ?? 0))).toBeLessThan(3);
+    expect(over?.x ?? 0).toBeLessThan((flow?.x ?? 0) + (flow?.width ?? 0));
+    // Nothing goes sideways, down to a phone's width.
+    for (const width of [1000, 390]) {
+      await page.setViewportSize({ width, height: 800 });
+      // Once the layout has followed the new width.
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+        .toBe(true);
+    }
+  });
+  test("AU-86 · a new step is named by what it does («Buscar filas», «Buscar filas en Libros» with its collection); a second «Filtrar» is «Filtrar 2»; a step renamed keeps its name", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    // A collection's step named with it, as the server keeps it.
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-name")).toHaveText(
+      "Buscar filas en Libros",
+    );
+    // New: by its action, with no collection yet; a name taken gets a number.
+    await page.locator(".auto-add-top").click();
+    await choose(page, "Buscar filas");
+    await expect(page.locator(".auto-card.selected .auto-card-name")).toHaveText("Buscar filas");
+    await page.locator(".auto-add-top").click();
+    await choose(page, "Filtrar");
+    const second = page.locator(".auto-card.selected");
+    await expect(second.locator(".auto-card-name")).toHaveText("Filtrar 2");
+    // Renamed on its card from «⋯»: the new name, saved; Esc leaves it as it was.
+    await bar(page).getByRole("button", { name: "Más" }).click();
+    await page.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+    const box = page.getByRole("textbox", { name: "Cambiar nombre" });
+    await expect(box).toBeFocused();
+    await box.fill("Solo los pendientes");
+    await box.press("Escape");
+    await expect(second.locator(".auto-card-name")).toHaveText("Filtrar 2");
+    await bar(page).getByRole("button", { name: "Más" }).click();
+    await page.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+    await box.pressSequentially("Solo los pendientes", { delay: 40 });
+    await box.press("Enter");
+    await expect(second.locator(".auto-card-name")).toHaveText("Solo los pendientes");
+    await expect(saved(page)).toHaveText("Guardado");
+    expect((await lastDraft(page, CHAIN.id))?.steps.map((s) => s.name)).toEqual([
+      "Disparado por el usuario",
+      "Buscar filas en Libros",
+      "Filtrar",
+      "Ordenar",
+      "Buscar filas",
+      "Solo los pendientes",
+    ]);
+  });
+  test.fixme("AU-86 · the name follows the step's collection, chosen in its view, until Juan renames it (D: the step's view); renaming a step changes the chips that cite it (F: AU-21)", async () => {});
+  test("A-15 · with 200 steps, dragging a box, adding a step and «Ordenar» keep the canvas moving", async ({
+    page,
+  }, info) => {
+    // A long automation: a trigger and 199 steps in a row, as Boni would place them.
+    const many = Array.from({ length: 200 }, (_, i) =>
+      i === 0
+        ? step("s_inicio", "Disparado por el usuario", "manual")
+        : step(`s_01jpaso${String(i).padStart(4, "0")}`, `Filtrar ${i + 1}`, "filter"),
+    );
+    const long = {
+      id: "a_01jx8s6p8r0t2v4x6z8b0d2f4h",
+      name: "Doscientos pasos",
+      updated: 1761990000000,
+      steps: many,
+      arrows: many.slice(1).map((s, i) => arrow(many[i]?.id as string, s.id)),
+    };
+    await openApp(page, "/?still", { automations: [long], agent: BEFORE() });
+    const rows = await list(page);
+    await rows.getByText("Doscientos pasos", { exact: true }).click();
+    await expect(cards(page)).toHaveCount(200);
+    // The frames while a box is dragged at a person's pace.
+    await page.evaluate(() => {
+      const w = window as unknown as { __frames: number[]; __run: boolean };
+      w.__frames = [];
+      w.__run = true;
+      const tick = (t: number) => {
+        w.__frames.push(t);
+        if (w.__run) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    const c = await middle(card(page, "s_inicio"));
+    await drag(page, c, { x: c.x + 60, y: c.y + 200 });
+    const frames = await page.evaluate(() => {
+      const w = window as unknown as { __frames: number[]; __run: boolean };
+      w.__run = false;
+      return w.__frames.slice(1).map((t, i) => t - (w.__frames[i] as number));
+    });
+    const worst = Math.max(...frames);
+    const mean = frames.reduce((a, z) => a + z, 0) / frames.length;
+    // A click and its change drawn: adding a step and «Ordenar».
+    const timed = async (act: () => Promise<void>, done: () => Promise<void>) => {
+      const t0 = Date.now();
+      await act();
+      await done();
+      return Date.now() - t0;
+    };
+    const adding = await timed(
+      async () => {
+        await page.locator(".auto-add-top").click();
+        await choose(page, "Limitar");
+      },
+      () => expect(cards(page)).toHaveCount(201),
+    );
+    const tidying = await timed(
+      () => page.locator(".auto-zoom").getByRole("button", { name: "Ordenar" }).click(),
+      () => expect.poll(() => at(page, "s_inicio")).toEqual({ x: 0, y: 0 }),
+    );
+    info.annotations.push({
+      type: "A-15",
+      description: `200 steps: drag ${frames.length} frames, mean ${mean.toFixed(1)} ms, worst ${worst.toFixed(1)} ms; adding a step ${adding} ms; «Ordenar» ${tidying} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    expect(mean).toBeLessThan(50);
+    expect(adding).toBeLessThan(2000);
+    expect(tidying).toBeLessThan(2000);
+  });
 });
 
 test.describe("the step's view", () => {

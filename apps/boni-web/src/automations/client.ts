@@ -3,8 +3,8 @@
  * routes of apps/server/src/automations/routes.ts and the shapes of its service.ts, as the wire carries them. The
  * app cannot import the server, so the shapes are written twice: the desktop e2e (the real app on the real server)
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
- * and Android's `Net.kt` already allow. C1 of F14b makes the calls of the list and the editor's header real; the
- * test, the boxes' places and the rows stay pending until their PRs.
+ * and Android's `Net.kt` already allow. C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
+ * places; the test and the rows stay pending until their PRs.
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
@@ -161,7 +161,8 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
       openedOf(await api.automations("POST", path(id, "/duplicate"), { name: copyName })),
     remove: async (id) => void (await api.automations("DELETE", path(id))),
     restore: async (id) => void (await api.automations("POST", path(id, "/restore"))),
-    place: () => notBuilt("automationsClient.place (AU-05)"),
+    place: async (id, places) =>
+      void (await api.automations("PUT", path(id, "/layout"), { places })),
     test: () => notBuilt("automationsClient.test (AU-90)"),
     rows: () => notBuilt("automationsClient.rows (AU-71)"),
     sample: () => notBuilt("automationsClient.sample (AU-20)"),
