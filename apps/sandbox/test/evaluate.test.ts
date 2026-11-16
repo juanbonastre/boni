@@ -24,7 +24,6 @@ import {
   type EvalRequest,
   type EvalResponse,
   type Json,
-  type WireEvaluated,
   type WireRead,
 } from "@boni/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -32,11 +31,15 @@ import { evaluateCall, readKey } from "../src/evaluate.ts";
 import { type Box, startBox } from "../src/server.ts";
 import { call } from "./call.ts";
 import {
+  CASES,
+  caseCode,
   categoriesLike,
   dateNames,
   evalRequest,
+  evals,
   NOW,
   rowsLike,
+  tryCase,
   zoneTable,
 } from "./eval-helpers.ts";
 
@@ -48,11 +51,6 @@ const ask = (
   input: EvalRequest["input"],
   more: Partial<EvalRequest> = {},
 ) => evaluateCall(evalRequest(kind, sources, input, more));
-/** The evaluations of an answer that has them (a test fails here when the call failed whole). */
-const evals = (r: EvalResponse): readonly WireEvaluated[] => {
-  if (!r.ok) throw new Error(`the call failed: ${r.error}: ${r.message}`);
-  return r.evaluations;
-};
 const values = (r: EvalResponse) => evals(r).map((e) => (e.state === "done" ? e.values : e));
 /** A «Código»'s one value per evaluation. */
 const outs = (r: EvalResponse) => evals(r).map((e) => (e.state === "done" ? e.values[0] : e));
@@ -72,47 +70,6 @@ async function untilDone(req: EvalRequest, serve: (read: WireRead) => Json) {
 }
 
 // ---------------------------------------------------------------- the cases of test/cases/evaluacion
-
-const CASES = join(import.meta.dirname, "cases", "evaluacion");
-const caseCode = (name: string) => readFileSync(join(CASES, name), "utf8");
-/** A case tried the three ways: «Código» with all the rows, «Código» once per row, and as an expression. */
-const FORMS: { label: string; req: (body: string) => EvalRequest }[] = [
-  { label: "«Código», all the rows", req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }]) },
-  {
-    label: "«Código», per row",
-    req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }], { mode: "perRow" }),
-  },
-  {
-    label: "an expression",
-    req: (b) => evalRequest("expressions", [`(() => {\n${b}\n})()`], [{ i: 0 }, { i: 1 }]),
-  },
-];
-async function tryCase(
-  name: string,
-  opts: { through?: (req: EvalRequest) => Promise<EvalResponse> } = {},
-) {
-  const code = caseCode(name);
-  const want = /^\/\/ expect: (.*)$/m.exec(code)?.[1] ?? "";
-  for (const form of FORMS) {
-    const at = `${name}, ${form.label}`;
-    const r = await (opts.through ?? evaluateCall)(form.req(code));
-    if (want.startsWith("call ")) {
-      expect(r.ok, at).toBe(false);
-      expect(want.slice(5).split("|"), at).toContain(!r.ok && r.error);
-      continue;
-    }
-    expect(r.ok, `${at}: ${!r.ok && r.message}`).toBe(true);
-    for (const e of evals(r)) {
-      if (want.startsWith("done ")) {
-        expect(e, at).toMatchObject({ state: "done" });
-        expect(e.state === "done" && e.values[0], at).toEqual(JSON.parse(want.slice(5)));
-      } else {
-        expect(e.state, at).toBe("failed");
-        expect(want.split("|"), at).toContain(e.state === "failed" && e.fault);
-      }
-    }
-  }
-}
 
 describe("the cases of test/cases/evaluacion", () => {
   for (const name of readdirSync(CASES).filter((f) => f.endsWith(".js")))
