@@ -12478,6 +12478,116 @@ tr[data-boni-pointed] > td {
   opacity: 0.35;
   cursor: default;
 }
+/* «Código» (AU-30, AU-33, AU-36): «Se ejecuta», the editor (CodeEditor.tsx paints inside it), its size and «Consola». */
+.auto-param.auto-param-code {
+  grid-template-columns: minmax(0, 1fr);
+}
+.auto-param-code .auto-param-control {
+  min-width: 0;
+}
+.auto-code-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.auto-code-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.auto-code-mode.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.auto-code-mode input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.auto-code-editor {
+  min-height: 120px;
+}
+.auto-code-editor.loading {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.auto-code-size {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.auto-code-problem {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--bad);
+}
+.auto-code-problem.warning {
+  color: var(--warn, #d9a441);
+}
+.auto-code-connect {
+  margin-top: 6px;
+}
+.auto-console {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  font-size: 12.5px;
+}
+.auto-console summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+}
+.auto-console summary::-webkit-details-marker {
+  display: none;
+}
+.auto-console[open] .auto-console-fold {
+  transform: rotate(90deg);
+}
+.auto-console-count {
+  margin-left: auto;
+  font-size: 12px;
+}
+.auto-console-lines {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 240px;
+  overflow: auto;
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.auto-console-line {
+  display: flex;
+  gap: 12px;
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.auto-console-line.warn {
+  color: var(--warn, #d9a441);
+}
+.auto-console-line.error {
+  color: var(--bad);
+}
+.auto-console-text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.auto-console-where,
+.auto-console-more {
+  color: var(--muted);
+  white-space: nowrap;
+}
 .auto-toggle {
   justify-self: start;
   margin-top: 7px;

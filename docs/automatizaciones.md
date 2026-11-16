@@ -399,6 +399,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en P1: cada uno de esos problemas tiene sus palabras en los dos idiomas (`words.ts`, `words.test.ts`), y se
   ven en la tarjeta del paso en el lienzo, y los de la vista previa debajo de la expresión. Falta: marcarlos en su
   sitio del editor y en la vista del paso (AU-36, P2).
+  Hecho en P2: en un «Código», cada problema con sitio se marca en él en su editor, y los demás se dicen debajo
+  (AU-36).
 - **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
@@ -413,10 +415,14 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en E3: al salir, `rowsOf` toma las claves de lo que dio la caja como campos y nada más: `__proto__`,
   `constructor` o `toString` son campos de la fila y no tocan ningún objeto del motor; al entrar, una fila o la de un
   paso citado con esas claves se manda con ellas, y su etiqueta es la de sus campos, nunca un miembro heredado.
-  Falta: las claves en la vista de un «Código» y en el autocompletado (P2).
+  Hecho en P2: en la vista de un «Código», cada campo de su ENTRADA lleva su clave al lado del nombre («Importe ·
+  importe»); el autocompletado del editor es `completions` (tras `$json.`, `$input.first().` y
+  `$('Paso').first().`, probado en E2) y escribe la clave enseñando el nombre; en la app lo prueba
+  `$input.first().` (`e2e-boni/automations-code.spec.ts`). Falta: arrastrar un campo a JavaScript escribe su clave,
+  y ningún otro sitio enseña una (la prueba pendiente de AU-25; a la cola).
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
-- **AU-27** (F14c, en parte) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
+- **AU-27** (F14c, hecho) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
   enseña la vista previa es lo que saldrá.
   En la F14c: la vista previa llama a la misma función del motor (`evaluate`, `box.ts`) con la misma caja y con la
   hora, la semilla y la fila de la prueba que guardó las filas. No hay un segundo intérprete en el navegador.
@@ -429,6 +435,9 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en P1: la línea debajo de la expresión. En la app de escritorio sobre el servidor y la caja reales, con
   3.000 filas, lo que dice fila a fila es lo que dio la prueba a esa fila, y lo escrito después lo calcula la caja
   (`e2e-boni-desktop/automations-code.spec.ts`). Falta: que lo mismo valga para «Código» (AU-30, P2).
+  Hecho en P2: un «Código» no tiene línea debajo; lo que enseña su SALIDA son las filas que guardó su prueba, y en la
+  app de escritorio sobre el servidor y la caja reales, con el código del §5.4 y 3.000 filas, esas filas son lo que
+  suman los gastos del almacén, categoría a categoría (la prueba del criterio, que lee las filas guardadas).
 - **AU-28** (F14c, hecho) · Las fechas tienen una ayuda propia y pequeña sobre `packages/calendar/src/time.ts`
   (`$now.plus({days: 7})`, `.startOf('month')`, `.format(…)`), con la zona horaria de Juan. La caja no tiene `Intl`,
   así que no se promete la biblioteca de fechas de n8n entera.
@@ -463,7 +472,7 @@ return categorias.map((c) => ({
 }));
 ```
 
-- **AU-30** (F14c, en parte) · «Código» es JavaScript. Su parámetro «Se ejecuta» tiene dos modos, a la vista: «Una
+- **AU-30** (F14c, hecho) · «Código» es JavaScript. Su parámetro «Se ejecuta» tiene dos modos, a la vista: «Una
   vez con todas las filas» (por defecto) y «Una vez por fila». Devuelve filas.
   En la F14c: el código es el cuerpo de una función: `return` da el resultado. Una lista de objetos son filas, un
   objeto es una fila, `null` o `[]` ninguna; otra cosa, o no devolver nada, falla diciendo cuál. «Una vez por fila»
@@ -474,7 +483,11 @@ return categorias.map((c) => ({
   Hecho en E3: el paso en el motor, fuera de `CATALOGUE` (`CODE_STEP` y sus dos ejecutores): sus filas, de qué fila
   viene cada una en «Una vez por fila», la lista vacía en los dos modos y «Si falla» por fila. Falta: el paso en el
   editor (pantallas).
-- **AU-31** (F14c, en parte) · Lee colecciones solo por las conexiones del paso: `$col('Gastos').find({ where,
+  Hecho en P2: «Código» en «Añadir paso», bajo «Transformar» y al buscar «código», sin estar en `CATALOGUE`
+  (`BESIDE_CATALOGUE`); nace llamado «Código», con «Se ejecuta» a la vista como dos opciones («Una vez con todas las
+  filas», la primera) y su editor (AU-36). En la app de escritorio, el código del §5.4 escrito en él corre sobre
+  3.000 filas en la caja real.
+- **AU-31** (F14c, hecho) · Lee colecciones solo por las conexiones del paso: `$col('Gastos').find({ where,
   sort, limit })`, `.get(id)`, `.count(…)`, `.sum('importe', …)`. `where` es el mismo filtro de las vistas, escrito
   como una lista de reglas: `[{ field: 'importe', op: 'gt', value: 50 }]`. Citar una colección que el paso no tiene
   conectada no pasa la validación (ni se prueba ni se publica): dice «Conecta «Gastos» a este paso», con el botón
@@ -494,6 +507,10 @@ return categorias.map((c) => ({
   `sum` es `code.read.query`.
   Hecho en S1: el código del §5.4, con colecciones de otros nombres, corre en una prueba sobre el almacén real con
   3.000 filas y la caja real, y da lo mismo dos veces. Falta: el aviso con su botón en la app (pantallas).
+  Hecho en P2: debajo del editor, «Conecta «Gastos» a este paso», una vez por colección aunque se cite dos, con
+  «Conectar», que le añade la conexión que lee sin filtros y no guarda nada (nunca con permiso de guardar: eso es
+  AU-176); mientras está, «Probar paso» no se puede pulsar y dice por qué. En la app de escritorio, sobre la caja real
+  y 3.000 filas, con el código del §5.4. La fila de la conexión en su tabla es AU-41 (P3).
 - **AU-32** (F14c, en parte) · El código no escribe por sí mismo (lo de A-09 se queda: pide, y Boni comprueba y
   aplica). Devuelve filas y las escriben los pasos «Colección» que le siguen, que pasan por la política; o pide
   guardar por una conexión que lo permite, y lo guarda el motor (AU-172 a AU-176, Juan, 2026-11-16).
@@ -506,7 +523,7 @@ return categorias.map((c) => ({
   no tienen origen: un paso «Colección» con «Las filas que llegan» detrás falla con `row.notSaved`.
   Comprobado en P1: la vista previa no escribe (en una expresión no hay `$col`, AU-184). Falta: pedir guardar por una
   conexión, que lo guarda el motor (AU-175, F14d), y la conexión que lo permite en la app (AU-176, P3).
-- **AU-33** (F14c, en parte) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
+- **AU-33** (F14c, hecho) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
   salida, con la línea que lo escribió. Un error señala su línea en el editor y dice el mensaje tal cual.
   En la F14c: la consola se guarda con la prueba del paso: hasta 200 líneas de 2.000 caracteres. Las que sobran se
   cuentan («y 340 líneas más») y no hacen fallar el paso. La consola y el mensaje de un error son texto de quien
@@ -520,6 +537,10 @@ return categorias.map((c) => ({
   Hecho en S1: la consola y el mensaje de un error quedan con la prueba del paso en el almacén de Juan, y ninguno se
   escribe en la salida del servidor (lo comprueba una prueba que escucha `console` y la salida del proceso). Falta
   (pantallas): darlos a la app con la prueba del paso, la «Consola» y la marca en el editor.
+  Hecho en P2: el servidor da la consola con la prueba del paso (`StepTestView.console`); la «Consola», plegable
+  debajo de la SALIDA, pinta cada línea como texto plano con su línea y, por fila, su fila, deja fuera lo que no es
+  una línea de texto y dice «y 340 líneas más»; un fallo marca su línea en el editor y dice el mensaje tal cual. En la
+  app de escritorio, el `console.log` del §5.4 se ve con su línea.
 - **AU-34** (F14c, hecho) · Sin red, sin ficheros, sin reloj propio (`$now` es la hora de la ejecución) y con el
   azar sembrado: repetir una ejecución da lo mismo.
   En la F14c: `Date.now()` y `new Date()` dan también la hora de la ejecución. La hora se toma una vez al empezar la
@@ -537,7 +558,7 @@ return categorias.map((c) => ({
   Hecho en S1: la prueba guarda en el almacén la hora y la semilla de cada paso (`KeptRecord.clock`); «Probar paso» en
   un paso posterior reutiliza lo que dio el «Código» anterior, con su hora, y al volver a correr el «Código» toma la
   hora y la semilla de la prueba nueva.
-- **AU-35** (F14c, en parte) · La caja tiene tiempo, memoria y tamaño máximos. Pasarse dice cuál y por cuánto.
+- **AU-35** (F14c, hecho) · La caja tiene tiempo, memoria y tamaño máximos. Pasarse dice cuál y por cuánto.
   En la F14c: cada tope es un número con nombre (`CODE_LIMITS`, `code.ts`): los caracteres de un «Código» (20.000) y
   de una expresión (2.000), que comprueba la validación; el tiempo de una llamada (5 s), sus operaciones, su memoria
   (64 MB) y su pila, lo que se le manda (8 MB), lo que devuelve (4 MB y 10.000 filas), las lecturas de una evaluación
@@ -563,7 +584,10 @@ return categorias.map((c) => ({
   Hecho en P1: cada tope tiene sus palabras en los dos idiomas, con cuál y, donde se sabe, por cuánto (`words.ts`,
   `words.test.ts`), y un `{{ }}` demasiado largo lo dice debajo antes de probar, sin pedir nada al servidor (la
   prueba de AU-35 en `e2e-boni/automations-code.spec.ts`). Falta: que un «Código» lo diga en su editor (P2).
-- **AU-36** (F14c, en parte) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
+  Hecho en P2: debajo del editor de un «Código», cuántos caracteres tiene de los 20.000; pasarse lo dice en `--bad`
+  con el tope y lo que tiene, sin marcar el código y sin dejar probar, y un tope pasado al probar se dice con sus
+  palabras en la vista del paso.
+- **AU-36** (F14c, hecho) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
   conectadas, y marca lo que no existe antes de probar.
   En la F14c: el editor lee el código con el mismo lector que el servidor (`readCode`, `javascript.ts`), así que lo
   que marca es lo que dirá la validación. Un campo que la última prueba del paso citado no dio se subraya como aviso y
@@ -574,6 +598,15 @@ return categorias.map((c) => ({
   da nada; cada problema lleva su sitio (`line`, `column`, `from`, `to`), contado desde el principio del valor; y un
   campo que la última prueba no dio, del paso citado o de los que llegan, es `code.fieldNotGiven`, un aviso con el
   que `canRun` sigue. Falta: el editor que los pinta (pantallas).
+  Hecho en P2: el editor (CodeMirror 6, cargado al abrir el primer «Código»; `CodeEditor.tsx`): completa con
+  `completions`, marca cada problema en su sitio (los errores en `--bad`, los avisos en `--warn`), y un error deja
+  «Probar paso» sin pulsar diciendo por qué; con los colores del tema de la app y con el teclado (Tab sangra, Escape
+  cierra la lista sin salir del editor). Lo que marca es lo que da `validate` para el mismo borrador, sin más ni menos,
+  en una tabla de códigos (`code.test.ts`). Sin probar, en el escritorio: que tecla a tecla, a la velocidad de una
+  persona, el editor no se quede atrás con 3.000 filas (la prueba escribe línea a línea).
+  En el teléfono (AU-74), un «Código» es para leer: su código no se cambia, «Se ejecuta» tampoco, el aviso de una
+  colección sin conectar no lleva «Conectar» y no hay «Probar paso» (la prueba de AU-74 en
+  `e2e-boni/automations-code.spec.ts`).
 - **AU-37** (F14c, hecho) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados. El
   código puede cambiar las filas que le llegan al paso (`for (const fila of $input.all()) fila.total = 1; return
   $input.all()`), y lo que devuelve es lo que da el paso. Cada evaluación tiene su propia copia de esas filas, así que
@@ -592,7 +625,7 @@ return categorias.map((c) => ({
   mirar.
   Hecho en E3: el motor no guarda de una evaluación más que sus valores, su consola y su cuenta, y lo que dio el paso
   anterior, la ENTRADA de una prueba y la colección siguen siendo lo que llegó aunque el código cambie sus filas.
-- **AU-38** (F14c, en parte) · Lo que cuesta evaluar una expresión por fila se mide con 3.000 filas antes de salir
+- **AU-38** (F14c, hecho) · Lo que cuesta evaluar una expresión por fila se mide con 3.000 filas antes de salir
   (A-15), y un paso «por fila» manda las filas a la caja por tandas, no de una en una.
   En la F14c: las expresiones de un paso se calculan para todas sus filas antes de trabajar las filas, por tandas de
   500 y todas las expresiones del paso en la misma llamada. El tiempo fijado se escribe en las pruebas al medir, que
@@ -617,6 +650,10 @@ return categorias.map((c) => ({
   una llamada media; con hilos de reserva arrancados antes (tarea 138, medido el mismo día con carga 2 a 3), la vacía
   cuesta de 68 a 74 ms, la media unos 98 y la prueba entera 3,3 s. La prueba fija 10 s de reloj (ensanchados por la
   carga, `under`) y que el montón del servidor no crezca 160 MB (creció entre 44 y 85). Falta: en la app de escritorio (pantallas).
+  Hecho en P2: en la app de escritorio sobre el servidor y la caja reales, «Probar» de un paso con dos expresiones con
+  JavaScript y de un «Código» «Una vez por fila», sobre 3.000 filas, termina dentro de los 15 s que fija esa prueba
+  (los 10 s del servidor y lo que cuesta la app), y mientras corre un clic en una tarjeta la selecciona en menos de
+  1 s.
 **El código que guarda** (Juan, 2026-11-16, decisiones 1 y 4 del §10). Un «Código» puede pedir crear, modificar o
 eliminar filas de una colección conectada, si su conexión lo permite (AU-176). Lo pide; lo guarda el motor, por el
 mismo camino que un paso «Colección». Antes de ejecutarlo, Boni ya sabe qué puede cambiar, porque lee el código

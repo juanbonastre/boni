@@ -25,7 +25,7 @@ import {
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
-  stepType,
+  specOf,
   WRITE_ACTIONS,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
@@ -87,6 +87,8 @@ export const DO = {
   /** «‹ ›» under an expression: the row before and after the one it is worked out with (AU-23). */
   rowBefore: "auto.do.rowBefore",
   rowAfter: "auto.do.rowAfter",
+  /** «Conecta «Gastos» a este paso» (AU-31): connects the collection the code cites. */
+  connect: "auto.do.connect",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
@@ -136,7 +138,7 @@ export function catalogueKeys(): string[] {
  * an entry of one action («Buscar filas») by that action's and its type's.
  */
 export function entryNames(t: T, entry: { type: string; action?: string }): string[] {
-  const spec = stepType(entry.type);
+  const spec = specOf(entry.type);
   const own = t(KEY.step(entry.type));
   if (entry.action) return [t(KEY.action(entry.type, entry.action)), own];
   return spec && spec.actions.length > 1
@@ -288,7 +290,7 @@ export interface Namer {
 export function namer(t: T, collections: Readonly<Record<string, string>>): Namer {
   return {
     auto(step) {
-      const spec = stepType(step.type);
+      const spec = specOf(step.type);
       if (!spec) return step.type;
       const action = spec.actions.length > 1 ? actionOf(step) : undefined;
       const phrase = action ? t(KEY.action(spec.type, action.key)) : t(KEY.step(spec.type));

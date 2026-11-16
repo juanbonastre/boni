@@ -13,6 +13,7 @@ import type {
   Automation,
   Cell,
   CodeFailure,
+  ConsoleLine,
   Problem,
   StepError,
   StepFailure,
@@ -45,6 +46,8 @@ export interface StepTest {
   error?: StepError;
   /** The step changed since (AU-92). */
   stale: boolean;
+  /** «Consola» (AU-33): the code's own text, checked before it is painted (automations/code.ts `consoleOf`). */
+  console?: { lines: ConsoleLine[]; dropped: number };
 }
 
 /** What the editor opens with. */

@@ -3,7 +3,7 @@
  * decides nothing. It is made from the catalogue alone: a category is there when the catalogue has a step of it, so
  * a later phase's category appears with its first step and nothing here changes.
  */
-import { CATALOGUE, type Category, type StepTypeSpec } from "@boni/automations";
+import { CATALOGUE, type Category, CODE_TYPE, type StepTypeSpec, specOf } from "@boni/automations";
 
 /**
  * The panel's categories in its order, by the catalogue's: said by what one wants to do through `KEY.category`
@@ -53,8 +53,14 @@ export function panelList(showing: "empty" | "triggers" | "steps"): PanelList {
   };
 }
 
+/**
+ * The types the engine runs that are not in `CATALOGUE` yet (code.ts says why), each at the end of its category:
+ * «Código» under «Transformar» (AU-30).
+ */
+const BESIDE_CATALOGUE: readonly StepTypeSpec[] = [specOf(CODE_TYPE) as StepTypeSpec];
+
 const entriesOf = (category: Category): PanelEntry[] =>
-  CATALOGUE.filter((t) => t.category === category).flatMap(entriesOfType);
+  [...CATALOGUE, ...BESIDE_CATALOGUE].filter((t) => t.category === category).flatMap(entriesOfType);
 const entriesOfType = (spec: StepTypeSpec): PanelEntry[] =>
   ACTIONS_AS_ENTRIES.includes(spec.type)
     ? spec.actions.map((a) => ({ type: spec.type, action: a.key }))

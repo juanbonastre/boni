@@ -63,13 +63,15 @@ describe("the panel «Añadir un paso»", () => {
     );
     expect(cats.size).toBe(PANEL_CATEGORIES.length);
     expect(searchPanel("zzzz", "steps", say)).toEqual([]);
-    // Empty, it is the whole list; over the triggers when the panel lists them.
+    // Empty, it is the whole list, with «Código» beside the catalogue (AU-30); over the triggers when the panel
+    // lists them.
     expect(searchPanel("", "steps", say)).toHaveLength(
       CATALOGUE.filter((s) => s.category !== "trigger").reduce(
         (n, s) => n + (s.type === "collection" ? s.actions.length : 1),
-        0,
+        1,
       ),
     );
+    expect(searchPanel("código", "steps", say)).toEqual([{ type: "code" }]);
     expect(searchPanel("usuario", "empty", say)).toEqual([{ type: "manual" }]);
   });
 });

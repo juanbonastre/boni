@@ -293,12 +293,15 @@ export function TestStepButton({
   step,
   className,
   besideSays = false,
+  blocked = false,
 }: {
   t: T;
   state: EditorState;
   step: Step;
   className: string;
   besideSays?: boolean;
+  /** A «Código» whose source cannot run as it is (AU-31, AU-36): the view says why. */
+  blocked?: boolean;
 }) {
   const tester = useTester();
   const phone = usePhone();
@@ -309,7 +312,7 @@ export function TestStepButton({
       type="button"
       className={className}
       data-boni-action="automations.test"
-      disabled={why !== null || !tester}
+      disabled={why !== null || blocked || !tester}
       onClick={() => tester?.run(step.id)}
     >
       {t(!besideSays && state.testing?.step === step.id ? "auto.view.testing" : DO.testStep)}
@@ -526,10 +529,16 @@ export function StepInput({
   step,
   inputName,
   fieldsOf,
+  withKeys = false,
 }: {
   state: EditorState;
   step: Step;
   inputName: (id: string) => string;
+  /**
+   * A «Código»'s input (AU-25): each field with its key beside its name, as the code cites it. The one place outside
+   * an expression where a key is seen.
+   */
+  withKeys?: boolean;
   /** The fields that come into `input` of `step`, or out of `output` of a step before it, as the draft knows them. */
   fieldsOf: (at: { step: string; input?: string; output?: string }) => readonly ConditionField[];
 }) {
@@ -665,13 +674,20 @@ export function StepInput({
           ask={tester.rows(ask)}
           total={ask.total}
           show={show}
-          names={fieldNames(t, fields)}
+          names={withKeys ? keyedNames(t, fields) : fieldNames(t, fields)}
           choices={choiceNames(fields)}
           from={phone ? undefined : from}
         />
       )}
     </div>
   );
+}
+
+/** A field's name with its key beside it, «Precio · precio», where the key is what one writes (AU-25). */
+function keyedNames(t: T, fields: readonly ConditionField[]): Record<string, string> {
+  const named = fieldNames(t, fields);
+  for (const f of fields) if (named[f.key] !== f.key) named[f.key] = `${named[f.key]} · ${f.key}`;
+  return named;
 }
 
 /** The mark of how a step ended in its last test, on its card (AU-67): its word, and why it failed. */

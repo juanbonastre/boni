@@ -10,6 +10,7 @@
 import {
   ACTION,
   type Automation,
+  CODE_PARAMS,
   type Control,
   isExpr,
   isTrigger,
@@ -25,7 +26,15 @@ import { Trash2, X } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { citedName } from "../automations/cite.ts";
 import type { Sample } from "../automations/client.ts";
-import { changeAction, removeOption, rename, setParam, setSetting } from "../automations/edit.ts";
+import { codeBlocked, codeContextOf, isCode } from "../automations/code.ts";
+import {
+  changeAction,
+  connectCollection,
+  removeOption,
+  rename,
+  setParam,
+  setSetting,
+} from "../automations/edit.ts";
 import {
   type ConditionField,
   cannotTest,
@@ -48,6 +57,7 @@ import { DO, KEY, labelWord, type Namer, summaryWords } from "../automations/wor
 import type { DataType as AppType, DataField } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
+import { CodeConsole, CodeParams } from "./AutomationCode.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
 import {
   StepInput,
@@ -881,6 +891,16 @@ export function AutomationStepView({
         ?.focus();
     });
   };
+  // A «Código» reads its source with the server's own context (AU-36): what it marks is what validation says.
+  const codeContext = isCode(step)
+    ? codeContextOf(collections, state.draft, state.tests, (id) =>
+        fieldsOut(state.draft, id, fieldsOf),
+      )
+    : null;
+  const blocked = codeContext ? codeBlocked(step, state.draft, codeContext) : null;
+  const lastTest = state.tests[step.id];
+  const codeFailure =
+    lastTest?.state === "failed" && !lastTest.stale ? lastTest.error?.why : undefined;
   const outputWord = (id: string) => {
     if (Array.isArray(step.params.rules))
       for (const r of step.params.rules as { id?: unknown; name?: unknown }[])
@@ -907,6 +927,7 @@ export function AutomationStepView({
           state={state}
           step={step}
           inputName={(id) => t(KEY.input(id))}
+          withKeys={isCode(step)}
           fieldsOf={(at) =>
             at.input !== undefined
               ? knownFields(state.draft, at.step, at.input, fieldsOf)
@@ -936,6 +957,7 @@ export function AutomationStepView({
         fields={fieldsOut(state.draft, step.id, fieldsOf)}
         goToParam={goToParam}
       />
+      {codeContext && <CodeConsole t={t} test={state.tests[step.id]} locale={cite.locale} />}
     </section>
   );
 
@@ -997,6 +1019,23 @@ export function AutomationStepView({
             </div>
           );
         })}
+        {codeContext && (
+          <CodeParams
+            t={t}
+            step={step}
+            draft={state.draft}
+            context={codeContext}
+            locale={cite.locale}
+            names={cite.said ?? {}}
+            readOnly={phone}
+            setMode={(m) => edit((d) => setParam(d, step.id, CODE_PARAMS.mode, m, names))}
+            setSource={(s) =>
+              edit((d) => setParam(d, step.id, CODE_PARAMS.source, s, names), `${step.id}.source`)
+            }
+            connect={(key) => edit((d) => connectCollection(d, step.id, key))}
+            {...(codeFailure ? { failure: codeFailure } : {})}
+          />
+        )}
         {options.length > 0 && (
           <PopButton
             label={t(DO.addOption)}
@@ -1142,10 +1181,12 @@ export function AutomationStepView({
           tabIndex={-1}
           data-step={step.id}
           onKeyDown={(e) => {
-            // Esc in a field leaves the field; the next one closes the view (the canvas's keys).
+            // Esc in a field leaves the field; the next one closes the view (the canvas's keys). One the field used
+            // itself (the code editor closing its completion) is left to it.
             const el = e.target as HTMLElement;
             if (
               e.key === "Escape" &&
+              !e.nativeEvent.defaultPrevented &&
               el !== e.currentTarget &&
               el.closest("input, textarea, select, [contenteditable='true']")
             ) {
@@ -1175,16 +1216,25 @@ export function AutomationStepView({
               {summary && <p className="auto-view-summary">{summary}</p>}
             </div>
             <div className="auto-view-test">
-              {why && !phone && (
+              {(why || blocked) && !phone && (
                 <span className="auto-view-why">
-                  {why.why === "testing"
+                  {why?.why === "testing"
                     ? t("auto.view.testing")
-                    : t("auto.view.missing", {
-                        names: why.params.map((p) => paramName(p.key)).join(", "),
-                      })}
+                    : why
+                      ? t("auto.view.missing", {
+                          names: why.params.map((p) => paramName(p.key)).join(", "),
+                        })
+                      : t(`auto.view.code.${blocked}`)}
                 </span>
               )}
-              <TestStepButton t={t} state={state} step={step} className="btn" besideSays />
+              <TestStepButton
+                t={t}
+                state={state}
+                step={step}
+                className="btn"
+                besideSays
+                blocked={blocked !== null}
+              />
             </div>
             <button
               type="button"

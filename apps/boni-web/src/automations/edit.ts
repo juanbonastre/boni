@@ -17,6 +17,7 @@ import {
   actionOf,
   inputsOf,
   isTrigger,
+  newConnection,
   outputsOf,
   type ParamSpec,
   type ParamValue,
@@ -24,7 +25,7 @@ import {
   SETTINGS_DEFAULTS,
   type Step,
   type StepSettings,
-  stepType,
+  specOf,
   wouldCycle,
 } from "@boni/automations";
 import { isEmpty, rowsOf } from "./panel.ts";
@@ -54,7 +55,7 @@ export function addStep(
   names: Namer,
   newId: NewId,
 ): { draft: Automation; step: string } {
-  const spec = stepType(type);
+  const spec = specOf(type);
   if (!spec) throw new Error(`automations: no step type ${type}`);
   // A type with several actions holds the one chosen, or its first: without one it would have no output to hang
   // the next step from. Nothing else: every other parameter is its default until Juan sets it (AU-87).
@@ -213,6 +214,20 @@ export function pasteSteps(
   };
 }
 
+/**
+ * A «Código» connected to a collection it cites (AU-31): reading it with no limits and nothing else (`newConnection`);
+ * one it already has is left as it is.
+ */
+export function connectCollection(draft: Automation, step: string, collection: string): Automation {
+  const before = draft.steps.find((s) => s.id === step);
+  if (!before || (before.connections ?? []).some((c) => c.collection === collection)) return draft;
+  const after: Step = {
+    ...before,
+    connections: [...(before.connections ?? []), newConnection(collection)],
+  };
+  return { ...draft, steps: draft.steps.map((s) => (s.id === step ? after : s)) };
+}
+
 /** A parameter's value. An option that is not in `step.params` is added by setting it (AU-76). */
 export function setParam(
   draft: Automation,
@@ -304,7 +319,7 @@ export function changeAction(
   names: Namer,
 ): { draft: Automation; dropped: string[] } {
   const before = draft.steps.find((s) => s.id === step);
-  const spec = before && stepType(before.type);
+  const spec = before && specOf(before.type);
   const next = spec?.actions.find((a) => a.key === action);
   if (!before || !spec || !next || before.params[ACTION] === action) return { draft, dropped: [] };
   const was = [...spec.params, ...(actionOf(before)?.params ?? [])];

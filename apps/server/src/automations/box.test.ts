@@ -788,6 +788,8 @@ describe("what «Código» did, kept with the test", () => {
       expect(t.state).toBe("failed");
       const k = keptOf(a.id, a.step("Código"));
       expect(k.console?.lines.map((l) => l.text)).toEqual(["contando filas de ejemplo"]);
+      // Given with the step's test, for «Consola» under its output.
+      expect(t.tests[a.step("Código")]?.console).toEqual(k.console);
       expect(k.error?.why).toMatchObject({
         code: "code.threw",
         detail: { message: expect.stringContaining("falla de ejemplo"), line: 2 },

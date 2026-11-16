@@ -4,6 +4,7 @@
  */
 import {
   ArrowUpDown,
+  Braces,
   CalendarDays,
   Combine,
   CopyMinus,
@@ -38,6 +39,7 @@ const ICONS: Readonly<Record<string, LucideIcon>> = {
   if: GitFork,
   switch: Signpost,
   stop: OctagonX,
+  code: Braces,
 };
 
 export const iconOf = (type: string): LucideIcon => ICONS[type] ?? Workflow;

@@ -2,6 +2,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clock, under } from "@boni/pace";
 import {
   type ElectronApplication,
   _electron as electron,
@@ -25,8 +26,12 @@ import { type Server, startServer } from "./server.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const PASSWORD = "una contraseña larga de ejemplo";
-/** «Gasto»'s 3,000 rows: each `importe` from 0 to 99, thirty times, as an import leaves them. */
+/**
+ * «Gasto»'s 3,000 rows: each `importe` from 0 to 99, thirty times, as an import leaves them, and each of one of the
+ * twelve «Categorías» in turn.
+ */
 const ROWS = 3000;
+const CATEGORIES = 12;
 const NAME = "Doblar los gastos";
 
 let dir = "";
@@ -56,26 +61,59 @@ test.beforeAll(async () => {
     store,
     [
       {
+        key: "categorias",
+        name: "Categorías",
+        folder: "finanzas/categorias/",
+        fields: { Nombre: "text", Presupuesto: "number" },
+      },
+      {
         key: "gasto",
         name: "Gasto",
         folder: "finanzas/gastos/",
-        fields: { Fecha: "date", Importe: "number" },
+        fields: {
+          Fecha: "date",
+          Importe: "number",
+          Categoría: { type: "relation", to: "categorias" },
+        },
       },
     ],
     {},
   );
-  const type = store.schema().types.t_gasto;
-  if (!type) throw new Error("no Gasto");
-  const id = (name: string) => type.fields.find((f) => f.name === name)?.id as string;
-  const label = type.label as never;
+  const fieldsOf = (t: string) => {
+    const type = store.schema().types[t];
+    if (!type) throw new Error(`no ${t}`);
+    return {
+      id: (name: string) => type.fields.find((f) => f.name === name)?.id as string,
+      label: type.label as never,
+    };
+  };
+  const cat = fieldsOf("t_categorias");
+  const gasto = fieldsOf("t_gasto");
   store.batch(() => {
+    const cats: string[] = [];
+    for (let i = 0; i < CATEGORIES; i++)
+      cats.push(
+        store.create(
+          "t_categorias",
+          {
+            [cat.id("Título")]: { value: `Categoría ${i + 1}`, label: cat.label },
+            [cat.id("Nombre")]: { value: `Categoría ${i + 1}`, label: cat.label },
+            [cat.id("Presupuesto")]: { value: 4000 + i * 100, label: cat.label },
+          },
+          { actor: "import", device: "seed" },
+        ).entity.id,
+      );
     for (let i = 0; i < ROWS; i++)
       store.create(
         "t_gasto",
         {
-          [id("Título")]: { value: `Gasto ${i + 1}`, label },
-          [id("Fecha")]: { value: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`, label },
-          [id("Importe")]: { value: (i * 7) % 100, label },
+          [gasto.id("Título")]: { value: `Gasto ${i + 1}`, label: gasto.label },
+          [gasto.id("Fecha")]: {
+            value: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
+            label: gasto.label,
+          },
+          [gasto.id("Importe")]: { value: (i * 7) % 100, label: gasto.label },
+          [gasto.id("Categoría")]: { value: cats[i % CATEGORIES] as string, label: gasto.label },
         },
         { actor: "import", device: "seed" },
       );
@@ -240,8 +278,163 @@ test("AU-27 AU-23 · in the desktop app over the real server and the real box, t
   });
 });
 
-test.fixme("AU-30 AU-31 AU-33 · the criterion of F14c in the desktop app over the real server and the real box: a «Código» with the code of the design's §5.4 written in its editor, its two collections connected, «Probar paso» run over 3,000 rows, its rows seen in the output and its `console.log` in «Consola», and nothing written in any collection", async () => {});
+/** A draft made through the app's own door, each step after the one before it; its id. */
+async function make(w: Page, name: string, steps: { id: string }[]): Promise<string> {
+  const made = await ask(w, "POST", "api/agent/automations", {
+    automation: {
+      format: FORMAT,
+      id: "",
+      version: 0,
+      name,
+      steps,
+      arrows: steps.slice(1).map((s, i) => ({
+        from: { step: steps[i]?.id, output: "main" },
+        to: { step: s.id, input: "main" },
+      })),
+      settings: {},
+    },
+  });
+  return made.id as string;
+}
+/** «Automatizaciones» from the sidebar, and `name` opened with its `steps` boxes. */
+async function openAutomation(w: Page, name: string, steps: number) {
+  await w
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await w.locator(".db-table tbody tr").getByText(name, { exact: true }).click();
+  await expect(w.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(name);
+  await expect(w.locator(".auto-card")).toHaveCount(steps);
+}
+/** How many rows each collection has, as the server says it. */
+async function counts(w: Page): Promise<Record<string, number>> {
+  const b = await ask(w, "GET", "api/data/types");
+  return Object.fromEntries(
+    (b.types as { key?: string; count: number }[]).map((t) => [t.key ?? "", t.count]),
+  );
+}
+const START = {
+  id: "s_01kx3inicio00",
+  name: "Disparado por el usuario",
+  type: "manual",
+  params: { fields: [] },
+};
+const FIND = {
+  id: "s_01kx3buscar00",
+  name: "Buscar filas en Gasto",
+  type: "collection",
+  params: { collection: "gasto", action: "find", where: [], sort: [], limit: 5000 },
+};
+/** The code of the design's §5.4, as it is there: this store's collections have its names. */
+const BY_CATEGORY = `// Lo gastado por categoría, con el presupuesto de cada una
+const categorias = $col('Categorías').find();
+const gastado = {};
+for (const gasto of $input.all()) {
+  gastado[gasto.categoria] = (gastado[gasto.categoria] ?? 0) + gasto.importe;
+}
+console.log('categorías con gasto:', Object.keys(gastado).length);
+return categorias.map((c) => ({
+  categoria: c.nombre,
+  gastado: gastado[c.id] ?? 0,
+  presupuesto: c.presupuesto,
+  pasada: (gastado[c.id] ?? 0) > c.presupuesto,
+}));`;
 
-test.fixme("AU-31 · in the desktop app over the real server, citing a collection that is not connected says «Conecta … a este paso»; the button connects it and the step can be tested", async () => {});
+test("AU-30 AU-31 AU-33 · the criterion of F14c in the desktop app over the real server and the real box: a «Código» with the code of the design's §5.4 written in its editor, its collection connected from «Conecta … a este paso», «Probar paso» run over 3,000 rows, its rows seen in the output and its `console.log` in «Consola», and nothing written in any collection", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  const name = "Gastado por categoría";
+  const code = { id: "s_01kx3codigo00", name: "Código", type: "code", params: { source: "" } };
+  const id = await make(w, name, [START, FIND, code]);
+  const before = await counts(w);
+  expect(before).toMatchObject({ gasto: ROWS, categorias: CATEGORIES });
+  await openAutomation(w, name, 3);
+  await w.locator(`.auto-card[data-step="${code.id}"]`).dblclick();
+  await expect(view(w)).toHaveAttribute("data-step", code.id);
+  // Written in its editor line by line, at a person's pace (as a whole line, so the editor's closing of brackets
+  // does not add its own).
+  const content = param(w, "source").locator(".cm-content");
+  await content.click();
+  for (const line of BY_CATEGORY.split("\n")) {
+    await w.keyboard.insertText(`${line}\n`);
+    await w.waitForTimeout(60);
+  }
+  const testStep = view(w).locator(".auto-view-test").getByRole("button", { name: "Probar paso" });
+  // «Categorías» is not connected: said with its button, and it cannot be tested.
+  const notice = param(w, "source").locator(".auto-code-connect");
+  await expect(notice).toContainText("Conecta «Categorías» a este paso");
+  await expect(testStep).toBeDisabled();
+  await notice.getByRole("button", { name: "Conectar" }).click();
+  await expect(notice).toHaveCount(0);
+  await expect(testStep).toBeEnabled();
+  await testStep.click();
+  // «Consola»: its line, from the line of the code that wrote it.
+  const line = view(w).locator(".auto-console .auto-console-line").first();
+  await expect(line).toContainText(`categorías con gasto: ${CATEGORIES}`, { timeout: 60_000 });
+  await expect(line.locator(".auto-console-where")).toHaveText("línea 7");
+  // Its rows, one per category, with what the 3,000 expenses add up to in each.
+  await expect(view(w).getByRole("region", { name: "Salida" })).toContainText("Categoría 1");
+  const kept = await ask(
+    w,
+    "GET",
+    `api/agent/automations/${id}/test/rows?${new URLSearchParams({ step: code.id, side: "out", name: "main", offset: "0" })}`,
+  );
+  const want = new Map<string, number>();
+  for (let i = 0; i < ROWS; i++) {
+    const c = `Categoría ${(i % CATEGORIES) + 1}`;
+    want.set(c, (want.get(c) ?? 0) + ((i * 7) % 100));
+  }
+  const rows = (kept.rows as { json: { categoria: string; gastado: number } }[]).map((r) => r.json);
+  expect(rows).toHaveLength(CATEGORIES);
+  for (const r of rows) expect(r.gastado, r.categoria).toBe(want.get(r.categoria));
+  // Saved with the draft: the connection reads «Categorías» and nothing more; and nothing was written.
+  const draft = await ask(w, "GET", `api/agent/automations/${id}`);
+  const saved = draft.automation.steps.find((s: { id: string }) => s.id === code.id);
+  expect(saved.connections).toEqual([
+    { collection: "categorias", read: {}, create: false, update: false, remove: false },
+  ]);
+  expect(await counts(w)).toEqual(before);
+});
 
-test.fixme("AU-38 · in the desktop app over the real server and the real box, an expression with JavaScript over 3,000 rows is tested within the time written in the test, and the canvas answers while it runs", async () => {});
+test("AU-38 · in the desktop app over the real server and the real box, expressions with JavaScript and a «Código» «Una vez por fila» over 3,000 rows are tested within the time written in the test, and the canvas answers while it runs", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  const name = "Doblar con tiempo";
+  const steps = [
+    START,
+    FIND,
+    {
+      id: "s_01kx3doblar00",
+      name: "Doblar",
+      type: "edit",
+      params: {
+        keep: "all",
+        fields: [
+          { field: "doble", value: { expr: "{{ $json.importe * 2 }}" } },
+          { field: "nivel", value: { expr: "{{ $json.importe > 50 ? 'alto' : 'bajo' }}" } },
+        ],
+      },
+    },
+    {
+      id: "s_01kx3triple00",
+      name: "Triplicar",
+      type: "code",
+      params: { mode: "perRow", source: "return { ...$json, triple: $json.importe * 3 };" },
+    },
+  ];
+  await make(w, name, steps);
+  await openAutomation(w, name, 4);
+  const from = clock();
+  await testBar(w).locator(".auto-test-go").click();
+  // While it runs, a click on a box selects it at once.
+  const card = w.locator('.auto-card[data-step="s_01kx3buscar00"]');
+  const asked = clock();
+  await card.click();
+  await expect(card).toHaveClass(/selected/, { timeout: 5_000 });
+  const answered = clock() - asked;
+  const log = testBar(w).locator(".auto-log-line");
+  expect(await log.textContent()).not.toContain("bien");
+  under(answered, 1_000, "clock", "selecting a box while the test runs");
+  await expect(log).toContainText("bien", { timeout: 60_000 });
+  await expect(log).toContainText("4 pasos");
+  // The server's test fixes 10 s for five steps of JavaScript (AU-38, S1 and task 138); with the app's own share: 15 s.
+  under(clock() - from, 15_000, "clock", "the test of 3,000 rows in the desktop app");
+});

@@ -792,8 +792,8 @@ export const stepType = (type: string): StepTypeSpec | undefined =>
   CATALOGUE.find((t) => t.type === type);
 
 /**
- * «Código» (code.ts, F14c): reachable by its type but not in `CATALOGUE` until the screen has its words, so the canvas
- * does not offer it and validation without a `CodeContext` refuses it (`step.unknownType`). One input, one output,
+ * «Código» (code.ts, F14c): reachable by its type but not in `CATALOGUE`: the editor's panel offers it beside the
+ * catalogue (apps/boni-web adding.ts, AU-30), and validation without a `CodeContext` refuses it (`step.unknownType`). One input, one output,
  * no parameter the catalogue paints (its two are the editor's, validated by `validate`), and one action whose mode is
  * its «Se ejecuta». Its effect is `none`: it changes the rows it receives, and what it reads goes through its
  * connections (box.ts), not through an action that reads.
@@ -821,8 +821,8 @@ const CODE_PER_ROW: ActionSpec = {
   pairs: true,
 };
 
-/** A type the engine can run by its key: the catalogue's, or «Código». */
-const specOf = (type: string): StepTypeSpec | undefined =>
+/** A type the engine can run by its key: the catalogue's, or «Código» (the editor's panel adds it, adding.ts). */
+export const specOf = (type: string): StepTypeSpec | undefined =>
   type === CODE_TYPE ? CODE_STEP : stepType(type);
 
 /**
