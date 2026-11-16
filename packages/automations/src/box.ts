@@ -22,7 +22,7 @@ import {
   narrow,
   type ReadAsk,
 } from "./connections.ts";
-import type { Gate, Labelled, StoredRow } from "./effects.ts";
+import { Denied, type Gate, type Labelled, type StoredRow } from "./effects.ts";
 import { type FieldsRead, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
 
@@ -112,10 +112,17 @@ export interface ReadRecord {
   ms: number;
 }
 
+/**
+ * One evaluation's end once every read is made: as the box's, or `denied` when the policy refused a read it asked
+ * for, or would have asked Juan about it (AU-161). `denied` is the gate's no, which the engine gives the unit as
+ * `policy.denied` or `policy.waits`: the code never learns it.
+ */
+export type Settled = Exclude<Evaluated, { state: "needs" }> | { state: "denied"; denied: Denied };
+
 /** What evaluating a step's JavaScript over its input gave. */
 export interface StepEvaluation {
-  /** As `BoxAnswer.evaluations` once every read is made: no `needs` is left. */
-  evaluations: readonly Exclude<Evaluated, { state: "needs" }>[];
+  /** One per evaluation: no `needs` is left. */
+  evaluations: readonly Settled[];
   /**
    * The label of everything each evaluation received (AU-169): the rows and steps sent, the code's own label and
    * every read it made. One per evaluation. What it gives carries it and is derived: never a destination (P14).
@@ -165,7 +172,8 @@ export interface EvaluateInput {
  * (AU-163), makes the reads the box asks for (through `narrow`, then the gate, so the policy is asked for each and
  * its rows come labelled: AU-161) and repeats until no evaluation needs one, within `CODE_LIMITS`. A read's values
  * are judged as calculated from everything the evaluation had received before it. It rejects with `CodeFault` only
- * for what stops the whole step (no box, `stepReads`, `stepReadBytes`); one row's failure is that row's `failed`.
+ * for what stops the whole step (no box, `stepReads`, `stepReadBytes`); one row's failure is that row's `failed`,
+ * and a read the policy refuses is `denied` for the rows that asked for it.
  *
  * How, where the contract leaves it open:
  * - «Una vez con todas las filas» is one evaluation with every row; every other case is one per row, in batches of
@@ -178,8 +186,10 @@ export interface EvaluateInput {
  *   console lines (a row that answered `needs` wrote none). A batch's `reads` hold only what that batch asked for.
  * - The label of an evaluation is the worst of its own rows (the fields sent and the row's), every row sent of every
  *   step it cites, the code's own and every read in the call that answered it: never finer, sometimes coarser.
- * - A read the policy refuses rejects the whole step (`Denied`): the code never learns why and cannot go on. A read
- *   that is not one, or of a collection not connected, fails the rows that asked for it.
+ * - A read the policy refuses, or would ask Juan about, fails the rows that asked for it (`denied`), as a read that
+ *   is not one or of a collection not connected does: each follows the step's «Si falla» (AU-16), and with
+ *   «Una vez con todas las filas» that is the whole step. The code never learns why and is not called again for
+ *   those rows (Juan, 2026-11-16, replacing E3's choice that a refused read rejected the whole step).
  */
 export async function evaluate(
   input: EvaluateInput,
@@ -245,7 +255,7 @@ export async function evaluate(
     clock: false,
     random: false,
   };
-  const final: (Exclude<Evaluated, { state: "needs" }> | undefined)[] = new Array(count);
+  const final: (Settled | undefined)[] = new Array(count);
   const labels: Label[] = new Array(count);
   const lines: ConsoleLine[][] = Array.from({ length: count }, () => []);
   const asked: Set<string>[] = Array.from({ length: count }, () => new Set());
@@ -329,9 +339,10 @@ export async function evaluate(
           ...(by.map((at) => joinWith(base[at] as Label, readLabels)) as [Label, ...Label[]]),
         );
         const made = await reader.read(key, read, before);
-        if ("failure" in made)
+        if ("failure" in made || "denied" in made)
           for (const at of by) {
-            final[at] = failedBy(made.failure);
+            final[at] =
+              "failure" in made ? failedBy(made.failure) : { state: "denied", denied: made.denied };
             labels[at] = joinWith(base[at] as Label, readLabels);
           }
         else {
@@ -345,7 +356,7 @@ export async function evaluate(
   }
 
   out.reads = reader.records;
-  out.evaluations = final as Exclude<Evaluated, { state: "needs" }>[];
+  out.evaluations = final as Settled[];
   out.labels = labels;
   const kept: ConsoleLine[] = [];
   for (const l of lines.flat())
@@ -450,12 +461,15 @@ export function jsonBytes(v: unknown): number {
 
 const READ_OPS: readonly string[] = ["find", "get", "count", "sum"];
 
+/** What one read gave the rows that asked for it: its value, why it is not one, or the policy's no. */
+type Made = { value: Cell; label?: Label } | { failure: CodeFailure } | { denied: Denied };
+
 /** The reads of one step in one run: each made once, counted against the step's limits. */
 class Reader {
   readonly input: EvaluateInput;
   readonly gate: Gate;
   readonly records: ReadRecord[] = [];
-  readonly made = new Map<string, { value: Cell; label?: Label } | { failure: CodeFailure }>();
+  readonly made = new Map<string, Made>();
   bytes = 0;
 
   constructor(input: EvaluateInput, gate: Gate) {
@@ -464,16 +478,12 @@ class Reader {
   }
 
   /** A read by the box's key: made once for the step, through the connection and the gate. */
-  async read(
-    key: string,
-    asked: CodeRead,
-    label: Label,
-  ): Promise<{ value: Cell; label?: Label } | { failure: CodeFailure }> {
+  async read(key: string, asked: CodeRead, label: Label): Promise<Made> {
     const done = this.made.get(key);
     if (done) return done;
     if (this.records.length >= CODE_LIMITS.stepReads)
       throw limitFault("stepReads", CODE_LIMITS.stepReads, this.records.length + 1);
-    let made: { value: Cell; label?: Label } | { failure: CodeFailure };
+    let made: Made;
     const start = Date.now();
     let record: ReadRecord | undefined;
     try {
@@ -483,8 +493,10 @@ class Reader {
       record = { collection: ask.collection, op: ask.op, rows: r.rows, bytes: r.bytes, ms: 0 };
       made = { value: r.value, ...(r.label ? { label: r.label } : {}) };
     } catch (e) {
-      if (!(e instanceof CodeFault) || this.stops(e)) throw e;
-      made = { failure: e.why };
+      // The policy's no fails the rows that asked, never the step: «Si falla» decides (Juan, 2026-11-16).
+      if (e instanceof Denied) made = { denied: e };
+      else if (!(e instanceof CodeFault) || this.stops(e)) throw e;
+      else made = { failure: e.why };
     }
     if (record) {
       record.ms = Date.now() - start;

@@ -1301,12 +1301,21 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   que comprueba la conexión y su filtro, la cuenta y la etiqueta.
   En la F14c: la conexión se lee de la automatización guardada, nunca de lo que diga la caja. Cada lectura pregunta a
   la política, y los valores de su filtro se juzgan como calculados, con la peor etiqueta de lo que esa evaluación
-  había recibido hasta ahí. Una lectura negada hace fallar el paso, y el código no puede atraparla. La cuenta de cada
-  lectura (colección, operación, filas, bytes, tiempo) queda en el registro del paso.
+  había recibido hasta ahí. Una lectura negada, o una por la que la política preguntaría, es un fallo de la fila que
+  la pidió y sigue el «Si falla» del paso (AU-16) como cualquier otro fallo de esa fila: con «Parar» (por defecto) se
+  para el paso; con «Salir por error» esa fila sale por «error» con su motivo y las demás siguen; con «Seguir» esa
+  fila se deja y las demás siguen, y el registro del paso cuenta las filas que fallaron y por qué. Con «Una vez con
+  todas las filas» el paso es una unidad. El motivo es el código (`policy.denied` o `policy.waits`) y la regla de la
+  política, nunca un detalle de lo que el código no pudo leer; el código no puede atraparlo y «Reintentos» no lo
+  repite. Lo que `validate` rechaza antes de ejecutar (AU-184) no tiene salida «error», y las escrituras se siguen
+  decidiendo para todo el paso a la vez (AU-174). (Juan, 2026-11-16: sustituye la elección de E3, en la que una
+  lectura negada hacía fallar el paso entero). La cuenta de cada lectura (colección, operación, filas, bytes,
+  tiempo) queda en el registro del paso.
   Hecho en E3: cada lectura que pide la caja pasa por `narrow` (la conexión del paso, nunca lo que diga la caja) y por
   la puerta, que pregunta a la política con los valores del filtro como calculados y con la peor etiqueta recibida
   hasta ahí; sin conexión es `code.read.notConnected` y no llega a la puerta; negada (`policy.denied`) o por preguntar
-  (`policy.waits`) hace fallar el paso, y la cuenta de cada lectura queda en `StepRecord.reads`. Falta: sobre el
+  (`policy.waits`) hacía fallar el paso; desde el 2026-11-16 hace fallar las filas que la pidieron, cada una por el
+  «Si falla» del paso, sin reintento y sin el motivo de la política; la cuenta de cada lectura queda en `StepRecord.reads`. Falta: sobre el
   servidor real, con la automatización como está guardada en el almacén (S1).
 - **AU-162** (F14a, hecho) · Una cita sencilla (un campo de la fila actual o de un paso anterior: `$json.importe`,
   `$('Buscar gastos').first().total`; lo que deja arrastrar un campo) la resuelve el servidor, sin caja, y conserva

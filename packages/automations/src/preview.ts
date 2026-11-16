@@ -196,6 +196,9 @@ export async function preview(input: PreviewInput, box: Box): Promise<Preview> {
       const e = evaluation.evaluations[at];
       if (!e) return failed({ code: "code.unavailable" });
       if (e.state === "failed") return failed({ ...e.failure, param: input.param });
+      // An expression reads no collection, so this cannot be; said as the run says it.
+      if (e.state === "denied")
+        return failed({ code: e.denied.waits ? "policy.waits" : "policy.denied" });
       const values = e.values;
       scope.code = (source) => ({
         value: values[sources.indexOf(source)] ?? null,
