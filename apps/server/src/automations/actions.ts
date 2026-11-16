@@ -27,6 +27,7 @@ import {
   type Hand,
   keepDraft,
   placeSteps,
+  previewExpression,
   ROWS_PAGE,
   type ServiceError,
   setDeleted,
@@ -87,16 +88,19 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step)",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed)",
     args: {
       id,
-      part: { role: "option", describe: "view (the default), rows or sample" },
-      step: { role: "option", describe: "rows and sample: the step's id" },
+      part: { role: "option", describe: "view (the default), rows, sample or preview" },
+      step: { role: "option", describe: "rows, sample and preview: the step's id" },
       side: { role: "option", describe: "rows: in or out" },
       name: { role: "option", describe: "rows: the input's or output's name" },
       offset: { role: "option", describe: "rows: the first row, from 0" },
+      param: { role: "option", describe: "preview: the path to the value in the step" },
+      row: { role: "option", describe: "preview: which row of the step's input, from 0" },
+      expr: { role: "definition", describe: "preview: the expression as it is being typed" },
     },
-    run(c, a) {
+    async run(c, a) {
       const s = handOf(c.service);
       const automation = idOf(a.id);
       const part = textOf(a.part) ?? "view";
@@ -105,6 +109,22 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       if (!step) throw new ToolError("bad-argument");
       if (part === "sample")
         return leaf(answer(testSample(s.store, automation, step)) as never, code);
+      if (part === "preview") {
+        const row = a.row ? plain(a.row) : 0;
+        const expr = textOf(a.expr);
+        if (typeof row !== "number") throw new ToolError("bad-argument");
+        const request = {
+          step,
+          param: textOf(a.param) ?? "",
+          row,
+          ...(expr !== undefined ? { expr } : {}),
+        };
+        const r = await previewExpression(s.store, automation, request, {
+          ...hand(s),
+          zone: s.zone ?? DEFAULT_ZONE,
+        });
+        return leaf(answer(r) as never, code);
+      }
       if (part !== "rows") throw new ToolError("bad-argument");
       const side = textOf(a.side);
       const offset = a.offset ? plain(a.offset) : 0;

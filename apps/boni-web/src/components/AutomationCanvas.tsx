@@ -87,8 +87,10 @@ import {
   entryNames,
   KEY,
   labelWord,
+  localeOf,
   namer,
   rowsWords,
+  said,
   summaryWords,
 } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
@@ -488,6 +490,8 @@ function Canvas({
   const fit = phone ? { padding: 0.2, maxZoom: 1, minZoom: 0.5 } : { padding: 0.2, maxZoom: 1 };
   const collections = useCollectionNames();
   const names = useMemo(() => namer(t, collections), [t, collections]);
+  const locale = localeOf(lang);
+  const sayNames = { collection: (key: string) => collections[key] };
   const flow = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
   /** Where the pointer was last on the canvas, in its units: where Ctrl+V pastes. */
@@ -628,9 +632,9 @@ function Canvas({
             })
           : null,
         problem: problems.length
-          ? problems.map((p) => t(KEY.problem(p.code), { ...(p.detail ?? {}) })).join(" · ")
+          ? problems.map((p) => said(t, "problem", p, locale, sayNames)).join(" · ")
           : null,
-        mark: stateMark(t, step, state.tests[step.id]),
+        mark: stateMark(t, step, state.tests[step.id], locale, sayNames),
         test: {
           blocked: !tester || cannotTest(step, state.testing !== null) !== null,
           testing: testing === step.id,

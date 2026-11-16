@@ -220,6 +220,11 @@ export function AutomationPage({ id }: { id: string | null }) {
         // With no test yet the server has nothing to give: the preview says nothing (AU-20).
         return id ? client.sample(id, step).catch(() => null) : Promise.resolve(null);
       },
+      // Offline or refused, the line keeps what it said: nothing is toasted for a line that is asked on each pause.
+      preview: (at) => {
+        const id = latest.current?.id;
+        return id ? client.preview(id, at).catch(() => null) : Promise.resolve(null);
+      },
     }),
     [apply, keep, t],
   );

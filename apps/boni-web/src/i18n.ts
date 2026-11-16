@@ -892,6 +892,112 @@ const es = {
   "auto.failure.stopped": "Parado: {message}",
   "auto.failure.limit": "Se pasó un límite de la ejecución",
   "auto.failure.other": "Este paso falló",
+  "auto.preview.untested": "Sin probar: prueba antes {steps}",
+  "auto.preview.noRows": "La entrada no tiene filas con las que calcularlo",
+  "auto.preview.failed": "Con la fila {row} de {of}: {why}",
+  "auto.preview.long": "Es demasiado largo para calcularlo aquí: {got} caracteres, y caben {max}",
+  "auto.do.rowBefore": "Fila anterior",
+  "auto.do.rowAfter": "Fila siguiente",
+  "auto.problem.code.syntax": "No es JavaScript: {message}",
+  "auto.problem.code.long": "Es demasiado largo: {got} caracteres, y caben {max}",
+  "auto.problem.code.computed.step": "El nombre del paso va escrito entre comillas: $('Nombre')",
+  "auto.problem.code.computed.collection":
+    "El nombre de la colección va escrito entre comillas: $col('Nombre')",
+  "auto.problem.code.unknownGlobal": "{name} no existe aquí",
+  "auto.problem.code.unknownCollection": "Ninguna colección se llama «{name}»",
+  "auto.problem.code.notConnected": "Este paso no está conectado a «{collection}»",
+  "auto.problem.code.readInExpression": "Una expresión no lee colecciones: $col es de «Código»",
+  "auto.problem.code.cannotWait.await": "El código da su resultado en seguida: aquí no hay await",
+  "auto.problem.code.cannotWait.import": "El código no trae nada de fuera: aquí no hay import",
+  "auto.problem.code.cannotWait.async":
+    "El código da su resultado en seguida: aquí no hay funciones async",
+  "auto.problem.code.cannotWait.generator":
+    "El código da su resultado en seguida: aquí no hay function*",
+  "auto.problem.code.fieldNotGiven": "La última prueba de «{name}» no dio «{field}»",
+  "auto.problem.connection.notAllowed": "Este paso no lleva conexiones",
+  "auto.problem.connection.unknown": "Está conectado a una colección que ya no existe",
+  "auto.problem.connection.repeated": "Hay dos conexiones con «{collection}»",
+  "auto.problem.connection.many": "Tiene más conexiones de las que caben",
+  "auto.problem.connection.limits.field":
+    "Los límites nombran un campo que la colección no tiene: «{field}»",
+  "auto.problem.connection.limits.where": "El filtro de los límites no es uno de los de las vistas",
+  "auto.problem.connection.limits.limit":
+    "El número de filas tiene que ser un número entero de 1 a {readRows}",
+  "auto.problem.code.colUse.kept":
+    "Llama a $col('{name}') y a su método a la vez: $col('{name}').find(…)",
+  "auto.problem.code.colUse.computed":
+    "El método va escrito por su nombre: $col('{name}').update(…)",
+  "auto.problem.code.colUse.unknown":
+    "$col('{name}') no tiene «{method}»: tiene find, get, count, sum, create, update y remove",
+  "auto.problem.code.write.notAllowed": "La conexión con «{collection}» no deja {action}",
+  "auto.failure.code.threw": "El código falló: {message}",
+  "auto.failure.code.threw.line": "El código falló en la línea {line}: {message}",
+  "auto.failure.code.limit": "Se pasó del tope de {limit}: {max}",
+  "auto.failure.code.limit.got": "Se pasó del tope de {limit}: {max}, y llegó a {got}",
+  "auto.failure.code.result.nothing": "El código no devuelve nada: falta un return",
+  "auto.failure.code.result.notRows":
+    "Lo que devuelve no son filas: tiene que ser una lista de objetos o un objeto",
+  "auto.failure.code.result.notJson":
+    "Lo que devuelve no se puede guardar: una función, un ciclo o un número que no es finito",
+  "auto.failure.code.result.promise": "Devuelve una promesa, y el código no puede esperar",
+  "auto.failure.code.frozen": "En la línea {line} cambia algo que solo puede leer",
+  "auto.failure.code.read.notConnected": "Lee «{collection}», y este paso no está conectado a ella",
+  "auto.failure.code.read.query.where":
+    "La lectura de «{collection}» tiene un filtro que no es uno de los de las vistas",
+  "auto.failure.code.read.query.sort":
+    "La lectura de «{collection}» ordena de una forma que no vale",
+  "auto.failure.code.read.query.limit":
+    "El número de filas de la lectura de «{collection}» tiene que ser un número entero de 1 a {readRows}",
+  "auto.failure.code.read.query.id": "El id que se pide a «{collection}» no es un texto",
+  "auto.failure.code.read.query.field": "«{collection}» no tiene el campo «{field}»",
+  "auto.failure.code.read.query.hidden": "La conexión no deja leer «{field}» de «{collection}»",
+  "auto.failure.code.read.query.op":
+    "«{collection}» no tiene esa operación: tiene find, get, count y sum",
+  "auto.failure.code.read.query.notNumber":
+    "«{field}» de «{collection}» no es un número: no se suma",
+  "auto.failure.code.unavailable.unavailable": "Ahora no se puede ejecutar código: no corrió nada",
+  "auto.failure.code.unavailable.busy":
+    "Hay demasiado código ejecutándose a la vez: no corrió nada; prueba otra vez",
+  "auto.failure.code.write.unseen.code":
+    "Pidió {action} en «{collection}», y el código guardado no lo hace: no se guardó nada",
+  "auto.failure.code.write.unseen.expression": "Una expresión no guarda: no se guardó nada",
+  "auto.failure.code.write.notAllowed":
+    "La conexión con «{collection}» no deja {action}: no se guardó nada",
+  "auto.failure.code.write.outside.row":
+    "Esa fila de «{collection}» no existe o la conexión no la deja ver: no se guardó nada",
+  "auto.failure.code.write.outside.created":
+    "La fila que crearía en «{collection}» queda fuera de las que la conexión deja ver: no se guardó nada",
+  "auto.failure.code.write.hidden":
+    "La conexión no deja ver «{field}» de «{collection}»: no se guardó nada",
+  "auto.failure.code.write.request.id": "El id de la fila no es un texto: no se guardó nada",
+  "auto.failure.code.write.request.fields":
+    "Los campos no son un objeto de campos: no se guardó nada",
+  "auto.failure.code.write.request.field":
+    "«{collection}» no tiene el campo «{field}»: no se guardó nada",
+  "auto.failure.code.write.request.empty":
+    "Modificar sin ningún campo no cambia nada: no se guardó nada",
+  "auto.limit.sourceChars": "caracteres de un «Código»",
+  "auto.limit.expressionChars": "caracteres de una expresión",
+  "auto.limit.ms": "tiempo de una llamada",
+  "auto.limit.steps": "operaciones de una llamada",
+  "auto.limit.memoryBytes": "memoria de una llamada",
+  "auto.limit.stackBytes": "llamadas anidadas",
+  "auto.limit.inputBytes": "lo que se le manda al código",
+  "auto.limit.outputBytes": "lo que devuelve el código",
+  "auto.limit.outputRows": "filas que devuelve el código",
+  "auto.limit.batchRows": "filas de una llamada",
+  "auto.limit.reads": "lecturas de una evaluación",
+  "auto.limit.stepReads": "lecturas de un paso",
+  "auto.limit.readRows": "filas de una lectura",
+  "auto.limit.readBytes": "tamaño de una lectura",
+  "auto.limit.stepReadBytes": "lo que lee un paso",
+  "auto.limit.writes": "peticiones de guardar de una evaluación",
+  "auto.limit.stepWrites": "peticiones de guardar de un paso",
+  "auto.limit.writeBytes": "tamaño de una petición de guardar",
+  "auto.limit.stepWriteBytes": "lo que pide guardar un paso",
+  "auto.writeAction.create": "crear filas",
+  "auto.writeAction.update": "modificar filas",
+  "auto.writeAction.remove": "eliminar filas",
   "flows.map": "Mapa",
   "flows.over.tasks": "cada tarea",
   "flows.over.events": "cada evento",
@@ -3825,6 +3931,113 @@ const en: Record<Key, string> = {
   "auto.failure.stopped": "Stopped: {message}",
   "auto.failure.limit": "A limit of the run was passed",
   "auto.failure.other": "This step failed",
+  "auto.preview.untested": "Not tested: test {steps} first",
+  "auto.preview.noRows": "Its input has no rows to work it out with",
+  "auto.preview.failed": "With row {row} of {of}: {why}",
+  "auto.preview.long": "Too long to work out here: {got} characters, and {max} fit",
+  "auto.do.rowBefore": "Previous row",
+  "auto.do.rowAfter": "Next row",
+  "auto.problem.code.syntax": "It is not JavaScript: {message}",
+  "auto.problem.code.long": "It is too long: {got} characters, and {max} fit",
+  "auto.problem.code.computed.step": "The step's name goes written in quotes: $('Name')",
+  "auto.problem.code.computed.collection":
+    "The collection's name goes written in quotes: $col('Name')",
+  "auto.problem.code.unknownGlobal": "{name} does not exist here",
+  "auto.problem.code.unknownCollection": "No collection is called «{name}»",
+  "auto.problem.code.notConnected": "This step is not connected to «{collection}»",
+  "auto.problem.code.readInExpression": "An expression reads no collection: $col is for «Code»",
+  "auto.problem.code.cannotWait.await": "Code gives its result at once: there is no await here",
+  "auto.problem.code.cannotWait.import":
+    "Code brings nothing from outside: there is no import here",
+  "auto.problem.code.cannotWait.async":
+    "Code gives its result at once: there are no async functions here",
+  "auto.problem.code.cannotWait.generator":
+    "Code gives its result at once: there is no function* here",
+  "auto.problem.code.fieldNotGiven": "The last test of «{name}» did not give «{field}»",
+  "auto.problem.connection.notAllowed": "This step takes no connections",
+  "auto.problem.connection.unknown": "It is connected to a collection that no longer exists",
+  "auto.problem.connection.repeated": "There are two connections to «{collection}»",
+  "auto.problem.connection.many": "It has more connections than fit",
+  "auto.problem.connection.limits.field":
+    "The limits name a field the collection does not have: «{field}»",
+  "auto.problem.connection.limits.where": "The limits' filter is not one of the views'",
+  "auto.problem.connection.limits.limit":
+    "The number of rows must be a whole number from 1 to {readRows}",
+  "auto.problem.code.colUse.kept":
+    "Call $col('{name}') and its method together: $col('{name}').find(…)",
+  "auto.problem.code.colUse.computed":
+    "The method goes written by its name: $col('{name}').update(…)",
+  "auto.problem.code.colUse.unknown":
+    "$col('{name}') has no «{method}»: it has find, get, count, sum, create, update and remove",
+  "auto.problem.code.write.notAllowed": "The connection to «{collection}» does not let it {action}",
+  "auto.failure.code.threw": "The code failed: {message}",
+  "auto.failure.code.threw.line": "The code failed on line {line}: {message}",
+  "auto.failure.code.limit": "It passed the limit of {limit}: {max}",
+  "auto.failure.code.limit.got": "It passed the limit of {limit}: {max}, and reached {got}",
+  "auto.failure.code.result.nothing": "The code returns nothing: a return is missing",
+  "auto.failure.code.result.notRows":
+    "What it returns is not rows: it must be a list of objects or one object",
+  "auto.failure.code.result.notJson":
+    "What it returns cannot be kept: a function, a cycle or a number that is not finite",
+  "auto.failure.code.result.promise": "It returns a promise, and code cannot wait",
+  "auto.failure.code.frozen": "On line {line} it changes something it may only read",
+  "auto.failure.code.read.notConnected":
+    "It reads «{collection}», and this step is not connected to it",
+  "auto.failure.code.read.query.where":
+    "The read of «{collection}» has a filter that is not one of the views'",
+  "auto.failure.code.read.query.sort":
+    "The read of «{collection}» sorts in a way that is not valid",
+  "auto.failure.code.read.query.limit":
+    "The number of rows of the read of «{collection}» must be a whole number from 1 to {readRows}",
+  "auto.failure.code.read.query.id": "The id asked of «{collection}» is not a text",
+  "auto.failure.code.read.query.field": "«{collection}» has no field «{field}»",
+  "auto.failure.code.read.query.hidden":
+    "The connection does not let it read «{field}» of «{collection}»",
+  "auto.failure.code.read.query.op":
+    "«{collection}» has no such operation: it has find, get, count and sum",
+  "auto.failure.code.read.query.notNumber":
+    "«{field}» of «{collection}» is not a number: it is not added up",
+  "auto.failure.code.unavailable.unavailable": "Code cannot run now: nothing ran",
+  "auto.failure.code.unavailable.busy": "Too much code is running at once: nothing ran; try again",
+  "auto.failure.code.write.unseen.code":
+    "It asked to {action} in «{collection}», and the saved code does not: nothing was saved",
+  "auto.failure.code.write.unseen.expression": "An expression does not save: nothing was saved",
+  "auto.failure.code.write.notAllowed":
+    "The connection to «{collection}» does not let it {action}: nothing was saved",
+  "auto.failure.code.write.outside.row":
+    "That row of «{collection}» does not exist or the connection does not let it see it: nothing was saved",
+  "auto.failure.code.write.outside.created":
+    "The row it would create in «{collection}» is outside the ones the connection lets it see: nothing was saved",
+  "auto.failure.code.write.hidden":
+    "The connection does not let it see «{field}» of «{collection}»: nothing was saved",
+  "auto.failure.code.write.request.id": "The row's id is not a text: nothing was saved",
+  "auto.failure.code.write.request.fields":
+    "The fields are not an object of fields: nothing was saved",
+  "auto.failure.code.write.request.field":
+    "«{collection}» has no field «{field}»: nothing was saved",
+  "auto.failure.code.write.request.empty": "Updating no field changes nothing: nothing was saved",
+  "auto.limit.sourceChars": "characters of a «Code»",
+  "auto.limit.expressionChars": "characters of an expression",
+  "auto.limit.ms": "time of one call",
+  "auto.limit.steps": "operations of one call",
+  "auto.limit.memoryBytes": "memory of one call",
+  "auto.limit.stackBytes": "nested calls",
+  "auto.limit.inputBytes": "what the code is sent",
+  "auto.limit.outputBytes": "what the code returns",
+  "auto.limit.outputRows": "rows the code returns",
+  "auto.limit.batchRows": "rows of one call",
+  "auto.limit.reads": "reads of one evaluation",
+  "auto.limit.stepReads": "reads of one step",
+  "auto.limit.readRows": "rows of one read",
+  "auto.limit.readBytes": "size of one read",
+  "auto.limit.stepReadBytes": "what one step reads",
+  "auto.limit.writes": "requests to save of one evaluation",
+  "auto.limit.stepWrites": "requests to save of one step",
+  "auto.limit.writeBytes": "size of one request to save",
+  "auto.limit.stepWriteBytes": "what one step asks to save",
+  "auto.writeAction.create": "create rows",
+  "auto.writeAction.update": "update rows",
+  "auto.writeAction.remove": "delete rows",
   "flows.map": "Map",
   "flows.over.tasks": "each task",
   "flows.over.events": "each event",
@@ -5880,8 +6093,8 @@ export function translator(lang: Lang): T {
     // A count of exactly 1 takes the key's ".one" form when there is one ("1 elemento", not "1 elementos").
     const one = vars && Number(vars.n) === 1 ? `${key}.one` : null;
     let s = (one ? (dict[one] ?? es[one as Key]) : undefined) ?? dict[key] ?? es[key as Key] ?? key;
-    if (vars)
-      for (const [k, v] of Object.entries(vars)) s = s.replaceAll(`{${k}}`, () => String(v));
+    // One pass: a value that holds `{row}` (a code's message, a cell) is said as it is, never filled in itself.
+    if (vars) s = s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
     return s;
   };
 }

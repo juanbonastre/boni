@@ -93,7 +93,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/agent/press": "tailnet",
   "POST /api/agent/flows/:id/test": "tailnet",
   // «Automatizaciones» (served in http.ts, each as its action, AU-168): C1's six, C2's layout and E's «Probar» with
-  // the rows and the sample of its last test.
+  // the rows and the sample of its last test, and F14c's line under an expression (AU-23).
   "POST /api/agent/automations": "tailnet",
   "GET /api/agent/automations/:id": "tailnet",
   "PUT /api/agent/automations/:id/draft": "tailnet",
@@ -104,6 +104,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/agent/automations/:id/test": "tailnet",
   "GET /api/agent/automations/:id/test/rows": "tailnet",
   "GET /api/agent/automations/:id/test/sample": "tailnet",
+  "GET /api/agent/automations/:id/test/preview": "tailnet",
   "GET /api/agent/models": "tailnet",
   "GET /api/agent/models/catalogue": "tailnet",
   "PUT /api/agent/models/roles/:role": "tailnet",

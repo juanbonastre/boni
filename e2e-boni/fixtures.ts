@@ -1207,6 +1207,72 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           }
           return [200, JSON.stringify({ current: first, total, steps })];
         }
+        // The line under an expression at a row (AU-23), as the server's `previewExpression` gives it:
+        // `window.__autoPreview` has every ask (JSON of step, param, row, expr). A citation of a field gives that
+        // field of the row, upper-cased when the expression says `toUpperCase`; `$json.nada.` throws, as reading
+        // a field of nothing does, with a message that carries markup (painted as text, A-01).
+        if (rest === "/test/preview" && method === "GET") {
+          const q = new URLSearchParams(query);
+          const step = q.get("step") ?? "";
+          const row = Number(q.get("row") ?? 0);
+          const expr = q.get("expr") ?? "";
+          record("__autoPreview", JSON.stringify({ step, param: q.get("param"), row, expr }));
+          const untested = [...stepsBefore(a, step)].filter((s) => !a.tests[s]);
+          if (untested.length) return [200, JSON.stringify({ state: "untested", steps: untested })];
+          const into = (
+            (a.doc.arrows ?? []) as {
+              from: { step: string; output: string };
+              to: { step: string };
+            }[]
+          ).find((x) => x.to.step === step);
+          const r = into
+            ? testRows(a.spec?.steps[into.from.step], `out:${into.from.output}`)
+            : null;
+          const of = countOf(r);
+          if (!r || of === 0) return [200, '{"state":"noRows"}'];
+          const at = Math.min(Math.max(0, row), of - 1);
+          const json: Record<string, unknown> = Array.isArray(r)
+            ? (((r[at] as { json?: Record<string, unknown> }).json ?? {}) as Record<
+                string,
+                unknown
+              >)
+            : Object.fromEntries(
+                Array.from({ length: r.fields }, (_, f) => [
+                  `campo_${f + 1}`,
+                  `valor ${at + 1}-${f + 1}`,
+                ]),
+              );
+          if (expr.includes("$json.nada."))
+            return [
+              200,
+              JSON.stringify({
+                state: "failed",
+                failure: {
+                  code: "code.threw",
+                  detail: {
+                    message: "Cannot read properties of undefined (reading '<b>x</b>')",
+                    line: 1,
+                  },
+                },
+                row: at,
+                of,
+              }),
+            ];
+          const codeValue = (code: string) => {
+            const field = /\$json\.(\w+)/.exec(code)?.[1];
+            const v = field ? json[field] : null;
+            return typeof v === "string" && code.includes("toUpperCase")
+              ? v.toUpperCase()
+              : (v ?? null);
+          };
+          // Text around the code is joined with it, as a text; one code part alone gives its value as it is.
+          const parts = expr.split(/(\{\{[\s\S]*?\}\})/).filter(Boolean);
+          const value =
+            parts.length === 1 && parts[0].startsWith("{{")
+              ? codeValue(parts[0])
+              : parts.map((x) => (x.startsWith("{{") ? String(codeValue(x) ?? "") : x)).join("");
+          return [200, JSON.stringify({ state: "value", value, row: at, of })];
+        }
         if (rest === "/duplicate" && method === "POST") {
           if (typeof b.name !== "string" || !b.name.trim()) return bad;
           const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
@@ -1919,7 +1985,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample)?)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?)?$/.exec(
             p,
           );
         if (automation)
@@ -2142,6 +2208,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         return null;
       };
+      // `window.__previewSlow` ({ expr, ms }): a preview whose expression has `expr` in it is answered after `ms`, so
+      // a later ask can be answered first (AU-23: the latest wins).
+      const slowPreview = (path: string) => {
+        const slow = w.__previewSlow as { expr: string; ms: number } | undefined;
+        if (!slow || !path.includes("/test/preview?")) return 20;
+        const expr = new URLSearchParams(path.split("?")[1]).get("expr") ?? "";
+        return expr.includes(slow.expr) ? slow.ms : 20;
+      };
       w.boniDesktop = {
         async request(method: string, path: string, body?: unknown) {
           record(
@@ -2164,7 +2238,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                     ? opts.live.ms
                     : opts.slow && path === opts.slow.path
                       ? opts.slow.ms
-                      : 20,
+                      : slowPreview(path),
             ),
           );
           if (!a) return { ok: false, offline: true, message: "refused" };

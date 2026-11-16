@@ -100,4 +100,8 @@ export const AUTOMATION_ROUTES: Readonly<Record<string, { action: string; runs: 
   "POST /api/agent/automations/:id/test": { action: "automations.test", runs: "testAutomation" },
   "GET /api/agent/automations/:id/test/rows": { action: "automations.read", runs: "testRows" },
   "GET /api/agent/automations/:id/test/sample": { action: "automations.read", runs: "testSample" },
+  "GET /api/agent/automations/:id/test/preview": {
+    action: "automations.read",
+    runs: "previewExpression",
+  },
 };

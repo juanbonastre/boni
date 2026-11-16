@@ -180,9 +180,9 @@ export interface CodeFailure {
 }
 
 /**
- * A failure of JavaScript: a `StepFault`, so the engine records it as it records any other. Until `STEP_FAILURES`
- * takes these codes (with the screen that has their words), `failure.code` is `other` and `why` says which it is;
- * from then on `failure` is `why`.
+ * A failure of JavaScript: a `StepFault`, so the engine records it as it records any other. `failure.code` is
+ * `other` and `why` says which it is: the screen reads `why` and says it with the words of `CODE_FAILURES`
+ * (boni-web's `words.ts`), until `STEP_FAILURES` takes these codes and `failure` is `why`.
  */
 export class CodeFault extends StepFault {
   readonly why: CodeFailure;

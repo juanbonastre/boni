@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decide, fakePlanner, type Origin, ToolRegistry } from "@boni/agent";
 import { FORMAT } from "@boni/automations";
+import { startBox } from "@boni/sandbox-runner/src/server.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ACTIONS, ROUTE_ACTIONS, ROUTE_RUNS } from "../actions.ts";
 import { AgentHost } from "../agent.ts";
@@ -21,6 +22,7 @@ import { type App, makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
 import { ROUTES } from "../routes.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES } from "./routes.ts";
+import { PREVIEW_CHARS } from "./service.ts";
 
 const SIGN_IN = "una contraseña larga de ejemplo";
 /** C1's and C2's routes (E's are checked with every route of AUTOMATION_ROUTES in automations.test.ts). */
@@ -278,5 +280,94 @@ describe("C1's and C2's routes (AU-168, AU-62, AU-05)", () => {
     expect(
       (await call("GET", "/api/agent/automations/a_nadie/test/sample?step=s_inicio")).status,
     ).toBe(404);
+  });
+
+  it("AU-23 AU-27 · the line under an expression as the editor asks it: `GET …/test/preview` with the text being typed, worked out by the real box with the row the test kept, and the draft's own value without it", async () => {
+    const box = await startBox(join(dir, "caja.sock"), { workers: 1 });
+    const was = process.env.BONI_SANDBOX_SOCKET;
+    process.env.BONI_SANDBOX_SOCKET = join(dir, "caja.sock");
+    try {
+      const call = await signedIn(await start());
+      const doc = {
+        ...first,
+        name: "Vista previa por HTTP",
+        steps: [
+          {
+            id: "s_inicio",
+            name: "Inicio",
+            type: "manual",
+            params: { fields: [{ key: "nota", name: "Nota", type: "text" }] },
+          },
+          {
+            id: "s_marcar",
+            name: "Marcar",
+            type: "edit",
+            params: {
+              fields: [{ field: "grande", value: { expr: "{{ $json.nota.toUpperCase() }}" } }],
+            },
+          },
+        ],
+        arrows: [
+          { from: { step: "s_inicio", output: "main" }, to: { step: "s_marcar", input: "main" } },
+        ],
+      };
+      const made = await call("POST", "/api/agent/automations", { automation: doc });
+      const path = `/api/agent/automations/${made.body.id as string}`;
+      const ask = (q: Record<string, string>) =>
+        call(
+          "GET",
+          `${path}/test/preview?${new URLSearchParams({ step: "s_marcar", param: "fields.0.value", row: "0", ...q })}`,
+        );
+
+      // Before a test there is nothing to work it out with: it says which step to test, and asks the box nothing.
+      expect((await ask({})).body).toEqual({ state: "untested", steps: ["s_inicio"] });
+      const tested = await call("POST", `${path}/test`, {
+        trigger: "s_inicio",
+        fields: { nota: "de ejemplo" },
+      });
+      expect(tested.body).toMatchObject({ state: "done" });
+      const log = host.store(1).logPage(0, 1_000_000).length;
+
+      // The draft's own value is what the test gave; the text being typed, before it is kept, is worked out in its place.
+      expect((await ask({})).body).toEqual({ state: "value", value: "DE EJEMPLO", row: 0, of: 1 });
+      expect((await ask({ expr: "{{ $json.nota.split(' ').length }} palabras" })).body).toEqual({
+        state: "value",
+        value: "2 palabras",
+        row: 0,
+        of: 1,
+      });
+      // One past the last row is the last.
+      expect((await ask({ expr: "{{ $json.nota.length * 2 }}", row: "5" })).body).toEqual({
+        state: "value",
+        value: 20,
+        row: 0,
+        of: 1,
+      });
+      // What the code threw is said with its code, its message as it is (plain text for the screen).
+      const threw = await ask({ expr: "{{ $json.nada.toUpperCase() }}" });
+      expect(threw.body).toMatchObject({ state: "failed", failure: { code: "code.threw" } });
+      // A preview keeps nothing: neither the draft nor any collection changed.
+      expect(host.store(1).logPage(0, 1_000_000).length).toBe(log);
+      expect(((await call("GET", path)).body.automation as typeof doc).steps[1]?.params).toEqual(
+        doc.steps[1]?.params,
+      );
+
+      // What the app may get wrong is a bad request: a value the step has not, a row that is not one, a text too long.
+      expect((await ask({ param: "fields.7.value", expr: "{{ 1 }}" })).status).toBe(400);
+      expect((await ask({ row: "-1" })).status).toBe(400);
+      expect((await ask({ expr: "x".repeat(PREVIEW_CHARS + 1) })).status).toBe(400);
+      expect(
+        (
+          await call(
+            "GET",
+            "/api/agent/automations/a_nadie/test/preview?step=s_marcar&param=fields.0.value",
+          )
+        ).status,
+      ).toBe(404);
+    } finally {
+      if (was === undefined) delete process.env.BONI_SANDBOX_SOCKET;
+      else process.env.BONI_SANDBOX_SOCKET = was;
+      await box.close();
+    }
   });
 });

@@ -6,11 +6,19 @@
  * («= 5 · con la fila 1 de 128»), resolved here on every key with no call (A-15). What a drop writes and how an
  * expression is painted and previewed is automations/cite.ts; this file is only the screen.
  */
-import { type Automation, isExpr, type ParamValue, printCitation } from "@boni/automations";
+import {
+  type Automation,
+  CODE_LIMITS,
+  isExpr,
+  type ParamValue,
+  parseExpression,
+  printCitation,
+} from "@boni/automations";
 import {
   createContext,
   type ReactNode,
   useContext,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -24,9 +32,17 @@ import {
   toExpression,
   toFixed,
 } from "../automations/cite.ts";
-import type { RowView, Sample } from "../automations/client.ts";
+import type { ExprPreview, RowView, Sample } from "../automations/client.ts";
 import { type ConditionField, fieldsOutOf, stepsBefore } from "../automations/panel.ts";
-import { type Choices, choiceNames, DO, fieldNames, namedRow } from "../automations/words.ts";
+import {
+  type Choices,
+  choiceNames,
+  DO,
+  fieldNames,
+  namedRow,
+  type SaidNames,
+  said,
+} from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { carriesField, cellText, draggedOf } from "./AutomationRows.tsx";
 import { usePhone } from "./AutomationTest.tsx";
@@ -45,6 +61,14 @@ export interface CiteView {
   /** The last test's first rows (`…/test/sample`), asked once when the view opens; null with no test. */
   sample: Sample | null;
   locale: string;
+  /**
+   * What the expression at `param` gives with row `row` of the step's last test, as the server works it out (AU-23,
+   * AU-27); null when it could not be asked. Absent: the line says only what a simple citation gives with the
+   * first row, worked out here.
+   */
+  ask?: (param: string, row: number, expr: string) => Promise<ExprPreview | null>;
+  /** A collection and a field said by name in a failure's words. */
+  said?: SaidNames;
 }
 export const CiteContext = createContext<CiteView | null>(null);
 
@@ -328,7 +352,10 @@ function ExprEditor({
             ]
           : p.kind === "text"
             ? p.text
-            : `{{ ${p.source} }}`,
+            : [
+                // JavaScript, as typed, set apart from the text around it (AU-22); read back as its text.
+                <span key={i} className="auto-expr-code">{`{{ ${p.source} }}`}</span>,
+              ],
       )}
     </div>
   );
@@ -349,27 +376,128 @@ function namedSample(view: CiteView): Sample | null {
   return { ...s, current: nr(s.current, view.choices[parentName]), steps };
 }
 
-/** Under an expression, after a test: what it gives with the first row, or why it gives nothing (AU-20). */
-function Preview({ value }: { value: ParamValue }) {
+/** How long the line waits after the last key before it asks the server (AU-23: «cuando Juan deja de escribir»). */
+export const PREVIEW_WAIT = 300;
+
+/** Whether an expression has JavaScript, which only the server's box works out (AU-27); a simple citation has not. */
+const hasCode = (expr: string) => parseExpression(expr).some((p) => p.kind === "code");
+
+/**
+ * Under an expression (AU-20, AU-23): what it gives with a row of the step's last test, «‹ ›» to go through the
+ * rows, or why it gives nothing. A simple citation with the first row is worked out here on every key, with no call
+ * (A-15); JavaScript, or another row, is asked of the server `PREVIEW_WAIT` after the last key, and only the answer
+ * to the latest ask is painted: one to an earlier text never covers a later one. Until it arrives the last answer
+ * stays, dimmed. The value and a failure's words are painted as text (A-01).
+ */
+function Preview({ value, param }: { value: { expr: string }; param?: string }) {
   const view = useContext(CiteContext) as CiteView;
-  const p = preview(value, namedSample(view));
-  if (!p) return null;
-  if ("failure" in p)
-    return (
-      <p className="auto-preview failed">
-        {p.failure === "expr.code"
-          ? view.t("auto.problem.expr.code")
-          : view.t(`auto.failure.cite.${p.failure}`, { step: p.step ?? "" })}
-      </p>
+  const [row, setRow] = useState(0);
+  const [answer, setAnswer] = useState<{ expr: string; row: number; p: ExprPreview } | null>(null);
+  const asked = useRef(0);
+  const expr = value.expr;
+  const ask = param === undefined ? undefined : view.ask;
+  const code = hasCode(expr);
+  const long = expr.length > CODE_LIMITS.expressionChars;
+  const remote = !!ask && (code || row > 0);
+  // The view makes `ask` again on each render: the latest is called, and only a new text, row or test asks again.
+  const latest = useRef(ask);
+  latest.current = ask;
+  useEffect(() => {
+    if (!remote || long || param === undefined) return;
+    const n = ++asked.current;
+    const timer = setTimeout(() => {
+      void latest.current?.(param, row, expr).then((p) => {
+        if (p && n === asked.current) setAnswer({ expr, row, p });
+      });
+    }, PREVIEW_WAIT);
+    return () => clearTimeout(timer);
+  }, [remote, long, param, row, expr, view.sample]);
+
+  const t = view.t;
+  const of = (n: number) => n.toLocaleString(view.locale);
+  const stepper = (at: number, total: number) =>
+    ask && total > 1 ? (
+      <span className="auto-preview-rows">
+        <button
+          type="button"
+          className="auto-preview-row"
+          aria-label={t(DO.rowBefore)}
+          title={t(DO.rowBefore)}
+          disabled={at <= 0}
+          onClick={() => setRow(Math.max(0, at - 1))}
+        >
+          ‹
+        </button>
+        <button
+          type="button"
+          className="auto-preview-row"
+          aria-label={t(DO.rowAfter)}
+          title={t(DO.rowAfter)}
+          disabled={at >= total - 1}
+          onClick={() => setRow(Math.min(total - 1, at + 1))}
+        >
+          ›
+        </button>
+      </span>
+    ) : null;
+
+  /** The line, and beside it «‹ ›» when there are rows to go through: outside its text, which says only the value. */
+  const line = (cls: string, text: string, at?: number, total = 0) => (
+    <div className="auto-preview-line">
+      <p className={cls}>{text}</p>
+      {at === undefined ? null : stepper(at, total)}
+    </div>
+  );
+
+  if (!remote) {
+    const p = preview(value, namedSample(view));
+    if (!p) return null;
+    if ("failure" in p)
+      return line(
+        "auto-preview failed",
+        p.failure === "expr.code"
+          ? t("auto.problem.expr.code")
+          : t(`auto.failure.cite.${p.failure}`, { step: p.step ?? "" }),
+      );
+    return line(
+      "auto-preview",
+      t("auto.preview", { value: cellText(t, p.value), row: p.row, of: of(p.of) }),
+      0,
+      p.of,
     );
-  return (
-    <p className="auto-preview">
-      {view.t("auto.preview", {
-        value: cellText(view.t, p.value),
-        row: p.row,
-        of: p.of.toLocaleString(view.locale),
-      })}
-    </p>
+  }
+  if (long)
+    return line(
+      "auto-preview failed",
+      t("auto.preview.long", { got: of(expr.length), max: of(CODE_LIMITS.expressionChars) }),
+    );
+  if (!answer) return null;
+  const pending = answer.expr !== expr || answer.row !== row;
+  const p = answer.p;
+  const cls = (failed: boolean) =>
+    `auto-preview${failed ? " failed" : ""}${pending ? " pending" : ""}`;
+  if (p.state === "untested") {
+    const names = p.steps.map((id) => `«${view.draft.steps.find((s) => s.id === id)?.name ?? id}»`);
+    const list = new Intl.ListFormat(view.locale, { type: "conjunction" }).format(names);
+    return line(cls(true), t("auto.preview.untested", { steps: list }));
+  }
+  if (p.state === "noRows") return line(cls(true), t("auto.preview.noRows"));
+  if (p.state === "failed")
+    return line(
+      cls(true),
+      t("auto.preview.failed", {
+        row: p.row + 1,
+        of: of(p.of),
+        why: said(t, "failure", p.failure, view.locale, view.said),
+      }),
+      p.row,
+      p.of,
+    );
+  return line(
+    cls(false),
+    t("auto.preview", { value: cellText(t, p.value), row: p.row + 1, of: of(p.of) }),
+    p.row,
+    p.of,
   );
 }
 
@@ -385,6 +513,7 @@ export function ValueBox({
   label,
   marked = false,
   onFocus,
+  param,
   children,
 }: {
   value: ParamValue | undefined;
@@ -395,6 +524,8 @@ export function ValueBox({
   marked?: boolean;
   /** Entered: what starts a run of typing (AU-68). */
   onFocus?: () => void;
+  /** Where the value is in the step, as `Problem.param` writes it: what the server's line is asked for (AU-23). */
+  param?: string;
   children: ReactNode;
 }) {
   const view = useContext(CiteContext);
@@ -458,6 +589,15 @@ export function ValueBox({
             className="auto-value-fixed"
             onSelect={fixedText ? keepFixed : undefined}
             onKeyUp={fixedText ? keepFixed : undefined}
+            onChange={(e) => {
+              // `{{` typed in a fixed text makes it an expression with what was written, the caret where it was
+              // (AU-22): the control's own change bubbles here after it is made, in the same run of typing.
+              const el = e.target;
+              if (!fixedText || !(el instanceof HTMLInputElement) || !el.value.includes("{{"))
+                return;
+              placeAt.current = el.selectionStart ?? el.value.length;
+              set({ expr: el.value }, true);
+            }}
           >
             {children}
           </div>
@@ -477,7 +617,7 @@ export function ValueBox({
           {"{ }"}
         </button>
       </div>
-      {expr && <Preview value={expr} />}
+      {expr && <Preview value={expr} param={param} />}
     </div>
   );
 }

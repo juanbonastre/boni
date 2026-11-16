@@ -12398,6 +12398,11 @@ tr[data-boni-pointed] > td {
   overflow-wrap: break-word;
   cursor: text;
 }
+/* JavaScript between `{{ }}` (AU-22): the code's font, the text around it the value's. */
+.auto-expr-code {
+  font-family: var(--mono, monospace);
+  font-size: 0.92em;
+}
 .auto-chip {
   display: inline-flex;
   align-items: center;
@@ -12438,6 +12443,40 @@ tr[data-boni-pointed] > td {
 }
 .auto-preview.failed {
   color: var(--bad);
+}
+/* The answer to an earlier text or row, kept while the latest is asked (AU-23). */
+.auto-preview.pending {
+  opacity: 0.55;
+}
+.auto-preview-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.auto-preview-rows {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+.auto-preview-row {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.auto-preview-row:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+.auto-preview-row:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .auto-toggle {
   justify-self: start;

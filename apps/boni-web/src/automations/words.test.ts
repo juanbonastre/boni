@@ -3,7 +3,15 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Automation, FORMAT, type Step } from "@boni/automations";
+import {
+  type Automation,
+  CODE_FAILURES,
+  CODE_LIMITS,
+  CODE_PROBLEMS,
+  FORMAT,
+  HARD_LIMITS,
+  type Step,
+} from "@boni/automations";
 import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { KEYS, type Lang, translator } from "../i18n.ts";
@@ -15,6 +23,8 @@ import {
   fieldNames,
   namedRow,
   namer,
+  REASONS,
+  said,
   summaryWords,
   uniqueName,
 } from "./words.ts";
@@ -266,5 +276,169 @@ describe("the words of «Automatizaciones»", () => {
     // A table names a page of 50 rows when it comes: a frame (16 ms) a page is the bound. Measured here (2026-11-16,
     // its CPU time, load 5 to 7 on 8 cores): 0.10 to 0.12 ms a page.
     under(ms / (rows.length / 50), 16, "cpu", "naming a page of 50 rows");
+  });
+});
+
+describe("what JavaScript's problems and failures say", () => {
+  const es = translator("es");
+  const en = translator("en");
+  // A collection by its key, generated as Juan's are; a field by its key.
+  const names = {
+    collection: (k: string) => ({ c_01kx3m9q2a7v: "Pedidos" })[k],
+    field: (c: string, k: string) =>
+      c === "c_01kx3m9q2a7v" && k === "f_importe" ? "Importe" : undefined,
+  };
+  it("AU-24 AU-35 AU-183 A-34 · every code of CODE_PROBLEMS and CODE_FAILURES, each reason and each limit is worded in both languages: the screen never shows a key", () => {
+    const keys = catalogueKeys();
+    for (const code of CODE_PROBLEMS)
+      expect(
+        keys.some((k) => k === `auto.problem.${code}` || k.startsWith(`auto.problem.${code}.`)),
+        code,
+      ).toBe(true);
+    for (const code of CODE_FAILURES)
+      expect(
+        keys.some((k) => k === `auto.failure.${code}` || k.startsWith(`auto.failure.${code}.`)),
+        code,
+      ).toBe(true);
+    for (const l of HARD_LIMITS) expect(keys).toContain(`auto.limit.${l}`);
+    // The write ones the coordinator named, each with its reasons.
+    for (const k of [
+      "auto.problem.code.colUse.kept",
+      "auto.problem.code.colUse.computed",
+      "auto.problem.code.colUse.unknown",
+      "auto.problem.code.write.notAllowed",
+      "auto.failure.code.write.notAllowed",
+      "auto.failure.code.write.unseen.code",
+      "auto.failure.code.write.outside.row",
+      "auto.failure.code.write.hidden",
+      "auto.failure.code.unavailable.busy",
+      "auto.failure.code.limit.got",
+    ])
+      expect(keys).toContain(k);
+    for (const k of keys) {
+      expect(es(k), k).not.toBe(k);
+      expect(en(k), k).not.toBe(k);
+    }
+    // A reason the engine gives with no key would read as the code: every reason has its own.
+    for (const kind of ["problem", "failure"] as const)
+      for (const [code, r] of Object.entries(REASONS[kind]))
+        for (const reason of r.of) expect(keys).toContain(`auto.${kind}.${code}.${reason}`);
+  });
+  it("AU-35 · a limit says which and by how much, with its unit; time, operations and memory say the limit alone", () => {
+    expect(
+      said(
+        es,
+        "failure",
+        {
+          code: "code.limit",
+          detail: { limit: "outputBytes", max: CODE_LIMITS.outputBytes, got: 5 * 1024 * 1024 },
+        },
+        "es-ES",
+      ),
+    ).toBe("Se pasó del tope de lo que devuelve el código: 4 MB, y llegó a 5 MB");
+    expect(
+      said(
+        es,
+        "failure",
+        { code: "code.limit", detail: { limit: "ms", max: CODE_LIMITS.ms } },
+        "es-ES",
+      ),
+    ).toBe("Se pasó del tope de tiempo de una llamada: 5 s");
+    expect(
+      said(
+        es,
+        "failure",
+        { code: "code.limit", detail: { limit: "readRows", max: 5000, got: 12400 } },
+        "es-ES",
+      ),
+    ).toBe("Se pasó del tope de filas de una lectura: 5000, y llegó a 12.400");
+    expect(
+      said(
+        en,
+        "failure",
+        { code: "code.limit", detail: { limit: "readRows", max: 5000, got: 12400 } },
+        "en-GB",
+      ),
+    ).toBe("It passed the limit of rows of one read: 5,000, and reached 12,400");
+    expect(
+      said(es, "problem", { code: "code.long", detail: { max: 2000, got: 2140 } }, "es-ES"),
+    ).toBe("Es demasiado largo: 2140 caracteres, y caben 2000");
+    expect(
+      said(es, "failure", { code: "code.unavailable", detail: { why: "busy" } }, "es-ES"),
+    ).toContain("no corrió nada");
+  });
+  it("AU-176 AU-177 AU-183 · saving's words name the collection and the field by their names and the action by its word; a row that is not there and one the connection leaves out read the same", () => {
+    const c = "c_01kx3m9q2a7v";
+    expect(
+      said(
+        es,
+        "problem",
+        {
+          code: "code.write.notAllowed",
+          detail: { collection: c, action: "remove", line: 3, column: 1 },
+        },
+        "es-ES",
+        names,
+      ),
+    ).toBe("La conexión con «Pedidos» no deja eliminar filas");
+    expect(
+      said(
+        es,
+        "failure",
+        { code: "code.write.hidden", detail: { collection: c, field: "f_importe" } },
+        "es-ES",
+        names,
+      ),
+    ).toBe("La conexión no deja ver «Importe» de «Pedidos»: no se guardó nada");
+    // One code for both: the engine says them the same, so the screen cannot tell them apart.
+    expect(
+      said(
+        es,
+        "failure",
+        { code: "code.write.outside", detail: { why: "row", collection: c } },
+        "es-ES",
+        names,
+      ),
+    ).toBe("Esa fila de «Pedidos» no existe o la conexión no la deja ver: no se guardó nada");
+    expect(
+      said(
+        es,
+        "problem",
+        { code: "code.colUse", detail: { why: "computed", name: "Pedidos" } },
+        "es-ES",
+      ),
+    ).toBe("El método va escrito por su nombre: $col('Pedidos').update(…)");
+    // A collection as the code wrote it, with no key to name it by, is said as written.
+    expect(
+      said(
+        es,
+        "failure",
+        {
+          code: "code.write.unseen",
+          detail: { where: "code", collection: "Pedidos", action: "create" },
+        },
+        "es-ES",
+        names,
+      ),
+    ).toBe("Pidió crear filas en «Pedidos», y el código guardado no lo hace: no se guardó nada");
+  });
+  it("AU-23 AU-33 · a value said in a sentence is said as it is: a `{row}` in a code's message or in a cell is never filled in", () => {
+    const es = translator("es");
+    expect(es("auto.preview", { value: "{row} y {of}", row: 2, of: 3 })).toBe(
+      "= {row} y {of} · con la fila 2 de 3",
+    );
+  });
+  it("AU-33 · an error's message is said as the code gave it, with its line when there is one", () => {
+    expect(
+      said(
+        es,
+        "failure",
+        { code: "code.threw", detail: { message: "<b>x</b> is not defined", line: 4, column: 7 } },
+        "es-ES",
+      ),
+    ).toBe("El código falló en la línea 4: <b>x</b> is not defined");
+    expect(said(es, "failure", { code: "code.threw", detail: { message: "nada" } }, "es-ES")).toBe(
+      "El código falló: nada",
+    );
   });
 });

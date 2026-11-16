@@ -12,6 +12,10 @@ import {
   CATEGORIES,
   type Cell,
   type Citation,
+  CODE_FAILURES,
+  CODE_LIMITS,
+  CODE_PROBLEMS,
+  HARD_LIMITS,
   isExpr,
   OUT,
   type ParamSpec,
@@ -22,6 +26,7 @@ import {
   STEP_FAILURES,
   type Step,
   stepType,
+  WRITE_ACTIONS,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
 import type { RowView } from "./client.ts";
@@ -45,6 +50,10 @@ export const KEY = {
   /** A problem of validation and a step's failure, each with its `detail` as variables. */
   problem: (code: string) => `auto.problem.${code}`,
   failure: (code: string) => `auto.failure.${code}`,
+  /** A limit of the box by its key in `CODE_LIMITS` (AU-35): «el tiempo de una llamada». */
+  limit: (limit: string) => `auto.limit.${limit}`,
+  /** An action of saving as a detail names it (AU-176): «crear filas», «modificar filas», «eliminar filas». */
+  writeAction: (action: string) => `auto.writeAction.${action}`,
 } as const;
 
 /**
@@ -75,6 +84,9 @@ export const DO = {
   /** «{ }» in a value of the step's view: a fixed value becomes an expression and back (AU-20). */
   exprOn: "auto.do.exprOn",
   exprOff: "auto.do.exprOff",
+  /** «‹ ›» under an expression: the row before and after the one it is worked out with (AU-23). */
+  rowBefore: "auto.do.rowBefore",
+  rowAfter: "auto.do.rowAfter",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
@@ -115,6 +127,7 @@ export function catalogueKeys(): string[] {
   for (const m of measures) keys.add(KEY.measure(m));
   for (const p of PROBLEMS) keys.add(KEY.problem(p));
   for (const f of STEP_FAILURES) keys.add(KEY.failure(f));
+  for (const k of saidKeys()) keys.add(k);
   return [...keys];
 }
 
@@ -362,3 +375,138 @@ export const namedRow = (r: RowView, choices: Choices | undefined): RowView =>
         ...(r.before ? { before: namedValues(r.before, choices) } : {}),
       }
     : r;
+
+// ---------------------------------------------------------------- what JavaScript's problems and failures say
+
+/**
+ * The codes of JavaScript that are said one way per reason (AU-24, AU-33, AU-35, AU-183): the detail that says which
+ * reason, and every reason it can be. Each is its own key, `auto.problem.<code>.<reason>` or
+ * `auto.failure.<code>.<reason>`, so a reason the engine gives and the screen has no words for fails a test.
+ */
+export const REASONS: Readonly<
+  Record<"problem" | "failure", Readonly<Record<string, { by: string; of: readonly string[] }>>>
+> = {
+  problem: {
+    "code.computed": { by: "what", of: ["step", "collection"] },
+    "code.cannotWait": { by: "what", of: ["await", "import", "async", "generator"] },
+    "connection.limits": { by: "why", of: ["field", "where", "limit"] },
+    "code.colUse": { by: "why", of: ["kept", "computed", "unknown"] },
+  },
+  failure: {
+    "code.result": { by: "why", of: ["nothing", "notRows", "notJson", "promise"] },
+    "code.read.query": {
+      by: "why",
+      of: ["where", "sort", "limit", "id", "field", "hidden", "op", "notNumber"],
+    },
+    "code.unavailable": { by: "why", of: ["unavailable", "busy"] },
+    "code.write.unseen": { by: "where", of: ["code", "expression"] },
+    "code.write.outside": { by: "why", of: ["row", "created"] },
+    "code.write.request": { by: "why", of: ["id", "fields", "field", "empty"] },
+  },
+};
+
+/**
+ * The codes said one way when a detail is there and another without it: a code's error with or without its line,
+ * a limit with or without what it reached (time, operations and memory are cut at the limit, AU-35).
+ */
+const WITH: Readonly<Record<"problem" | "failure", Readonly<Record<string, string>>>> = {
+  problem: {},
+  failure: { "code.threw": "line", "code.limit": "got" },
+};
+
+/** Every key the words of JavaScript need: what `catalogueKeys` adds, so both languages must have them. */
+function saidKeys(): string[] {
+  const keys: string[] = [];
+  for (const [kind, codes] of [
+    ["problem", CODE_PROBLEMS],
+    ["failure", CODE_FAILURES],
+  ] as const) {
+    const key = kind === "problem" ? KEY.problem : KEY.failure;
+    for (const code of codes) {
+      const reasons = REASONS[kind][code];
+      if (reasons) for (const r of reasons.of) keys.push(`${key(code)}.${r}`);
+      else keys.push(key(code));
+      const w = WITH[kind][code];
+      if (w) keys.push(`${key(code)}.${w}`);
+    }
+  }
+  for (const l of HARD_LIMITS) keys.push(KEY.limit(l));
+  for (const a of WRITE_ACTIONS) keys.push(KEY.writeAction(a));
+  return keys;
+}
+
+/**
+ * What a detail names, said as Juan reads it: a collection by its name (a detail gives its key, or the name as the
+ * code wrote it), a field by its name. Whatever it cannot name is said as the detail has it.
+ */
+export interface SaidNames {
+  collection?: (keyOrName: string) => string | undefined;
+  field?: (collection: string, key: string) => string | undefined;
+}
+
+const KB = 1024;
+const MB = 1024 * KB;
+/** The limits measured in bytes; `ms` is time; every other is a count (AU-35). */
+const BYTES = new Set<string>([
+  "memoryBytes",
+  "stackBytes",
+  "inputBytes",
+  "outputBytes",
+  "readBytes",
+  "stepReadBytes",
+  "writeBytes",
+  "stepWriteBytes",
+]);
+
+/** The locale numbers and dates are written in, by the app's language. */
+export const localeOf = (lang: string): string => (lang === "en" ? "en-GB" : "es-ES");
+
+/** A limit's amount with its unit: «5 s», «8 MB», «256 KB», «10.000». */
+export function amountOf(limit: string, n: number, locale: string): string {
+  const num = (x: number) => x.toLocaleString(locale, { maximumFractionDigits: 1 });
+  if (limit === "ms") return `${num(n / 1000)} s`;
+  if (BYTES.has(limit))
+    return n >= MB ? `${num(n / MB)} MB` : n >= KB ? `${num(n / KB)} KB` : `${num(n)} B`;
+  return num(n);
+}
+
+/**
+ * A problem of validation or a step's failure in words (A-34): its key, by reason where it has one, with its detail
+ * as variables, a collection and a field said by name, an action of saving and a limit by their words and an amount
+ * with its unit. What a code wrote (an error's message, the parser's) stays as it came: the caller paints it as plain
+ * text (A-01).
+ */
+export function said(
+  t: T,
+  kind: "problem" | "failure",
+  x: { code: string; detail?: Record<string, string | number> },
+  locale: string,
+  names: SaidNames = {},
+): string {
+  const d = x.detail ?? {};
+  const base = (kind === "problem" ? KEY.problem : KEY.failure)(x.code);
+  const reason = REASONS[kind][x.code];
+  const w = WITH[kind][x.code];
+  const key = reason
+    ? `${base}.${String(d[reason.by] ?? reason.of[0])}`
+    : w && d[w] !== undefined
+      ? `${base}.${w}`
+      : base;
+  // A read's limit of rows, which a few say without a detail naming it.
+  const vars: Record<string, string | number> = {
+    readRows: amountOf("readRows", CODE_LIMITS.readRows, locale),
+  };
+  for (const [k, v] of Object.entries(d))
+    vars[k] = typeof v === "number" ? v.toLocaleString(locale) : v;
+  const collection = typeof d.collection === "string" ? d.collection : undefined;
+  if (collection !== undefined) vars.collection = names.collection?.(collection) ?? collection;
+  if (typeof d.field === "string" && collection !== undefined)
+    vars.field = names.field?.(collection, d.field) ?? d.field;
+  if (typeof d.action === "string") vars.action = t(KEY.writeAction(d.action));
+  if (typeof d.limit === "string") {
+    vars.limit = t(KEY.limit(d.limit));
+    for (const n of ["max", "got"] as const)
+      if (typeof d[n] === "number") vars[n] = amountOf(d.limit, d[n] as number, locale);
+  }
+  return t(key, vars);
+}
