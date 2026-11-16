@@ -1,5 +1,4 @@
 // What the step's view and its card show of a step (docs/automatizaciones.md §5.7, «Contra el mar de opciones»).
-// What SALIDA says (AU-72, AU-84) is E's, pending.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -12,11 +11,13 @@ import {
   type ParamValue,
   paramsOf,
   SETTINGS_DEFAULTS,
+  STEP_FAILURES,
   type Step,
   stepType,
 } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
+import type { StepTest } from "./client.ts";
 import {
   cannotTest,
   conditionFields,
@@ -26,6 +27,7 @@ import {
   markedOf,
   missingOf,
   optionsLeft,
+  outputSays,
   rowsOf,
   SETTINGS_ROWS,
   settingsChanged,
@@ -433,10 +435,66 @@ describe("«Parámetros»", () => {
 });
 
 describe("what the output says in place of rows", () => {
-  it.todo(
-    "AU-72 · a step never tested, one skipped, one that failed and one that gave no rows each say so in the output, and one with rows says nothing in their place",
-  );
-  it.todo(
-    "AU-84 · a failed step's reason names the parameter at fault when the failure has one, and a failure with no code of its own is said as a general one, never in the engine's English",
-  );
+  const step: Step = {
+    id: "s_b",
+    name: "Buscar filas",
+    type: "collection",
+    params: { action: "find", collection: "gastos" },
+  };
+  const test = (over: Partial<StepTest>): StepTest => ({
+    state: "done",
+    at: 1,
+    ms: 20,
+    in: { main: 3 },
+    out: { main: 3 },
+    retries: 0,
+    failed: 0,
+    wouldWrite: 0,
+    stale: false,
+    ...over,
+  });
+  it("AU-72 · a step never tested, one skipped, one that failed and one that gave no rows each say so in the output, and one with rows says nothing in their place", () => {
+    expect(outputSays(step, undefined)).toEqual({ kind: "untested" });
+    expect(outputSays(step, test({ state: "skipped", out: {} }))).toEqual({ kind: "skipped" });
+    // Not reached because the test stopped before it (AU-67): «parado», never «saltado».
+    expect(outputSays(step, test({ state: "stopped", out: {} }))).toEqual({ kind: "stopped" });
+    expect(outputSays(step, test({ state: "failed", out: {} }))?.kind).toBe("failed");
+    expect(outputSays(step, test({ out: { main: 0 } }))).toEqual({ kind: "empty" });
+    expect(outputSays(step, test({ out: { yes: 0, no: 0 } }))).toEqual({ kind: "empty" });
+    expect(outputSays(step, test({}))).toBeNull();
+    // One output with rows is rows to show, even when the other gave none.
+    expect(outputSays(step, test({ out: { yes: 0, no: 2 } }))).toBeNull();
+  });
+  it("AU-84 · a failed step's reason names the parameter at fault when the failure has one, and a failure with no code of its own is said as a general one, never in the engine's English", () => {
+    const failed = (error: StepTest["error"]) =>
+      outputSays(step, test({ state: "failed", out: {}, ...(error ? { error } : {}) }));
+    const said = failed({
+      message: "collection gastos has no row r_1",
+      failure: { code: "row.missing", param: "collection", detail: { collection: "gastos" } },
+    });
+    expect(said).toEqual({
+      kind: "failed",
+      failure: { code: "row.missing", param: "collection", detail: { collection: "gastos" } },
+      param: expect.objectContaining({ key: "collection" }),
+    });
+    // A parameter written with the path inside it is still that parameter.
+    expect(
+      failed({ message: "x", failure: { code: "value.type", param: "where.0.value" } }),
+    ).toMatchObject({ param: { key: "where" } });
+    // No code: the general one; the English message is never what is said.
+    const general = failed({ message: "TypeError: cannot read properties of undefined" });
+    expect(general).toEqual({ kind: "failed", failure: { code: "other" } });
+    expect(failed(undefined)).toEqual({ kind: "failed", failure: { code: "other" } });
+    // A parameter the step has not: the reason, with nothing to go to.
+    expect(failed({ message: "x", failure: { code: "limit", param: "nada" } })).toEqual({
+      kind: "failed",
+      failure: { code: "limit", param: "nada" },
+    });
+    // Every code is worded in both languages, the general one too.
+    for (const lang of ["es", "en"] as const) {
+      const t = translator(lang);
+      for (const code of STEP_FAILURES)
+        expect(t(`auto.failure.${code}`)).not.toBe(`auto.failure.${code}`);
+    }
+  });
 });

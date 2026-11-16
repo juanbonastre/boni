@@ -3,10 +3,20 @@
 // and the builder turns each into a real one, keeping the rule's id in its name (`make check` reads them). Real
 // tests open a store with the repo's invented seeds (seed.test-util.ts: generated ids, keys and names like Juan's)
 // and, where a rule is about volume, thousands of rows. Bounds on time are in this thread's CPU time (cpu.test-util.ts).
-import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import type { Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide, ensureSystemTypes, type Origin } from "@boni/agent";
+import {
+  decide,
+  ensureSystemTypes,
+  fakePlanner,
+  leaf,
+  type Origin,
+  ToolRegistry,
+} from "@boni/agent";
 import {
   type Automation,
   cellOf,
@@ -21,9 +31,13 @@ import { label, newId } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACTIONS, runAction } from "../actions.ts";
+import { ACTION_MCP, ACTIONS, ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
+import { AgentHost } from "../agent.ts";
+import { addUser } from "../auth.ts";
 import { cpu } from "../cpu.test-util.ts";
 import { DataError, listRows } from "../data.ts";
+import { openDb } from "../db.ts";
+import { Feeds } from "../feeds.ts";
 import { flowMap } from "../flowMap.ts";
 import {
   deleteAutomationRow,
@@ -32,14 +46,17 @@ import {
   updateFlowRow,
   withFlows,
 } from "../flowsCollection.ts";
+import { makeApp, serve } from "../http.ts";
+import { LoginGuard } from "../limits.ts";
 import { mcpAnswer, mcpToolNames } from "../mcp.ts";
 import { createPage } from "../pages.ts";
+import { ROUTES } from "../routes.ts";
 import { seed } from "../seed.test-util.ts";
 import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { ACTS, actOf, argsOf, runPolicy } from "./policy.ts";
-import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES } from "./routes.ts";
+import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES, NO_MCP_YET } from "./routes.ts";
 import * as service from "./service.ts";
 import {
   automationLabel,
@@ -231,24 +248,198 @@ const timing = (what: string, ms: number) => {
     appendFileSync(process.env.BONI_TIMINGS, `${what}: ${ms.toFixed(1)} ms\n`);
 };
 
+const SIGN_IN = "una contraseña larga de ejemplo";
+/** The server over HTTP on the tailnet entry, with its own accounts and Juan's store in its host. */
+async function served(actions?: ToolRegistry) {
+  const home = mkdtempSync(join(dir, "http-"));
+  const db = openDb(join(home, "system.db"));
+  addUser(db, "juan", SIGN_IN);
+  const planner = fakePlanner([]);
+  const host = new AgentHost({ dataDir: home, providers: { planner, reader: planner } });
+  const app = makeApp({
+    db,
+    key: randomBytes(32),
+    feeds: new Feeds(async () => ""),
+    guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
+    agent: host,
+    write: true,
+    ...(actions ? { actions } : {}),
+  });
+  const server: Server = serve(app, "tailnet");
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  server.on("close", () => db.close());
+  return { server, host, base: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+}
+async function signedIn(base: string) {
+  const r = await fetch(`${base}/api/login`, {
+    method: "POST",
+    body: JSON.stringify({ user: "juan", password: SIGN_IN, device: "portatil-ejemplo" }),
+  });
+  const token = ((await r.json()) as { token: string }).token;
+  return async (method: string, path: string, body?: unknown) => {
+    const res = await fetch(`${base}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}` },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  };
+}
+
 describe("the routes and the list of actions", () => {
-  it.todo(
-    "AU-168 · every route of AUTOMATION_ROUTES is in ROUTES as tailnet and in ROUTE_RUNS with its action; with a list of actions that lacks it the route is refused (403, P0) before anything runs, the reads too",
-  );
-  it.todo(
-    "AU-168 · an action that changes an automation is Juan's touch: his hand runs it, and an assistant, a flow and work in the background are refused by the policy",
-  );
-  it.todo(
-    "AU-168 · asked by an origin that is not Juan's hand, automations.read and automations.test answer the states and the counts and never a row or a field's value",
-  );
+  it("AU-168 · every route of AUTOMATION_ROUTES is in ROUTES as tailnet and in ROUTE_RUNS with its action; with a list of actions that lacks it the route is refused (403, P0) before anything runs, the reads too", async () => {
+    const http = readFileSync(join(import.meta.dirname, "..", "http.ts"), "utf8");
+    for (const [route, { action }] of Object.entries(AUTOMATION_ROUTES)) {
+      expect(ROUTES[route], route).toBe("tailnet");
+      expect(ACTIONS.get(action)?.name, route).toBe(action);
+      // A route that changes something is its action in both tables; a read (no ROUTE_RUNS: only changes are there)
+      // runs its action by name all the same, through the same `runAction`.
+      if (!route.startsWith("GET ")) {
+        expect(ROUTE_RUNS[route], route).toBe(action);
+        expect(ROUTE_ACTIONS[route], route).toEqual([action]);
+      } else expect(Object.hasOwn(ROUTE_RUNS, route), route).toBe(false);
+      const at = http.indexOf(`case "${route}"`);
+      expect(at, route).toBeGreaterThan(-1);
+      expect(http.slice(at, at + 700), route).toContain(`"${action}"`);
+    }
+
+    // Over HTTP with a list of actions that has none of them: each is refused by the policy before anything runs.
+    const { server, base, host } = await served(new ToolRegistry());
+    try {
+      const call = await signedIn(base);
+      const own = host.store(1);
+      const made = ok(createAutomation(own, reviewing().doc, HAND));
+      const trigger = made.automation.steps[0]?.id as string;
+      const step = made.automation.steps[1]?.id as string;
+      const log = own.logPage(0, 1_000_000).length;
+      const refused = { status: 403, body: { error: "policy", rule: "P0" } };
+      const path = `/api/agent/automations/${made.id}`;
+      expect(await call("POST", `${path}/test`, { trigger, fields: { minimo: 1 } })).toEqual(
+        refused,
+      );
+      expect(await call("GET", `${path}/test/rows?step=${step}&side=out&name=main`)).toEqual(
+        refused,
+      );
+      expect(await call("GET", `${path}/test/sample?step=${step}`)).toEqual(refused);
+      expect(await call("GET", path)).toEqual(refused);
+      // Nothing ran: no test kept, nothing in the log.
+      expect(own.journal.automationTests(made.id)).toEqual([]);
+      expect(own.logPage(0, 1_000_000).length).toBe(log);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+  it("AU-168 · an action that changes an automation is Juan's touch: his hand runs it, and an assistant, a flow and work in the background are refused by the policy", async () => {
+    const { id, step } = made();
+    const touching = Object.entries(AUTOMATION_ACTIONS)
+      .filter(([, a]) => a.effect === "touch")
+      .map(([name]) => name);
+    expect(touching.sort()).toEqual(
+      [
+        "automations.arrange",
+        "automations.create",
+        "automations.delete",
+        "automations.duplicate",
+        "automations.edit",
+        "automations.restore",
+      ].sort(),
+    );
+    // The two that read are reads in the registry too: a test writes in no collection (AU-90).
+    expect(ACTIONS.get("automations.read")?.effect).toBe("read");
+    expect(ACTIONS.get("automations.test")?.effect).toBe("read");
+    const at = (name: string, origin: Origin, flow = false) =>
+      decide({ tool: ACTIONS.get(name), args: {}, control: null, flow }, origin, {
+        writes: 0,
+        sensitiveReads: 0,
+      }).kind;
+    for (const name of touching) {
+      expect(ACTIONS.get(name)?.effect, name).toBe("touch");
+      expect(at(name, { kind: "hand", trust: "personal", device: "d_portatil" }), name).toBe(
+        "allow",
+      );
+      expect(at(name, { kind: "assistant", trust: "personal", device: "d_asistente" }), name).toBe(
+        "deny",
+      );
+      expect(at(name, { kind: "background", trust: "personal" }), name).toBe("deny");
+      // A flow is work in the background: refused too.
+      expect(at(name, { kind: "background", trust: "personal" }, true), name).toBe("deny");
+    }
+    // And his hand does run them, through `runAction` as the routes call it.
+    const hand = { store, trust: "personal" as const, device: "d_portatil" };
+    const r = await runAction(
+      "automations.arrange",
+      { id, places: [{ step: step("Buscar"), x: 10, y: 20 }] },
+      hand,
+    );
+    expect(r).toEqual({ out: { ok: true } });
+    expect(ok(automationView(store, id)).places).toEqual([{ step: step("Buscar"), x: 10, y: 20 }]);
+  });
+  it("AU-168 · asked by an origin that is not Juan's hand, automations.read and automations.test answer the states and the counts and never a row or a field's value", async () => {
+    const { id, step } = made();
+    ok(await testAutomation(store, id, { trigger: step("Inicio"), fields: { minimo: 1 } }, JUAN));
+    const reads = {
+      "automations.read": [
+        { id },
+        { id, part: "rows", step: step("Buscar"), side: "out", name: "main" },
+        { id, part: "sample", step: step("Marcar") },
+      ],
+      "automations.test": [{ id, trigger: step("Inicio"), fields: { minimo: 1 } }],
+    };
+    // By his hand they give the rows and their values.
+    const hand = { store, trust: "personal" as const, device: "d_portatil" };
+    const page = await runAction("automations.read", reads["automations.read"][1] as never, hand);
+    expect("out" in page && JSON.stringify(page.out)).toContain("libro");
+    // Any other origin reaches an action through the agent's runner, which gives each tool the service its host
+    // names: the server's host names none «automations» in F14b (agent.ts), so the action gets null. A run of an
+    // assistant, a flow or work in the background with a service shaped like another area's (actor «agent») is no
+    // hand either. Both answer `not-available`: no row, no value, and no count either (the gap: F16).
+    const planner = fakePlanner([]);
+    const host = new AgentHost({
+      dataDir: mkdtempSync(join(dir, "host-")),
+      providers: { planner, reader: planner },
+    });
+    const services = host as unknown as {
+      service(account: number, name: string, run: { run: string; inFlow?: boolean }): unknown;
+    };
+    const fromHost = services.service(1, "automations", { run: "r_ejemplo" });
+    expect(fromHost).toBeNull();
+    expect(services.service(1, "automations", { run: "r_ejemplo", inFlow: true })).toBeNull();
+    const asAgent = { store, meta: { actor: "agent", run: "r_ejemplo" } };
+    const testsBefore = JSON.stringify(store.journal.automationTests(id));
+    for (const [name, list] of Object.entries(reads))
+      for (const args of list)
+        for (const service of [fromHost, asAgent, undefined]) {
+          const tool = ACTIONS.get(name);
+          if (!tool?.run) throw new Error(`no action ${name}`);
+          const vals = Object.fromEntries(
+            Object.entries(args).map(([k, v]) => [k, leaf(v as never, OUTSIDE)]),
+          );
+          let out: unknown = null;
+          let code = "";
+          try {
+            out = await tool.run({ store: null, service } as never, vals, OUTSIDE);
+          } catch (e) {
+            code = (e as { code?: string }).code ?? String(e);
+          }
+          expect(code, `${name} ${JSON.stringify(args)}`).toBe("not-available");
+          expect(out).toBeNull();
+        }
+    // A test asked so ran nothing either: what is kept is as it was.
+    expect(JSON.stringify(store.journal.automationTests(id))).toBe(testsBefore);
+    // Nor has the MCP a tool for them in F14b: each says why (NO_MCP_YET).
+    for (const name of Object.keys(reads))
+      expect(ACTION_MCP[name], name).toEqual({ why: NO_MCP_YET });
+    expect(mcpToolNames().filter((t) => /automation/.test(t))).toEqual([]);
+  });
   it("AU-87 · no action of the list adds, removes or changes a step of a draft but automations.create and automations.edit, and neither runs for an origin that is not Juan's hand or his card", async () => {
     const { id, step } = made();
     const before = ok(automationView(store, id)).automation;
     const hand = { store, trust: "personal" as const, device: "d_portatil" };
-    // Every action of the list there is today, as his hand runs it (E registers «Probar»: it joins this list then).
+    // Every action of the list there is today, as his hand runs it: «Probar» and «Probar paso» too.
     const args: Record<string, Record<string, unknown>> = {
       "automations.arrange": { id, places: [{ step: step("Buscar"), x: 300, y: 40 }] },
       "automations.duplicate": { id, name: "Revisar gastos (copia)" },
+      "automations.test": { id, trigger: step("Inicio"), fields: { minimo: 1 } },
     };
     const others = Object.keys(AUTOMATION_ACTIONS).filter(
       (a) => a !== "automations.create" && a !== "automations.edit" && ACTIONS.get(a),
@@ -256,6 +447,7 @@ describe("the routes and the list of actions", () => {
     expect(others).toEqual(
       expect.arrayContaining([
         "automations.read",
+        "automations.test",
         "automations.arrange",
         "automations.duplicate",
         "automations.delete",
@@ -1086,6 +1278,57 @@ describe("«Probar» and «Probar paso»", () => {
     expect(third.reused).toEqual([]);
   });
 
+  it("AU-91 · «Probar paso» of the last step over 3,000 rows of 40 fields takes the steps before it from their kept tests within its time, timed (A-15)", async () => {
+    bulk(3000);
+    // «Ampliar» gives each row (a title and three fields) 36 fields more: «Marcar» reads 3,003 rows of 40 fields.
+    const extra = Array.from({ length: 36 }, (_, i) => ({
+      field: `campo_${i}`,
+      value: `un valor de ejemplo ${i}`,
+    }));
+    const d = draft(
+      [
+        ["Inicio", "manual"],
+        [
+          "Buscar",
+          "collection",
+          { collection: "gasto", action: "find", where: [], sort: [], limit: 5000 },
+        ],
+        ["Ampliar", "edit", { fields: extra }],
+        ["Marcar", "edit", { fields: [{ field: "visto", value: true }] }],
+      ],
+      [
+        ["Inicio", "Buscar"],
+        ["Buscar", "Ampliar"],
+        ["Ampliar", "Marcar"],
+      ],
+    );
+    const { id, step } = made(d);
+    let start = cpu();
+    const whole = await tested(id, { trigger: step("Inicio"), fields: {} });
+    const all = cpu() - start;
+    timing("«Probar» of four steps over 3,003 rows of 40 fields (CPU)", all);
+    expect(whole.state).toBe("done");
+    // About 0.9 s of CPU on the laptop (2026-11-16); the bound has room for CI's slower machines.
+    expect(all).toBeLessThan(4000);
+    expect(whole.tests[step("Ampliar")]?.out.main).toBe(3003);
+    start = cpu();
+    const last = await tested(id, { trigger: step("Inicio"), fields: {}, step: step("Marcar") });
+    const ms = cpu() - start;
+    timing(
+      "«Probar paso» of the last step, reusing three kept tests of 3,003 rows of up to 40 fields (CPU)",
+      ms,
+    );
+    expect(last.ran).toEqual([step("Marcar")]);
+    expect(last.reused).toEqual([step("Inicio"), step("Buscar"), step("Ampliar")]);
+    const [row] = ok(
+      testRows(store, id, { step: step("Marcar"), side: "out", name: "main", offset: 0, limit: 1 }),
+    ).rows;
+    expect(Object.keys(row?.json ?? {})).toHaveLength(41);
+    // About 0.7 s of CPU on the laptop (2026-11-16), near half of it reading the 6,007 kept rows back (`recordOf`);
+    // the bound has room for CI's slower machines.
+    expect(ms).toBeLessThan(3000);
+  }, 120_000);
+
   it("AU-92 · a save of the draft answers the steps whose kept test is stale, and the view marks them; moving a box or renaming a step marks none", async () => {
     // 300 steps: «Inicio», «Buscar» and a chain of 298 «Editar campos».
     bulk(3000);
@@ -1267,8 +1510,7 @@ describe("«Probar» and «Probar paso»", () => {
     expect(answer.failedAt).toBe(step("Leer"));
     expect(t[step("Leer")]?.state).toBe("failed");
     expect(t[step("Leer")]?.error?.failure?.code).toBe("row.missing");
-    // The run stops at the failure: the step that hung from it was not decided. The engine (F14a) calls that
-    // «stopped» («parado»); the design's word in this sentence is «saltado» (see the PR).
+    // The run stops at the failure: the step that hung from it was not decided, «stopped» («parado», AU-67).
     expect(t[step("Tras leer")]?.state).toBe("stopped");
     expect(t[step("Tras leer")]?.out).toEqual({});
   });

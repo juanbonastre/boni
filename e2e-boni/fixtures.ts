@@ -19,6 +19,17 @@ export interface Shell {
   calls: string[];
 }
 
+/** One step's test as the fake server answers it (`automations[].test.steps`). */
+export interface AutoTestSpec {
+  state?: "done" | "failed" | "skipped" | "stopped";
+  in?: Record<string, number>;
+  out?: Record<string, number>;
+  ms?: number;
+  wouldWrite?: number;
+  error?: Record<string, unknown>;
+  rows?: Record<string, Record<string, unknown>[] | { count: number; fields: number }>;
+}
+
 export interface Options {
   /** Answer of POST actions: "ok", "invalid" or "offline". */
   action?: "ok" | "invalid" | "offline";
@@ -48,6 +59,22 @@ export interface Options {
     steps?: Record<string, unknown>[];
     arrows?: Record<string, unknown>[];
     places?: { step: string; x: number; y: number }[];
+    /**
+     * What the server answers a test of it (E, AU-64, AU-90 to AU-94). `steps`: each step's test by id, its rows by
+     * «in:<input>» or «out:<output>» (as given, or `{ count, fields }`: made up as «valor <fila>-<campo>» in fields
+     * «campo_1»…), its counts from them unless given; `state`, `problems` and `failedAt`, the answer's. `kept`: the
+     * tests are already there when the editor opens, made at that time (only those of `keptOnly`, when given);
+     * `tested`, the fields they were made with.
+     */
+    test?: {
+      steps: Record<string, AutoTestSpec>;
+      state?: "done" | "failed" | "invalid";
+      problems?: Record<string, unknown>[];
+      failedAt?: string;
+      kept?: number;
+      keptOnly?: string[];
+      tested?: Record<string, Record<string, unknown>>;
+    };
   }[];
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
    * api/agent/turn"); the last one repeats. */
@@ -867,6 +894,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         places: { step: string; x: number; y: number }[];
         updated: number;
         deleted: boolean;
+        /** E: what a test answers, the tests kept, the fields of the last, and each tested step as it was. */
+        spec?: NonNullable<Options["automations"]>[number]["test"];
+        tests: Record<string, Record<string, unknown>>;
+        tested: Record<string, Record<string, unknown>>;
+        prints: Record<string, string>;
       };
       const autoDoc = (id: string, name: string, trigger?: string | null) => ({
         format: 1,
@@ -892,7 +924,72 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         places: a.places ?? [],
         updated: a.updated ?? 0,
         deleted: false,
+        spec: a.test,
+        tests: {},
+        tested: a.test?.tested ?? {},
+        prints: {},
       }));
+      /** What makes a step's test stale (AU-91): anything but its name and its place. */
+      const printOf = (step: Record<string, unknown>) =>
+        JSON.stringify({ ...step, name: undefined });
+      const testRows = (spec: AutoTestSpec | undefined, key: string) => {
+        const r = spec?.rows?.[key];
+        return r === undefined ? null : r;
+      };
+      const countOf = (r: ReturnType<typeof testRows>) =>
+        r === null ? 0 : Array.isArray(r) ? r.length : r.count;
+      const sideCounts = (spec: AutoTestSpec | undefined, side: "in" | "out") => {
+        const out: Record<string, number> = {};
+        for (const k of Object.keys(spec?.rows ?? {}))
+          if (k.startsWith(`${side}:`)) out[k.slice(side.length + 1)] = countOf(testRows(spec, k));
+        return out;
+      };
+      const stepTest = (spec: AutoTestSpec, at: number) => ({
+        state: spec.state ?? "done",
+        at,
+        ms: spec.ms ?? 120,
+        in: spec.in ?? sideCounts(spec, "in"),
+        out: spec.out ?? sideCounts(spec, "out"),
+        retries: 0,
+        failed: 0,
+        wouldWrite: spec.wouldWrite ?? 0,
+        ...(spec.error ? { error: spec.error } : {}),
+        stale: false,
+      });
+      const stepsBefore = (a: AutoHere, step: string) => {
+        const arrows = (a.doc.arrows ?? []) as { from: { step: string }; to: { step: string } }[];
+        const seen = new Set<string>();
+        const walk = (id: string) => {
+          for (const x of arrows)
+            if (x.to.step === id && !seen.has(x.from.step)) {
+              seen.add(x.from.step);
+              walk(x.from.step);
+            }
+        };
+        walk(step);
+        return seen;
+      };
+      const stepsAfter = (a: AutoHere, step: string) => {
+        const arrows = (a.doc.arrows ?? []) as { from: { step: string }; to: { step: string } }[];
+        const seen = new Set<string>();
+        const walk = (id: string) => {
+          for (const x of arrows)
+            if (x.from.step === id && !seen.has(x.to.step)) {
+              seen.add(x.to.step);
+              walk(x.to.step);
+            }
+        };
+        walk(step);
+        return seen;
+      };
+      for (const a of autos)
+        if (a.spec?.kept !== undefined)
+          for (const s of a.doc.steps) {
+            const spec = a.spec.steps[s.id];
+            if (!spec || (a.spec.keptOnly && !a.spec.keptOnly.includes(s.id))) continue;
+            a.tests[s.id] = stepTest(spec, a.spec.kept);
+            a.prints[s.id] = printOf(s);
+          }
       const autoTrigger = (a: AutoHere) => {
         const first = a.doc.steps[0]?.type;
         return first === "manual" ? "Disparado por el usuario" : (first ?? "—");
@@ -904,8 +1001,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           rev: a.rev,
           automation: a.doc,
           places: a.places,
-          tests: {},
-          tested: {},
+          tests: a.tests,
+          tested: a.tested,
           device: "d_portatil",
           updated: a.updated,
         });
@@ -914,6 +1011,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         id: string | undefined,
         rest: string | undefined,
         body: unknown,
+        query = "",
       ): [number, string] => {
         // What the app asked of these routes, every method (`window.__automations`: "METHOD id/rest"); with
         // `window.__automationsDown` set, the server is down and each is answered 503.
@@ -958,7 +1056,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           a.doc = { ...b.automation, id: a.id };
           a.rev++;
           a.updated = Date.now();
-          return [200, JSON.stringify({ rev: a.rev, stale: [] })];
+          // A step that changed since its test, and what hangs from it, is stale (AU-92); moved or renamed, not.
+          const changed = a.doc.steps
+            .filter((x) => a.prints[x.id] !== undefined && a.prints[x.id] !== printOf(x))
+            .map((x) => x.id);
+          const stale = new Set(changed);
+          for (const c of changed) for (const d of stepsAfter(a, c)) stale.add(d);
+          const said = [...stale].filter((x) => a.tests[x] && !a.tests[x].stale);
+          for (const x of said) a.tests[x] = { ...a.tests[x], stale: true };
+          return [200, JSON.stringify({ rev: a.rev, stale: said })];
         }
         // The boxes (AU-05): kept apart from the draft, so its `rev` stays; a box of a step it has not, refused.
         if (rest === "/layout" && method === "PUT") {
@@ -969,6 +1075,87 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           a.places = [...by.values()].filter((p) => ids.has(p.step));
           return [200, '{"ok":true}'];
         }
+        // «Probar» and «Probar paso» (AU-90, AU-91): what `test` says; «Probar paso» runs the step and what before it
+        // has no test or a stale one, and leaves the rest as it was. Every body asked: `window.__autoTests`.
+        if (rest === "/test" && method === "POST") {
+          const req = (body ?? {}) as { trigger?: unknown; fields?: unknown; step?: unknown };
+          if (typeof req.trigger !== "string" || !req.fields || typeof req.fields !== "object")
+            return bad;
+          record("__autoTests", JSON.stringify(req));
+          const spec = a.spec;
+          if (spec?.state === "invalid")
+            return [
+              200,
+              JSON.stringify({
+                state: "invalid",
+                problems: spec.problems ?? [],
+                ms: 0,
+                ran: [],
+                reused: [],
+                tests: a.tests,
+              }),
+            ];
+          const ids = a.doc.steps.map((x) => x.id);
+          const step = typeof req.step === "string" ? req.step : null;
+          let ran = ids;
+          let reused: string[] = [];
+          if (step) {
+            const before = stepsBefore(a, step);
+            reused = ids.filter((x) => before.has(x) && a.tests[x] && !a.tests[x].stale);
+            ran = ids.filter((x) => x === step || (before.has(x) && !reused.includes(x)));
+          }
+          const at = Date.now();
+          let ms = 0;
+          for (const x of ran) {
+            const st = spec?.steps[x];
+            if (!st) {
+              delete a.tests[x];
+              continue;
+            }
+            a.tests[x] = stepTest(st, at);
+            a.prints[x] = printOf(a.doc.steps.find((y) => y.id === x) as Record<string, unknown>);
+            ms += st.ms ?? 120;
+          }
+          a.tested = { ...a.tested, [req.trigger]: req.fields as Record<string, unknown> };
+          return [
+            200,
+            JSON.stringify({
+              state: spec?.state ?? "done",
+              problems: [],
+              ms,
+              ran: ran.filter((x) => a.tests[x]),
+              reused,
+              tests: a.tests,
+              ...(spec?.failedAt ? { failedAt: spec.failedAt } : {}),
+            }),
+          ];
+        }
+        // The rows of a test, 50 at a time (AU-71, AU-72): `window.__autoRows` has every page asked.
+        if (rest === "/test/rows" && method === "GET") {
+          const q = new URLSearchParams(query);
+          const step = q.get("step") ?? "";
+          const side = q.get("side");
+          const name = q.get("name") ?? "";
+          const offset = Number(q.get("offset") ?? "0");
+          if ((side !== "in" && side !== "out") || !Number.isInteger(offset) || offset < 0)
+            return bad;
+          if (!a.tests[step]) return gone;
+          record("__autoRows", `${step} ${side}:${name} ${offset}`);
+          const r = testRows(a.spec?.steps[step], `${side}:${name}`);
+          const total = countOf(r);
+          const rows: Record<string, unknown>[] = [];
+          for (let i = offset; i < Math.min(total, offset + 50); i++) {
+            if (Array.isArray(r)) rows.push({ label: {}, ...(r[i] as Record<string, unknown>) });
+            else if (r) {
+              const json: Record<string, unknown> = {};
+              for (let f = 1; f <= r.fields; f++) json[`campo_${f}`] = `valor ${i + 1}-${f}`;
+              rows.push({ json, label: {} });
+            }
+          }
+          return [200, JSON.stringify({ rows, total })];
+        }
+        if (rest === "/test/sample" && method === "GET")
+          return [200, JSON.stringify({ current: null, total: 0, steps: {} })];
         if (rest === "/duplicate" && method === "POST") {
           if (typeof b.name !== "string" || !b.name.trim()) return bad;
           const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
@@ -1681,10 +1868,17 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample)?)?$/.exec(
             p,
           );
-        if (automation) return automationAnswer(method, automation[1], automation[2], body);
+        if (automation)
+          return automationAnswer(
+            method,
+            automation[1],
+            automation[2],
+            body,
+            path.split("?")[1] ?? "",
+          );
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
         if (p === "api/agent/requests" && asked) return [200, JSON.stringify({ requests: asked })];

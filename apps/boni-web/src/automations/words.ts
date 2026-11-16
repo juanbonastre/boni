@@ -24,6 +24,7 @@ import {
 import type { T } from "../i18n.ts";
 import type { CardLabel } from "./panel.ts";
 import { notBuilt } from "./pending.ts";
+import type { LogLine } from "./state.ts";
 
 /** The key that says each thing of the catalogue. */
 export const KEY = {
@@ -200,6 +201,56 @@ export function labelWord(t: T, step: Step, label: CardLabel): string {
     default:
       return t(KEY.setting(label.kind));
   }
+}
+
+/** When, said from now (AU-64, AU-72): «hace un momento», «hace 2 min», «hace 3 h», «hace 2 días». */
+export function agoWords(t: T, at: number, now: number): string {
+  const min = Math.floor(Math.max(0, now - at) / 60_000);
+  if (min < 1) return t("auto.ago.now");
+  if (min < 60) return t("auto.ago.min", { n: min });
+  const h = Math.floor(min / 60);
+  if (h < 24) return t("auto.ago.h", { n: h });
+  return t("auto.ago.d", { n: Math.floor(h / 24) });
+}
+
+/** How long, in seconds with one decimal as each language writes it: «4,1 s», «4.1 s». */
+export function secsWords(t: T, lang: "es" | "en", ms: number): string {
+  const s = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(Math.max(0, ms) / 1000);
+  return t("auto.secs", { s });
+}
+
+/** How many rows: «128 filas», «1 fila», with the thousands as the language writes them. */
+export function rowsWords(t: T, lang: "es" | "en", n: number): string {
+  return t("auto.rows", { n: n.toLocaleString(lang === "en" ? "en-GB" : "es-ES") });
+}
+
+/**
+ * The line of «Registro» (AU-64): «Sin probar»; «2 problemas»; «Última prueba hace 2 min · bien · 6 pasos · 4,1 s ·
+ * no escribió nada»; «… · falló en «Filtrar»». `nameOf`: a step's name by its id.
+ */
+export function logWords(
+  t: T,
+  lang: "es" | "en",
+  line: LogLine,
+  nameOf: (step: string) => string,
+  now: number,
+): string {
+  if (line.kind === "untested") return t("auto.view.untested");
+  if (line.kind === "problems") return t("auto.log.problems", { n: line.count });
+  const parts = [
+    t("auto.log.last", { ago: agoWords(t, line.at, now) }),
+    line.ok ? t("auto.log.ok") : t("auto.log.failedAt", { step: nameOf(line.failedAt) }),
+    t("auto.log.steps", { n: line.steps }),
+    secsWords(t, lang, line.ms),
+  ];
+  if (line.ok) {
+    parts.push(t("auto.log.wroteNothing"));
+    if (line.wouldWrite > 0) parts.push(t("auto.log.wouldWrite", { n: line.wouldWrite }));
+  }
+  return parts.join(" · ");
 }
 
 /** What names a step on its own (AU-86). */

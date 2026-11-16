@@ -4,8 +4,8 @@
  * parameter is painted by the component of its control (`PARAM_CONTROLS`, AU-80), never by anything of its step's
  * type; what the panel holds is `rowsOf` and its kin (automations/panel.ts), and every change is a pure function of
  * automations/edit.ts made into one change of automations/state.ts, as on the canvas. There is no «Guardar»: the
- * draft is saved as it changes. What ENTRADA and SALIDA show of a test, and «Probar paso», are E's: until then they
- * say «Prueba los pasos anteriores» and «Sin probar».
+ * draft is saved as it changes. ENTRADA and SALIDA show the step's last test and «Probar paso» tests it (E,
+ * AutomationTest.tsx).
  */
 import {
   ACTION,
@@ -44,6 +44,14 @@ import { DO, KEY, labelWord, type Namer, summaryWords } from "../automations/wor
 import type { DataType as AppType, DataField } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
+import {
+  StepInput,
+  StepOutput,
+  setTrial,
+  TestStepButton,
+  TrialFields,
+  trialOf,
+} from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 import { FilterItemsEditor, type FilterValueSlot, RecordValue } from "./DatabaseBlock.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
@@ -623,6 +631,15 @@ export function AutomationStepView({
     setTab("params");
     setSide("input");
   }, [stepId]);
+  // The required rows being watched for the focus to leave them (AU-83), each with how to stop watching.
+  const watching = useRef(new Map<string, () => void>());
+  useEffect(
+    () => () => {
+      for (const stop of watching.current.values()) stop();
+      watching.current.clear();
+    },
+    [],
+  );
   if (!step) return null;
 
   const collections = types ?? [];
@@ -678,7 +695,7 @@ export function AutomationStepView({
   const left = state.left
     .filter((x) => x.startsWith(`${step.id}.`))
     .map((x) => x.slice(step.id.length + 1));
-  const marked = new Set(markedOf(step, left, false).map((p) => p.key));
+  const marked = new Set(markedOf(step, left, state.asked).map((p) => p.key));
   const paramName = (key: string) => t(KEY.param(step.type, key));
   const why = cannotTest(step, state.testing !== null);
   const summary = summaryOf(step, summaryWords(t, collectionNames, step)).join(" · ");
@@ -689,20 +706,82 @@ export function AutomationStepView({
   const rowsSaid = labelsOf(step).filter((l) => l.changesRows);
   const options = optionsLeft(step);
   const close = () => apply((s) => ({ ...s, open: null }));
+  /**
+   * A required parameter is left once the focus lands somewhere outside it (AU-83). A box it opened (the conditions'
+   * editor, a picker's list) is drawn apart from the row, so going into it is not leaving. Watched from the moment the
+   * focus enters the row, not from its blur: a control that held the focus and is taken out («Quitar filtro») blurs
+   * nothing, and the row is left only when the focus next lands outside it.
+   */
+  const inRow = (row: HTMLElement, el: EventTarget | null) =>
+    el instanceof Node &&
+    (row.contains(el) || !!(el as Element).closest?.(".pop-box, [role='menu'], [role='listbox']"));
+  const watch = (row: HTMLElement, key: string) => {
+    const at = `${step.id}.${key}`;
+    if (watching.current.has(at) || state.left.includes(at)) return;
+    const on = (e: FocusEvent) => {
+      if (inRow(row, e.target)) return;
+      stop();
+      leave(key);
+    };
+    const stop = () => {
+      document.removeEventListener("focusin", on);
+      watching.current.delete(at);
+    };
+    watching.current.set(at, stop);
+    document.addEventListener("focusin", on);
+  };
+  /** The focus went nowhere (out of the window, a click on nothing): the row is left now. */
+  const blurred = (row: HTMLElement, to: EventTarget | null, key: string) => {
+    if (to !== null) return;
+    if (document.activeElement && inRow(row, document.activeElement)) return;
+    watching.current.get(`${step.id}.${key}`)?.();
+    leave(key);
+  };
+  /** «Ir al parámetro» (AU-84): the parameter at fault, in «Parámetros», with the focus in it. */
+  const goToParam = (key: string) => {
+    setTab("params");
+    requestAnimationFrame(() => {
+      const row = box.current?.querySelector<HTMLElement>(
+        `.auto-param[data-param="${CSS.escape(key)}"]`,
+      );
+      row?.scrollIntoView({ block: "nearest" });
+      row?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+    });
+  };
+  const outputWord = (id: string) => {
+    if (Array.isArray(step.params.rules))
+      for (const r of step.params.rules as { id?: unknown; name?: unknown }[])
+        if (r?.id === id && typeof r.name === "string" && r.name) return r.name;
+    return t(KEY.output(id));
+  };
 
   const input = (
     <section className="auto-view-col" aria-label={t("auto.view.input")}>
       {wide && <h3 className="auto-view-col-head">{t("auto.view.input")}</h3>}
       {trigger ? (
-        <TestData t={t} fields={fieldsOut(state.draft, step.id, fieldsOf)} />
-      ) : (
-        <div className="auto-view-empty">
-          <p>{t("auto.view.noInput")}</p>
-          {/* It tests the steps before: E's (AU-71, AU-84). */}
-          <button type="button" className="btn small" disabled>
-            {t(DO.testBefore)}
-          </button>
+        <div className="auto-test-data">
+          <h4>{t("auto.view.testData")}</h4>
+          <TrialFields
+            t={t}
+            fields={fieldsOut(state.draft, step.id, fieldsOf)}
+            values={trialOf(state, step.id)}
+            set={(key, value) => apply(setTrial(step.id, key, value))}
+          />
         </div>
+      ) : (
+        <StepInput
+          key={step.id}
+          state={state}
+          step={step}
+          inputName={(id) => t(KEY.input(id))}
+          fieldNamesOf={(at) =>
+            namesOf(
+              at.input !== undefined
+                ? knownFields(state.draft, at.step, at.input, fieldsOf)
+                : fieldsOut(state.draft, at.step, fieldsOf),
+            )
+          }
+        />
       )}
     </section>
   );
@@ -718,13 +797,14 @@ export function AutomationStepView({
           ))}
         </ul>
       )}
-      <div className="auto-view-empty">
-        <p>{t("auto.view.untested")}</p>
-        {/* «Probar paso» is E's (AU-72, AU-91). */}
-        <button type="button" className="btn small" disabled>
-          {t(DO.testStep)}
-        </button>
-      </div>
+      <StepOutput
+        key={step.id}
+        state={state}
+        step={step}
+        outputName={(id) => outputWord(id)}
+        fieldNames={namesOf(fieldsOut(state.draft, step.id, fieldsOf))}
+        goToParam={goToParam}
+      />
     </section>
   );
 
@@ -748,9 +828,11 @@ export function AutomationStepView({
             key={param.key}
             className={`auto-param${isMarked ? " marked" : ""}`}
             data-param={param.key}
+            onFocus={(e) => {
+              if (param.required) watch(e.currentTarget, param.key);
+            }}
             onBlur={(e) => {
-              if (param.required && !e.currentTarget.contains(e.relatedTarget as Node | null))
-                leave(param.key);
+              if (param.required) blurred(e.currentTarget, e.relatedTarget, param.key);
             }}
           >
             <span className="auto-param-name">{name}</span>
@@ -961,10 +1043,7 @@ export function AutomationStepView({
                     })}
               </span>
             )}
-            {/* «Probar paso» is E's (AU-73, AU-91): there, and not usable yet. */}
-            <button type="button" className="btn" disabled>
-              {t(DO.testStep)}
-            </button>
+            <TestStepButton t={t} state={state} step={step} className="btn" besideSays />
           </div>
           <button
             type="button"
@@ -1111,20 +1190,6 @@ function NoteBox({
   );
 }
 
-/** A trigger's ENTRADA (AU-70): «Datos de prueba», the fields it asks; what the last test gave is E's (AU-94). */
-function TestData({ t, fields }: { t: T; fields: readonly ConditionField[] }) {
-  return (
-    <div className="auto-test-data">
-      <h4>{t("auto.view.testData")}</h4>
-      {fields.length ? (
-        <ul>
-          {fields.map((f) => (
-            <li key={f.key}>{f.name}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted small">{t("auto.view.noFields")}</p>
-      )}
-    </div>
-  );
-}
+/** A field's name by its key: what the rows of a test are headed with. */
+const namesOf = (fields: readonly ConditionField[]): Record<string, string> =>
+  Object.fromEntries(fields.map((f) => [f.key, f.name]));

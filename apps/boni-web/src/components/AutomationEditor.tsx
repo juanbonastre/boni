@@ -9,9 +9,11 @@
  */
 import { SYS } from "@boni/views";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { automationsClient } from "../automations/client.ts";
+import { triggerFor } from "../automations/panel.ts";
 import {
+  askTest,
   change,
   created,
   type EditorState,
@@ -21,6 +23,8 @@ import {
   placesKept,
   saved,
   saveFailed,
+  tested,
+  testLost,
 } from "../automations/state.ts";
 import { DO } from "../automations/words.ts";
 import { ApiError } from "../core/api.ts";
@@ -35,6 +39,7 @@ import {
   useStore,
 } from "../store.ts";
 import { AutomationCanvas } from "./AutomationCanvas.tsx";
+import { type Tester, TesterContext, trialOf } from "./AutomationTest.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
@@ -175,6 +180,44 @@ export function AutomationPage({ id }: { id: string | null }) {
     };
   }, [keep]);
 
+  /**
+   * «Probar» and «Probar paso» (AU-64, AU-90, AU-91): what the draft owes goes first, since the server tests the
+   * draft it has; a draft that could not be sent is not tested. One test at a time.
+   */
+  const tester = useMemo<Tester>(
+    () => ({
+      run: (step, trigger) => {
+        const s = latest.current;
+        if (!s || s.testing) return;
+        const from = trigger ?? triggerFor(s.draft, step);
+        if (!from) return;
+        apply((cur) => askTest(cur, step));
+        void (async () => {
+          await keep();
+          const cur = latest.current;
+          if (!cur?.id || cur.owed.draft) {
+            apply(testLost);
+            toast(t("auto.save.failed"));
+            return;
+          }
+          const request = { trigger: from, fields: trialOf(cur, from), ...(step ? { step } : {}) };
+          try {
+            const answer = await client.test(cur.id, request);
+            apply((x) => tested(x, answer, Date.now(), request));
+          } catch (e) {
+            apply(testLost);
+            toast(errorText(t, e));
+          }
+        })();
+      },
+      rows: (at) => (offset) => {
+        const id = latest.current?.id;
+        return id ? client.rows(id, { ...at, offset }) : Promise.resolve({ rows: [], total: 0 });
+      },
+    }),
+    [apply, keep, t],
+  );
+
   /** «Duplicar» (AU-62): the copy, named «<nombre> (copia)», opened once what is owed has arrived. */
   const duplicate = async () => {
     const s = latest.current;
@@ -229,7 +272,9 @@ export function AutomationPage({ id }: { id: string | null }) {
           <div className="page-loading" role="status" aria-busy="true" />
         ) : (
           <section className="auto-canvas" aria-label={state.draft.name}>
-            <AutomationCanvas state={state} apply={apply} />
+            <TesterContext.Provider value={tester}>
+              <AutomationCanvas state={state} apply={apply} />
+            </TesterContext.Provider>
           </section>
         )}
       </div>

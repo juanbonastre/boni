@@ -1158,7 +1158,7 @@ contraseña ni un código aquí» under a question.
   automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
   ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of
   the header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d;
-  «Probar» with E.
+  «Probar» is at the bottom of the canvas (E, below).
 - **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
@@ -1172,7 +1172,7 @@ contraseña ni un código aquí» under a question.
   pills in `--hover`; the ones that do not fit are one «+2», which says them on hover. A step with a required
   parameter marked empty (AU-83) has a 16 px dot of `--bad` on its top right corner. Selected, a card has the accent's
   border and ring; an off step is dimmed with a dashed border.
-  Nothing appears on hover. One step selected shows a bar above it: Probar paso (there, not usable until E) · Apagar
+  Nothing appears on hover. One step selected shows a bar above it: Probar paso («Probando…» while one runs) · Apagar
   («Encender» on an off step) · Eliminar · «⋯» with Cambiar nombre · Duplicar · Copiar; a selected arrow, in the
   accent, «+» and a cross («Quitar la flecha») at its middle. The right click on a step: Abrir · Probar paso · Apagar ·
   Cambiar nombre · Duplicar · Copiar · Eliminar (danger). Cambiar nombre edits the name on the card (Intro keeps it,
@@ -1199,8 +1199,8 @@ contraseña ni un código aquí» under a question.
   change of the draft, saved and undone like the canvas's (in the view Ctrl+Z and Ctrl+Y are the draft's, inside a
   field too; a run of keys in one box is one step back). The header: the type's icon, the name edited in place («Nombre
   del paso», Intro or leaving keeps it, Esc gives it back) with the whole summary under it in `--muted`, wrapped and
-  never cut; at the right «Probar paso» (not usable until E) with why beside it in `--muted` («Falta: Colección», the
-  names of the required parameters that are empty) and the cross. Three columns from 1100 px, ENTRADA · «Parámetros |
+  never cut; at the right «Probar paso» with why it cannot be pressed beside it in `--muted` («Falta: Colección», the
+  names of the required parameters that are empty; «Probando…» while a test runs) and the cross. Three columns from 1100 px, ENTRADA · «Parámetros |
   Ajustes» · SALIDA (1 : 1.3 : 1), each with a small uppercase `--muted` head and its own scroll. ENTRADA before a
   test says «Prueba los pasos anteriores»; a trigger's is «Datos de prueba», the fields it asks (or «No pide
   campos»). SALIDA says «Sin probar», with the labels that change the rows above it («Solo la primera fila», «Sigue
@@ -1221,6 +1221,33 @@ contraseña ni un código aquí» under a question.
   the tabs wrap. Under 640 px the app is the phone's, where the editor is not (the phone's view, only to look, comes with G; the view's styles for
   it, one column over the whole window, are there). A key typed in the view redraws only
   its step's card (A-15).
+- **«Probar»** (F14b E, `AutomationTest.tsx`, `AutomationRows.tsx`; AU-64, AU-67, AU-71 to AU-73, AU-83, AU-84, AU-90
+  to AU-94): at the bottom centre of the canvas, one small bar on `--surface`: the button «Probar» and, beside it, the
+  «Registro» folded in one line of 12 px `--muted` cut with an ellipsis: «Sin probar», then «Última prueba hace 2 min
+  · bien · 6 pasos · 4,1 s · no escribió nada · habría escrito 129 filas», or «… · falló en «Si»» and «2 problemas»
+  in `--bad`, underlined: a click selects that step (or the first with a problem). With several triggers «Probar»
+  opens a menu, «Probar desde»; a trigger with fields asks them in a small box over the button, with those of the last
+  test (or what was typed in its «Datos de prueba») filled in, and «Probar»; one with no fields starts at once. While
+  it runs the button says «Probando…» and cannot be pressed, nor can any «Probar paso». A draft with problems is not
+  tested: each step at fault has the `--bad` border and «Registro» says how many. After a test each arrow has a pill
+  at its middle with what passed («128 filas», 10.5 px `--muted`), an output with no arrow its count beside its dot,
+  and «0 filas» or a stale count is dimmed with its arrow. Each card has a small pill at its bottom right, «Bien» in
+  `--good`, «Falló» in `--bad`, «Saltado» (no rows came to it) and «Parado» (the test stopped before it) in `--muted`;
+  a failed card says why under its summary in `--bad`, two lines at most, whole in its tooltip. After «Probar» or
+  «Probar paso» every required parameter left empty is marked, on its card too.
+  In the step's view, ENTRADA and SALIDA have a head with what they hold and «Ver como»: «Esquema» (each field with
+  the first row's value cut to a line, a search over more than ten fields, a related row or a list unfolded one
+  level), «Tabla» (its own sideways scroll, every cell one line with an ellipsis, whole in its tooltip), «JSON» and,
+  in the SALIDA of a step that writes, «Haría esto» (first there): a row per row it would write, «Cambiaría» with
+  the value before struck through and the one after in each field that changes, «Crearía» with only after,
+  «A la papelera» with the row as it was. Rows come 50 at a time and «2950 filas más» brings 50 more; every value is
+  plain text. ENTRADA says «De «Buscar filas en Libros» · 128 filas», lets an earlier step of the path be chosen
+  in a small select, and «Combinar» has a tab per input («A (3)», «B (125)»); with nothing tested before it, «Prueba
+  los pasos anteriores» with «Probar los anteriores». SALIDA has a tab per output («sí (3)», «no (125)»), its foot
+  «probado hace 5 min · 0,2 s»; untested «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas»,
+  stopped «Parado: la prueba paró en «Si»», failed the reason with «Ir al parámetro» (it opens «Parámetros» with the
+  focus in it), and a step changed since its test says «puede estar vieja» with «Probar paso» above its rows. Moving
+  a box or renaming a step ages nothing.
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

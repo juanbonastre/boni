@@ -18,6 +18,8 @@ const MAIL = "apps/server/src/mail.test.ts";
 const AUTOMATION_ROUTES = "apps/server/src/automations/routes.test.ts";
 const AUTOMATION_TEST =
   "AU-62 · create, read, keep the draft and its boxes, duplicate, delete and restore, as the editor calls them";
+const AUTOMATION_PROBAR =
+  "AU-90 · «Probar», «Probar paso», the rows and the sample, as the editor calls them";
 const FUNCTIONS = "apps/server/src/functionSteps.test.ts";
 
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
@@ -222,7 +224,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
     },
   ],
   // «Automatizaciones» (C1 and C2 of F14b): the editor's own routes, each run as its action (AU-168).
-  "automations.read": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.read": [
+    { file: AUTOMATION_ROUTES, test: AUTOMATION_TEST },
+    // A page of the last test's rows and the sample: automations.read, told which part.
+    { file: AUTOMATION_ROUTES, test: AUTOMATION_PROBAR },
+  ],
+  "automations.test": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_PROBAR }],
   "automations.create": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.edit": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.arrange": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],

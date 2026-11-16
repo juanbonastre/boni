@@ -110,6 +110,7 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "POST /api/agent/automations/:id/duplicate": ["automations.duplicate"],
   "DELETE /api/agent/automations/:id": ["automations.delete"],
   "POST /api/agent/automations/:id/restore": ["automations.restore"],
+  "POST /api/agent/automations/:id/test": ["automations.test"],
   // A page's chat (pageChat.ts, D-61) is a flow: made for its page and changed in its block's panel.
   "POST /api/agent/chats": ["flows.save"],
   "PUT /api/agent/chats/:id": ["flows.save"],
@@ -222,6 +223,7 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "POST /api/agent/automations/:id/duplicate": "automations.duplicate",
   "DELETE /api/agent/automations/:id": "automations.delete",
   "POST /api/agent/automations/:id/restore": "automations.restore",
+  "POST /api/agent/automations/:id/test": "automations.test",
 };
 
 /**
@@ -368,7 +370,7 @@ export function handStore(store: UserStore): ReadStore {
 export async function runAction(
   name: string,
   args: Readonly<Record<string, unknown>>,
-  hand: { store: UserStore; trust: Trust; device: string; registry?: ToolRegistry },
+  hand: { store: UserStore; trust: Trust; device: string; registry?: ToolRegistry; zone?: string },
 ): Promise<{ out: unknown } | { refused: string } | { error: string }> {
   const def = (hand.registry ?? ACTIONS).get(name);
   const typed = handLabel(hand.device);
@@ -381,12 +383,15 @@ export async function runAction(
   );
   if (d.kind !== "allow" || !def) return { refused: d.rule };
   const meta = { actor: "user" as const, device: hand.device };
+  // The device's trust and the account's zone go with the hand: what an action that tests something runs with.
+  const service = {
+    store: hand.store,
+    meta,
+    trust: hand.trust,
+    ...(hand.zone ? { zone: hand.zone } : {}),
+  };
   try {
-    const out = await def.run(
-      { store: handStore(hand.store), service: { store: hand.store, meta } } as never,
-      vals,
-      typed,
-    );
+    const out = await def.run({ store: handStore(hand.store), service } as never, vals, typed);
     return { out: plain(out) };
   } catch (e) {
     if (e instanceof ToolError) return { error: e.code };
@@ -545,6 +550,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "calendars.color": "calendars_color",
   "calendars.reminders": "calendars_reminders",
   "automations.read": { why: NO_MCP_YET },
+  "automations.test": { why: NO_MCP_YET },
   "automations.create": { why: NO_MCP_YET },
   "automations.edit": { why: NO_MCP_YET },
   "automations.arrange": { why: NO_MCP_YET },

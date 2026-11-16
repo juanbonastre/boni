@@ -255,6 +255,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   un disparador nuevo, debajo del último disparador. Un paso que no cuelga de nada (el «+» de arriba) va a la
   derecha de la caja más a la derecha de la primera fila; el del clic derecho, donde se hizo el clic. El sitio que
   Boni le da a un paso al añadirlo se guarda como si Juan lo hubiera soltado: ya no se mueve solo.
+  Hecho en E: mover una caja no envejece ninguna prueba (AU-92). Falta: que una caja soltada siga ahí al recargar y
+  en otra ventana, con el servidor de verdad (G, la app de escritorio).
   Hecho en C2: el sitio se guarda al soltar, aparte del borrador y sin «Guardando…»; un paso nuevo va junto al suyo y
   no mueve ningún otro; «Ordenar» y su Deshacer. Falta (G): la prueba en la app de escritorio sobre el servidor real,
   tras cerrarla y abrirla.
@@ -727,7 +729,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Hecho en C2: la tarjeta, su resumen, las salidas con su nombre y el lienzo con solo su disparador. Hecho en D: el
   nombre y el resumen enteros en la vista del paso y la marca de lo obligatorio que falta. Falta: su captura de
   referencia (G).
-- **AU-64** (F14b, pendiente) · Abajo a la izquierda: acercar, alejar, encajar y «Ordenar». Abajo en el centro:
+- **AU-64** (F14b, hecho) · Abajo a la izquierda: acercar, alejar, encajar y «Ordenar». Abajo en el centro:
   «Probar», que ensaya la automatización entera. En el editor solo se prueba (entera aquí; un paso, con «Probar
   paso»: AU-66 y AU-73); «Ejecutar», que corre la versión publicada, está en «⋯» (AU-97). Arriba a la derecha: «+».
   Abajo, plegado, el «Registro», que resume la última prueba en una línea (se despliega desde la F14d: AU-101).
@@ -738,12 +740,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   con problema en su tarjeta y el «Registro» dice cuántos hay; un clic en él lleva al primero. El «Registro» dice «Sin
   probar» antes de la primera prueba; después, «Última prueba hace 2 min · bien · 6 pasos · 4,1 s · no escribió nada»,
   o «… · falló en «Filtrar»», y un clic selecciona ese paso.
+  Hecho en E: todo lo de arriba; el «Registro» que se despliega es de la F14d (AU-101).
 - **AU-65** (F14b, en parte) · Un paso se añade de cuatro maneras, y las cuatro abren el mismo panel: el «+» de
   arriba, el «+» de una salida sin conectar (o arrastrar desde ella), el «+» de una flecha seleccionada y el clic
   derecho en el lienzo (I-24 se queda).
   Hecho en C2: las cuatro maneras abren el mismo panel y el paso elegido queda conectado y seleccionado. Hecho en D:
   el paso elegido se abre en su vista. Falta: la prueba en la app de escritorio (G).
-- **AU-66** (F14b, en parte) · Un paso seleccionado enseña una barra corta: Probar paso · Apagar · Eliminar · ⋯; una
+- **AU-66** (F14b, hecho) · Un paso seleccionado enseña una barra corta: Probar paso · Apagar · Eliminar · ⋯; una
   flecha seleccionada, «+» y eliminar. El clic derecho da lo mismo y poco más (cambiar nombre, duplicar, copiar).
   Nada sale solo al pasar el ratón.
   En la F14b: el «⋯» de la barra tiene Cambiar nombre · Duplicar · Copiar. El clic derecho en un paso tiene siete
@@ -751,15 +754,18 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   paso apagado. Eliminar un paso que tiene una flecha de entrada y una de salida une a sus dos vecinos; en los demás
   casos se van sus flechas.
   Hecho en C2: la barra, el «⋯», el menú del clic derecho con sus siete cosas, «Apagar» y «Encender», la flecha con
-  «+» y quitar, y eliminar uniendo a los vecinos. Hecho en D: «Abrir» abre la vista. Falta: que «Probar paso» se pueda
-  pulsar (E, AU-73); hoy está y no hace nada.
-- **AU-67** (F14b, pendiente) · Después de probar, cada flecha dice cuántas filas pasaron y cada paso cómo acabó. Una
+  «+» y quitar, y eliminar uniendo a los vecinos. Hecho en D: «Abrir» abre la vista. Hecho en E: «Probar paso» de la
+  barra y del menú prueba el paso y dice «Probando…» mientras tanto (AU-73).
+- **AU-67** (F14b, hecho) · Después de probar, cada flecha dice cuántas filas pasaron y cada paso cómo acabó. Una
   salida sin conectar también enseña su cuenta: ninguna fila desaparece sin que se vea. Un paso que falló lo dice en
-  su tarjeta, con el motivo, y los que colgaban de él quedan «saltados».
+  su tarjeta, con el motivo, y los que colgaban de él quedan «parados»; «saltado» es un paso al que no le llegaron
+  filas.
   En la F14b: la cuenta de una flecha se lee en ella («128 filas»); con «0 filas» la flecha se atenúa. El estado de un
   paso es una marca en su tarjeta (bien, falló, saltado, parado). El motivo de un fallo se lee en tres sitios: en la
   tarjeta, en dos líneas como mucho; entero, en la SALIDA del paso, en lugar de las filas, con el parámetro que lo
-  causa y «Ir al parámetro» (AU-84); y en el «Registro», que dice en qué paso fue (AU-64).
+  causa y «Ir al parámetro» (AU-84); y en el «Registro», que dice en qué paso fue (AU-64). Un paso parado dice en su
+  SALIDA «Parado: la prueba paró en «Si»».
+  Hecho en E: todo lo de arriba.
 - **AU-68** (F14b, hecho) · Deshacer y rehacer en el lienzo, y copiar y pegar pasos, con las teclas de siempre.
   En la F14b: `Ctrl`/`⌘`+`Z` deshace y `Ctrl`/`⌘`+`Mayús`+`Z` (o `Ctrl`+`Y`) rehace; `Ctrl`/`⌘`+`C`, `X` y `V` copian,
   cortan y pegan los pasos seleccionados con las flechas que hay entre ellos; `Supr` elimina lo seleccionado, `Intro`
@@ -796,8 +802,8 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   prueba»: los campos que pide, con lo de la última prueba (AU-94).
   Hecho en D: la vista encima del lienzo atenuado, sus tres columnas, la cabecera con el icono, el nombre que se edita
   ahí, «Probar paso» y cerrar, `Esc`, ningún «Guardar», y los «Datos de prueba» de un disparador con los campos que
-  pide. Falta: lo de la última prueba en ellos (E, AU-94) y su captura de referencia (G).
-- **AU-71** (F14b, pendiente) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
+  pide. Hecho en E: lo de la última prueba en ellos (AU-94). Falta: su captura de referencia (G).
+- **AU-71** (F14b, en parte) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
   valor de muestra, que se arrastran), «Tabla» o «JSON». Vacía, dice «Prueba los pasos anteriores» con su botón.
   En la F14b: la cabecera de ENTRADA dice «De «Buscar gastos» · 128 filas» y deja elegir cualquier paso anterior del
   camino para ver y arrastrar sus campos (AU-21). «Combinar» tiene una pestaña por entrada. «Esquema» lista todos los
@@ -805,7 +811,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   es una fila relacionada o una lista se despliega un nivel. «Tabla» y «JSON» enseñan las primeras 50 filas y, debajo,
   «N filas más», que trae otras 50 del servidor: nunca llegan todas de golpe (A-15). Una tabla con muchos campos se
   desplaza de lado y sus celdas se cortan a una línea.
-- **AU-72** (F14b, pendiente) · SALIDA se ve como «Tabla» (por defecto; «Esquema» si sale una sola fila), «Esquema»
+  Hecho en E: la cabecera con el paso y las filas, elegir un paso anterior, las pestañas de «Combinar», «Esquema»,
+  «Tabla» y «JSON», el buscador, desplegar un nivel, 50 filas y «N filas más», y «Prueba los pasos anteriores» con su
+  botón. Falta: arrastrar los campos (F, AU-21).
+- **AU-72** (F14b, hecho) · SALIDA se ve como «Tabla» (por defecto; «Esquema» si sale una sola fila), «Esquema»
   o «JSON», con cuántas filas y una pestaña por salida («sí (3)», «no (125)»). En una prueba, un paso que escribe
   enseña «Haría esto», con el antes y el después de cada fila. Su cabecera lleva «Fijar» desde la F14d (AU-93);
   «Código» añade debajo su «Consola» (AU-33) y «Agente», encima, «Lo que hizo» (AU-54).
@@ -814,11 +823,12 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   «Saltado: no le llegaron filas»; uno que falló, el motivo (AU-67); uno que no dio filas, «0 filas». «Haría esto» es
   una tabla con una fila por fila escrita y, en cada campo que cambia, el valor de antes y el de después; al crear,
   solo el de después; al eliminar, la fila como estaba (AU-122).
-- **AU-73** (F14b, en parte) · Arriba a la derecha está «Probar paso». Si no se puede pulsar, dice por qué.
+  Hecho en E: todo lo de la F14b; «Fijar», «Consola» y «Lo que hizo» llegan con sus fases.
+- **AU-73** (F14b, hecho) · Arriba a la derecha está «Probar paso». Si no se puede pulsar, dice por qué.
   En la F14b no se puede pulsar en dos casos, y lo dice al lado: «Falta: Colección» (los parámetros obligatorios
   vacíos, por su nombre) y «Probando…».
-  Hecho en D: «Probar paso» arriba a la derecha y «Falta: Colección» a su lado. Falta: que se pueda pulsar y
-  «Probando…» (E, AU-91); hasta E no se puede pulsar aunque no falte nada, y entonces no dice nada al lado.
+  Hecho en D: «Probar paso» arriba a la derecha y «Falta: Colección» a su lado. Hecho en E: se pulsa, y mientras
+  prueba dice «Probando…» al lado y no se puede pulsar (AU-91).
 - **AU-74** (F14b, en parte) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
   automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan; no se editan (como hoy).
   En la F14b: con menos de 1100 px de ancho la vista del paso tiene dos columnas, «Entrada | Salida» en pestañas a la
@@ -883,8 +893,9 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   En la F14b lo dice un aviso: «Se quitó: Ordenar por, Límite · Deshacer».
 - **AU-83** (F14b, en parte) · Un parámetro obligatorio vacío no se marca hasta salir de él, probar o publicar.
   Hecho en D: sin marca al abrir el paso; al salir de él, la marca en el parámetro y en la tarjeta, que se va cuando
-  tiene valor. Falta: marcar todos al «Probar» o «Probar paso» (E, AU-90 y AU-91) y al publicar (F14d).
-- **AU-84** (F14b, pendiente) · Cada estado vacío, viejo o de error dice qué hacer después, y un error nombra el
+  tiene valor. Hecho en E: al «Probar» o «Probar paso» se marcan todos, también en su tarjeta; entrar en el editor de
+  condiciones o en una lista de filas no es salir. Falta: marcarlos al publicar (F14d).
+- **AU-84** (F14b, hecho) · Cada estado vacío, viejo o de error dice qué hacer después, y un error nombra el
   parámetro que lo causa.
   En la F14b: el motivo de un fallo es una clave de una lista cerrada (`STEP_FAILURES`), con el parámetro que lo causa
   cuando es de uno, y la pantalla lo dice con `i18n.ts`; la frase en inglés del motor es para el registro y no se
@@ -892,6 +903,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   vacío, «¿Cómo empieza?»; ENTRADA sin datos, «Prueba los pasos anteriores» con su botón; SALIDA sin probar, «Sin
   probar» con «Probar paso»; una salida vieja, «puede estar vieja» con «Probar paso»; un fallo, el motivo con «Ir al
   parámetro»; un buscador sin resultados, «Nada con «…»»; un borrador que no se guardó, «Sin guardar · Reintentar».
+  Hecho en E: todos.
 - **AU-85** (F14b, hecho) · Una palabra por acción: una prueba comprueba que cada acción («Probar paso», «Añadir
   opción» y, cuando lleguen, «Fijar» y «Publicar») sale de una sola clave de `i18n.ts`.
 - **AU-86** (F14b, en parte) · Un paso nuevo se llama como lo que hace («Buscar filas en Gastos») y el nombre sigue
@@ -927,17 +939,20 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   colección sean otros tampoco: la salida dice cuándo se probó (AU-72). «Probar paso» siempre vuelve a ejecutar ese
   paso. De cada automatización se guarda la última prueba de cada paso; se guarda en el servidor, así que se ve igual
   en otro dispositivo.
-- **AU-92** (F14b, pendiente) · La salida de un paso que cambió después de probar se marca «puede estar vieja».
+- **AU-92** (F14b, hecho) · La salida de un paso que cambió después de probar se marca «puede estar vieja».
   En la F14b se lee en la cabecera de SALIDA y, en el lienzo, la cuenta de sus flechas queda atenuada. Lo dice el
   servidor al guardar cada cambio del borrador.
+  Hecho en E: la marca en SALIDA con «Probar paso», las cuentas atenuadas del paso y de lo que cuelga de él, y nada
+  al moverlo o cambiarle el nombre.
 - **AU-93** (F14d, pendiente) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
   gasta modelo. Lo fijado se ve en la tarjeta («Salida fijada») y nunca vale en una ejecución de verdad. Se suelta en
   el mismo botón.
-- **AU-94** (F14b, pendiente) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
+- **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
   En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
   disparador sin campos empieza sin preguntar. Los campos de la última prueba son la fila que dio el disparador en
   ella: no se guardan aparte.
+  Hecho en E: todo lo de la F14b.
 - **AU-95** (F14d, pendiente) · «Publicar» hace del borrador la versión que corre. El borrador, que se guarda solo
   desde la F14b (AU-62), nunca corre de verdad (D-55): lo que escribe de verdad es siempre una versión publicada, así
   que cada escritura tiene su versión.

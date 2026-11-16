@@ -4,7 +4,7 @@
  * app cannot import the server, so the shapes are written twice: the desktop e2e (the real app on the real server)
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
  * and Android's `Net.kt` already allow. C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
- * places; the test and the rows stay pending until their PRs.
+ * places, E the test, its rows and the sample.
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
@@ -12,7 +12,6 @@
 import type { Automation, Cell, Problem, StepError, StepState } from "@boni/automations";
 import type { Label } from "@boni/entities";
 import type { AgentApi } from "../core/agent.ts";
-import { notBuilt } from "./pending.ts";
 
 /** Where a step's box is on the canvas, in the canvas's own units (AU-05). */
 export interface Place {
@@ -142,6 +141,23 @@ export function openedOf(x: unknown): Opened {
   };
 }
 
+/** What `POST automations/:id/test` answers, read as the editor needs it. */
+export function testAnswerOf(x: unknown): TestAnswer {
+  const o = isObj(x) ? x : {};
+  const strings = (v: unknown) =>
+    Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+  const state = o.state === "done" || o.state === "failed" ? o.state : "invalid";
+  return {
+    state,
+    problems: Array.isArray(o.problems) ? (o.problems.filter(isObj) as unknown as Problem[]) : [],
+    ms: typeof o.ms === "number" ? o.ms : 0,
+    ran: strings(o.ran),
+    reused: strings(o.reused),
+    tests: isObj(o.tests) ? (o.tests as Record<string, StepTest>) : {},
+    ...(typeof o.failedAt === "string" ? { failedAt: o.failedAt } : {}),
+  };
+}
+
 /** The calls over the app's one way to the server. */
 export function automationsClient(api: AutomationsApi): AutomationsClient {
   return {
@@ -163,8 +179,33 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
     restore: async (id) => void (await api.automations("POST", path(id, "/restore"))),
     place: async (id, places) =>
       void (await api.automations("PUT", path(id, "/layout"), { places })),
-    test: () => notBuilt("automationsClient.test (AU-90)"),
-    rows: () => notBuilt("automationsClient.rows (AU-71)"),
-    sample: () => notBuilt("automationsClient.sample (AU-20)"),
+    test: async (id, request) =>
+      testAnswerOf(await api.automations("POST", path(id, "/test"), request)),
+    rows: async (id, at) => {
+      const q = new URLSearchParams({
+        step: at.step,
+        side: at.side,
+        name: at.name,
+        offset: String(at.offset),
+      });
+      const r = await api.automations("GET", path(id, `/test/rows?${q}`));
+      const o = isObj(r) ? r : {};
+      return {
+        rows: Array.isArray(o.rows) ? (o.rows.filter(isObj) as unknown as RowView[]) : [],
+        total: typeof o.total === "number" ? o.total : 0,
+      };
+    },
+    sample: async (id, step) => {
+      const r = await api.automations(
+        "GET",
+        path(id, `/test/sample?${new URLSearchParams({ step })}`),
+      );
+      const o = isObj(r) ? r : {};
+      return {
+        current: isObj(o.current) ? (o.current as unknown as RowView) : null,
+        total: typeof o.total === "number" ? o.total : 0,
+        steps: isObj(o.steps) ? (o.steps as unknown as Sample["steps"]) : {},
+      };
+    },
   };
 }

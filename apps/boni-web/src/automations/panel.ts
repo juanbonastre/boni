@@ -7,8 +7,10 @@
 import {
   ACTION,
   type Automation,
+  actionOf,
   type FieldsOf,
   isExpr,
+  isTrigger,
   MAIN,
   type ParamSpec,
   type ParamValue,
@@ -21,7 +23,6 @@ import {
   type StepSettings,
 } from "@boni/automations";
 import type { StepTest } from "./client.ts";
-import { notBuilt } from "./pending.ts";
 
 /** A row of «Parámetros»: one parameter with its control. A «cosa» of AU-75. */
 export interface PanelRow {
@@ -176,17 +177,31 @@ export function cannotTest(
 
 /**
  * What SALIDA says in place of rows (AU-72, AU-84): each with what to do next. `untested`: «Sin probar», with
- * «Probar paso». `skipped`: no rows came. `failed`: the reason whole (its code, said by i18n.ts; `other` when
- * the engine gave none), with the parameter at fault and «Ir al parámetro» when there is one. `empty`: «0 filas». Null: there are rows to show.
+ * «Probar paso». `skipped`: no rows came. `stopped`: the test stopped before it, in the step that failed («Parado: la
+ * prueba paró en «Filtrar»», AU-67). `failed`: the reason whole (its code, said by i18n.ts; `other` when the engine
+ * gave none), with the parameter at fault and «Ir al parámetro» when there is one. `empty`: «0 filas». Null: there
+ * are rows to show.
  */
 export type OutputSays =
   | { kind: "untested" }
   | { kind: "skipped" }
+  | { kind: "stopped" }
   | { kind: "failed"; failure: StepFailure; param?: ParamSpec }
   | { kind: "empty" };
 
-export function outputSays(_step: Step, _test: StepTest | undefined): OutputSays | null {
-  return notBuilt("outputSays (AU-72, AU-84)");
+export function outputSays(step: Step, test: StepTest | undefined): OutputSays | null {
+  if (!test || test.state === "queued" || test.state === "running" || test.state === "waiting")
+    return { kind: "untested" };
+  if (test.state === "skipped") return { kind: "skipped" };
+  if (test.state === "stopped") return { kind: "stopped" };
+  if (test.state === "failed") {
+    const failure: StepFailure = test.error?.failure ?? { code: "other" };
+    // `param` is written as a problem's is: the parameter's key, then the path inside it.
+    const key = failure.param?.split(".")[0];
+    const param = key ? paramsOf(step).find((p) => p.key === key) : undefined;
+    return param ? { kind: "failed", failure, param } : { kind: "failed", failure };
+  }
+  return Object.values(test.out).some((n) => n > 0) ? null : { kind: "empty" };
 }
 
 /** A field a condition can name, with the type that gives its operators (as in a view). */
@@ -354,3 +369,39 @@ const unique = (fields: ConditionField[]): ConditionField[] => {
   for (const f of fields) if (!by.has(f.key)) by.set(f.key, f);
   return [...by.values()];
 };
+
+/** The steps before `step` along the arrows, nearest first (AU-71: ENTRADA's «Ver los datos de»). */
+export function stepsBefore(draft: Automation, step: string): string[] {
+  const seen = new Set<string>([step]);
+  const out: string[] = [];
+  let ring = [step];
+  while (ring.length) {
+    const next: string[] = [];
+    for (const id of ring)
+      for (const a of draft.arrows)
+        if (a.to.step === id && !seen.has(a.from.step)) {
+          seen.add(a.from.step);
+          out.push(a.from.step);
+          next.push(a.from.step);
+        }
+    ring = next;
+  }
+  return out;
+}
+
+/**
+ * The trigger a test starts from (AU-64, AU-91): for «Probar paso», the nearest one the arrows reach the step from;
+ * for «Probar», or a step no trigger reaches, the draft's first. Null with no trigger.
+ */
+export function triggerFor(draft: Automation, step: string | null): string | null {
+  const triggers = draft.steps.filter(isTrigger).map((s) => s.id);
+  if (step !== null) {
+    if (triggers.includes(step)) return step;
+    const found = stepsBefore(draft, step).find((id) => triggers.includes(id));
+    if (found) return found;
+  }
+  return triggers[0] ?? null;
+}
+
+/** A step that writes in a collection: in a test, its SALIDA shows «Haría esto» (AU-72). */
+export const writesRows = (step: Step): boolean => actionOf(step)?.effect === "write";
