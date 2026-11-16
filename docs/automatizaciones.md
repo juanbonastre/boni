@@ -321,7 +321,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   El icono de la ficha es el del paso del que es el campo (en `$json`, el paso del que cuelga). La ficha lleva
   también el paso cuando otro paso del camino tiene un campo con el mismo nombre. Un paso con dos entradas
   («Combinar») no tiene fila actual: un campo soltado en un valor suyo se cita por su paso, con `first()`.
-- **AU-22** (F14c, pendiente) · Una expresión es texto con JavaScript entre `{{ }}`:
+- **AU-22** (F14c, en parte) · Una expresión es texto con JavaScript entre `{{ }}`:
   `Hola {{ $json.nombre }}, llevas {{ $('Sumar gastos').first().total }} € este mes`. Escribir `{{` en un valor fijo
   lo pasa a expresión.
   En la F14c: cada `{{ }}` es una cita sencilla (la resuelve el servidor, AU-162) o JavaScript (va a la caja), y las
@@ -330,13 +330,15 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   sentencias. Un valor que es un solo `{{ }}` conserva el tipo de lo que da; con texto alrededor es texto (nada para
   `null`, el JSON para un objeto). Una expresión no lee colecciones: `$col` es solo de «Código» (AU-46). Mientras el
   servidor no le pasa la caja al motor, la validación sigue diciendo que el JavaScript está por llegar.
+  Hecho en E1: la caja evalúa las expresiones de una petición para cada fila y las contesta en orden; `undefined` da
+  `null`. Falta: leer los `{{ }}` (E2) y escribirlos en el editor (pantallas).
 - **AU-23** (F14c, pendiente) · Debajo de una expresión se ve lo que vale con la fila actual («= 5 · con la fila 3
   de 128»), y se pasa de fila. Si no se puede calcular dice qué hacer: «Prueba los pasos anteriores».
   En la F14c: el valor lo calcula el servidor en la caja (AU-27) con las filas que guardó la prueba y con su hora y su
   semilla. Se pide cuando Juan deja de escribir, y la respuesta de un texto anterior nunca pisa la de uno posterior.
   Con un paso anterior sin probar o desfasado no se pide nada a la caja y dice cuáles probar. Un fallo se dice debajo,
   con sus palabras.
-- **AU-24** (F14c, pendiente) · Lo que se puede citar, igual en expresiones y en «Código»: `$json` (la fila actual),
+- **AU-24** (F14c, en parte) · Lo que se puede citar, igual en expresiones y en «Código»: `$json` (la fila actual),
   `$input` (`.all()`, `.first()`, `.last()`, `.item`), `$('Nombre de un paso')`, `$now` y `$today`, `$run` (si es
   prueba, quién la inició), `$page` (los valores de la página que la inició: F17) y las ayudas de fechas, texto y
   listas.
@@ -346,20 +348,24 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   inició (`"user"`), nunca un nombre ni un id. `$page` es `null` hasta la F17. Las ayudas de texto y de listas son las
   de JavaScript (`String`, `Array`, `Object`, `Math`, `JSON`), sin métodos añadidos a sus prototipos: los que n8n
   añade a los valores no se prometen. Un `$nombre` que no está en la lista no pasa la validación.
-- **AU-25** (F14c, pendiente) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
+  Hecho en E1: en la caja, todo lo de la lista con su sentido, `$json` y `.item` fallan con todas las filas, un paso
+  que la petición no trae falla por su nombre y nada se añade a los prototipos. Falta (E2): `readCode` y sus avisos.
+- **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
   es donde hace falta para citarlo. Un campo que nace en un «Código» o en una expresión no tiene más nombre que el
   que ahí se le dio, y con ese se ve en los pasos siguientes (`gastado`).
   En la F14c: una clave que la fila no tiene da `undefined`, no un error; el editor la subraya si la última prueba del
   paso citado no dio ese campo (AU-36).
+  Hecho en E1: en la caja, una clave que falta da `undefined` y una como `__proto__`, `constructor` o `toString` es un
+  campo más, al entrar y al salir. Falta: `readCode` (E2), `rowsOf` (E3) y las claves en la vista (pantallas).
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, pendiente) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
   enseña la vista previa es lo que saldrá.
   En la F14c: la vista previa llama a la misma función del motor (`evaluate`, `box.ts`) con la misma caja y con la
   hora, la semilla y la fila de la prueba que guardó las filas. No hay un segundo intérprete en el navegador.
-- **AU-28** (F14c, pendiente) · Las fechas tienen una ayuda propia y pequeña sobre `packages/calendar/src/time.ts`
+- **AU-28** (F14c, en parte) · Las fechas tienen una ayuda propia y pequeña sobre `packages/calendar/src/time.ts`
   (`$now.plus({days: 7})`, `.startOf('month')`, `.format(…)`), con la zona horaria de Juan. La caja no tiene `Intl`,
   así que no se promete la biblioteca de fechas de n8n entera.
   En la F14c: `$now`, `$today` y `$date(valor)` dan una fecha con `plus`, `minus`, `startOf`, `endOf`, `diff`,
@@ -367,6 +373,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   los patrones de la lista; otro falla diciendo cuál. Como la caja no tiene `Intl`, el servidor manda con cada llamada
   los cambios de hora de la zona (de 1970 a 2100) y los nombres de los meses y los días, calculados con `time.ts`; una
   prueba compara la caja con `time.ts` en los días de cambio de hora.
+  Hecho en E1: la ayuda en la caja, comparada con `time.ts` en los días de cambio de hora de Madrid, Nueva York, Lord
+  Howe y Calcuta; una fecha fuera de la tabla toma el desfase del extremo más cercano. Las horas propias de un `Date`
+  (`getHours`) son las del contenedor, UTC: la ayuda es la que sabe de la zona. Falta (S1): la tabla de la zona y los
+  nombres que manda el servidor.
 
 ### 5.4 El paso «Código»
 
@@ -386,13 +396,15 @@ return categorias.map((c) => ({
 }));
 ```
 
-- **AU-30** (F14c, pendiente) · «Código» es JavaScript. Su parámetro «Se ejecuta» tiene dos modos, a la vista: «Una
+- **AU-30** (F14c, en parte) · «Código» es JavaScript. Su parámetro «Se ejecuta» tiene dos modos, a la vista: «Una
   vez con todas las filas» (por defecto) y «Una vez por fila». Devuelve filas.
   En la F14c: el código es el cuerpo de una función: `return` da el resultado. Una lista de objetos son filas, un
   objeto es una fila, `null` o `[]` ninguna; otra cosa, o no devolver nada, falla diciendo cuál. «Una vez por fila»
   conserva de qué fila viene cada una (AU-13); «Una vez con todas las filas» las rehace y corre también con la lista
   vacía. El código no espera: `await`, `async`, `import` y los generadores no pasan la validación.
-- **AU-31** (F14c, pendiente) · Lee colecciones solo por las conexiones del paso: `$col('Gastos').find({ where,
+  Hecho en E1: en la caja, `return` da el resultado, y no devolver nada, una promesa o lo que no es JSON fallan
+  diciendo cuál, en los dos modos. Falta: el paso en el motor (E3) y en el editor (pantallas).
+- **AU-31** (F14c, en parte) · Lee colecciones solo por las conexiones del paso: `$col('Gastos').find({ where,
   sort, limit })`, `.get(id)`, `.count(…)`, `.sum('importe', …)`. `where` es el mismo filtro de las vistas, escrito
   como una lista de reglas: `[{ field: 'importe', op: 'gt', value: 50 }]`. Citar una colección que el paso no tiene
   conectada no pasa la validación (ni se prueba ni se publica): dice «Conecta «Gastos» a este paso», con el botón
@@ -402,17 +414,27 @@ return categorias.map((c) => ({
   conectada (con el botón) o se cita desde una expresión. `get` de una fila que no existe, o que el filtro de la
   conexión deja fuera, da `null`. Una relación llega como el id de la fila relacionada, nunca con sus campos. Cuando
   la caja no tiene una lectura, la evaluación se detiene ahí; el motor la hace y repite (§6, riesgo 4).
-- **AU-32** (F14c, pendiente) · El código nunca escribe (A-09 se queda). Devuelve filas y las escriben los pasos
+  Hecho en E1: en la caja, `find`, `get`, `count` y `sum` dan lo que trae la petición; sin ello la evaluación se para
+  ahí, aunque el código atrape los errores, y dice la lectura tal como se escribió y su clave, y las demás filas de la
+  tanda siguen. Falta: las conexiones en la validación (E2), hacer las lecturas y repetir (E3), sobre el servidor
+  real (S1) y en la app (pantallas).
+- **AU-32** (F14c, en parte) · El código nunca escribe (A-09 se queda). Devuelve filas y las escriben los pasos
   «Colección» que le siguen, que pasan por la política.
   En la F14c: `$col(…)` solo tiene `find`, `get`, `count` y `sum`, y el motor nunca pide una escritura por lo que diga
   una evaluación. Las filas que salen de «Código» no son filas guardadas aunque copien su id: el paso «Colección» que
   le sigue las busca o las casa por un campo, no por «Las filas que llegan».
-- **AU-33** (F14c, pendiente) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
+  Hecho en E1: `$col(…)` de la caja tiene solo esas cuatro, y una expresión no tiene `$col`. Falta (E3): que el motor
+  nunca pida una escritura y que las filas de «Código» no sean filas guardadas.
+- **AU-33** (F14c, en parte) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
   salida, con la línea que lo escribió. Un error señala su línea en el editor y dice el mensaje tal cual.
   En la F14c: la consola se guarda con la prueba del paso: hasta 200 líneas de 2.000 caracteres. Las que sobran se
   cuentan («y 340 líneas más») y no hacen fallar el paso. La consola y el mensaje de un error son texto de quien
   escribió el código: se pintan como texto plano y no van al registro del servidor.
-- **AU-34** (F14c, pendiente) · Sin red, sin ficheros, sin reloj propio (`$now` es la hora de la ejecución) y con el
+  Hecho en E1: la caja da cada línea con su nivel, su texto, la línea del código y, por fila, la fila, cuenta las que
+  pasan del tope y corta las largas; un error da su mensaje, su línea y su columna, y lo lanzado que no es un `Error`
+  se dice como texto. Falta: guardarlo con la prueba del paso (E3, S1), y la «Consola» y la marca en el editor
+  (pantallas).
+- **AU-34** (F14c, en parte) · Sin red, sin ficheros, sin reloj propio (`$now` es la hora de la ejecución) y con el
   azar sembrado: repetir una ejecución da lo mismo.
   En la F14c: `Date.now()` y `new Date()` dan también la hora de la ejecución. La hora se toma una vez al empezar la
   ejecución, y la semilla también; las dos se guardan con ella. El azar de una fila sale de la semilla, del id del
@@ -420,7 +442,11 @@ return categorias.map((c) => ({
   lo mismo guardado: una lectura de una colección da lo que haya en ese momento. En una prueba, un paso guardado que
   leyó la hora o el azar se reutiliza tal como quedó (AU-91), igual que uno que leyó una colección (su salida dice
   cuándo se probó, AU-72); cuando vuelve a correr recibe la hora y la semilla de la prueba nueva.
-- **AU-35** (F14c, pendiente) · La caja tiene tiempo, memoria y tamaño máximos. Pasarse dice cuál y por cuánto.
+  Hecho en E1: en la caja, `Date.now()`, `new Date()` y `$now` dan la hora de la petición, no hay `performance`,
+  temporizadores, `Atomics` ni `crypto`, el azar sale de la semilla y del sitio de la fila (igual sola que en una
+  tanda), y la respuesta dice si cada evaluación leyó la hora o el azar. Falta: la hora y la semilla de la ejecución,
+  guardadas con ella y con cada paso guardado (E3, S1).
+- **AU-35** (F14c, en parte) · La caja tiene tiempo, memoria y tamaño máximos. Pasarse dice cuál y por cuánto.
   En la F14c: cada tope es un número con nombre (`CODE_LIMITS`, `code.ts`): los caracteres de un «Código» (20.000) y
   de una expresión (2.000), que comprueba la validación; el tiempo de una llamada (5 s), sus operaciones, su memoria
   (64 MB) y su pila, lo que se le manda (8 MB), lo que devuelve (4 MB y 10.000 filas), las lecturas de una evaluación
@@ -429,20 +455,35 @@ return categorias.map((c) => ({
   (AU-38) no caben en la caja o en el servidor. «Por cuánto» se dice donde se puede saber (tamaños, filas, lecturas);
   el tiempo, las operaciones y la memoria se cortan en el tope, y se dice el tope. Sin caja, o con la caja ocupada, el
   paso falla diciéndolo y no corre nada.
+  Hecho en E1: los topes de la caja (`EVAL_DEFAULT_LIMITS` y `EVAL_MAX_LIMITS`, `packages/sandbox`): tiempo,
+  operaciones, memoria, pila, tamaño de la respuesta, líneas de la consola y lecturas distintas, y tras cada uno la
+  caja sirve la llamada siguiente. La pila es de 256 KB: con 512 KB una recursión sin fin desbordaba antes la pila del
+  hilo de la caja y rompía la llamada entera; con 256 KB es un error del código, a unas 1.500 llamadas de hondo.
+  Falta: `code.long` (E2), `code.limit` y los topes del motor (E3), sin caja o con la caja ocupada (S1) y sus
+  palabras en la app (pantallas).
 - **AU-36** (F14c, pendiente) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
   conectadas, y marca lo que no existe antes de probar.
   En la F14c: el editor lee el código con el mismo lector que el servidor (`readCode`, `javascript.ts`), así que lo
   que marca es lo que dirá la validación. Un campo que la última prueba del paso citado no dio se subraya como aviso y
   no impide probar.
-- **AU-37** (F14c, pendiente) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados.
+- **AU-37** (F14c, en parte) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados.
   En la F14c: vale entre dos llamadas (un intérprete nuevo cada vez) y entre dos filas de la misma tanda: lo que el
   código recibe y lo que el intérprete trae no se pueden cambiar, y escribir en ellos falla diciendo que devuelva una
   copia. La respuesta de una tanda es la de sus filas mandadas de una en una.
-- **AU-38** (F14c, pendiente) · Lo que cuesta evaluar una expresión por fila se mide con 3.000 filas antes de salir
+  Hecho en E1: la caja. Lo decide un solo sitio, `received` en `apps/sandbox/src/world.js`. Falta (E3): que el motor
+  no guarde de una evaluación más que sus valores, su consola y su cuenta.
+- **AU-38** (F14c, en parte) · Lo que cuesta evaluar una expresión por fila se mide con 3.000 filas antes de salir
   (A-15), y un paso «por fila» manda las filas a la caja por tandas, no de una en una.
   En la F14c: las expresiones de un paso se calculan para todas sus filas antes de trabajar las filas, por tandas de
   500 y todas las expresiones del paso en la misma llamada. El tiempo fijado se escribe en las pruebas al medir, que
   es lo primero que se hace: con eso se decide entre repetir la evaluación y un intérprete con pausas (§6, riesgo 4).
+  Medido en E1 (2026-11-16, 3.000 filas, en el portátil), se queda **repetir la evaluación**: con todas las filas y
+  una lectura, unos 70 ms; con 20 lecturas distintas, unos 780 (21 llamadas), y una lectura de 3.000 filas, unos 120.
+  El intérprete con pausas es una vez y media más lento por evaluación (80 ms contra 55 una expresión en tandas de
+  500; 118 contra 73 un «Código» por fila) y solo gana con muchas lecturas distintas, que el tope y su aviso ya evitan.
+  Cada llamada por la puerta de la caja cuesta además unos 200 ms, sea cual sea su tamaño. Los tiempos están escritos
+  en la prueba de la caja. Falta: las tandas del motor (E3), sobre el servidor (S1) y en la app de escritorio
+  (pantallas).
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.
 
@@ -1007,11 +1048,14 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
 Juan no tiene por qué leer el código que acepta, y un modelo puede proponérselo. Así que la seguridad no puede
 depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar y de quién decide las escrituras.
 
-- **AU-160** (F14c, pendiente) · El JavaScript solo corre en la caja (A-08): sin red, sin ficheros, sin reloj, con
+- **AU-160** (F14c, en parte) · El JavaScript solo corre en la caja (A-08): sin red, sin ficheros, sin reloj, con
   un intérprete que no guarda nada de una evaluación a otra.
   En la F14c: es la caja de las extensiones (QuickJS compilado a WebAssembly, en su contenedor, sin red ni disco) con
   un protocolo más (`packages/sandbox/src/evaluate.ts`); el módulo `vm` de Node no se usa. A la caja no llegan
   etiquetas, ids ni nada que el código no cite, y lo que devuelve es un dato sin confianza.
+  Hecho en E1: el protocolo 2 en la caja, por la misma puerta y el mismo contenedor; los casos de ataque de
+  `apps/sandbox/test/cases/evaluacion`, como expresión y como «Código»; y un código que cierra la función en la que va
+  no se ejecuta fuera de ella. Falta (E3): que el motor no ejecute JavaScript y lo que lleva cada llamada.
 - **AU-161** (F14c, pendiente) · El código solo lee por las conexiones de su paso. Cada lectura la hace el servidor,
   que comprueba la conexión y su filtro, la cuenta y la etiqueta.
   En la F14c: la conexión se lee de la automatización guardada, nunca de lo que diga la caja. Cada lectura pregunta a

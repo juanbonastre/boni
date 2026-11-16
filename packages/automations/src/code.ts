@@ -41,7 +41,11 @@ export const CODE_LIMITS = {
   steps: 5_000,
   /** The interpreter's memory for one call, bytes. */
   memoryBytes: 64 * MB,
-  stackBytes: 512 * KB,
+  /**
+   * The interpreter's stack, bytes: about 1,500 calls deep. Measured 2026-11-16 (E1): at 512 KB a recursion without end
+   * overflowed the thread's own stack before QuickJS's, and the call failed whole instead of as the code's error.
+   */
+  stackBytes: 256 * KB,
   /** What one call may be sent, as JSON: its rows, the rows of the steps it cites and what it has read. */
   inputBytes: 8 * MB,
   /** What one call may answer, as JSON. */
