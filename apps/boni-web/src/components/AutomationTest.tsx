@@ -57,6 +57,13 @@ export interface Tester {
 export const TesterContext = createContext<Tester | null>(null);
 export const useTester = () => useContext(TesterContext);
 
+/**
+ * On the phone an automation is looked at and tested, never changed (AU-74): no «Probar paso», no buttons in the empty
+ * states, nothing that edits. The page says it once; a change of layout mounts another app, so it never flips.
+ */
+export const PhoneContext = createContext(false);
+export const usePhone = () => useContext(PhoneContext);
+
 /** The time, again every half minute: what «hace 2 min» is said against. Asks nothing of the server. */
 export function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -284,7 +291,9 @@ export function TestStepButton({
   besideSays?: boolean;
 }) {
   const tester = useTester();
+  const phone = usePhone();
   const why = cannotTest(step, state.testing !== null);
+  if (phone) return null;
   return (
     <button
       type="button"
@@ -394,6 +403,7 @@ export function StepOutput({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
+  const phone = usePhone();
   const now = useNow();
   const test = state.tests[step.id];
   const outs = outputsOf(step);
@@ -432,7 +442,7 @@ export function StepOutput({
           <p className="auto-out-failure">
             {t(KEY.failure(failure.code), { ...(failure.detail ?? {}) })}
           </p>
-          {param && (
+          {param && !phone && (
             <>
               <p className="muted small">{t(KEY.param(step.type, param.key))}</p>
               <button type="button" className="btn small" onClick={() => goToParam(param.key)}>
@@ -514,6 +524,7 @@ export function StepInput({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
+  const phone = usePhone();
   const ins = inputsOf(step);
   const [at, setAt] = useState(ins[0] ?? "main");
   const input = ins.includes(at) ? at : (ins[0] ?? "main");
@@ -608,8 +619,8 @@ export function StepInput({
       <div className="auto-in">
         {head}
         <div className="auto-view-empty" data-in="untested">
-          <p>{t("auto.view.noInput")}</p>
-          {nearest && (
+          <p>{t(phone ? "auto.view.untested" : "auto.view.noInput")}</p>
+          {nearest && !phone && (
             <button
               type="button"
               className="btn small"
@@ -644,7 +655,7 @@ export function StepInput({
           show={show}
           names={fieldNames(t, fields)}
           choices={choiceNames(fields)}
-          from={from}
+          from={phone ? undefined : from}
         />
       )}
     </div>

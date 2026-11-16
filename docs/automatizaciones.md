@@ -308,17 +308,20 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 ### 5.3 Los valores: fijo o expresión
 
 - **AU-20** (F14b, hecho) · Un parámetro que es un valor es «Fijo» (su control: texto, número, fecha, una opción
-  del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», dentro del propio control y siempre a
-  la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
+  del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», que cierra la línea del valor y siempre
+  está a la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
   resuelve el servidor (AU-162); el JavaScript llega con la F14c (AU-22).
   En la F14b: soltar un campo en un valor de texto añade la cita donde está el cursor (al final si no lo hay); en un
   número, una fecha o una opción, la cita sustituye al valor. Pasar a «Expresión» con «{ }» conserva lo escrito,
   como texto de la expresión; volver a «Fijo» deja el control vacío, y las dos cosas se pueden deshacer. Después de una prueba, debajo de un valor que es una expresión se lee lo que da con la primera fila
   de la entrada («= 5 · con la fila 1 de 128»); sin prueba no se lee nada debajo.
-  Hecho en F: «{ }» al final de cada valor de la vista (dentro de un texto, un número o una fecha; al lado de una
-  opción o de una casilla), soltar en un texto donde está el cursor y en lo demás en lugar del valor, el paso a
+  Hecho en F: «{ }» al final de cada valor de la vista, soltar en un texto donde está el cursor y en lo demás en lugar del valor, el paso a
   «Expresión» y vuelta con Deshacer, y lo que da con la primera fila de la última prueba, que se calcula en la app a
   cada tecla, sin preguntar al servidor (A-15).
+  Hecho en G (Juan, 2026-11-16: «lo que mejor sea para la usabilidad»): «{ }» va al lado de su control en todos
+  los valores, en una columna: el mismo borde derecho, tamaño y aspecto en un texto, un número, una fecha, una
+  opción, una casilla o una expresión, de una condición o de «Campo · Valor», también tras pasar a expresión y
+  volver; la papelera de «Campo · Valor» es la de una condición; Tab va de cada control a su «{ }».
 - **AU-21** (F14b, hecho) · Arrastrar un campo de «Entrada» a un parámetro lo cita. Una cita sencilla se ve
   como una ficha con el icono de su paso y el nombre del campo («Importe mínimo»), nunca como código; si dos pasos
   tienen un campo que se llama igual, la ficha lleva también el paso («Buscar gastos › Importe»).
@@ -832,7 +835,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Hecho en C1: la cabecera, «Guardado» con sus tres estados, la pausa y la salida, «Duplicar» y «Eliminar» con su
   «Deshacer». Hecho en C2: en el lienzo, la copia tiene cada paso en el mismo sitio. Falta (G): la prueba en la app de
   escritorio sobre el servidor real.
-- **AU-63** (F14b, en parte) · El lienzo va de izquierda a derecha. Un paso es una tarjeta con su icono, su nombre y
+- **AU-63** (F14b, hecho) · El lienzo va de izquierda a derecha. Un paso es una tarjeta con su icono, su nombre y
   una línea que resume lo que hace («Gastos · este mes · hasta 500»). Las salidas están a la derecha con su nombre;
   las conexiones cuelgan debajo (desde la F14c: AU-40).
   En la F14b: la tarjeta tiene un ancho fijo; el nombre y el resumen ocupan una línea cada uno y se cortan con puntos
@@ -841,8 +844,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Un paso al que le falta algo obligatorio lleva una marca en la tarjeta desde que se marca el parámetro (AU-83). Un
   lienzo con solo su disparador no dice nada más: el «+» de su salida es lo que hay que hacer (AU-65).
   Hecho en C2: la tarjeta, su resumen, las salidas con su nombre y el lienzo con solo su disparador. Hecho en D: el
-  nombre y el resumen enteros en la vista del paso y la marca de lo obligatorio que falta. Falta: su captura de
-  referencia (G).
+  nombre y el resumen enteros en la vista del paso y la marca de lo obligatorio que falta. Hecho en G: la tarjeta
+  dice una cita sola por el nombre de su campo, como la cabecera de la vista, con lo que el borrador sabe de cada paso
+  (sin la prueba); con 200 tarjetas que citan, el lienzo abre en 350 ms y una tecla se pinta en 20 ms (A-15), y su
+  captura de referencia («automatizaciones-lienzo»).
 - **AU-64** (F14b, hecho) · Abajo a la izquierda: acercar, alejar, encajar y «Ordenar». Abajo en el centro:
   «Probar», que ensaya la automatización entera. En el editor solo se prueba (entera aquí; un paso, con «Probar
   paso»: AU-66 y AU-73); «Ejecutar», que corre la versión publicada, está en «⋯» (AU-97). Arriba a la derecha: «+».
@@ -894,7 +899,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 **Añadir un paso** (pantalla 3: «¿Cómo empieza?» y «Añadir un paso»)
 
-- **AU-69** (F14b, en parte) · Un panel a la derecha con el buscador arriba. En un lienzo vacío pregunta «¿Cómo
+- **AU-69** (F14b, hecho) · Un panel a la derecha con el buscador arriba. En un lienzo vacío pregunta «¿Cómo
   empieza?» y lista los disparadores; después, las ocho categorías del §5.10, dichas por lo que se quiere hacer:
   «Leer o escribir en una colección», «Transformar filas», «Decidir el camino», «Escribir código», «Usar IA»,
   «Preguntar o avisar», «Actuar en una página» y «Piezas de Boni»; al final, «Añadir otro disparador». Cada paso
@@ -906,18 +911,19 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   lienzo, no al lado.
   Hecho en C2: el panel, «¿Cómo empieza?», las tres categorías, «Añadir otro disparador», las acciones de «Colección»,
   el buscador y «Nada con «…»», y el panel encima del lienzo bajo 1100 px. Hecho en D: el paso elegido se abre.
-  Falta: su captura de referencia (G).
+  Hecho en G: su captura de referencia («automatizaciones-anadir»).
 
 **La vista del paso** (pantallas 4 a 7 del boceto)
 
-- **AU-70** (F14b, en parte) · Doble clic o Intro abre el paso encima del lienzo en tres columnas: ENTRADA ·
+- **AU-70** (F14b, hecho) · Doble clic o Intro abre el paso encima del lienzo en tres columnas: ENTRADA ·
   «Parámetros | Ajustes» · SALIDA. `Esc` cierra. No hay «Guardar».
   En la F14b: la vista ocupa la ventana encima del lienzo, que queda atenuado detrás. Su cabecera tiene el icono y el
   nombre del paso (se edita ahí), «Probar paso» y cerrar. En un disparador, la columna ENTRADA son sus «Datos de
   prueba»: los campos que pide, con lo de la última prueba (AU-94).
   Hecho en D: la vista encima del lienzo atenuado, sus tres columnas, la cabecera con el icono, el nombre que se edita
   ahí, «Probar paso» y cerrar, `Esc`, ningún «Guardar», y los «Datos de prueba» de un disparador con los campos que
-  pide. Hecho en E: lo de la última prueba en ellos (AU-94). Falta: su captura de referencia (G).
+  pide. Hecho en E: lo de la última prueba en ellos (AU-94). Hecho en G: su captura de referencia
+  («automatizaciones-paso»).
 - **AU-71** (F14b, hecho) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
   valor de muestra, que se arrastran), «Tabla» o «JSON». Vacía, dice «Prueba los pasos anteriores» con su botón.
   En la F14b: la cabecera de ENTRADA dice «De «Buscar gastos» · 128 filas» y deja elegir cualquier paso anterior del
@@ -944,19 +950,24 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   vacíos, por su nombre) y «Probando…».
   Hecho en D: «Probar paso» arriba a la derecha y «Falta: Colección» a su lado. Hecho en E: se pulsa, y mientras
   prueba dice «Probando…» al lado y no se puede pulsar (AU-91).
-- **AU-74** (F14b, en parte) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
+- **AU-74** (F14b, hecho) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
   automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan; no se editan (como hoy).
   En la F14b: con menos de 1100 px de ancho la vista del paso tiene dos columnas, «Entrada | Salida» en pestañas a la
   izquierda y «Parámetros | Ajustes» a la derecha. En el teléfono (menos de 640 px, la disposición de teléfono de la
   app) la lista es la página de la colección de siempre, y una automatización abre su lienzo solo para ver: se mueve y
   se acerca con los dedos, y tocar un paso abre su vista en una columna con tres pestañas, «Entrada | Parámetros |
   Salida», con los parámetros sin poder cambiarlos y lo que dio la última prueba. No hay «+», ni barras de paso, ni
-  arrastrar, ni menús que cambien algo. Abierto, lo decide Juan: si en el teléfono se puede «Probar» en la F14b (un
-  flujo de hoy sí se prueba ahí); hasta que lo diga, no está, y tampoco «Probar paso» ni los botones de los estados
+  arrastrar, ni menús que cambien algo. «Probar» sí está (Juan, 2026-11-15: «Sí, también»): el de todo el borrador,
+  abajo en el lienzo, con los campos del disparador si los pide; no hay «Probar paso» ni los botones de los estados
   vacíos: en el teléfono una ENTRADA o una SALIDA sin datos dice «Sin probar» y nada más.
   Hecho en D: bajo 1100 px, las dos columnas con «Entrada | Salida» en pestañas, sin nada cortado ni que se desplace
-  de lado (a 1000 px y a 640 px; por debajo de 640 px la app es la del teléfono). Falta: el teléfono, solo para ver,
-  y sus capturas de referencia (G).
+  de lado (a 1000 px y a 640 px; por debajo de 640 px la app es la del teléfono). Hecho en G: el teléfono, para ver y
+  «Probar», probado a 360 px con los dedos (un dedo mueve el lienzo, dos lo acercan; un dedo sobre un paso mueve el
+  lienzo, no el paso); el nombre es texto, sin «Guardado» ni «⋯», y la flecha de volver es la de la app. Lo que el
+  tacto no hace, ni hace falta: arrastrar un campo de «Esquema» (el arrastre de HTML es del ratón) y el menú del
+  botón derecho. En el teléfono el nombre de un parámetro va encima de su control, que ocupa todo el ancho. Sus
+  capturas de referencia: «automatizaciones-estrecho», «automatizaciones-telefono» y
+  «automatizaciones-telefono-paso».
 
 **Contra el mar de opciones** (C2 y C8: cada regla con su prueba)
 
@@ -977,12 +988,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   el botón no se ve. Quitar una opción la devuelve a su valor por defecto.
 - **AU-77** (F14b, hecho) · Una opción que cambia qué filas salen o por dónde nunca está detrás de «Añadir
   opción»: es un parámetro a la vista. El catálogo la marca y una prueba lo comprueba.
-- **AU-78** (F14b, en parte) · «Ajustes» es igual en todos los pasos y tiene seis filas (pantalla 7): Si falla ·
+- **AU-78** (F14b, hecho) · «Ajustes» es igual en todos los pasos y tiene seis filas (pantalla 7): Si falla ·
   Reintentos (las dos, AU-16) · Seguir sin filas (AU-14) · Solo la primera fila (el paso trabaja con la primera que
   llegue y no con las demás) · Nota (un texto de Juan para acordarse de algo) · Apagado (el paso no corre y las
   filas pasan tal cual).
   Hecho en D: las seis filas en todos los tipos de paso; la segunda se llama «Reintentos» porque «Reintentar» es la
-  palabra de otra acción, «Sin guardar · Reintentar» (AU-85). Falta: su captura de referencia (G).
+  palabra de otra acción, «Sin guardar · Reintentar» (AU-85). Hecho en G: su captura de referencia
+  («automatizaciones-ajustes»).
 - **AU-79** (F14b, hecho) · Todo ajuste u opción que no esté en su valor por defecto se ve en la tarjeta del
   paso, como una etiqueta corta («Reintenta 2 veces», «Nota»), y en la pestaña «Ajustes», que cuenta lo cambiado. Si
   además cambia las filas que salen («Solo la primera fila», «Seguir sin filas», «Apagado»), lo dice también encima

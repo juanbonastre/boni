@@ -22,6 +22,7 @@ import {
   type StepFailure,
   type StepSettings,
 } from "@boni/automations";
+import type { DataField } from "../core/agent.ts";
 import type { StepTest } from "./client.ts";
 
 /** A row of «Parámetros»: one parameter with its control. A «cosa» of AU-75. */
@@ -219,6 +220,17 @@ export interface ConditionField {
   result?: { measure: string; of?: string };
 }
 
+/** A collection's fields as a condition and a citation name them: by its key, with a choice's options, a relation's target. */
+export function conditionFieldsOf(collection: { fields: readonly DataField[] }): ConditionField[] {
+  return collection.fields.map((f) => ({
+    key: f.key ?? f.id,
+    name: f.name,
+    type: f.type,
+    ...(f.options ? { options: f.options } : {}),
+    ...(f.relation ? { relation: f.relation } : {}),
+  }));
+}
+
 /**
  * The conditions control (AU-81) is the views' filter editor (components/DatabaseHead.tsx), not a new one: the
  * builder gives that editor a slot for the control of a value, so a value is «Fijo» or «Expresión» (AU-20), and
@@ -278,28 +290,58 @@ export function fieldsOut(
   step: string,
   collection: (key: string) => readonly ConditionField[] | undefined,
 ): ConditionField[] {
-  const s = draft.steps.find((x) => x.id === step);
-  return s ? fieldWalk(draft, collection).outOf(s) : [];
+  return fieldsOutOf(draft, collection)(step);
+}
+
+/**
+ * `fieldsOut` for many steps of one draft: each input is walked once, however many steps ask (the canvas's 200
+ * cards, A-15).
+ */
+export function fieldsOutOf(
+  draft: Automation,
+  collection: (key: string) => readonly ConditionField[] | undefined,
+): (step: string) => ConditionField[] {
+  const walk = fieldWalk(draft, collection);
+  const byId = new Map(draft.steps.map((s) => [s.id, s]));
+  return (step) => {
+    const s = byId.get(step);
+    return s ? walk.outOf(s) : [];
+  };
 }
 
 function fieldWalk(
   draft: Automation,
   collection: (key: string) => readonly ConditionField[] | undefined,
 ) {
-  const seen = new Set<string>();
+  const byId = new Map(draft.steps.map((s) => [s.id, s]));
+  /** What came into each input, once walked; empty while it is being walked (a loop gives nothing). */
+  const walked = new Map<string, ConditionField[]>();
   const into = (id: string, inp: string): ConditionField[] => {
     const at = `${id}:${inp}`;
-    if (seen.has(at)) return [];
-    seen.add(at);
+    const was = walked.get(at);
+    if (was) return was;
+    walked.set(at, []);
     const from = draft.arrows.filter((a) => a.to.step === id && a.to.input === inp);
-    return unique(
+    const fields = unique(
       from.flatMap((a) => {
-        const s = draft.steps.find((x) => x.id === a.from.step);
+        const s = byId.get(a.from.step);
         return s ? outOf(s) : [];
       }),
     );
+    walked.set(at, fields);
+    return fields;
   };
+  /** What each step gives, once made. */
+  const gives = new Map<string, ConditionField[]>();
   const outOf = (s: Step): ConditionField[] => {
+    let fields = gives.get(s.id);
+    if (!fields) {
+      fields = make(s);
+      gives.set(s.id, fields);
+    }
+    return fields;
+  };
+  const make = (s: Step): ConditionField[] => {
     const p = s.params;
     switch (s.type) {
       case "manual":

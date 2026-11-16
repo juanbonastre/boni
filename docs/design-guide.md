@@ -1164,8 +1164,9 @@ contraseña ni un código aquí» under a question.
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
   catalogue has none), its name in 13 px semibold and one line of summary in `--muted`, each cut with an ellipsis and
   whole in its tooltip. The summary is the parameters in sight that have a value, in their order, joined by « · »
-  («Libros · Límite 10»; a collection by its name, a citation by its field, a number with its parameter's name, a
-  list by how many). Inputs are dots on the left (Combinar's say A and B), outputs on the right with their names
+  («Libros · Límite 10»; a collection by its name, a citation alone by its field's name as its chip says it, from what
+  the draft knows of each step and never from a test, so the card and the view's header say the same; a number with
+  its parameter's name, a list by how many). Inputs are dots on the left (Combinar's say A and B), outputs on the right with their names
   (none when the only one is «Salida»; a rule of «Elegir rama» by its own); an output with no arrow has a small «+»
   beside its dot. Under the summary, one line of labels for what is not at its default (AU-79: «Si falla: seguir»,
   «Reintenta 2 veces», «Sigue sin filas», «Solo la primera fila», «Nota», «Apagado», an option by its name), small
@@ -1218,9 +1219,19 @@ contraseña ni un código aquí» under a question.
   parameter left empty is not marked on opening; it is once it is left (AU-83), in `--bad`, and on its card. Under
   1100 px: two columns, «Entrada | Salida» as tabs on the left and «Parámetros | Ajustes» on the right; in a
   column under 260 px (the app's sidebar beside the editor, near 640 px) each row's name goes above its control and
-  the tabs wrap. Under 640 px the app is the phone's, where the editor is not (the phone's view, only to look, comes with G; the view's styles for
-  it, one column over the whole window, are there). A key typed in the view redraws only
-  its step's card (A-15).
+  the tabs wrap. A key typed in the view redraws only its step's card (A-15).
+  **On the phone** (under 640 px, the app's phone layout; F14b G, AU-74; `PhoneContext` in `AutomationTest.tsx`) an
+  automation is looked at and tested, never changed. The header is its name as text (the app's own bar goes back; no
+  «Guardado», no «⋯»); the canvas fills what is left above the tab bar and opens never smaller than half size (its
+  middle, the rest a finger away). One finger moves it, two zoom it, a finger on a step moves the canvas and not the
+  step, and a tap on a step opens its view. Nothing that changes is drawn: no «+», no step bar, no arrow's bar, no
+  «Ordenar», no menus. At the bottom «Probar» and «Registro» take the whole width, the zoom's three buttons just above
+  them on the left. The step's view covers the canvas, one column with three tabs, «Entrada | Parámetros | Salida»
+  («Parámetros» first; no «Ajustes»): the name is text, the parameters are drawn as on the computer but disabled
+  (a disabled fieldset, and an expression's box is not editable), each name above its control, which takes the whole
+  width, and there is no «Probar paso»; an ENTRADA or a
+  SALIDA with nothing tested says «Sin probar» and nothing else. A trigger's «Datos de prueba» can be typed: they are
+  the next test's, never the draft's.
 - **«Probar»** (F14b E, `AutomationTest.tsx`, `AutomationRows.tsx`; AU-64, AU-67, AU-71 to AU-73, AU-83, AU-84, AU-90
   to AU-94): at the bottom centre of the canvas, one small bar on `--surface`: the button «Probar» and, beside it, the
   «Registro» folded in one line of 12 px `--muted` cut with an ellipsis: «Sin probar», then «Última prueba hace 2 min
@@ -1252,8 +1263,9 @@ contraseña ni un código aquí» under a question.
   its id; «JSON» shows the row as it is.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
-  sight: inside the box at its right end on a text, a number or a date, beside the control on a select or a
-  checkbox. Pressed it is in `--accent` and the value is an expression; it keeps what was written as the
+  sight. «{ }» closes every value's row, in one column: beside its control, with the same right edge, size and
+  look whatever the value is, and a row of «Campo · Valor» ends with the same trash icon as a condition's; a condition's value has a line of its
+  own with its trash beside it, and the trash stays on the value's first line when an expression wraps. Pressed it is in `--accent` and the value is an expression; it keeps what was written as the
   expression's text, and back to «Fijo» leaves the control empty (both undo with Ctrl+Z). An expression is one line
   of text, not monospace, where each citation is a **chip**: a pill in `--accent-soft` with the step's icon (12 px)
   and the field's name («Páginas», «Suma de Páginas»; «Buscar filas en Libros › Título» when another step of the

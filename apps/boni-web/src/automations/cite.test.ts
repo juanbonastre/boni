@@ -8,16 +8,21 @@ import {
   type Step,
 } from "@boni/automations";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n.ts";
 import {
   citationFor,
+  citedName,
   dragFrom,
   dropCitation,
+  namesOnDemand,
   paint,
   preview,
   toExpression,
   toFixed,
 } from "./cite.ts";
 import type { RowView, Sample } from "./client.ts";
+import { summaryOf } from "./panel.ts";
+import { summaryWords } from "./words.ts";
 
 const step = (id: string, name: string, type: string, params: Step["params"] = {}): Step => ({
   id,
@@ -126,6 +131,61 @@ describe("the citation a dragged field writes", () => {
     expect(paint("{{ $json.a + 1 }}", draft, "s_orden", names)).toEqual([
       { kind: "code", source: "$json.a + 1" },
     ]);
+  });
+
+  it("AU-21 · a citation alone is said by its field's name as its chip says it, and nothing where its chip is broken; the canvas's card says it from the draft, its collection's field by name, its key where the draft does not know the field", () => {
+    for (const [expr, into] of [
+      ["{{ $json.importe }}", "s_orden"],
+      ["{{ $('Inicio').item.minimo }}", "s_orden"],
+      ["{{ $json.sum_importe }}", "s_limite"],
+      ["{{ $json.importe.total }}", "s_orden"],
+      ["{{ $('Ya no está').item.importe }}", "s_orden"],
+      ["{{ $json.nada }}", "s_orden"],
+    ] as const) {
+      const [chip] = paint(expr, draft, into, names);
+      const only = parseExpression(expr)[0];
+      if (only?.kind !== "cite" || chip?.kind !== "chip") throw new Error(expr);
+      expect(citedName(draft, into, names)(only.cite)).toBe(chip.broken ? undefined : chip.name);
+    }
+    // The canvas: no test, the draft's shapes only. «Buscar gastos» reads «gastos», whose field «importe» is «Importe».
+    const t = translator("es");
+    const gastos = [{ key: "importe", name: "Importe", type: "number" }];
+    const shapes = namesOnDemand(t, draft, (key) => (key === "gastos" ? gastos : undefined));
+    const limit = step("s_limite", "Limitar", "limit", { count: { expr: "{{ $json.importe }}" } });
+    const say = (into: string) =>
+      summaryOf(limit, summaryWords(t, {}, limit, citedName(draft, into, shapes))).join(" · ");
+    expect(say("s_filtro")).toBe("Importe");
+    // «Inicio» has no shape in the draft: its key.
+    expect(say("s_gastos")).toBe("importe");
+  });
+
+  it("AU-21, A-15 · the names the canvas's 200 cards cite by walk each step of the draft once, however many cards ask", () => {
+    const n = 200;
+    const chain = {
+      ...draft,
+      steps: [
+        step("s_inicio", "Inicio", "manual"),
+        step("s_libros", "Buscar libros", "collection", { action: "find", collection: "libros" }),
+        ...Array.from({ length: n - 2 }, (_, i) => step(`s_l${i}`, `Limitar ${i + 1}`, "limit")),
+      ],
+      arrows: [
+        arrow("s_inicio", "s_libros"),
+        ...Array.from({ length: n - 2 }, (_, i) =>
+          arrow(i ? `s_l${i - 1}` : "s_libros", `s_l${i}`),
+        ),
+      ],
+    } as unknown as Automation;
+    let asked = 0;
+    const libros = [{ key: "paginas", name: "Páginas", type: "number" }];
+    const shapes = namesOnDemand(translator("es"), chain, (key) => {
+      asked++;
+      return key === "libros" ? libros : undefined;
+    });
+    const [cite] = parseExpression("{{ $json.paginas }}");
+    if (cite?.kind !== "cite") throw new Error("no citation");
+    for (let i = n - 3; i >= 0; i--)
+      expect(citedName(chain, `s_l${i}`, shapes)(cite.cite)).toBe("Páginas");
+    expect(asked).toBe(1);
   });
 
   it("AU-21 · a chip knows the step its field is of, for its icon ($json: the step the edited one hangs from), and says the step too only when another step of the path has a field of the same name", () => {

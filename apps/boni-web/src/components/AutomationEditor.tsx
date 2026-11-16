@@ -29,6 +29,7 @@ import {
 import { DO } from "../automations/words.ts";
 import { ApiError } from "../core/api.ts";
 import { DRAFT_PAUSE_MS, draftRetryMs } from "../core/flowEdit.ts";
+import { phoneLayout } from "../host.ts";
 import {
   agentApi,
   errorText,
@@ -39,7 +40,7 @@ import {
   useStore,
 } from "../store.ts";
 import { AutomationCanvas } from "./AutomationCanvas.tsx";
-import { type Tester, TesterContext, trialOf } from "./AutomationTest.tsx";
+import { PhoneContext, type Tester, TesterContext, trialOf } from "./AutomationTest.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
@@ -261,11 +262,14 @@ export function AutomationPage({ id }: { id: string | null }) {
           .catch((e) => toast(errorText(t, e))),
     });
   };
+  // On the phone it is looked at and tested, never changed (AU-74); another layout mounts another app.
+  const phone = phoneLayout();
   return (
     <div className="content page-doc full auto-page" data-boni-action="automations.read">
       <div className="doc">
         <Header
           state={state}
+          phone={phone}
           onName={(name) => apply((s) => change(s, { draft: { ...s.draft, name } }))}
           onRetry={() => void keep()}
           onDuplicate={() => void duplicate()}
@@ -277,9 +281,11 @@ export function AutomationPage({ id }: { id: string | null }) {
           <div className="page-loading" role="status" aria-busy="true" />
         ) : (
           <section className="auto-canvas" aria-label={state.draft.name}>
-            <TesterContext.Provider value={tester}>
-              <AutomationCanvas state={state} apply={apply} />
-            </TesterContext.Provider>
+            <PhoneContext.Provider value={phone}>
+              <TesterContext.Provider value={tester}>
+                <AutomationCanvas state={state} apply={apply} />
+              </TesterContext.Provider>
+            </PhoneContext.Provider>
           </section>
         )}
       </div>
@@ -293,15 +299,17 @@ const SAVE_WORDS = {
   failed: "auto.save.failed",
 } as const;
 
-/** Back, the name, «Guardado» and «⋯»: nothing else of its own (AU-62). */
+/** Back, the name, «Guardado» and «⋯»: nothing else of its own (AU-62). On the phone, back and the name alone. */
 function Header({
   state,
+  phone,
   onName,
   onRetry,
   onDuplicate,
   onRemove,
 }: {
   state: EditorState | null;
+  phone: boolean;
   onName: (name: string) => void;
   onRetry: () => void;
   onDuplicate: () => void;
@@ -320,37 +328,46 @@ function Header({
   const words = t(SAVE_WORDS[save]);
   return (
     <header className="auto-head">
-      <button
-        type="button"
-        className="icon-btn"
-        aria-label={t("auto.back")}
-        title={t("auto.back")}
-        onClick={showFlows}
-      >
-        <ArrowLeft size={16} strokeWidth={1.8} />
-      </button>
-      <input
-        className="auto-name"
-        aria-label={t("auto.name")}
-        data-boni-action="automations.edit"
-        value={text}
-        disabled={!state}
-        onFocus={() => {
-          editing.current = true;
-        }}
-        onChange={(e) => {
-          setText(e.target.value);
-          if (e.target.value.trim()) onName(e.target.value);
-        }}
-        onBlur={() => {
-          editing.current = false;
-          setText(name);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-        }}
-      />
-      {state && (exists || state.owed.draft) && (
+      {/* On the phone its own bar goes back. */}
+      {!phone && (
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label={t("auto.back")}
+          title={t("auto.back")}
+          onClick={showFlows}
+        >
+          <ArrowLeft size={16} strokeWidth={1.8} />
+        </button>
+      )}
+      {phone ? (
+        <h1 className="auto-name look" title={name}>
+          {name}
+        </h1>
+      ) : (
+        <input
+          className="auto-name"
+          aria-label={t("auto.name")}
+          data-boni-action="automations.edit"
+          value={text}
+          disabled={!state}
+          onFocus={() => {
+            editing.current = true;
+          }}
+          onChange={(e) => {
+            setText(e.target.value);
+            if (e.target.value.trim()) onName(e.target.value);
+          }}
+          onBlur={() => {
+            editing.current = false;
+            setText(name);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+          }}
+        />
+      )}
+      {state && !phone && (exists || state.owed.draft) && (
         <span className={`auto-saved ${save}`} role="status">
           {words}
           {save === "failed" && (
@@ -369,7 +386,7 @@ function Header({
         </span>
       )}
       <span className="spacer" />
-      {exists && (
+      {exists && !phone && (
         <PopButton label={<MoreHorizontal size={16} strokeWidth={1.8} />} title={t("auto.more")}>
           {(close) => (
             <>

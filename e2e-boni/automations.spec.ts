@@ -1,3 +1,4 @@
+import { under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { CATALOGUE, type ParamSpec, paramsOf } from "../packages/automations/src/catalogue.ts";
 import {
@@ -9,6 +10,7 @@ import {
   MAP,
   MODELS,
 } from "./agent-scenarios.ts";
+import { ALL_DONE, arrow, books, step, TESTED, testOf } from "./automation-data.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -81,17 +83,6 @@ const head = (page: Page) => page.locator(".auto-head");
 const saved = (page: Page) => head(page).getByRole("status");
 const nameBox = (page: Page) => page.getByRole("textbox", { name: "Nombre de la automatización" });
 
-/** Steps and arrows as the app writes them, for the automations of the canvas's tests. */
-const step = (id: string, name: string, type: string, params: Record<string, unknown> = {}) => ({
-  id,
-  name,
-  type,
-  params,
-});
-const arrow = (from: string, to: string, output = "main") => ({
-  from: { step: from, output },
-  to: { step: to, input: "main" },
-});
 /** «Libros por leer»: a trigger and three steps in a row, each box where the server keeps it. */
 const CHAIN = {
   id: "a_01jx8q4m6p8r0t2v4x6z8b0d2f",
@@ -234,6 +225,34 @@ const CONDITIONS = {
     { step: "s_01jeliminar", x: 1200, y: 110 },
   ],
 };
+/** «Marcar los leídos»: one value of each kind in one view, a condition's and «Campo · Valor»'s (AU-20). */
+const KINDS = {
+  id: "a_01jx8w9s1u3w5y7a9c1e3g5k2p",
+  name: "Marcar los leídos",
+  updated: 1761970000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual"),
+    step("s_01jmarcar", "Modificar filas en Libros", "collection", {
+      collection: "libros",
+      action: "update",
+      target: "matching",
+      where: [{ field: "estado", op: "is", value: "o_leyendo" }],
+      fields: [
+        { field: "titulo", value: "Leído entero" },
+        { field: "estado", value: "o_leido" },
+        { field: "paginas", value: 320 },
+        { field: "fin", value: "2026-11-01" },
+        { field: "fav", value: true },
+        { field: "relacionado", value: { expr: "{{ $json.titulo }}" } },
+      ],
+    }),
+  ],
+  arrows: [arrow("s_inicio", "s_01jmarcar")],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jmarcar", x: 300, y: 0 },
+  ],
+};
 /** The keys a choice offers, when they are keys and not fields. */
 const keysOf = (p: ParamSpec): readonly string[] =>
   p.control === "choice" && Array.isArray(p.options) ? (p.options as readonly string[]) : [];
@@ -258,140 +277,6 @@ const SEA = {
   steps: SEA_STEPS,
   arrows: [],
   places: SEA_STEPS.map((s, i) => ({ step: s.id, x: (i % 8) * 300, y: Math.floor(i / 8) * 200 })),
-};
-/**
- * «Revisar pendientes», for «Probar» (E): a trigger that asks «Mínimo», a «Buscar filas», a «Si», a step that changes
- * rows and one that sends them to the trash on its two outputs, a «Combinar» of both and a «Crear una fila» at the
- * end, whose output has no arrow. What the server answers a test of it is given by each test (`testOf`).
- */
-const TESTED = {
-  id: "a_01jx8x0t2v4x6z8b0d2f4h6k8n",
-  name: "Revisar pendientes",
-  updated: 1761990000000,
-  steps: [
-    step("s_inicio", "Disparado por el usuario", "manual", {
-      fields: [{ key: "minimo", name: "Mínimo", type: "number" }],
-    }),
-    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
-      collection: "libros",
-      action: "find",
-      where: [{ field: "estado", op: "is", value: "o_pendiente" }],
-      limit: 200,
-    }),
-    step("s_01jsi", "Si", "if", { where: [{ field: "paginas", op: "gt", value: 300 }] }),
-    step("s_01jmodificar", "Modificar filas en Libros", "collection", {
-      collection: "libros",
-      action: "update",
-      target: "incoming",
-      fields: [{ field: "notas", value: "Revisar" }],
-    }),
-    step("s_01jeliminar", "Eliminar filas en Libros", "collection", {
-      collection: "libros",
-      action: "trash",
-      target: "incoming",
-    }),
-    step("s_01jcombinar", "Combinar", "combine", { by: "all" }),
-    step("s_01jcrear", "Crear una fila en Libros", "collection", {
-      collection: "libros",
-      action: "create",
-      fields: [{ field: "titulo", value: "Resumen de pendientes" }],
-    }),
-  ],
-  arrows: [
-    arrow("s_inicio", "s_01jbuscar"),
-    arrow("s_01jbuscar", "s_01jsi"),
-    arrow("s_01jsi", "s_01jmodificar", "yes"),
-    arrow("s_01jsi", "s_01jeliminar", "no"),
-    { from: { step: "s_01jmodificar", output: "main" }, to: { step: "s_01jcombinar", input: "a" } },
-    { from: { step: "s_01jeliminar", output: "main" }, to: { step: "s_01jcombinar", input: "b" } },
-    arrow("s_01jcombinar", "s_01jcrear"),
-  ],
-  places: [
-    { step: "s_inicio", x: 0, y: 0 },
-    { step: "s_01jbuscar", x: 300, y: 0 },
-    { step: "s_01jsi", x: 600, y: 0 },
-    { step: "s_01jmodificar", x: 900, y: -130 },
-    { step: "s_01jeliminar", x: 900, y: 130 },
-    { step: "s_01jcombinar", x: 1200, y: 0 },
-    { step: "s_01jcrear", x: 1500, y: 0 },
-  ],
-};
-/**
- * A book as a test brings it: the keys of Libros and some more (thirteen fields), a related row, a list, and a title
- * and a value that look like HTML and like a link (A-01).
- */
-const book = (i: number) => ({
-  json: {
-    titulo: i === 1 ? "<b>Rayuela</b>" : `Libro ${i}`,
-    estado: "o_pendiente",
-    paginas: 200 + i,
-    fin: null,
-    fav: false,
-    notas: null,
-    web: "https://ejemplo.example.com/libros/1",
-    editorial: "Editorial de ejemplo",
-    anio: 1963,
-    idioma: "es",
-    isbn: `978-0-00-0000${String(i).padStart(2, "0")}-0`,
-    autor: { nombre: "Autora de ejemplo", pais: "Chile" },
-    relacionado: [{ titulo: "Libro 2" }, { titulo: "Libro 3" }],
-  },
-  label: {},
-});
-const books = (n: number, from = 1) => Array.from({ length: n }, (_, i) => book(from + i));
-/** What «Modificar filas» would do to a book: its «notas», from empty to «Revisar». */
-const changed = (i: number) => {
-  const b = book(i);
-  return { json: { ...b.json, notas: "Revisar" }, before: b.json, would: "update", label: {} };
-};
-const trashed = (i: number) => ({ ...book(i), before: book(i).json, would: "trash" });
-/** Every step of «Revisar pendientes» tested and fine: 128 books, 3 to change, 125 to the trash, one made. */
-const ALL_DONE = {
-  s_inicio: { rows: { "out:main": [{ json: { minimo: 300 }, label: {} }] }, ms: 10 },
-  s_01jbuscar: {
-    rows: { "in:main": [{ json: { minimo: 300 }, label: {} }], "out:main": books(128) },
-    ms: 180,
-  },
-  s_01jsi: {
-    rows: { "in:main": books(128), "out:yes": books(3, 126), "out:no": books(125) },
-    ms: 40,
-  },
-  s_01jmodificar: {
-    rows: { "in:main": books(3, 126), "out:main": [126, 127, 128].map(changed) },
-    wouldWrite: 3,
-    ms: 60,
-  },
-  s_01jeliminar: {
-    rows: {
-      "in:main": books(125),
-      "out:main": Array.from({ length: 125 }, (_, i) => trashed(i + 1)),
-    },
-    wouldWrite: 125,
-    ms: 90,
-  },
-  s_01jcombinar: {
-    rows: {
-      "in:a": [126, 127, 128].map(changed),
-      "in:b": Array.from({ length: 125 }, (_, i) => trashed(i + 1)),
-      "out:main": [{ json: { total: 128 }, label: {} }],
-    },
-    ms: 20,
-  },
-  s_01jcrear: {
-    rows: {
-      "in:main": [{ json: { total: 128 }, label: {} }],
-      "out:main": [
-        {
-          json: { titulo: "Resumen de pendientes", estado: null, paginas: null },
-          before: null,
-          would: "create",
-          label: {},
-        },
-      ],
-    },
-    wouldWrite: 1,
-    ms: 30,
-  },
 };
 /** «Si» fails on its condition's value: what hung from it is «parado». */
 const SI_FAILS = {
@@ -419,31 +304,6 @@ const NONE_PASS = {
   s_01jmodificar: { state: "skipped" as const, in: { main: 0 }, out: { main: 0 } },
   s_01jeliminar: ALL_DONE.s_01jeliminar,
 };
-/** «Revisar pendientes» with what a test of it answers; `kept`: tested already, that long ago. */
-const testOf = (
-  steps: Record<string, unknown>,
-  more: {
-    kept?: number;
-    state?: string;
-    failedAt?: string;
-    problems?: unknown[];
-    tested?: unknown;
-  } = {},
-  base: { id: string; name: string } = TESTED,
-) => ({
-  ...TESTED,
-  ...base,
-  test: {
-    steps,
-    ...(more.kept !== undefined ? { kept: Date.now() - more.kept } : {}),
-    ...(more.state ? { state: more.state } : {}),
-    ...(more.failedAt ? { failedAt: more.failedAt } : {}),
-    ...(more.problems ? { problems: more.problems } : {}),
-    tested: (more.tested as Record<string, Record<string, unknown>>) ?? {
-      s_inicio: { minimo: 300 },
-    },
-  },
-});
 const FIVE_MIN = 5 * 60_000;
 /**
  * «Resumir libros», for F (AU-20, AU-21): a trigger that asks a «Título» of its own, a «Buscar filas», an «Agrupar»
@@ -2425,7 +2285,179 @@ test.describe("the step's view", () => {
     await openStep(page, "s_01jfiltrar");
     await expect.poll(sideways).toEqual([]);
   });
-  test.fixme("AU-74 · on the phone the list is the collection's page and an automation opens its canvas only to look: it pans and zooms, a step opens in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something, no «Probar» and no «Probar paso», and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async () => {});
+  test.describe("on the phone", () => {
+    test.use({ hasTouch: true, isMobile: true });
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: 360, height: 740 });
+    });
+    /** Fingers on the screen, as a person moves them: pressed, moved in small steps over about a third of a second. */
+    async function fingers(
+      page: Page,
+      from: { x: number; y: number }[],
+      to: { x: number; y: number }[],
+    ) {
+      const cdp = await page.context().newCDPSession(page);
+      const at = (k: number) =>
+        from.map((f, i) => ({
+          x: f.x + (((to[i] ?? f).x - f.x) * k) / 20,
+          y: f.y + (((to[i] ?? f).y - f.y) * k) / 20,
+          id: i,
+        }));
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(0) });
+      for (let k = 1; k <= 20; k++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(k) });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp.detach();
+    }
+    const moved = (page: Page) =>
+      page
+        .locator(".auto-flow .react-flow__viewport")
+        .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform))
+        .then((m) => ({ x: Math.round(m.e), y: Math.round(m.f), zoom: m.a }));
+    const sideways = (page: Page) =>
+      page.evaluate(() =>
+        [document.documentElement, ...document.querySelectorAll(".auto-view, .auto-view-col")]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => (el as HTMLElement).className || el.tagName),
+      );
+    async function openOnPhone(page: Page, name: string, steps: number) {
+      await page
+        .locator(".m-tabs")
+        .getByRole("button", { name: /^Páginas/ })
+        .tap();
+      await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+      await page.getByText(name, { exact: true }).first().tap();
+      await expect(head(page).locator(".auto-name")).toHaveText(name);
+      await expect(cards(page)).toHaveCount(steps);
+      await settled(page);
+    }
+
+    test("AU-74 · on the phone the list is the collection's page and an automation opens its canvas to look at it and to test it: it pans and zooms with the fingers, a tap on a step opens it in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something and no «Probar paso»; «Probar» is there, and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async ({
+      page,
+    }) => {
+      await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+      await openOnPhone(page, TESTED.name, 7);
+      // The header: back and the name, as text; no «Guardado» and no «⋯».
+      await expect(nameBox(page)).toHaveCount(0);
+      await expect(head(page).getByRole("status")).toHaveCount(0);
+      await expect(head(page).getByRole("button", { name: "Más" })).toHaveCount(0);
+      // The canvas: no «+», no «Ordenar»; «Probar» and «Registro» at the bottom.
+      await expect(page.locator(".auto-add-top, .auto-out-add, .auto-panel")).toHaveCount(0);
+      await expect(page.locator(".auto-zoom").getByRole("button")).toHaveCount(3);
+      await expect(page.getByRole("button", { name: "Ordenar" })).toHaveCount(0);
+      await expect(testGo(page)).toBeEnabled();
+      await expect(logLine(page)).toHaveText("Sin probar");
+      expect(await sideways(page)).toEqual([]);
+      await page.screenshot({ path: `${SHOTS}/phone-automation.png` });
+      // One finger on the canvas moves it; two apart zoom it.
+      const flow = await page.locator(".auto-flow").boundingBox();
+      if (!flow) throw new Error("no canvas");
+      const empty = { x: flow.x + 40, y: flow.y + 60 };
+      const before = await moved(page);
+      await fingers(page, [empty], [{ x: empty.x + 90, y: empty.y + 60 }]);
+      await settled(page);
+      const panned = await moved(page);
+      expect(Math.abs(panned.x - before.x - 90)).toBeLessThan(12);
+      expect(Math.abs(panned.y - before.y - 60)).toBeLessThan(12);
+      const mid = { x: flow.x + flow.width / 2, y: flow.y + flow.height / 2 };
+      await fingers(
+        page,
+        [
+          { x: mid.x - 30, y: mid.y },
+          { x: mid.x + 30, y: mid.y },
+        ],
+        [
+          { x: mid.x - 90, y: mid.y },
+          { x: mid.x + 90, y: mid.y },
+        ],
+      );
+      await settled(page);
+      expect((await moved(page)).zoom).toBeGreaterThan(panned.zoom * 1.5);
+      await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).tap();
+      await settled(page);
+      // A finger on a card moves the canvas, never the card; a long press opens no menu.
+      const si = await middle(card(page, "s_01jsi"));
+      const place = await at(page, "s_01jsi");
+      await fingers(page, [si], [{ x: si.x + 60, y: si.y + 40 }]);
+      await settled(page);
+      expect(await at(page, "s_01jsi")).toEqual(place);
+      await card(page, "s_01jsi").dispatchEvent("contextmenu");
+      await page.locator(".react-flow__pane").dispatchEvent("contextmenu");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(page.locator(".auto-panel")).toHaveCount(0);
+      // A tap on a step opens it: no step bar, one column, three tabs, «Parámetros» first.
+      await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).tap();
+      await settled(page);
+      await card(page, "s_01jsi").tap();
+      await expect(view(page)).toHaveAttribute("data-step", "s_01jsi");
+      await expect(bar(page)).toHaveCount(0);
+      await expect(view(page)).toHaveClass(/\bphone\b/);
+      const tabs = view(page).getByRole("tab");
+      await expect(tabs).toHaveText(["Entrada", "Parámetros", "Salida"]);
+      await expect(view(page).getByRole("tab", { name: "Parámetros" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(view(page).locator(".auto-view-cols > .auto-view-col")).toHaveCount(1);
+      // Its name is text, the parameters are read and nothing in them can be changed; no «Probar paso».
+      await expect(nameIn(page)).toHaveCount(0);
+      await expect(view(page).locator(".auto-view-head h2")).toHaveText("Si");
+      await expect(param(page, "where")).toBeVisible();
+      const controls = view(page).locator(
+        "[role=tabpanel] :is(input, select, textarea, button):not([role=tab])",
+      );
+      expect(await controls.count()).toBeGreaterThan(0);
+      for (const c of await controls.all()) await expect(c).toBeDisabled();
+      await expect(view(page).locator("[contenteditable=true]")).toHaveCount(0);
+      await expect(view(page).getByRole("button", { name: "Probar paso" })).toHaveCount(0);
+      expect(await sideways(page)).toEqual([]);
+      // The condition's trash is on its value's line, beside «{ }» (AU-20).
+      const line = (l: ReturnType<Page["locator"]>) =>
+        l.evaluate((e) => {
+          const r = e.getBoundingClientRect();
+          return Math.round(r.top + r.height / 2);
+        });
+      const where = param(page, "where");
+      const toggleAt = await line(where.locator(".auto-expr-toggle"));
+      expect(
+        Math.abs((await line(where.locator(".db-filter-row > .icon-btn"))) - toggleAt),
+      ).toBeLessThan(4);
+      await page.screenshot({ path: `${SHOTS}/phone-automation-params.png` });
+      // Not tested: ENTRADA and SALIDA say «Sin probar», and nothing else.
+      for (const side of ["Entrada", "Salida"]) {
+        await view(page).getByRole("tab", { name: side }).tap();
+        const empty = view(page).locator(".auto-view-empty");
+        await expect(empty).toHaveText("Sin probar");
+        await expect(empty.getByRole("button")).toHaveCount(0);
+        expect(await sideways(page)).toEqual([]);
+      }
+      await view(page).getByRole("button", { name: "Cerrar" }).tap();
+      await expect(view(page)).toHaveCount(0);
+      // «Probar»: the trigger's field asked with the last value, then the last test.
+      await testGo(page).tap();
+      const box = testBar(page).getByRole("dialog");
+      await expect(box.getByRole("spinbutton", { name: "Mínimo" })).toHaveValue("300");
+      await box.getByRole("button", { name: "Probar" }).tap();
+      await expect(logLine(page)).toHaveText(
+        "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+      );
+      // Tested: a step shows what it got and what it gave.
+      await card(page, "s_01jsi").tap();
+      await view(page).getByRole("tab", { name: "Entrada" }).tap();
+      await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+        "De «Buscar filas en Libros» · 128 filas",
+      );
+      await view(page).getByRole("tab", { name: "Salida" }).tap();
+      await expect(salida(page).locator(".auto-out-count")).toHaveText("3 filas");
+      await expect(salida(page)).toContainText("Libro 126");
+      expect(await sideways(page)).toEqual([]);
+      await page.screenshot({ path: `${SHOTS}/phone-automation-step.png` });
+      // Nothing of it was changed: no draft and no boxes sent.
+      expect((await asked(page)).filter((a) => a.startsWith("PUT"))).toEqual([]);
+    });
+  });
   test("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async ({
     page,
   }) => {
@@ -2485,7 +2517,7 @@ test.describe("the step's view", () => {
       { field: "notas", value: { expr: "Rev{{ $json.titulo }}isar ya" } },
     ]);
   });
-  test("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async ({
+  test("AU-20 · every control of a value ends with «{ }», always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async ({
     page,
   }) => {
     await openApp(page, "/?still", { automations: [CONDITIONS], agent: BEFORE() });
@@ -2513,6 +2545,90 @@ test.describe("the step's view", () => {
     await expect.poll(() => exprOf(limit.getByRole("textbox", { name: "Límite" }))).toBe("50");
     await press(page, "Control+z");
     await expect(limit.getByRole("spinbutton", { name: "Límite" })).toHaveValue("50");
+  });
+  test("AU-20 · «{ }» closes every value's row in one column: the same right edge, size and look on a text, a number, a date, a select, a checkbox and an expression, of a condition and of «Campo · Valor», also after a value goes to an expression and back; Tab goes from each control to its «{ }»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [KINDS], agent: BEFORE() });
+    await openCanvas(page, KINDS.name, 2);
+    await openStep(page, "s_01jmarcar");
+    const values = view(page).locator(".auto-value");
+    // The condition's value and the six of «Campo · Valor».
+    await expect(values).toHaveCount(7);
+    await expect(view(page).locator(".auto-expr")).toHaveCount(1);
+    for (const kind of ["text", "number", "date", "checkbox"])
+      await expect(view(page).locator(`.auto-value-fixed input[type="${kind}"]`)).toHaveCount(1);
+    await expect(view(page).locator(".auto-value-fixed select")).toHaveCount(2);
+    /** Each «{ }»'s right edge, width, height and look, as the screen draws it. */
+    const toggles = () =>
+      view(page)
+        .locator(".auto-expr-toggle")
+        .evaluateAll((all) =>
+          all.map((b) => {
+            const r = b.getBoundingClientRect();
+            const c = getComputedStyle(b);
+            // The row's trash, on the same line as «{ }».
+            const trash = b
+              .closest(".db-filter-row, .auto-field-row")
+              ?.querySelector(":scope > .icon-btn")
+              ?.getBoundingClientRect();
+            return {
+              trashBeside:
+                !!trash && Math.abs(trash.top + trash.height / 2 - (r.top + r.height / 2)) < 4,
+              right: Math.round(r.right),
+              width: Math.round(r.width),
+              height: Math.round(r.height),
+              look: `${c.borderTopWidth} ${c.borderTopStyle} ${c.borderRadius} ${c.fontSize}`,
+              on: b.classList.contains("on"),
+            };
+          }),
+        );
+    const oneColumn = async () => {
+      const all = await toggles();
+      expect(all).toHaveLength(7);
+      for (const t of all) {
+        expect(t.right).toBe(all[0]?.right);
+        expect(t.width).toBe(all[0]?.width);
+        expect(t.height).toBe(all[0]?.height);
+        expect(t.look).toBe(all[0]?.look);
+        expect(t.trashBeside).toBe(true);
+      }
+      // Pressed or not, it is the same button: only its colour says «Expresión».
+      expect(all.filter((t) => t.on)).toHaveLength(await view(page).locator(".auto-expr").count());
+    };
+    await oneColumn();
+    // A text and a number to an expression, and back: still one column.
+    const fields = param(page, "fields");
+    for (const name of ["Título", "Páginas"]) {
+      const row = fields
+        .locator(".auto-value")
+        .filter({ has: page.getByLabel(name, { exact: true }) });
+      await row.getByRole("button", { name: "Usar una expresión" }).click();
+      await expect(row.locator(".auto-expr")).toHaveCount(1);
+    }
+    await oneColumn();
+    for (const name of ["Título", "Páginas"]) {
+      const row = fields
+        .locator(".auto-value")
+        .filter({ has: page.getByLabel(name, { exact: true }) });
+      await row.getByRole("button", { name: "Usar un valor fijo" }).click();
+      await expect(row.locator(".auto-expr")).toHaveCount(0);
+    }
+    await oneColumn();
+    // Tab: from each control (a date's last part, too) to its own «{ }».
+    for (const v of await values.all()) {
+      const control = v.locator("input, select, [contenteditable]").first();
+      await control.focus();
+      for (let i = 0; i < 4; i++) {
+        if (!(await control.evaluate((c) => c === document.activeElement))) break;
+        await press(page, "Tab");
+      }
+      await expect(v.locator(".auto-expr-toggle")).toBeFocused();
+    }
+    // At 900 px, where the step's view has two columns (AU-74), still one column.
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect(view(page)).toHaveClass(/\bnarrow\b/);
+    await oneColumn();
   });
   test("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async ({
     page,
@@ -2710,6 +2826,105 @@ test.describe("the step's view", () => {
     expect(opening).toBeLessThan(400);
     expect(worstKey).toBeLessThan(120);
     expect(mean).toBeLessThan(45);
+  });
+
+  test("AU-21, A-15 · with 200 steps whose counts cite a field, each card says it by the field's name, as the view's header does; the canvas opens and each key typed in a step is drawn at once", async ({
+    page,
+  }, info) => {
+    const many = Array.from({ length: 200 }, (_, i) =>
+      i === 0
+        ? step("s_inicio", "Disparado por el usuario", "manual")
+        : i === 1
+          ? step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+              action: "find",
+              collection: "libros",
+            })
+          : step(`s_01jpaso${String(i).padStart(4, "0")}`, `Limitar ${i + 1}`, "limit", {
+              count: i === 2 ? 5 : { expr: "{{ $json.paginas }}" },
+            }),
+    );
+    const long = {
+      id: "a_01jx8x0t2v4x6z8b0d2f4h6k8p",
+      name: "Doscientas citas",
+      updated: 1761995000000,
+      steps: many,
+      arrows: many.slice(1).map((s, i) => arrow(many[i]?.id as string, s.id)),
+      places: many.map((s, i) => ({ step: s.id, x: (i % 20) * 300, y: Math.floor(i / 20) * 200 })),
+    };
+    await openApp(page, "/?still", { automations: [long], agent: BEFORE() });
+    const rows = await list(page);
+    // From the click on its row to the frame with its 200 cards, measured in the page.
+    await page.evaluate(() => {
+      const w = window as unknown as { __open: { click: number; shown: number } };
+      w.__open = { click: 0, shown: 0 };
+      document.addEventListener(
+        "click",
+        () => {
+          w.__open.click = performance.now();
+        },
+        { capture: true, once: true },
+      );
+      const seen = new MutationObserver(() => {
+        if (document.querySelectorAll(".auto-card").length < 200) return;
+        seen.disconnect();
+        requestAnimationFrame(() => {
+          w.__open.shown = performance.now();
+        });
+      });
+      seen.observe(document.body, { childList: true, subtree: true });
+    });
+    await rows.getByText("Doscientas citas", { exact: true }).click();
+    await expect(cards(page)).toHaveCount(200);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __open: { shown: number } }).__open.shown),
+      )
+      .toBeGreaterThan(0);
+    const opening = await page.evaluate(() => {
+      const o = (window as unknown as { __open: { click: number; shown: number } }).__open;
+      return o.shown - o.click;
+    });
+    // Each card citing «paginas» of «Libros» says «Páginas», the name the collection gives it; the view's header too.
+    const summary = (id: string) => card(page, id).locator(".auto-card-summary");
+    await expect(summary("s_01jpaso0003")).toHaveText("Páginas");
+    await expect(summary("s_01jpaso0199")).toHaveText("Páginas");
+    await expect(summary("s_01jpaso0002")).toHaveText("Cuántas 5");
+    await card(page, "s_01jpaso0199").dblclick();
+    await expect(view(page).locator(".auto-view-summary")).toHaveText("Páginas");
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    // Each key typed at a person's pace in the one count that is a number, from the key to its frame.
+    await card(page, "s_01jpaso0002").dblclick();
+    const count = param(page, "count").getByRole("spinbutton");
+    await count.click();
+    await press(page, "Control+a");
+    await page.evaluate(() => {
+      const w = window as unknown as { __keys: number[] };
+      w.__keys = [];
+      document.addEventListener(
+        "input",
+        () => {
+          const t0 = performance.now();
+          requestAnimationFrame(() => w.__keys.push(performance.now() - t0));
+        },
+        { capture: true },
+      );
+    });
+    await count.pressSequentially("1234567", { delay: 120 });
+    await expect(summary("s_01jpaso0002")).toHaveText("Cuántas 1234567");
+    await expect(summary("s_01jpaso0199")).toHaveText("Páginas");
+    const keys = await page.evaluate(() => (window as unknown as { __keys: number[] }).__keys);
+    const worstKey = Math.max(...keys);
+    info.annotations.push({
+      type: "A-15",
+      description: `200 cards citing a field: the canvas opened in ${opening.toFixed(0)} ms; ${keys.length} keys typed, the worst drawn in ${worstKey.toFixed(1)} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    expect(keys).toHaveLength(7);
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 6 on 8 cores): opened in 347 to 360 ms, and
+    // 330 to 333 ms with the cards saying the key instead (naming 198 citations costs about 20 ms); the worst key 17 to
+    // 19 ms. The margins are for CI, as the view's test above.
+    under(opening, 1100, "clock", "opening 200 cards that cite a field");
+    under(worstKey, 120, "clock", "the worst key typed with 200 cards that cite a field");
   });
 });
 

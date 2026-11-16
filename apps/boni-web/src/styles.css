@@ -10838,6 +10838,27 @@ body.dragging-image * {
   }
 }
 
+/* An automation on the phone (AU-74): its name and its canvas, which fills what is left above the tab bar. */
+.m-flows:has(.auto-page) {
+  padding: 0 8px 8px;
+}
+.m-flows .auto-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.m-flows .auto-page .doc {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 0;
+}
+.m-flows .auto-page .auto-canvas {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 320px;
+}
 /* «Flujos» on the phone (docs/sistema.md §4.4): to look at the map and run a flow; nothing is made or changed here. */
 .m-flows .content.page-doc {
   padding: 8px 12px 24px;
@@ -12341,6 +12362,7 @@ tr[data-boni-pointed] > td {
   flex: 1;
   min-width: 0;
 }
+/* «{ }» closes every value's row, beside its control, in one column whatever the value is (AU-20). */
 .auto-expr-toggle {
   flex: none;
   min-width: 30px;
@@ -12362,23 +12384,6 @@ tr[data-boni-pointed] > td {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-}
-/* On a box of text, a number, a date or an expression, «{ }» sits inside it, at its right end (AU-20). */
-.auto-value-row:has(> .auto-expr, > .auto-value-fixed > input.input:not([type="checkbox"])) {
-  position: relative;
-}
-.auto-value-row:has(> .auto-expr, > .auto-value-fixed > input.input:not([type="checkbox"]))
-  > .auto-expr-toggle {
-  position: absolute;
-  right: 3px;
-  top: 3px;
-  height: 24px;
-  min-width: 26px;
-  border-color: transparent;
-}
-.auto-value-row > .auto-expr,
-.auto-value-row > .auto-value-fixed > input.input:not([type="checkbox"]) {
-  padding-right: 34px;
 }
 /* The expression's editor: one line that wraps, its citations as chips (AU-21). */
 /* One line while it fits; a longer expression wraps between words and the box grows. */
@@ -12495,7 +12500,7 @@ tr[data-boni-pointed] > td {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 6px;
-  align-items: center;
+  align-items: start;
 }
 .auto-conditions {
   min-width: 0;
@@ -12505,6 +12510,27 @@ tr[data-boni-pointed] > td {
 }
 .auto-conditions .db-filter-row {
   flex-wrap: wrap;
+}
+/* A row's trash: 18 px, or the phone's 44 (`.m-app .icon-btn`). */
+.auto-conditions,
+.auto-field-row {
+  --auto-trash: 18px;
+}
+.m-app .auto-conditions,
+.m-app .auto-field-row {
+  --auto-trash: 44px;
+}
+/* A condition's value takes its own line with the trash beside it, as a row of «Campo · Valor» ends, at any width:
+   «{ }» closes every value's row in one column (AU-20). 6 px: the row's gap. */
+.auto-conditions .db-filter-row > .auto-value {
+  flex: 1 0 calc(100% - var(--auto-trash) - 6px);
+}
+/* A row's trash stays on its value's first line, centred on the 30 px of a control, when an expression wraps and
+   the value grows. */
+.auto-field-row > .icon-btn,
+.auto-conditions .db-filter-row > .icon-btn {
+  align-self: flex-start;
+  margin-top: calc((30px - var(--auto-trash)) / 2);
 }
 .auto-view-notice {
   display: flex;
@@ -12551,6 +12577,18 @@ tr[data-boni-pointed] > td {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
+}
+/* On the phone (AU-74) «Probar» and «Registro» take the bottom's whole width, the zoom just above them on the left. */
+@media (max-width: 639px) {
+  .auto-test-bar {
+    left: 10px;
+    right: 10px;
+    transform: none;
+    max-width: none;
+  }
+  .auto-zoom {
+    bottom: 78px;
+  }
 }
 .auto-test-go {
   display: inline-flex;
@@ -12722,6 +12760,10 @@ button.auto-log-line {
 .auto-show {
   margin-left: auto;
 }
+/* «Esquema | Tabla | JSON» whole in a column of 200 px (under 1100 px, AU-74). */
+.auto-show button {
+  padding: 0 8px;
+}
 .auto-in-source select {
   max-width: 100%;
 }
@@ -12886,7 +12928,42 @@ button.auto-log-line {
   box-sizing: border-box;
   resize: vertical;
 }
-/* The phone's width: one column, the whole screen (the phone's own view, with three tabs, is G's: AU-74). */
+/* The phone's view (AU-74): one column with «Entrada | Parámetros | Salida» in tabs, the parameters read, never
+   changed; the name is text. */
+.auto-name.look,
+.auto-view-name.look {
+  margin-top: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.auto-view-look {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  display: contents;
+}
+.auto-view.phone .auto-view-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+.auto-view.phone .auto-view-col {
+  overflow: auto;
+  border-bottom: none;
+}
+.auto-view.phone .auto-expr[aria-readonly="true"] {
+  color: var(--muted);
+}
+/* On the phone a parameter's name goes above its control, which takes the whole width: two selects of a condition fit. */
+.auto-view.phone .auto-param {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+}
+.auto-view.phone .auto-param-name {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+/* The phone's width: one column, the whole screen. */
 @media (max-width: 639px) {
   .auto-view {
     inset: 0;

@@ -7,6 +7,7 @@ import {
   MAP,
   MODELS,
 } from "./agent-scenarios.ts";
+import { ALL_DONE, step, testOf } from "./automation-data.ts";
 import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
@@ -140,11 +141,141 @@ test("a block's panel", async ({ page }) => {
   await shot(page, "panel-bloque");
 });
 
-// «Automatizaciones» (docs/automatizaciones.md F14b): pending until each screen exists; the builder makes each
-// capture with the «screens» workflow in the PR that builds its screen. The list keeps its capture «flujos», made
-// again when its words change (AU-60).
-test.fixme("AU-63 · the canvas of an automation after a test: its cards, its arrows with their rows, «Registro» (automatizaciones-lienzo)", async () => {});
-test.fixme("AU-69 · «Añadir un paso» beside the canvas (automatizaciones-anadir)", async () => {});
-test.fixme("AU-70 · the step's view in three columns, with rows in and out (automatizaciones-paso)", async () => {});
-test.fixme("AU-78 · the step's view on «Ajustes» (automatizaciones-ajustes)", async () => {});
-test.fixme("AU-74 · the step's view under 1100 px, and the canvas on the phone (automatizaciones-estrecho, automatizaciones-telefono)", async () => {});
+// «Automatizaciones» (docs/automatizaciones.md F14b): «Revisar pendientes» after «Probar», as Juan sees it once he
+// has tested it (automation-data.ts). The list keeps its capture «flujos», made again when its words change (AU-60).
+const AUTOMATION_AGENT = FLOW_AGENT;
+/** «Nueva automatización» with only its trigger: what «Añadir un paso» offers after it (AU-69). */
+const ONLY_TRIGGER = {
+  id: "a_01jx8z2w4y6a8c0e2g4j6m8p0r",
+  name: "Nueva automatización",
+  updated: 1761990000000,
+  steps: [step("s_inicio", "Disparado por el usuario", "manual")],
+  arrows: [],
+  places: [{ step: "s_inicio", x: 0, y: 0 }],
+};
+/** The canvas still: a fit, a pan or a zoom has stopped moving it. */
+async function still(page: Page) {
+  let last: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const now = await page.locator(".auto-flow .react-flow__viewport").getAttribute("style");
+        const same = now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [150] },
+    )
+    .toBe(true);
+}
+async function openAutomation(page: Page, name: string, width = 1440, height = 900) {
+  await page.setViewportSize({ width, height });
+  await page.clock.install({ time: FIXED });
+  await openApp(page, "/?still", {
+    automations: [testOf(ALL_DONE), ONLY_TRIGGER],
+    agent: AUTOMATION_AGENT,
+  });
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await page.locator(".db-table").getByText(name, { exact: true }).click();
+  await page.locator(".auto-card").first().waitFor();
+  await still(page);
+}
+/** «Probar» with the trigger's «Mínimo» as the last test left it: every step with its rows. */
+async function tested(page: Page) {
+  await page.locator(".auto-test-bar .auto-test-go").click();
+  await page
+    .locator(".auto-test-bar")
+    .getByRole("dialog")
+    .getByRole("button", { name: "Probar" })
+    .click();
+  await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("bien · 7 pasos");
+  await still(page);
+}
+async function openStep(page: Page, id: string) {
+  await page.locator(`.auto-card[data-step="${id}"]`).dblclick();
+  await expect(page.locator(".auto-view")).toHaveAttribute("data-step", id);
+}
+
+test("AU-63 · the canvas of an automation after a test: its cards, its arrows with their rows, «Registro» (automatizaciones-lienzo)", async ({
+  page,
+}) => {
+  await openAutomation(page, "Revisar pendientes");
+  await tested(page);
+  await shot(page, "automatizaciones-lienzo");
+});
+
+test("AU-69 · «Añadir un paso» beside the canvas (automatizaciones-anadir)", async ({ page }) => {
+  await openAutomation(page, "Nueva automatización");
+  await page.locator(".auto-out-add").first().click();
+  await page.locator(".auto-panel").waitFor();
+  await still(page);
+  await shot(page, "automatizaciones-anadir");
+});
+
+test("AU-70 · the step's view in three columns, with rows in and out (automatizaciones-paso)", async ({
+  page,
+}) => {
+  await openAutomation(page, "Revisar pendientes");
+  await tested(page);
+  await openStep(page, "s_01jsi");
+  await page.locator(".auto-view .auto-out-count").first().waitFor();
+  await shot(page, "automatizaciones-paso");
+});
+
+test("AU-78 · the step's view on «Ajustes» (automatizaciones-ajustes)", async ({ page }) => {
+  await openAutomation(page, "Revisar pendientes");
+  await openStep(page, "s_01jbuscar");
+  await page.locator(".auto-view").getByRole("tab", { name: "Ajustes" }).click();
+  await shot(page, "automatizaciones-ajustes");
+});
+
+test("AU-74 · the step's view under 1100 px: «Entrada | Parámetros | Salida» as tabs (automatizaciones-estrecho)", async ({
+  page,
+}) => {
+  await openAutomation(page, "Revisar pendientes", 900, 800);
+  await tested(page);
+  await openStep(page, "s_01jsi");
+  await shot(page, "automatizaciones-estrecho");
+});
+
+test.describe("on the phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  async function openOnPhone(page: Page) {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.clock.install({ time: FIXED });
+    await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: AUTOMATION_AGENT });
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText("Revisar pendientes", { exact: true }).first().tap();
+    await page.locator(".auto-card").first().waitFor();
+    await still(page);
+  }
+  test("AU-74 · the canvas on the phone, after a test (automatizaciones-telefono)", async ({
+    page,
+  }) => {
+    await openOnPhone(page);
+    await page.locator(".auto-test-bar .auto-test-go").tap();
+    await page
+      .locator(".auto-test-bar")
+      .getByRole("dialog")
+      .getByRole("button", { name: "Probar" })
+      .tap();
+    await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("bien · 7 pasos");
+    await still(page);
+    await shot(page, "automatizaciones-telefono");
+  });
+  test("AU-74 · a step on the phone: one column, «Parámetros» to read (automatizaciones-telefono-paso)", async ({
+    page,
+  }) => {
+    await openOnPhone(page);
+    await page.locator('.auto-card[data-step="s_01jsi"]').tap();
+    await expect(page.locator(".auto-view")).toHaveAttribute("data-step", "s_01jsi");
+    await shot(page, "automatizaciones-telefono-paso");
+  });
+});
