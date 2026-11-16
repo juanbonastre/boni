@@ -1,13 +1,20 @@
 /**
  * The box's door (docs/extensiones.md §11.6, E1): a Unix socket that only Boni's server reaches (a folder their two
  * containers share), one JSON request per line and one answer per line. Each call runs in a worker thread of its own,
- * ended if it is not done in time; a few at once, a few more waiting, the rest told to come back later.
+ * ended if it is not done in time; a few at once, a few more waiting, the rest told to come back later. Two protocols
+ * share it and nothing else (docs/automatizaciones.md AU-160): an extension's function (protocol 1) and an
+ * evaluation of an automation's JavaScript (protocol 2, a line with `v`), each checked by its own rules.
  */
 import { existsSync, unlinkSync } from "node:fs";
 import { chmod } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import { Worker } from "node:worker_threads";
 import {
+  type EvalRequest,
+  type EvalResponse,
+  evalLimitsOf,
+  evalRequestErrors,
+  isEvalRequest,
   limitsOf,
   MAX_REQUEST_BYTES,
   type RunRequest,
@@ -31,6 +38,10 @@ export interface Box {
 
 const WORKER = new URL("./worker.ts", import.meta.url);
 
+type BoxRequest = RunRequest | EvalRequest;
+/** An answer the door gives itself (busy, invalid, timeout…) has the same shape in both protocols. */
+type BoxResponse = RunResponse | EvalResponse;
+
 export async function startBox(socketPath: string, opts: BoxOptions = {}): Promise<Box> {
   const workers = opts.workers ?? 2;
   const queueMax = opts.queue ?? 16;
@@ -38,10 +49,12 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
   // The interpreter compiled once, for every call's worker to make its own instance of (fast).
   const module = await compiledQuickJS();
   const running = new Set<Worker>();
-  const waiting: { req: RunRequest; done: (r: RunResponse) => void }[] = [];
+  const waiting: { req: BoxRequest; done: (r: BoxResponse) => void }[] = [];
 
-  const start = (req: RunRequest, done: (r: RunResponse) => void) => {
-    const limits = limitsOf(req);
+  const start = (req: BoxRequest, done: (r: BoxResponse) => void) => {
+    const limits = isEvalRequest(req)
+      ? evalLimitsOf(req as EvalRequest)
+      : limitsOf(req as RunRequest);
     const worker = new Worker(WORKER, {
       workerData: { request: req, module },
       // The interpreter's memory is its own, capped (run.ts); this bounds what the worker's JavaScript may take.
@@ -49,7 +62,7 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
     });
     running.add(worker);
     let answered = false;
-    const answer = (r: RunResponse) => {
+    const answer = (r: BoxResponse) => {
       if (answered) return;
       answered = true;
       clearTimeout(timer);
@@ -70,7 +83,7 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
         }),
       limits.ms + grace,
     );
-    worker.on("message", (r: RunResponse) => answer(r));
+    worker.on("message", (r: BoxResponse) => answer(r));
     worker.on("error", (e: Error & { code?: string }) =>
       answer({
         id: req.id,
@@ -89,27 +102,27 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
     );
   };
 
-  const handle = (line: string, reply: (r: RunResponse) => void) => {
+  const handle = (line: string, reply: (r: BoxResponse) => void) => {
     let req: unknown;
     try {
       req = JSON.parse(line);
     } catch {
       return reply({ id: "", ok: false, error: "invalid", message: "no es JSON" });
     }
-    const errs = requestErrors(req);
+    const errs = isEvalRequest(req) ? evalRequestErrors(req) : requestErrors(req);
     const id = typeof (req as { id?: unknown }).id === "string" ? (req as { id: string }).id : "";
     if (errs.length)
       return reply({ id, ok: false, error: "invalid", message: `petición: ${errs.join(", ")}` });
-    if (running.size < workers) return start(req as RunRequest, reply);
+    if (running.size < workers) return start(req as BoxRequest, reply);
     if (waiting.length < queueMax)
-      return void waiting.push({ req: req as RunRequest, done: reply });
+      return void waiting.push({ req: req as BoxRequest, done: reply });
     reply({ id, ok: false, error: "busy", message: "hay demasiadas llamadas esperando" });
   };
 
   const server = createServer((socket: Socket) => {
     let buffer = "";
     socket.setEncoding("utf8");
-    const reply = (r: RunResponse) => {
+    const reply = (r: BoxResponse) => {
       if (!socket.destroyed) socket.write(`${JSON.stringify(r)}\n`);
     };
     socket.on("data", (chunk: string) => {

@@ -41,7 +41,11 @@ export const CODE_LIMITS = {
   steps: 5_000,
   /** The interpreter's memory for one call, bytes. */
   memoryBytes: 64 * MB,
-  stackBytes: 512 * KB,
+  /**
+   * The interpreter's stack, bytes: about 1,500 calls deep. Measured 2026-11-16 (E1): at 512 KB a recursion without end
+   * overflowed the thread's own stack before QuickJS's, and the call failed whole instead of as the code's error.
+   */
+  stackBytes: 256 * KB,
   /** What one call may be sent, as JSON: its rows, the rows of the steps it cites and what it has read. */
   inputBytes: 8 * MB,
   /** What one call may answer, as JSON. */
@@ -95,7 +99,11 @@ export const CODE_FAILURES = [
    * nor one object), "notJson" (a function, a cycle, a number that is not finite), "promise" (code cannot wait).
    */
   "code.result",
-  /** It tried to change what it was given, or something of the interpreter (AU-37). `detail.line`, `detail.column`. */
+  /**
+   * It tried to change what it may only look at: another step's rows, what it read, `$run`, or something of the
+   * interpreter or of the world Boni gives it. The rows that reach the step it may change (AU-37, Juan 2026-11-16).
+   * `detail.line`, `detail.column`.
+   */
   "code.frozen",
   /** `$col` of a collection the step is not connected to, found while running (AU-161). `detail.collection`: as written. */
   "code.read.notConnected",

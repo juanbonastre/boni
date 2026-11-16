@@ -40,7 +40,7 @@ const INITIAL_PAGES = 256;
  * function asking for memory without end grew the process past the container's limit before QuickJS's own limit
  * stopped it, and the box was killed whole). With it, the memory cannot grow: the call fails, the box goes on.
  */
-const memoryFor = (limitBytes: number) =>
+export const memoryFor = (limitBytes: number) =>
   new WebAssembly.Memory({
     initial: INITIAL_PAGES,
     maximum: Math.max(INITIAL_PAGES, Math.ceil((limitBytes + 16 * 1024 * 1024) / PAGE)),

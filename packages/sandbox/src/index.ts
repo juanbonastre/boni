@@ -1,6 +1,8 @@
 // Protocol 2: evaluating an automation's JavaScript (docs/automatizaciones.md §7).
 export {
   type DateNames,
+  EVAL_DEFAULT_LIMITS,
+  EVAL_MAX_LIMITS,
   EVALUATE,
   type EvalFault,
   type EvalLimits,
@@ -10,6 +12,7 @@ export {
   evalRequestErrors,
   isEvalRequest,
   type Json,
+  MAX_READ_BYTES,
   MAX_READ_KEY,
   type WireConsoleLine,
   type WireEvaluated,
