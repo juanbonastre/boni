@@ -31,8 +31,9 @@ cuando cada punto suyo tiene su prueba.
   hacer si falla, reintentar, una nota) está en una pestaña «Ajustes» igual en todos. Una prueba cuenta los
   parámetros de cada paso del catálogo: el «mar de opciones» no puede volver sin que falle.
 - **JavaScript donde haga falta.** Cualquier valor puede ser una expresión `{{ }}`, y hay un paso «Código». El código
-  recorre listas, consulta colecciones con filtros y cruza unas con otras. Corre en la caja y nunca escribe:
-  escribir es cosa de los pasos «Colección» y de las conexiones del agente, que decide la política.
+  recorre listas, consulta colecciones con filtros y cruza unas con otras. Corre en la caja, sin red; guarda en una
+  colección solo si su conexión lo permite, y lo que puede cambiar se ve en su tarjeta antes de ejecutarlo (Juan,
+  2026-11-16). Quien guarda es siempre el motor, con la política, como en los pasos «Colección».
 - **El paso «Agente» es una IA conectada a las colecciones que tú digas, con límites.** Por cada colección: si puede
   leer, crear, modificar o eliminar («No», «Preguntar» o «Sí»), en qué filas y en qué campos. Cómo lee lo decide la
   IA o lo dice tu código. Una frase resume siempre lo que puede hacer. Esto n8n no lo tiene: allí el límite es la
@@ -418,13 +419,16 @@ return categorias.map((c) => ({
   ahí, aunque el código atrape los errores, y dice la lectura tal como se escribió y su clave, y las demás filas de la
   tanda siguen. Falta: las conexiones en la validación (E2), hacer las lecturas y repetir (E3), sobre el servidor
   real (S1) y en la app (pantallas).
-- **AU-32** (F14c, en parte) · El código nunca escribe (A-09 se queda). Devuelve filas y las escriben los pasos
-  «Colección» que le siguen, que pasan por la política.
-  En la F14c: `$col(…)` solo tiene `find`, `get`, `count` y `sum`, y el motor nunca pide una escritura por lo que diga
-  una evaluación. Las filas que salen de «Código» no son filas guardadas aunque copien su id: el paso «Colección» que
-  le sigue las busca o las casa por un campo, no por «Las filas que llegan».
-  Hecho en E1: `$col(…)` de la caja tiene solo esas cuatro, y una expresión no tiene `$col`. Falta (E3): que el motor
-  nunca pida una escritura y que las filas de «Código» no sean filas guardadas.
+- **AU-32** (F14c, en parte) · El código no escribe por sí mismo (lo de A-09 se queda: pide, y Boni comprueba y
+  aplica). Devuelve filas y las escriben los pasos «Colección» que le siguen, que pasan por la política; o pide
+  guardar por una conexión que lo permite, y lo guarda el motor (AU-172 a AU-176, Juan, 2026-11-16).
+  En la F14c: `$col(…)` tiene `find`, `get`, `count` y `sum` y, para pedir guardar, `create`, `update` y `remove`
+  (AU-172); el motor nunca escribe lo que no pasó por la conexión, el análisis y la política (AU-183). Las filas que
+  salen de «Código» no son filas guardadas aunque copien su id: el paso «Colección» que le sigue las busca o las casa
+  por un campo, no por «Las filas que llegan».
+  Hecho en E1: `$col(…)` de la caja tiene solo `find`, `get`, `count` y `sum`, y una expresión no tiene `$col`.
+  Falta: pedir guardar (AU-172 a AU-176, sus PR) y, en el motor (E3), que nunca escriba lo que no pasó por la
+  conexión y que las filas de «Código» no sean filas guardadas.
 - **AU-33** (F14c, en parte) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
   salida, con la línea que lo escribió. Un error señala su línea en el editor y dice el mensaje tal cual.
   En la F14c: la consola se guarda con la prueba del paso: hasta 200 líneas de 2.000 caracteres. Las que sobran se
@@ -486,6 +490,61 @@ return categorias.map((c) => ({
   los topes de los cuatro casos de la regla, en milisegundos de CPU (1.000, 1.000, 800 y 1.000, frente a unos 60, 80,
   75 y 120 medidos); las demás cifras son las de esta medida. Falta: las tandas del motor (E3), sobre el servidor (S1) y en la app de escritorio
   (pantallas).
+**El código que guarda** (Juan, 2026-11-16, decisiones 1 y 4 del §10). Un «Código» puede pedir crear, modificar o
+eliminar filas de una colección conectada, si su conexión lo permite (AU-176). Lo pide; lo guarda el motor, por el
+mismo camino que un paso «Colección». Antes de ejecutarlo, Boni ya sabe qué puede cambiar, porque lee el código
+(AU-183), y lo dice en su tarjeta y en su conexión.
+
+```js
+// Pone a cada gasto sin categoría la de su concepto, si alguna regla la conoce
+const reglas = $col('Categorías').find();
+for (const gasto of $col('Gastos').find({ where: [{ field: 'categoria', op: 'empty' }] })) {
+  const regla = reglas.find((r) => gasto.concepto.includes(r.palabra));
+  if (regla) $col('Gastos').update(gasto.id, { categoria: regla.id });
+}
+return [];
+```
+
+- **AU-172** (F14c, pendiente) · El código pide guardar con tres métodos de `$col('Nombre')`, uno por acción de
+  «Colección» y con su palabra: `.create({ campo: valor })` (Crear), `.update(id, { campo: valor })` (Modificar) y
+  `.remove(id)` (Eliminar, a la papelera: AU-122). Los campos van por su clave (AU-25); `update` cambia solo los que
+  se le dan. Una llamada es una petición: en ese momento no guarda nada y no devuelve nada (`undefined`), porque la
+  fila no está guardada hasta que el paso acaba. Para usar una fila creada, un paso posterior la busca («Buscar
+  filas»), y ya la encuentra guardada.
+  En la F14c: el id es un dato como otro (el de una fila leída con `$col`, que llega con su id: AU-43; el de una
+  relación; uno escrito); el motor comprueba al guardar que es una fila de esa colección que la conexión deja ver.
+  Una lectura del mismo código no ve lo que acaba de pedir: lee lo guardado, como si las peticiones no existieran.
+  Los métodos de escribir solo existen en «Código»; en una expresión no hay `$col` (AU-184).
+- **AU-173** (F14c, pendiente) · Lo pide el código y lo guarda el motor. La caja sigue sin camino al almacén: una
+  petición es un dato más de lo que devuelve la evaluación. Cuando el paso termina, el motor aplica sus peticiones en
+  el orden en que se pidieron, por la misma puerta de la política y con el mismo ejecutor y la misma validación que
+  la acción de un paso «Colección» (AU-120, AU-121, AU-168).
+  En la F14c: el orden es el de las llamadas dentro de una evaluación y, en «Una vez por fila», el de las filas de la
+  entrada. Con lecturas por repetición (§6, riesgo 4) una evaluación corre varias veces; solo cuentan las peticiones
+  de su última pasada, la que acaba: las de una pasada parada en una lectura se tiran. Modificar y eliminar leen antes
+  la fila guardada, sin otra pregunta a la política (como en AU-168), para comprobar sus límites (AU-177), para «Haría
+  esto» y para la versión con la que se guarda (`row.changed` si cambió entretanto, AU-04).
+- **AU-174** (F14c, pendiente) · Todo o nada. Lo que pide un paso es un solo cambio: se guarda entero o no se guarda
+  nada. Si el código lanza un error, si el paso falla o si una sola petición no se puede guardar (no pasa la
+  validación, su fila cambió, la política la niega, se sale de la conexión), no se guarda ninguna y el paso falla
+  diciendo cuál. Reintentar el paso (AU-16) no escribe dos veces.
+  En la F14c: el motor pregunta a la política por todas antes de guardar la primera, y las guarda en una sola
+  transacción del almacén. Si la política pide preguntar alguna (algo de fuera, P4; eliminar, P5) o la conexión dice
+  «Preguntar», el cambio entero del paso espera a Juan como una sola propuesta («Esta ejecución quiere modificar 12
+  filas en Gastos»), y no se guarda nada de él hasta que la acepta: un código que elimina pregunta siempre, y con él
+  todo lo que guarda ese paso. En «Una vez por fila» con «Si falla: seguir» o «salir por error», lo que pidió una fila
+  que falló se tira y lo de las demás es el cambio del paso. Cada escritura lleva la ejecución en el registro de
+  operaciones, así que «Deshacer lo que hizo» (AU-18, AU-100: F14d) la deshace con todo lo de esa ejecución, como las
+  de un paso «Colección».
+- **AU-175** (F14c, pendiente) · Lo que se puede pedir tiene topes, cada uno un número con nombre
+  (`WRITE_LIMITS`, `writes.ts`): peticiones por evaluación (5.000) y por paso (5.000), el tamaño de una (64 KB) y el
+  de todas las de un paso (4 MB). Pasarse hace fallar el paso, dice cuál y por cuánto, y no guarda nada: nunca se
+  recorta, porque guardar la mitad de un cambio sería guardar otro.
+  En la F14c: 5.000 porque es lo que da una lectura (`readRows`): lo que se lee de una vez se puede reescribir de
+  una vez, y los miles de filas de Juan caben en un paso. La caja cuenta las de una evaluación mientras corre (para un
+  bucle sin fin en cuanto se pasa); el motor, las del paso. Los topes de la ejecución (filas escritas, AU-17: F14d)
+  las cuentan también.
+
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.
 
@@ -511,8 +570,9 @@ interface Connection {
   Leer es «No» o «Sí»; crear y modificar, «No», «Preguntar» o «Sí»; eliminar, solo «No» o «Preguntar», y manda a la
   papelera. Al conectar una colección solo se lee; cada permiso de escribir se da a mano. La fila se abre para poner
   los límites de cada acción (AU-43, AU-48), y un permiso con límites lo dice en su celda: «Sí · con filtro». En
-  «Código» la tabla solo tiene la columna de leer; las de escribir llegan con el «Agente» (F15).
-  En la F14c: en un «Código», una conexión con un permiso de escribir no pasa la validación.
+  «Código» la tabla es la misma, con las cuatro columnas (AU-176, Juan, 2026-11-16).
+  En la F14c: en un «Código», leer es siempre «Sí» (sin leer no hay conexión) y las tres de escribir son las de
+  arriba.
 - **AU-42** (F15, pendiente) · «Preguntar» es una propuesta: en una conversación, una tarjeta para aceptar o no; en
   segundo plano, espera en la Bandeja. La ejecución no se queda esperando: termina, y en «Ejecuciones» dice «1
   propuesta sin responder». «Sí» escribe con Deshacer.
@@ -529,16 +589,48 @@ interface Connection {
   Crear puede llevar valores fijos que la IA no elige.
 - **AU-44** (F14c, pendiente) · Una frase calculada resume todas las conexiones de un paso, debajo de su tabla:
   «Puede leer Gastos (solo los de este año) y Categorías, y proponer filas nuevas en Notas. No puede modificar ni
-  eliminar nada.» En la F14c dice solo lo que lee; lo de proponer y escribir llega con el «Agente» (F15). Al
+  eliminar nada.» En la F14c dice lo que lee y lo que el código puede guardar (AU-178). Al
   publicar, otra igual resume la automatización entera («Lo que podrá hacer», AU-96).
 - **AU-45** (F15, pendiente) · Una conexión solo restringe. Nunca deja hacer lo que la política no deja: un dato de
   fuera se propone aunque diga «Sí», una colección privada no se puede conectar a un paso de IA, eliminar se
   pregunta siempre.
-- **AU-46** (F14c, pendiente) · Las usan «Código» (solo leer: sus colecciones, cada una con sus límites de lectura),
-  «Agente» (todo: F15) y el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
+- **AU-46** (F14c, pendiente) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
+  el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
 - **AU-47** (F14d, pendiente) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
+
+**Los permisos de guardar de un «Código»** (Juan, 2026-11-16). Son los de esta tabla, no otros: los mismos permisos,
+las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
+
+- **AU-176** (F14c, pendiente) · El permiso está en la conexión. La de un «Código» siempre lee, dentro de sus límites
+  (AU-43); además puede dejarle crear, modificar o eliminar, con las columnas de AU-41: crear y modificar «No»,
+  «Preguntar» o «Sí»; eliminar «No» o «Preguntar». Una conexión nueva solo lee: cada permiso de guardar se da a mano.
+  «Sí» guarda cuando la política lo deja (lo de fuera se propone igual: la política es el suelo, AU-165); «Preguntar»
+  manda el cambio del paso a Juan antes de guardarlo (AU-174).
+  En la F14c: la tabla es una lista y cuenta como una de las siete cosas del paso (AU-75); los permisos se cambian
+  dentro de su fila, no son controles aparte. Pedir con el código una acción que su conexión no permite no pasa la
+  validación (`code.write.notAllowed`): dice «Permite modificar en «Gastos»», con el botón que pone esa celda en
+  «Preguntar» (nunca en «Sí»: eso lo elige Juan). Una colección que no está conectada da el aviso de siempre (AU-31).
+- **AU-177** (F14c, pendiente) · Los límites de la conexión valen también para guardar, y los comprueba el motor con
+  la conexión guardada, nunca con lo que diga la caja: no se modifica ni se elimina una fila que «Solo estas filas»
+  deja fuera, no se pone un campo que «Solo estos campos» no deja ver, y una fila creada tiene que cumplir «Solo
+  estas filas». Pasarse hace fallar el paso y no guarda nada (AU-174).
+  En la F14c: la fila creada se comprueba tal como quedaría, con los valores por defecto de la colección. Modificar
+  puede sacar una fila del filtro: el filtro dice qué filas puede tocar, no cómo quedan (modificar la categoría de
+  los gastos que no la tienen). Cuando lleguen los límites de cada acción (AU-48, F15), estrechan además de estos.
+  Lo que una escritura devuelve no llega al código (AU-172), así que AU-171 no tiene nada que hacer aquí.
+- **AU-178** (F14c, pendiente) · La conexión dice sin abrirla si el código puede cambiar esa colección. Su ficha
+  (AU-40): «Solo lee» frente a «Lee y modifica», «Lee, crea y modifica», con «pregunta antes» cuando es «Preguntar»
+  («Lee y elimina · pregunta antes»). La frase del paso (AU-44): «Puede leer Categorías, y leer y modificar Gastos
+  (solo los de este año). No puede crear ni eliminar nada.»
+  En la F14c: las palabras de las acciones son las de AU-85 (Crear, Modificar, Eliminar, en minúscula en la frase),
+  de `i18n.ts`, las mismas que la tabla; la ficha y la frase salen de `permissions` (`connections.ts`).
+- **AU-179** (F14c, pendiente) · En la vista del paso, cada permiso de guardar dice si el código lo usa, según el
+  análisis (AU-183): «Lo usa» o «Sin usar»; y lo que el código usa sin permiso sale en rojo en su fila, con el
+  problema de AU-176. Nada más: ni explicaciones ni ayudas dentro de la app.
+  En la F14c: es una palabra en la celda («Sí · lo usa»), no una columna más; un permiso «Sin usar» no es un problema
+  y no impide probar ni publicar.
 
 ### 5.6 El paso «Agente»
 
@@ -801,6 +893,14 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   tarjeta y que las citas lo sigan. Hecho en D: el nombre sigue a la colección elegida en la vista del paso hasta que
   Juan lo cambia. Falta: las fichas de las citas (F, AU-21).
 - **AU-87** (F14b, hecho) · Boni no mete pasos por su cuenta: lo que hay en el lienzo lo puso Juan o lo aceptó.
+- **AU-180** (F14c, pendiente) · La tarjeta de un paso que puede cambiar una colección lo dice sin abrirlo, con la
+  colección: «Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas». Es la misma marca para todo paso
+  que guarda: un «Colección» que crea, modifica o elimina, un «Código» que puede guardar y, desde la F15, un «Agente»
+  con permiso de escribir. Un código que solo calcula no enseña nada.
+  En la F14c: de un «Código» enseña lo que dice el análisis (AU-183), aunque la conexión no lo permita todavía (eso
+  es un problema y se marca como tal, AU-83). Cambiar en memoria las filas que le llegan al código (AU-37) no es
+  guardar y nunca se marca. La marca va en la línea de las etiquetas de AU-79 y sale de un solo sitio
+  (`stepChanges`, `writes.ts`), el mismo que usan «Publicar» y el mapa (AU-47, AU-182).
 
 ### 5.8 Probar, publicar y ejecuciones
 
@@ -851,6 +951,20 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   palabras, y el aviso lleva a ella.
 - **AU-103** (F14d, pendiente) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
   las anteriores, solo el resumen (A-29).
+- **AU-181** (F14c, pendiente) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
+  pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
+  aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
+  el antes y el después. Lo que el código devuelve sigue siendo su salida.
+  En la F14c: «Haría esto» es una franja plegable como «Consola», encima de ella, con cuántas peticiones y en qué
+  colecciones («Modificaría 12 filas en Gastos»). Una petición que haría fallar la ejecución hace fallar la prueba
+  igual, con el mismo motivo. El registro de una ejecución de verdad (AU-99, AU-101) lista lo que el paso guardó, o
+  lo que propuso, como el de un «Colección».
+- **AU-182** (F14d, pendiente) · Lo que se acepta sin haberlo escrito Juan dice lo que puede cambiar. «Lo que podrá
+  hacer» de «Publicar» (AU-96) nombra cada colección que puede cambiar cada «Código», con la acción, según el
+  análisis y sus conexiones; y lo mismo, antes de aceptarla, una automatización que propone el asistente (AU-140,
+  F16), «Pedir a Boni» o «Escribir con IA» (AU-141, AU-39: F19) o un paquete (AU-145, F19).
+  Un «Código» que guarda no corre nunca solo antes de eso: solo corre de verdad una versión publicada (AU-95), y
+  «Publicar» llega con esto en la misma fase (F14d). Hasta entonces sus peticiones solo se prueban (AU-181).
 
 ### 5.9 Cómo empieza: los disparadores
 
@@ -1100,12 +1214,35 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   las filas y los campos que su conexión le deja leer. Sin permiso de leer, devuelve lo que escribió y nada más, en
   una prueba también. Hasta la F15 solo escriben los pasos de «Colección» que pone Juan, que no llevan límites de
   conexión.
+- **AU-183** (F14c, pendiente) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
+  el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que
+  puede cambiar y cómo (crear, modificar, eliminar), esté donde esté la llamada: en un `if`, en un bucle, en una
+  función. Al ejecutar, el motor solo acepta una petición si el análisis del código guardado encontró esa colección
+  con esa acción; una que llegó de otro modo (lo que un lector no puede seguir) hace fallar el paso y no se guarda
+  nada. Lo que el análisis dice es así el máximo de lo que el código puede cambiar: lo lee la persona; la barrera es
+  la puerta, que comprueba la conexión y la política en cada petición.
+  En la F14c: para que el análisis sea exacto, `$col('Nombre')` solo vale llamado en seguida por uno de sus métodos y
+  con su nombre escrito: `$col('Gastos').update(…)`. Guardar `$col('Gastos')` en una variable, pasarlo, devolverlo,
+  o llamar a un método por un nombre calculado (`$col('Gastos')[accion](…)`) no pasa la validación
+  (`code.colUse`), y el aviso dice cómo: «Llama a `$col('Gastos').update(…)` directamente». Vale igual para leer:
+  una sola manera de usar `$col`. El servidor vuelve a leer el código guardado en cada ejecución, nunca se fía de lo
+  que diga la caja ni el navegador; la caja recibe con el trabajo lo que el análisis encontró y su `$col` solo tiene
+  esos métodos de guardar; y el motor lo comprueba otra vez con cada petición que vuelve. El máximo es por colección y
+  acción, no por línea.
+- **AU-184** (F14c, pendiente) · Las expresiones nunca guardan. En un `{{ }}` no hay `$col` (AU-22, AU-46): una
+  expresión que lo usa, para leer o para guardar, no pasa la validación (`code.readInExpression`), y una petición en
+  la respuesta de una evaluación de expresiones hace fallar el paso sin guardar nada.
+- **AU-185** (F14c, pendiente) · Lo que guarda un código es un cambio de su paso, como el de un «Colección»: lleva
+  la ejecución, la versión y el paso, y la etiqueta de lo que la evaluación recibió (AU-169), así que con algo de
+  fuera se propone (P4) y en el almacén queda como de fuera (AU-170). Lo que evita que una escritura de una
+  automatización la vuelva a iniciar (AU-113, F18) vale igual para estas, porque van por el mismo camino; hasta la
+  F18 ningún cambio de una colección inicia nada.
 
 Lo que cambia, regla por regla:
 
 | Regla | Hoy | Con esto |
 |---|---|---|
-| Código libre (`docs/flujos.md` §6, decisión 3) | «Nunca JavaScript libre en un nodo» | JavaScript en la caja, que lee por conexiones y no escribe |
+| Código libre (`docs/flujos.md` §6, decisión 3) | «Nunca JavaScript libre en un nodo» | JavaScript en la caja, que lee por conexiones y, si la conexión lo permite, pide guardar: lo guarda el motor, solo lo que el análisis del código vio (AU-176, AU-183; Juan, 2026-11-16) |
 | P7, segundo plano | Solo lee y propone | Escribe con Deshacer lo que es todo propio; lo de fuera se sigue proponiendo (decisión 5) |
 | D-44 | Un flujo no ejecuta otro | Llama a otra si esta lo permite; tres niveles, sin ciclos (decisión 3) |
 | P26 y P27, el chat de una página | Una lista fija de cinco acciones | Las conexiones del «Agente»; escribir sigue preguntando salvo un valor de su página |
@@ -1190,9 +1327,9 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en curso |
-| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones de lectura con sus límites, «Consola» | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo | en curso |
-| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí | pendiente |
-| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro | pendiente |
+| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en curso |
+| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182) | pendiente |
+| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos | pendiente |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |
 | **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar | pendiente |
@@ -1243,9 +1380,14 @@ Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo 
 1. **JavaScript libre.** El 2026-11-05 decidió que el código solo entraba como funciones de extensión («nunca
    JavaScript libre en un nodo»). Su mensaje pide lo contrario, así que se da por decidido; va aquí para que conste.
    - Recomendada: **sí, en la caja**. En cualquier parámetro, `{{ $json.importe * 1.21 }}`; en un paso «Código»,
-     el ejemplo del §5.4. No puede escribir ni salir a la red, y lo que calcula hereda de dónde vienen sus datos.
+     el ejemplo del §5.4. ~~No puede escribir~~ ni salir a la red, y lo que calcula hereda de dónde vienen sus datos.
    - La otra: solo pasos visuales y funciones cerradas. Sumar los gastos por categoría sería un paso «Agrupar»; lo
      que no tenga paso no se puede hacer.
+   - **Cambiada por Juan el 2026-11-16**: «Si, puede cambiarlas pero solo si la conexion con la coleccion tiene
+     permiso para ello. Ademas, si el codigo puede modificar los datos originales de alguna forma, la interfaz
+     deberia indiciarlo claramente». Sigue sin red y sin ficheros, y la caja sigue sin camino al almacén; lo que
+     cambia es que un «Código» puede **pedir** guardar por una conexión que le da permiso, y el motor lo guarda con la
+     política (AU-172 a AU-185). Las expresiones `{{ }}` siguen sin guardar nada (AU-184).
 
 2. **El sitio de las cajas.** El 2026-11-05 pidió que el lienzo se ordenara solo y nada se guardara, porque «Leer
    correo» se abría amontonado y mover una caja encendía «Guardar».
@@ -1264,6 +1406,14 @@ Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo 
      un paso «Crear filas en Movimientos» las escribe. Como vienen de un fichero, van a la Bandeja como una sola
      propuesta: «Esta ejecución quiere crear 40 filas en Movimientos», se acepta o no entera.
    - La otra: mantener «Función» + «Aplicar cambios» como un paso especial que no se parece a los demás.
+   - **Cambiada por Juan el 2026-11-16**, preguntado si el código debía poder guardar en sus colecciones él mismo
+     (`$col('Gastos').update(row.id, { total })` por una conexión que deja modificar): «Si, que guarde. A parte de
+     que en la conexion se vea claramente si puede modificar o no, el codigo debe ser analizado para ver si
+     potencialmente puede modificar.» Devolver filas para un paso «Colección» sigue valiendo; además el código puede
+     pedir crear, modificar o eliminar por su conexión. Lo de la A que quería se queda: lo que pide un paso se
+     guarda junto o no se guarda (AU-174), y si hay que preguntar, va a la Bandeja como una sola propuesta. Lo nuevo
+     que no estaba en ninguna de las dos: Boni lee el código sin ejecutarlo y sabe qué puede cambiar (AU-183), lo
+     dice en la tarjeta y en la conexión (AU-178 a AU-180), y lo que el análisis no vio no se guarda.
 
 5. **Lo que una automatización escribe sola en segundo plano** (programada o por un cambio). Hoy, nada: todo se
    propone. El 2026-11-05 eligió que lo disparado por sus propios datos escribiera con Deshacer; la tarea 103 lo
@@ -1320,7 +1470,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Lo que no está por defecto se ve en la tarjeta (AU-79) | Por cada ajuste, la tarjeta lo pinta | F14b |
 | Una palabra por acción (AU-85) | Cada acción sale de una sola clave de `i18n.ts` | F14b |
 | El sitio no es parte de la automatización (AU-05; sustituye a I-26) | Mover no cambia el borrador ni su versión; un paso sin sitio se coloca | F14b |
-| El código no escribe y solo lee por sus conexiones (AU-31, AU-32) | Un `$col` sin conexión no pasa la validación; la caja no tiene con qué escribir | F14c |
+| El código solo lee y guarda por sus conexiones, y solo lo que su análisis vio (AU-31, AU-32, AU-176, AU-183; cambia el 2026-11-16) | Un `$col` sin conexión no pasa la validación; la caja no tiene con qué escribir; una petición que el análisis no vio, o que la conexión no permite, hace fallar el paso y no guarda nada | F14c |
 | Los límites de una conexión estrechan y nunca ensanchan (AU-43, AU-48) | Una lectura fuera del filtro no devuelve nada; una escritura fuera de sus filas o de sus campos se niega | F14c, F15 |
 | La vista previa es la ejecución (AU-27) | El mismo valor en las dos, para los ejemplos del catálogo | F14c |
 | Lo calculado hereda la peor etiqueta de lo que recibió (AU-169) | Un valor calculado con un dato de fuera se propone al escribirlo y no vale como destino | F14c |
