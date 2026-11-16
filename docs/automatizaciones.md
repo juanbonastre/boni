@@ -302,8 +302,50 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-17** (F14d, pendiente) · Los límites de una ejecución (pasos, llamadas a modelos, filas escritas, tiempo)
   están en los ajustes de la automatización con valores prudentes; el código tiene su techo (P12, P13). Parar por un
   límite dice cuál fue y lleva a ese ajuste.
+  En la F14d: son cuatro números con nombre (`AUTOMATION_LIMITS`, `packages/automations`; `RUN_LIMITS` ya es el
+  nombre de los de P12 en `packages/agent`), cada uno con su valor por defecto y su techo. Los valores están
+  razonados, no medidos; el constructor los mide con el volumen de Juan y los corrige aquí.
+
+  | Límite | Por defecto | Techo | Se ve en «Ajustes» cuando |
+  |---|---|---|---|
+  | Tiempo | 60 s | 10 min | siempre |
+  | Filas escritas | 1.000 | 20.000 | algún paso escribe |
+  | Llamadas a modelos | 20 | 40 | algún paso llama a un modelo (F15) |
+  | Pasos | 200 | 1.000 | un paso puede repetirse (F18) |
+
+  «El código tiene su techo» es la columna «Techo» de esta tabla, escrita en el código y fuera del alcance de un
+  ajuste. P12 y P13 no cambian y siguen siendo de lo suyo: los números de P12 (200 pasos, 40 llamadas) topan el plan
+  que escribe un modelo en un turno, y los de P13, cada lectura. Una automatización es un documento que Juan publica,
+  así que sus pasos tienen el techo de esta tabla y no el de P12; sus llamadas a modelos tienen el mismo número que
+  P12, y lo que un paso de IA haga por dentro (F15) sigue además bajo P12.
+  Los cuatro se cumplen siempre, se vean o no. Los comprueba el motor, que es código puro: el tiempo y los pasos,
+  antes de empezar cada paso (el reloj es el de la ejecución, inyectado); las filas escritas, antes de preguntar a
+  la política por el cambio de un paso, contando también las que se propondrían. Así «Las que cumplan…» (AU-121)
+  sin tope lee como mucho lo que da una lectura (5.000, AU-175) y, si se pasa, falla antes de guardar ninguna. Un
+  paso en marcha no se corta (la caja ya corta el suyo a los 5 s, AU-35), así que una ejecución puede pasarse del
+  tiempo en lo que tarde un paso. Parar por un límite para la ejecución entera, diga lo que diga «Si falla» en el
+  paso (AU-16): el motivo es `run.limit` con el nombre del límite y los dos números, en una prueba también. Lo que
+  los pasos anteriores guardaron se queda y se deshace desde la ejecución (AU-18). Se lee «Paró: iba a escribir 3.000
+  filas y el límite son 1.000 · Cambiar el límite», y el botón abre «⋯ → Ajustes» en ese número. Los límites son
+  parte del documento (`settings.limits`), así que cambiar uno es un cambio del borrador y vale desde que se publica
+  (AU-95). Un número por encima de su techo no pasa la validación (`limit.over`): nunca se recorta en silencio. El
+  tope de escrituras de la política (P11) no cuenta en una ejecución que empieza sola: su tope es este (AU-167).
+  Lo sostienen `limits.test.ts` (`packages/automations`: cada límite para la ejecución, antes de guardar) y
+  `runs.test.ts` (`apps/server/src/automations`: con el volumen de Juan, 3.000 filas que cumplen la condición en un
+  almacén de 12.000 registros, para por defecto sin una operación en el registro; con el límite subido las guarda
+  en una transacción dentro de su tiempo y «Deshacer lo que hizo» las devuelve).
 - **AU-18** (F14d, pendiente) · Todo lo que una ejecución escribe es un solo grupo en el diario: se deshace entero
   desde la ejecución.
+  En la F14d: el grupo ya existe. Cada operación lleva la ejecución en el registro desde la F14c (AU-174), y
+  `undoRun` del almacén las deshace todas, la última primero, en una transacción. «Deshacer lo que hizo» (AU-100) es
+  esa llamada: todo o nada. Si una fila cambió después de la ejecución, no se deshace ninguna y se dice cuál («No se
+  pudo deshacer: «Comprar pan» cambió después»); nada se pisa. Lo que Juan aceptó de la propuesta de esa ejecución
+  (AU-193) se guardó con la misma ejecución y se deshace con ella. Deshecha, la ejecución lo dice con su hora y el
+  botón desaparece: no hay «Rehacer». Vale también para una ejecución de la que solo queda el resumen (AU-103),
+  porque deshacer lee el registro de operaciones y no el de la ejecución. Deshacer miles de filas tarda lo que
+  guardarlas (AU-174) y entretanto el servidor no atiende: es la tarea aparte del `update` del almacén.
+  Lo sostiene `runs.test.ts`: una ejecución de tres pasos que escriben (crear, modificar y mandar a la papelera) deja
+  el almacén como estaba; con una fila cambiada después, no deshace ninguna.
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
   En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
@@ -775,6 +817,13 @@ interface Connection {
   Hecho en W1: la conexión de un «Código» da permiso de guardar (AU-176). Hecho en W2: guardar.
 - **AU-47** (F14d, pendiente) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
+  En la F14d: lo da `abilities` (`versions.ts`, AU-96) sobre la versión publicada, la misma función que escribe «Lo
+  que podrá hacer»: por cada colección, qué pasos la leen, crean, modifican o eliminan, y con qué se inicia. Una
+  automatización entra en el mapa al publicarse (AU-61); un borrador no aparece nunca, y lo que cambia en él no mueve
+  el mapa hasta publicar. Sus ejecuciones se cuentan por el índice (A-29), y una prueba no cuenta (A-16). Extiende
+  el mapa de hoy (`FlowMap.tsx` y su cálculo), que sigue enseñando igual los flujos de antes.
+  Lo sostienen `versions.test.ts` (todo cambio que un paso puede hacer, `stepChanges`, está en `abilities`) y
+  `publish.test.ts` (el mapa lee la publicada y no el borrador).
 
 **Los permisos de guardar de un «Código»** (Juan, 2026-11-16). Son los de esta tabla, no otros: los mismos permisos,
 las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
@@ -1139,36 +1188,185 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-93** (F14d, pendiente) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
   gasta modelo. Lo fijado se ve en la tarjeta («Salida fijada») y nunca vale en una ejecución de verdad. Se suelta en
   el mismo botón.
+  En la F14d: lo fijado vive junto al borrador, como las pruebas y el sitio de las cajas (`automation_pins`), y
+  nunca dentro de una versión: una ejecución de verdad lee solo la versión publicada (AU-95), así que no tiene de
+  dónde sacarlo. «Fijar» está en la cabecera de SALIDA (AU-72) y fija la última salida probada de ese paso, con las
+  etiquetas de cada fila: un valor de fuera fijado sigue siendo de fuera en la prueba. Sin una salida probada, el
+  botón no se puede pulsar. En «Probar» y «Probar paso», un paso fijado no corre (ni caja, ni lecturas, ni modelo):
+  da sus filas fijadas y su tarjeta dice «Salida fijada». Si el paso cambió después de fijarlo, dice además «puede
+  estar vieja» (AU-92). «Publicar» lo recuerda entre lo que conviene mirar (AU-96). Duplicar no copia lo fijado.
+  Lo sostienen `runs.test.ts` (un paso con la salida fijada corre de verdad en una ejecución y no en una prueba; lo
+  fijado conserva sus etiquetas) y `automations-publish.spec.ts` (el botón y la tarjeta).
 - **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
   En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
   disparador sin campos empieza sin preguntar. Los campos de la última prueba son la fila que dio el disparador en
   ella: no se guardan aparte.
   Hecho en E: todo lo de la F14b.
+
+**Publicar, ejecutar y lo que corre solo (F14d): lo que extiende** (T-05). Nada de esto se inventa: es lo que los
+flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que sigue como está hasta la F16.
+
+| Lo que hace falta | Lo que ya hay | Lo que hace la F14d |
+|---|---|---|
+| Versiones | La tabla `flows`: una fila por versión, con su huella, quién la escribió (`by`) y `enabled`; `saveFlow`, `revertFlow` | `automation_versions`, igual; publicar el mismo documento no hace otra versión (AU-95, AU-98) |
+| Que un borrador no corra | D-55: el borrador de un flujo se guarda aparte y no corre | La ejecución de verdad no admite un documento: lee la versión publicada (AU-95) |
+| Ejecuciones guardadas | `runs` y `run_steps` del motor de antes; la última prueba de cada paso (`automation_tests`, F14b) | `automation_runs` y `automation_steps`, con las filas aparte de 50 en 50 como las de una prueba (AU-99, AU-103) |
+| Deshacer una ejecución | Cada operación lleva la ejecución; `undoRun` del almacén | La ruta y el botón (AU-18, AU-100) |
+| Correr a su hora | `flowScheduler.ts`: `dueSlot`, `graceOf`, una vuelta por minuto (D-44) | Las mismas funciones, con varias reglas por automatización (AU-114) |
+| Proponer y aceptar | La Bandeja (`proposals`), `acceptProposal` con el origen «aceptado», cada valor con su etiqueta | Una propuesta por ejecución, con las etiquetas de cada valor (AU-193, AU-170) |
+| Quién escribe solo | `decide`: P4, P15 y P7 (segundo plano solo propone) | El origen «automatización» y la fila P28; la frase nueva de P5 (AU-167, AU-186, AU-195) |
+| Avisar | `notify`: la app y el móvil | Un aviso por ejecución que escribió sola y uno por racha de fallos (AU-167, AU-102) |
+| Recuperar una eliminada | El «Deshacer» de su aviso (`restoreFlowRow`, AU-62) | «Eliminadas», después de que el aviso se fue (AU-191) |
+
 - **AU-95** (F14d, pendiente) · «Publicar» hace del borrador la versión que corre. El borrador, que se guarda solo
   desde la F14b (AU-62), nunca corre de verdad (D-55): lo que escribe de verdad es siempre una versión publicada, así
   que cada escritura tiene su versión.
+  En la F14d: una versión es una fila que no cambia nunca (`automation_versions`: el documento, su número, su
+  huella, cuándo, desde qué dispositivo y de quién, `user` hoy y `preset` desde la F16), y la automatización dice
+  cuál corre (`published`). Publicar pide el `rev` del borrador que se ve: si el borrador cambió entretanto (otro
+  dispositivo), no publica y lo dice. Con el mismo documento que ya corre no hay nada que publicar, y el botón lo
+  dice apagado. La función que ejecuta de verdad no tiene un parámetro por el que entre un documento: recibe la
+  automatización y lee su versión publicada del almacén; «Probar» es otra función, que no tiene ejecución y no
+  escribe (AU-90). Cada escritura lleva su ejecución en el registro de operaciones, y la ejecución guarda su
+  versión. «Guardado» dice «publicada la versión 4» cuando el borrador es el documento que corre y «cambios sin
+  publicar» cuando no (AU-62), comparando huellas. Las tablas están en el almacén del usuario (D-02) y ninguna pasa
+  por el registro de operaciones: una versión no se deshace, se publica otra.
+  Lo sostiene `publish.test.ts`: con un borrador que escribiría una cosa y una versión publicada que escribe otra,
+  cada ruta de `automations/routes.ts` que ejecuta escribe solo lo de la publicada; sin publicar, ninguna ejecuta; el
+  borrador que cambió no se publica.
 - **AU-96** (F14d, pendiente) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
   que llega un disparador no se publica.
+  En la F14d: las tres salen de funciones puras de `packages/automations` (`versions.ts`), las mismas en la app y en
+  el servidor, que es quien decide si se publica. `diffAutomations(a, b)`: los pasos añadidos, quitados y cambiados
+  (qué parámetros, qué conexiones, qué ajustes), las flechas, el nombre, el disparador y los límites; la usa también
+  «Versiones» (AU-98). `publishChecks`: lo que impide publicar (un problema de la validación, o un parámetro
+  obligatorio vacío, en un paso al que llega un disparador: abrir «Publicar» los marca todos, que es la mitad de
+  AU-83 que faltaba) y lo que conviene mirar y no lo impide (una salida sin conectar, un paso al que no llega ningún
+  disparador y que por eso no correrá, un paso sin probar o con la prueba vieja, una salida fijada, un límite
+  cambiado). `abilities`: por colección, lo que lee, lo que crea, modifica o elimina, y de cada escritura si la
+  guardará sola o la preguntará; lo que elimina sin preguntar lo dice con esas dos palabras (AU-189), y de lo que
+  corre solo dice que con algo de fuera lo propone (AU-167). La primera vez, la pantalla dice además que publicar la
+  enciende (AU-194). Los textos de un paso (su nombre, el de una colección) se pintan como texto.
+  Lo sostienen `versions.test.ts` (las tres funciones, caso por caso), `publish.test.ts` (con un problema en un paso
+  alcanzable no publica; en uno al que no llega nada, sí) y `automations-publish.spec.ts` (la pantalla).
 - **AU-97** (F14d, pendiente) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
+  En la F14d: con «Campos que pide», sale el mismo cuadro que en «Probar» (AU-64, AU-94). La ruta contesta enseguida
+  con la ejecución, que sigue en el servidor: la app lleva a «Ejecuciones» (AU-99) y la ve avanzar por avisos
+  pequeños (qué paso acabó y con cuántas filas; nunca las filas, que se piden aparte). Una automatización corre una
+  ejecución a la vez: otra mientras tanto dice «Ya se está ejecutando». Las de una cuenta corren una detrás de otra,
+  por orden de llegada. Sin publicar no hay «Ejecutar»; apagada, dice «Está apagada» con «Encender» (AU-194). Con
+  cambios sin publicar, «Ejecutar» lo dice antes: corre la versión publicada, no lo que se ve. Un «Código» corre en
+  la caja, como en una prueba (A-08); sin caja, el paso falla y lo dice. Qué deja guardar la política a una
+  ejecución iniciada así está en AU-195.
+  Lo sostienen `runs.test.ts` (corre la publicada; una a la vez; apagada no corre) y `automations-publish.spec.ts`
+  (los tres sitios de «Ejecutar»).
 - **AU-98** (F14d, pendiente) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
+  En la F14d: está en «⋯ → Versiones». La lista dice de cada una su número, cuándo, de quién («Tú»; «De Boni» desde
+  la F16, que trae las suyas: la columna y la palabra ya están) y cuál corre. Ver una es su lienzo solo para ver,
+  como el de una ejecución (pantalla 8). Comparar dos pone un lienzo al lado del otro con lo de `diffAutomations`
+  marcado: añadido, quitado, cambiado. No tiene pantalla dibujada en la maqueta: reutiliza la 8 y la 10. «Volver a
+  esta» abre «Publicar» (AU-96) con el documento de esa versión en lugar del borrador: lo que cambia respecto a la
+  que corre, lo que falta (las colecciones de hoy pueden no ser las de entonces) y lo que podrá hacer. Publicar ahí
+  hace una versión nueva con ese documento; la historia no se reescribe. El borrador no se toca: se queda con lo
+  último que Juan escribió y dice «cambios sin publicar», así que volver atrás por un fallo no le cuesta el trabajo
+  que tenía a medias.
+  Lo sostienen `publish.test.ts` (volver a la 2 desde la 4 hace la 5 con el documento de la 2 y deja el borrador
+  como estaba) y `automations-publish.spec.ts` (la lista, ver, comparar, volver).
 - **AU-99** (F14d, pendiente) · La pestaña «Ejecuciones» (pantalla 8): a la izquierda la lista, con «Todas | Fallos |
   Pruebas» (cuándo, cómo acabó, cuánto tardó, qué la inició, qué versión; las pruebas, marcadas); a la derecha el
   lienzo de esa ejecución, solo para ver, con sus filas en cada flecha y, encima, lo que hizo en una línea. Abrir un
   paso enseña lo que entró y lo que salió.
+  En la F14d: el registro que el motor ya devuelve (AU-15) se guarda paso a paso mientras corre
+  (`automation_runs`, `automation_steps`, las filas aparte de 50 en 50), así que una ejecución en marcha se ve
+  avanzar y una interrumpida dice hasta dónde llegó (AU-190). Una ejecución acaba «Hecha», «Falló», «Interrumpida» o
+  «No corrió» (AU-114), y puede estar además «Deshecha». La línea de encima sale del registro, con palabras de
+  `i18n.ts`: «Creó 1 fila en Tareas», «Propuso modificar 12 filas en Gastos · Ver en la Bandeja», «Falló en «Buscar
+  gastos»: …», «No hizo nada». El lienzo es el de la versión que corrió, no el borrador. La lista se pide de 50 en
+  50 por el índice y no lee pasos ni filas (A-29); las filas de un paso se piden al abrirlo. Un «Probar» entero se
+  guarda como una ejecución marcada como prueba, para «Pruebas»; «Probar paso» no. Una prueba no cuenta en la
+  columna «Ejecuciones» ni en el mapa (A-16). En el móvil, la lista y, al tocar una, su detalle.
+  Lo sostienen `runs.test.ts` (lo guardado es lo que el motor devolvió; la lista con un año de ejecuciones cada hora
+  dentro de su tiempo, A-15) y `automations-publish.spec.ts` (la pestaña, los tres filtros, abrir un paso).
 - **AU-100** (F14d, pendiente) · En una ejecución: «Deshacer lo que hizo», «Reintentar» y «Abrir en el editor con
   estos datos», que fija la salida del disparador para probar con ella.
+  En la F14d: «Deshacer lo que hizo» es AU-18, y solo está si escribió algo. «Reintentar» inicia otra ejecución, de
+  la mano de Juan, con los datos del disparador de aquella (sus campos, o la hora que le tocaba) y la versión
+  publicada de hoy; si no es la de entonces, lo dice («Correrá la versión 5, no la 4»). Empieza desde el principio:
+  si aquella guardó algo antes de fallar, el cuadro lo dice y ofrece «Deshacer y reintentar» además de
+  «Reintentar», para no escribirlo dos veces. «Abrir en el editor con estos datos» fija en el borrador la salida que
+  dio el disparador (AU-93) y abre el editor. Una prueba solo tiene este último.
+  Lo sostienen `runs.test.ts` (reintentar usa los mismos datos y la versión publicada; «Deshacer y reintentar» no
+  deja nada dos veces) y `automations-publish.spec.ts` (los tres botones).
 - **AU-101** (F14d, pendiente) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
   línea por paso y, dentro de un paso de IA, sus lecturas y escrituras.
+  En la F14d: es un solo componente para el «Registro» del editor y para una ejecución de «Ejecuciones», sobre el
+  mismo registro: una línea por paso en el orden en que corrió, con su estado, las filas que entraron y salieron y
+  lo que tardó. Dentro de un «Código», sus lecturas (`$col`), su «Consola» y lo que guardó, propuso o guardaría
+  (AU-181); dentro de un paso de IA, desde la F15. Tocar una línea abre ese paso. Todo se pinta como texto.
+  Lo sostiene `automations-publish.spec.ts`: el árbol de una prueba y el de una ejecución son el mismo.
 - **AU-102** (F14d, pendiente) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
   palabras, y el aviso lleva a ella.
+  En la F14d: «en segundo plano» es la que empezó sola (AU-195); una que inició su mano falla en su pantalla, sin
+  aviso. El aviso («Tarea de la mañana falló en «Crear una fila»: falta «Título»») lo escribe el código con el
+  nombre de la automatización, el del paso y el motivo de las listas cerradas (`STEP_FAILURES`, `words.ts`): nunca
+  el mensaje que lanzó un código ni el valor de una fila, que pueden venir de fuera. Avisa una vez por racha: tras
+  un fallo, los siguientes de esa automatización no avisan hasta que una acaba bien o se publica otra versión, así
+  que «Cada hora» no avisa veinticuatro veces; todas están en «Ejecuciones». Una interrumpida (AU-190) y una que no
+  corrió a su hora (AU-114) cuentan como un fallo de la racha: avisan si la abren y callan si ya estaba abierta. Va
+  a la app y al móvil. El motivo no dice más de lo que ya decía al
+  código: el aviso y el registro guardado de una escritura fuera del filtro de su conexión (`code.write.outside`)
+  son los mismos exista o no esa fila (AU-177).
+  Lo sostienen `scheduler.test.ts` (tres fallos seguidos, un aviso; tras una que acaba bien, el siguiente fallo
+  avisa; un código que lanza un texto con HTML no lo deja en el aviso) y `runs.test.ts` (el registro y el aviso de
+  `code.write.outside`, iguales con la fila y sin ella).
 - **AU-103** (F14d, pendiente) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
   las anteriores, solo el resumen (A-29).
+  En la F14d: la «o» de la regla se lee como lo que antes acabe, para que lo guardado entero tenga tope por
+  automatización: una ejecución está entera mientras es de las últimas 100 de su automatización y tiene menos de 30
+  días. De las demás queda su fila (cuándo, cómo acabó, cuánto tardó, qué la inició,
+  qué versión, lo que hizo en una línea) y se van sus pasos y sus filas. Su «Deshacer lo que hizo» sigue valiendo
+  (AU-18). De las pruebas se guardan las últimas 20, y las anteriores se borran del todo: una prueba no hizo nada.
+  Se recorta al acabar cada ejecución y al arrancar el servidor. «Última ejecución» y «Ejecuciones» de la lista
+  (AU-61) se cuentan por el índice.
+  Lo sostiene `runs.test.ts`: un año de ejecuciones cada hora de una automatización deja 100 enteras, y la lista,
+  las cuentas y el recorte van dentro de su tiempo (A-15, `@boni/pace`).
+- **AU-190** (F14d, pendiente) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
+  arrancar, toda ejecución que seguía en marcha se cierra como «Interrumpida», diciendo en qué paso estaba. Lo que
+  guardaron los pasos que acabaron se queda, y se deshace desde ella (AU-18); un paso nunca queda a medias, porque
+  su cambio es una transacción (AU-174). Su hora cuenta como corrida (AU-114). Avisa como un fallo si empezó sola
+  (AU-102), y «Reintentar» es de la mano de Juan (AU-100). Repetirla sola escribiría dos veces lo de los pasos que
+  ya habían guardado. Es una propuesta del diseño que Juan no ha visto (tarea 128).
+  Lo sostiene `runs.test.ts`: un servidor que arranca con una ejecución en marcha la cierra, no la repite y deja lo
+  que guardó.
+- **AU-191** (F14d, pendiente) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
+  de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
+  la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
+  eliminada no corre nunca, la inicie quien la inicie, ni entra en el mapa. Borrarla del todo no está en la F14d.
+  Extiende `setAutomationDeleted` y la ruta `restore`, que ya existen.
+  Lo sostienen `publish.test.ts` (eliminada no corre a su hora ni a mano; recuperada vuelve apagada, con sus
+  versiones y sus ejecuciones) y `automations-publish.spec.ts` («Eliminadas» y «Recuperar»).
+- **AU-192** (F14d, pendiente) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
+  conexión guardan la clave de la colección; un «Código» la cita por su nombre (`$col('Gastos')`). Cada versión
+  guarda, al publicarse, el nombre con que su código cita cada colección conectada y la clave que era. Al
+  ejecutar, el nombre se resuelve primero por ahí, así que la versión publicada sigue leyendo y guardando en la
+  misma colección aunque ahora se llame de otra manera. Esto nunca ensancha: la clave tiene que seguir siendo una
+  conexión de ese paso, y una colección archivada o eliminada hace fallar el paso diciendo cuál. En el borrador, la
+  cita con el nombre viejo es un problema de la validación («`$col('Gastos')`: ahora se llama «Compras»») con un
+  botón que la reescribe: el código de Juan lo cambia su mano, no Boni por su cuenta.
+  Lo sostienen `versions.test.ts` (lo que una versión guarda de sus nombres) y `runs.test.ts` (tras el cambio de
+  nombre, la publicada guarda en la misma colección; sin la conexión, no).
+- **AU-194** (F14d, pendiente) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
+  lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
+  ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió
+  mientras estaba apagada (AU-114). La lista dice «Encendida», «Apagada» o «Sin publicar» (AU-61).
+  Lo sostienen `publish.test.ts` (la primera publicación enciende, la segunda no cambia el interruptor; apagada no
+  corre) y `automations-publish.spec.ts` (el interruptor y la columna «Estado»).
 - **AU-181** (F14c, en parte) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
   pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
   aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
@@ -1187,6 +1385,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   propone el asistente (AU-140, F16), «Pedir a Boni» o «Escribir con IA» (AU-141, AU-39: F19) o un paquete (AU-145,
   F19). Un «Código» que guarda no corre nunca solo antes de eso: solo corre de verdad una versión publicada (AU-95), y
   «Publicar» llega con esto en la misma fase (F14d). Hasta entonces sus peticiones solo se prueban (AU-181).
+  En la F14d: es `abilities` (AU-96). De cada «Código» nombra las colecciones que su análisis vio cambiar
+  (`readCode`, AU-183) y su conexión permite, con la acción y con cómo: «la guarda», «la pregunta» o, al eliminar con
+  «Sí», «sin preguntar». No hay otra lista: sale de `stepChanges` y de `permissions`, lo mismo que cumple el motor al
+  ejecutar, así que la pantalla no puede decir menos de lo que el paso puede hacer. Las aceptaciones de la F16 y la
+  F19 llaman a la misma función.
+  Lo sostiene `versions.test.ts`: por cada ejemplo del catálogo que guarda, todo cambio que el motor aceptaría está
+  nombrado en `abilities`, y uno que la conexión no permite no está.
 - **AU-188** (F14d, pendiente) · Un «Sí» solo lo pone la mano de Juan. Lo que llega sin haberlo escrito él (una
   automatización que propone el asistente, AU-140, o `automations_propose` del MCP, AU-144; «Pedir a Boni» y «Escribir
   con IA», AU-141, AU-39; un paquete o una plantilla, AU-145, AU-146) llega con cada «Sí» de guardar bajado a
@@ -1196,6 +1401,15 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   En la F14d: lo baja una sola función (`lowerYes`, `writes.ts`) por la que pasa todo lo que llega así antes de ser
   borrador. Un «Sí» que el borrador ya tenía de su mano se queda; uno nuevo o cambiado baja. El servidor lee el «Sí»
   de la versión publicada, nunca de la caja, de un navegador ni de un modelo.
+  En la F14d todavía no llega nada sin haberlo escrito él (el asistente es de la F16; los paquetes, de la F19), así
+  que la fase deja la función hecha y cerrado el camino: toda función del servidor que escribe un borrador está en
+  una lista, como de su mano (el editor, «Duplicar») o como venida de fuera de ella, y las segundas pasan por
+  `lowerYes`. Una función nueva que escriba un borrador y no esté en la lista hace fallar la prueba. «Volver a
+  esta» (AU-98) publica un documento que él ya publicó: sus «Sí» eran de su mano y se quedan.
+  Lo sostienen `consent.test.ts` (`packages/automations`; `lowerYes`: baja crear, modificar y eliminar, en las
+  conexiones y en «Permiso»; el que ya era suyo se queda; uno cambiado de colección o de acción baja) y
+  `publish.test.ts` del servidor (la lista de quien escribe un borrador; un «Sí» que dice la respuesta de la caja o
+  el cuerpo de una petición no cuenta).
 - **AU-189** (F14c, en parte) · Eliminar sin preguntar se ve a simple vista, aparte de lo que pregunta, con dos
   palabras, «sin preguntar»: en la ficha de la conexión («Lee y elimina · sin preguntar», AU-178), en la marca de la
   tarjeta («Elimina en Gastos · sin preguntar», AU-180), en «Haría esto» («Eliminaría 3 filas en Gastos · sin
@@ -1233,6 +1447,23 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   cadena, una automatización no se repite en su cadena, unas pocas ejecuciones por minuto.
 - **AU-114** (F14d, pendiente) · «Programada» tiene una o más reglas. Si el servidor estaba apagado a su hora, corre
   una vez al volver (lo que queda de D-44).
+  En la F14d: una regla es «Cada hora», «Cada día a las 08:00» o «Cada lunes a las 09:00», la forma que ya tienen
+  los flujos de antes (`Schedule`), y el disparador lleva una lista de ellas, al menos una. Las horas son de la zona
+  de la cuenta (IANA), por `packages/calendar/src/time.ts`: una hora que el cambio de hora se salta o repite corre
+  una vez. Da una fila con la fecha: la hora que tocaba, no la hora a la que corrió, así que dos ejecuciones de la
+  misma hora calculan lo mismo. El planificador es el de hoy (`flowScheduler.ts`: `dueSlot`, `graceOf`, una vuelta
+  por minuto), con las mismas funciones. Corre la última hora cumplida de cualquiera de sus reglas, una sola vez
+  aunque coincidan varias, si es posterior a la publicación de la versión que corre, a que se encendió y a la
+  última que corrió. Si el servidor estaba apagado, corre al volver solo esa última, y solo dentro del margen de
+  D-44 (30 minutos las de cada hora, 3 horas las demás); pasada de margen, queda una línea «No corrió: Boni estaba
+  apagado a su hora» en «Ejecuciones» y avisa como un fallo (AU-102). Nunca corre dos veces la misma hora: la
+  ejecución guarda la hora que le tocaba y el almacén no admite otra con la misma. Si a su hora sigue corriendo la
+  anterior, espera a la vuelta siguiente. Cada vuelta lee las horas de una columna de la automatización, escrita al
+  publicar, y no los documentos. Empieza sola, así que la política la trata como dice AU-167. «Probar» le da la
+  fecha de ahora (AU-115).
+  Lo sostiene `scheduler.test.ts`, con un reloj de la prueba: corre a su hora y una vez; apagado tres horas con
+  «Cada hora», corre una; fuera de margen, no corre y lo deja dicho; nada anterior a publicar o a encender; el
+  cambio de hora; y una vuelta con 200 automatizaciones programadas dentro de su tiempo (A-15).
 - **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
 - **AU-116** (F17, pendiente) · El panel de un disparador lista quién la inicia hoy: qué botones de qué páginas y
   qué automatizaciones. Se calcula, no se declara (A-16).
@@ -1280,6 +1511,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   «Sí», lo que el paso manda a la papelera no pregunta en lo que dice AU-186. Hasta el 2026-11-16 eliminar preguntaba
   siempre (P5), y así un paso que escribió y publicó Juan preguntaba más que un código que hiciera lo mismo. Crear y
   modificar no lo llevan: ya escriben solos con Deshacer lo que es propio (decisión 5 del §10, AU-167).
+  En la F14d: es un parámetro más de la acción en el catálogo, a la vista (cambia el resultado: AU-77), con las dos
+  palabras de las celdas de una conexión, de las mismas claves de `i18n.ts`. Un documento guardado sin él se lee
+  «Preguntar». `stepChanges` deja de dar eliminar siempre como «Preguntar» y lee el parámetro, así que la tarjeta
+  («Elimina en Gastos · sin preguntar»), «Haría esto» y «Lo que podrá hacer» lo dicen igual que de un «Código»
+  (AU-189). `lowerYes` lo baja como una celda (AU-188).
+  Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro, su valor por defecto y lo que `stepChanges`
+  da con cada uno) y `automations-publish.spec.ts` (el control y la marca de la tarjeta).
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
 - **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
@@ -1486,20 +1724,101 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   asistente elimina fuera de una automatización sigue como hoy (P5, P24). Juan, 2026-11-16: «la logica de "no", "si",
   "preguntar" deberia ser la misma para modificar y eliminar, por separado», y del «Agente»: «es responsabilidad del
   usuario limitarlo si no quiere arriesgar».
-  En la F14d: cambia una frase de la política, la fila P5 de `docs/nucleo.md` §7.5. «borrar a petición del agente»
-  pasa a «borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera con el «Sí» de
-  Juan para esa colección (AU-186)». P4, P15 y P7 van antes y no cambian; P24 ya dejaba al asistente del MCP mandar
-  una nota a la papelera, y tampoco cambia. El acto «Eliminar filas» de `apps/server/src/automations/policy.ts` deja
+  En la F14d: esta regla cambia una frase de la política, la fila P5 de `docs/nucleo.md` §7.5. «borrar a petición
+  del agente» pasa a «borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera
+  con el «Sí» de Juan para esa colección (AU-186) o dentro de la propuesta de una ejecución que él acepta (AU-193)».
+  P4 y P15 van antes y no cambian; P24 ya dejaba al asistente del MCP mandar una nota a la papelera, y tampoco
+  cambia. Con las de AU-167 (la fila nueva P28 y el «salvo lo que deja P28» de P7) son las tres filas que cambian
+  en la fase, y ninguna otra. El acto «Eliminar filas» de `apps/server/src/automations/policy.ts` deja
   de llevar `alwaysConfirm` fijo: la llamada a `decide` lleva el «Sí» de la versión publicada, de su conexión o de
   AU-187, leído por el servidor de lo guardado (AU-188); sin él confirma, como hoy. Para crear y modificar, la regla
   de segundo plano (decisión 5, AU-167) ya decía esto de lo que es propio; esta regla la extiende a eliminar y la dice
   una vez para los tres tipos de paso (el «Agente», desde la F15). Lo de fuera se sigue proponiendo. Que Boni pueda un
   día aceptar una propuesta por su cuenta, con pruebas (la seudoaceptación de `docs/fiabilidad.md`), es del diseño de
   la F15, y esta regla no lo cierra.
+  Una escritura pasa dos puertas, en este orden. La primera es la celda de Juan (la de la conexión, o el «Permiso»
+  de «Eliminar filas», AU-187): «No» hace fallar el paso; «Preguntar» hace esperar el cambio entero del paso como
+  propuesta en cualquier ejecución, también una que inició su mano; «Sí» pasa a la segunda. La segunda es la
+  política, que es el suelo: lo que `decide` contesta al origen de la ejecución (AU-195). Ninguna celda cambia lo que
+  contesta la política, salvo el «Sí» de eliminar en lo que dice la fila P5.
+  Lo que lee una celda «Sí» antes y después. Hasta el primer PR del motor de esta fase, un «Sí» pregunta como
+  «Preguntar» (`YES_SAVES` es falso) y, como nada se publica, nada corre de verdad: «Haría esto» dice de un paso
+  con «Sí» que preguntaría. Las palabras «sin preguntar» de AU-189 (F14c, en parte: la app aún no las pinta) dirán
+  lo contrario en la ficha de la conexión y en la tarjeta de un paso que elimina con «Sí». Si llegan antes que ese
+  PR, las dos frases no coinciden en ese rato, y por eso ese PR es el primero. Con él `YES_SAVES` desaparece:
+  un paso pregunta si su celda dice «Preguntar» o si la política preguntaría al origen que inicia esa automatización
+  (AU-195). Desde entonces, crear y modificar con «Sí» no añaden nada a «Haría esto»; eliminar con «Sí» dice «sin
+  preguntar»; y lo que lleva algo de fuera y correría solo dice que lo propondría, con «Sí» también.
+  Lo sostienen `consent.test.ts` (`packages/automations`: las dos puertas, caso por caso, y que una celda nunca
+  cambia un «no» de la política), `automation-origin.test.ts` (`packages/agent/test`: la fila P5 con y sin el «Sí»,
+  y que fuera de una automatización eliminar sigue confirmando) y `proposal.test.ts` (servidor: una eliminación con
+  «Sí» de una versión publicada va a la papelera sin propuesta y se deshace con la ejecución; con algo de fuera, se
+  propone).
 - **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
 - **AU-167** (F14d, pendiente) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
+  En la F14d: `decide` conoce un origen más, `automation`: una versión publicada que empieza sola (§7). Su regla es
+  una fila nueva de `docs/nucleo.md` §7.5, P28, que va después de P2, P4 y P15, que no cambian:
+
+  | Lo que escribe sola | Qué pasa |
+  |---|---|
+  | Crear o modificar con todos sus valores y su camino propios (integridad `imported` o más) | Se guarda, con el Deshacer de la ejecución y un aviso por ejecución («Tarea de la mañana creó 1 fila en Tareas · Deshacer») |
+  | Algo de fuera en un valor (P4) o en el camino (P15) | Se propone, diga lo que diga la celda |
+  | Un valor que escribió un modelo, o de un turno ambiental (`model`, `ambient`) | Se propone, hasta que la F15 diga qué vale el «Sí» de un paso de IA (A11) |
+  | Mandar a la papelera con el «Sí» de la versión publicada para esa colección y nada de fuera | Va a la papelera con la ejecución (AU-186, la frase nueva de P5) |
+  | Mandar a la papelera sin ese «Sí» | Se confirma (P5): va en la propuesta de la ejecución (AU-193) |
+  | Enviar, salir fuera, lo irreversible | No existe en estas fases (decisión 9); `decide` lo niega a este origen |
+
+  La fila P7 gana «salvo lo que deja P28». P11 no cuenta para este origen: su tope son las filas escritas de la
+  ejecución (AU-17), que Juan ve y cambia. Lo que se propone de una ejecución es una sola propuesta (AU-193). El
+  aviso de lo que escribió lo escribe el código con cuentas y nombres de colección, nunca con valores; sale en la
+  app, y al móvil solo van los fallos (AU-102). P9 no se toca: un paso solo puede nombrar colecciones que no son
+  del sistema (`shape`, `collectionNamed`), así que una automatización no tiene con qué escribir lo que Boni sabe de
+  Juan, traiga lo que traiga. Con esto se cumple sobre el servidor real lo que quedaba de AU-185: una ejecución
+  que empieza sola con algo de fuera se propone.
+  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla, y cada acto de
+  `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
+  almacén de verdad, y que ningún paso puede nombrar una colección del sistema) y `scheduler.test.ts` (el aviso por
+  ejecución, sin valores).
+- **AU-195** (F14d, pendiente) · Quién inicia una ejecución decide qué le contesta la política, y hay cuatro casos.
+
+  | Quién | Origen para `decide` | Qué pasa con una escritura |
+  |---|---|---|
+  | «Probar», «Probar paso» | `hand`, como prueba | Nada se guarda nunca (AU-90) |
+  | «Ejecutar», «Reintentar» | `hand` | P25: es su toque, se guarda con su etiqueta; la celda «Preguntar» propone |
+  | Sola («Programada»; desde la F18, un cambio en una colección) | `automation` | AU-167 |
+  | Aceptar la propuesta de una ejecución | `accepted` | AU-193 |
+
+  El segundo caso frente al tercero es la pregunta abierta de esta fase y es de Juan. Sus palabras (2026-11-16):
+  «por que se deberia comportar diferente el flujo si lo lanzo yo o por el trigger del correo? creo que ese cambio
+  en el comportamiento deberia ser algo marcado por el flujo». Hoy, y mientras no conteste, una ejecución que
+  inicia su mano guarda también lo que lleva algo de fuera, con su etiqueta de fuera (P25), y la que empieza sola lo
+  propone (decisión 5, AU-167). Hay tres salidas, y este diseño no toma ninguna:
+
+  | Salida | Algo de fuera con «Sí», a mano | Lo mismo, sola | Qué cambia |
+  |---|---|---|---|
+  | Como hoy | Se guarda, con su etiqueta de fuera | Se propone | Nada |
+  | Decide la celda | Se guarda, con su etiqueta de fuera | Se guarda, con su etiqueta de fuera, el Deshacer de la ejecución y su aviso | La decisión 5 (sería la 11 del §10, con sus palabras), la tercera condición de AU-186 y la fila P28: lo de fuera deja de proponerse en una versión publicada con el «Sí» de su mano |
+  | Se propone siempre | Se propone | Se propone | Una línea: el origen que da la ruta de «Ejecutar» a `runPolicy` pasa a `automation` |
+
+  Las dos últimas contestan a sus palabras: la misma versión publicada recibe la misma decisión a mano y sola. La
+  recomendación del diseño es «Decide la celda» para lo que calcula el código. P4 se escribió para un modelo que lee
+  un texto de fuera y elige qué hacer con él; en una automatización de pasos sin modelo, el texto de fuera es
+  un dato que pasa por un camino que Juan dibujó y publicó, y nada lo lee para decidir. Con «Se propone siempre»,
+  una automatización que empieza con un correo no guardaría sola nunca, pusiera lo que pusiera su celda. En
+  cualquiera de las tres queda igual: un «Sí» solo de su mano (AU-188); la etiqueta de fuera en lo guardado
+  (AU-170), con la que el asistente y cualquier paso de IA que lo lea después lo siguen tratando como de fuera; P2,
+  P14 y P9; enviar y lo irreversible; lo que escribe un modelo, que se propone hasta la F15 (A11); y «Probar», que no
+  guarda. «Publicar» lo diría (AU-182): «Guardará sin preguntar también lo que venga de fuera». La automatización que
+  quiera hacer otra cosa según quién la inicie lo dice ella: `$run` (AU-24) en un paso «Si», o una rama por
+  disparador (AU-06). «Decide la celda» cambia una decisión que Juan aceptó (la 5) y un suelo de esta fase (P4 para
+  lo que empieza solo), así que solo entra con su «sí». Para que su respuesta cueste poco, el primer PR del motor
+  escribe la fila P28 con una prueba por caso: la respuesta cambia una fila y su prueba, y nada más. Para que
+  «Haría esto» no engañe entretanto, una prueba pregunta a la política con el origen que inicia esa automatización:
+  la de una «Programada», con `automation`, y la de «Disparado por el usuario», con `hand`; siempre como prueba.
+  Lo sostiene `proposal.test.ts` (servidor): los cuatro casos con el mismo paso y el mismo valor de fuera, y la
+  prueba de una «Programada» diciendo que lo propondría.
 - **AU-168** (F14a, hecho) · Todas las rutas y herramientas de automatizaciones pasan por `decide` desde el
   primer día (A-26). En la F14a todavía no hay rutas ni herramientas: es el motor el que no tiene otro camino a las
   colecciones que la política, y cada lectura y cada escritura le pregunta antes, en una prueba también. En una
@@ -1511,6 +1830,33 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   el asistente) lo da como de fuera. Guardar y volver a leer nunca limpia una etiqueta. En la F14a el motor ya
   etiqueta lo que sale del paso que escribe; falta que el almacén lo guarde, porque el cambio que recibe lleva
   valores y no etiquetas.
+  En la F14d: lo que el motor guarda directamente ya lleva la etiqueta de cada valor desde la F14c (`applyAll`
+  recibe `ChangeWith`, AU-185). Falta el otro camino, la propuesta: lo que espera a Juan (`Asked`) lleva hoy el
+  cambio sin sus etiquetas, así que aceptarlo lo guardaría como propio. `Asked` pasa a llevar los valores con su
+  etiqueta, la propuesta los guarda así y aceptar los escribe con ella (AU-193). Lo fijado también las conserva
+  (AU-93).
+  Lo sostienen `consent.test.ts` (`packages/automations`: lo que se pregunta lleva la etiqueta de cada valor) y
+  `proposal.test.ts` (servidor: un valor de fuera propuesto, aceptado y leído otra vez por otra ejecución sigue
+  siendo de fuera, y lo que esa escriba con él se propone).
+- **AU-193** (F14d, pendiente) · Lo que una ejecución pregunta es una sola propuesta en la Bandeja de siempre. Junta
+  el cambio entero de cada paso que espera (AU-174), paso por paso, y la ejecución sigue: un paso que espera no da
+  filas a los siguientes (AU-14). La tarjeta la pinta el código, con texto y nunca con un resumen de un modelo:
+  qué automatización y qué versión, cuántas filas crea, modifica o manda a la papelera en cada colección («Tarea de
+  la mañana quiere crear 4 filas en Tareas»), y cada fila con su antes y su después y con la marca de lo que viene
+  de fuera. Aceptar es un toque en un dispositivo personal: pasa otra vez por `decide` con el origen «aceptado»
+  (satisface P4; nunca P2 ni P3), guarda todo en una transacción, con la ejecución en el registro y cada valor con
+  su etiqueta (AU-170), y vale como la confirmación de P5 para las eliminaciones que la tarjeta nombra: hoy `decide`
+  confirmaría otra vez un borrado aceptado, y la frase nueva de P5 (AU-186) lo dice para la propuesta de una
+  ejecución, que ya es lo que P5 pide (pintada por el código desde el cambio real, aceptada en un dispositivo
+  personal). Solo la papelera: lo irreversible sigue sin existir aquí, y ninguna otra propuesta gana esto. Lo aceptado
+  se deshace con la ejecución (AU-18). Si una fila cambió desde que se propuso, no se guarda ninguna y la propuesta
+  queda «Ya no vale · Ejecutar otra vez». Rechazar no guarda nada, y la ejecución lo dice. Nada de esto es nuevo en
+  la Bandeja: extiende `proposals` y `acceptProposal`, con una acción más en la lista (A-26).
+  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: un borrado aceptado en la propuesta de una
+  ejecución no se confirma otra vez, y el de cualquier otra propuesta sí) y `proposal.test.ts` (servidor): una
+  propuesta por ejecución con dos pasos que esperan; aceptar guarda
+  todo o nada; una fila cambiada la deja sin valer; rechazar no escribe; desde un dispositivo que no es personal no
+  se acepta; y un texto con HTML en un valor se lee letra por letra en la tarjeta (`automations-publish.spec.ts`).
 - **AU-171** (F15, pendiente) · Lo que devuelve una escritura pasa por los límites de lectura de quien la pide: solo
   las filas y los campos que su conexión le deja leer. Sin permiso de leer, devuelve lo que escribió y nada más, en
   una prueba también. Hasta la F15 solo escriben los pasos de «Colección» que pone Juan, que no llevan límites de
@@ -1562,6 +1908,8 @@ Lo que cambia, regla por regla:
 |---|---|---|
 | Código libre (`docs/flujos.md` §6, decisión 3) | «Nunca JavaScript libre en un nodo» | JavaScript en la caja, que lee por conexiones y, si la conexión lo permite, pide guardar: lo guarda el motor, solo lo que el análisis del código vio (AU-176, AU-183; Juan, 2026-11-16) |
 | P7, segundo plano | Solo lee y propone | Escribe con Deshacer lo que es todo propio; lo de fuera se sigue proponiendo (decisión 5) |
+| P5, eliminar | Se confirma siempre | Lo que una versión publicada manda a la papelera con el «Sí» de Juan para esa colección, sin nada de fuera, no pregunta (AU-186); lo que Juan acepta en la propuesta de una ejecución no se confirma otra vez (AU-193); todo lo demás, como hoy |
+| P28 (nueva) y P11 | No hay origen «automatización»; más de 20 escrituras en una ejecución se confirman | Una fila para la que empieza sola (AU-167), cuyo tope de escrituras es el límite de la ejecución (AU-17) |
 | D-44 | Un flujo no ejecuta otro | Llama a otra si esta lo permite; tres niveles, sin ciclos (decisión 3) |
 | P26 y P27, el chat de una página | Una lista fija de cinco acciones | Las conexiones del «Agente»; escribir sigue preguntando salvo un valor de su página |
 | I-26 | El lienzo se ordena solo; nada se coloca | El sitio se guarda aparte; Boni coloca lo que no tiene sitio (decisión 2) |
@@ -1609,8 +1957,20 @@ Lo que cambia, regla por regla:
   borrador y de probar (`automations/routes.ts`, cada una con su acción), las `Collections` de verdad sobre el
   almacén y la `Policy` de verdad sobre `decide`. Nada de ello pasa por el registro de operaciones: el borrador lo
   deshace el editor (AU-68), «Eliminar» se deshace desde su aviso (AU-62) y una prueba no escribe (AU-90).
+  La F14d trae las demás (`automation_versions`, `automation_runs`, `automation_steps` con sus filas aparte,
+  `automation_pins`) y, en `automations`, cuál versión corre, si está encendida y sus horas; tampoco pasan por el
+  registro de operaciones, por el que sí pasa todo lo que una ejecución escribe en las colecciones, con su
+  ejecución (AU-18). Sus rutas, todas bajo `/api/agent/automations/:id` y cada una con su acción: `publish` (leer lo
+  que enseña «Publicar», y publicar), `versions` (la lista, una, volver a una), `enabled`, `run`, `runs` (la lista,
+  una, las filas de un paso, deshacerla, reintentarla), `pins` y, en la lista, las eliminadas. Lo puro está en
+  `packages/automations` (`versions.ts`: `diffAutomations`, `publishChecks`, `abilities`; `AUTOMATION_LIMITS` y su
+  comprobación en el motor; `lowerYes`); el planificador usa `dueSlot` y `graceOf` de `flowScheduler.ts` (la segunda
+  hoy no se exporta: pasa a exportarse).
 - **`packages/agent`**: `decide` conoce el origen «automatización» y comprueba la conexión; el camino vigilado de
   una llamada queda disponible para los pasos; las rondas del «Agente»; en la F16, la traducción de un plan a pasos.
+  En la F14d: el origen `automation` y su fila P28 (AU-167), y la llamada que dice si la versión publicada lleva el
+  «Sí» de eliminar (AU-186). La conexión la sigue comprobando el motor (AU-176) hasta que el «Agente» la necesite
+  en `decide` (F15).
 - **`packages/views`**: el filtro (`FilterItem`) admite una expresión como valor y es el modelo de condiciones de
   todos los pasos; los bloques de página ganan nombre, eventos y «De una automatización».
 - **`apps/boni-web/src/automations/`**: la lista, el lienzo (con `@xyflow/react`, que ya está), el panel de añadir,
@@ -1646,7 +2006,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en main |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en curso |
-| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189) | pendiente |
+| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189). Desde su diseño (tarea 128): quién inicia una ejecución y con qué origen (AU-195), la propuesta de una ejecución (AU-193), el interruptor (AU-194), una eliminada se recupera (AU-191), una interrumpida no se repite sola (AU-190) y cambiar el nombre de una colección no rompe lo publicado (AU-192) | en curso |
 | **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10) | pendiente |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |

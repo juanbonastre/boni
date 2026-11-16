@@ -612,6 +612,18 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P26 | El chat de una página (una llamada con `scope`: la ejecución de un mensaje en su modo; `packages/agent/src/chat.ts`, D-61, `docs/sistema.md` §4.6 punto 6), después de P0 y antes de las demás reglas | deny una acción que su paso «Agente» no da (`not-the-chats-action`), una página que no es la suya (`not-the-chats-page`) o una colección que su página no enseña (`not-the-pages-collection`; también la colección de un bloque que añadiría, `pages.add_block`); lo que pasa sigue por las demás reglas. Sin `scope`, la regla no se aplica |
 | P27 | Lo que escribe el chat de una página (una llamada con `scope` que escribe; D-62, `docs/sistema.md` §4.6 punto 7), después de P5 | confirm todo salvo cambiar un valor de su página (`CHAT_UNASKED`, `packages/agent/src/chat.ts`): añadir un bloque pasa por su tarjeta. Sin `scope`, la regla no se aplica |
 
+**Diseñado y sin construir: lo que una automatización publicada escribe sola** (F14d de «Automatizaciones»,
+`docs/automatizaciones.md` §6: AU-167, AU-186, AU-195). Hasta que llegue su código, con sus pruebas en el mismo PR,
+vale la tabla de arriba tal cual. Entonces cambian tres filas, y ninguna otra:
+
+| Regla | Caso | Decisión |
+|---|---|---|
+| P5 | `send`, pagar, borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera con el «Sí» de Juan para esa colección (AU-186) o dentro de la propuesta de una ejecución que él acepta (AU-193: aceptarla es esta confirmación), `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
+| P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose, salvo lo que deja P28; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
+| P28 | Una automatización publicada que empieza sola (origen `automation`: «Programada»; desde la F18, un cambio en una colección), después de P2, P4 y P15, que no cambian | allow, con el Deshacer de la ejecución y un aviso por ejecución, crear o modificar con todos los valores y el camino de integridad `imported` o más; propose un valor `model` o `ambient`; mandar a la papelera, allow solo con ese «Sí» de la versión publicada (P5), y si no confirm, que va en la propuesta de la ejecución; deny `egress`, `send` y lo irreversible. P11 no cuenta: el tope son las filas escritas de la ejecución (AU-17) |
+
+Una ejecución que inicia la mano de Juan («Ejecutar») sigue siendo P25 mientras él no decida otra cosa (AU-195).
+
 - **Las confirmaciones las pinta el código** con la plantilla de cada herramienta y los argumentos reales:
   destinatario, importe, texto completo. Muestran la procedencia ("este texto viene de un correo de X"). Nunca usan un
   resumen del modelo.
