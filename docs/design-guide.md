@@ -369,8 +369,8 @@ contraseña ni un código aquí» under a question.
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
   la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
-  showed, as data it can change or delete. «Flujos», with its map, is a section of its own under «Mis datos» (F8); the
-  conversation also keeps the detailed run log.
+  showed, as data it can change or delete. «Automatizaciones», with its map, is a section of its own under «Mis datos»
+  (F8; «Flujos» until F14b, AU-60); the conversation also keeps the detailed run log.
 - **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
   always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
   width, from the top bar's "…": "Ancho completo", where charts sit side by side); the name is the first line (40 px,
@@ -457,9 +457,9 @@ contraseña ni un código aquí» under a question.
   in the chat's mode: over the composer a chip «Chat de «Gastos»» with «×» («Salir del modo de este chat»), and the
   conversation goes on there. Its panel has «Bienvenida», «Botones» (a name and what it writes, up to six, «Añadir
   botón»), «Instrucciones del agente» («Restablecer las de Boni» once changed) and «Lo que puede hacer» (the fixed
-  list, one checkbox each), and «Guardar» («Guardado»; a save made elsewhere first says so). Switched off in «Flujos», it says
+  list, one checkbox each), and «Guardar» («Guardado»; a save made elsewhere first says so). Switched off in «Automatizaciones», it says
   «apagado» and its bar and buttons are disabled; its flow gone, the block says «Este chat ya no existe.». In
-  «Flujos» it shows as any flow, its trigger «Chat» fixed and its step named «Agente». Every word of it, and of what
+  «Automatizaciones» it shows as any flow, its trigger «Chat» fixed and its step named «Agente». Every word of it, and of what
   it answers, is plain text. A figure in its answer that is a block's total or count (D-62; «Gastaste 312,40 € en 14
   movimientos») is a quiet button: dotted underline, solid on hover, tooltip «Ver las filas»; a click opens the page
   and the rows panel with the values the figure was read with, whatever the page holds now. A block the chat would add
@@ -1321,7 +1321,7 @@ contraseña ni un código aquí» under a question.
   «Correo» round its connector, collection, flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo
   lo encendido, Solo lo que pasó, an arrow with a number in the period; Con páginas), with a count on the button when
   any is on; and the period (7 días | 30 días). The lenses, the
-  grouping and the period are kept on the device; «Flujos»' own filter and search take flows off the map too.
+  grouping and the period are kept on the device; «Automatizaciones»' own filter and search take flows off the map too.
   Hovering a card lights its arrows and quiets the rest; a click shows its panel docked on the right (300 px; a sheet
   at the bottom on the phone): its name and kind, its numbers («7 propuestas · 4 aceptadas», «21 llamadas a
   modelos», its models), **«Entra»** and **«Sale»** (each arrow's other end as a link that chooses it, with its verb
