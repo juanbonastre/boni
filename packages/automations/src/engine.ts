@@ -659,7 +659,7 @@ class Run {
     };
 
     // Its JavaScript, for every row, before any row is worked on (AU-38): in the box, never here (AU-160). What
-    // stops all of it (no box, a limit of the step, a read refused) fails the step as one unit.
+    // stops all of it (no box, a limit of the step) fails the step as one unit; a read refused fails its rows.
     const js = javascriptOf(step);
     let evaluated: Prepared | undefined;
     // Only when some unit will run (AU-14): row by row with no row and no effect, nothing runs.
@@ -762,7 +762,7 @@ class Run {
    * A step's JavaScript, evaluated in the box for all its rows before any of them is worked on (AU-38), with the run's
    * instant and the step's seed (AU-34) and only what the code cites (AU-163). Its reads go through a gate of the
    * policy that judges them as reads of this step (AU-161). It rejects for what stops the whole step: no box, a cited
-   * step that has not run, a limit of the step, a read the policy refuses.
+   * step that has not run, a limit of the step. A read the policy refuses fails only the units that asked for it.
    */
   async prepare(
     step: Step,
@@ -847,17 +847,33 @@ class Run {
       decided.add(f);
       return f;
     };
+    // A read the policy refused: the unit fails with `policy.denied` or `policy.waits` and the policy's rule, never
+    // with its reason, which may say what the code could not read (Juan, 2026-11-16).
+    const deniedOf = (d: Denied) => {
+      const code = d.waits ? "policy.waits" : "policy.denied";
+      const f = new Denied(
+        d.rule,
+        `a read of the step's JavaScript was refused (${code})`,
+        d.waits,
+      );
+      decided.add(f);
+      return f;
+    };
     const failures = run.evaluations.map((e) =>
-      e.state === "failed" ? faultOf(e.failure, js.params[e.source]) : undefined,
+      e.state === "failed"
+        ? faultOf(e.failure, js.params[e.source])
+        : e.state === "denied"
+          ? deniedOf(e.denied)
+          : undefined,
     );
 
     // What a «Código» gave, as rows (AU-30): each carries the label of everything its evaluation received (AU-169).
-    const made: (readonly RowOut[] | CodeFault)[] = [];
+    const made: (readonly RowOut[] | CodeFault | Denied)[] = [];
     if (code) {
       let total = 0;
       for (const [i, e] of run.evaluations.entries()) {
         if (e.state !== "done") {
-          made.push(failures[i] as CodeFault);
+          made.push(failures[i] as CodeFault | Denied);
           continue;
         }
         const label = run.labels[i] as Label;
@@ -892,14 +908,14 @@ class Run {
                 throw new CodeFault("this JavaScript was not evaluated", {
                   code: "code.unavailable",
                 });
-              if (e.state === "failed") throw failures[i] as CodeFault;
+              if (e.state !== "done") throw failures[i] as CodeFault | Denied;
               return { value: e.values[k] ?? null, label: run.labels[i] as Label, derived: true };
             },
       rows: (i) => {
         const m = made[i];
         if (!m)
           throw new CodeFault("this «Código» was not evaluated", { code: "code.unavailable" });
-        if (m instanceof CodeFault) throw m;
+        if (m instanceof CodeFault || m instanceof Denied) throw m;
         return m;
       },
     };

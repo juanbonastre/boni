@@ -22,7 +22,7 @@ import {
 import { CODE_LIMITS, CODE_TYPE, type CodeFailure, CodeFault } from "./code.ts";
 import { type Connection, newConnection } from "./connections.ts";
 import type { Gate, PolicyCall } from "./effects.ts";
-import { CLOSED, type Execution, type RunDeps, run } from "./engine.ts";
+import { CLOSED, ERROR_FIELD, type Execution, type RunDeps, run } from "./engine.ts";
 import { ACTION, type Automation, MAIN, OUT, type Step } from "./format.ts";
 import { keep, runTest, stepPrints, type TestExecution } from "./partial.ts";
 import { preview } from "./preview.ts";
@@ -1007,6 +1007,112 @@ describe("reading collections from code", () => {
       expect(r.error).toMatchObject({ step: s.id("Código"), failure: { code } });
       // It was asked once, and never answered with why.
       expect(box.jobs).toHaveLength(1);
+    }
+  });
+
+  /** A «Código» whose `settings` are given, connected to the orders; and a policy that refuses its reads with a filter. */
+  const refusing = (
+    kind: "deny" | "confirm",
+    settings: Partial<Step["settings"]>,
+    mode = "perRow",
+  ) => {
+    const s = withSearch((x) =>
+      x
+        .step("Código", CODE_TYPE, { mode, source }, settings)
+        .arrow("Inicio", "Buscar")
+        .arrow("Buscar", "Código"),
+    );
+    const p = policy((c) =>
+      c.effect === "read" && c.step === s.id("Código") && "where.0.value" in c.values
+        ? kind === "deny"
+          ? { kind, rule: "test.no", reason: "secreto: what it could not read" }
+          : { kind, rule: "test.no" }
+        : { kind: "allow", rule: "test.allow" },
+    );
+    return { s, a: connect(s.build(), s, "Código", [newConnection(orders.key)]), p };
+  };
+  /** The row at place 1 asks for the read the policy refuses; the others for one it lets through. */
+  const oneRefused = () =>
+    fakeBox({
+      [source]: ({ at, job }) => {
+        const key = at === 1 ? "x" : "y";
+        if (!(key in job.reads))
+          return ask(key, key === "x" ? (reads.a as CodeRead) : (reads.c as CodeRead));
+        return { n: at, got: job.reads[key] ?? null };
+      },
+    });
+
+  it("AU-161 · AU-16 · a read the policy refuses, or would ask about, fails only the row that asked, and that row follows the step's «Si falla»: «Parar» stops the step there, «Seguir» drops it and «Salir por error» sends it out by «error», the others go on, the record counts it with the code, and «Reintentos» never tries it again", async () => {
+    for (const [kind, code] of [
+      ["deny", "policy.denied"],
+      ["confirm", "policy.waits"],
+    ] as const)
+      for (const onError of ["stop", "continue", "errorOutput"] as const) {
+        const box = oneRefused();
+        const { s, a, p } = refusing(kind, { onError, retry: { times: 2, waitMs: 1 } });
+        const e = await go(a, s.id("Inicio"), { box, collections: db(3), policy: p });
+        const record = e.steps[s.id("Código")];
+        const name = `${kind}, ${onError}`;
+        // One call with every row, then one for the rows still to answer: the refused row is never asked again.
+        expect(box.jobs, name).toHaveLength(2);
+        expect(record?.retries, name).toBe(0);
+        // The reason the policy gave may say what the code could not read: it goes nowhere.
+        expect(JSON.stringify(e), name).not.toContain("secreto");
+        if (onError === "stop") {
+          expect(e.state, name).toBe("failed");
+          expect(e.error, name).toMatchObject({
+            step: s.id("Código"),
+            row: 1,
+            rule: "test.no",
+            failure: { code },
+          });
+          continue;
+        }
+        expect(e.state, name).toBe("done");
+        expect(outOf(e, s.id("Código")), name).toEqual([
+          { n: 0, got: 3 },
+          { n: 2, got: 3 },
+        ]);
+        expect(record?.failed, name).toBe(1);
+        expect(record?.error, name).toMatchObject({ row: 1, rule: "test.no", failure: { code } });
+        const out = record?.out[OUT.error] ?? [];
+        if (onError === "continue") {
+          expect(out, name).toEqual([]);
+          continue;
+        }
+        expect(
+          out.map((r) => r.json[price]),
+          name,
+        ).toEqual([1]);
+        // The reason on «error» is the code and the policy's rule.
+        expect(out[0]?.json[ERROR_FIELD], name).toEqual({
+          message: `a read of the step's JavaScript was refused (${code})`,
+          rule: "test.no",
+        });
+      }
+  });
+
+  it("AU-161 · AU-16 · with «Una vez con todas las filas» a read the policy refuses fails the step as one unit: «Seguir» drops every row and «Salir por error» sends every row out by «error», with no retry", async () => {
+    for (const onError of ["continue", "errorOutput"] as const) {
+      const box = reader({ a: reads.a as CodeRead });
+      const { s, a, p } = refusing("deny", { onError, retry: { times: 2, waitMs: 1 } }, "all");
+      const e = await go(a, s.id("Inicio"), { box, collections: db(3), policy: p });
+      const record = e.steps[s.id("Código")];
+      expect(e.state, onError).toBe("done");
+      expect(box.jobs, onError).toHaveLength(1);
+      expect(record?.retries, onError).toBe(0);
+      expect(outOf(e, s.id("Código")), onError).toEqual([]);
+      expect(record?.failed, onError).toBe(3);
+      expect(record?.error, onError).toMatchObject({
+        rule: "test.no",
+        failure: { code: "policy.denied" },
+      });
+      expect(record?.error?.row, onError).toBeUndefined();
+      expect(
+        (record?.out[OUT.error] ?? []).map((r) => r.json[price]),
+        onError,
+      ).toEqual(onError === "errorOutput" ? [0, 1, 2] : []);
+      expect(JSON.stringify(e), onError).not.toContain("secreto");
     }
   });
 
