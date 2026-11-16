@@ -12500,7 +12500,7 @@ tr[data-boni-pointed] > td {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 6px;
-  align-items: center;
+  align-items: start;
 }
 .auto-conditions {
   min-width: 0;
@@ -12510,6 +12510,18 @@ tr[data-boni-pointed] > td {
 }
 .auto-conditions .db-filter-row {
   flex-wrap: wrap;
+}
+/* A condition's value takes its own line with the trash beside it, as a row of «Campo · Valor» ends, at any width:
+   «{ }» closes every value's row in one column (AU-20). 24 px: the trash (18) and the row's gap (6). */
+.auto-conditions .db-filter-row > .auto-value {
+  flex: 1 0 calc(100% - 24px);
+}
+/* A row's trash stays on its value's first line when an expression wraps and the value grows: 6 px centres its 18 px
+   on the 30 px of a control. */
+.auto-field-row > .icon-btn,
+.auto-conditions .db-filter-row > .icon-btn {
+  align-self: flex-start;
+  margin-top: 6px;
 }
 .auto-view-notice {
   display: flex;

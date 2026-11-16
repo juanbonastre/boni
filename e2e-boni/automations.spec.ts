@@ -2556,7 +2556,14 @@ test.describe("the step's view", () => {
           all.map((b) => {
             const r = b.getBoundingClientRect();
             const c = getComputedStyle(b);
+            // The row's trash, on the same line as «{ }».
+            const trash = b
+              .closest(".db-filter-row, .auto-field-row")
+              ?.querySelector(":scope > .icon-btn")
+              ?.getBoundingClientRect();
             return {
+              trashBeside:
+                !!trash && Math.abs(trash.top + trash.height / 2 - (r.top + r.height / 2)) < 4,
               right: Math.round(r.right),
               width: Math.round(r.width),
               height: Math.round(r.height),
@@ -2573,6 +2580,7 @@ test.describe("the step's view", () => {
         expect(t.width).toBe(all[0]?.width);
         expect(t.height).toBe(all[0]?.height);
         expect(t.look).toBe(all[0]?.look);
+        expect(t.trashBeside).toBe(true);
       }
       // Pressed or not, it is the same button: only its colour says «Expresión».
       expect(all.filter((t) => t.on)).toHaveLength(await view(page).locator(".auto-expr").count());
@@ -2606,6 +2614,10 @@ test.describe("the step's view", () => {
       }
       await expect(v.locator(".auto-expr-toggle")).toBeFocused();
     }
+    // At 900 px, where the step's view has two columns (AU-74), still one column.
+    await page.setViewportSize({ width: 900, height: 800 });
+    await expect(view(page)).toHaveClass(/\bnarrow\b/);
+    await oneColumn();
   });
   test("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async ({
     page,
