@@ -165,6 +165,11 @@ export const CODE_PROBLEMS = [
   "code.readInExpression",
   /** `await`, `async`, `import` or a generator: code gives its result at once. `detail.what`. */
   "code.cannotWait",
+  /**
+   * A warning: a field read of a step (`$('Paso').first().campo`) that the step's last test did not give (AU-25,
+   * AU-36). `detail.name` (the step), `detail.field`. It runs: the field is `undefined` if it is still not there.
+   */
+  "code.fieldNotGiven",
   /** A connection on a step type that takes none (AU-46). */
   "connection.notAllowed",
   /** A connection to a collection that does not exist. `detail.collection`. */
@@ -179,6 +184,9 @@ export const CODE_PROBLEMS = [
   "connection.limits",
 ] as const;
 export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
+
+/** The codes of `CODE_PROBLEMS` that are only warnings; every other is an error. */
+export const CODE_WARNINGS: readonly CodeProblemCode[] = ["code.fieldNotGiven"];
 
 /** A `Problem` with one of F14c's codes. Citations of steps keep the codes they have (`expr.unknownStep`, `expr.notBefore`, `expr.cannotPair`, `expr.noCurrentRow`). */
 export type CodeProblem = Omit<Problem, "code"> & { code: CodeProblemCode };

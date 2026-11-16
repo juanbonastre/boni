@@ -399,6 +399,9 @@ importers:
       '@boni/views':
         specifier: workspace:*
         version: link:../views
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
     devDependencies:
       '@types/node':
         specifier: 24.19.2
@@ -1225,6 +1228,11 @@ packages:
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}
     engines: {node: ^20.17.0 || >=22.9.0}
+
+  acorn@8.19.0:
+    resolution: {integrity: sha512-oJlA3XiRm7Cyk6qFD2Jn8ak9B7jSy0qy00ADO3+8dpT0LSjFihQYv4C02LFCSYJV3Q37xYwwRy5m+IpIiUzqWw==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -3095,6 +3103,8 @@ snapshots:
       d3-zoom: 3.0.1
 
   abbrev@4.0.0: {}
+
+  acorn@8.19.0: {}
 
   agent-base@7.1.4: {}
 

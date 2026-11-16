@@ -240,6 +240,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-02** (F14a, hecho) · Cada paso tiene un identificador fijo que no se ve y un nombre único que se ve. Las
   flechas y lo guardado usan el identificador; las expresiones citan el nombre. Cambiar el nombre reescribe las
   expresiones que lo citan (y el código, desde la F14c), y nada se rompe.
+  Hecho en la F14c (E2): `renameStep` reescribe `$('…')` en el JavaScript de los `{{ }}` y en el «Código», con
+  comillas simples, dobles o invertidas, sin tocar un texto ni un comentario que digan lo mismo.
 - **AU-03** (F14a, hecho) · Un paso tiene una entrada y una o más salidas con nombre («sí» y «no» en «Si»,
   «error» si se pide). A una entrada pueden llegar varias flechas y de una salida pueden salir varias. Las
   excepciones las dice el catálogo: un disparador no tiene entrada, «Combinar» tiene dos con nombre (AU-124) y
@@ -334,7 +336,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   `null`, el JSON para un objeto). Una expresión no lee colecciones: `$col` es solo de «Código» (AU-46). Mientras el
   servidor no le pasa la caja al motor, la validación sigue diciendo que el JavaScript está por llegar.
   Hecho en E1: la caja evalúa las expresiones de una petición para cada fila y las contesta en orden; `undefined` da
-  `null`. Falta: leer los `{{ }}` (E2) y escribirlos en el editor (pantallas).
+  `null`.
+  Hecho en E2: leerlos (`codeParts`, `isWholeExpression`, `joinParts`): dónde termina cada `{{ }}`, uno sin cerrar
+  da `code.syntax` con su sitio, una sentencia o una asignación no pasan, un valor de un solo `{{ }}` conserva su
+  tipo, y `expr.code` solo sale sin caja. Falta: que el motor los mande a la caja (E3) y escribirlos en el editor
+  (pantallas).
 - **AU-23** (F14c, pendiente) · Debajo de una expresión se ve lo que vale con la fila actual («= 5 · con la fila 3
   de 128»), y se pasa de fila. Si no se puede calcular dice qué hacer: «Prueba los pasos anteriores».
   En la F14c: el valor lo calcula el servidor en la caja (AU-27) con las filas que guardó la prueba y con su hora y su
@@ -352,7 +358,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   de JavaScript (`String`, `Array`, `Object`, `Math`, `JSON`), sin métodos añadidos a sus prototipos: los que n8n
   añade a los valores no se prometen. Un `$nombre` que no está en la lista no pasa la validación.
   Hecho en E1: en la caja, todo lo de la lista con su sentido, `$json` y `.item` fallan con todas las filas, un paso
-  que la petición no trae falla por su nombre y nada se añade a los prototipos. Falta (E2): `readCode` y sus avisos.
+  que la petición no trae falla por su nombre y nada se añade a los prototipos.
+  Hecho en E2: `readCode` lee los mismos nombres en los dos sitios, y la validación da `code.unknownGlobal`,
+  `expr.noCurrentRow`, `expr.notBefore`, `expr.cannotPair`, `code.readInExpression` y `code.cannotWait`. Falta:
+  verlos en el editor (pantallas).
 - **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
@@ -361,7 +370,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   En la F14c: una clave que la fila no tiene da `undefined`, no un error; el editor la subraya si la última prueba del
   paso citado no dio ese campo (AU-36).
   Hecho en E1: en la caja, una clave que falta da `undefined` y una como `__proto__`, `constructor` o `toString` es un
-  campo más, al entrar y al salir. Falta: `readCode` (E2), `rowsOf` (E3) y las claves en la vista (pantallas).
+  campo más, al entrar y al salir.
+  Hecho en E2: `readCode` dice qué campos lee el código (`$json.importe`, `$json['importe']`, desestructurando) y,
+  si pasa la fila entera o calcula la clave, que los lee todos. Falta: `rowsOf` (E3) y las claves en la vista
+  (pantallas).
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, pendiente) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
@@ -419,8 +431,10 @@ return categorias.map((c) => ({
   la caja no tiene una lectura, la evaluación se detiene ahí; el motor la hace y repite (§6, riesgo 4).
   Hecho en E1: en la caja, `find`, `get`, `count` y `sum` dan lo que trae la petición; sin ello la evaluación se para
   ahí, aunque el código atrape los errores, y dice la lectura tal como se escribió y su clave, y las demás filas de la
-  tanda siguen. Falta: las conexiones en la validación (E2), hacer las lecturas y repetir (E3), sobre el servidor
-  real (S1) y en la app (pantallas).
+  tanda siguen.
+  Hecho en E2: en la validación, `code.unknownCollection`, `code.notConnected` con la clave de la colección (lo que
+  necesita el botón) y `code.readInExpression`; con cualquiera, el paso ni se prueba ni se publica. Falta: hacer las
+  lecturas y repetir (E3), sobre el servidor real (S1) y el aviso con su botón en la app (pantallas).
 - **AU-32** (F14c, en parte) · El código no escribe por sí mismo (lo de A-09 se queda: pide, y Boni comprueba y
   aplica). Devuelve filas y las escriben los pasos «Colección» que le siguen, que pasan por la política; o pide
   guardar por una conexión que lo permite, y lo guarda el motor (AU-172 a AU-176, Juan, 2026-11-16).
@@ -465,14 +479,21 @@ return categorias.map((c) => ({
   operaciones, memoria, pila, tamaño de la respuesta, líneas de la consola y lecturas distintas, y tras cada uno la
   caja sirve la llamada siguiente. La pila es de 256 KB: con 512 KB una recursión sin fin desbordaba antes la pila del
   hilo de la caja y rompía la llamada entera; con 256 KB es un error del código, a unas 1.500 llamadas de hondo.
-  Falta: `code.long` (E2), `code.limit` y los topes del motor, entre ellos lo que se le manda a la caja (8 MB; su
+  Hecho en E2: `code.long`, con el tope y lo que tiene, para un «Código» y para el JavaScript de un `{{ }}`.
+  Falta: `code.limit` y los topes del motor, entre ellos lo que se le manda a la caja (8 MB; su
   puerta admite hasta 16) (E3), sin caja o con la caja ocupada (S1) y sus
   palabras en la app (pantallas).
-- **AU-36** (F14c, pendiente) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
+- **AU-36** (F14c, en parte) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
   conectadas, y marca lo que no existe antes de probar.
   En la F14c: el editor lee el código con el mismo lector que el servidor (`readCode`, `javascript.ts`), así que lo
   que marca es lo que dirá la validación. Un campo que la última prueba del paso citado no dio se subraya como aviso y
   no impide probar.
+  Hecho en E2: el modelo del editor. `completions` da los nombres de `CODE_GLOBALS`, los pasos que siempre corren
+  antes, los campos que dio la última prueba (se escribe la clave y se enseña el nombre), también tras `$json.` y
+  `$input.first().` con los de los pasos cuyas filas llegan a este, y las colecciones conectadas; tras otro punto no
+  da nada; cada problema lleva su sitio (`line`, `column`, `from`, `to`), contado desde el principio del valor; y un
+  campo que la última prueba no dio, del paso citado o de los que llegan, es `code.fieldNotGiven`, un aviso con el
+  que `canRun` sigue. Falta: el editor que los pinta (pantallas).
 - **AU-37** (F14c, en parte) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados. El
   código puede cambiar las filas que le llegan al paso (`for (const fila of $input.all()) fila.total = 1; return
   $input.all()`), y lo que devuelve es lo que da el paso. Cada evaluación tiene su propia copia de esas filas, así que
@@ -575,21 +596,27 @@ interface Connection {
 }
 ```
 
-- **AU-40** (F14c, pendiente) · Una conexión une un paso con una colección y dice qué puede hacer en ella: leer,
+- **AU-40** (F14c, en parte) · Una conexión une un paso con una colección y dice qué puede hacer en ella: leer,
   crear, modificar, eliminar. En el lienzo cuelga debajo del paso con una línea de puntos: una ficha por colección,
   con sus permisos en palabras («Lee · solo este año», «Crear: pregunta antes»).
   En la F14c: una conexión por colección, hasta 12 por paso, guardadas en el paso (`connections`).
-- **AU-41** (F14c, pendiente) · En la vista del paso es una tabla: una fila por colección y una columna por acción.
+  Hecho en E2: el formato (cerrado: una clave que no conoce no se lee), `connection.repeated`, `connection.unknown`
+  y `connection.many`, y `permissions`, de donde salen sus palabras. Falta: la ficha en el lienzo (pantallas).
+- **AU-41** (F14c, en parte) · En la vista del paso es una tabla: una fila por colección y una columna por acción.
   Leer es «No» o «Sí»; crear y modificar, «No», «Preguntar» o «Sí»; eliminar, solo «No» o «Preguntar», y manda a la
   papelera. Al conectar una colección solo se lee; cada permiso de escribir se da a mano. La fila se abre para poner
   los límites de cada acción (AU-43, AU-48), y un permiso con límites lo dice en su celda: «Sí · con filtro». En
   «Código» la tabla es la misma, con las cuatro columnas (AU-176, Juan, 2026-11-16).
   En la F14c: en un «Código», leer es siempre «Sí» (sin leer no hay conexión) y las tres de escribir son las de
   arriba.
+  Hecho en E2: `newConnection` solo lee, `connectionActions` de «Código» es leer, eliminar con «Sí» no se lee, y un
+  límite que no lo es (un campo que la colección no tiene, un límite de 0 o de más de 5.000) es `connection.limits`.
+  Hasta W1, un permiso de escribir en un «Código» es `connection.write`, como decía la regla antes del 2026-11-16; W1
+  lo quita. Falta: los permisos de guardar (W1) y la tabla (pantallas).
 - **AU-42** (F15, pendiente) · «Preguntar» es una propuesta: en una conversación, una tarjeta para aceptar o no; en
   segundo plano, espera en la Bandeja. La ejecución no se queda esperando: termina, y en «Ejecuciones» dice «1
   propuesta sin responder». «Sí» escribe con Deshacer.
-- **AU-43** (F14c, pendiente) · Leer puede llevar «Solo estas filas» (el filtro de las vistas), «Solo estos campos»
+- **AU-43** (F14c, en parte) · Leer puede llevar «Solo estas filas» (el filtro de las vistas), «Solo estos campos»
   y un límite. El filtro se suma a todo lo que el paso busque: puede estrechar, nunca ensanchar.
   En la F14c: el filtro vale para `find`, `get`, `count` y `sum`. Con «Solo estos campos» la fila llega con esos
   campos y su id, y no se puede filtrar, ordenar ni sumar por un campo que no está entre ellos: preguntar «¿es mayor
@@ -597,19 +624,28 @@ interface Connection {
   recorta sin fallar. El tope de 5.000 filas por lectura no recorta: una lectura que daría más falla diciéndolo,
   porque media colección dada como entera sumaría mal; `count` y `sum` no lo tienen. Cambiar un límite deja desfasada
   la prueba guardada del paso.
+  Hecho en E2: `narrow` suma el filtro de la conexión al que pide el código, niega lo que toca un campo oculto
+  (`code.read.query`) y pone el límite (uno pedido por encima del tope no lo levanta: al almacén se le piden como
+  mucho 5.001 filas y más de 5.000 fallan); `cutRead` recorta o falla con `code.limit`, y `asRead` da la fila con su
+  id y solo esos campos. Falta: la relación como id, sobre el servidor real (S1), y que cambiar un límite deje
+  desfasada la prueba (E3).
 - **AU-48** (F15, pendiente) · Cada acción de escribir lleva los suyos: modificar y eliminar, «Solo estas filas»;
   crear y modificar, «Solo estos campos». Por ejemplo, modificar solo la «Categoría» de los gastos que no la tienen.
   Crear puede llevar valores fijos que la IA no elige.
-- **AU-44** (F14c, pendiente) · Una frase calculada resume todas las conexiones de un paso, debajo de su tabla:
+- **AU-44** (F14c, en parte) · Una frase calculada resume todas las conexiones de un paso, debajo de su tabla:
   «Puede leer Gastos (solo los de este año) y Categorías, y proponer filas nuevas en Notas. No puede modificar ni
   eliminar nada.» En la F14c dice lo que lee y lo que el código puede guardar (AU-178). Al
   publicar, otra igual resume la automatización entera («Lo que podrá hacer», AU-96).
+  Hecho en E2: `permissions` da todo lo que la frase necesita (cada colección que se lee, con filtro, con menos
+  campos o con límite) y nada para un paso sin conexiones. Falta: la frase con sus palabras (pantallas).
 - **AU-45** (F15, pendiente) · Una conexión solo restringe. Nunca deja hacer lo que la política no deja: un dato de
   fuera se propone aunque diga «Sí», una colección privada no se puede conectar a un paso de IA, eliminar se
   pregunta siempre.
-- **AU-46** (F14c, pendiente) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
+- **AU-46** (F14c, en parte) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
+  Hecho en E2: `connectionActions` no da nada a ningún otro tipo, una conexión en él es `connection.notAllowed`, y un
+  «Código» sin conexiones valida y no lee ninguna colección. Falta: guardar con permiso (W1, W2).
 - **AU-47** (F14d, pendiente) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
 
@@ -1211,11 +1247,16 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   marcado como derivado: nunca vale como destino (P14).
   En la F14c: «lo que recibió» son sus filas, las filas de cada paso citado que se le mandaron, la etiqueta de quien
   escribió el código y todo lo que leyó. Se calcula por evaluación (por fila en «Una vez por fila»), nunca más fino.
-- **AU-163** (F14c, pendiente) · Qué recibe una evaluación lo decide el servidor leyendo el código antes de correrlo:
+- **AU-163** (F14c, en parte) · Qué recibe una evaluación lo decide el servidor leyendo el código antes de correrlo:
   los pasos y los campos que cita. Un paso citado con un nombre calculado no se admite.
   En la F14c: tampoco se admite `$col` con un nombre calculado, ni darle otro nombre a `$` o a `$col`. El lector no es
   la barrera: la barrera es que el servidor solo manda lo que el lector listó, así que el código que esconde una cita
   no recibe nada.
+  Hecho en E2: `readCode` lista los pasos citados y sus campos, sin contar comentarios ni textos, y da
+  `code.computed` para un `$(…)` o un `$col(…)` con un nombre calculado, para `$` o `$col` con otro nombre y para los
+  que se alcanzan por el objeto global (`globalThis`, `self` o un `this` que puede serlo), también si el objeto global
+  se guarda con otro nombre o se le pasa a una función. Falta (E3): que el trabajo que manda el motor lleve solo lo
+  que el lector listó.
 - **AU-164** (F14a, hecho) · Las filas llevan también la etiqueta del camino: lo que sale de una condición o de
   unas filas que dependen de algo de fuera se trata como de fuera (P15).
 - **AU-165** (F15, pendiente) · La política es el suelo. Una conexión, un ajuste o un «Sí» nunca dejan hacer lo que

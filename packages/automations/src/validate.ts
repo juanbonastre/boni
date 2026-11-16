@@ -18,10 +18,27 @@ import {
   resultName,
   stepType,
 } from "./catalogue.ts";
+import {
+  CODE_LIMITS,
+  CODE_MODES,
+  CODE_PARAMS,
+  CODE_TYPE,
+  CODE_WARNINGS,
+  type CodeProblem,
+} from "./code.ts";
+import { connectionProblems } from "./connections.ts";
 import type { CollectionShape } from "./effects.ts";
-import { parseExpression, printCitation } from "./expression.ts";
+import { type Citation, codeParts, parseExpression, printCitation } from "./expression.ts";
 import { type Automation, isExpr, MAX_RETRIES, type ParamValue, type Step } from "./format.ts";
 import { byCodeUnit, downstream, findCycle } from "./graph.ts";
+import {
+  type CodeContext,
+  inputFields,
+  isCodeContext,
+  placeIn,
+  readCode,
+  type Span,
+} from "./javascript.ts";
 
 /**
  * Every problem there is. A code is a key: each app says it to Juan in its `i18n.ts`, with what `detail` carries.
@@ -51,7 +68,7 @@ export const PROBLEMS = [
   "param.condition", // «Las que cumplan…» with no condition (AU-121)
   "param.sameName", // two results of «Agrupar» or «Contar o sumar» get one name, or one is named like a field it groups by (AU-120). detail: name
   // An expression (`param` is the path to it)
-  "expr.code", // not a simple citation: JavaScript arrives in F14c (AU-22)
+  "expr.code", // not a simple citation, and the run has no box: validated with a `CodeContext`, JavaScript is read (AU-22)
   "expr.unknownStep", // cites a name no step has. detail: name
   "expr.notBefore", // cites a step that does not always run before this one. detail: name
   "expr.cannotPair", // `.item` across a step that remakes the rows (AU-13). detail: name, by (the step between), first and all (the citations it proposes instead)
@@ -95,9 +112,19 @@ export interface ValidationContext {
  * its parameters in the catalogue's order, then the arrows' by index), the same for the same automation whatever
  * the order its steps were saved in. Empty when it can be published. Never throws on an automation `parseAutomation`
  * gave.
+ *
+ * With a `CodeContext` (a run that has the box) JavaScript is read: «Código» is a step type, a `{{ }}` that is not a
+ * simple citation is checked instead of being `expr.code`, and `codeProblems` adds what is wrong with each step's code
+ * and connections. Without one, every step's connections are still checked (`connection.*`), and only that.
  */
-export function validate(automation: Automation, context: ValidationContext): Problem[] {
-  const problems: Problem[] = [];
+export function validate(automation: Automation, context: CodeContext): (Problem | CodeProblem)[];
+export function validate(automation: Automation, context: ValidationContext): Problem[];
+export function validate(
+  automation: Automation,
+  context: ValidationContext,
+): (Problem | CodeProblem)[] {
+  const problems: (Problem | CodeProblem)[] = [];
+  const code = isCodeContext(context) ? context : undefined;
   const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
     problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
 
@@ -133,8 +160,10 @@ export function validate(automation: Automation, context: ValidationContext): Pr
     if (!step.name.trim()) add("step.emptyName", at);
     else if ((byName.get(step.name)?.length ?? 0) > 1)
       add("step.duplicateName", { ...at, detail: { name: step.name } });
-    if (!stepType(step.type)) {
+    const isCode = code !== undefined && step.type === CODE_TYPE;
+    if (!isCode && !stepType(step.type)) {
       add("step.unknownType", { ...at, detail: { type: step.type } });
+      problems.push(...connectionProblems(step, context));
       continue;
     }
     const retry = step.settings?.retry;
@@ -147,7 +176,15 @@ export function validate(automation: Automation, context: ValidationContext): Pr
     )
       add("step.settings", { ...at, param: "retry" });
     if (!isTrigger(step) && !reached.has(step.id)) add("step.unreachable", at);
-    new StepCheck(step, context, byId, byName, down, add).run();
+    if (isCode) {
+      codeParams(step, add);
+      problems.push(...codeProblems(step, automation, code));
+      continue;
+    }
+    new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
+    problems.push(
+      ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
+    );
     for (const out of outputsOf(step))
       if (
         OUTPUT_BRANCHES.has(step.type) &&
@@ -188,6 +225,64 @@ export function validate(automation: Automation, context: ValidationContext): Pr
 
 type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
 
+/**
+ * The parameters of a «Código» (AU-26, AU-30): «Se ejecuta», one of `CODE_MODES` and absent for the first, and the
+ * source, a text; neither an expression. What is wrong inside the source is `codeProblems`'.
+ */
+function codeParams(step: Step, add: Add): void {
+  const at = { step: step.id };
+  const { mode, source } = CODE_PARAMS;
+  for (const k of Object.keys(step.params).sort(byCodeUnit))
+    if (k !== mode && k !== source) add("param.unknown", { ...at, param: k });
+  for (const k of [mode, source]) {
+    const v = step.params[k];
+    if (v === undefined) {
+      if (k === source) add("param.required", { ...at, param: k });
+    } else if (isExpr(v)) add("param.shape", { ...at, param: k });
+    else if (k === mode ? !(CODE_MODES as readonly unknown[]).includes(v) : typeof v !== "string")
+      add("param.value", { ...at, param: k });
+  }
+}
+
+/**
+ * What is wrong with citing a step from `here` (AU-13, AU-24): one that does not exist, one that does not always run
+ * before, `.item` where there is no current row or across a step that remakes the rows. The same for a simple
+ * citation and for `$('…')` in JavaScript (javascript.ts).
+ */
+export function citeProblem(
+  cite: Citation,
+  here: Step,
+  byId: ReadonlyMap<string, Step>,
+  byName: ReadonlyMap<string, readonly Step[]>,
+  down: ReadonlyMap<string, ReadonlySet<string>>,
+  perRow: boolean,
+): { code: ProblemCode; detail?: Record<string, string> } | undefined {
+  const { step: name, pick } = cite;
+  if (name === null) return perRow ? undefined : { code: "expr.noCurrentRow" };
+  const cited = byName.get(name)?.[0];
+  if (!cited) return { code: "expr.unknownStep", detail: { name } };
+  if (!down.get(cited.id)?.has(here.id)) return { code: "expr.notBefore", detail: { name } };
+  if (pick !== "item") return undefined;
+  if (!perRow) return { code: "expr.noCurrentRow" };
+  // A step between the two that remakes the rows: the current row does not come from one of the cited step's.
+  const by = [...(down.get(cited.id) ?? [])]
+    .filter((id) => id !== here.id && down.get(id)?.has(here.id))
+    .sort(byCodeUnit)
+    .map((id) => byId.get(id))
+    .find((s) => s && actionOf(s)?.pairs === false);
+  if (!by) return undefined;
+  // What it proposes instead, written as Juan would cite it: the first row, or all of them (AU-13).
+  return {
+    code: "expr.cannotPair",
+    detail: {
+      name,
+      by: by.name,
+      first: printCitation({ ...cite, pick: "first" }),
+      all: `${printCitation({ ...cite, pick: "first", path: [] }).slice(0, -".first()".length)}.all()`,
+    },
+  };
+}
+
 /** The parameters of one step, in the catalogue's order, then the keys it does not declare. */
 class StepCheck {
   private readonly step: Step;
@@ -198,6 +293,8 @@ class StepCheck {
   private readonly add: Add;
   private readonly shape: CollectionShape | undefined;
   private readonly perRow: boolean;
+  /** JavaScript is read (`codeProblems`): a code part is not `expr.code`. */
+  private readonly withBox: boolean;
 
   constructor(
     step: Step,
@@ -206,7 +303,9 @@ class StepCheck {
     byName: Map<string, Step[]>,
     down: Map<string, Set<string>>,
     add: Add,
+    withBox = false,
   ) {
+    this.withBox = withBox;
     this.step = step;
     this.context = context;
     this.byId = byId;
@@ -439,46 +538,172 @@ class StepCheck {
 
   private expression(expr: string, path: string): void {
     for (const part of parseExpression(expr)) {
-      if (part.kind === "code") this.problem("expr.code", path);
+      if (part.kind === "code" && !this.withBox) this.problem("expr.code", path);
       if (part.kind !== "cite") continue;
-      const { step: name, pick } = part.cite;
-      if (name === null) {
-        if (!this.perRow) this.problem("expr.noCurrentRow", path);
-        continue;
-      }
-      const cited = this.byName.get(name)?.[0];
-      if (!cited) {
-        this.problem("expr.unknownStep", path, { name });
-        continue;
-      }
-      if (!this.down.get(cited.id)?.has(this.step.id)) {
-        this.problem("expr.notBefore", path, { name });
-        continue;
-      }
-      if (pick !== "item") continue;
-      if (!this.perRow) {
-        this.problem("expr.noCurrentRow", path);
-        continue;
-      }
-      // A step between the two that remakes the rows: the current row does not come from one of the cited step's.
-      const by = [...(this.down.get(cited.id) ?? [])]
-        .filter((id) => id !== this.step.id && this.down.get(id)?.has(this.step.id))
-        .sort(byCodeUnit)
-        .map((id) => this.byId.get(id))
-        .find((s) => s && actionOf(s)?.pairs === false);
-      // What it proposes instead, written as Juan would cite it: the first row, or all of them (AU-13).
-      const instead = printCitation({ ...part.cite, pick: "first" });
-      if (by)
-        this.problem("expr.cannotPair", path, {
-          name,
-          by: by.name,
-          first: instead,
-          all: `${printCitation({ ...part.cite, pick: "first", path: [] }).slice(0, -".first()".length)}.all()`,
-        });
+      const wrong = citeProblem(
+        part.cite,
+        this.step,
+        this.byId,
+        this.byName,
+        this.down,
+        this.perRow,
+      );
+      if (wrong) this.problem(wrong.code, path, wrong.detail);
     }
   }
 }
 
+// ---------------------------------------------------------------- JavaScript and connections
+
+/** Whether a step runs once per row: what `$json` and `.item` need. */
+const perRowOf = (step: Step) =>
+  step.type === CODE_TYPE
+    ? step.params[CODE_PARAMS.mode] === "perRow"
+    : actionOf(step)?.mode === "perRow";
+
+/**
+ * A piece of JavaScript of a step and the parameter it is in: a «Código»'s source, or the inside of one `{{ }}`. `text`
+ * is what its places count from (the whole value of the parameter) and `at` where the piece starts in it. `open`: a
+ * `{{` that never closes, at that offset.
+ */
+interface Piece {
+  source: string;
+  as: "expression" | "code";
+  param: string;
+  text: string;
+  at: number;
+  open?: number;
+}
+
+function piecesOf(step: Step): Piece[] {
+  if (step.type === CODE_TYPE) {
+    const source = step.params[CODE_PARAMS.source];
+    return typeof source === "string"
+      ? [{ source, as: "code", param: CODE_PARAMS.source, text: source, at: 0 }]
+      : [];
+  }
+  const out: Piece[] = [];
+  const walk = (v: ParamValue, path: string) => {
+    if (isExpr(v)) {
+      const { parts, open } = codeParts(v.expr);
+      for (const p of parts)
+        out.push({ source: p.source, as: "expression", param: path, text: v.expr, at: p.at });
+      if (open !== undefined)
+        out.push({ source: "", as: "expression", param: path, text: v.expr, at: open, open });
+    } else if (Array.isArray(v))
+      v.forEach((x, i) => {
+        walk(x, `${path}.${i}`);
+      });
+    else if (typeof v === "object" && v !== null)
+      for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
+  };
+  for (const [k, v] of Object.entries(step.params)) walk(v, k);
+  return out;
+}
+
+/**
+ * Everything wrong with a step's JavaScript and its connections (`CODE_PROBLEMS`, and the citations' own codes of
+ * validate.ts: `expr.unknownStep`, `expr.notBefore`, `expr.cannotPair`, `expr.noCurrentRow`), for `validate` to add
+ * to its list: nothing with an error here is tested or published (AU-31). A place (`detail.from`, `to`, `line`,
+ * `column`) counts from the start of the parameter's value: the «Código»'s source, or the whole text of a value with
+ * `{{ }}` (AU-36).
+ */
+export function codeProblems(
+  step: Step,
+  automation: Automation,
+  context: CodeContext,
+): (CodeProblem | Problem)[] {
+  const out: (CodeProblem | Problem)[] = connectionProblems(step, context);
+  const perRow = perRowOf(step);
+  const connected = new Set(
+    (step.connections ?? []).filter((c) => c.read !== false).map((c) => c.collection),
+  );
+  const down = downstream(automation);
+  const byId = new Map(automation.steps.map((s) => [s.id, s]));
+  const byName = new Map<string, Step[]>();
+  for (const s of automation.steps) byName.set(s.name, [...(byName.get(s.name) ?? []), s]);
+  for (const piece of piecesOf(step)) {
+    const add = (
+      code: (CodeProblem | Problem)["code"],
+      at: Pick<Span, "from" | "to"> | undefined,
+      detail: Record<string, string | number> = {},
+      severity: "error" | "warning" = (CODE_WARNINGS as readonly string[]).includes(code)
+        ? "warning"
+        : "error",
+    ) =>
+      out.push({
+        code,
+        severity,
+        step: step.id,
+        param: piece.param,
+        detail: { ...detail, ...(at ? placeIn(piece.text, piece.at, at) : {}) },
+      } as CodeProblem | Problem);
+    if (piece.open !== undefined) {
+      add("code.syntax", { from: 0, to: 2 }, { message: "a `{{` that never closes" });
+      continue;
+    }
+    const max = piece.as === "code" ? CODE_LIMITS.sourceChars : CODE_LIMITS.expressionChars;
+    if (piece.source.length > max) {
+      add("code.long", undefined, { max, got: piece.source.length });
+      continue;
+    }
+    const reading = readCode(piece.source, piece.as);
+    for (const p of reading.problems)
+      add(
+        p.code,
+        p.detail && typeof p.detail.from === "number" ? spanFrom(p.detail) : undefined,
+        withoutPlace(p.detail),
+        p.severity,
+      );
+    if (reading.input?.current && !perRow) add("expr.noCurrentRow", reading.input.at[0]);
+    if (reading.input && reading.input.fields !== "all") {
+      const given = inputFields(step, automation, context);
+      if (given)
+        for (const field of reading.input.fields)
+          if (!given.fields.some((f) => f.key === field))
+            add("code.fieldNotGiven", reading.input.at[0], { name: given.names.join(", "), field });
+    }
+    for (const s of reading.steps) {
+      const wrong = citeProblem(
+        {
+          step: s.name,
+          pick: s.item ? "item" : "first",
+          path: s.fields === "all" ? [] : [...s.fields].slice(0, 1),
+        },
+        step,
+        byId,
+        byName,
+        down,
+        perRow,
+      );
+      if (wrong) {
+        add(wrong.code, s.at[0], wrong.detail);
+        continue;
+      }
+      const tested = context.testedFields?.(s.name);
+      if (tested && s.fields !== "all")
+        for (const field of s.fields)
+          if (!tested.some((f) => f.key === field))
+            add("code.fieldNotGiven", s.at[0], { name: s.name, field });
+    }
+    if (piece.as === "code")
+      for (const c of reading.collections) {
+        const key = context.collectionNamed(c.name);
+        if (key === undefined) add("code.unknownCollection", c.at[0], { name: c.name });
+        else if (!connected.has(key)) add("code.notConnected", c.at[0], { collection: key });
+      }
+  }
+  return out;
+}
+
+const PLACE = ["line", "column", "from", "to"];
+const spanFrom = (d: Record<string, string | number>) => ({
+  from: Number(d.from),
+  to: Number(d.to),
+});
+const withoutPlace = (d: Record<string, string | number> | undefined) =>
+  Object.fromEntries(Object.entries(d ?? {}).filter(([k]) => !PLACE.includes(k)));
+
 /** Whether a list of problems lets the automation run: no errors (warnings do not count). */
-export const canRun = (problems: readonly Problem[]): boolean =>
+export const canRun = (problems: readonly Pick<Problem, "severity">[]): boolean =>
   problems.every((p) => p.severity !== "error");

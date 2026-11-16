@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@boni/entities": "workspace:*",
-    "@boni/views": "workspace:*"
+    "@boni/views": "workspace:*",
+    "acorn": "8.19.0"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
