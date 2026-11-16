@@ -125,10 +125,19 @@ export function under(
 
 /** The cap of vitest's limits: 30 s for a test, 60 s for a hook; a hang still fails. */
 export const TIMEOUT_CAP = 6;
+/**
+ * The floor of vitest's limits: 20 s for a test, 40 s for a hook, on any machine. They are set once, when a package's
+ * tests start, and a load that comes after is not in them: with ten busy loops starting with the run, the factor read
+ * at the start went from 1.3 to 2.5 under the same load (the load average lags, and the reference sometimes ran
+ * between the loops), while the heavy tests under such a load took up to 17 s, and a hook 16 s (task 134). These limits
+ * only catch a hang; how fast the code is, is `under`'s.
+ */
+export const TIMEOUT_FLOOR = 4;
 
 /**
- * The factor for a limit on the clock that only catches a hang: the reference's, or twice the load per core of the last
- * minute or of the last five, whichever is more, up to `TIMEOUT_CAP`. Twice, because it is taken when a package's tests
+ * The factor for a limit on the clock that only catches a hang: `TIMEOUT_FLOOR`, the reference's, or twice the load per
+ * core of the last minute or of the last five, whichever is more, up to `TIMEOUT_CAP` (the reference's counts only if
+ * `CLOCK_CAP` ever rises above the floor). Twice, because it is taken when a package's tests
  * start, and the heavy tests then ran slower than the load alone says; the five minutes too, because the load comes in
  * waves (task 134, measured: «brings the mail through its piece…» 17 s at 2.5 per core, the planner's evaluation 1.8 s
  * free and 18.8 to 21 s at 3.7 per core, a hook of AU-60 16 s at 2.5 per core; a login of the API v1 0.45 s free and
@@ -136,7 +145,7 @@ export const TIMEOUT_CAP = 6;
  */
 export function stretch(p: Pace = pace()): number {
   const load = Math.max(p.load, p.recent ?? 0);
-  return Math.min(TIMEOUT_CAP, Math.max(p.clock, clamp(2 * load, TIMEOUT_CAP)));
+  return Math.min(TIMEOUT_CAP, Math.max(TIMEOUT_FLOOR, p.clock, 2 * load));
 }
 
 export function timeouts(p: Pace = pace()): { testTimeout: number; hookTimeout: number } {
