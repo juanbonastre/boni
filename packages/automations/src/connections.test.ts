@@ -21,6 +21,7 @@ import {
 } from "./connections.ts";
 import { FormatError, parseAutomation, type Step } from "./format.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
+import { stepPrints } from "./partial.ts";
 import { validate } from "./validate.ts";
 
 const next = ids(11);
@@ -432,9 +433,36 @@ describe("the limits of reading", () => {
   it.todo(
     "AU-43 · a relation of a row read comes as the related row's id, never its fields: the other collection is read only through a connection of its own (S1: the server's read, apps/server/src/automations/box.ts)",
   );
-  it.todo(
-    "AU-43 · a step's print holds its connections: changing a limit, or connecting or disconnecting a collection, makes its kept test stale (E3: the print of preview.ts)",
-  );
+  it("AU-43 · a step's print holds its connections: changing a limit, or connecting or disconnecting a collection, makes its kept test stale (E3: the print of preview.ts)", () => {
+    const draft = (connections?: Connection[]) => {
+      const s = sketch(12)
+        .step("Inicio", "manual", { fields: [] })
+        .step("Código", CODE_TYPE, { mode: "all", source: "return $col('Pedidos').find()" })
+        .arrow("Inicio", "Código");
+      const a = s.build();
+      if (connections) (a.steps[1] as Step).connections = connections;
+      return { a, code: s.id("Código"), start: s.id("Inicio") };
+    };
+    const printOf = (connections?: Connection[]) => {
+      const { a, code, start } = draft(connections);
+      const p = stepPrints(a, {}, (t) => t);
+      return { code: p[code], start: p[start] };
+    };
+    const base = printOf([newConnection(orders.key)]);
+    for (const other of [
+      [{ ...newConnection(orders.key), read: { limit: 10 } }],
+      [{ ...newConnection(orders.key), read: { where: open } }],
+      [newConnection(orders.key), newConnection(notes.key)],
+      [],
+    ]) {
+      const p = printOf(other);
+      expect(p.code, JSON.stringify(other)).not.toBe(base.code);
+      // What a step before it kept stays good.
+      expect(p.start).toBe(base.start);
+    }
+    // No connections and an empty list are the same draft: an old kept test is not made stale by the field.
+    expect(printOf([]).code).toBe(printOf(undefined).code);
+  });
 
   it("AU-44 · the sentence under the table is made from `permissions` alone: in F14c it names every collection read, each with whether it has a filter, fewer fields or a limit, and a step with no connection says that it reads nothing", () => {
     const given = permissions([

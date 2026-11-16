@@ -109,7 +109,8 @@ export const CODE_FAILURES = [
   "code.read.notConnected",
   /**
    * A read that is not one. `detail.collection`; `detail.why`: "where", "sort", "limit", "id", "field" (it has no
-   * such field: `detail.field`), "hidden" (the connection does not let that field be read: `detail.field`),
+   * such field: `detail.field`), "hidden" (the connection does not let that field be read: `detail.field`), "op"
+   * (an operation that is not find, get, count or sum),
    * "notNumber" (`sum` of a field that is not a number).
    */
   "code.read.query",

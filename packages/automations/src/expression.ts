@@ -301,6 +301,13 @@ export interface Scope {
   row(step: string, pick: Citation["pick"]): Row;
   /** The label of what Juan wrote in the automation: its fixed values and the text around a citation. */
   literal: Label;
+  /**
+   * What the JavaScript of one `{{ }}` gave for this unit, by its source (F14c): the engine evaluates a step's
+   * JavaScript in the box before its rows are worked on (box.ts, AU-38), and this hands back each value with the
+   * label of its evaluation, derived. Throws what made it fail. Absent where there is no box: a `code` part then
+   * throws, as before F14c.
+   */
+  code?(source: string): Labeled<Cell>;
 }
 
 /**
@@ -311,7 +318,9 @@ export interface Scope {
  * - text with citations: a string, with the joined label of `scope.literal` and of every field cited, derived (it
  *   can never be a destination, P14);
  * - a structure: each value inside it, resolved the same way; its label is the join of them all.
- * Throws `CiteError`, and an Error for a `code` part (F14c).
+ * - with JavaScript (a `code` part): what `scope.code` gave it, the type kept when it is the whole value (AU-22),
+ *   its label joined with the rest, derived.
+ * Throws `CiteError`, and for a `code` part what `scope.code` throws, or an Error when the scope has none.
  */
 export function resolve(value: ParamValue, scope: Scope): Labeled<Cell> {
   if (isExpr(value)) return resolveExpr(value.expr, scope);
@@ -356,9 +365,22 @@ const asText = (v: Cell): string =>
 
 function resolveExpr(expr: string, scope: Scope): Labeled<Cell> {
   const parts = parseExpression(expr);
-  for (const p of parts)
-    if (p.kind === "code")
-      throw new Error("expr.code: JavaScript in an expression arrives in F14c");
+  if (parts.some((p) => p.kind === "code")) {
+    const code = scope.code;
+    if (!code) throw new Error("expr.code: JavaScript in an expression needs the box");
+    const values = parts.flatMap((p) =>
+      p.kind === "cite" ? [citeValue(p.cite, scope)] : p.kind === "code" ? [code(p.source)] : [],
+    );
+    if (parts.length === 1) return { ...(values[0] as Labeled<Cell>), derived: true };
+    return {
+      value: joinParts(
+        parts,
+        values.map((v) => v.value),
+      ),
+      label: join(scope.literal, ...values.map((v) => v.label)),
+      derived: true,
+    };
+  }
   const only = parts.length === 1 ? parts[0] : undefined;
   if (only?.kind === "cite") return citeValue(only.cite, scope);
   const cited = parts.flatMap((p) => (p.kind === "cite" ? [citeValue(p.cite, scope)] : []));

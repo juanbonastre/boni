@@ -47,7 +47,9 @@ describe("the box", () => {
     it(`ends «${name}» as it should, and goes on answering`, async () => {
       const code = readFileSync(join(CASES, name), "utf8");
       const expect1 = /^\/\/ expect: (.*)$/m.exec(code)?.[1] ?? "";
-      const r = await ask(call(code, "f", {}));
+      // A case may ask for its own limits, as a request may (`// limits: {…}`).
+      const limits = /^\/\/ limits: (.*)$/m.exec(code)?.[1];
+      const r = await ask(call(code, "f", {}, limits ? { limits: JSON.parse(limits) } : {}));
       if (expect1.startsWith("ok ")) {
         expect(r).toMatchObject({ ok: true });
         expect(r.ok && r.output).toEqual(JSON.parse(expect1.slice(3)));

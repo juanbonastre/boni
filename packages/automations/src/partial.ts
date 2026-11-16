@@ -5,8 +5,9 @@
  *
  * What makes a step «changed» is its **print**: one digest per step, the same for a step that would do the same with
  * the same input. A step's print is made of
- * - its type, its action, its parameters and its settings but `note` (a setting it does not hold counts as its
- *   default), each citation counted by the id of the step it cites and never by that step's name;
+ * - its type, its action, its parameters, its connections (F14c) and its settings but `note` (a setting it does not
+ *   hold counts as its default), each citation counted by the id of the step it cites and never by that step's
+ *   name, in its JavaScript too (`$('…')`, in a `{{ }}` or a «Código»);
  * - the print of every step an arrow reaches it from, with the arrow's output and input, in the order of
  *   `arrowsInto`, and the print of every step it cites;
  * - for a trigger, the fields it was last tested with (`tested`), or nothing when it never was.
@@ -18,14 +19,17 @@
  * reuses and what is «puede estar vieja» (AU-92). The app never computes a print.
  */
 import { actionOf, inputsOf, isTrigger } from "./catalogue.ts";
+import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import {
   CannotRun,
   checkTriggerRow,
   type Execution,
+  javascriptOf,
   type RunDeps,
   type RunInput,
   runPlanned,
   type StepRecord,
+  validationOf,
 } from "./engine.ts";
 import { type Citation, citationsIn, parseExpression } from "./expression.ts";
 import {
@@ -36,9 +40,10 @@ import {
   type Step,
 } from "./format.ts";
 import { arrowsInto, byCodeUnit, executionOrder } from "./graph.ts";
+import { readCode, renameInCode } from "./javascript.ts";
 import type { Cell } from "./rows.ts";
 import { canonical } from "./steps.ts";
-import { canRun, validate } from "./validate.ts";
+import { canRun, type ValidationContext, validate } from "./validate.ts";
 
 /** A step's print: a digest, compared only for equality. */
 export type Print = string;
@@ -54,6 +59,23 @@ export interface Kept {
    * calculated with, so it shows what the test gave (AU-27). Absent on a step kept before F14c's engine.
    */
   clock?: { now: number; seed: number };
+}
+
+/**
+ * What a test keeps of one step it decided and did not reuse: its record and print, when it ran, and the instant
+ * and seed its JavaScript saw (AU-34), when it had any. Undefined for a step the test did not run.
+ */
+export function keep(execution: TestExecution, step: string, print: Print): Kept | undefined {
+  const record = execution.steps[step];
+  if (!record || !execution.ran.includes(step)) return undefined;
+  return {
+    print,
+    record,
+    at: execution.started,
+    ...(execution.seed === undefined
+      ? {}
+      : { clock: { now: execution.started, seed: execution.seed } }),
+  };
 }
 
 /**
@@ -77,11 +99,10 @@ export function stepPrints(
     if (!isTrigger(s)) {
       for (const a of automation.arrows)
         if (a.to.step === s.id && byId.has(a.from.step)) set.add(a.from.step);
-      for (const c of citationsIn(s.params))
-        if (c.step !== null) {
-          const id = idOf.get(c.step);
-          if (id && id !== s.id) set.add(id);
-        }
+      for (const name of citedBy(s)) {
+        const id = idOf.get(name);
+        if (id && id !== s.id) set.add(id);
+      }
     }
     from.set(s.id, set);
   }
@@ -106,7 +127,12 @@ export function stepPrints(
       canonical({
         type: s.type,
         action: actionOf(s)?.key ?? null,
-        params: byIds(s.params, idOf),
+        params:
+          s.type === CODE_TYPE
+            ? { ...(byIds(s.params, idOf) as object), [CODE_PARAMS.source]: sourceById(s, idOf) }
+            : byIds(s.params, idOf),
+        // Only when it has some: the print of every step kept before F14c stays the same.
+        ...(s.connections?.length ? { connections: s.connections } : {}),
         settings,
         arrows,
         cited,
@@ -135,6 +161,36 @@ function topological(
   return [...order, ...[...left.keys()].sort(byCodeUnit)];
 }
 
+/** The names of the steps a step cites: in its simple citations and in its JavaScript (AU-163). */
+export function citedBy(step: Step): string[] {
+  const names = new Set<string>();
+  for (const c of citationsIn(step.params)) if (c.step !== null) names.add(c.step);
+  const js = javascriptOf(step);
+  for (const source of js?.sources ?? [])
+    for (const c of readCode(source, js?.kind === "code" ? "code" : "expression").steps)
+      names.add(c.name);
+  return [...names];
+}
+
+/** JavaScript with every `$('Name')` of a step that exists written as its id: what a rename does not change. */
+function codeById(
+  source: string,
+  as: "expression" | "code",
+  idOf: ReadonlyMap<string, string>,
+): string {
+  let out = source;
+  for (const c of readCode(source, as).steps) {
+    const id = idOf.get(c.name);
+    if (id) out = renameInCode(out, c.name, `#${id}`);
+  }
+  return out;
+}
+
+const sourceById = (s: Step, idOf: ReadonlyMap<string, string>): unknown => {
+  const source = s.params[CODE_PARAMS.source];
+  return typeof source === "string" ? codeById(source, "code", idOf) : source;
+};
+
 /** A parameter's value with every citation naming the step it cites by id, never by name. */
 function byIds(value: ParamValue, idOf: ReadonlyMap<string, string>): unknown {
   if (isExpr(value))
@@ -144,7 +200,7 @@ function byIds(value: ParamValue, idOf: ReadonlyMap<string, string>): unknown {
           ? { cite: citeById(p.cite, idOf) }
           : p.kind === "text"
             ? { text: p.text }
-            : { code: p.source },
+            : { code: codeById(p.source, "expression", idOf) },
       ),
     };
   if (Array.isArray(value)) return value.map((v) => byIds(v, idOf));
@@ -223,9 +279,7 @@ export async function runTest(input: TestInput, deps: RunDeps): Promise<TestExec
     order = order.filter((id) => before.has(id));
   }
   const decided = new Set(order);
-  const problems = validate(automation, {
-    collection: (key) => deps.collections.shape(key),
-  }).filter((p) => {
+  const problems = validate(automation, validationOf(deps) as ValidationContext).filter((p) => {
     if (p.step !== undefined && !decided.has(p.step)) return false;
     const arrow = p.arrow === undefined ? undefined : automation.arrows[p.arrow];
     return !arrow || decided.has(arrow.to.step);
@@ -244,7 +298,7 @@ export async function runTest(input: TestInput, deps: RunDeps): Promise<TestExec
       const s = byId.get(id) as Step;
       const hangs = [
         ...automation.arrows.filter((a) => a.to.step === id).map((a) => a.from.step),
-        ...citationsIn(s.params).flatMap((c) => (c.step === null ? [] : [idOf.get(c.step) ?? ""])),
+        ...citedBy(s).map((name) => idOf.get(name) ?? ""),
       ].filter((other) => decided.has(other));
       if (hangs.every((other) => reuse.has(other))) reuse.set(id, k.record);
     }

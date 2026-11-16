@@ -28,7 +28,17 @@
  * that failed and goes on; «Salir por error» sends them out by `OUT.error`, each with the field `ERROR_FIELD`.
  */
 import type { Label, Labeled } from "@boni/entities";
-import type { Box, ConsoleLine, ReadRecord } from "./box.ts";
+import {
+  type Box,
+  type ConsoleLine,
+  type EvaluateInput,
+  evaluate,
+  limitFault,
+  type ReadRecord,
+  rowsOf,
+  type StepEvaluation,
+  seedOf,
+} from "./box.ts";
 import {
   actionOf,
   inputsOf,
@@ -38,6 +48,14 @@ import {
   paramsOf,
   paramValue,
 } from "./catalogue.ts";
+import {
+  CODE_LIMITS,
+  CODE_PARAMS,
+  CODE_TYPE,
+  type CodeFailure,
+  CodeFault,
+  type CodeMode,
+} from "./code.ts";
 import { COLLECTION } from "./collection.ts";
 import {
   type Asked,
@@ -49,7 +67,14 @@ import {
   guard,
   type Policy,
 } from "./effects.ts";
-import { type Citation, CiteError, citationsIn, resolve, type Scope } from "./expression.ts";
+import {
+  type Citation,
+  CiteError,
+  citationsIn,
+  codeParts,
+  resolve,
+  type Scope,
+} from "./expression.ts";
 import { type StepFailure, StepFault } from "./failures.ts";
 import {
   type Automation,
@@ -60,9 +85,10 @@ import {
   type Step,
 } from "./format.ts";
 import { arrowsInto, executionOrder } from "./graph.ts";
+import { type CodeContext, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
 import { fieldLabel, joinAll, StopRun, TRANSFORM_AND_LOGIC } from "./steps.ts";
-import { canRun, type Problem, validate } from "./validate.ts";
+import { canRun, type Problem, type ValidationContext, validate } from "./validate.ts";
 
 export { StopRun } from "./steps.ts";
 
@@ -89,6 +115,11 @@ export interface StepError {
   row?: number;
   /** Why, as a key the screen can say, with the parameter at fault (failures.ts; set from F14b on). */
   failure?: StepFailure;
+  /**
+   * F14c: why its JavaScript failed (code.ts), while `failure.code` is `other` until the screen has words for these
+   * codes. The code's own message (`code.threw`) is here, in `detail.message`, and never in `message`.
+   */
+  why?: CodeFailure;
 }
 
 /** What is kept of a step in a run (AU-15). What an AI step cost arrives with those steps (F15). */
@@ -127,7 +158,8 @@ export interface Execution {
   started: number;
   /**
    * The seed of its chance (AU-34, F14c): with `started`, which is also the instant its JavaScript sees, all a run
-   * knows of the clock and of chance. Absent until F14c's engine is in.
+   * knows of the clock and of chance. `RunInput.seed`, or one made from `started` when it has none. Only in a run
+   * where some JavaScript went to the box.
    */
   seed?: number;
   ms: number;
@@ -153,6 +185,11 @@ export interface RunInput {
   fields: Pick<Row, "json" | "label" | "fields">;
   /** Runs everything and writes nothing (`PolicyCall.test`). */
   test: boolean;
+  /**
+   * The seed of the run's chance (AU-34): drawn once by whoever starts the run and kept with it, so repeating the run
+   * with it and with the same instant gives the same. Absent: made from the run's instant.
+   */
+  seed?: number;
 }
 
 export interface RunDeps {
@@ -165,10 +202,22 @@ export interface RunDeps {
   /** The language «Dar formato» writes in. */
   locale: string;
   /**
-   * Where JavaScript runs (box.ts, F14c). Not read yet. Without one, an automation with JavaScript does not run:
-   * validation refuses it (`expr.code`) as it does today.
+   * Where JavaScript runs (box.ts, F14c). Without one, an automation with JavaScript does not run: validation refuses
+   * it (`expr.code`) as before F14c. With one, validation reads the code (`CodeContext`).
    */
   box?: Box;
+  /** A collection's key by its name as Juan sees it now: what `$col('…')` cites (javascript.ts). */
+  collectionNamed?(name: string): string | undefined;
+}
+
+/**
+ * What a run validates with: the collections' shapes and, with a box, what reading code needs (`CodeContext`), so
+ * JavaScript is checked instead of refused.
+ */
+export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
+  const collection = (key: string) => deps.collections.shape(key);
+  if (!deps.box) return { collection };
+  return { collection, collectionNamed: (name) => deps.collectionNamed?.(name) };
 }
 
 /**
@@ -178,7 +227,7 @@ export interface RunDeps {
  * limits of a run (AU-17) and saving it (AU-15 in tables) are F14d's.
  */
 export async function run(input: RunInput, deps: RunDeps): Promise<Execution> {
-  const problems = validate(input.automation, { collection: (key) => deps.collections.shape(key) });
+  const problems = validate(input.automation, validationOf(deps) as ValidationContext);
   if (!canRun(problems)) throw new CannotRun("the automation has errors", problems);
   const trigger = input.automation.steps.find((s) => s.id === input.trigger);
   if (!trigger || !isTrigger(trigger))
@@ -259,7 +308,7 @@ function triggerRow(step: Step, given: RunInput["fields"]): Row {
 }
 
 /** A step that neither reads nor writes gets a gate that refuses everything: it has no way to the collections. */
-const CLOSED: Gate = {
+export const CLOSED: Gate = {
   shape: closed,
   find: closed,
   get: closed,
@@ -315,6 +364,7 @@ function stepErrorOf(e: unknown, step: Step): StepError {
     message: e instanceof Error ? e.message : String(e),
     ...(e instanceof Denied ? { rule: e.rule } : {}),
     failure: failureOf(e, step),
+    ...(e instanceof CodeFault ? { why: e.why } : {}),
   };
 }
 
@@ -368,6 +418,55 @@ function citedIn(step: Step, cite: Citation): string | undefined {
   return undefined;
 }
 
+/** A step's JavaScript (F14c): what is sent to the box, and the parameter each source is written in. */
+export interface Javascript {
+  kind: "expressions" | "code";
+  sources: string[];
+  /** For each source, the parameter it is written in (the first that has it), as `Problem.param` writes one. */
+  params: string[];
+}
+
+/**
+ * The JavaScript of a step: a «Código»'s source, or every `{{ }}` of its parameters that is not a simple citation,
+ * each source once. None: the step has no JavaScript and never reaches the box.
+ */
+export function javascriptOf(step: Step): Javascript | undefined {
+  if (step.type === CODE_TYPE) {
+    const source = step.params[CODE_PARAMS.source];
+    return {
+      kind: "code",
+      sources: [typeof source === "string" ? source : ""],
+      params: [CODE_PARAMS.source],
+    };
+  }
+  const sources: string[] = [];
+  const params: string[] = [];
+  const walk = (v: ParamValue, at: string) => {
+    if (isExpr(v)) {
+      for (const p of codeParts(v.expr).parts)
+        if (!sources.includes(p.source)) {
+          sources.push(p.source);
+          params.push(at);
+        }
+    } else if (Array.isArray(v)) for (const [i, x] of v.entries()) walk(x, `${at}.${i}`);
+    else if (typeof v === "object" && v !== null)
+      for (const [k, x] of Object.entries(v)) walk(x, `${at}.${k}`);
+  };
+  for (const [k, v] of Object.entries(step.params)) walk(v, k);
+  return sources.length ? { kind: "expressions", sources, params } : undefined;
+}
+
+/** A step's JavaScript once evaluated: the record's part, and what each unit reads of it. */
+interface Prepared {
+  run: StepEvaluation;
+  /** The failures of single evaluations: a unit that meets one does not try again. */
+  decided: WeakSet<object>;
+  /** The scope's `code` for evaluation `i` (expressions); undefined for a «Código». */
+  at(i: number): Scope["code"] | undefined;
+  /** The rows evaluation `i` of a «Código» gave; throws its failure. */
+  rows(i: number): readonly RowOut[];
+}
+
 /** One run: its records, and which step and input rows made each row (for `$('Step').item`, AU-13). */
 class Run {
   readonly input: RunInput;
@@ -380,6 +479,11 @@ class Run {
   readonly byName: Map<string, Step>;
   readonly plan: Plan | undefined;
   order: string[] = [];
+  /** The run's instant and seed (AU-34): what every job to the box carries. */
+  started = 0;
+  seed = 0;
+  /** Whether any step's JavaScript went to the box: only then is the seed part of what the run was. */
+  boxed = false;
 
   constructor(input: RunInput, deps: RunDeps, first: Row, plan?: Plan) {
     this.input = input;
@@ -393,6 +497,8 @@ class Run {
   async go(): Promise<Execution> {
     const { automation, trigger, test } = this.input;
     const started = this.deps.clock.now();
+    this.started = started;
+    this.seed = this.input.seed ?? seedOf(started, "");
     this.order = this.plan?.order ?? executionOrder(automation, trigger);
     let error: Execution["error"];
     for (const id of this.order) {
@@ -428,6 +534,7 @@ class Run {
       test,
       state: error ? "failed" : "done",
       started,
+      ...(this.boxed ? { seed: this.seed } : {}),
       ms: this.deps.clock.now() - started,
       order: this.order,
       steps: this.records,
@@ -495,51 +602,22 @@ class Run {
     }
 
     const action = actionOf(step);
-    const executor = action ? EXECUTORS[executorKey(step.type, action.key)] : undefined;
+    const executor = action
+      ? step.type === CODE_TYPE
+        ? CODE_EXECUTORS[action.mode]
+        : EXECUTORS[executorKey(step.type, action.key)]
+      : undefined;
     const tries = 1 + Math.max(0, settings.retry.times);
     let stop: StepError | undefined;
 
-    /** One unit: one row, or all of them. Tries it, and on a last failure does what «Si falla» says. */
-    const unit = async (row: Row | null, index: number, units: readonly Row[], scope: Scope) => {
-      const path = this.path(step, scope, row ? { [inputsOf(step)[0] as string]: [row] } : inputs);
-      let lastError: unknown;
-      for (let t = 0; t < tries; t++) {
-        if (t > 0) {
-          record.retries++;
-          await clock.sleep(settings.retry.waitMs);
-        }
-        const asked: Asked[] = [];
-        try {
-          if (!action || !executor) throw new Error(`no executor for ${step.type}`);
-          const ctx = this.context(step, action.key, scope, this.gate(step, path, asked));
-          const out =
-            executor.mode === "perRow"
-              ? await executor.run(ctx, row, index)
-              : await executor.run(ctx, inputs);
-          for (const name of Object.keys(out))
-            if (!names.includes(name) || name === OUT.error)
-              throw new Error(`no output named ${name}`);
-          for (const [name, rows] of Object.entries(out))
-            for (const r of rows) {
-              const parent = row
-                ? index
-                : action.pairs && action.mode === "all"
-                  ? (r.from ?? null)
-                  : null;
-              (record.out[name] as Row[]).push(this.row(step.id, r, parent, path, units));
-            }
-          record.asked += asked.length;
-          this.asked.push(...asked);
-          return;
-        } catch (e) {
-          // «Parar con error» ends the run there, with no retry and no «Si falla» (AU-16).
-          if (e instanceof StopRun) {
-            stop = stepErrorOf(e, step);
-            return;
-          }
-          lastError = e;
-        }
-      }
+    /** What «Si falla» does with a unit that failed its last try. */
+    const give = (
+      lastError: unknown,
+      row: Row | null,
+      index: number,
+      units: readonly Row[],
+      path: Label | null,
+    ) => {
       const failure: StepError = {
         ...stepErrorOf(lastError, step),
         ...(row ? { row: index } : {}),
@@ -580,14 +658,96 @@ class Run {
         }
     };
 
-    if (action?.mode === "all") await unit(null, 0, all, this.scope(null));
+    // Its JavaScript, for every row, before any row is worked on (AU-38): in the box, never here (AU-160). What
+    // stops all of it (no box, a limit of the step, a read refused) fails the step as one unit.
+    const js = javascriptOf(step);
+    let evaluated: Prepared | undefined;
+    // Only when some unit will run (AU-14): row by row with no row and no effect, nothing runs.
+    const works = action?.mode === "all" || all.length > 0 || action?.effect !== "none";
+    if (js && action && works) {
+      let lastError: unknown;
+      for (let t = 0; t < tries && !evaluated; t++) {
+        if (t > 0) {
+          record.retries++;
+          await clock.sleep(settings.retry.waitMs);
+        }
+        try {
+          evaluated = await this.prepare(step, js, action.mode, all, inputs);
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      if (!evaluated) {
+        give(lastError, null, 0, all, this.path(step, this.scope(null), inputs));
+        if (stop) {
+          record.error = stop;
+          finish("failed");
+          return stop;
+        }
+        finish("done");
+        return;
+      }
+      record.console = { lines: [...evaluated.run.console], dropped: evaluated.run.dropped };
+      record.reads = [...evaluated.run.reads];
+      record.uses = { clock: evaluated.run.clock, random: evaluated.run.random };
+    }
+
+    /** One unit: one row, or all of them. Tries it, and on a last failure does what «Si falla» says. */
+    const unit = async (row: Row | null, index: number, units: readonly Row[], scope: Scope) => {
+      const path = this.path(step, scope, row ? { [inputsOf(step)[0] as string]: [row] } : inputs);
+      let lastError: unknown;
+      for (let t = 0; t < tries; t++) {
+        if (t > 0) {
+          record.retries++;
+          await clock.sleep(settings.retry.waitMs);
+        }
+        const asked: Asked[] = [];
+        try {
+          if (!action || !executor) throw new Error(`no executor for ${step.type}`);
+          const ctx = this.context(step, action.key, scope, this.gate(step, path, asked));
+          if (evaluated) ctx.code = evaluated.rows;
+          const out =
+            executor.mode === "perRow"
+              ? await executor.run(ctx, row, index)
+              : await executor.run(ctx, inputs);
+          for (const name of Object.keys(out))
+            if (!names.includes(name) || name === OUT.error)
+              throw new Error(`no output named ${name}`);
+          for (const [name, rows] of Object.entries(out))
+            for (const r of rows) {
+              const parent = row
+                ? index
+                : action.pairs && action.mode === "all"
+                  ? (r.from ?? null)
+                  : null;
+              (record.out[name] as Row[]).push(this.row(step.id, r, parent, path, units));
+            }
+          record.asked += asked.length;
+          this.asked.push(...asked);
+          return;
+        } catch (e) {
+          // «Parar con error» ends the run there, with no retry and no «Si falla» (AU-16).
+          if (e instanceof StopRun) {
+            stop = stepErrorOf(e, step);
+            return;
+          }
+          lastError = e;
+          // What its JavaScript gave for this row is decided once for the step: trying it again gives the same.
+          if (evaluated?.decided.has(e as object)) break;
+        }
+      }
+      give(lastError, row, index, units, path);
+    };
+
+    if (action?.mode === "all") await unit(null, 0, all, this.scope(null, evaluated?.at(0)));
     else if (all.length)
       for (const [i, row] of all.entries()) {
-        await unit(row, i, all, this.scope(row));
+        await unit(row, i, all, this.scope(row, evaluated?.at(i)));
         if (stop) break;
       }
     // Row by row with an empty list: an action that reads or writes runs once with no row (AU-14).
-    else if (action && action.effect !== "none") await unit(null, 0, all, this.scope(null));
+    else if (action && action.effect !== "none")
+      await unit(null, 0, all, this.scope(null, evaluated?.at(0)));
 
     if (stop) {
       record.error = stop;
@@ -596,6 +756,165 @@ class Run {
     }
     finish("done");
     return;
+  }
+
+  /**
+   * A step's JavaScript, evaluated in the box for all its rows before any of them is worked on (AU-38), with the run's
+   * instant and the step's seed (AU-34) and only what the code cites (AU-163). Its reads go through a gate of the
+   * policy that judges them as reads of this step (AU-161). It rejects for what stops the whole step: no box, a cited
+   * step that has not run, a limit of the step, a read the policy refuses.
+   */
+  async prepare(
+    step: Step,
+    js: Javascript,
+    mode: CodeMode,
+    all: readonly Row[],
+    inputs: Record<string, Row[]>,
+  ): Promise<Prepared> {
+    const { box, clock, dates, locale } = this.deps;
+    if (!box)
+      throw new CodeFault("JavaScript runs only in the box, and there is none", {
+        code: "code.unavailable",
+      });
+    this.boxed = true;
+    const code = js.kind === "code";
+    // Expressions of a step that works with all the rows have no row of their own: one evaluation, of no row.
+    const input = code || mode === "perRow" ? all : [];
+    const perRow = !code || mode === "perRow";
+
+    // The steps its code cites, with the row each input row comes from where it asks for `.item` (AU-13).
+    const cited = new Map<string, boolean>();
+    for (const source of js.sources)
+      for (const c of readCode(source, code ? "code" : "expression").steps)
+        cited.set(c.name, (cited.get(c.name) ?? false) || c.item);
+    const steps: EvaluateInput["steps"] = {};
+    for (const [name, item] of cited) {
+      const cite: Citation = { step: name, pick: "first", path: [] };
+      const other = this.byName.get(name);
+      if (!other) throw new CiteError("unknownStep", cite);
+      const record = this.records[other.id];
+      if (record?.state !== "done") throw new CiteError("notRun", cite);
+      const rows = outputsOf(other)
+        .filter((o) => o !== OUT.error)
+        .flatMap((o) => record.out[o] ?? []);
+      const at = new Map(rows.map((r, i) => [r, i]));
+      steps[name] = {
+        rows,
+        ...(item && perRow ? { item: input.map((r) => this.pairIn(r, other.id, at)) } : {}),
+      };
+    }
+
+    const action = actionOf(step);
+    const gate = guard(this.deps.policy, this.deps.collections, {
+      automation: { id: this.input.automation.id, version: this.input.automation.version },
+      step: step.id,
+      type: step.type,
+      action: action?.key ?? "",
+      effect: "read",
+      destroys: false,
+      control: this.path(step, this.scope(null), inputs),
+      test: this.input.test,
+      own: this.deps.own,
+    });
+    const run = await evaluate(
+      {
+        kind: js.kind,
+        sources: js.sources,
+        mode: code ? mode : "perRow",
+        input,
+        steps,
+        literal: this.deps.own,
+        connections: code ? (step.connections ?? []) : [],
+        collectionNamed: (name) => this.deps.collectionNamed?.(name),
+        now: this.started,
+        zone: clock.zone,
+        locale,
+        today: dates.day(this.started, clock.zone),
+        seed: seedOf(this.seed, step.id),
+        run: { test: this.input.test, startedBy: "user" },
+      },
+      box,
+      gate,
+    );
+
+    // One evaluation's failure, as the failure of the unit that reads it; the code's message only in `why`.
+    const decided = new WeakSet<object>();
+    const faultOf = (failure: CodeFailure, param: string | undefined) => {
+      const f = new CodeFault(`the step's JavaScript failed (${failure.code})`, {
+        ...failure,
+        ...(param ? { param } : {}),
+      });
+      decided.add(f);
+      return f;
+    };
+    const failures = run.evaluations.map((e) =>
+      e.state === "failed" ? faultOf(e.failure, js.params[e.source]) : undefined,
+    );
+
+    // What a «Código» gave, as rows (AU-30): each carries the label of everything its evaluation received (AU-169).
+    const made: (readonly RowOut[] | CodeFault)[] = [];
+    if (code) {
+      let total = 0;
+      for (const [i, e] of run.evaluations.entries()) {
+        if (e.state !== "done") {
+          made.push(failures[i] as CodeFault);
+          continue;
+        }
+        const label = run.labels[i] as Label;
+        try {
+          const rows = rowsOf(e.values[0] ?? null).map((json) => ({
+            json,
+            label,
+            fields: Object.fromEntries(Object.keys(json).map((k) => [k, { label, derived: true }])),
+          }));
+          total += rows.length;
+          made.push(rows);
+        } catch (f) {
+          made.push(faultOf((f as CodeFault).why, CODE_PARAMS.source));
+        }
+      }
+      if (total > CODE_LIMITS.outputRows) {
+        const f = limitFault("outputRows", CODE_LIMITS.outputRows, total);
+        throw new CodeFault(f.message, { ...f.why, param: CODE_PARAMS.source });
+      }
+    }
+
+    return {
+      run,
+      decided,
+      at: (i) =>
+        code
+          ? undefined
+          : (source) => {
+              const k = js.sources.indexOf(source);
+              const e = run.evaluations[i];
+              if (k < 0 || !e)
+                throw new CodeFault("this JavaScript was not evaluated", {
+                  code: "code.unavailable",
+                });
+              if (e.state === "failed") throw failures[i] as CodeFault;
+              return { value: e.values[k] ?? null, label: run.labels[i] as Label, derived: true };
+            },
+      rows: (i) => {
+        const m = made[i];
+        if (!m)
+          throw new CodeFault("this «Código» was not evaluated", { code: "code.unavailable" });
+        if (m instanceof CodeFault) throw m;
+        return m;
+      },
+    };
+  }
+
+  /** The place in `at` of the row of step `id` that `row` comes from, or null when it comes from none (AU-13). */
+  pairIn(row: Row, id: string, at: ReadonlyMap<Row, number>): number | null {
+    let r: Row | undefined = row;
+    while (r) {
+      const made = this.made.get(r);
+      if (!made) return null;
+      if (made.step === id) return at.get(r) ?? null;
+      r = r.parent === null ? undefined : made.inputs[r.parent];
+    }
+    return null;
   }
 
   /** Every row that reaches a step, input by input in the order of `arrowsInto`, as `step` puts them together. */
@@ -695,11 +1014,12 @@ class Run {
     };
   }
 
-  /** What expressions are resolved against for one unit (AU-13). */
-  scope(current: Row | null): Scope {
+  /** What expressions are resolved against for one unit (AU-13), with what its JavaScript gave, if it has any. */
+  scope(current: Row | null, code?: Scope["code"]): Scope {
     return {
       current,
       literal: this.deps.own,
+      ...(code ? { code } : {}),
       row: (name, pick) => {
         const cite: Citation = { step: name, pick, path: [] };
         const step = this.byName.get(name);
@@ -761,6 +1081,8 @@ export interface StepContext {
   value(param: ParamValue): Labeled<Cell>;
   /** The scope itself, for an executor that resolves a structure piece by piece (conditions, the fields of a row). */
   scope: Scope;
+  /** A «Código» only (F14c): the rows its evaluation `at` gave, evaluated before the units (AU-38); throws its failure. */
+  code?(at: number): readonly RowOut[];
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */
@@ -795,3 +1117,22 @@ export const EXECUTORS: Readonly<Record<string, Executor>> = {
 
 /** The key of an action's executor in `EXECUTORS`. */
 export const executorKey = (type: string, action: string): string => `${type}.${action}`;
+
+/** What a «Código» gave for its unit: the rows the engine evaluated before (AU-30, AU-38). */
+const codeRows = (ctx: StepContext, at: number): readonly RowOut[] => {
+  if (!ctx.code)
+    throw new CodeFault("this «Código» was not evaluated", { code: "code.unavailable" });
+  return ctx.code(at);
+};
+
+/**
+ * The executors of «Código», by «Se ejecuta»: reachable by its type, outside `EXECUTORS` as it is outside
+ * `CATALOGUE`. They only hand out what the box gave: the code never runs here.
+ */
+const CODE_EXECUTORS: Readonly<Record<CodeMode, Executor>> = {
+  all: { mode: "all", run: async (ctx) => ({ [OUT.main]: codeRows(ctx, 0) }) },
+  perRow: {
+    mode: "perRow",
+    run: async (ctx, _row, index) => ({ [OUT.main]: codeRows(ctx, index) }),
+  },
+};
