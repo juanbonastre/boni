@@ -1208,7 +1208,7 @@ contraseña ni un código aquí» under a question.
   default). «Parámetros» is a row per parameter in sight, its name on the left (30 %, in `--bad` once marked) and its
   control on the right, seven rows at most (AU-75); an option added has «Quitar» at its end, and «Añadir opción»
   after the rows lists the ones not there yet (it is gone when none is left). The controls are the seven of the
-  catalogue and no other (AU-80): a value (a box; an expression `{{ … }}` in monospace), a choice (a select), yes or
+  catalogue and no other (AU-80): a value (a box, «Fijo» or «Expresión»: below), a choice (a select), yes or
   no (a switch), a list (each entry one folded line saying what it holds, «Fila 1» while empty, opened to edit it), the conditions (the views' filter
   editor, «Propiedad · Condición · valor», «Añadir filtro», «Filtro avanzado» for one level of groups, the value
   fixed or an expression), the fields of a row («Campo · Valor») and a picker (the account's collections by name).
@@ -1247,7 +1247,24 @@ contraseña ni un código aquí» under a question.
   «probado hace 5 min · 0,2 s»; untested «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas»,
   stopped «Parado: la prueba paró en «Si»», failed the reason with «Ir al parámetro» (it opens «Parámetros» with the
   focus in it), and a step changed since its test says «puede estar vieja» with «Probar paso» above its rows. Moving
-  a box or renaming a step ages nothing.
+  a box or renaming a step ages nothing. A failed step's arrows and its outputs with no arrow have no count. Wherever
+  a row's value is shown («Esquema», «Tabla», «Haría esto», a chip, a preview), a choice is its option's name, never
+  its id; «JSON» shows the row as it is.
+- **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
+  step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
+  sight: inside the box at its right end on a text, a number or a date, beside the control on a select or a
+  checkbox. Pressed it is in `--accent` and the value is an expression; it keeps what was written as the
+  expression's text, and back to «Fijo» leaves the control empty (both undo with Ctrl+Z). An expression is one line
+  of text, not monospace, where each citation is a **chip**: a pill in `--accent-soft` with the step's icon (12 px)
+  and the field's name («Páginas», «Suma de Páginas»; «Buscar filas en Libros › Título» when another step of the
+  path has a field of that name), never the code; the caret steps over it and Backspace takes it whole. A citation of
+  a step or a field that is gone is a red chip (`--bad`), its tooltip saying why («Ningún paso se llama «Paso
+  borrado»»). A citation typed by hand becomes its chip when the box is left. Each field of ENTRADA's «Esquema» can be
+  dragged (the grab cursor; a related row's fields once unfolded): over a value the box takes an `--accent` border;
+  dropped on a text it goes in at the caret, on anything else it replaces the value and makes it an expression, and
+  the caret stays after it. After a test, under an expression in 12 px `--muted`: «= 201 · con la fila 1 de 128», what
+  it gives with the first row of the last test, as plain text, following each key with no call to the server; one
+  that cannot be read says why in `--bad`; with no test, nothing.
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

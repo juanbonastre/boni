@@ -16,7 +16,9 @@ import {
   type Step,
 } from "@boni/automations";
 import { Play } from "lucide-react";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { dragFrom } from "../automations/cite.ts";
+import type { Sample } from "../automations/client.ts";
 import {
   type ConditionField,
   cannotTest,
@@ -26,7 +28,16 @@ import {
   writesRows,
 } from "../automations/panel.ts";
 import { type EditorState, failedAt, logLine } from "../automations/state.ts";
-import { agoWords, DO, KEY, logWords, rowsWords, secsWords } from "../automations/words.ts";
+import {
+  agoWords,
+  choiceNames,
+  DO,
+  fieldNames,
+  KEY,
+  logWords,
+  rowsWords,
+  secsWords,
+} from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
 import { type RowsAsk, type RowsShow, TestRows } from "./AutomationRows.tsx";
@@ -40,6 +51,8 @@ export interface Tester {
   run: (step: string | null, trigger?: string) => void;
   /** The rows of one input or output of a step's last test, a page at a time. */
   rows: (at: { step: string; side: "in" | "out"; name: string }) => RowsAsk;
+  /** The first rows of the last test as `step` sees them: what the preview of an expression reads (AU-20). */
+  sample: (step: string) => Promise<Sample | null>;
 }
 export const TesterContext = createContext<Tester | null>(null);
 export const useTester = () => useContext(TesterContext);
@@ -368,13 +381,14 @@ export function StepOutput({
   state,
   step,
   outputName,
-  fieldNames,
+  fields,
   goToParam,
 }: {
   state: EditorState;
   step: Step;
   outputName: (id: string) => string;
-  fieldNames: Readonly<Record<string, string>>;
+  /** The fields the step gives, as the draft knows them: their names and their options' names. */
+  fields: readonly ConditionField[];
   goToParam: (key: string) => void;
 }) {
   const t = useStore((s) => s.t);
@@ -393,6 +407,8 @@ export function StepOutput({
   const says = outputSays(step, test);
   const nameOf = (id: string) => state.draft.steps.find((s) => s.id === id)?.name ?? id;
   const testStep = <TestStepButton t={t} state={state} step={step} className="btn small" />;
+  const names = useMemo(() => fieldNames(t, fields), [t, fields]);
+  const choices = useMemo(() => choiceNames(fields), [fields]);
 
   if (says && says.kind !== "empty") {
     let body: React.ReactNode;
@@ -464,7 +480,8 @@ export function StepOutput({
           ask={tester.rows({ step: step.id, side: "out", name: output })}
           total={total}
           show={shown}
-          names={fieldNames}
+          names={names}
+          choices={choices}
         />
       )}
       <p className="auto-out-foot muted small">
@@ -486,17 +503,13 @@ export function StepInput({
   state,
   step,
   inputName,
-  fieldNamesOf,
+  fieldsOf,
 }: {
   state: EditorState;
   step: Step;
   inputName: (id: string) => string;
-  /** The names of the fields that come into `input` of `step`, or out of `output` of a step before it. */
-  fieldNamesOf: (at: {
-    step: string;
-    input?: string;
-    output?: string;
-  }) => Readonly<Record<string, string>>;
+  /** The fields that come into `input` of `step`, or out of `output` of a step before it, as the draft knows them. */
+  fieldsOf: (at: { step: string; input?: string; output?: string }) => readonly ConditionField[];
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
@@ -518,7 +531,9 @@ export function StepInput({
   let ask: { step: string; side: "in" | "out"; name: string; total: number; at: number } | null =
     null;
   let fromNames: string[] = into.map((a) => nameOf(a.from.step));
-  let names: Readonly<Record<string, string>> = {};
+  let fields: readonly ConditionField[] = [];
+  /** The step whose rows are shown: a field of them dragged onto a value of this step cites it (AU-21). */
+  let from: string | undefined;
   if (source) {
     const t2 = state.tests[source];
     const outOf = outputsOf(draft.steps.find((s) => s.id === source) as Step);
@@ -529,10 +544,12 @@ export function StepInput({
     if (t2 && output && t2.state !== "stopped")
       ask = { step: source, side: "out", name: output, total: t2.out[output] ?? 0, at: t2.at };
     fromNames = [nameOf(source)];
-    names = output ? fieldNamesOf({ step: source, output }) : {};
+    fields = output ? fieldsOf({ step: source, output }) : [];
+    from = source;
   } else if (ownRows !== undefined && own) {
     ask = { step: step.id, side: "in", name: input, total: ownRows, at: own.at };
-    names = fieldNamesOf({ step: step.id, input });
+    fields = fieldsOf({ step: step.id, input });
+    from = dragFrom(draft, step.id, into);
   } else {
     const a = into.find((x) => {
       const k = state.tests[x.from.step];
@@ -548,7 +565,8 @@ export function StepInput({
         at: k.at,
       };
       fromNames = [nameOf(a.from.step)];
-      names = fieldNamesOf({ step: a.from.step, output: a.from.output });
+      fields = fieldsOf({ step: a.from.step, output: a.from.output });
+      from = a.from.step;
     }
   }
   const nearest = into[0]?.from.step ?? before[0];
@@ -624,7 +642,9 @@ export function StepInput({
           ask={tester.rows(ask)}
           total={ask.total}
           show={show}
-          names={names}
+          names={fieldNames(t, fields)}
+          choices={choiceNames(fields)}
+          from={from}
         />
       )}
     </div>

@@ -23,6 +23,8 @@ import {
 import type { FilterItem } from "@boni/views";
 import { X } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
+import { citedName } from "../automations/cite.ts";
+import type { Sample } from "../automations/client.ts";
 import { changeAction, removeOption, rename, setParam, setSetting } from "../automations/edit.ts";
 import {
   type ConditionField,
@@ -37,6 +39,7 @@ import {
   rowsOf,
   SETTINGS_ROWS,
   settingsChanged,
+  stepsBefore,
   summaryOf,
 } from "../automations/panel.ts";
 import { change, type EditorState, undo } from "../automations/state.ts";
@@ -44,6 +47,7 @@ import { DO, KEY, labelWord, type Namer, summaryWords } from "../automations/wor
 import type { DataType as AppType, DataField } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
+import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
 import {
   StepInput,
   StepOutput,
@@ -51,6 +55,7 @@ import {
   TestStepButton,
   TrialFields,
   trialOf,
+  useTester,
 } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 import { FilterItemsEditor, type FilterValueSlot, RecordValue } from "./DatabaseBlock.tsx";
@@ -101,10 +106,40 @@ const enterEnds = (e: React.KeyboardEvent<HTMLElement>) => {
   if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement)) e.currentTarget.blur();
 };
 
-/** A value: text, a number or a date; an expression already written is kept one (its «{ }» is F's, AU-20). */
-function ValueControl({ param, value, set, path, label, marked }: ControlProps) {
+/** A value: text, a number or a date, or with «{ }» an expression (AU-20) that a field dropped on it cites (AU-21). */
+function ValueControl(p: ControlProps) {
   const v = useView();
   const run = useRef(0);
+  const { param, value, set, path, label, marked } = p;
+  // A field named by its key, with no fields known (ChoiceControl), is not a value to cite into.
+  if (param.control !== "value") return <FixedValue {...p} run={run} />;
+  return (
+    <ValueBox
+      value={value}
+      set={(x, typed) => set(x, typed ? v.typing(path, run.current) : undefined)}
+      text={param.of === "text"}
+      label={label}
+      marked={marked}
+      onFocus={() => {
+        run.current = ++entered;
+      }}
+    >
+      <FixedValue {...p} run={run} />
+    </ValueBox>
+  );
+}
+
+/** The fixed value's own input: text, a number or a date, as the browser offers each. */
+function FixedValue({
+  param,
+  value,
+  set,
+  path,
+  label,
+  marked,
+  run,
+}: ControlProps & { run: React.MutableRefObject<number> }) {
+  const v = useView();
   const of = param.control === "value" ? param.of : "text";
   const expr = isExpr(value) ? value : null;
   const text = expr ? expr.expr : value === undefined || value === null ? "" : String(value);
@@ -323,19 +358,20 @@ function asType(fields: readonly ConditionField[]): AppType {
   } as AppType;
 }
 
-/** A condition's value that is an expression stays one, as written (its «{ }» and its chips are F's, AU-20). */
-const exprValue: FilterValueSlot = (field, value, onChange, fallback) => {
-  const x = value as unknown;
-  if (!isExpr(x)) return fallback;
-  return (
-    <input
-      className="input auto-input expr"
-      aria-label={field.name}
-      value={x.expr}
-      onChange={(e) => onChange({ expr: e.target.value } as unknown as string)}
-    />
-  );
-};
+/**
+ * A condition's value, fixed as the views edit it or with «{ }» an expression with its chips (AU-20, AU-81): a run
+ * of typing in it is the conditions' own (ConditionsControl).
+ */
+const exprValue: FilterValueSlot = (field, value, onChange, fallback) => (
+  <ValueBox
+    value={value as unknown as ParamValue}
+    set={(x) => onChange(x as unknown as string)}
+    text={!NUMERIC.has(field.type) && !DATES.has(field.type) && !CHOICES.has(field.type)}
+    label={field.name}
+  >
+    {fallback}
+  </ValueBox>
+);
 
 /** The views' filter (AU-81): «todas» by default, groups «y» or «o» of one level, operators by the field's type. */
 function ConditionsControl({ param, value, set, path, label, marked }: ControlProps) {
@@ -378,8 +414,54 @@ function FieldValue({
   label: string;
   typing: (entered: number) => string;
 }) {
-  const v = useView();
   const run = useRef(0);
+  const kind = field?.type ?? "text";
+  return (
+    <ValueBox
+      value={value}
+      set={(x, typed) => set(x, typed ? typing(run.current) : undefined)}
+      text={
+        !field ||
+        (!NUMERIC.has(kind) &&
+          !DATES.has(kind) &&
+          !CHOICES.has(kind) &&
+          !field.relation &&
+          kind !== "checkbox")
+      }
+      label={label}
+      onFocus={() => {
+        run.current = ++entered;
+      }}
+    >
+      <FixedFieldValue
+        field={field}
+        value={value}
+        set={set}
+        label={label}
+        typing={typing}
+        run={run}
+      />
+    </ValueBox>
+  );
+}
+
+/** The fixed value of a field by its type: a box to tick, an option, a row, a number, a date or text. */
+function FixedFieldValue({
+  field,
+  value,
+  set,
+  label,
+  typing,
+  run,
+}: {
+  field: ConditionField | undefined;
+  value: ParamValue | undefined;
+  set: (x: ParamValue, typing?: string) => void;
+  label: string;
+  typing: (entered: number) => string;
+  run: React.MutableRefObject<number>;
+}) {
+  const v = useView();
   const kind = field?.type ?? "text";
   if (isExpr(value) || !field)
     return (
@@ -619,6 +701,7 @@ export function AutomationStepView({
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
+  const lang = useStore((s) => s.settings.language);
   const wide = useWide();
   const [tab, setTab] = useState<"params" | "settings">("params");
   const [side, setSide] = useState<"input" | "output">("input");
@@ -631,6 +714,26 @@ export function AutomationStepView({
     setTab("params");
     setSide("input");
   }, [stepId]);
+  // The last test's first rows as this step sees them, asked once when it opens and again after a test of it or of a
+  // step before it, never on a key (AU-20, A-15): what the preview of an expression reads.
+  const tester = useTester();
+  const [sample, setSample] = useState<{ step: string; sample: Sample | null } | null>(null);
+  const tested = stepId
+    ? [stepId, ...stepsBefore(state.draft, stepId)].map((id) => state.tests[id]?.at ?? "").join(",")
+    : "";
+  useEffect(() => {
+    if (!stepId || !tester || !/[^,]/.test(tested)) {
+      setSample(null);
+      return;
+    }
+    let gone = false;
+    tester.sample(stepId).then((x) => {
+      if (!gone) setSample({ step: stepId, sample: x });
+    });
+    return () => {
+      gone = true;
+    };
+  }, [stepId, tested]);
   // The required rows being watched for the focus to leave them (AU-83), each with how to stop watching.
   const watching = useRef(new Map<string, () => void>());
   useEffect(
@@ -672,6 +775,15 @@ export function AutomationStepView({
       }),
     typing: (path, n) => `${step.id}.${path}#${n}`,
   };
+  const seen = sample?.step === step.id ? sample.sample : null;
+  const cite: CiteView = {
+    t,
+    draft: state.draft,
+    into: step.id,
+    ...citeNames(t, state.draft, step.id, fieldsOf, seen),
+    sample: seen,
+    locale: lang === "en" ? "en-GB" : "es-ES",
+  };
 
   const edit = (f: (d: Automation) => Automation, typing?: string) =>
     apply((s) => change(s, { draft: f(s.draft) }, typing ?? null));
@@ -698,7 +810,10 @@ export function AutomationStepView({
   const marked = new Set(markedOf(step, left, state.asked).map((p) => p.key));
   const paramName = (key: string) => t(KEY.param(step.type, key));
   const why = cannotTest(step, state.testing !== null);
-  const summary = summaryOf(step, summaryWords(t, collectionNames, step)).join(" · ");
+  const summary = summaryOf(
+    step,
+    summaryWords(t, collectionNames, step, citedName(state.draft, step.id, cite.names)),
+  ).join(" · ");
   const Icon = iconOf(step.type);
   const trigger = isTrigger(step);
   const dropped = state.dropped?.step === step.id ? state.dropped.params : null;
@@ -745,7 +860,9 @@ export function AutomationStepView({
         `.auto-param[data-param="${CSS.escape(key)}"]`,
       );
       row?.scrollIntoView({ block: "nearest" });
-      row?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+      row
+        ?.querySelector<HTMLElement>("input, select, textarea, [contenteditable='true'], button")
+        ?.focus();
     });
   };
   const outputWord = (id: string) => {
@@ -774,12 +891,10 @@ export function AutomationStepView({
           state={state}
           step={step}
           inputName={(id) => t(KEY.input(id))}
-          fieldNamesOf={(at) =>
-            namesOf(
-              at.input !== undefined
-                ? knownFields(state.draft, at.step, at.input, fieldsOf)
-                : fieldsOut(state.draft, at.step, fieldsOf),
-            )
+          fieldsOf={(at) =>
+            at.input !== undefined
+              ? knownFields(state.draft, at.step, at.input, fieldsOf)
+              : fieldsOut(state.draft, at.step, fieldsOf)
           }
         />
       )}
@@ -802,7 +917,7 @@ export function AutomationStepView({
         state={state}
         step={step}
         outputName={(id) => outputWord(id)}
-        fieldNames={namesOf(fieldsOut(state.draft, step.id, fieldsOf))}
+        fields={fieldsOut(state.draft, step.id, fieldsOf)}
         goToParam={goToParam}
       />
     </section>
@@ -998,98 +1113,100 @@ export function AutomationStepView({
 
   return (
     <ViewContext.Provider value={view}>
-      <div className="auto-view-back" onPointerDown={close} aria-hidden />
-      <div
-        ref={box}
-        className={`auto-view${wide ? "" : " narrow"}`}
-        role="dialog"
-        aria-label={step.name}
-        tabIndex={-1}
-        data-step={step.id}
-        onKeyDown={(e) => {
-          // Esc in a field leaves the field; the next one closes the view (the canvas's keys).
-          const el = e.target as HTMLElement;
-          if (
-            e.key === "Escape" &&
-            el !== e.currentTarget &&
-            el.closest("input, textarea, select")
-          ) {
-            e.preventDefault();
-            el.blur();
-            box.current?.focus();
-          }
-        }}
-      >
-        <header className="auto-view-head">
-          <span className="auto-card-icon" aria-hidden>
-            <Icon size={18} strokeWidth={1.7} />
-          </span>
-          <div className="auto-view-title">
-            <NameBox
-              key={step.name}
-              name={step.name}
-              label={t("auto.view.name")}
-              onDone={(name) => edit((d) => rename(d, step.id, name))}
-            />
-            {summary && <p className="auto-view-summary">{summary}</p>}
-          </div>
-          <div className="auto-view-test">
-            {why && (
-              <span className="auto-view-why">
-                {why.why === "testing"
-                  ? t("auto.view.testing")
-                  : t("auto.view.missing", {
-                      names: why.params.map((p) => paramName(p.key)).join(", "),
-                    })}
-              </span>
-            )}
-            <TestStepButton t={t} state={state} step={step} className="btn" besideSays />
-          </div>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label={t("auto.close")}
-            title={t("auto.close")}
-            onClick={close}
-          >
-            <X size={16} strokeWidth={1.8} />
-          </button>
-        </header>
-        {wide ? (
-          <div className="auto-view-cols">
-            {input}
-            {middle}
-            {output}
-          </div>
-        ) : (
-          <div className="auto-view-cols">
-            <section className="auto-view-col auto-view-side">
-              <div className="auto-tabs" role="tablist">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={side === "input"}
-                  className="auto-tab"
-                  onClick={() => setSide("input")}
-                >
-                  {t("auto.view.input")}
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={side === "output"}
-                  className="auto-tab"
-                  onClick={() => setSide("output")}
-                >
-                  {t("auto.view.output")}
-                </button>
-              </div>
-              {side === "input" ? input : output}
-            </section>
-            {middle}
-          </div>
-        )}
-      </div>
+      <CiteContext.Provider value={cite}>
+        <div className="auto-view-back" onPointerDown={close} aria-hidden />
+        <div
+          ref={box}
+          className={`auto-view${wide ? "" : " narrow"}`}
+          role="dialog"
+          aria-label={step.name}
+          tabIndex={-1}
+          data-step={step.id}
+          onKeyDown={(e) => {
+            // Esc in a field leaves the field; the next one closes the view (the canvas's keys).
+            const el = e.target as HTMLElement;
+            if (
+              e.key === "Escape" &&
+              el !== e.currentTarget &&
+              el.closest("input, textarea, select, [contenteditable='true']")
+            ) {
+              e.preventDefault();
+              el.blur();
+              box.current?.focus();
+            }
+          }}
+        >
+          <header className="auto-view-head">
+            <span className="auto-card-icon" aria-hidden>
+              <Icon size={18} strokeWidth={1.7} />
+            </span>
+            <div className="auto-view-title">
+              <NameBox
+                key={step.name}
+                name={step.name}
+                label={t("auto.view.name")}
+                onDone={(name) => edit((d) => rename(d, step.id, name))}
+              />
+              {summary && <p className="auto-view-summary">{summary}</p>}
+            </div>
+            <div className="auto-view-test">
+              {why && (
+                <span className="auto-view-why">
+                  {why.why === "testing"
+                    ? t("auto.view.testing")
+                    : t("auto.view.missing", {
+                        names: why.params.map((p) => paramName(p.key)).join(", "),
+                      })}
+                </span>
+              )}
+              <TestStepButton t={t} state={state} step={step} className="btn" besideSays />
+            </div>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={t("auto.close")}
+              title={t("auto.close")}
+              onClick={close}
+            >
+              <X size={16} strokeWidth={1.8} />
+            </button>
+          </header>
+          {wide ? (
+            <div className="auto-view-cols">
+              {input}
+              {middle}
+              {output}
+            </div>
+          ) : (
+            <div className="auto-view-cols">
+              <section className="auto-view-col auto-view-side">
+                <div className="auto-tabs" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={side === "input"}
+                    className="auto-tab"
+                    onClick={() => setSide("input")}
+                  >
+                    {t("auto.view.input")}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={side === "output"}
+                    className="auto-tab"
+                    onClick={() => setSide("output")}
+                  >
+                    {t("auto.view.output")}
+                  </button>
+                </div>
+                {side === "input" ? input : output}
+              </section>
+              {middle}
+            </div>
+          )}
+        </div>
+      </CiteContext.Provider>
     </ViewContext.Provider>
   );
 }
@@ -1189,7 +1306,3 @@ function NoteBox({
     />
   );
 }
-
-/** A field's name by its key: what the rows of a test are headed with. */
-const namesOf = (fields: readonly ConditionField[]): Record<string, string> =>
-  Object.fromEntries(fields.map((f) => [f.key, f.name]));

@@ -4,12 +4,13 @@
  * list unfolded one level), «Tabla» and «JSON», 50 rows at a time with «N filas más» for the next 50 (never all of
  * them at once, A-15), and «Haría esto» for a step that writes: one row per row it would write, with the value
  * before and after of each field that changes. Every value is data from anywhere: painted as plain text, never as
- * HTML, Markdown or a link (A-01).
+ * HTML, Markdown or a link (A-01). Wherever a value is shown to Juan, a choice is its option's name, never its id
+ * (F); «JSON» stays the raw data. A field of «Esquema» can be dragged onto a value of the step's view (AU-21).
  */
 import type { Cell } from "@boni/automations";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { RowView } from "../automations/client.ts";
-import { DO } from "../automations/words.ts";
+import { type Choices, DO, namedRow } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { toast, useStore } from "../store.ts";
 
@@ -34,6 +35,29 @@ export function cellText(t: T, v: Cell | undefined): string {
 const fullText = (v: Cell | undefined): string =>
   v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
 
+/** What a field dragged from ENTRADA carries (AU-21): the step whose rows it is of, its key and the keys inside. */
+export interface DraggedField {
+  from: string;
+  path: string[];
+}
+const FIELD = "application/x-boni-field";
+export function dragField(e: React.DragEvent, field: DraggedField) {
+  e.dataTransfer.setData(FIELD, JSON.stringify(field));
+  e.dataTransfer.setData("text/plain", field.path.join("."));
+  e.dataTransfer.effectAllowed = "copy";
+}
+export const carriesField = (e: React.DragEvent) => e.dataTransfer.types.includes(FIELD);
+export function draggedOf(e: React.DragEvent): DraggedField | null {
+  try {
+    const v = JSON.parse(e.dataTransfer.getData(FIELD)) as Partial<DraggedField>;
+    return typeof v.from === "string" && Array.isArray(v.path) && v.path.length
+      ? { from: v.from, path: v.path.map(String) }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The fields of the rows, in the order they first appear. */
 function columnsOf(rows: readonly RowView[]): string[] {
   const seen = new Set<string>();
@@ -46,8 +70,9 @@ function columnsOf(rows: readonly RowView[]): string[] {
 
 /**
  * The rows of one input or output, asked a page at a time. `total`: how many there are (what the test counted);
- * `names`: a field's name by its key, where the draft knows it. Opened again for another test, it starts over (the
- * caller keys it by the test).
+ * `names`: a field's name by its key, where the draft knows it; `choices`: the options of its choices; `from`: the
+ * step the rows are of, when its fields can be dragged onto this step's values (ENTRADA). Opened again for another
+ * test, it starts over (the caller keys it by the test).
  */
 export function TestRows({
   t,
@@ -55,12 +80,16 @@ export function TestRows({
   total,
   show,
   names,
+  choices,
+  from,
 }: {
   t: T;
   ask: RowsAsk;
   total: number;
   show: RowsShow;
   names: Readonly<Record<string, string>>;
+  choices?: Choices;
+  from?: string;
 }) {
   const locale = useStore((s) => s.settings.language) === "en" ? "en-GB" : "es-ES";
   const [rows, setRows] = useState<RowView[] | null>(null);
@@ -85,7 +114,10 @@ export function TestRows({
       gone = true;
     };
   }, []);
-  if (!rows) return <div className="auto-rows-wait" role="status" aria-busy="true" />;
+  // Named again only when the rows or the options change, not on each key of the view that remakes `choices` (A-15).
+  const options = choices && JSON.stringify(choices);
+  const said = useMemo(() => rows?.map((r) => namedRow(r, choices)) ?? null, [rows, options]);
+  if (!rows || !said) return <div className="auto-rows-wait" role="status" aria-busy="true" />;
   const left = count - rows.length;
   const next = () => {
     if (more) return;
@@ -103,7 +135,7 @@ export function TestRows({
   return (
     <div className="auto-rows">
       {show === "schema" ? (
-        <Schema t={t} row={rows[0]} names={names} />
+        <Schema t={t} row={said[0]} names={names} from={from} />
       ) : show === "json" ? (
         <pre className="auto-rows-json">
           {JSON.stringify(
@@ -113,9 +145,9 @@ export function TestRows({
           )}
         </pre>
       ) : show === "would" ? (
-        <WouldTable t={t} rows={rows} names={names} />
+        <WouldTable t={t} rows={said} names={names} />
       ) : (
-        <RowsTable t={t} rows={rows} names={names} />
+        <RowsTable t={t} rows={said} names={names} />
       )}
       {show !== "schema" && left > 0 && (
         <button
@@ -136,10 +168,12 @@ function Schema({
   t,
   row,
   names,
+  from,
 }: {
   t: T;
   row: RowView | undefined;
   names: Readonly<Record<string, string>>;
+  from?: string;
 }) {
   const [q, setQ] = useState("");
   const fields = Object.entries(row?.json ?? {});
@@ -164,7 +198,13 @@ function Schema({
       ) : (
         <ul className="auto-schema-list">
           {shown.map(([k, v]) => (
-            <SchemaField key={k} t={t} name={names[k] ?? k} value={v} />
+            <SchemaField
+              key={k}
+              t={t}
+              name={names[k] ?? k}
+              value={v}
+              drag={from ? { from, path: [k] } : undefined}
+            />
           ))}
         </ul>
       )}
@@ -172,7 +212,30 @@ function Schema({
   );
 }
 
-function SchemaField({ t, name, value }: { t: T; name: string; value: Cell }) {
+/** Dragged, a field of «Esquema» is cited where it is dropped (AU-21); one inside a row, by its key in it. */
+const draggable = (drag: DraggedField | undefined) =>
+  drag
+    ? {
+        draggable: true,
+        "data-field": drag.path.join("."),
+        onDragStart: (e: React.DragEvent) => {
+          e.stopPropagation();
+          dragField(e, drag);
+        },
+      }
+    : {};
+
+function SchemaField({
+  t,
+  name,
+  value,
+  drag,
+}: {
+  t: T;
+  name: string;
+  value: Cell;
+  drag?: DraggedField;
+}) {
   const nested =
     value && typeof value === "object"
       ? Array.isArray(value)
@@ -181,7 +244,7 @@ function SchemaField({ t, name, value }: { t: T; name: string; value: Cell }) {
       : null;
   if (!nested)
     return (
-      <li className="auto-schema-field">
+      <li className="auto-schema-field" {...draggable(drag)}>
         <span className="auto-schema-name">{name}</span>
         <span className="auto-schema-value" title={fullText(value)}>
           {cellText(t, value)}
@@ -191,13 +254,21 @@ function SchemaField({ t, name, value }: { t: T; name: string; value: Cell }) {
   return (
     <li className="auto-schema-field">
       <details>
-        <summary>
+        <summary {...draggable(drag)}>
           <span className="auto-schema-name">{name}</span>
           <span className="auto-schema-value">{cellText(t, value)}</span>
         </summary>
         <ul className="auto-schema-list nested">
           {nested.map(([k, v]) => (
-            <li key={k} className="auto-schema-field">
+            <li
+              key={k}
+              className="auto-schema-field"
+              {...draggable(
+                drag && !Array.isArray(value)
+                  ? { from: drag.from, path: [...drag.path, k] }
+                  : undefined,
+              )}
+            >
               <span className="auto-schema-name">{k}</span>
               {/* One level: what is deeper is said as text. */}
               <span className="auto-schema-value" title={fullText(v)}>

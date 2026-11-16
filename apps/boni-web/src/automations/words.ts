@@ -10,6 +10,8 @@ import {
   actionOf,
   CATALOGUE,
   CATEGORIES,
+  type Cell,
+  type Citation,
   isExpr,
   OUT,
   type ParamSpec,
@@ -22,8 +24,8 @@ import {
   stepType,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
-import type { CardLabel } from "./panel.ts";
-import { notBuilt } from "./pending.ts";
+import type { RowView } from "./client.ts";
+import type { CardLabel, ConditionField } from "./panel.ts";
 import type { LogLine } from "./state.ts";
 
 /** The key that says each thing of the catalogue. */
@@ -70,6 +72,9 @@ export const DO = {
   /** An entry of a list, added and erased in the step's view. */
   addRow: "auto.do.addRow",
   eraseRow: "auto.do.eraseRow",
+  /** «{ }» in a value of the step's view: a fixed value becomes an expression and back (AU-20). */
+  exprOn: "auto.do.exprOn",
+  exprOff: "auto.do.exprOff",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
@@ -140,7 +145,7 @@ const conditionCount = (v: ParamValue): number =>
 
 /**
  * How the card's summary says each value of `step` (AU-63, `summaryOf` of panel.ts): a choice by its word, a
- * collection by its name, a citation by its field (the field's key until F's `fieldNames` names it), any other
+ * collection by its name, a citation by its field's name (`fieldNames`; its key where the draft does not know it), any other
  * expression as written, a number with its parameter's name («Límite 10»), a text as it is, a toggle on by its
  * parameter's name, a list and a row's fields by how many, conditions by how many. A toggle off says nothing.
  */
@@ -148,13 +153,17 @@ export function summaryWords(
   t: T,
   collections: Readonly<Record<string, string>>,
   step: Step,
+  /** A citation's field's name, where the draft knows it (`paint` of cite.ts). */
+  cited?: (cite: Citation) => string | undefined,
 ): (param: ParamSpec, value: ParamValue) => string {
   const name = (p: ParamSpec) => t(KEY.param(step.type, p.key));
   return (p, v) => {
     if (isExpr(v)) {
       const parts = parseExpression(v.expr);
       const only = parts.length === 1 ? parts[0] : undefined;
-      return only?.kind === "cite" ? only.cite.path.join(".") : v.expr.trim();
+      return only?.kind === "cite"
+        ? (cited?.(only.cite) ?? only.cite.path.join("."))
+        : v.expr.trim();
     }
     switch (p.control) {
       case "picker":
@@ -291,16 +300,65 @@ export function uniqueName(draft: Automation, name: string, but?: string): strin
 }
 
 /**
- * The names of the fields a step gives, by key, known without a test where the catalogue can say: a collection's
- * fields by their names; a result of «Agrupar» or «Contar o sumar» by its measure and its field's name («Suma de
- * Importe», «Número de filas»: AU-25, never the key `sum_importe`); a field Juan named, as he wrote it; the rest,
- * as the step before gives them. What chips, «Esquema», the tables' headers and the summaries read.
+ * A field's name as Juan reads it (AU-21, AU-25): a result of «Agrupar» or «Contar o sumar» by its measure and its
+ * field's name («Suma de Importe», «Número de filas», never the key `sum_importe`); a collection's field by its
+ * name; a field Juan named, as he wrote it.
  */
-export function fieldNames(
-  _draft: Automation,
-  _step: string,
-  _shapes: Readonly<Record<string, Readonly<Record<string, string>>>>,
-  _t: T,
-): Record<string, string> {
-  return notBuilt("fieldNames (AU-21, AU-25)");
+export const fieldName = (t: T, f: ConditionField): string =>
+  f.result ? t(KEY.measure(f.result.measure), { field: f.result.of ?? "" }) : f.name;
+
+/**
+ * The names of a step's fields by key, as `fieldName` says each: what chips, «Esquema», the tables' headers and the
+ * summaries read. The fields are those the draft knows (`knownFields`, `fieldsOut` of panel.ts).
+ */
+export function fieldNames(t: T, fields: readonly ConditionField[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of fields) out[f.key] = fieldName(t, f);
+  return out;
 }
+
+/**
+ * The names of a step's options by field and by id, for the fields that are a choice: a row's value is said by its
+ * option's name, never its id (`namedRow`).
+ */
+export function choiceNames(
+  fields: readonly ConditionField[],
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const f of fields)
+    if (f.options?.length) out[f.key] = Object.fromEntries(f.options.map((o) => [o.id, o.name]));
+  return out;
+}
+
+/** A choice's options by field and id: what a value is said by. */
+export type Choices = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+/** The fields of a row with each choice said by its option's name: what Juan reads (F). */
+export function namedValues(
+  json: Record<string, Cell>,
+  choices: Choices | undefined,
+): Record<string, Cell> {
+  if (!choices) return json;
+  let out: Record<string, Cell> | null = null;
+  for (const [k, opts] of Object.entries(choices)) {
+    const v = json[k];
+    const named =
+      typeof v === "string" && opts[v] !== undefined
+        ? opts[v]
+        : Array.isArray(v) && v.some((x) => typeof x === "string" && opts[x] !== undefined)
+          ? v.map((x) => (typeof x === "string" && opts[x] !== undefined ? opts[x] : x))
+          : undefined;
+    if (named === undefined) continue;
+    out ??= { ...json };
+    out[k] = named;
+  }
+  return out ?? json;
+}
+export const namedRow = (r: RowView, choices: Choices | undefined): RowView =>
+  choices
+    ? {
+        ...r,
+        json: namedValues(r.json, choices),
+        ...(r.before ? { before: namedValues(r.before, choices) } : {}),
+      }
+    : r;

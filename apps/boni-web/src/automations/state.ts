@@ -412,7 +412,15 @@ export function outputCount(
   output: string,
 ): { rows: number; stale: boolean } | null {
   const t = state.tests[step];
-  if (!t || t.state === "stopped" || t.state === "queued" || t.state === "running") return null;
+  // A step that failed gave no rows to count: its arrows say nothing, as those it never reached (AU-67).
+  if (
+    !t ||
+    t.state === "stopped" ||
+    t.state === "failed" ||
+    t.state === "queued" ||
+    t.state === "running"
+  )
+    return null;
   return { rows: t.out[output] ?? 0, stale: t.stale };
 }
 

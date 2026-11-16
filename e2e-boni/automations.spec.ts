@@ -445,6 +445,106 @@ const testOf = (
   },
 });
 const FIVE_MIN = 5 * 60_000;
+/**
+ * «Resumir libros», for F (AU-20, AU-21): a trigger that asks a «Título» of its own, a «Buscar filas», an «Agrupar»
+ * by «Estado» with «Suma de Páginas», and a «Crear una fila» whose fields cite: one a step that is gone, one
+ * «Título» of «Buscar filas en Libros» (two steps of the path have a «Título»).
+ */
+const CITED = {
+  id: "a_01jx8y1v3x5z7b9d1f3h5k7n9q",
+  name: "Resumir libros",
+  updated: 1761995000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual", {
+      fields: [{ key: "tit", name: "Título", type: "text" }],
+    }),
+    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+      collection: "libros",
+      action: "find",
+      limit: 200,
+    }),
+    step("s_01jagrupar", "Agrupar", "group", {
+      by: [{ field: "estado" }],
+      measures: [{ measure: "sum", field: "paginas" }],
+    }),
+    step("s_01jcrear", "Crear una fila en Libros", "collection", {
+      collection: "libros",
+      action: "create",
+      fields: [
+        { field: "titulo", value: "Resumen" },
+        { field: "estado", value: { expr: "{{ $('Paso borrado').first().estado }}" } },
+        { field: "fin", value: { expr: "{{ $('Buscar filas en Libros').first().titulo }}" } },
+      ],
+    }),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jbuscar"),
+    arrow("s_01jbuscar", "s_01jagrupar"),
+    arrow("s_01jagrupar", "s_01jcrear"),
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jagrupar", x: 600, y: 0 },
+    { step: "s_01jcrear", x: 900, y: 0 },
+  ],
+};
+/** «Resumir libros» tested: 128 books in one group, «Pendiente», with 33,856 pages. */
+const CITED_DONE = {
+  s_inicio: { rows: { "out:main": [{ json: { tit: "Lista de ejemplo" }, label: {} }] } },
+  s_01jbuscar: {
+    rows: { "in:main": [{ json: { tit: "Lista de ejemplo" }, label: {} }], "out:main": books(128) },
+  },
+  s_01jagrupar: {
+    rows: {
+      "in:main": books(128),
+      "out:main": [{ json: { estado: "o_pendiente", sum_paginas: 33856 }, label: {} }],
+    },
+  },
+  s_01jcrear: {
+    rows: {
+      "in:main": [{ json: { estado: "o_pendiente", sum_paginas: 33856 }, label: {} }],
+      "out:main": [
+        { json: { titulo: "Resumen", estado: null }, before: null, would: "create", label: {} },
+      ],
+    },
+    wouldWrite: 1,
+  },
+};
+const citedTested = () =>
+  testOf(CITED_DONE, { kept: FIVE_MIN, tested: { s_inicio: { tit: "Lista de ejemplo" } } }, CITED);
+/** The steps whose first rows the app asked (`…/test/sample`, AU-20). */
+const samplesAsked = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __autoSample?: string[] }).__autoSample ?? []);
+/** An expression as its editor holds it: its text, and each chip as the citation it stands for (AU-21). */
+const exprOf = (l: ReturnType<Page["locator"]>) =>
+  l.evaluate((el) => {
+    const walk = (n: Node): string =>
+      n.nodeType === Node.TEXT_NODE
+        ? (n as Text).data.replace(/\u00a0/g, " ").replace(/\u200b/g, "")
+        : ((n as HTMLElement).dataset?.src ?? [...n.childNodes].map(walk).join(""));
+    return [...el.childNodes].map(walk).join("");
+  });
+/** A field of ENTRADA's «Esquema» by its name. */
+const schemaField = (page: Page, name: string) =>
+  entrada(page)
+    .locator(".auto-schema-list:not(.nested) > .auto-schema-field")
+    .filter({ has: page.locator(".auto-schema-name", { hasText: new RegExp(`^${name}$`) }) })
+    .first();
+/** Drags `from` onto `to` with the mouse, at a person's pace (AU-21). */
+async function dragOnto(
+  page: Page,
+  from: ReturnType<Page["locator"]>,
+  to: ReturnType<Page["locator"]>,
+) {
+  const a = await from.boundingBox();
+  const b = await to.boundingBox();
+  if (!a || !b) throw new Error("nothing to drag or nowhere to drop");
+  await page.mouse.move(a.x + Math.min(20, a.width / 2), a.y + a.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 15 });
+  await page.mouse.up();
+}
 /** What the app asked to test (`window.__autoTests`, the bodies), and the pages of rows it asked. */
 const testsAsked = (page: Page) =>
   page.evaluate(() =>
@@ -1520,7 +1620,7 @@ test.describe("the editor", () => {
     await expect(saved(page)).toHaveText("Guardado");
     expect((await lastDraft(page, CHAIN.id))?.steps.at(-1)?.params).toEqual({ action: "find" });
   });
-  test("AU-67 · after a test each arrow says how many rows passed («128 filas»; «0 filas» dimmed), an output with no arrow its count too, and each step how it ended (bien, falló, saltado, parado); a step that failed says why on its card in two lines at most, whole in its SALIDA with «Ir al parámetro», and in «Registro»; the ones that hung from it are «parados»; «saltado» is a step no rows came to", async ({
+  test("AU-67 · after a test each arrow says how many rows passed («128 filas»; «0 filas» dimmed), an output with no arrow its count too, and each step how it ended (bien, falló, saltado, parado); a step that failed says why on its card in two lines at most, whole in its SALIDA with «Ir al parámetro», and in «Registro»; the ones that hung from it are «parados» and its arrows say no count; «saltado» is a step no rows came to", async ({
     page,
   }) => {
     const fails = testOf(
@@ -1563,8 +1663,9 @@ test.describe("the editor", () => {
     for (const id of ["s_01jmodificar", "s_01jeliminar", "s_01jcombinar", "s_01jcrear"])
       await expect(stateOf(page, id)).toHaveText("Parado");
     await expect(stateOf(page, "s_01jbuscar")).toHaveText("Bien");
-    // No count on the arrows the test did not reach.
-    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveText("0 filas");
+    // No count on the arrows out of the step that failed, nor on those the test did not reach.
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveCount(0);
+    await expect(countOn(page, "s_01jsi", "s_01jeliminar")).toHaveCount(0);
     await expect(countOn(page, "s_01jmodificar", "s_01jcombinar")).toHaveCount(0);
     // In «Registro»: in which step; a click selects it.
     await expect(logLine(page)).toContainText("falló en «Si»");
@@ -1783,7 +1884,22 @@ test.describe("adding a step", () => {
     expect(kept?.name).toBe("Mis libros");
     expect(kept?.params.collection).toBe("tareas");
   });
-  test.fixme("AU-86 · renaming a step changes the chips that cite it (F: AU-21)", async () => {});
+  test("AU-86 · renaming a step changes the chips that cite it (F: AU-21)", async ({ page }) => {
+    await openApp(page, "/?still", { automations: [citedTested()], agent: BEFORE() });
+    await openCanvas(page, CITED.name, 4);
+    await openStep(page, "s_01jcrear");
+    const fin = () => param(page, "fields").getByRole("textbox", { name: "Terminado" });
+    await expect(fin().locator(".auto-chip")).toHaveText("Buscar filas en Libros › Título");
+    await press(page, "Escape");
+    await openStep(page, "s_01jbuscar");
+    await nameIn(page).fill("Mis libros");
+    await nameIn(page).press("Enter");
+    await press(page, "Escape");
+    await openStep(page, "s_01jcrear");
+    await expect(fin().locator(".auto-chip")).toHaveText("Mis libros › Título");
+    await expect(fin().locator(".auto-chip")).not.toHaveClass(/broken/);
+    await expect.poll(() => exprOf(fin())).toBe("{{ $('Mis libros').first().titulo }}");
+  });
   test("A-15 · with 200 steps, dragging a box, adding a step and «Ordenar» keep the canvas moving", async ({
     page,
   }, info) => {
@@ -2310,10 +2426,188 @@ test.describe("the step's view", () => {
     await expect.poll(sideways).toEqual([]);
   });
   test.fixme("AU-74 · on the phone the list is the collection's page and an automation opens its canvas only to look: it pans and zooms, a step opens in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something, no «Probar» and no «Probar paso», and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async () => {});
-  test.fixme("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async () => {});
-  test.fixme("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async () => {});
-  test.fixme("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async () => {});
-  test.fixme("AU-71 · a field of ENTRADA's «Esquema», of the step before or of an earlier one chosen in its header, is dragged into a parameter (F: AU-21)", async () => {});
+  test("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    // On a number, the field replaces the value: «Si» keeps the books of more than 300 pages.
+    await openStep(page, "s_01jsi");
+    const where = param(page, "where");
+    await expect(where.locator(".auto-value input")).toHaveValue("300");
+    await dragOnto(page, schemaField(page, "Páginas"), where.locator(".auto-value").first());
+    const cond = where.getByRole("textbox", { name: "Páginas" });
+    await expect.poll(() => exprOf(cond)).toBe("{{ $json.paginas }}");
+    await expect(cond.locator(".auto-chip")).toHaveText("Páginas");
+    await expect(where.locator(".auto-preview")).toHaveText("= 201 · con la fila 1 de 128");
+    // A drop leaves the caret after the field, to go on typing; Esc leaves it, the next one closes the view.
+    await expect(cond).toBeFocused();
+    await press(page, "Escape");
+    await expect(cond).not.toBeFocused();
+    await press(page, "Escape");
+    // On a text, it goes in at the caret: «Rev|isar».
+    await openStep(page, "s_01jmodificar");
+    const fields = param(page, "fields");
+    const notas = fields.getByRole("textbox", { name: "Valor" });
+    await notas.click();
+    await notas.press("Home");
+    for (let i = 0; i < 3; i++) await notas.press("ArrowRight");
+    await dragOnto(page, schemaField(page, "Título"), notas);
+    const editor = fields.getByRole("textbox", { name: "Valor" });
+    await expect.poll(() => exprOf(editor)).toBe("Rev{{ $json.titulo }}isar");
+    await expect(fields.locator(".auto-preview")).toHaveText(
+      "= RevLibro 126isar · con la fila 1 de 3",
+    );
+    // Typed at a person's pace, the preview follows each key and the server is asked nothing.
+    const asked = {
+      samples: (await samplesAsked(page)).length,
+      rows: (await rowsAsked(page)).length,
+      tests: (await testsAsked(page)).length,
+    };
+    await editor.click();
+    await editor.press("Control+End");
+    await editor.pressSequentially(" ya", { delay: 120 });
+    await expect(fields.locator(".auto-preview")).toHaveText(
+      "= RevLibro 126isar ya · con la fila 1 de 3",
+    );
+    await expect.poll(() => exprOf(editor)).toBe("Rev{{ $json.titulo }}isar ya");
+    expect({
+      samples: (await samplesAsked(page)).length,
+      rows: (await rowsAsked(page)).length,
+      tests: (await testsAsked(page)).length,
+    }).toEqual(asked);
+    await expect(saved(page)).toHaveText("Guardado");
+    const kept = (await lastDraft(page, TESTED.id))?.steps.find((x) => x.id === "s_01jmodificar");
+    expect(kept?.params.fields).toEqual([
+      { field: "notas", value: { expr: "Rev{{ $json.titulo }}isar ya" } },
+    ]);
+  });
+  test("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [CONDITIONS], agent: BEFORE() });
+    await openCanvas(page, CONDITIONS.name, 6);
+    await openStep(page, "s_01jbuscar");
+    // Each value of the view has its «{ }», in sight: «Límite» and the condition's value.
+    const values = view(page).locator(".auto-value");
+    await expect(values).toHaveCount(2);
+    for (const v of await values.all()) await expect(v.locator(".auto-expr-toggle")).toBeVisible();
+    const limit = param(page, "limit");
+    await expect(limit.getByRole("spinbutton", { name: "Límite" })).toHaveValue("50");
+    // Fixed to an expression, keeping what was written.
+    await limit.getByRole("button", { name: "Usar una expresión" }).click();
+    const editor = limit.getByRole("textbox", { name: "Límite" });
+    await expect.poll(() => exprOf(editor)).toBe("50");
+    await expect(limit.getByRole("button", { name: "Usar un valor fijo" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // And back: the control empty.
+    await limit.getByRole("button", { name: "Usar un valor fijo" }).click();
+    await expect(limit.getByRole("spinbutton", { name: "Límite" })).toHaveValue("");
+    // Ctrl+Z undoes either.
+    await press(page, "Control+z");
+    await expect.poll(() => exprOf(limit.getByRole("textbox", { name: "Límite" }))).toBe("50");
+    await press(page, "Control+z");
+    await expect(limit.getByRole("spinbutton", { name: "Límite" })).toHaveValue("50");
+  });
+  test("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [citedTested()], agent: BEFORE() });
+    await openCanvas(page, CITED.name, 4);
+    await openStep(page, "s_01jcrear");
+    const fields = param(page, "fields");
+    // Of a result: «Suma de Páginas», never its key; and a choice by its option's name.
+    await expect(schemaField(page, "Suma de Páginas")).toBeVisible();
+    await expect(entrada(page)).not.toContainText("sum_paginas");
+    await expect(schemaField(page, "Estado").locator(".auto-schema-value")).toHaveText("Pendiente");
+    const titulo = fields.getByRole("textbox", { name: "Título" });
+    await titulo.click();
+    await titulo.press("End");
+    await titulo.pressSequentially(" ", { delay: 60 });
+    await dragOnto(page, schemaField(page, "Suma de Páginas"), titulo);
+    const editor = fields.getByRole("textbox", { name: "Título" });
+    await expect.poll(() => exprOf(editor)).toBe("Resumen {{ $json.sum_paginas }}");
+    const chip = editor.locator(".auto-chip");
+    await expect(chip).toHaveText("Suma de Páginas");
+    // The step's icon beside the field's name.
+    await expect(chip.locator("svg")).toHaveCount(1);
+    // Of an earlier step chosen in ENTRADA's header: after «Agrupar» it is that step's first row.
+    await entrada(page)
+      .getByRole("combobox", { name: "Ver los datos de" })
+      .selectOption({ label: "Buscar filas en Libros" });
+    // A long expression wraps: Ctrl+End is its end, past the chip.
+    await editor.click();
+    await editor.press("Control+End");
+    await editor.pressSequentially(" ", { delay: 60 });
+    await dragOnto(page, schemaField(page, "Título"), editor);
+    await expect
+      .poll(() => exprOf(editor))
+      .toBe("Resumen {{ $json.sum_paginas }} {{ $('Buscar filas en Libros').first().titulo }}");
+    // Two steps of the path have a «Título»: the chip says the step too.
+    await expect(editor.locator(".auto-chip")).toHaveText([
+      "Suma de Páginas",
+      "Buscar filas en Libros › Título",
+    ]);
+    // What it gives, as text: a title that looks like HTML is read letter by letter (A-01).
+    const preview = fields.locator(".auto-preview").first();
+    await expect(preview).toHaveText("= Resumen 33856 <b>Rayuela</b> · con la fila 1 de 1");
+    await expect(preview.locator("b")).toHaveCount(0);
+    // A citation of a step that is gone is a red chip, with why.
+    const gone = fields.getByRole("textbox", { name: "Estado" }).locator(".auto-chip");
+    await expect(gone).toHaveClass(/broken/);
+    // With what it cited: the step that is gone and its field.
+    await expect(gone).toHaveText("Paso borrado › estado");
+    await expect(gone).toHaveAttribute("title", "Ningún paso se llama «Paso borrado»");
+    expect(await gone.evaluate((el) => getComputedStyle(el).color)).not.toBe(
+      await chip.first().evaluate((el) => getComputedStyle(el).color),
+    );
+  });
+  test("AU-71 · a field of ENTRADA's «Esquema», of the step before or of an earlier one chosen in its header, is dragged into a parameter (F: AU-21)", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    await openStep(page, "s_01jmodificar");
+    const fields = param(page, "fields");
+    // Of the step before («Si»): the row that comes in.
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText("De «Si» · 3 filas");
+    await dragOnto(
+      page,
+      schemaField(page, "Páginas"),
+      fields.getByRole("textbox", { name: "Valor" }),
+    );
+    const editor = fields.getByRole("textbox", { name: "Valor" });
+    await expect.poll(() => exprOf(editor)).toBe("Revisar{{ $json.paginas }}");
+    // Of an earlier one chosen in the header, a field inside a related row: «Si» keeps the rows, so it is their pair.
+    await entrada(page)
+      .getByRole("combobox", { name: "Ver los datos de" })
+      .selectOption({ label: "Buscar filas en Libros" });
+    const autor = schemaField(page, "autor");
+    await autor.locator("summary").click();
+    await dragOnto(page, autor.locator(".nested .auto-schema-field").first(), editor);
+    await expect
+      .poll(() => exprOf(editor))
+      .toBe("Revisar{{ $json.paginas }}{{ $('Buscar filas en Libros').item.autor.nombre }}");
+    await expect(editor.locator(".auto-chip")).toHaveText(["Páginas", "autor › nombre"]);
+    await expect(saved(page)).toHaveText("Guardado");
+    const kept = (await lastDraft(page, TESTED.id))?.steps.find((x) => x.id === "s_01jmodificar");
+    expect(kept?.params.fields).toEqual([
+      {
+        field: "notas",
+        value: {
+          expr: "Revisar{{ $json.paginas }}{{ $('Buscar filas en Libros').item.autor.nombre }}",
+        },
+      },
+    ]);
+  });
   test("A-15 · with 200 steps, a step's view opens at once and each key typed in it is drawn at once", async ({
     page,
   }, info) => {
@@ -2585,15 +2879,17 @@ test.describe("against a sea of options", () => {
     await press(page, "Escape");
     await openStep(page, "s_01jfiltrar");
     expect(await ops()).toEqual(["es", "mayor que", "menor que", "está vacío", "no está vacío"]);
-    const expr = where().locator(".auto-input.expr");
-    await expect(expr).toHaveValue("{{ $json.minimo }}");
+    // The value an expression, painted with its chip (F: AU-21).
+    const expr = where().locator(".auto-expr");
+    await expect.poll(() => exprOf(expr)).toBe("{{ $json.minimo }}");
+    await expect(expr.locator(".auto-chip")).toHaveCount(1);
     // A run of keys in a condition's value is one step of Deshacer, and Ctrl+Y brings it back (AU-68).
     await expr.fill("");
     await expr.pressSequentially("{{ $json.maximo }}", { delay: 40 });
     await press(page, "Control+z");
-    await expect(expr).toHaveValue("{{ $json.minimo }}");
+    await expect.poll(() => exprOf(expr)).toBe("{{ $json.minimo }}");
     await press(page, "Control+y");
-    await expect(expr).toHaveValue("{{ $json.maximo }}");
+    await expect.poll(() => exprOf(expr)).toBe("{{ $json.maximo }}");
     await press(page, "Escape");
     await expect(expr).not.toBeFocused();
     await press(page, "Escape");

@@ -429,7 +429,7 @@ describe("after a test", () => {
     const again = openedEditor({ ...three, tests: done.tests });
     expect(logLine(again)).toMatchObject({ kind: "tested", ok: true, steps: 3 });
   });
-  it("AU-67 · every arrow has the rows that passed by it and every output with no arrow its count; a step the test did not reach because it stopped is «parado», and «saltado» only one that got no rows", () => {
+  it("AU-67 · every arrow has the rows that passed by it and every output with no arrow its count; a step the test did not reach because it stopped is «parado», and «saltado» only one that got no rows; the arrows and the outputs of a step that failed say no count", () => {
     const s = tested(askTest(openedEditor(three), null), done, 10_000);
     const [first, second] = three.automation.arrows;
     expect(arrowCount(openedEditor(three), first as Arrow)).toBeNull();
@@ -452,8 +452,9 @@ describe("after a test", () => {
       },
       20_000,
     );
-    // The failed step's outputs gave no rows; the one it stopped before says nothing of rows.
-    expect(arrowCount(stopped, second as Arrow)).toEqual({ rows: 0, stale: false });
+    // The failed step's arrows and its outputs with none say no count; nor does the one it stopped before.
+    expect(arrowCount(stopped, second as Arrow)).toBeNull();
+    expect(outputCount(stopped, "s_filtro", "no")).toBeNull();
     expect(outputCount(stopped, "s_orden", "main")).toBeNull();
     expect(outputSays(sort as Step, stopped.tests.s_orden)).toEqual({ kind: "stopped" });
     const skipped = {
