@@ -215,7 +215,7 @@ function testedFields(
     if (!isTrigger(s) || !kept.has(s.id)) continue;
     const output = outputsOf(s)[0];
     const [first] = output ? store.journal.automationTestRows(a.id, s.id, output, 0, 1) : [];
-    if (first) out[s.id] = (JSON.parse(first) as KeptRow).json;
+    if (first) out[s.id] = (first as KeptRow).json;
   }
   return out;
 }
@@ -525,7 +525,7 @@ function recordOf(store: UserStore, id: string, k: KeptRecord, step: string): St
   for (const [output, n] of Object.entries(out))
     rows[output] = store.journal
       .automationTestRows(id, step, output, 0, n)
-      .map((r) => rowOfKept(JSON.parse(r) as KeptRow));
+      .map((r) => rowOfKept(r as KeptRow));
   return { ...rest, out: rows };
 }
 
@@ -587,14 +587,22 @@ function pageAcross(
   parts: readonly { step: string; output: string; count: number }[],
   offset: number,
   limit: number,
-): string[] {
-  const out: string[] = [];
+): KeptRow[] {
+  const out: KeptRow[] = [];
   let at = 0;
   for (const p of parts) {
     if (out.length >= limit) break;
     const from = Math.max(0, offset + out.length - at);
     if (from < p.count)
-      out.push(...store.journal.automationTestRows(id, p.step, p.output, from, limit - out.length));
+      out.push(
+        ...(store.journal.automationTestRows(
+          id,
+          p.step,
+          p.output,
+          from,
+          limit - out.length,
+        ) as KeptRow[]),
+      );
     at += p.count;
   }
   return out;
@@ -628,13 +636,13 @@ export function testRows(
   if (at.side === "out") {
     if (!(at.name in k.out)) return BAD;
     const rows = store.journal.automationTestRows(id, at.step, at.name, at.offset, limit);
-    return { rows: rows.map((r) => viewOf(JSON.parse(r) as KeptRow)), total: k.out[at.name] ?? 0 };
+    return { rows: rows.map((r) => viewOf(r as KeptRow)), total: k.out[at.name] ?? 0 };
   }
   if (!(at.name in k.in)) return BAD;
   const parts = inputSources(o.automation, kept, at.step, at.name);
   const rows = pageAcross(store, id, parts, at.offset, limit);
   return {
-    rows: rows.map((r) => viewOf(JSON.parse(r) as KeptRow)),
+    rows: rows.map(viewOf),
     total: parts.reduce((n, p) => n + p.count, 0),
   };
 }
@@ -676,7 +684,7 @@ export function testSample(
     for (const p of parts) {
       if (index < at + p.count) {
         const [r] = store.journal.automationTestRows(id, p.step, p.output, index - at, 1);
-        return r ? { row: JSON.parse(r) as KeptRow, step: p.step } : null;
+        return r ? { row: r as KeptRow, step: p.step } : null;
       }
       at += p.count;
     }
