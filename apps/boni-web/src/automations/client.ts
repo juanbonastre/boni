@@ -145,6 +145,15 @@ export interface AutomationsClient {
   ): Promise<ExprPreview>;
 }
 
+/**
+ * The most an expression may take once escaped in a preview's request (`queryValue`), well under the 16 KB of a
+ * request's head the server reads, with the rest of the request around it. 2,000 characters fit `CODE_LIMITS`, but
+ * one that escapes to three bytes each («—», «€») is about 18 KB: such a text is said too long, never asked (AU-23).
+ */
+export const PREVIEW_QUERY_CHARS = 12_000;
+/** Whether `expr` fits a preview's request (`PREVIEW_QUERY_CHARS`). */
+export const previewFits = (expr: string) => queryValue(expr).length <= PREVIEW_QUERY_CHARS;
+
 /** The way to the server the client needs: `AgentApi.automations` (offline and errors are its own). */
 export type AutomationsApi = Pick<AgentApi, "automations">;
 

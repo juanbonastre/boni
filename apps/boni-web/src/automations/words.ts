@@ -367,6 +367,27 @@ export function namedValues(
   }
   return out ?? json;
 }
+/**
+ * A value worked out by the box (a preview, AU-23) with each option said by its name, as a row's are (AU-21): the box
+ * read the rows as they are kept, with ids, and what it gave is not tied to a field, so any text that is an option's
+ * id of a step before is said by that option's name, also inside a list or an object.
+ */
+export function namedCell(value: Cell, choices: Readonly<Record<string, Choices>>): Cell {
+  const names = new Map<string, string>();
+  for (const byField of Object.values(choices))
+    for (const opts of Object.values(byField))
+      for (const [id, name] of Object.entries(opts)) names.set(id, name);
+  if (!names.size) return value;
+  const walk = (v: Cell): Cell =>
+    typeof v === "string"
+      ? (names.get(v) ?? v)
+      : Array.isArray(v)
+        ? v.map(walk)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))
+          : v;
+  return walk(value);
+}
 export const namedRow = (r: RowView, choices: Choices | undefined): RowView =>
   choices
     ? {

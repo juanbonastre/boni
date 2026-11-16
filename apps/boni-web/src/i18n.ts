@@ -896,6 +896,8 @@ const es = {
   "auto.preview.noRows": "La entrada no tiene filas con las que calcularlo",
   "auto.preview.failed": "Con la fila {row} de {of}: {why}",
   "auto.preview.long": "Es demasiado largo para calcularlo aquí: {got} caracteres, y caben {max}",
+  "auto.preview.big":
+    "Es demasiado largo para calcularlo aquí: sus {got} caracteres ocupan más de lo que cabe en una consulta",
   "auto.do.rowBefore": "Fila anterior",
   "auto.do.rowAfter": "Fila siguiente",
   "auto.problem.code.syntax": "No es JavaScript: {message}",
@@ -3935,6 +3937,8 @@ const en: Record<Key, string> = {
   "auto.preview.noRows": "Its input has no rows to work it out with",
   "auto.preview.failed": "With row {row} of {of}: {why}",
   "auto.preview.long": "Too long to work out here: {got} characters, and {max} fit",
+  "auto.preview.big":
+    "Too long to work out here: its {got} characters take more than a request holds",
   "auto.do.rowBefore": "Previous row",
   "auto.do.rowAfter": "Next row",
   "auto.problem.code.syntax": "It is not JavaScript: {message}",
