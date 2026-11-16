@@ -178,6 +178,7 @@ describe("labels and the policy", () => {
         get: (c, id) => noted("get", () => db.get(c, id)),
         aggregate: (q) => noted("aggregate", () => db.aggregate(q)),
         apply: (c, v) => noted("apply", () => db.apply(c, v)),
+        applyAll: (cs) => noted("applyAll", () => db.applyAll(cs)),
       };
       const judged = policy((c) => {
         log.push(`decide ${c.effect}${c.test ? " test" : ""}`);

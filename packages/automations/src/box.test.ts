@@ -977,6 +977,14 @@ describe("reading collections from code", () => {
         touched.push("write");
         return Promise.reject(new Error("a write"));
       },
+      decideAll: () => {
+        touched.push("decideAll");
+        return Promise.reject(new Error("a write"));
+      },
+      writeAll: () => {
+        touched.push("writeAll");
+        return Promise.reject(new Error("a write"));
+      },
     };
     const r0 = await evaluate(
       input({

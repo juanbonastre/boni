@@ -42,12 +42,30 @@ export interface WireRead {
   field?: Json;
 }
 
+/** The three ways the code asks to save (AU-172): one per action of «Colección», by its word. */
+export const WRITE_ACTIONS = ["create", "update", "remove"] as const;
+export type WriteAction = (typeof WRITE_ACTIONS)[number];
+
+/**
+ * What a call of `$col('Nombre').create/update/remove` asked for, as the code wrote it: a request, never saved by the
+ * box (AU-172, AU-173). `id` and `fields` are its arguments as JSON; `line` is where the call is in the source.
+ */
+export interface WireWrite {
+  collection: string;
+  action: WriteAction;
+  id?: Json;
+  fields?: Json;
+  line?: number;
+}
+
 export interface EvalLimits extends Limits {
   /** Lines of console kept, and characters of each. */
   consoleLines: number;
   consoleLineChars: number;
   /** Different reads one evaluation may ask for. */
   reads: number;
+  /** Requests to save one evaluation may make (AU-175): the box stops it as soon as it asks for one more. */
+  writes: number;
 }
 
 export interface EvalRequest {
@@ -72,6 +90,11 @@ export interface EvalRequest {
   run: { test: boolean; startedBy: string };
   /** What was read before, by the key the box gave each read. */
   reads: { [key: string]: Json };
+  /**
+   * What the code may ask to save, by the collection's name as the code writes it: the methods `$col('Nombre')` has
+   * beside its reads (AU-183). Only for `code`; what it does not name has none.
+   */
+  writes?: { [name: string]: readonly WriteAction[] };
   limits?: Partial<EvalLimits>;
 }
 
@@ -84,10 +107,19 @@ export type EvalFault =
   /** It tried to change what it was given or something of the interpreter. */
   | "frozen"
   /** It asked for more different reads than `limits.reads`. */
-  | "reads";
+  | "reads"
+  /** It asked to save more than `limits.writes` times in one evaluation. */
+  | "writes";
 
 export type WireEvaluated =
-  | { state: "done"; values: readonly Json[]; clock: boolean; random: boolean }
+  | {
+      state: "done";
+      values: readonly Json[];
+      clock: boolean;
+      random: boolean;
+      /** What it asked to save, in the order of the calls (AU-173): only its last pass's, the one that ended. */
+      writes?: readonly WireWrite[];
+    }
   | { state: "needs"; key: string; read: WireRead }
   | {
       state: "failed";
@@ -142,6 +174,7 @@ export const EVAL_DEFAULT_LIMITS: EvalLimits = {
   consoleLines: 200,
   consoleLineChars: 2_000,
   reads: 20,
+  writes: 5_000,
 };
 /** The most an evaluation may ask for. */
 export const EVAL_MAX_LIMITS: EvalLimits = {
@@ -151,6 +184,7 @@ export const EVAL_MAX_LIMITS: EvalLimits = {
   consoleLines: 1_000,
   consoleLineChars: 10_000,
   reads: 100,
+  writes: 5_000,
 };
 /** A read as the code wrote it, at most, as JSON: what it asks travels to Boni's server, which checks the rest. */
 export const MAX_READ_BYTES = 64 * 1024;
@@ -174,8 +208,11 @@ const MEMBERS = new Set([
   "seed",
   "run",
   "reads",
+  "writes",
   "limits",
 ]);
+/** A collection's name as the code writes it, at most: the same bound as a read's key. */
+const MAX_NAME = 128;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -266,6 +303,19 @@ export function evalRequestErrors(v: unknown): string[] {
   else
     for (const k of Object.keys(v.reads))
       if (!k.length || k.length > MAX_READ_KEY) out.push(`reads.${k.slice(0, 16)}`);
+  if (v.writes !== undefined) {
+    // Only a «Código» asks to save, and only by the three actions, each once (AU-183, AU-184).
+    if (!isObject(v.writes) || v.kind !== "code") out.push("writes");
+    else
+      for (const [name, actions] of Object.entries(v.writes))
+        if (
+          !name.length ||
+          name.length > MAX_NAME ||
+          !Array.isArray(actions) ||
+          !actions.every((a, i) => WRITE_ACTIONS.includes(a) && actions.indexOf(a) === i)
+        )
+          out.push(`writes.${name.slice(0, 16)}`);
+  }
   if (v.limits !== undefined) {
     if (!isObject(v.limits)) out.push("limits");
     else

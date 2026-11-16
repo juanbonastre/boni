@@ -207,6 +207,8 @@
   let readClock = false;
   let readRandom = false;
   const asked = new Set();
+  /** Per evaluation: what it asked to save, each as JSON text, in the order of the calls (AU-172, AU-173). */
+  let requests = [];
   let state = 0;
 
   // ------------------------------------------------------------------ the clock and chance (AU-34)
@@ -651,6 +653,40 @@
     answers.set(text, { value });
     return value;
   };
+  // Saving (AU-172, AU-183): `$col('Nombre')` has only the methods the request grants that name, and a call is a
+  // request: its arguments are copied as JSON there and then (what the code changes later is not asked for), nothing
+  // is saved and it gives back `undefined`. A read never sees a request: it reads what is saved. The requests of a
+  // pass stopped at a read are dropped with it, since `evaluate` starts each pass with none.
+  const grants = req.writes || {};
+  const request = (name, action, id, fields) => {
+    if (requests.length >= limits.writes) {
+      hostHalt("writes");
+      for (;;) {}
+    }
+    const parts = [`"collection":${JSON.stringify(name)}`, `"action":"${action}"`];
+    try {
+      if (id !== undefined) parts.push(`"id":${walk(id, []) ?? "null"}`);
+      if (fields !== undefined) parts.push(`"fields":${walk(fields, []) ?? "null"}`);
+    } catch (e) {
+      if (e === NOT_JSON)
+        throw new Error(
+          `$col('${name}').${action}: lo que pide guardar no es JSON (una función, un ciclo o un número que no es finito)`,
+        );
+      throw e;
+    }
+    const at = placeIn(new Error().stack);
+    if (at) parts.push(`"line":${at.line}`);
+    requests.push(`{${parts.join(",")}}`);
+    return undefined;
+  };
+  const writers = (name) => {
+    const own = Object.hasOwn(grants, name) ? grants[name] : [];
+    const out = {};
+    if (own.includes("create")) out.create = (fields) => request(name, "create", undefined, fields);
+    if (own.includes("update")) out.update = (id, fields) => request(name, "update", id, fields);
+    if (own.includes("remove")) out.remove = (id) => request(name, "remove", id, undefined);
+    return out;
+  };
   const collections = new Map();
   const $col = function $col(name) {
     if (typeof name !== "string") throw new Error("$col: el nombre de la colección es un texto");
@@ -671,6 +707,7 @@
         count: (q) => ask({ collection: name, op: "count", where: query(q, "count").where }),
         sum: (field, q) =>
           ask({ collection: name, op: "sum", field, where: query(q, "sum").where }),
+        ...writers(name),
       });
       collections.set(name, c);
     }
@@ -888,6 +925,7 @@
     readClock = false;
     readRandom = false;
     asked.clear();
+    requests = [];
     copies = null;
     lists = null;
     current = null;
@@ -907,7 +945,8 @@
         return JSON.stringify({ state: "failed", fault: "result", message: r.why, source: n });
       values.push(r.text);
     }
-    return `{"state":"done","values":[${values.join(",")}],"clock":${readClock},"random":${readRandom}}`;
+    const writes = requests.length ? `,"writes":[${requests.join(",")}]` : "";
+    return `{"state":"done","values":[${values.join(",")}],"clock":${readClock},"random":${readRandom}${writes}}`;
   };
 
   /** The driver: each row from `start` on, each answer handed to the host as it is made. */

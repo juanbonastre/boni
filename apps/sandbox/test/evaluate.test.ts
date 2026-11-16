@@ -748,6 +748,190 @@ return categorias.map((c) => ({ categoria: c.nombre, gastado: gastado[c.id] ?? 0
   });
 });
 
+describe("saving: a call is a request (AU-172, AU-173, AU-175, AU-183)", () => {
+  const grant = { writes: { Gastos: ["create", "update", "remove"] as const } };
+  /** What each evaluation of an answer asked to save. */
+  const writesOf = (r: EvalResponse) =>
+    evals(r).map((e) => (e.state === "done" ? (e.writes ?? []) : e));
+
+  it("AU-172 · `.create`, `.update` and `.remove` save nothing and give `undefined`; each call is a request, in the order of the calls, with its arguments as JSON copied at the call (a later change of the object is not asked for) and the line of the source", async () => {
+    const r = await ask(
+      "code",
+      [
+        [
+          "const f = { importe: 12.5, nota: 'café' };",
+          "const a = $col('Gastos').create(f);",
+          "f.importe = 99;",
+          "const b = $col('Gastos').update('e_01m7aaaaaaaaaaaaaaaaaaaaaa', { categoria: 'e_01m7bbbbbbbbbbbbbbbbbbbbbb' });",
+          "const c = $col('Gastos').remove('e_01m7cccccccccccccccccccccc');",
+          "return [a, b, c].map((x) => x === undefined);",
+        ].join("\n"),
+      ],
+      [],
+      grant,
+    );
+    expect(outs(r)).toEqual([[true, true, true]]);
+    expect(writesOf(r)).toEqual([
+      [
+        {
+          collection: "Gastos",
+          action: "create",
+          fields: { importe: 12.5, nota: "café" },
+          line: 2,
+        },
+        {
+          collection: "Gastos",
+          action: "update",
+          id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa",
+          fields: { categoria: "e_01m7bbbbbbbbbbbbbbbbbbbbbb" },
+          line: 4,
+        },
+        { collection: "Gastos", action: "remove", id: "e_01m7cccccccccccccccccccccc", line: 5 },
+      ],
+    ]);
+    // What it asked for is not JSON: the code's own error, at the call.
+    const bad = await ask("code", ["$col('Gastos').create({ f: () => 1 }); return 1"], [], grant);
+    expect(evals(bad)).toMatchObject([{ state: "failed", fault: "threw", line: 1 }]);
+    expect(evals(bad)[0]?.state === "failed" && evals(bad)[0]).toMatchObject({
+      message: expect.stringContaining("no es JSON"),
+    });
+  });
+
+  it("AU-172 · a read of the same code does not see what it asked for: it reads what is saved, as if the requests did not exist", async () => {
+    const source =
+      "$col('Gastos').create({ importe: 1 }); $col('Gastos').remove('e_01m7aaaaaaaaaaaaaaaaaaaaaa'); return $col('Gastos').find();";
+    const saved = [{ id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa", importe: 5 }];
+    const { r } = await untilDone(evalRequest("code", [source], [], grant), () => saved);
+    expect(outs(r)).toEqual([saved]);
+    expect(writesOf(r)[0]).toHaveLength(2);
+  });
+
+  it("AU-173 · only the last pass's requests count: a pass stopped at a read gives none, and the pass repeated with what it read gives each request once", async () => {
+    const source =
+      "$col('Gastos').update('e_01m7aaaaaaaaaaaaaaaaaaaaaa', { n: 1 }); const all = $col('Gastos').find(); $col('Gastos').create({ n: all.length }); return all.length;";
+    const req = evalRequest("code", [source], [], grant);
+    const first = await evaluateCall(req);
+    expect(evals(first)).toMatchObject([{ state: "needs" }]);
+    expect(JSON.stringify(first)).not.toContain('"writes"');
+    const { r, calls } = await untilDone(req, () => [{ id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa" }]);
+    expect(calls).toBe(2);
+    expect(writesOf(r)).toEqual([
+      [
+        {
+          collection: "Gastos",
+          action: "update",
+          id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa",
+          fields: { n: 1 },
+          line: 1,
+        },
+        { collection: "Gastos", action: "create", fields: { n: 1 }, line: 1 },
+      ],
+    ]);
+  });
+
+  it("AU-173 · in «Una vez por fila» each evaluation gives its own requests, in the order of the rows, and one row's are never another's", async () => {
+    const r = await ask(
+      "code",
+      ["if ($json.i % 2) $col('Gastos').update($json.id, { par: false }); return $json;"],
+      [
+        { i: 0, id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa" },
+        { i: 1, id: "e_01m7bbbbbbbbbbbbbbbbbbbbbb" },
+        { i: 3, id: "e_01m7cccccccccccccccccccccc" },
+      ],
+      { ...grant, mode: "perRow" },
+    );
+    expect(writesOf(r).map((w) => (Array.isArray(w) ? w.map((x) => x.id) : w))).toEqual([
+      [],
+      ["e_01m7bbbbbbbbbbbbbbbbbbbbbb"],
+      ["e_01m7cccccccccccccccccccccc"],
+    ]);
+  });
+
+  it("AU-173 · nested calls: in `$col('A').update(x, { y: $col('B').remove(1) })` the inner call is asked for first, as JavaScript evaluates the arguments before the call; the outer one is asked for without `y`, whose value is `undefined`", async () => {
+    const r = await ask(
+      "code",
+      [
+        "$col('Gastos').update('e_01m7aaaaaaaaaaaaaaaaaaaaaa', { y: $col('Notas').remove('e_01m7bbbbbbbbbbbbbbbbbbbbbb') }); return 1;",
+      ],
+      [],
+      { writes: { Gastos: ["update"], Notas: ["remove"] } },
+    );
+    expect(writesOf(r)).toEqual([
+      [
+        { collection: "Notas", action: "remove", id: "e_01m7bbbbbbbbbbbbbbbbbbbbbb", line: 1 },
+        {
+          collection: "Gastos",
+          action: "update",
+          id: "e_01m7aaaaaaaaaaaaaaaaaaaaaa",
+          fields: {},
+          line: 1,
+        },
+      ],
+    ]);
+  });
+
+  it("AU-183 · `$col('Nombre')` has only the methods the job grants that name, beside its reads: none for a name with no grant, and an expression has no `$col` even when the request names grants", async () => {
+    const keys =
+      "return [Object.keys($col('Gastos')).sort(), Object.keys($col('Notas')).sort(), typeof $col('Gastos').create];";
+    expect(
+      outs(await ask("code", [keys], [], { writes: { Gastos: ["update", "remove"] } })),
+    ).toEqual([
+      [
+        ["count", "find", "get", "remove", "sum", "update"],
+        ["count", "find", "get", "sum"],
+        "undefined",
+      ],
+    ]);
+    // Calling one it was not given is the code's own error, and asks for nothing.
+    const r = await ask("code", ["$col('Gastos').create({ a: 1 }); return 1"], [], {
+      writes: { Gastos: ["update"] },
+    });
+    expect(evals(r)).toMatchObject([{ state: "failed", fault: "threw" }]);
+    expect(JSON.stringify(r)).not.toContain('"writes"');
+    expect(
+      values(await ask("expressions", ["typeof $col"], [{}], { writes: { Gastos: ["create"] } })),
+    ).toEqual([["undefined"]]);
+  });
+
+  it("AU-175 · more requests in one evaluation than `limits.writes` stops it there as `writes`, which code that catches every error cannot catch, and in «Una vez por fila» the next row goes on", async () => {
+    const r = await ask(
+      "code",
+      [
+        "try { for (let i = 0; i < 10 * $json.n; i++) $col('Gastos').create({ i }); } catch { return 'atrapado'; } return $json.n;",
+      ],
+      [{ n: 1 }, { n: 0 }],
+      { ...grant, mode: "perRow", limits: { writes: 3 } },
+    );
+    expect(evals(r)).toMatchObject([
+      { state: "failed", fault: "writes" },
+      { state: "done", values: [0] },
+    ]);
+    // Exactly the limit is not past it.
+    const at = await ask(
+      "code",
+      ["for (let i = 0; i < 3; i++) $col('Gastos').create({ i }); return 1"],
+      [],
+      {
+        ...grant,
+        limits: { writes: 3 },
+      },
+    );
+    expect(writesOf(at)[0]).toHaveLength(3);
+  });
+
+  it("AU-175 · the requests count towards the answer that `outputBytes` limits: a code cannot pass it by asking instead of returning", async () => {
+    const source = (n: number) =>
+      `for (let i = 0; i < ${n}; i++) $col('Gastos').create({ t: 'x'.repeat(100) }); return 1`;
+    const limits = { outputBytes: 4_000 };
+    expect(await ask("code", [source(50)], [], { ...grant, limits })).toMatchObject({
+      ok: false,
+      error: "output",
+    });
+    // The same few requests fit.
+    expect(writesOf(await ask("code", [source(5)], [], { ...grant, limits }))[0]).toHaveLength(5);
+  });
+});
+
 describe("dates", () => {
   const ZONES = ["Europe/Madrid", "America/New_York", "Australia/Lord_Howe", "Asia/Kolkata"];
   /** Instants around every change of hour of 2026 in a zone, and its local midnights then. */
@@ -1124,7 +1308,7 @@ describe("the box and the automations say the same", () => {
     expect(values(r)).toEqual([[[...DATE_HELP.methods, ...DATE_HELP.parts].sort()]]);
   });
 
-  it("AU-35 · the limits the engine sends are the box's: every one of `CODE_LIMITS` the box knows is within `EVAL_MAX_LIMITS`, and the box's own defaults for the stack, the console and the reads are `CODE_LIMITS`'", () => {
+  it("AU-35 · the limits the engine sends are the box's: every one of `CODE_LIMITS` the box knows is within `EVAL_MAX_LIMITS`, and the box's own defaults for the stack, the console, the reads and the requests to save are `CODE_LIMITS`'", () => {
     const box = EVAL_MAX_LIMITS as unknown as Record<string, number>;
     const shared = Object.keys(EVAL_DEFAULT_LIMITS).filter((k) => k in CODE_LIMITS);
     expect(shared.sort()).toEqual(
@@ -1137,11 +1321,12 @@ describe("the box and the automations say the same", () => {
         "reads",
         "stackBytes",
         "steps",
+        "writes",
       ].sort(),
     );
     for (const k of shared)
       expect(CODE_LIMITS[k as CodeLimit], k).toBeLessThanOrEqual(box[k] as number);
-    for (const k of ["stackBytes", "consoleLines", "consoleLineChars", "reads"] as const)
+    for (const k of ["stackBytes", "consoleLines", "consoleLineChars", "reads", "writes"] as const)
       expect(EVAL_DEFAULT_LIMITS[k], k).toBe(CODE_LIMITS[k]);
   });
 });

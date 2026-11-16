@@ -581,7 +581,7 @@ for (const gasto of $col('Gastos').find({ where: [{ field: 'categoria', op: 'emp
 return [];
 ```
 
-- **AU-172** (F14c, en parte) · El código pide guardar con tres métodos de `$col('Nombre')`, uno por acción de
+- **AU-172** (F14c, hecho) · El código pide guardar con tres métodos de `$col('Nombre')`, uno por acción de
   «Colección» y con su palabra: `.create({ campo: valor })` (Crear), `.update(id, { campo: valor })` (Modificar) y
   `.remove(id)` (Eliminar, a la papelera: AU-122). Los campos van por su clave (AU-25); `update` cambia solo los que
   se le dan. Una llamada es una petición: en ese momento no guarda nada y no devuelve nada (`undefined`), porque la
@@ -592,9 +592,11 @@ return [];
   Una lectura del mismo código no ve lo que acaba de pedir: lee lo guardado, como si las peticiones no existieran.
   Los métodos de escribir solo existen en «Código»; en una expresión no hay `$col` (AU-184).
   Hecho en W1: el análisis lee los tres métodos por su nombre, y cada llamada es una petición de su acción, en el
-  orden del código. Falta: que la llamada no guarde ni devuelva nada en la caja, y que una lectura no vea lo pedido
-  (W2).
-- **AU-173** (F14c, pendiente) · Lo pide el código y lo guarda el motor. La caja sigue sin camino al almacén: una
+  orden del código. Hecho en W2: en la caja la llamada no guarda nada y devuelve `undefined`, una lectura no ve lo
+  pedido, y un id que no es de una fila que la conexión deja ver hace fallar el paso (`code.write.outside`). Con dos
+  llamadas anidadas (`.create({ x: $col('A').update(…) })`) las peticiones van en el orden en que corren, primero la
+  de dentro; el análisis las da en el orden del texto, lo que no cambia lo que permite.
+- **AU-173** (F14c, hecho) · Lo pide el código y lo guarda el motor. La caja sigue sin camino al almacén: una
   petición es un dato más de lo que devuelve la evaluación. Cuando el paso termina, el motor aplica sus peticiones en
   el orden en que se pidieron, por la misma puerta de la política y con el mismo ejecutor y la misma validación que
   la acción de un paso «Colección» (AU-120, AU-121, AU-168).
@@ -603,7 +605,10 @@ return [];
   de su última pasada, la que acaba: las de una pasada parada en una lectura se tiran. Modificar y eliminar leen antes
   la fila guardada, sin otra pregunta a la política (como en AU-168), para comprobar sus límites (AU-177), para «Haría
   esto» y para la versión con la que se guarda (`row.changed` si cambió entretanto, AU-04).
-- **AU-174** (F14c, pendiente) · Todo o nada. Lo que pide un paso es un solo cambio: se guarda entero o no se guarda
+  Hecho en W2: la evaluación devuelve sus peticiones con la respuesta (`writes`), solo las de la última pasada; el
+  motor las aplica en ese orden con `applyWrites` (`writes.ts`), que lee cada fila una vez antes y guarda con su
+  versión.
+- **AU-174** (F14c, en parte) · Todo o nada. Lo que pide un paso es un solo cambio: se guarda entero o no se guarda
   nada. Si el código lanza un error, si el paso falla o si una sola petición no se puede guardar (no pasa la
   validación, su fila cambió, la política la niega, se sale de la conexión), no se guarda ninguna y el paso falla
   diciendo cuál. Reintentar el paso (AU-16) no escribe dos veces.
@@ -616,7 +621,12 @@ return [];
   que falló se tira y lo de las demás es el cambio del paso. Cada escritura lleva la ejecución en el registro de
   operaciones, así que «Deshacer lo que hizo» (AU-18, AU-100: F14d) la deshace con todo lo de esa ejecución, como las
   de un paso «Colección».
-- **AU-175** (F14c, pendiente) · Lo que se puede pedir tiene topes, cada uno un número con nombre
+  Hecho en W2: la política se pregunta por todas antes de guardar (`decideAll`), las guarda una sola transacción
+  (`applyAll`, también en el almacén del servidor: dos cambios de una fila van en orden y, si el último falla, no
+  queda ninguno), el cambio que espera es una sola propuesta del paso, y con «seguir» o «salir por error» lo de una
+  fila que falló se tira. Falta: que cada escritura lleve la ejecución en el registro de operaciones, con las rutas y
+  el almacén de verdad (S1).
+- **AU-175** (F14c, en parte) · Lo que se puede pedir tiene topes, cada uno un número con nombre
   (`WRITE_LIMITS`, `writes.ts`): peticiones por evaluación (5.000) y por paso (5.000), el tamaño de una (64 KB) y el
   de todas las de un paso (4 MB). Pasarse hace fallar el paso, dice cuál y por cuánto, y no guarda nada: nunca se
   recorta, porque guardar la mitad de un cambio sería guardar otro.
@@ -624,6 +634,10 @@ return [];
   una vez, y los miles de filas de Juan caben en un paso. La caja cuenta las de una evaluación mientras corre (para un
   bucle sin fin en cuanto se pasa); el motor, las del paso. Los topes de la ejecución (filas escritas, AU-17: F14d)
   las cuentan también.
+  Hecho en W2: los cuatro topes, en la caja los de una evaluación y en el motor los del paso, y las peticiones
+  cuentan en el tamaño de la respuesta (`outputBytes`). Falta: que el adaptador de la caja del servidor
+  (`sandboxBox`, S1) dé su falta `writes` como `code.limit`, como las demás faltas de la caja. Los de la ejecución
+  llegan con AU-17 (F14d).
 
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.
@@ -691,12 +705,12 @@ interface Connection {
   fuera se propone aunque diga «Sí», una colección privada no se puede conectar a un paso de IA. Eliminar pregunta
   salvo en lo que dice AU-186, que es la política y no la conexión (hasta el 2026-11-16: «eliminar se pregunta
   siempre»).
-- **AU-46** (F14c, en parte) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
+- **AU-46** (F14c, hecho) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
   Hecho en E2: `connectionActions` no da nada a ningún otro tipo, una conexión en él es `connection.notAllowed`, y un
   «Código» sin conexiones valida y no lee ninguna colección.
-  Hecho en W1: la conexión de un «Código» da permiso de guardar (AU-176). Falta: guardar (W2).
+  Hecho en W1: la conexión de un «Código» da permiso de guardar (AU-176). Hecho en W2: guardar.
 - **AU-47** (F14d, pendiente) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
 
@@ -713,10 +727,12 @@ las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
   validación (`code.write.notAllowed`): dice «Permite modificar en «Gastos»», con el botón que pone esa celda en
   «Preguntar» (nunca en «Sí»: eso lo elige Juan). Una colección que no está conectada da el aviso de siempre (AU-31).
   Hecho en W1: las tres celdas, `code.write.notAllowed` con la colección, la acción y el sitio de cada llamada, y
-  `allowing`, el arreglo, que pone «Preguntar» y deja como está una celda que ya lo permite. Falta: que el motor
-  compruebe cada petición con la conexión guardada (W2), las palabras del aviso (W2, con las de `code.colUse`), y la
-  tabla y el botón (pantallas).
-- **AU-177** (F14c, pendiente) · Los límites de la conexión valen también para guardar, y los comprueba el motor con
+  `allowing`, el arreglo, que pone «Preguntar» y deja como está una celda que ya lo permite. Hecho en W2: el motor
+  comprueba cada petición con la conexión guardada, y una celda que no la permite hace fallar el paso aunque el código
+  pasara la validación con otra. Hasta la F14d (AU-186 a AU-188) un «Sí» pregunta como «Preguntar» (`YES_SAVES`,
+  `writes.ts`): el cambio del paso espera a Juan. Falta: las palabras del aviso, con las de `code.colUse` (están en
+  `CODE_PROBLEMS`, sin palabras como los demás), la tabla y el botón (pantallas), y que «Sí» guarde (F14d).
+- **AU-177** (F14c, hecho) · Los límites de la conexión valen también para guardar, y los comprueba el motor con
   la conexión guardada, nunca con lo que diga la caja: no se modifica ni se elimina una fila que «Solo estas filas»
   deja fuera, no se pone un campo que «Solo estos campos» no deja ver, y una fila creada tiene que cumplir «Solo
   estas filas». Pasarse hace fallar el paso y no guarda nada (AU-174).
@@ -724,6 +740,10 @@ las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
   puede sacar una fila del filtro: el filtro dice qué filas puede tocar, no cómo quedan (modificar la categoría de
   los gastos que no la tienen). Cuando lleguen los límites de cada acción (AU-48, F15), estrechan además de estos.
   Lo que una escritura devuelve no llega al código (AU-172), así que AU-171 no tiene nada que hacer aquí.
+  Hecho en W2: los comprueba `insideConnection` con la conexión guardada; una fila que no existe y una que la conexión
+  deja fuera fallan igual, con el mismo código y el mismo mensaje, para que el código no sepa cuál era. Una fila
+  creada se comprueba con los campos que pide: hoy el almacén no pone valores por defecto, y cuando los ponga se
+  comprobará con ellos.
 - **AU-178** (F14c, en parte) · La conexión dice sin abrirla si el código puede cambiar esa colección. Su ficha
   (AU-40): «Solo lee» frente a «Lee y modifica», «Lee, crea y modifica», con «pregunta antes» cuando es «Preguntar»
   («Lee y elimina · pregunta antes»), y «sin preguntar» cuando elimina con «Sí» (AU-189). La frase del paso (AU-44):
@@ -1011,7 +1031,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   tarjeta y que las citas lo sigan. Hecho en D: el nombre sigue a la colección elegida en la vista del paso hasta que
   Juan lo cambia. Hecho en F: las fichas de las citas cambian con el nombre.
 - **AU-87** (F14b, hecho) · Boni no mete pasos por su cuenta: lo que hay en el lienzo lo puso Juan o lo aceptó.
-- **AU-180** (F14c, pendiente) · La tarjeta de un paso que puede cambiar una colección lo dice sin abrirlo, con la
+- **AU-180** (F14c, en parte) · La tarjeta de un paso que puede cambiar una colección lo dice sin abrirlo, con la
   colección: «Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas». Es la misma marca para todo paso
   que guarda: un «Colección» que crea, modifica o elimina, un «Código» que puede guardar y, desde la F15, un «Agente»
   con permiso de escribir. Un código que solo calcula no enseña nada. Eliminar sin preguntar lo dice (AU-189).
@@ -1019,6 +1039,8 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   es un problema y se marca como tal, AU-83). Cambiar en memoria las filas que le llegan al código (AU-37) no es
   guardar y nunca se marca. La marca va en la línea de las etiquetas de AU-79 y sale de un solo sitio
   (`stepChanges`, `writes.ts`), el mismo que usan «Publicar» y el mapa (AU-47, AU-182).
+  Hecho en W2: `stepChanges` da de un «Código» las colecciones y acciones del análisis y de un «Colección» la suya.
+  Falta: la marca en la tarjeta (pantallas).
 
 ### 5.8 Probar, publicar y ejecuciones
 
@@ -1072,7 +1094,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   palabras, y el aviso lleva a ella.
 - **AU-103** (F14d, pendiente) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
   las anteriores, solo el resumen (A-29).
-- **AU-181** (F14c, pendiente) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
+- **AU-181** (F14c, en parte) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
   pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
   aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
   el antes y el después, y si preguntaría (AU-189). Lo que el código devuelve sigue siendo su salida.
@@ -1080,6 +1102,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   colecciones («Modificaría 12 filas en Gastos»). Una petición que haría fallar la ejecución hace fallar la prueba
   igual, con el mismo motivo. El registro de una ejecución de verdad (AU-99, AU-101) lista lo que el paso guardó, o
   lo que propuso, como el de un «Colección».
+  Hecho en W2: en una prueba las peticiones pasan por el análisis, la conexión, sus límites y la política como prueba,
+  no se guarda nada, y lo que haría cada una sale con el antes, el después y si preguntaría (`asks`); el paso de una
+  ejecución de verdad lista lo mismo de lo que guardó o propuso. Falta: «Haría esto» en SALIDA y en el registro
+  (pantallas).
 - **AU-182** (F14d, pendiente) · Lo que se acepta sin haberlo escrito Juan dice lo que puede cambiar. «Lo que podrá
   hacer» de «Publicar» (AU-96) nombra cada colección que puede cambiar cada «Código», con la acción, según el análisis
   y sus conexiones, y si eliminará sin preguntar (AU-189); y lo mismo, antes de aceptarla, una automatización que
@@ -1422,19 +1448,24 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   acción, no por línea.
   Hecho en W1: `readCode` encuentra cada llamada que pide guardar, esté donde esté (`readWrites` da esa parte),
   `grantsOf` da un par por colección y acción, y `$col` usado de otra forma es `code.colUse`, con su porqué: guardado
-  o pasado («kept»), un método por un nombre calculado («computed») o uno que no tiene («unknown»). Falta: la caja con
-  solo esos métodos, que el motor rechace lo que el análisis no vio, y las palabras de `code.colUse` y de
-  `code.write.notAllowed`, que hasta entonces no están en `CODE_PROBLEMS` ni en los `i18n.ts` (W2).
-- **AU-184** (F14c, en parte) · Las expresiones nunca guardan. En un `{{ }}` no hay `$col` (AU-22, AU-46): una
+  o pasado («kept»), un método por un nombre calculado («computed») o uno que no tiene («unknown»). Hecho en W2: la
+  caja recibe con el trabajo lo que el análisis encontró y su `$col` solo tiene esos métodos; el motor rechaza una
+  petición que el análisis no vio (`code.write.unseen`); y `code.colUse` y `code.write.notAllowed` están en
+  `CODE_PROBLEMS` (A-34). Falta: sus palabras en los `i18n.ts`, con las de los demás problemas del código
+  (pantallas).
+- **AU-184** (F14c, hecho) · Las expresiones nunca guardan. En un `{{ }}` no hay `$col` (AU-22, AU-46): una
   expresión que lo usa, para leer o para guardar, no pasa la validación (`code.readInExpression`), y una petición en
   la respuesta de una evaluación de expresiones hace fallar el paso sin guardar nada.
   Hecho en W1: `{{ $col(…) }}` es `code.readInExpression`, para leer y para guardar, y el análisis no le da ninguna
-  petición. Falta: que una petición en la respuesta de una evaluación de expresiones haga fallar el paso (W2).
-- **AU-185** (F14c, pendiente) · Lo que guarda un código es un cambio de su paso, como el de un «Colección»: lleva
+  petición. Hecho en W2: una petición en la respuesta de una evaluación de expresiones hace fallar el paso
+  (`code.write.unseen`) sin guardar nada.
+- **AU-185** (F14c, en parte) · Lo que guarda un código es un cambio de su paso, como el de un «Colección»: lleva
   la ejecución, la versión y el paso, y la etiqueta de lo que la evaluación recibió (AU-169), así que con algo de
   fuera se propone (P4) y en el almacén queda como de fuera (AU-170). Lo que evita que una escritura de una
   automatización la vuelva a iniciar (AU-113, F18) vale igual para estas, porque van por el mismo camino; hasta la
   F18 ningún cambio de una colección inicia nada.
+  Hecho en W2: cada cambio lleva la versión, el paso y la etiqueta de lo que la evaluación recibió, y con algo de
+  fuera se propone. Falta: la ejecución en el cambio, con el almacén de verdad (S1), y lo de AU-113 (F18).
 
 Lo que cambia, regla por regla:
 

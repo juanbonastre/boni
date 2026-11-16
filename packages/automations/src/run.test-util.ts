@@ -3,17 +3,18 @@
 // what Juan wrote and one for what came from outside, so a test can see which one a value carries.
 import { type IdKind, type Label, label } from "@boni/entities";
 import { matchesFilters } from "@boni/views";
-import type {
-  Change,
-  Clock,
-  CollectionShape,
-  Collections,
-  Dates,
-  DateUnit,
-  Decision,
-  Policy,
-  PolicyCall,
-  StoredRow,
+import {
+  type Change,
+  type Clock,
+  type CollectionShape,
+  type Collections,
+  collectionOfChange,
+  type Dates,
+  type DateUnit,
+  type Decision,
+  type Policy,
+  type PolicyCall,
+  type StoredRow,
 } from "./effects.ts";
 import { type Execution, type RunDeps, run } from "./engine.ts";
 import { StepFault } from "./failures.ts";
@@ -129,11 +130,14 @@ export const nothing: Collections = {
   apply: async () => {
     throw new Error("nothing to write to");
   },
+  applyAll: async () => {
+    throw new Error("nothing to write to");
+  },
 };
 
 export interface FakeStore extends Collections {
   /** Every call the engine made, in order: the method and its collection. */
-  calls: { method: "find" | "get" | "aggregate" | "apply"; collection: string }[];
+  calls: { method: "find" | "get" | "aggregate" | "apply" | "applyAll"; collection: string }[];
   /** Every change applied, in order. */
   applied: Change[];
   /** The rows of a collection as they are now, in id order. */
@@ -178,6 +182,34 @@ export function store(
     const rows = live.get(collection) ?? [];
     const i = rows.findIndex((r) => r.origin.id === id);
     return { rows, i };
+  };
+  const one = (change: Change): StoredRow => {
+    const collection = collectionOfChange(change);
+    if (change.kind === "create") {
+      const r = make(collection, { ...change.fields });
+      live.get(collection)?.push(r);
+      applied.push(change);
+      return r;
+    }
+    const { rows, i } = find(collection, change.row.id);
+    const saved = rows[i];
+    if (!saved || saved.origin.version !== change.row.version)
+      throw new StepFault(`the row ${change.row.id} changed since it was read`, {
+        code: "row.changed",
+      });
+    applied.push(change);
+    if (change.kind === "trash") {
+      rows.splice(i, 1);
+      trashed.push(saved);
+      return saved;
+    }
+    const r: StoredRow = {
+      ...saved,
+      json: { ...saved.json, ...change.fields },
+      origin: { ...saved.origin, version: saved.origin.version + 1 },
+    };
+    rows[i] = r;
+    return r;
   };
   return {
     calls,
@@ -237,33 +269,33 @@ export function store(
       });
     },
     async apply(change) {
-      const collection = change.kind === "create" ? change.collection : change.row.collection;
-      calls.push({ method: "apply", collection });
-      if (change.kind === "create") {
-        const r = make(collection, { ...change.fields });
-        live.get(collection)?.push(r);
-        applied.push(change);
-        return r;
-      }
-      const { rows, i } = find(collection, change.row.id);
-      const saved = rows[i];
-      if (!saved || saved.origin.version !== change.row.version)
-        throw new StepFault(`the row ${change.row.id} changed since it was read`, {
-          code: "row.changed",
+      calls.push({ method: "apply", collection: collectionOfChange(change) });
+      return one(change);
+    },
+    // One transaction: what it did is taken back when a change throws, and a row changed earlier in the same call
+    // is checked against the version that change left (as the server's store).
+    async applyAll(changes) {
+      const before = new Map([...live].map(([k, rows]) => [k, [...rows]]));
+      const counts = { applied: applied.length, trashed: trashed.length };
+      const left = new Map<string, number>();
+      try {
+        return changes.map(({ change }) => {
+          calls.push({ method: "applyAll", collection: collectionOfChange(change) });
+          const version = change.kind === "create" ? undefined : left.get(change.row.id);
+          const r = one(
+            version === undefined || change.kind === "create"
+              ? change
+              : { ...change, row: { ...change.row, version } },
+          );
+          left.set(r.origin.id, r.origin.version);
+          return r;
         });
-      applied.push(change);
-      if (change.kind === "trash") {
-        rows.splice(i, 1);
-        trashed.push(saved);
-        return saved;
+      } catch (e) {
+        for (const [k, rows] of before) live.set(k, rows);
+        applied.length = counts.applied;
+        trashed.length = counts.trashed;
+        throw e;
       }
-      const r: StoredRow = {
-        ...saved,
-        json: { ...saved.json, ...change.fields },
-        origin: { ...saved.origin, version: saved.origin.version + 1 },
-      };
-      rows[i] = r;
-      return r;
     },
   };
 }

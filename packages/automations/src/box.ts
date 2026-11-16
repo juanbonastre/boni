@@ -25,6 +25,7 @@ import {
 import { Denied, type Gate, type Labelled, type StoredRow } from "./effects.ts";
 import { type FieldsRead, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
+import type { WriteAction, WriteRequest } from "./writes.ts";
 
 /** A row as code sees it: its fields by key, and nothing of its labels or of where it was read from. */
 export type Fields = Record<string, Cell>;
@@ -66,6 +67,11 @@ export interface BoxJob {
    * read: rows (their fields), one row or null, a number.
    */
   reads: Record<string, Cell>;
+  /**
+   * `code` only: the methods of saving its `$col('…')` has, by the name written there (AU-183): what the analysis of
+   * the code as saved found and its connection allows, and nothing else. Absent or empty: `$col` only reads.
+   */
+  writes?: Record<string, readonly WriteAction[]>;
 }
 
 /** A line of «Consola» (AU-33): what `console.log` was given, as text, and the line of the source that wrote it. */
@@ -80,8 +86,17 @@ export interface ConsoleLine {
 
 /** One evaluation's end: one per row of `input` in `perRow`, one in all in `all`. */
 export type Evaluated =
-  /** `values`: one per source for expressions; for `code`, one value: what it returned. */
-  | { state: "done"; values: readonly Cell[]; clock: boolean; random: boolean }
+  /**
+   * `values`: one per source for expressions; for `code`, one value: what it returned. `writes`: what it asked to
+   * save, in the order asked, of its last pass only (AU-173); never trusted, and none from expressions (AU-184).
+   */
+  | {
+      state: "done";
+      values: readonly Cell[];
+      clock: boolean;
+      random: boolean;
+      writes?: readonly WriteRequest[];
+    }
   /** It stopped at a read it does not have. `key` is the box's, opaque, and what `BoxJob.reads` is filled by. */
   | { state: "needs"; key: string; read: CodeRead }
   /** `source`: which of the job's sources. */
@@ -238,6 +253,7 @@ export async function evaluate(
   if (noRow) sent.push({});
   const all = input.kind === "code" && input.mode === "all";
   const count = all ? 1 : sent.length;
+  const writes = input.kind === "code" ? grantedOf(readings[0], input) : {};
   const base: Label[] = [];
   const sharedLabel = join(...(shared as [Label, ...Label[]]));
   if (all) base.push(join(sharedLabel, ...own));
@@ -288,6 +304,7 @@ export async function evaluate(
         seed: input.seed,
         run: input.run,
         reads,
+        ...(Object.keys(writes).length ? { writes } : {}),
       };
       const bytes = jsonBytes(job);
       if (bytes > CODE_LIMITS.inputBytes)
@@ -374,6 +391,26 @@ export async function evaluate(
       out.random ||= e.random;
     }
   return out;
+}
+
+/**
+ * The methods of saving a «Código»'s `$col` gets (AU-183), by the name as written: each call the analysis found whose
+ * collection is connected and whose action the connection gives. Anything else the box does not have.
+ */
+function grantedOf(
+  reading: ReturnType<typeof readCode> | undefined,
+  input: Pick<EvaluateInput, "connections" | "collectionNamed">,
+): Record<string, WriteAction[]> {
+  const out = new Map<string, WriteAction[]>();
+  for (const site of reading?.writes ?? []) {
+    const key = input.collectionNamed(site.name);
+    const connection = input.connections.find((c) => c.collection === key);
+    if (!connection || connection[site.action] === false) continue;
+    const given = out.get(site.name) ?? [];
+    if (!given.includes(site.action)) out.set(site.name, [...given, site.action]);
+  }
+  // `fromEntries` defines each name as data: `__proto__` would be a name like any other.
+  return Object.fromEntries(out);
 }
 
 const failedBy = (failure: CodeFailure): Exclude<Evaluated, { state: "needs" }> => ({

@@ -19,6 +19,7 @@ import {
 } from "@boni/agent";
 import {
   type Automation,
+  type ChangeWith,
   cellOf,
   FORMAT,
   type PolicyCall,
@@ -865,6 +866,56 @@ describe("the real Collections and the real Policy", () => {
     const written = await c.apply({ ...change, row: again.origin }, {});
     expect(written.json).toMatchObject({ concepto: "revisado", importe: 1 });
     expect(written.origin.version).toBe(again.origin.version + 1);
+  });
+
+  it("AU-174 · a step's changes are written in one transaction: two on one row apply in order, and when the last is refused none of them was saved", async () => {
+    const c = collections();
+    const [one, two] = await c.find({
+      collection: "gasto",
+      where: [],
+      sort: [],
+      limit: 10,
+      related: false,
+    });
+    if (!one?.origin || !two?.origin) throw new Error("no rows");
+    const count = store.list(GASTO).length;
+    store.update(
+      two.origin.id,
+      { [fieldId("importe")]: { value: 30, label: SEED } },
+      { actor: "user", device: "d_telefono" },
+    );
+    const before = opLog();
+    const changes = (last: NonNullable<typeof two.origin>): ChangeWith[] => [
+      {
+        change: {
+          kind: "create" as const,
+          collection: "gasto",
+          fields: { concepto: "nuevo", importe: 3 },
+        },
+        values: {},
+      },
+      {
+        change: { kind: "update" as const, row: one.origin, fields: { concepto: "uno" } },
+        values: {},
+      },
+      { change: { kind: "update" as const, row: one.origin, fields: { importe: 2 } }, values: {} },
+      { change: { kind: "update" as const, row: last, fields: { concepto: "dos" } }, values: {} },
+    ];
+    const refused = await c.applyAll(changes(two.origin)).catch((e) => e);
+    expect(refused).toBeInstanceOf(StepFault);
+    expect((refused as StepFault).failure.code).toBe("row.changed");
+    expect(opLog()).toBe(before);
+    expect(store.list(GASTO)).toHaveLength(count);
+    expect(store.get(one.origin.id)?.entity.version).toBe(one.origin.version);
+
+    // Read again, all of them are saved, the two on one row in the order asked.
+    const again = await c.get("gasto", two.origin.id);
+    if (!again?.origin) throw new Error("no row");
+    const written = await c.applyAll(changes(again.origin));
+    expect(written.map((r) => r.json.concepto)).toEqual(["nuevo", "uno", "uno", "dos"]);
+    expect(written[2]?.json).toMatchObject({ concepto: "uno", importe: 2 });
+    expect(written[2]?.origin.version).toBe(one.origin.version + 2);
+    expect(store.list(GASTO)).toHaveLength(count + 1);
   });
 
   it("AU-162 · a row read from the store has its record's label and each field that differs its own: a value that came from outside is still from outside in the row, field by field", async () => {

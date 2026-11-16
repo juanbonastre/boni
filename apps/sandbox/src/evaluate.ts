@@ -125,7 +125,7 @@ async function evaluate(
   let deadline = Number.POSITIVE_INFINITY;
   /** Set by the world inside when an evaluation must stop where it is: the interpreter is then interrupted. */
   const halted: {
-    now: { state: "needs"; key: string; read: WireRead } | { state: "reads" } | null;
+    now: { state: "needs"; key: string; read: WireRead } | { state: "reads" | "writes" } | null;
   } = {
     now: null,
   };
@@ -178,8 +178,8 @@ async function evaluate(
     halted.now = { state: "needs", key, read: asked };
     return vm.newString("");
   });
-  const stop = vm.newFunction("__boni_halt", () => {
-    halted.now = { state: "reads" };
+  const stop = vm.newFunction("__boni_halt", (kindH) => {
+    halted.now = { state: vm.getString(kindH) === "writes" ? "writes" : "reads" };
   });
   const put = vm.newFunction("__boni_put", (textH) => {
     const text = vm.getString(textH);
@@ -239,8 +239,11 @@ async function evaluate(
         names: req.names,
         seed: req.seed,
         run: req.run,
+        // Only for a «Código»: an expression's evaluation has no `$col` at all (AU-184).
+        writes: req.kind === "code" ? (req.writes ?? {}) : {},
         limits: {
           reads: limits.reads,
+          writes: limits.writes,
           stackBytes: limits.stackBytes,
           consoleLineChars: limits.consoleLineChars,
           readBytes: MAX_READ_BYTES,
@@ -278,7 +281,14 @@ async function evaluate(
           // Its lines will be written again when it is repeated with what it asked for.
           lines.length = mark.lines;
           dropped = mark.dropped;
-        } else
+        } else if (h.state === "writes")
+          evaluations[current] = {
+            state: "failed",
+            fault: "writes",
+            message: `pide guardar más de ${limits.writes} veces en una evaluación`,
+            source: 0,
+          };
+        else
           evaluations[current] = {
             state: "failed",
             fault: "reads",

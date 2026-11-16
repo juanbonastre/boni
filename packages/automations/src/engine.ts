@@ -89,6 +89,14 @@ import { type CodeContext, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
 import { fieldLabel, joinAll, StopRun, TRANSFORM_AND_LOGIC } from "./steps.ts";
 import { canRun, type Problem, type ValidationContext, validate } from "./validate.ts";
+import {
+  applyWrites,
+  grantsOf,
+  readWrites,
+  type StepWrites,
+  type WriteGate,
+  type WriteRequest,
+} from "./writes.ts";
 
 export { StopRun } from "./steps.ts";
 
@@ -145,6 +153,11 @@ export interface StepRecord {
   reads?: ReadRecord[];
   /** Whether its JavaScript read the clock or chance (AU-34, F14c): what the screen says of a kept step that did. */
   uses?: { clock: boolean; random: boolean };
+  /**
+   * What its «Código» asked to save, as one change (AU-174, AU-181): saved, what a test would do and whether a run
+   * would ask, or what waits for Juan. Absent when it asked for nothing, or when the step failed and saved nothing.
+   */
+  writes?: StepWrites;
 }
 
 export interface Execution {
@@ -314,6 +327,8 @@ export const CLOSED: Gate = {
   get: closed,
   aggregate: closed,
   write: closed,
+  decideAll: closed,
+  writeAll: closed,
 };
 function closed(): never {
   throw new Error("this step does not read or write collections");
@@ -465,6 +480,11 @@ interface Prepared {
   at(i: number): Scope["code"] | undefined;
   /** The rows evaluation `i` of a «Código» gave; throws its failure. */
   rows(i: number): readonly RowOut[];
+  /**
+   * What evaluation `i` of a «Código» asked to save, in the order asked, each with the label of what it received
+   * (AU-169); in «Una vez por fila», each with its row. None for one that failed.
+   */
+  writes(i: number): { request: WriteRequest; label: Label }[];
 }
 
 /** One run: its records, and which step and input rows made each row (for `$('Step').item`, AU-13). */
@@ -692,8 +712,16 @@ class Run {
       record.uses = { clock: evaluated.run.clock, random: evaluated.run.random };
     }
 
-    /** One unit: one row, or all of them. Tries it, and on a last failure does what «Si falla» says. */
-    const unit = async (row: Row | null, index: number, units: readonly Row[], scope: Scope) => {
+    /**
+     * One unit: one row, or all of them. Tries it, and on a last failure does what «Si falla» says. True when it
+     * worked: what its «Código» asked to save is part of the step's change.
+     */
+    const unit = async (
+      row: Row | null,
+      index: number,
+      units: readonly Row[],
+      scope: Scope,
+    ): Promise<boolean> => {
       const path = this.path(step, scope, row ? { [inputsOf(step)[0] as string]: [row] } : inputs);
       let lastError: unknown;
       for (let t = 0; t < tries; t++) {
@@ -724,12 +752,12 @@ class Run {
             }
           record.asked += asked.length;
           this.asked.push(...asked);
-          return;
+          return true;
         } catch (e) {
           // «Parar con error» ends the run there, with no retry and no «Si falla» (AU-16).
           if (e instanceof StopRun) {
             stop = stepErrorOf(e, step);
-            return;
+            return false;
           }
           lastError = e;
           // What its JavaScript gave for this row is decided once for the step: trying it again gives the same.
@@ -737,17 +765,61 @@ class Run {
         }
       }
       give(lastError, row, index, units, path);
+      return false;
     };
 
-    if (action?.mode === "all") await unit(null, 0, all, this.scope(null, evaluated?.at(0)));
-    else if (all.length)
+    // The units that worked: what their «Código» asked to save is the step's change (AU-174).
+    const worked: number[] = [];
+    if (action?.mode === "all") {
+      if (await unit(null, 0, all, this.scope(null, evaluated?.at(0)))) worked.push(0);
+    } else if (all.length)
       for (const [i, row] of all.entries()) {
-        await unit(row, i, all, this.scope(row, evaluated?.at(i)));
+        if (await unit(row, i, all, this.scope(row, evaluated?.at(i)))) worked.push(i);
         if (stop) break;
       }
     // Row by row with an empty list: an action that reads or writes runs once with no row (AU-14).
     else if (action && action.effect !== "none")
       await unit(null, 0, all, this.scope(null, evaluated?.at(0)));
+
+    // What its «Código» asked to save, decided for the whole step at once, when the step has not stopped (AU-174).
+    if (!stop && evaluated && js?.kind === "code") {
+      const asked = worked.flatMap((i) => evaluated.writes(i));
+      if (asked.length) {
+        const whole = action?.mode === "all";
+        const units = whole ? all : worked.map((i) => all[i] as Row);
+        const path = this.path(
+          step,
+          this.scope(null),
+          whole ? inputs : { [inputsOf(step)[0] as string]: units },
+        );
+        let lastError: unknown;
+        let saved: StepWrites | undefined;
+        for (let t = 0; t < tries && !saved; t++) {
+          if (t > 0) {
+            record.retries++;
+            await clock.sleep(settings.retry.waitMs);
+          }
+          try {
+            saved = await this.save(step, js.sources[0] ?? "", asked, path);
+          } catch (e) {
+            lastError = e;
+            // What the code asked and what the policy said are the same on every try: only the store's may change.
+            if (e instanceof CodeFault || e instanceof Denied) break;
+          }
+        }
+        if (saved) {
+          record.writes = saved;
+          if (saved.kind === "asked") {
+            record.asked += saved.asked.length;
+            this.asked.push(...saved.asked);
+          }
+        } else {
+          // Nothing of the step was saved: the rows that worked fail with it, and «Si falla» decides (AU-16).
+          for (const name of Object.keys(record.out)) if (name !== OUT.error) record.out[name] = [];
+          give(lastError, null, 0, units, path);
+        }
+      }
+    }
 
     if (stop) {
       record.error = stop;
@@ -756,6 +828,52 @@ class Run {
     }
     finish("done");
     return;
+  }
+
+  /**
+   * Saves what a «Código» asked (writes.ts): held to the analysis of the code as saved and to its connections, as
+   * saved, never to what the box said; every change judged by the policy before any is written, as the «Colección»
+   * action that makes it; and all of them in one transaction, or none (AU-173 to AU-177).
+   */
+  async save(
+    step: Step,
+    source: string,
+    asked: readonly { request: WriteRequest; label: Label }[],
+    control: Label | null,
+  ): Promise<StepWrites> {
+    const { collections, policy, clock, dates } = this.deps;
+    const collectionNamed = (name: string) => this.deps.collectionNamed?.(name);
+    const gate = guard(policy, collections, {
+      automation: { id: this.input.automation.id, version: this.input.automation.version },
+      step: step.id,
+      type: step.type,
+      action: actionOf(step)?.key ?? "",
+      effect: "write",
+      destroys: false,
+      control,
+      test: this.input.test,
+      own: this.deps.own,
+    });
+    // The saved row, read with no other question to the policy: part of the write it is asked about (AU-173).
+    const writer: WriteGate = {
+      shape: (c) => collections.shape(c),
+      get: (c, id) => collections.get(c, id),
+      decideAll: (changes) => gate.decideAll(changes),
+      writeAll: (changes) => gate.writeAll(changes),
+    };
+    return applyWrites(
+      {
+        step: step.id,
+        requests: asked.map((a) => a.request),
+        labels: asked.map((a) => a.label),
+        grants: grantsOf(readWrites(source, "code"), collectionNamed),
+        connections: step.connections ?? [],
+        collectionNamed,
+        today: dates.day(this.started, clock.zone),
+        test: this.input.test,
+      },
+      writer,
+    );
   }
 
   /**
@@ -837,6 +955,21 @@ class Run {
       gate,
     );
 
+    // Expressions never save (AU-184): an answer that asks to is not the box's to give, and fails the whole step.
+    if (!code)
+      for (const e of run.evaluations)
+        if (e.state === "done" && e.writes?.length) {
+          const w = e.writes[0] as WriteRequest;
+          throw new CodeFault("an expression asked to save", {
+            code: "code.write.unseen",
+            detail: {
+              collection: String(w.collection),
+              action: String(w.action),
+              where: "expression",
+            },
+          });
+        }
+
     // One evaluation's failure, as the failure of the unit that reads it; the code's message only in `why`.
     const decided = new WeakSet<object>();
     const faultOf = (failure: CodeFailure, param: string | undefined) => {
@@ -917,6 +1050,15 @@ class Run {
           throw new CodeFault("this «Código» was not evaluated", { code: "code.unavailable" });
         if (m instanceof CodeFault || m instanceof Denied) throw m;
         return m;
+      },
+      writes: (i) => {
+        const e = run.evaluations[i];
+        if (!code || e?.state !== "done") return [];
+        const label = run.labels[i] as Label;
+        return (e.writes ?? []).map((request) => ({
+          request: perRow ? { ...request, row: i } : request,
+          label,
+        }));
       },
     };
   }
@@ -1027,6 +1169,9 @@ class Run {
         if (r.kind === "asked") asked.push(r.asked);
         return r;
       },
+      // A step's changes together are the «Código»'s (writes.ts), through a gate of their own: never an executor's.
+      decideAll: closed,
+      writeAll: closed,
     };
   }
 
