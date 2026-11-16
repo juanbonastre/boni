@@ -1228,7 +1228,8 @@ contraseña ni un código aquí» under a question.
   «Ordenar», no menus. At the bottom «Probar» and «Registro» take the whole width, the zoom's three buttons just above
   them on the left. The step's view covers the canvas, one column with three tabs, «Entrada | Parámetros | Salida»
   («Parámetros» first; no «Ajustes»): the name is text, the parameters are drawn as on the computer but disabled
-  (a disabled fieldset, and an expression's box is not editable), and there is no «Probar paso»; an ENTRADA or a
+  (a disabled fieldset, and an expression's box is not editable), each name above its control, which takes the whole
+  width, and there is no «Probar paso»; an ENTRADA or a
   SALIDA with nothing tested says «Sin probar» and nothing else. A trigger's «Datos de prueba» can be typed: they are
   the next test's, never the draft's.
 - **«Probar»** (F14b E, `AutomationTest.tsx`, `AutomationRows.tsx`; AU-64, AU-67, AU-71 to AU-73, AU-83, AU-84, AU-90

@@ -12755,6 +12755,10 @@ button.auto-log-line {
 .auto-show {
   margin-left: auto;
 }
+/* «Esquema | Tabla | JSON» whole in a column of 200 px (under 1100 px, AU-74). */
+.auto-show button {
+  padding: 0 8px;
+}
 .auto-in-source select {
   max-width: 100%;
 }
@@ -12944,6 +12948,15 @@ button.auto-log-line {
 }
 .auto-view.phone .auto-expr[aria-readonly="true"] {
   color: var(--muted);
+}
+/* On the phone a parameter's name goes above its control, which takes the whole width: two selects of a condition fit. */
+.auto-view.phone .auto-param {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+}
+.auto-view.phone .auto-param-name {
+  grid-column: 1 / -1;
+  padding-top: 0;
 }
 /* The phone's width: one column, the whole screen. */
 @media (max-width: 639px) {
