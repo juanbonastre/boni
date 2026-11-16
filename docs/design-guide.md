@@ -720,7 +720,7 @@ contraseña ni un código aquí» under a question.
   and "```" (code). **Ctrl+Z / Ctrl+Shift+Z** undo and redo the page's changes (typing in one block for a moment is
   one step). **Ctrl+K** (and "Buscar" at the top of the sidebar; in the text, with words selected or the caret in a
   link, it is the link's address instead) opens Notion's search: a box over the window, pages
-  matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nuevo flujo (Flujos)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words and its action's icon, read from the definitions, `GET /api/agent/actions`, task 95); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
+  matching the words with their path, arrows and Enter. While typing, the **actions** that match come first («Nueva página», «Abrir la Bandeja», «Recordar algo (Memoria)», «Nueva automatización (Automatizaciones)», «Ajustes del correo», «Activar o quitar extensiones»: `FIND_ACTIONS`, each with its `find.action.*` words and its action's icon, read from the definitions, `GET /api/agent/actions`, task 95); every control that runs an action says which with `data-boni-action` (a menu row's `boniAction`), the name Boni over the screen will point at (docs/sistema.md §4.7; F10's `actions.test.ts` holds it). After a turn that changed something, and after Undo, the sidebar's pages and the Bandeja are read again (a page Boni made shows at once; one undone closes to the start). **Papelera** at the bottom of the sidebar lists deleted pages
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). Without a connection it stays, as an edit does: the same notice once
   («save.offline»), in the sidebar and kept on the device with what is typed in it, and made on the server when it is
@@ -1117,18 +1117,48 @@ contraseña ni un código aquí» under a question.
   beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
   per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
   muted, Boni's code `--compare`.
-- **«Flujos»** (the sidebar, under «Mis datos»; `docs/flujos.md`, F1; `docs/sistema.md` §4.4, F8, 2026-11-06): one of
-  Boni's collections, like «Mis datos»: a page with any collection's head (its views as tabs with «+», filter, sort,
-  search, its settings and «Nuevo», which makes a flow by hand, off, and opens it), starting with two views:
-  **«Tabla»** (Nombre; Disparador as it is said everywhere, «Llega a Correos», «Cada día a las 08:00», «Disparado por
-  el usuario»; Estado; Versión de, Boni or Ti; Pasos; Ejecuciones; Última; Versión hidden: a name and the state change
-  in place, a flow of Boni's keeps its name and is turned off, never deleted) and **«Mapa»** (below). A flow's name
-  opens it on a page of its own; its row in «Mis datos» opens «Flujos». No «Modelos» tab any more (decision 3): what
-  configures the models is Ajustes → Modelos, what they do and cost is on the map. On the phone «Páginas» lists
-  «Flujos» under «De Boni»: there the map is looked at and a flow tried or run, never changed (no «Nuevo», in the
-  header or under the table; its rows only open, nothing chosen, renamed, deleted or edited in a cell; the editor
-  read only, with «Probar»); the map opens no smaller than half its size, so its cards can be read, the rest a finger
-  or a pinch away.
+- **«Automatizaciones»** (the sidebar, under «Mis datos»; `docs/automatizaciones.md` §5.7, F14b, AU-60, AU-61, AU-151;
+  before, «Flujos»: `docs/flujos.md`, F1; `docs/sistema.md` §4.4, F8): one of Boni's collections, like «Mis datos»: a
+  page with any collection's head (its views as tabs with «+», filter, sort, search, its settings and «Nueva», the
+  feminine of the word in this collection only), starting with two views: **«Tabla»** and **«Mapa»** (below). Every word
+  on the screen says «Automatizaciones» and «automatización» (the sidebar, the page and its crumbs, «Buscar», the
+  conversation, the map, the MCP's texts); «flujo» is read nowhere, and the flows of before are told apart only by
+  «Formato anterior» in their editor. The internal names (`flows.*`, the key `flujos`, the MCP's `flows_*`) stay
+  until F16.
+  **«Tabla»** has six columns: Nombre · Se inicia (what starts it as it is said everywhere: «Llega a Correos», «Cada
+  día a las 08:00», «Disparado por el usuario»; «—» for an automation with no trigger) · Estado («Encendida»,
+  «Apagada» or «Sin publicar») · Última ejecución · Ejecuciones · De («Tú», «Boni» or «Página «Gastos»»). The
+  automations of the new format come first, the newest first, each «Sin publicar» with no runs (published and run
+  from F14d); then the flows of before, those on first. What starts an automation is kept at save, so the list never
+  reads a draft (1,000 automations and 40 flows are listed in 8 ms of the server's CPU). An automation's row only
+  opens and is deleted (with «Deshacer»); a flow of before's name and state change in place as before, a flow of
+  Boni's keeps its name and is turned off, never deleted. **«Nueva»** (in the head and under the table; «Buscar» has
+  it as «Nueva automatización (Automatizaciones)») opens the new editor on an empty canvas and asks the server for
+  nothing: the automation is made by its first step, named «Nueva automatización» until Juan renames it. With nothing
+  in it, the page says what any empty collection says: its columns, no row and its «Nueva». The map shows what it
+  showed, the flows of before: an automation not published does not run and enters it when published (F14d).
+  A row's name opens it: an automation in the new editor (below), a flow of before in the editor of before, its page
+  of always. Its row in «Mis datos» opens «Automatizaciones». No «Modelos» tab (decision 3 of F8): what configures the
+  models is Ajustes → Modelos, what they do and cost is on the map. On the phone «Páginas» lists «Automatizaciones»
+  under «De Boni»: there the map is looked at and a flow of before tried or run, never changed (no «Nueva», in the
+  header or under the table; its rows only open, nothing chosen, renamed, deleted or edited in a cell; the editor of
+  before read only, with «Probar»); the map opens no smaller than half its size, so its cards can be read, the rest a
+  finger or a pinch away.
+- **An automation's editor** (F14b C1, `docs/automatizaciones.md` §5.7, AU-62; the sketch `docs/maquetas/automatizaciones.html`,
+  screen 2): the window's width, a header over the canvas and nothing else: no bar under it and no button to save.
+  The header, left to right: back («Volver a Automatizaciones», to the list), the name edited in place (it saves itself
+  like any change; an empty box changes nothing and gives the name back when it is left; Intro or Esc leave it),
+  «Guardado» in `--muted` and, at the right, «⋯» with Duplicar and Eliminar. «Guardado» says «Guardando…» while a
+  change is on its way, «Guardado» when the server has the last one, and «Sin guardar · Reintentar» (in `--text`, the
+  link retries now) when it could not: Boni tries again by itself, 2 s, then 4 s, up to a minute, as the flow editor
+  does (D-55); a refusal (a shared device, an automation gone) waits for the next change. Each change goes out 0.8 s
+  after the last one and at once on leaving the editor or hiding the window, one request at a time. On the empty canvas
+  of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its middle asks «¿Cómo empieza?» with a
+  row per trigger of the catalogue («Disparado por el usuario» in F14b), and choosing one makes the automation.
+  «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not ask: it goes
+  back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of the
+  header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d; the
+  canvas itself, its steps and «Probar», with C2 and after.
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an
@@ -1242,12 +1272,12 @@ contraseña ni un código aquí» under a question.
   «Viene de fuera» on hover); «Ampliar» under it opens the map with the run on it. Only a run a tool gave is drawn,
   never an id a model wrote. Its names are the map's; who proposed something is said by its name («lo propuso Leer
   correo»), never by a code.
-- **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
+- **A flow's page** (F8; «Formato anterior» since F14b, AU-151): «Automatizaciones › Leer correo · Formato anterior» above it (the crumb goes back to «Automatizaciones»; the mark in `--muted`, the only place where a flow of before is told apart) with the period (7 días |
   30 días) on its right, then the editor, its canvas taking the window's height.
-- **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):
+- **The flow editor**, now **«Formato anterior»** (F2, `docs/flujos.md` §4.5; kept as it was while the two live together, AU-151, and removed in F16, AU-152; n8n's canvas and node panel and Dify's checklist as references):
   a flow's page. A toolbar: the name (edited in place and saved when it is left or with Enter, Escape giving the old
   one back, never waiting for «Guardar», the list saying it at once; read-only on Boni's own flows, task 80), a pill saying whose version runs («De Boni» in `--accent`, kept
-  up to date by Boni; «Tu versión», which Boni no longer changes), the «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
+  up to date by Boni; «Tu versión», which Boni no longer changes), the «Encendida» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
   a kind by its name, its group's or its tool's, Enter taking the first once something is typed, «Ningún paso se
   llama así» when none; under it the kinds in groups by what they do, Leer, Decidir, Datos, Avisar, Preguntar,
   Responder and Otros, and **«De Boni»** in a flow a mail starts (F7, `docs/sistema.md` §4.2: Boni's pieces, named as

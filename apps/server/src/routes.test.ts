@@ -132,7 +132,8 @@ describe("the server's two entries", () => {
       expect(v1Routes, `${r} is listed but not served`).toContain(r);
     // The agent's, none of them public either.
     // The agent's and «Modelos»' (served under /api/agent/models from models.ts).
-    const ag = ["./agent.ts", "./models.ts"]
+    // «Automatizaciones»' are served from http.ts, each as its action (automations/actions.ts).
+    const ag = ["./agent.ts", "./models.ts", "./http.ts"]
       .map((f) => readFileSync(new URL(f, import.meta.url), "utf8"))
       .join("\n");
     const agRoutes = [...ag.matchAll(/case "((?:GET|POST|PUT|DELETE) \/api\/agent\/[^"]*)"/g)].map(

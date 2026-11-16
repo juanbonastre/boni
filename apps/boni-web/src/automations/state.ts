@@ -7,7 +7,7 @@
  * What changes the draft comes from edit.ts (the graph) and panel.ts (a step's rows); every such change goes
  * through `change`, which is what makes it undoable and owed to the server (AU-62, AU-68).
  */
-import type { Arrow, Automation, Cell, Problem } from "@boni/automations";
+import { type Arrow, type Automation, type Cell, FORMAT, type Problem } from "@boni/automations";
 import type { Opened, Place, StepTest, TestAnswer } from "./client.ts";
 import { notBuilt } from "./pending.ts";
 
@@ -75,22 +75,72 @@ export interface EditorState extends Snapshot {
   dropped: { step: string; params: string[] } | null;
 }
 
+const fresh = {
+  selected: [],
+  arrow: null,
+  open: null,
+  adding: null,
+  past: [],
+  future: [],
+  owed: { draft: false, places: [] },
+  save: "saved",
+  testing: null,
+  last: null,
+  problems: [],
+  left: [],
+  dropped: null,
+} satisfies Partial<EditorState>;
+
 /** An empty canvas for «Nueva» (AU-61): nothing saved, the name already worded. */
-export function emptyEditor(_name: string): EditorState {
-  return notBuilt("emptyEditor (AU-61)");
+export function emptyEditor(name: string): EditorState {
+  return {
+    ...fresh,
+    id: null,
+    rev: 0,
+    draft: { format: FORMAT, id: "", version: 0, name, steps: [], arrows: [], settings: {} },
+    places: {},
+    tests: {},
+    tested: {},
+  };
 }
 
 /** The editor over what the server has. */
-export function openedEditor(_opened: Opened): EditorState {
-  return notBuilt("openedEditor");
+export function openedEditor(opened: Opened): EditorState {
+  return {
+    ...fresh,
+    id: opened.id,
+    rev: opened.rev,
+    draft: opened.automation,
+    places: Object.fromEntries(opened.places.map((p) => [p.step, { x: p.x, y: p.y }])),
+    tests: opened.tests,
+    tested: opened.tested,
+  };
 }
+
+const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
 /**
  * A change of the draft or of the boxes: the state before it goes into `past`, `future` empties, and it is owed to
  * the server (the draft when it differs; each step whose place differs). A change that changes nothing is nothing.
+ * On an empty canvas nothing is owed until the draft has its first step: that step makes it (`automations.create`).
  */
-export function change(_state: EditorState, _next: Partial<Snapshot>): EditorState {
-  return notBuilt("change (AU-62, AU-68)");
+export function change(state: EditorState, next: Partial<Snapshot>): EditorState {
+  const draft = next.draft ?? state.draft;
+  const places = next.places ?? state.places;
+  const drafted = !same(draft, state.draft);
+  const moved = Object.keys(places).filter((k) => !same(places[k], state.places[k]));
+  if (!drafted && !moved.length) return state;
+  const owesDraft = state.owed.draft || (drafted && (state.id !== null || draft.steps.length > 0));
+  const owesPlaces = state.id === null ? [] : [...new Set([...state.owed.places, ...moved])];
+  return {
+    ...state,
+    draft,
+    places,
+    past: [...state.past, { draft: state.draft, places: state.places }],
+    future: [],
+    owed: { draft: owesDraft, places: owesPlaces },
+    save: owesDraft ? "saving" : state.save,
+  };
 }
 
 /** Deshacer and Rehacer (AU-68): what comes back is owed to the server like any other change. */
@@ -101,14 +151,33 @@ export function redo(_state: EditorState): EditorState {
   return notBuilt("redo (AU-68)");
 }
 
-/** The server kept the draft: its `rev`, and the steps whose test it says is stale (AU-92). */
-export function saved(_state: EditorState, _answer: { rev: number; stale: string[] }): EditorState {
-  return notBuilt("saved (AU-62, AU-92)");
+/**
+ * The server kept the draft: its `rev`, and the steps whose test it says is stale (AU-92). `sent`: the draft that
+ * save carried; when the draft changed while it was out, what changed after it is still owed, and goes next.
+ */
+export function saved(
+  state: EditorState,
+  answer: { rev: number; stale: string[] },
+  sent?: Automation,
+): EditorState {
+  const after = sent !== undefined && sent !== state.draft;
+  const tests = { ...state.tests };
+  for (const step of answer.stale) {
+    const kept = tests[step];
+    if (kept) tests[step] = { ...kept, stale: true };
+  }
+  return {
+    ...state,
+    rev: answer.rev,
+    tests,
+    owed: { ...state.owed, draft: after },
+    save: after ? "saving" : "saved",
+  };
 }
 
 /** A save did not arrive: «Sin guardar · Reintentar»; what is owed stays owed. */
-export function saveFailed(_state: EditorState): EditorState {
-  return notBuilt("saveFailed (AU-62)");
+export function saveFailed(state: EditorState): EditorState {
+  return { ...state, save: "failed" };
 }
 
 /**

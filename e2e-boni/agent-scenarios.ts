@@ -2685,7 +2685,7 @@ export const FLOW_CATALOG = {
     },
     {
       name: "flows.run",
-      title: "Ejecutar flujo",
+      title: "Ejecutar automatización",
       effect: "flow",
       args: [
         { name: "flow", role: "option", required: true },
@@ -3398,7 +3398,7 @@ export const RUN_TURN_TOLD = {
 export const FLOW_PROPOSAL = {
   id: "pf1",
   tool: "flows.save",
-  view: { tool: "flows.save", title: "Proponer flujo", rows: [] },
+  view: { tool: "flows.save", title: "Proponer automatización", rows: [] },
   sources: [],
   created: 1761900000000,
   run: "run-f1",

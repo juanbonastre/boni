@@ -263,7 +263,7 @@ test("«Ver en el mapa» on a block: the map shows the values that control it, t
   await blk.hover();
   await blk.locator(".blk-handle button").click();
   await page.getByRole("menuitemradio", { name: "Ver en el mapa" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
   await expect(page.getByRole("tab", { name: "Mapa" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".mp-centre")).toContainText("Gastado");
   const map = page.locator(".mp-stage");

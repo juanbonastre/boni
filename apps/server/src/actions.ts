@@ -16,6 +16,8 @@ import {
 } from "@boni/agent";
 import { type Label, label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
+import { withAutomationActions } from "./automations/actions.ts";
+import { NO_MCP_YET } from "./automations/routes.ts";
 import { withCalendarActions } from "./calendarActions.ts";
 import { calendarDefs } from "./calendarStore.ts";
 import { withConnectorActions } from "./connectorActions.ts";
@@ -40,13 +42,15 @@ import { withTurnActions } from "./turnActions.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  const all = withConnectorActions(
-    withCalendarActions(
-      withInboxActions(
-        withFlowActions(
-          withFileActions(
-            withTurnActions(
-              withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+  const all = withAutomationActions(
+    withConnectorActions(
+      withCalendarActions(
+        withInboxActions(
+          withFlowActions(
+            withFileActions(
+              withTurnActions(
+                withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+              ),
             ),
           ),
         ),
@@ -91,6 +95,7 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
     "flows.delete",
     "schema.delete_type",
     "pages.delete",
+    "automations.delete",
   ],
   // «Flujos» (flowActions.ts and the core's).
   "POST /api/agent/flows": ["flows.save"],
@@ -98,6 +103,12 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/agent/flows/:id/enabled": ["flows.enable"],
   "DELETE /api/agent/flows/:id": ["flows.delete"],
   "POST /api/agent/flows/:id/run": ["flows.run"],
+  // «Automatizaciones» (automations/actions.ts, AU-168): each route is its action, run by `runAction`.
+  "POST /api/agent/automations": ["automations.create"],
+  "PUT /api/agent/automations/:id/draft": ["automations.edit"],
+  "POST /api/agent/automations/:id/duplicate": ["automations.duplicate"],
+  "DELETE /api/agent/automations/:id": ["automations.delete"],
+  "POST /api/agent/automations/:id/restore": ["automations.restore"],
   // A page's chat (pageChat.ts, D-61) is a flow: made for its page and changed in its block's panel.
   "POST /api/agent/chats": ["flows.save"],
   "PUT /api/agent/chats/:id": ["flows.save"],
@@ -204,6 +215,11 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "POST /api/collections/color": "calendars.color",
   "PUT /api/data/types/:type/tree": "schema.set_tree",
   "PUT /api/data/types/:type/roles": "schema.set_roles",
+  "POST /api/agent/automations": "automations.create",
+  "PUT /api/agent/automations/:id/draft": "automations.edit",
+  "POST /api/agent/automations/:id/duplicate": "automations.duplicate",
+  "DELETE /api/agent/automations/:id": "automations.delete",
+  "POST /api/agent/automations/:id/restore": "automations.restore",
 };
 
 /**
@@ -234,7 +250,7 @@ export const ROUTE_MODULES: Readonly<Record<string, string>> = {
     "data.ts takes the column by id and answers its HTTP code",
   "PUT /api/data/rows/:id/type": "data.ts moves the row by ids and answers its HTTP code",
   "POST /api/data/types/:type/rows":
-    "a row of «Flujos», «Mis datos» or «Páginas» is that area's own: four actions by the collection's kind",
+    "a row of «Automatizaciones», «Mis datos» or «Páginas» is that area's own: four actions by the collection's kind",
   "PUT /api/data/rows/:id": "a row's change is its area's own by the row's kind: four actions",
   "DELETE /api/data/rows/:id": "a row's deletion is its area's own by the row's kind: four actions",
   "POST /api/agent/flows":
@@ -526,6 +542,12 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "calendars.split": "calendars_split",
   "calendars.color": "calendars_color",
   "calendars.reminders": "calendars_reminders",
+  "automations.read": { why: NO_MCP_YET },
+  "automations.create": { why: NO_MCP_YET },
+  "automations.edit": { why: NO_MCP_YET },
+  "automations.duplicate": { why: NO_MCP_YET },
+  "automations.delete": { why: NO_MCP_YET },
+  "automations.restore": { why: NO_MCP_YET },
   "schema.set_view": "collection_view",
   "schema.set_tree": "notes_in_tree",
   "schema.set_roles": "set_roles",

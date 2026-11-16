@@ -189,7 +189,7 @@ one "op":
   or "line"), unit, caption; run: run (a run's id, as entities.origin or inbox.pending give it), caption: draws where
   it came from and where it went, after the text that says it (when the user asks where something comes from).
 On the user's screen (the "screen.*" tools; once each, never in "each"): screen.open when he asks to open, show or go
-to something (ONE of a collection, a record, a place, a run or a flow; map: true on the map of «Flujos»: a run that
+to something (ONE of a collection, a record, a place, a run or a flow; map: true on the map of «Automatizaciones»: a run that
 stopped, with its step lit, or "where is this"); screen.filter when he asks to see some of a collection's records
 («enséñame los de…»: it opens the collection filtered); screen.highlight and screen.scroll to show him what an answer
 is about on his screen, by what "screen" or a tool gave, whole.

@@ -6,7 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
  * entity: no collection lists it but Boni's own «Automatizaciones», which is made on each read. `Journal` extends
  * `AutomationsJournal`, and `automationsJournal` is its part of `openJournal`.
  *
- * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`):
+ * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`; entry 26 adds `automation_drafts.trigger`):
  *
  *   CREATE TABLE automations (
  *     id TEXT PRIMARY KEY, by TEXT NOT NULL, created INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
@@ -54,6 +54,11 @@ export interface AutomationDraftRow {
   rev: number;
   /** The document's `name`, kept apart so the list does not parse every draft. */
   name: string;
+  /**
+   * The type of its first trigger, in the order of its steps (`manual`), or null with none: kept apart at each save,
+   * as the name, so the list says what starts it without parsing the draft (AU-61; migration 26).
+   */
+  trigger: string | null;
   /** The automation as `@boni/automations`' format writes it (JSON). Its `version` is 0 until F14d publishes. */
   doc: string;
   /** The device that wrote it last. */
@@ -83,8 +88,9 @@ export interface AutomationTestRow {
 }
 
 export interface AutomationsJournal {
-  /** The automations not deleted, the newest first, each with its draft's name, `rev` and `updated`. */
-  automations(): (AutomationRow & Pick<AutomationDraftRow, "name" | "rev" | "updated">)[];
+  /** The automations not deleted, the newest first, each with its draft's name, trigger, `rev` and `updated`. */
+  automations(): (AutomationRow &
+    Pick<AutomationDraftRow, "name" | "trigger" | "rev" | "updated">)[];
   /** One automation, deleted or not, or null. */
   automation(id: string): AutomationRow | null;
   /** A new automation with its first draft (`rev` 1), in one transaction. */
@@ -141,6 +147,16 @@ export const AUTOMATIONS_MIGRATION = `CREATE TABLE IF NOT EXISTS automations (
      PRIMARY KEY (id, step, output, chunk)
    ) WITHOUT ROWID;`;
 
+/**
+ * Migration 26 (AU-61): the trigger kept beside the name. It may run again on a database that has it (as 25), so the
+ * column is added only when it is not there.
+ */
+export function automationsTriggerMigration(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(automation_drafts)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "trigger"))
+    db.exec("ALTER TABLE automation_drafts ADD COLUMN trigger TEXT");
+}
+
 /** How many rows of a kept test one chunk holds: one page of the step view (AU-71, AU-72). */
 export const TEST_ROWS_CHUNK = 50;
 
@@ -174,7 +190,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
       (
         db
           .prepare(
-            `SELECT a.id, a.by, a.created, a.deleted, d.name, d.rev, d.updated
+            `SELECT a.id, a.by, a.created, a.deleted, d.name, d.trigger, d.rev, d.updated
              FROM automations a JOIN automation_drafts d ON d.id = a.id
              WHERE a.deleted = 0 ORDER BY a.created DESC, a.id DESC`,
           )
@@ -182,6 +198,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
       ).map((r) => ({
         ...row(r),
         name: r.name as string,
+        trigger: (r.trigger as string | null) ?? null,
         rev: Number(r.rev),
         updated: Number(r.updated),
       })),
@@ -199,8 +216,8 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
           a.created,
         );
         db.prepare(
-          "INSERT INTO automation_drafts (id, rev, name, doc, device, updated) VALUES (?, 1, ?, ?, ?, ?)",
-        ).run(a.id, d.name, d.doc, d.device, d.updated);
+          "INSERT INTO automation_drafts (id, rev, name, trigger, doc, device, updated) VALUES (?, 1, ?, ?, ?, ?, ?)",
+        ).run(a.id, d.name, d.trigger, d.doc, d.device, d.updated);
       }),
     setAutomationDeleted: (id, deleted) =>
       void db.prepare("UPDATE automations SET deleted = ? WHERE id = ?").run(deleted ? 1 : 0, id),
@@ -213,6 +230,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
             id: r.id as string,
             rev: Number(r.rev),
             name: r.name as string,
+            trigger: (r.trigger as string | null) ?? null,
             doc: r.doc as string,
             device: (r.device as string | null) ?? null,
             updated: Number(r.updated),
@@ -223,10 +241,10 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
       atomic(() => {
         const r = db
           .prepare(
-            `UPDATE automation_drafts SET rev = rev + 1, name = ?, doc = ?, device = ?, updated = ?
+            `UPDATE automation_drafts SET rev = rev + 1, name = ?, trigger = ?, doc = ?, device = ?, updated = ?
              WHERE id = ? RETURNING rev`,
           )
-          .get(d.name, d.doc, d.device, d.updated, d.id) as { rev: number } | undefined;
+          .get(d.name, d.trigger, d.doc, d.device, d.updated, d.id) as { rev: number } | undefined;
         if (!r) throw new Error(`no draft of automation ${d.id}`);
         // What the draft no longer has loses its place and its test.
         for (const table of ["automation_layout", "automation_tests", "automation_test_rows"])

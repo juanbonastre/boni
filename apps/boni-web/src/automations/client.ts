@@ -3,14 +3,15 @@
  * routes of apps/server/src/automations/routes.ts and the shapes of its service.ts, as the wire carries them. The
  * app cannot import the server, so the shapes are written twice: the desktop e2e (the real app on the real server)
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
- * and Android's `Net.kt` already allow.
+ * and Android's `Net.kt` already allow. C1 of F14b makes the calls of the list and the editor's header real; the
+ * test, the boxes' places and the rows stay pending until their PRs.
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
  */
 import type { Automation, Cell, Problem, StepError, StepState } from "@boni/automations";
 import type { Label } from "@boni/entities";
-import type { BoniApi } from "../core/api.ts";
+import type { AgentApi } from "../core/agent.ts";
 import { notBuilt } from "./pending.ts";
 
 /** Where a step's box is on the canvas, in the canvas's own units (AU-05). */
@@ -118,7 +119,51 @@ export interface AutomationsClient {
   sample(id: string, step: string): Promise<Sample>;
 }
 
-/** The calls over the app's one way to the server (`BoniApi`): offline and errors are its own. */
-export function automationsClient(_api: BoniApi): AutomationsClient {
-  return notBuilt("automationsClient");
+/** The way to the server the client needs: `AgentApi.automations` (offline and errors are its own). */
+export type AutomationsApi = Pick<AgentApi, "automations">;
+
+const isObj = (x: unknown): x is Record<string, unknown> =>
+  !!x && typeof x === "object" && !Array.isArray(x);
+const path = (id: string, rest = "") => `${encodeURIComponent(id)}${rest}`;
+
+/** What `GET automations/:id` and the calls that make one answer, read as the editor needs it. */
+export function openedOf(x: unknown): Opened {
+  if (!isObj(x) || typeof x.id !== "string" || !isObj(x.automation))
+    throw new Error("automations: not an automation");
+  return {
+    id: x.id,
+    rev: typeof x.rev === "number" ? x.rev : 0,
+    automation: x.automation as unknown as Automation,
+    places: Array.isArray(x.places) ? (x.places as Place[]) : [],
+    tests: isObj(x.tests) ? (x.tests as Record<string, StepTest>) : {},
+    tested: isObj(x.tested) ? (x.tested as Record<string, Record<string, Cell>>) : {},
+    device: typeof x.device === "string" ? x.device : null,
+    updated: typeof x.updated === "number" ? x.updated : 0,
+  };
+}
+
+/** The calls over the app's one way to the server. */
+export function automationsClient(api: AutomationsApi): AutomationsClient {
+  return {
+    open: async (id) => openedOf(await api.automations("GET", path(id))),
+    create: async (draft) => openedOf(await api.automations("POST", "", { automation: draft })),
+    save: async (id, draft) => {
+      const r = await api.automations("PUT", path(id, "/draft"), { automation: draft });
+      const o = isObj(r) ? r : {};
+      return {
+        rev: typeof o.rev === "number" ? o.rev : 0,
+        stale: Array.isArray(o.stale)
+          ? o.stale.filter((s): s is string => typeof s === "string")
+          : [],
+      };
+    },
+    duplicate: async (id, copyName) =>
+      openedOf(await api.automations("POST", path(id, "/duplicate"), { name: copyName })),
+    remove: async (id) => void (await api.automations("DELETE", path(id))),
+    restore: async (id) => void (await api.automations("POST", path(id, "/restore"))),
+    place: () => notBuilt("automationsClient.place (AU-05)"),
+    test: () => notBuilt("automationsClient.test (AU-90)"),
+    rows: () => notBuilt("automationsClient.rows (AU-71)"),
+    sample: () => notBuilt("automationsClient.sample (AU-20)"),
+  };
 }

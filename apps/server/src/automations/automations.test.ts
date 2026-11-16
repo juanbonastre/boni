@@ -6,7 +6,7 @@
 import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { decide, type Origin } from "@boni/agent";
+import { decide, ensureSystemTypes, type Origin } from "@boni/agent";
 import {
   type Automation,
   cellOf,
@@ -19,10 +19,23 @@ import {
 } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIONS } from "../actions.ts";
 import { cpu } from "../cpu.test-util.ts";
+import { DataError, listRows } from "../data.ts";
+import { flowMap } from "../flowMap.ts";
+import {
+  deleteAutomationRow,
+  flowsCollection,
+  SYS_FLOWS,
+  updateFlowRow,
+  withFlows,
+} from "../flowsCollection.ts";
+import { mcpAnswer, mcpToolNames } from "../mcp.ts";
+import { createPage } from "../pages.ts";
 import { seed } from "../seed.test-util.ts";
+import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { ACTS, actOf, argsOf, runPolicy } from "./policy.ts";
@@ -359,30 +372,214 @@ describe("where an automation lives", () => {
     expect(Object.keys(after.tests).sort()).toEqual([step("Inicio"), step("Buscar")].sort());
   });
 
-  // The list is Boni's collection «Flujos» extended with a row per automation (flowsCollection.ts). Its page is
-  // `FlowsView.tsx`, outside `apps/boni-web/src/automations`: a row of an automation there would open today's flow
-  // editor until C1 changes that page, and its six columns and their words are the screen's. So these stay for C1.
-  it.todo(
-    "AU-61 · the collection «Automatizaciones» has six columns (name, what starts it, state, last run, runs, whose); an automation of the new format says «Sin publicar» with no runs, and one with no trigger says none",
-  );
-  it.todo(
-    "AU-61 · with a thousand automations and flows the list answers within its time (A-15): no draft is parsed to list it",
-  );
-  it.todo(
-    "AU-60 · Boni's collection of automations says «Automatizaciones» in its name and in what it tells an assistant; the internal names (flows.*, flows_*) stay until F16",
-  );
-  it.todo(
-    "AU-60 · the MCP's texts (the guide and the descriptions of the flows_* tools) say automation where they said flow; the tools keep their names until F16",
-  );
-  it.todo(
-    "AU-61 · a flow of before says «Encendida» or «Apagada» and only it does; «De» says whose each is (the user's, Boni's or a page's, with the page's name); with no automation and no flow the collection has no rows",
-  );
-  it.todo(
-    "AU-61 · the map lists the flows of before and no automation of the new format, which does not run until it is published (F14d)",
-  );
-  it.todo(
-    "AU-151 · the list has the flows of before and the automations side by side, each saying its format; a flow of before still saves, turns on and off and runs through its own routes, untouched by this phase",
-  );
+  // The list is Boni's collection of flows extended with a row per automation (flowsCollection.ts); its page is
+  // `FlowsView.tsx`. A flow of before is saved as its own routes save it (store.journal.saveFlow).
+  const flowOfBefore = (
+    id: string,
+    name: string,
+    more: Partial<Parameters<UserStore["journal"]["saveFlow"]>[0]> = {},
+  ) =>
+    store.journal.saveFlow({
+      id,
+      name,
+      trigger: { manual: true, inputs: [] },
+      inputs: [],
+      plan: { version: 1, steps: [] },
+      layout: null,
+      by: "user",
+      enabled: false,
+      created: NOW - 5_000,
+      ...more,
+    });
+  const listed = () => flowsCollection(store);
+  const F = SYS.flows;
+  const optionName = (field: string, id: unknown) =>
+    listed()
+      .type.fields.find((f) => f.id === field)
+      ?.options?.find((o) => o.id === id)?.name;
+
+  it("AU-61 · the collection «Automatizaciones» has six columns (name, what starts it, state, last run, runs, whose); an automation of the new format says «Sin publicar» with no runs, and one with no trigger says none", () => {
+    const { id } = made();
+    const empty = ok(createAutomation(store, draft([], [], "Sin empezar").doc, HAND));
+    const { type, rows } = listed();
+    expect(type.fields.map((f) => f.name)).toEqual([
+      "Nombre",
+      "Se inicia",
+      "Estado",
+      "Última ejecución",
+      "Ejecuciones",
+      "De",
+    ]);
+    expect(type.fields.find((f) => f.id === F.state)?.options?.map((o) => o.name)).toEqual([
+      "Encendida",
+      "Apagada",
+      "Sin publicar",
+    ]);
+    const row = (a: string) => rows.find((r) => r.id === `${F.automation}${a}`);
+    expect(row(id)?.values[F.title]).toBe("Revisar gastos");
+    expect(optionName(F.trigger, row(id)?.values[F.trigger])).toBe("Disparado por el usuario");
+    expect(row(id)?.values[F.state]).toBe(F.unpublished);
+    expect(row(id)?.values[F.runs]).toBe(0);
+    expect(row(id)?.values[F.last]).toBeUndefined();
+    expect(row(id)?.values[F.by]).toBe(F.user);
+    expect(optionName(F.trigger, row(empty.id)?.values[F.trigger])).toBe("—");
+    // The name and the trigger are kept at each save: a rename and a trigger taken away show at once.
+    const d = { ...ok(automationView(store, id)).automation };
+    ok(
+      keepDraft(
+        store,
+        id,
+        { ...d, name: "Gastos grandes", steps: d.steps.filter((s) => s.type !== "manual") },
+        HAND,
+      ),
+    );
+    expect(listed().rows.find((r) => r.id === `${F.automation}${id}`)?.values[F.title]).toBe(
+      "Gastos grandes",
+    );
+    expect(
+      optionName(
+        F.trigger,
+        listed().rows.find((r) => r.id === `${F.automation}${id}`)?.values[F.trigger],
+      ),
+    ).toBe("—");
+    // Deleted: out of the list; restored: back.
+    setDeleted(store, id, true);
+    expect(listed().rows.map((r) => r.id)).toEqual([`${F.automation}${empty.id}`]);
+    setDeleted(store, id, false);
+    expect(listed().rows).toHaveLength(2);
+  });
+
+  it("AU-61 · with a thousand automations and flows the list answers within its time (A-15): no draft is parsed to list it", () => {
+    const one = reviewing().doc;
+    store.journal.automations();
+    for (let i = 0; i < 1000; i++)
+      ok(createAutomation(store, { ...one, name: `Automatización ${i}` }, HAND));
+    for (let i = 0; i < 40; i++) flowOfBefore(`f_${i}`, `Flujo ${i}`, { enabled: i % 2 === 0 });
+    const read = vi.spyOn(store.journal, "automationDraft");
+    const sys = () =>
+      withFlows(store, systemCollections(store, { now: NOW, tz: JUAN.zone, usdToEur: 0.9 }));
+    // Once to warm, then as the app asks for it: the rows of the collection's page.
+    listRows(store, SYS_FLOWS, sys());
+    const start = cpu();
+    const page = listRows(store, SYS_FLOWS, sys());
+    const ms = cpu() - start;
+    timing("the list with 1000 automations and 40 flows (listRows, CPU)", ms);
+    expect(page.rows).toHaveLength(1040);
+    expect(read).not.toHaveBeenCalled();
+    expect(ms).toBeLessThan(250);
+    read.mockRestore();
+  });
+
+  it("AU-60 · Boni's collection of automations says «Automatizaciones» in its name and in what it tells an assistant; the internal names (flows.*, flows_*) stay until F16", () => {
+    const { type } = listed();
+    expect(type.name).toBe("Automatizaciones");
+    // Its key and its fields' ids stay: a saved view or filter keeps working.
+    expect(type.key).toBe("flujos");
+    expect(type.id).toBe(F.id);
+    // The actions keep their names and say automation in their titles (what «Buscar» and a card show).
+    const flows = ACTIONS.all().filter((t) => t.name.startsWith("flows."));
+    expect(flows.length).toBeGreaterThan(3);
+    for (const t of flows) expect(t.title, t.name).not.toMatch(/flujo/i);
+    for (const t of ACTIONS.all().filter((x) => x.name.startsWith("automations.")))
+      expect(t.title, t.name).toMatch(/automatización/);
+    expect(mcpToolNames().filter((n) => n.startsWith("flows_"))).toEqual([
+      "flows_describe",
+      "flows_propose",
+      "flows_test",
+      "flows_runs",
+    ]);
+  });
+
+  it("AU-60 · the MCP's texts (the guide and the descriptions of the flows_* tools) say automation where they said flow; the tools keep their names until F16", async () => {
+    const answer = (await mcpAnswer(store, "d_asistente", {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/list",
+    })) as { result: { tools: { name: string; description: string; inputSchema: unknown }[] } };
+    const tools = answer.result.tools;
+    // Prose only: the tools' names, the argument «flow» and the code «by: flow» are names, not words.
+    const prose = (t: { description: string; inputSchema: unknown }) =>
+      `${t.description} ${JSON.stringify(t.inputSchema)}`
+        .replace(/flows_[a-z]+/g, "")
+        .replace(/"flow"|\bflow:|by: flow/g, "");
+    for (const t of tools.filter((x) => x.name.startsWith("flows_"))) {
+      expect(t.description, t.name).toMatch(/automation/);
+      expect(prose(t), t.name).not.toMatch(/\bflows?\b/i);
+    }
+    for (const t of tools) expect(prose(t), t.name).not.toMatch(/\bflows?\b/i);
+  });
+
+  it("AU-61 · a flow of before says «Encendida» or «Apagada» and only it does; «De» says whose each is (the user's, Boni's or a page's, with the page's name); with no automation and no flow the collection has no rows", () => {
+    expect(listed().rows).toEqual([]);
+    ensureSystemTypes(store);
+    const page = createPage(store, { title: "Gastos" });
+    flowOfBefore("mio", "Apuntar tarea");
+    flowOfBefore("de-boni", "Leer correo", { by: "preset", enabled: true });
+    flowOfBefore("chat", "Conversación", { trigger: { chat: { page: page.id } }, enabled: true });
+    const { id } = made();
+    const { rows } = listed();
+    const by = (row: string) => optionName(F.by, rows.find((r) => r.id === row)?.values[F.by]);
+    const state = (row: string) =>
+      optionName(F.state, rows.find((r) => r.id === row)?.values[F.state]);
+    expect(state(`${F.row}de-boni`)).toBe("Encendida");
+    expect(state(`${F.row}mio`)).toBe("Apagada");
+    expect(state(`${F.automation}${id}`)).toBe("Sin publicar");
+    expect(by(`${F.row}mio`)).toBe("Tú");
+    expect(by(`${F.row}de-boni`)).toBe("Boni");
+    expect(by(`${F.row}chat`)).toBe("Página «Gastos»");
+    expect(by(`${F.automation}${id}`)).toBe("Tú");
+    // Only the flows of before are on or off.
+    expect(
+      rows.filter((r) => r.values[F.state] !== F.unpublished).every((r) => r.id.startsWith(F.row)),
+    ).toBe(true);
+  });
+
+  it("AU-61 · the map lists the flows of before and no automation of the new format, which does not run until it is published (F14d)", () => {
+    flowOfBefore("mio", "Apuntar tarea");
+    const { id } = made(draft([["Inicio", "manual"]], [], "Nueva automatización"));
+    const map = JSON.stringify(
+      flowMap(store, { now: NOW, days: 7, tz: JUAN.zone, mailType: null, mailAccount: null }),
+    );
+    expect(map).toContain("Apuntar tarea");
+    expect(map).not.toContain(id);
+    expect(map).not.toContain("Nueva automatización");
+  });
+
+  it("AU-151 · the list has the flows of before and the automations side by side, each saying its format; a flow of before still saves, turns on and off and runs through its own routes, untouched by this phase", () => {
+    flowOfBefore("mio", "Apuntar tarea");
+    const { id } = made();
+    const { rows } = listed();
+    // Side by side: the automations first, then the flows of before; each row says which it is by its id.
+    expect(rows.map((r) => [automationRowTarget(r.id), flowRowTarget(r.id)])).toEqual([
+      [id, null],
+      [null, "mio"],
+    ]);
+    // A flow of before changes as it always did, by its own functions; the automation is not touched.
+    updateFlowRow(store, `${F.row}mio`, { [F.title]: "Apuntar una tarea" }, () => [], NOW);
+    updateFlowRow(store, `${F.row}mio`, { [F.state]: F.on }, () => [], NOW);
+    expect(store.journal.flow("mio")).toMatchObject({
+      name: "Apuntar una tarea",
+      enabled: true,
+      version: 2,
+    });
+    expect(ok(automationView(store, id)).rev).toBe(1);
+    // A row of an automation is changed in its editor, never by the table: its name and state are fixed there.
+    const table = listRows(
+      store,
+      SYS_FLOWS,
+      withFlows(store, systemCollections(store, { now: NOW, tz: JUAN.zone, usdToEur: 0.9 })),
+    );
+    expect(table.rows.find((r) => r.id === `${F.automation}${id}`)?.fixed).toEqual([
+      F.title,
+      F.state,
+    ]);
+    // «Eliminar» from the table is the automation's own, and its Undo.
+    deleteAutomationRow(store, `${F.automation}${id}`, true);
+    expect(store.journal.automation(id)?.deleted).toBe(true);
+    deleteAutomationRow(store, `${F.automation}${id}`, false);
+    expect(store.journal.automation(id)?.deleted).toBe(false);
+    expect(() => deleteAutomationRow(store, `${F.automation}a_nadie`, true)).toThrow(DataError);
+  });
 });
 
 // ---------------------------------------------------------------- the real Collections and the real Policy

@@ -80,7 +80,9 @@ describe("one list of actions (D-41, F10)", () => {
   it("every action has its control in the app, or its «Buscar» entry, the same name both ways", () => {
     const text = [...sources(WEB), ...sources(CALENDAR_WEB)].join("\n");
     const controlled = new Set(
-      [...text.matchAll(/(?:data-boni-action|boniAction)=\{?"([a-z_.]+)"/g)].map((m) => m[1]),
+      [...text.matchAll(/(?:data-boni-action|boniAction)(?:=\{?|: )"([a-z_.]+)"/g)].map(
+        (m) => m[1],
+      ),
     );
     const find = readFileSync(join(WEB, "components", "QuickFind.tsx"), "utf8");
     for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g)) controlled.add(m[1]);
@@ -104,6 +106,7 @@ describe("one list of actions (D-41, F10)", () => {
       if (t.name.startsWith("inbox.")) expect(t.area, t.name).toBe("inbox");
       if (t.name.startsWith("calendars.")) expect(t.area, t.name).toBe("calendars");
       if (t.name.startsWith("connectors.")) expect(t.area, t.name).toBe("connectors");
+      if (t.name.startsWith("automations.")) expect(t.area, t.name).toBe("flows");
     }
     expect(
       registry
@@ -112,6 +115,12 @@ describe("one list of actions (D-41, F10)", () => {
         .map((t) => t.name)
         .sort(),
     ).toEqual([
+      // «Automatizaciones» (automations/routes.ts): what changes one is his touch (AU-168).
+      "automations.create",
+      "automations.delete",
+      "automations.duplicate",
+      "automations.edit",
+      "automations.restore",
       "connectors.mail",
       "connectors.mail_guide",
       "connectors.mail_suggestion",

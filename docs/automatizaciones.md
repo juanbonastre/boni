@@ -464,13 +464,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 **La lista** (pantalla 1 del boceto)
 
-- **AU-60** (F14b, pendiente) · La sección se llama «Automatizaciones» en la barra lateral, la conversación, el mapa,
+- **AU-60** (F14b, hecho) · La sección se llama «Automatizaciones» en la barra lateral, la conversación, el mapa,
   el MCP y la documentación.
   En la F14b cambia el nombre que se lee: la barra lateral, la página de la colección y sus migas, «Buscar», la
   conversación, el mapa y los textos del MCP dicen «Automatizaciones» y «automatización». Los nombres de dentro
   (`flows.*`, las herramientas `flows_*` del MCP) siguen hasta la F16. «Flujo» solo queda en la marca «Formato
   anterior» (AU-151).
-- **AU-61** (F14b, pendiente) · La lista sigue siendo una página de colección, «Tabla | Mapa», con seis columnas:
+- **AU-61** (F14b, hecho) · La lista sigue siendo una página de colección, «Tabla | Mapa», con seis columnas:
   Nombre · Se inicia (su disparador) · Estado («Encendida», «Apagada» o «Sin publicar») · Última ejecución ·
   Ejecuciones · De («Tú», «Boni» o «Página «Gastos»»). «Nueva» abre el lienzo vacío. Las que inicia el usuario llevan
   «Ejecutar» en su fila desde que se puede publicar (AU-97, F14d). Hasta entonces, una del formato nuevo dice «Sin
@@ -482,7 +482,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 **El editor** (pantalla 2)
 
-- **AU-62** (F14b, pendiente) · La cabecera tiene seis cosas propias: volver y el nombre (se edita ahí), las pestañas
+- **AU-62** (F14b, en parte) · La cabecera tiene seis cosas propias: volver y el nombre (se edita ahí), las pestañas
   «Editor | Ejecuciones», «Guardado» (el borrador se guarda solo; dice además «cambios sin publicar» o «publicada la
   versión 3»), el interruptor de encendida, «Publicar» y «⋯» (Ejecutar, Versiones, Duplicar, Ajustes, Eliminar).
   Debajo no hay más barras, y al lado solo lo que la barra de Boni lleva en todas las pantallas (plegar la barra
@@ -493,6 +493,8 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   tiene el último, y «Sin guardar · Reintentar» si no pudo (Boni reintenta solo, como hoy: D-55). Cada cambio sale
   tras una pausa corta y al salir del editor; no hay botón de guardar. «Duplicar» crea «<nombre> (copia)» con los
   mismos pasos y sitios y la abre. «Eliminar» la quita de la lista sin preguntar y su aviso lleva «Deshacer».
+  Hecho en C1: la cabecera, «Guardado» con sus tres estados, la pausa y la salida, «Duplicar» y «Eliminar» con su
+  «Deshacer». Falta, con el lienzo (C2): ver que la copia tiene cada paso en el mismo sitio.
 - **AU-63** (F14b, pendiente) · El lienzo va de izquierda a derecha. Un paso es una tarjeta con su icono, su nombre y
   una línea que resume lo que hace («Gastos · este mes · hasta 500»). Las salidas están a la derecha con su nombre;
   las conexiones cuelgan debajo (desde la F14c: AU-40).
@@ -867,7 +869,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   cada paso a su tipo, «Solo si» a un «Si», «Para cada» al trabajo por fila, «Función» + «Aplicar cambios» a «Código»
   + «Colección». La conversión se prueba antes de desplegar con copias de los flujos de Juan y con los de Boni. Lo
   que no se pueda convertir queda apagado con su aviso; nada se borra.
-- **AU-151** (F14b, pendiente) · Mientras tanto conviven: la lista enseña las dos clases y un flujo de antes abre el
+- **AU-151** (F14b, hecho) · Mientras tanto conviven: la lista enseña las dos clases y un flujo de antes abre el
   editor de antes, marcado «formato anterior».
   En la F14b: «Nueva» crea siempre una automatización del formato nuevo. Un flujo de antes abre su editor de siempre,
   con «Formato anterior» junto a su nombre, y sigue encendido, apagado y ejecutándose como estaba.

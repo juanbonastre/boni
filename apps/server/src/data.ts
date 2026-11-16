@@ -21,7 +21,14 @@ import {
   type UserStore,
   type Zone,
 } from "@boni/store";
-import { dataRowFixed, filterErrors, type SavedView, SYS, savedViewsOf } from "@boni/views";
+import {
+  automationRowTarget,
+  dataRowFixed,
+  filterErrors,
+  type SavedView,
+  SYS,
+  savedViewsOf,
+} from "@boni/views";
 import { mimeOf } from "./paths.ts";
 import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
@@ -441,7 +448,12 @@ export function flowRow(e: Entity): DataRow {
     id: e.id,
     values: e.values,
     updated: e.updated,
-    ...(e.values[SYS.flows.by] === SYS.flows.boni ? { fixed: [SYS.flows.title] } : {}),
+    // An automation of the new format is renamed in its editor and has no state to switch until F14d (AU-62).
+    ...(automationRowTarget(e.id) !== null
+      ? { fixed: [SYS.flows.title, SYS.flows.state] }
+      : e.values[SYS.flows.by] === SYS.flows.boni
+        ? { fixed: [SYS.flows.title] }
+        : {}),
   };
 }
 /** One row of «Flujos» as the app takes it, made again (after a change to it); null when it is gone. */

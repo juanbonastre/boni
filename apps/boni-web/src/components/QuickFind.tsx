@@ -9,7 +9,7 @@ import {
   openPage,
   openSettings,
   restoreFromTrash,
-  showFlows,
+  showAutomation,
   toggleInbox,
   useStore,
 } from "../store.ts";
@@ -40,7 +40,8 @@ export const FIND_ACTIONS: readonly { name: string; run: () => void }[] = [
   { name: "inbox.pending", run: () => toggleInbox(true) },
   // What Boni remembers is a note of «Memoria», written where Juan writes it.
   { name: "memory.save", run: () => openCollection("memory") },
-  { name: "flows.save", run: () => showFlows() },
+  // «Nueva automatización»: the empty canvas, as «Nueva» of «Automatizaciones» opens it (AU-61).
+  { name: "automations.create", run: () => showAutomation(null) },
   { name: "connectors.mail_view", run: () => openSettings(true, "mail") },
   { name: "extensions.enable", run: () => openSettings(true, "extensions") },
 ];

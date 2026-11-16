@@ -1735,7 +1735,11 @@ export function FlowEditor({
             checked={detail.enabled}
             disabled={busy}
             aria-label={detail.enabled ? t("flows.enabled") : t("flows.disabled")}
-            onChange={(e) => void act(() => agentApi.setFlowEnabled(detail.id, e.target.checked))}
+            onChange={(e) => {
+              // Read now: by the time `act` has sent what was owed, React has put the box back as `detail` says.
+              const on = e.target.checked;
+              void act(() => agentApi.setFlowEnabled(detail.id, on));
+            }}
           />
           <span>{detail.enabled ? t("flows.enabled") : t("flows.disabled")}</span>
         </label>

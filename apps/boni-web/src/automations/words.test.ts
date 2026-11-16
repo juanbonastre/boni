@@ -1,6 +1,7 @@
 // The words of «Automatizaciones» (docs/automatizaciones.md AU-25, AU-60, AU-85, AU-86). Pending but the first: the
 // builder's PRs bring the words into i18n.ts and turn each into a real test, the rule's id kept in its name.
 import { describe, expect, it } from "vitest";
+import { KEYS, translator } from "../i18n.ts";
 import { DO } from "./words.ts";
 
 describe("the words of «Automatizaciones»", () => {
@@ -15,9 +16,22 @@ describe("the words of «Automatizaciones»", () => {
   it.todo(
     "AU-86 · every step type, action, parameter, choice, output, setting, measure, problem and failure the catalogue has is worded in i18n.ts in both languages: a name, a card and a panel never show a key",
   );
-  it.todo(
-    "AU-60 · the section's words say «Automatizaciones» and «automatización» in the sidebar, the collection's page, «Buscar» and the map; «flujo» is left only in «Formato anterior»",
-  );
+  it("AU-60 · the section's words say «Automatizaciones» and «automatización» in the sidebar, the collection's page, «Buscar» and the map; «flujo» is left only in «Formato anterior»", () => {
+    const es = translator("es");
+    const en = translator("en");
+    // The sidebar and the collection's page, the conversation, the map, «Buscar».
+    expect(es("nav.flows")).toBe("Automatizaciones");
+    expect(es("chat.place.flows")).toBe("Automatizaciones");
+    expect(es("map.kind.flow")).toBe("Automatización");
+    expect(es("map.group.flow")).toBe("Por automatización");
+    expect(es("find.action.automations.create")).toContain("Automatizaciones");
+    expect(en("nav.flows")).toBe("Automations");
+    // No word of the app says «flujo» (nor «flow»): the mark of the editor of before says «Formato anterior».
+    expect(KEYS.filter((k) => /flujo/i.test(es(k)))).toEqual([]);
+    expect(KEYS.filter((k) => /\bflows?\b/i.test(en(k)))).toEqual([]);
+    expect(es("auto.formerFormat")).toBe("Formato anterior");
+    expect(en("auto.formerFormat")).toBe("Former format");
+  });
   it.todo(
     "AU-86 · a new step is named by its action's phrase and its collection («Buscar filas en Gastos»; with no collection, «Buscar filas»), and a name another step has takes the first free number («Filtrar 2»)",
   );

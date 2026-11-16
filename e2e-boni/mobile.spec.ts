@@ -644,13 +644,26 @@ test("«Flujos» on the phone (F8): the map to look at, a flow to try or run, ne
       "POST api/agent/flows/check": [FLOW_CHECK],
       "POST api/agent/flows/:id/test": [FLOW_TEST],
     },
+    automations: [
+      {
+        id: "a_01jx8p3k5m7n9q2r4t6v8w0y1z",
+        name: "Revisar gastos",
+        trigger: "manual",
+        updated: 1761900000000,
+      },
+    ],
   });
   await tab(page, "Páginas");
   // Under «De Boni» in «Páginas».
-  await page.locator(".m-item-main", { hasText: "Flujos" }).tap();
-  // Its two views, as on the computer; no «Nuevo»: a flow is made on the computer.
+  await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+  // Its two views, as on the computer; no «Nueva»: an automation is made on the computer (AU-74).
   await expect(page.getByRole("tab", { name: "Mapa" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Nuevo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Nueva" })).toHaveCount(0);
+  // The automation of the new format among the flows of before, as the list says it (AU-61), inside the phone.
+  await expect(page.getByText("Revisar gastos", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Sin publicar").first()).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(412);
+  await page.screenshot({ path: `${SHOTS}/phone-automations.png` });
   await page.getByRole("tab", { name: "Mapa" }).tap();
   const map = page.locator(".mp-stage");
   await expect(map.locator(".mp-card", { hasText: "Bandeja" })).toBeVisible();

@@ -1,4 +1,14 @@
-import { test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import {
+  FLOW_CATALOG,
+  FLOW_CHECK,
+  FLOW_DETAIL,
+  FLOWS,
+  FLOWS_WITH_SUMMARY,
+  MAP,
+  MODELS,
+} from "./agent-scenarios.ts";
+import { openApp } from "./fixtures.ts";
 
 /**
  * «Automatizaciones» on the screen, F14b (docs/automatizaciones.md §5.7, §5.8; the sketch,
@@ -13,18 +23,328 @@ import { test } from "@playwright/test";
  * the preview of an expression). The same things over the real server are e2e-boni-desktop/automations.spec.ts.
  */
 
+const SHOTS = "e2e-boni/screenshots";
+/** Two automations of the new format, with ids as the server makes them: one started by hand, one with no step. */
+const AUTOMATIONS = [
+  {
+    id: "a_01jx8p3k5m7n9q2r4t6v8w0y1z",
+    name: "Revisar gastos",
+    trigger: "manual",
+    updated: 1761900000000,
+  },
+  {
+    id: "a_01jx8n2c4e6g8j0l2n4p6r8t0v",
+    name: "Borrador sin pasos",
+    trigger: null,
+    updated: 1761800000000,
+  },
+];
+/** What the flows of before need to be listed and opened (agent-scenarios.ts). */
+const BEFORE = (flows: unknown = FLOWS) => ({
+  "GET api/agent/models": [MODELS],
+  "GET api/agent/map": [MAP],
+  "GET api/agent/flows": [flows],
+  "GET api/agent/flows/:id": [{ ...FLOW_DETAIL, enabled: true }],
+  "GET api/agent/flows/catalog": [FLOW_CATALOG],
+  "POST api/agent/flows/check": [FLOW_CHECK],
+  "PUT api/agent/flows/:id/enabled": [{ ...FLOW_DETAIL, enabled: false }],
+});
+async function list(page: Page) {
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
+  return page.locator(".db-table tbody tr");
+}
+/** What the app asked of the automations' routes ("POST", "GET a_…", "PUT a_…/draft"), as the mock saw it. */
+const asked = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __automations?: string[] }).__automations ?? []);
+/** The server down (each automations' route answers 503), or back. */
+const serverDown = (page: Page, down: boolean) =>
+  page.evaluate((d) => {
+    (window as unknown as { __automationsDown?: boolean }).__automationsDown = d;
+  }, down);
+const sent = (page: Page, start: string) =>
+  page.evaluate(
+    (st) =>
+      ((window as unknown as { __bodies?: string[] }).__bodies ?? [])
+        .filter((b) => b.startsWith(st))
+        .map((b) => JSON.parse(b.slice(st.length)) as Record<string, unknown>),
+    start,
+  );
+/** The name in the last draft sent to `start`. */
+const lastName = async (page: Page, start: string) =>
+  ((await sent(page, start)).at(-1)?.automation as { name?: string } | undefined)?.name;
+const head = (page: Page) => page.locator(".auto-head");
+const saved = (page: Page) => head(page).getByRole("status");
+const nameBox = (page: Page) => page.getByRole("textbox", { name: "Nombre de la automatización" });
+
+test.beforeEach(async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
+
 test.describe("the list", () => {
-  test.fixme("AU-60 · the sidebar, the collection's page and its crumbs, «Buscar», the conversation and the map say «Automatizaciones»; nothing on the screen says «Flujos», and «flujo» is read only in «Formato anterior»", async () => {});
-  test.fixme("AU-61 · the list is a collection page, «Tabla | Mapa», with six columns: Nombre, Se inicia, Estado, Última ejecución, Ejecuciones and De; an automation of the new format says «Sin publicar» and one with no trigger «—»; a flow of before says «Encendida» or «Apagada»", async () => {});
-  test.fixme("AU-61 · with no automation the page says what any empty collection says, with its «Nueva»; «Mapa» shows the flows of before and no automation that is not published", async () => {});
-  test.fixme("AU-61 · «Nueva» opens the empty canvas and asks the server for nothing; the automation is in the list, named «Nueva automatización», once it has its first step", async () => {});
-  test.fixme("AU-151 · «Nueva» always opens the new canvas; a flow of before opens the editor of before with «Formato anterior» by its name, and is saved, turned on and run as it was", async () => {});
+  test("AU-60 · the sidebar, the collection's page and its crumbs, «Buscar», the conversation and the map say «Automatizaciones»; nothing on the screen says «Flujos», and «flujo» is read only in «Formato anterior»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    const noFlujo = async () => expect(page.locator("body")).not.toContainText(/flujo/i);
+    // The sidebar and the collection's page.
+    await expect(page.locator(".sidebar")).toContainText("Automatizaciones");
+    await list(page);
+    await expect(page.locator(".db-table tbody tr")).toHaveCount(3);
+    await noFlujo();
+    // «Buscar»: «Nueva automatización», which opens the new canvas.
+    await page.keyboard.press("Control+k");
+    await page.keyboard.type("automat", { delay: 40 });
+    const found = page.locator(".find-row").first();
+    await expect(found).toHaveText("Nueva automatización (Automatizaciones)");
+    await expect(found).toHaveAttribute("data-boni-action", "automations.create");
+    await noFlujo();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".auto-start h2")).toHaveText("¿Cómo empieza?");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    // The map: its groups by automation, its cards of the flows of before.
+    await page.getByRole("tab", { name: "Mapa" }).click();
+    await expect(page.locator(".mp-stage .mp-card").first()).toBeVisible();
+    await noFlujo();
+    // A flow of before: its crumbs say the section, and «Formato anterior» by its name.
+    await page.getByRole("tab", { name: "Tabla" }).click();
+    await page.locator(".db-table tbody tr").getByText("Leer correo", { exact: true }).click();
+    await expect(page.locator(".flow-crumbs")).toContainText("Automatizaciones");
+    await expect(page.locator(".flow-crumbs .former-format")).toHaveText("Formato anterior");
+    await noFlujo();
+  });
+  test("AU-61 · the list is a collection page, «Tabla | Mapa», with six columns: Nombre, Se inicia, Estado, Última ejecución, Ejecuciones and De; an automation of the new format says «Sin publicar» and one with no trigger «—»; a flow of before says «Encendida» or «Apagada»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: AUTOMATIONS,
+      agent: BEFORE(FLOWS_WITH_SUMMARY),
+    });
+    const rows = await list(page);
+    await expect(page.getByRole("tab")).toHaveText(["Tabla", "Mapa"]);
+    await expect(page.locator(".db-table thead th .th-name")).toHaveText([
+      "Nombre",
+      "Se inicia",
+      "Estado",
+      "Última ejecución",
+      "Ejecuciones",
+      "De",
+    ]);
+    // The automations of the new format first, the newest first; then the flows of before, those on first.
+    await expect(rows).toHaveCount(4);
+    for (const text of ["Revisar gastos", "Disparado por el usuario", "Sin publicar", "Tú"])
+      await expect(rows.nth(0)).toContainText(text);
+    for (const text of ["Borrador sin pasos", "—", "Sin publicar"])
+      await expect(rows.nth(1)).toContainText(text);
+    for (const text of ["Leer correo", "Encendida", "Boni", "42"])
+      await expect(rows.nth(2)).toContainText(text);
+    await expect(rows.nth(3)).toContainText("Apagada");
+    await expect(page.locator(".db-table tbody")).not.toContainText("Encendido");
+    await page.screenshot({ path: `${SHOTS}/automations-list.png` });
+  });
+  test("AU-61 · with no automation the page says what any empty collection says, with its «Nueva»; «Mapa» shows the flows of before and no automation that is not published", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { agent: BEFORE({ flows: [] }) });
+    const rows = await list(page);
+    // What any empty collection shows: its columns, no row, and its «Nueva» above and under the table.
+    await expect(page.locator(".db-table thead th .th-name")).toHaveCount(6);
+    await expect(rows).toHaveCount(0);
+    await expect(
+      page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator(".db-add-row")).toHaveText("Nueva");
+    await page.screenshot({ path: `${SHOTS}/automations-empty.png` });
+  });
+
+  test("AU-61 · «Mapa» shows the flows of before and no automation that is not published", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    await list(page);
+    await page.getByRole("tab", { name: "Mapa" }).click();
+    const map = page.locator(".mp-stage");
+    await expect(map.locator(".mp-card", { hasText: "Leer correo" }).first()).toBeVisible();
+    await expect(map.locator(".mp-card", { hasText: "Revisar gastos" })).toHaveCount(0);
+    await expect(map.locator(".mp-card", { hasText: "Borrador sin pasos" })).toHaveCount(0);
+  });
+  test("AU-61 · «Nueva» opens the empty canvas and asks the server for nothing; the automation is in the list, named «Nueva automatización», once it has its first step", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { agent: BEFORE() });
+    const rows = await list(page);
+    await expect(rows).toHaveCount(1);
+    await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
+    await expect(page.locator(".auto-start h2")).toHaveText("¿Cómo empieza?");
+    await expect(nameBox(page)).toHaveValue("Nueva automatización");
+    // Longer than the pause before a save: nothing was asked and nothing says it was saved.
+    await page.waitForTimeout(1500);
+    expect(await asked(page)).toEqual([]);
+    await expect(saved(page)).toHaveCount(0);
+    await page.screenshot({ path: `${SHOTS}/automation-new.png` });
+    // Back with nothing done: the list as it was.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await expect(rows).toHaveCount(1);
+    expect(await asked(page)).toEqual([]);
+    // Its first step makes it.
+    await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
+    await page.getByRole("button", { name: "Disparado por el usuario" }).click();
+    await expect(saved(page)).toHaveText("Guardado");
+    expect(await asked(page)).toEqual(["POST"]);
+    const [made] = await sent(page, "POST api/agent/automations ");
+    const first = made?.automation as { name: string; steps: { type: string }[] };
+    expect(first.name).toBe("Nueva automatización");
+    expect(first.steps.map((x) => x.type)).toEqual(["manual"]);
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await expect(rows).toHaveCount(2);
+    for (const text of ["Nueva automatización", "Disparado por el usuario", "Sin publicar"])
+      await expect(rows.first()).toContainText(text);
+  });
+  test("AU-151 · «Nueva» always opens the new canvas; a flow of before opens the editor of before with «Formato anterior» by its name, and is saved, turned on and run as it was", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    const rows = await list(page);
+    // «Nueva» is the new canvas, also with flows of before in the list.
+    await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
+    await expect(page.locator(".auto-page .auto-start")).toBeVisible();
+    await expect(page.locator(".flow-editor")).toHaveCount(0);
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    // A flow of before: the editor of before, marked by its name.
+    await rows.getByText("Leer correo", { exact: true }).click();
+    await expect(page.locator(".flow-editor .flow-canvas .fl-node").first()).toBeVisible();
+    await expect(page.locator(".auto-page")).toHaveCount(0);
+    const crumbs = page.locator(".flow-crumbs");
+    await expect(crumbs).toContainText("Leer correo");
+    await expect(crumbs.locator(".former-format")).toHaveText("Formato anterior");
+    // As it was: saved with «Guardar», turned on and off with its switch, through the routes of the flows.
+    await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled();
+    const on = page.locator('[data-boni-action="flows.enable"]');
+    await expect(on).toBeChecked();
+    await on.click();
+    await expect
+      .poll(async () => (await sent(page, "PUT api/agent/flows/leer-correo/enabled ")).length)
+      .toBe(1);
+    expect(await sent(page, "PUT api/agent/flows/leer-correo/enabled ")).toEqual([
+      { enabled: false },
+    ]);
+    await expect(on).not.toBeChecked();
+    await page.screenshot({ path: `${SHOTS}/automations-former-format.png` });
+  });
 });
 
 test.describe("the editor", () => {
-  test.fixme("AU-62 · the header has back, the name (edited in place), «Guardado» and «⋯» with Duplicar and Eliminar, and nothing else of its own; there is no bar under it and no button to save", async () => {});
-  test.fixme("AU-62 · a change is saved after a short pause and on leaving the editor: «Guardando…», then «Guardado»; with the server failing, «Sin guardar · Reintentar», and it is saved when the server is back; opened again, the draft is as it was left", async () => {});
-  test.fixme("AU-62 · «Duplicar» opens «<nombre> (copia)» with the same steps in the same places; «Eliminar» takes it off the list without asking and the «Deshacer» of its notice brings it back", async () => {});
+  test("AU-62 · the header has back, the name (edited in place), «Guardado» and «⋯» with Duplicar and Eliminar, and nothing else of its own; there is no bar under it and no button to save", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    const rows = await list(page);
+    await rows.getByText("Revisar gastos", { exact: true }).click();
+    await expect(nameBox(page)).toHaveValue("Revisar gastos");
+    await expect(saved(page)).toHaveText("Guardado");
+    // Back, the name, «Guardado» and «⋯»: two buttons and the name, nothing else.
+    await expect(head(page).getByRole("button")).toHaveCount(2);
+    await expect(
+      head(page).getByRole("button", { name: "Volver a Automatizaciones" }),
+    ).toBeVisible();
+    await expect(head(page).getByRole("button", { name: "Más" })).toBeVisible();
+    await expect(head(page).getByRole("textbox")).toHaveCount(1);
+    // No bar under it, no button to save.
+    await expect(page.locator(".auto-page .doc > *")).toHaveCount(2);
+    await expect(page.locator(".auto-page .doc > *").nth(1)).toHaveClass(/auto-canvas/);
+    await expect(page.getByRole("button", { name: /^Guardar/ })).toHaveCount(0);
+    await head(page).getByRole("button", { name: "Más" }).click();
+    await expect(page.locator(".pop-box .menu-item")).toHaveText(["Duplicar", "Eliminar"]);
+    await page.screenshot({ path: `${SHOTS}/automation-header.png` });
+  });
+  test("AU-62 · a change is saved after a short pause and on leaving the editor: «Guardando…», then «Guardado»; with the server failing, «Sin guardar · Reintentar», and it is saved when the server is back; opened again, the draft is as it was left", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    const rows = await list(page);
+    await rows.getByText("Revisar gastos", { exact: true }).click();
+    const box = nameBox(page);
+    await expect(box).toHaveValue("Revisar gastos");
+    const draft = "PUT api/agent/automations/a_01jx8p3k5m7n9q2r4t6v8w0y1z/draft ";
+    // Typed at a person's pace: «Guardando…» while typing, one save after the pause, then «Guardado».
+    await box.click();
+    await box.press("End");
+    await box.pressSequentially(" del mes", { delay: 120 });
+    await expect(saved(page)).toHaveText("Guardando…");
+    await expect(saved(page)).toHaveText("Guardado");
+    const once = await sent(page, draft);
+    expect(once).toHaveLength(1);
+    expect(await lastName(page, draft)).toBe("Revisar gastos del mes");
+    // The server failing: «Sin guardar · Reintentar»; what he typed stays; saved when the server is back.
+    await serverDown(page, true);
+    const before = (await asked(page)).length;
+    await box.pressSequentially(" ejemplo", { delay: 120 });
+    await expect(saved(page)).toContainText("Sin guardar");
+    await expect(saved(page).getByRole("button", { name: "Reintentar" })).toBeVisible();
+    await expect(box).toHaveValue("Revisar gastos del mes ejemplo");
+    await page.screenshot({ path: `${SHOTS}/automation-not-saved.png` });
+    // Tried again by itself a moment later (2 s, then 4 s): still failing, still said.
+    await expect.poll(async () => (await asked(page)).length - before, { timeout: 5_000 }).toBe(2);
+    await expect(saved(page)).toContainText("Sin guardar");
+    await serverDown(page, false);
+    await saved(page).getByRole("button", { name: "Reintentar" }).click();
+    await expect(saved(page)).toHaveText("Guardado");
+    expect(await lastName(page, draft)).toBe("Revisar gastos del mes ejemplo");
+    // On leaving, before the pause: sent on the way out; opened again, as it was left.
+    await box.press("End");
+    await box.pressSequentially(" 2", { delay: 60 });
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await expect.poll(() => lastName(page, draft)).toBe("Revisar gastos del mes ejemplo 2");
+    await rows.getByText(/^Revisar gastos del mes ejemplo/).click();
+    await expect(box).toHaveValue("Revisar gastos del mes ejemplo 2");
+    await expect(saved(page)).toHaveText("Guardado");
+  });
+  test("AU-62 · «Duplicar» opens «<nombre> (copia)» with the same steps in the same places; «Eliminar» takes it off the list without asking and the «Deshacer» of its notice brings it back", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
+    const rows = await list(page);
+    await expect(rows).toHaveCount(3);
+    let confirmed = false;
+    page.on("dialog", (d) => {
+      confirmed = true;
+      void d.dismiss();
+    });
+    await rows.getByText("Revisar gastos", { exact: true }).click();
+    await head(page).getByRole("button", { name: "Más" }).click();
+    await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
+    // The copy, opened: its name, its own id, its trigger (no «¿Cómo empieza?»).
+    await expect(nameBox(page)).toHaveValue("Revisar gastos (copia)");
+    expect(
+      await sent(page, "POST api/agent/automations/a_01jx8p3k5m7n9q2r4t6v8w0y1z/duplicate "),
+    ).toEqual([{ name: "Revisar gastos (copia)" }]);
+    await expect(page.locator(".auto-start")).toHaveCount(0);
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await expect(rows).toHaveCount(4);
+    for (const text of ["Revisar gastos (copia)", "Disparado por el usuario"])
+      await expect(rows.first()).toContainText(text);
+    // «Eliminar» without asking: off the list, and the notice's «Deshacer» brings it back.
+    await rows.getByText("Revisar gastos", { exact: true }).click();
+    await expect(nameBox(page)).toHaveValue("Revisar gastos");
+    await head(page).getByRole("button", { name: "Más" }).click();
+    await page.getByRole("menuitemradio", { name: "Eliminar" }).click();
+    await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
+    await expect(rows).toHaveCount(3);
+    await expect(rows.getByText("Revisar gastos", { exact: true })).toHaveCount(0);
+    expect(confirmed).toBe(false);
+    await expect(page.locator(".modal")).toHaveCount(0);
+    const undo = page.locator(".toast").getByRole("button", { name: "Deshacer" });
+    await expect(page.locator(".toast")).toContainText("«Revisar gastos» eliminada");
+    await expect(undo).toHaveAttribute("data-boni-action", "automations.restore");
+    await undo.click();
+    await expect(rows).toHaveCount(4);
+    await expect(rows.getByText("Revisar gastos", { exact: true })).toHaveCount(1);
+  });
+
+  test.fixme("AU-62 · on the canvas, the copy of «Duplicar» has each step of the original in the same place (C2)", async () => {});
   test.fixme("AU-63 · the canvas reads left to right: each step a card of one width with its icon, its name and one line of summary, both cut with an ellipsis and whole on hover and in the step's view; the outputs on the right with their names; a canvas with only its trigger says nothing more", async () => {});
   test.fixme("AU-64 · bottom left: zoom in, zoom out, fit and «Ordenar»; bottom centre: «Probar»; top right: «+»; at the bottom «Registro», folded, with one line: «Sin probar», then the last test", async () => {});
   test.fixme("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async () => {});

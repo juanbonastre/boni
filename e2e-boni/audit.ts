@@ -94,7 +94,7 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
 export const MODELS_TEXT = {
   es: {
     settings: "Ajustes",
-    nav: "Flujos",
+    nav: "Automatizaciones",
     modelsTab: "Modelos",
     conns: /^Claves/,
     budget: "Cambiar el presupuesto",
