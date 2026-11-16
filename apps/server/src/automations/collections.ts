@@ -62,6 +62,19 @@ export interface CollectionsFor {
 
 const SYSTEM: ReadonlySet<string> = new Set(SYSTEM_TYPES);
 
+/**
+ * A collection's key by its name as Juan sees it now: what `$col('…')` cites (javascript.ts). Only a collection an
+ * automation may reach (`shape` gives it); none when the name is not one, or when two have it.
+ */
+export function collectionNamed(store: UserStore): (name: string) => string | undefined {
+  return (name) => {
+    const found = Object.values(store.schema().types).filter(
+      (t) => t.name === name && !t.archived && !t.system && !SYSTEM.has(t.id),
+    );
+    return found.length === 1 ? found[0]?.key : undefined;
+  };
+}
+
 export function storeCollections(store: UserStore, who: CollectionsFor): Collections {
   // One object per distinct label, for every row this gives (AU-162: shared, never changed in place).
   const interned = new Map<string, Label>();
