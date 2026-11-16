@@ -459,7 +459,8 @@ return categorias.map((c) => ({
   operaciones, memoria, pila, tamaño de la respuesta, líneas de la consola y lecturas distintas, y tras cada uno la
   caja sirve la llamada siguiente. La pila es de 256 KB: con 512 KB una recursión sin fin desbordaba antes la pila del
   hilo de la caja y rompía la llamada entera; con 256 KB es un error del código, a unas 1.500 llamadas de hondo.
-  Falta: `code.long` (E2), `code.limit` y los topes del motor (E3), sin caja o con la caja ocupada (S1) y sus
+  Falta: `code.long` (E2), `code.limit` y los topes del motor, entre ellos lo que se le manda a la caja (8 MB; su
+  puerta admite hasta 16) (E3), sin caja o con la caja ocupada (S1) y sus
   palabras en la app (pantallas).
 - **AU-36** (F14c, pendiente) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
   conectadas, y marca lo que no existe antes de probar.
@@ -481,8 +482,9 @@ return categorias.map((c) => ({
   una lectura, unos 70 ms; con 20 lecturas distintas, unos 780 (21 llamadas), y una lectura de 3.000 filas, unos 120.
   El intérprete con pausas es una vez y media más lento por evaluación (80 ms contra 55 una expresión en tandas de
   500; 118 contra 73 un «Código» por fila) y solo gana con muchas lecturas distintas, que el tope y su aviso ya evitan.
-  Cada llamada por la puerta de la caja cuesta además unos 200 ms, sea cual sea su tamaño. Los tiempos están escritos
-  en la prueba de la caja. Falta: las tandas del motor (E3), sobre el servidor (S1) y en la app de escritorio
+  Cada llamada por la puerta de la caja cuesta además unos 200 ms, sea cual sea su tamaño. La prueba de la caja fija
+  los topes de los cuatro casos de la regla, en milisegundos de CPU (1.000, 1.000, 800 y 1.000, frente a unos 60, 80,
+  75 y 120 medidos); las demás cifras son las de esta medida. Falta: las tandas del motor (E3), sobre el servidor (S1) y en la app de escritorio
   (pantallas).
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.

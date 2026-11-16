@@ -304,6 +304,9 @@ importers:
         specifier: 0.32.0
         version: 0.32.0
     devDependencies:
+      '@boni/automations':
+        specifier: workspace:*
+        version: link:../../packages/automations
       '@boni/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar

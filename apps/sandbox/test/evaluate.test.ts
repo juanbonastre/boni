@@ -6,6 +6,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CODE_GLOBALS, CODE_LIMITS, type CodeLimit, DATE_HELP } from "@boni/automations";
 import {
   addMonths,
   civilFromDays,
@@ -16,7 +17,15 @@ import {
   toLocal,
   weekday,
 } from "@boni/calendar";
-import type { EvalRequest, EvalResponse, Json, WireEvaluated, WireRead } from "@boni/sandbox";
+import {
+  EVAL_DEFAULT_LIMITS,
+  EVAL_MAX_LIMITS,
+  type EvalRequest,
+  type EvalResponse,
+  type Json,
+  type WireEvaluated,
+  type WireRead,
+} from "@boni/sandbox";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluateCall, readKey } from "../src/evaluate.ts";
 import { type Box, startBox } from "../src/server.ts";
@@ -151,17 +160,15 @@ afterAll(async () => {
 
 describe("nothing of outside", () => {
   it("AU-160 · code reaches no network, file, process, module, timer or worker: `fetch`, `require`, `import()`, `process`, `globalThis.constructor`, `Function('return this')()`, `setTimeout`, `WebAssembly` and `SharedArrayBuffer` give nothing of the host, as an expression and as a «Código»", async () => {
-    for (const name of ["red.js", "modulos.js", "importar.js", "proceso.js", "nada-de-fuera.js"])
+    for (const name of [
+      "red.js",
+      "modulos.js",
+      "importar.js",
+      "importar-nunca.js",
+      "proceso.js",
+      "nada-de-fuera.js",
+    ])
       await tryCase(name);
-    // An import that never comes gives nothing either: the box runs no job of a promise.
-    const r = await ask(
-      "code",
-      [
-        'let got = "nada"; try { import("node:fs").then((m) => { got = m; }); } catch {} return got;',
-      ],
-      [],
-    );
-    expect(outs(r)).toEqual(["nada"]);
   }, 30_000);
 
   it("AU-160 · the interpreter is made new for each call, with a memory of its own that cannot grow past its limit, in a worker of its own that the door ends: a call that never yields is answered `timeout` and the next call is served", async () => {
@@ -169,6 +176,25 @@ describe("nothing of outside", () => {
     await servesNext();
     const never = evalRequest("code", ["for (;;) {}"], [], { limits: { steps: 20_000, ms: 300 } });
     expect(await send(never)).toMatchObject({ ok: false, error: "timeout" });
+    await servesNext();
+    // The door's own end: a worker that has not answered by its time and its grace is ended from outside, whatever it
+    // is doing. With no grace and 1 ms the worker is still starting its interpreter when the door ends it, so the
+    // answer is the door's (it has no `steps`, which only the worker counts), and the door serves the next call.
+    const quick = join(dir, "sin-gracia.sock");
+    const strict = await startBox(quick, { workers: 1, grace: 0 });
+    try {
+      const ended = await send(
+        evalRequest("code", ["for (;;) {}"], [], { limits: { ms: 1 } }),
+        quick,
+      );
+      expect(ended).toMatchObject({ ok: false, error: "timeout" });
+      expect(ended.steps).toBeUndefined();
+      expect(
+        await send(evalRequest("expressions", ["$json.a * 2"], [{ a: 21 }]), quick),
+      ).toMatchObject({ ok: true, evaluations: [{ state: "done", values: [42] }] });
+    } finally {
+      await strict.close();
+    }
     await servesNext();
     // What one call left in its interpreter is not in the next one's (each is new).
     const first = await send(
@@ -298,38 +324,27 @@ describe("nothing of outside", () => {
 
 describe("one evaluation leaves nothing to the next", () => {
   it("AU-37 · a row's evaluation cannot leave anything to the next row's of the same batch: a variable without `const`, a property on `globalThis`, on `Object.prototype`, `Array.prototype` or `Function.prototype`, on a function of `$input` or on `console`, a `Symbol.for`, a getter left on a shared row: each either throws (`frozen`) or is not there for the next row", async () => {
-    const attempts: [string, string][] = [
-      ["dejado = 1", "typeof dejado"],
-      ["globalThis.dejado = 1", "typeof globalThis.dejado"],
-      ["Object.prototype.dejado = 1", "typeof ({}).dejado"],
-      ["Array.prototype.dejado = 1", "typeof [].dejado"],
-      ["Function.prototype.dejado = 1", "typeof (() => 1).dejado"],
-      ["$input.all.dejado = 1", "typeof $input.all.dejado"],
-      ["console.dejado = 1", "typeof console.dejado"],
-      ["Math.random = () => 0", "Math.random() === 0 ? 'cambiado' : 'undefined'"],
-      ["const s = Symbol.for('dejado'); s.dato = 1", "typeof Symbol.for('dejado').dato"],
-      [
-        "Object.defineProperty($input.all()[1], 'trampa', { get: () => 1 })",
-        "typeof Object.getOwnPropertyDescriptor($json, 'trampa')",
-      ],
-      ["Object.defineProperty(globalThis, '$dejado', { value: 1 })", "typeof globalThis.$dejado"],
-      ["Date.prototype.dejado = 1", "typeof new Date().dejado"],
-    ];
-    for (const [leave, look] of attempts) {
+    // Each attempt is a case of test/cases/evaluacion (`dejar-*.js`): it fails in the three forms, and its `look`
+    // line, run for the next row of the same batch, finds nothing left.
+    const attempts = readdirSync(CASES).filter((f) => /^dejar-.*\.js$/.test(f));
+    expect(attempts.length).toBe(12);
+    for (const name of attempts) {
+      await tryCase(name);
+      const code = caseCode(name);
+      const look = /^\/\/ look: (.*)$/m.exec(code)?.[1];
+      expect(look, name).toBeTruthy();
       const r = await ask(
         "code",
-        [`if ($json.i === 0) { ${leave}; return 'dejado' } return ${look}`],
+        [`if ($json.i === 0) {\n${code}\n}\nreturn ${look}`],
         [{ i: 0 }, { i: 1 }],
-        {
-          mode: "perRow",
-        },
+        { mode: "perRow" },
       );
       const [first, second] = evals(r);
-      expect(first, leave).toMatchObject({ state: "failed" });
-      expect(["frozen", "threw"], leave).toContain(first?.state === "failed" && first.fault);
-      expect(second, leave).toMatchObject({ state: "done", values: ["undefined"] });
+      expect(first, name).toMatchObject({ state: "failed" });
+      expect(["frozen", "threw"], name).toContain(first?.state === "failed" && first.fault);
+      expect(second, name).toMatchObject({ state: "done", values: ["undefined"] });
     }
-  });
+  }, 60_000);
 
   it("AU-37 · the rows of a cited step, shared by every row of a batch, cannot be changed by one of them: writing a field, pushing to the list or deleting a key is `frozen`, with the line, and the message says to return a copy", async () => {
     const steps = { "Buscar gastos": { rows: [{ importe: 5 }] } };
@@ -829,6 +844,7 @@ return $json.i;`;
     ).toMatchObject({
       ok: false,
       error: "memory",
+      message: expect.stringContaining(String(64 * 1024 * 1024)),
     });
     await servesNext();
     for (const stackBytes of [256 * 1024, 512 * 1024]) {
@@ -838,7 +854,11 @@ return $json.i;`;
       expect(deep, String(stackBytes)).toMatchObject({
         ok: true,
         evaluations: [
-          { state: "failed", fault: "threw", message: expect.stringContaining("stack") },
+          {
+            state: "failed",
+            fault: "threw",
+            message: expect.stringContaining(`stack overflow, ${stackBytes} bytes`),
+          },
         ],
       });
       await servesNext();
@@ -943,4 +963,53 @@ return $json.i;`;
     expect(times.all).toBeLessThan(800);
     expect(times.reading).toBeLessThan(1_000);
   }, 120_000);
+});
+
+describe("the box and the automations say the same", () => {
+  it("AU-24 · the world defines exactly `CODE_GLOBALS` as its `$` names and `console`: `$col` only in «Código», and no other name that starts with `$`", async () => {
+    const names =
+      "return Object.getOwnPropertyNames(globalThis).filter((n) => n.startsWith('$')).sort()";
+    const want = CODE_GLOBALS.filter((n) => n.startsWith("$")).sort();
+    expect(outs(await ask("code", [names], []))).toEqual([want]);
+    expect(values(await ask("expressions", [`(() => { ${names} })()`], [{}]))).toEqual([
+      [want.filter((n) => n !== "$col")],
+    ]);
+    expect(values(await ask("expressions", ["typeof console.log"], [{}]))).toEqual([["function"]]);
+  });
+
+  it("AU-28 · `format` takes exactly `DATE_HELP.tokens`, and a date has exactly the methods and parts of `DATE_HELP`", async () => {
+    const world = readFileSync(new URL("../src/world.js", import.meta.url), "utf8");
+    const tokens = /const TOKENS = \[([^\]]*)\]/.exec(world)?.[1] ?? "";
+    expect([...tokens.matchAll(/"([^"]+)"/g)].map((m) => m[1])).toEqual([...DATE_HELP.tokens]);
+    // Beyond JavaScript's own conversions (`toJSON`, `toString`, `valueOf`), which a date answers as any value does.
+    const r = await ask(
+      "expressions",
+      [
+        "Object.getOwnPropertyNames(Object.getPrototypeOf($now)).filter((n) => !['constructor', 'toJSON', 'toString', 'valueOf'].includes(n)).sort()",
+      ],
+      [{}],
+    );
+    expect(values(r)).toEqual([[[...DATE_HELP.methods, ...DATE_HELP.parts].sort()]]);
+  });
+
+  it("AU-35 · the limits the engine sends are the box's: every one of `CODE_LIMITS` the box knows is within `EVAL_MAX_LIMITS`, and the box's own defaults for the stack, the console and the reads are `CODE_LIMITS`'", () => {
+    const box = EVAL_MAX_LIMITS as unknown as Record<string, number>;
+    const shared = Object.keys(EVAL_DEFAULT_LIMITS).filter((k) => k in CODE_LIMITS);
+    expect(shared.sort()).toEqual(
+      [
+        "consoleLineChars",
+        "consoleLines",
+        "memoryBytes",
+        "ms",
+        "outputBytes",
+        "reads",
+        "stackBytes",
+        "steps",
+      ].sort(),
+    );
+    for (const k of shared)
+      expect(CODE_LIMITS[k as CodeLimit], k).toBeLessThanOrEqual(box[k] as number);
+    for (const k of ["stackBytes", "consoleLines", "consoleLineChars", "reads"] as const)
+      expect(EVAL_DEFAULT_LIMITS[k], k).toBe(CODE_LIMITS[k]);
+  });
 });

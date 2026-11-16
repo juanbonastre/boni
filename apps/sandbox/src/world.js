@@ -10,27 +10,17 @@
   const isCode = kind === "code";
 
   // What the code is given, and what the interpreter brings, is never changed by it (AU-37): `received` is the one
-  // place that decides it. Every row, every cited step's rows, every read, and every object of the interpreter go
-  // through it; a write to them fails with `frozen`, whose message tells the code to return a copy (evaluate.ts).
+  // place that decides it. Every row, every cited step's rows, every read, every object the world makes for the code
+  // (`$input`, `$('…')`, `$col('…')`, `$run`, the dates) and every object of the interpreter go through it, with
+  // their prototypes, accessors and what they hold; a write to them fails with `frozen`, and `COPY` is what its
+  // message adds. It skips what is already frozen: only `received` freezes here, and it freezes all it reaches.
   const freeze = Object.freeze;
-  const received = (value) => {
-    const todo = [value];
-    while (todo.length) {
-      const v = todo.pop();
-      if (v === null || typeof v !== "object" || Object.isFrozen(v)) continue;
-      freeze(v);
-      for (const k of Object.keys(v)) todo.push(v[k]);
-    }
-    return value;
-  };
-  /** The interpreter's own objects, frozen with their prototypes, accessors and what they hold. */
-  const harden = (roots) => {
-    const seen = new Set();
+  const isFrozen = Object.isFrozen;
+  const received = (...roots) => {
     const todo = roots.slice();
     while (todo.length) {
       const o = todo.pop();
-      if (o === null || (typeof o !== "object" && typeof o !== "function") || seen.has(o)) continue;
-      seen.add(o);
+      if (o === null || (typeof o !== "object" && typeof o !== "function") || isFrozen(o)) continue;
       freeze(o);
       todo.push(Object.getPrototypeOf(o));
       const all = Object.getOwnPropertyDescriptors(o);
@@ -40,7 +30,12 @@
         else todo.push(d.get, d.set);
       }
     }
+    return roots[0];
   };
+  /** How a write to what `received` froze is told: the interpreter's words, and these. */
+  const FROZEN =
+    /is read-only|not extensible|could not delete|cannot define property|non-configurable|not configurable/;
+  const COPY = "lo que recibe el código no se cambia; devuelve una copia";
   /**
    * A frozen prototype makes `row.toString = …` fail on an object of the code's own (the "override mistake"): its
    * writable properties become a getter and a setter that gives the object a property of its own, as before.
@@ -69,9 +64,26 @@
     }
   };
 
-  const input = received(req.input);
+  // Before anything is frozen: the interpreter's writable properties that code's own objects assign.
+  ownOnAssign(Object.prototype, Reflect.ownKeys(Object.prototype));
+  for (const E of [
+    Error,
+    TypeError,
+    RangeError,
+    SyntaxError,
+    ReferenceError,
+    EvalError,
+    URIError,
+    globalThis.InternalError,
+    globalThis.AggregateError,
+  ])
+    if (E) ownOnAssign(E.prototype, ["name", "message", "toString", "constructor"]);
+  ownOnAssign(Function.prototype, ["toString", "constructor"]);
+  ownOnAssign(Array.prototype, ["constructor", "toString"]);
+
+  // Frozen with the rest, before the first row (below): nothing reads them until then.
+  const input = req.input;
   const steps = req.steps;
-  for (const name of Object.keys(steps)) received(steps[name]);
   /** The input's row being evaluated, or -1 (a «Código» with all the rows, or between rows). */
   let row = -1;
   /** Per evaluation: whether it read the clock or chance, the reads it asked for, and its own sequence of chance. */
@@ -257,7 +269,7 @@
     constructor(day, ms) {
       this.#day = day;
       this.#ms = ms;
-      freeze(this);
+      received(this);
     }
     #local() {
       return this.#day !== null ? { day: this.#day, minute: 0 } : toLocal(this.#ms);
@@ -457,7 +469,7 @@
   // ------------------------------------------------------------------ what the code may name (AU-24)
   const LIST_ONLY = "no hay fila actual en «Una vez con todas las filas»: usa $input.all()";
   const rows = (list, item) =>
-    freeze({
+    received({
       all: () => list,
       first: () => list[0],
       last: () => list[list.length - 1],
@@ -521,7 +533,7 @@
           throw new Error(`${what}: espera un objeto, como { where, sort, limit }`);
         return q;
       };
-      c = freeze({
+      c = received({
         find: (q) => {
           const { where, sort, limit } = query(q, "find");
           return ask({ collection: name, op: "find", where, sort, limit });
@@ -531,7 +543,6 @@
         sum: (field, q) =>
           ask({ collection: name, op: "sum", field, where: query(q, "sum").where }),
       });
-      harden([c]);
       collections.set(name, c);
     }
     return c;
@@ -581,7 +592,7 @@
   const globals = {
     $input,
     $,
-    $run: freeze({ test: req.run.test, startedBy: req.run.startedBy }),
+    $run: received({ test: req.run.test, startedBy: req.run.startedBy }),
     $page: null,
     $date,
     console,
@@ -632,24 +643,11 @@
   });
 
   // Freeze it all: everything reachable from the global object, the intrinsics reachable only from values, the help.
-  ownOnAssign(Object.prototype, Reflect.ownKeys(Object.prototype));
-  for (const E of [
-    Error,
-    TypeError,
-    RangeError,
-    SyntaxError,
-    ReferenceError,
-    EvalError,
-    URIError,
-    globalThis.InternalError,
-    globalThis.AggregateError,
-  ])
-    if (E) ownOnAssign(E.prototype, ["name", "message", "toString", "constructor"]);
-  ownOnAssign(Function.prototype, ["toString", "constructor"]);
-  ownOnAssign(Array.prototype, ["constructor", "toString"]);
   const proto = Object.getPrototypeOf;
-  harden([
+  received(
     globalThis,
+    input,
+    ...Object.values(steps),
     proto(function* () {}),
     proto(async () => {}),
     proto(async function* () {}),
@@ -662,10 +660,8 @@
     BoniDate.prototype,
     ...made.map((m) => m.fn),
     ...cited.values(),
-  ]);
+  );
 
-  const FROZEN =
-    /is read-only|not extensible|could not delete|cannot define property|non-configurable|not configurable/;
   const failed = (e, source) => {
     let fault = "threw";
     let message;
@@ -676,10 +672,9 @@
         if (e.name === "InternalError" && /out of memory/.test(message)) throw e;
         if (e instanceof TypeError && FROZEN.test(message)) {
           fault = "frozen";
-          message = `${message}: lo que recibe el código no se cambia; devuelve una copia`;
+          message = `${message}: ${COPY}`;
         } else if (e.name === "InternalError" && /stack overflow/.test(message))
-          message =
-            "se ha pasado de su pila (stack overflow): una función que se llama a sí misma sin fin";
+          message = `se ha pasado de su pila (stack overflow, ${limits.stackBytes} bytes): una función que se llama a sí misma sin fin`;
         at = placeIn(e.stack);
         // A source that ends too soon is said at its end, not at the line its wrapping adds.
         const lines = sources[source].split("\n");

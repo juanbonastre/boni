@@ -207,7 +207,7 @@ async function evaluate(
     const err = (e ?? {}) as { name?: string; message?: string };
     const text = `${err.name ?? "Error"}: ${err.message ?? String(e)}`;
     if (MEMORY.test(text))
-      return fail(req.id, "memory", "ha pedido más memoria de la que tiene", at);
+      return fail(req.id, "memory", `ha pedido más memoria de sus ${limits.memoryBytes} bytes`, at);
     return fail(req.id, "exception", text, at);
   };
 
@@ -241,6 +241,7 @@ async function evaluate(
         run: req.run,
         limits: {
           reads: limits.reads,
+          stackBytes: limits.stackBytes,
           consoleLineChars: limits.consoleLineChars,
           readBytes: MAX_READ_BYTES,
         },
