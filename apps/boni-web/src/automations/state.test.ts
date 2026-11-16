@@ -122,6 +122,16 @@ describe("the draft saves itself", () => {
     expect(kept.owed.places).toEqual(["s_inicio"]);
     expect(owedPlaces(kept)).toEqual([{ step: "s_inicio", x: 60, y: 80 }]);
   });
+  it("AU-05, AU-62 · a box that did not arrive says «Sin guardar»; once the server keeps it, «Guardado», unless a draft is still owed", () => {
+    const moved = change(openedEditor(opened), { places: { s_inicio: { x: 40, y: 80 } } });
+    const failed = saveFailed(moved);
+    expect(failed.save).toBe("failed");
+    expect(placesKept(failed, owedPlaces(failed)).save).toBe("saved");
+    // With the draft still owed it is the draft's save that says it.
+    const both = saveFailed(change(moved, { draft: { ...moved.draft, name: "Otra" } }));
+    expect(both.owed.draft).toBe(true);
+    expect(placesKept(both, owedPlaces(both)).save).toBe("failed");
+  });
   it("AU-05 · a step added has its place from then on, owed to the server like one Juan dropped: where the right click was, or where placeFor says; a later step never moves it", () => {
     const s = openedEditor(opened);
     const one = addStep(

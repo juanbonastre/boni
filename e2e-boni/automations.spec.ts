@@ -1452,7 +1452,51 @@ test.describe("the editor", () => {
     await openStep(page, "s_01jsi");
     await expect(salida(page).locator(".auto-out-stale")).toHaveCount(0);
   });
-  test.fixme("AU-05 · over the real server, a box dropped is there after a reload and in another window (G: the desktop app)", async () => {});
+  test("AU-05 · a box the server refuses (4xx) stays where it was dropped and is owed no more: it is not sent again, nor with the next box; one that does not arrive says «Sin guardar · Reintentar» and is saved once the server is back", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await expect(saved(page)).toHaveText("Guardado");
+    const refuse = (end: string | null) =>
+      page.evaluate((e) => {
+        (window as unknown as { __automationsRefuse?: string | null }).__automationsRefuse = e;
+      }, end);
+    // Refused: sent once, never again, and nothing says it is not saved (there is nothing to retry).
+    await refuse("/layout");
+    const c = await middle(card(page, "s_01jfiltrar"));
+    await drag(page, c, { x: c.x + 30, y: c.y + 150 });
+    await expect.poll(() => layouts(page, CHAIN.id)).toHaveLength(1);
+    const dropped = await at(page, "s_01jfiltrar");
+    expect((await layouts(page, CHAIN.id))[0]).toEqual([{ step: "s_01jfiltrar", ...dropped }]);
+    await page.waitForTimeout(2500);
+    expect(await layouts(page, CHAIN.id)).toHaveLength(1);
+    await expect(saved(page)).toHaveText("Guardado");
+    expect(await at(page, "s_01jfiltrar")).toEqual(dropped);
+    // The next box dropped goes alone: the refused one is owed no more.
+    await refuse(null);
+    const o = await middle(card(page, "s_01jordenar"));
+    await drag(page, o, { x: o.x + 20, y: o.y - 120 });
+    await expect.poll(() => layouts(page, CHAIN.id)).toHaveLength(2);
+    const ordenar = await at(page, "s_01jordenar");
+    expect((await layouts(page, CHAIN.id))[1]).toEqual([{ step: "s_01jordenar", ...ordenar }]);
+    await expect(saved(page)).toHaveText("Guardado");
+    // The server down: the box does not arrive, «Sin guardar · Reintentar»; once it is back, saved.
+    await serverDown(page, true);
+    const b = await middle(card(page, "s_01jbuscar"));
+    await drag(page, b, { x: b.x, y: b.y + 140 });
+    await expect(saved(page)).toContainText("Sin guardar");
+    await expect(saved(page).getByRole("button", { name: "Reintentar" })).toBeVisible();
+    const buscar = await at(page, "s_01jbuscar");
+    await serverDown(page, false);
+    await saved(page).getByRole("button", { name: "Reintentar" }).click();
+    await expect(saved(page)).toHaveText("Guardado");
+    expect((await layouts(page, CHAIN.id)).at(-1)).toEqual([{ step: "s_01jbuscar", ...buscar }]);
+    // Never the draft: only boxes moved.
+    expect(await sent(page, `PUT api/agent/automations/${CHAIN.id}/draft `)).toEqual([]);
+  });
+  // Over the real server, a box dropped is there after a reload, with the app closed and opened again and in the app
+  // of another computer: e2e-boni-desktop/automations.spec.ts, «AU-62 AU-05 · …».
   test("AU-87 · adding a step puts that step and nothing else: no other step, arrow or option appears, and nothing changes on the canvas that Juan did not do", async ({
     page,
   }) => {

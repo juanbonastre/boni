@@ -271,7 +271,10 @@ export function owedPlaces(state: EditorState): Place[] {
   });
 }
 
-/** The server kept these boxes: they are owed no more, but one moved again while they were on their way. */
+/**
+ * The server kept these boxes: they are owed no more, but one moved again while they were on their way. A box that
+ * had not arrived said «Sin guardar»: with nothing else owed, it is saved now (AU-62).
+ */
 export function placesKept(state: EditorState, sent: readonly Place[]): EditorState {
   const kept = new Set(
     sent.filter((p) => same(state.places[p.step], { x: p.x, y: p.y })).map((p) => p.step),
@@ -279,7 +282,8 @@ export function placesKept(state: EditorState, sent: readonly Place[]): EditorSt
   // A box of a step that is gone is no longer owed either: the server would refuse it.
   const ids = new Set(state.draft.steps.map((s) => s.id));
   const places = state.owed.places.filter((s) => !kept.has(s) && ids.has(s));
-  return { ...state, owed: { ...state.owed, places } };
+  const save = state.save === "failed" && !state.owed.draft ? "saved" : state.save;
+  return { ...state, save, owed: { ...state.owed, places } };
 }
 
 export type { Places };
