@@ -15,6 +15,12 @@ describe("«Programada» (F14d)", () => {
   );
   it.todo("AU-114 · the trigger gives one row with the hour that was due, not the hour it ran at");
   it.todo(
+    "AU-195 · `$run.startedBy` is `schedule` in a run that started at its hour, in the test of a «Programada» and in a «Reintentar» of one that started at its hour, and `user` in «Ejecutar», in the test of one started by hand and in a retry of one: a closed list, never a name or an id",
+  );
+  it.todo(
+    "AU-195 · a «Si» over `$run.startedBy` sends a run started by hand down one branch and one that started alone down the other, and each branch's write gets the decision of its own cell",
+  );
+  it.todo(
     "AU-114 · a server off for three hours with «every hour» runs once on coming back, for the last hour only, and only within the margin (30 minutes hourly, 3 hours the others)",
   );
   it.todo(

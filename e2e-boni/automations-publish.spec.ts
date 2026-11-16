@@ -20,6 +20,7 @@ test.describe("the header and «Publicar»", () => {
   test.fixme("AU-96 AU-83 · opening «Publicar» marks every empty required parameter of the steps a trigger reaches, on the parameter and on its card, and with one of them «Publicar» cannot be pressed", async () => {});
   test.fixme("AU-96 · a link of «lo que falta» closes the screen and opens that step; with the same document as the one that runs the button says there is nothing to publish", async () => {});
   test.fixme("AU-182 · «Lo que podrá hacer» names each collection a «Código» can change, with its action, and a removal with «Sí» reads «sin preguntar»", async () => {});
+  test.fixme("AU-182 · «Lo que podrá hacer» is one line per collection and action, and a write with «Sí» that can receive something from outside ends in «con datos de fuera»", async () => {});
   test.fixme("AU-194 · the switch of the header turns the automation on and off, the list's «Estado» says «Encendida», «Apagada» or «Sin publicar», and the first publish leaves it on", async () => {});
 });
 
@@ -51,7 +52,7 @@ test.describe("«Fijar», the settings and «Programada»", () => {
   test.fixme("AU-17 · «⋯ → Ajustes» shows the limits a step of this automation can reach («Tiempo» always, «Filas escritas» when a step writes), each with its default and its maximum, and a number over the maximum is refused in the field", async () => {});
   test.fixme("AU-17 · a run stopped by a limit says which and both numbers («Paró: …»), and «Cambiar el límite» opens the settings on that number", async () => {});
   test.fixme("AU-114 · «Programada» is in «Añadir paso» among the triggers; its panel lists its rules in words («Cada día a las 08:00», «Cada lunes a las 09:00», «Cada hora»), adds and removes one, and with none the step is marked", async () => {});
-  test.fixme("AU-187 · «Eliminar filas» shows «Permiso» with «Preguntar» chosen and «Sí»; with «Sí» its card says it removes «sin preguntar», and «Haría esto» the same", async () => {});
+  test.fixme("AU-187 · «Crear una fila», «Modificar filas» and «Eliminar filas» show «Permiso», «Eliminar filas» with «Preguntar» chosen; with «Sí» its card says it removes «sin preguntar», and «Haría esto» the same", async () => {});
   test.fixme("AU-47 · the «Mapa» shows a published automation with the collections it reads and writes and its trigger, and one never published is not in it", async () => {});
 });
 

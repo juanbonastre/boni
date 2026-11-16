@@ -24,13 +24,16 @@ describe("what stops a publish and what is worth a look (F14d)", () => {
 
 describe("what it will be able to do (F14d)", () => {
   it.todo(
-    "AU-96 · `abilities` says, by collection, what the automation reads and what it creates, modifies and removes, and of each write whether it saves on its own or asks; of one that starts alone, that anything from outside is proposed",
+    "AU-96 · `abilities` says, by collection, what the automation reads and what it creates, modifies and removes, and of each write whether it saves on its own or asks, one line per collection and action",
   );
   it.todo(
     "AU-182 · for every example of the catalogue that saves, each change the engine would accept from a «Código» (what its analysis saw and its connection allows) is named in `abilities` with its collection and its action, and one the connection does not allow is not",
   );
   it.todo(
     "AU-182 · a removal with «Sí», of a connection or of «Eliminar filas», is named with «sin preguntar», and one with «Preguntar» is not",
+  );
+  it.todo(
+    "AU-182 · a write with «Sí» whose step can receive something from outside (a source of outside in its path of rows or of control, or a read of a collection given as holding outside values) says «con datos de fuera», for create, update and remove alike; one with «Preguntar», or with no such path, does not",
   );
   it.todo(
     "AU-47 · every change a step can make (`stepChanges`) and every read of a connection is in `abilities`, which is what the map reads: nothing a published version can touch is missing from it",

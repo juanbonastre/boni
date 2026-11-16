@@ -62,6 +62,18 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
     "AU-188 · every function of the service that writes a draft is in one list, as the user's hand or as arriving without it, and each of the second kind passes through `lowerYes`: a new one missing from the list fails this test",
   );
   it.todo(
+    "AU-188 · the ways a «Sí» stays, one case each: the user's hand on the cell in the editor, a duplicate (born unpublished), going back to a version the user published, and a deleted automation recovered by «Recuperar» or by its notice's «Deshacer» (off, and with no «Sí» it did not have)",
+  );
+  it.todo(
+    "AU-188 · no Undo gives a «Sí» back or takes one away: the store's undo, a turn's and a run's leave every draft and every version as they were, since none is an operation of the log",
+  );
+  it.todo(
+    "AU-188 · setting a «Sí» and publishing are refused from a device that is not personal; reading and testing are not",
+  );
+  it.todo(
+    "AU-182 · opening «Publicar» says which of the collections the version reads hold a value from outside today, by one query per collection that reads no row whole and stays within its time at 3,000 rows",
+  );
+  it.todo(
     "AU-188 · the «Sí» a run obeys is read from the published version in the store: one claimed by the box's answer, by a request's body or by a draft changes nothing",
   );
 });

@@ -102,6 +102,12 @@ describe("the limits of a run at the user's volume (F14d)", () => {
 
 describe("what a failure tells (F14d)", () => {
   it.todo(
+    "AU-182 · the line of a run that saved something from outside without asking ends in «con datos de fuera», from the labels of what it wrote; one that saved only its own does not",
+  );
+  it.todo(
+    "AU-188 AU-192 · a «Sí» belongs to its collection by key: after a rename the run still saves in the same one, and a new collection given the name of a deleted one gets no «Sí»",
+  );
+  it.todo(
     "AU-102 · the kept record and the notice of a write outside its connection's filter (`code.write.outside`) are the same whether or not that row exists",
   );
 });
