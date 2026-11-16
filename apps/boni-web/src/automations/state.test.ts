@@ -1,9 +1,17 @@
-// The editor's own state (docs/automatizaciones.md §5.7). Pending but AU-62's: see edit.test.ts.
+// The editor's own state (docs/automatizaciones.md §5.7). What comes after a test is E's, pending.
 import { FORMAT } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import type { Opened } from "./client.ts";
-import { addStep, connect, removeSteps, rename, setParam, setSetting } from "./edit.ts";
+import {
+  addStep,
+  changeAction,
+  connect,
+  removeSteps,
+  rename,
+  setParam,
+  setSetting,
+} from "./edit.ts";
 import {
   added,
   change,
@@ -249,9 +257,59 @@ describe("undo", () => {
     // Forward again: owed again too.
     expect(redo(back).owed.draft).toBe(true);
   });
-  it.todo(
-    "AU-82 · the notice of what a change of action took away undoes it in one step, parameters and name together",
-  );
+  it("AU-82 · the notice of what a change of action took away undoes it in one step, parameters and name together", () => {
+    const s0 = openedEditor(opened);
+    const made = addStep(s0.draft, "collection", "find", { from: "top" }, names, ids());
+    const s1 = change(s0, {
+      draft: setParam(
+        setParam(made.draft, made.step, "collection", "gastos", names),
+        made.step,
+        "limit",
+        20,
+        names,
+      ),
+    });
+    const before = s1.draft;
+    const { draft, dropped } = changeAction(before, made.step, "create", names);
+    expect(dropped).toEqual(["limit"]);
+    const s2 = { ...change(s1, { draft }), dropped: { step: made.step, params: dropped } };
+    expect(s2.draft.steps.at(-1)?.name).toBe("Crear una fila en Gastos");
+    // «Deshacer» in the notice: one step back, the parameters and the name together, and the notice gone.
+    const back = undo(s2);
+    expect(back.draft).toBe(before);
+    expect(back.dropped).toBeNull();
+    // Any other change after it, and the notice is gone too: it says the last change only.
+    const later = change(s2, { draft: setParam(s2.draft, made.step, "fields", [], names) });
+    expect(later.dropped).toBeNull();
+  });
+  it("AU-68 · typing in one field of the view is one step of Deshacer, and another field or a field entered again is another", () => {
+    const s0 = openedEditor(opened);
+    const made = addStep(s0.draft, "stop", undefined, { from: "top" }, names, ids());
+    const s1 = change(s0, { draft: made.draft });
+    let s = s1;
+    for (const text of ["N", "No", "No h", "No hay"])
+      s = change(s, { draft: setParam(s.draft, made.step, "message", text, names) }, "s.message#1");
+    expect(s.past).toHaveLength(s1.past.length + 1);
+    expect(undo(s).draft).toBe(s1.draft);
+    // The field entered again: another step.
+    const again = change(
+      s,
+      { draft: setParam(s.draft, made.step, "message", "No hay nada", names) },
+      "s.message#2",
+    );
+    expect(again.past).toHaveLength(s.past.length + 1);
+    expect(undo(again).draft.steps.at(-1)?.params.message).toBe("No hay");
+    // A change of nothing typed in between ends the run.
+    const off = change(s, { draft: setSetting(s.draft, made.step, "off", true) });
+    const more = change(
+      off,
+      { draft: setParam(off.draft, made.step, "message", "No hay!", names) },
+      "s.message#1",
+    );
+    expect(more.past).toHaveLength(off.past.length + 1);
+    // Deshacer ends a run too.
+    expect(undo(s).typing).toBeNull();
+  });
 });
 
 describe("after a test", () => {
@@ -265,6 +323,6 @@ describe("after a test", () => {
     "AU-92 · the steps the server says are stale after a save keep their counts, marked; a test of them clears the mark",
   );
   it.todo(
-    "AU-83 · the problems shown after a test was asked leave a step as soon as it changes, and none is shown before one is asked",
+    "AU-83 (E, «Probar») · the problems shown after a test was asked leave a step as soon as it changes, and none is shown before one is asked",
   );
 });

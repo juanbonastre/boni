@@ -22,6 +22,7 @@ import {
   stepType,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
+import type { CardLabel } from "./panel.ts";
 import { notBuilt } from "./pending.ts";
 
 /** The key that says each thing of the catalogue. */
@@ -65,6 +66,9 @@ export const DO = {
   goToParam: "auto.do.goToParam",
   testBefore: "auto.do.testBefore",
   moreRows: "auto.do.moreRows",
+  /** An entry of a list, added and erased in the step's view. */
+  addRow: "auto.do.addRow",
+  eraseRow: "auto.do.eraseRow",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
@@ -175,6 +179,27 @@ export function summaryWords(
             : "";
     }
   };
+}
+
+/**
+ * A label of the card and of SALIDA in words (AU-79): «Si falla: seguir», «Reintenta 2 veces», «Sigue sin filas»;
+ * «Solo la primera fila», «Nota» and «Apagado» by their setting's name; an added option by its parameter's.
+ */
+export function labelWord(t: T, step: Step, label: CardLabel): string {
+  switch (label.kind) {
+    case "onError":
+      return t(`auto.label.onError.${label.value}`);
+    case "retry":
+      return label.times === 1
+        ? t("auto.label.retry.one")
+        : t("auto.label.retry", { n: label.times });
+    case "continueEmpty":
+      return t("auto.label.continueEmpty");
+    case "option":
+      return t(KEY.param(step.type, label.param));
+    default:
+      return t(KEY.setting(label.kind));
+  }
 }
 
 /** What names a step on its own (AU-86). */

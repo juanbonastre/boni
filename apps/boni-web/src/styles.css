@@ -12094,3 +12094,372 @@ tr[data-boni-pointed] > td {
   padding: 1px 7px;
   white-space: nowrap;
 }
+/* The labels of a step (AU-79): on its card, in one line under the summary, and above its SALIDA. */
+.auto-card-labels {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.auto-label {
+  flex: none;
+  font-size: 10.5px;
+  line-height: 15px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--hover);
+  color: var(--text-2, var(--muted));
+  white-space: nowrap;
+}
+.auto-labels {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+/* Something required is missing, once marked (AU-83): what it is, on hover. */
+.auto-card-mark {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bad);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+/* The step's view (D, AU-70): over the canvas, which is dimmed behind it; three columns, two under 1100 px. */
+.auto-view-back {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgb(0 0 0 / 0.28);
+}
+.auto-view {
+  position: absolute;
+  inset: 16px;
+  z-index: 21;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  outline: none;
+}
+.auto-view-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.auto-view-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auto-view-name {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  margin-left: -7px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.auto-view-name:hover {
+  border-color: var(--line);
+}
+.auto-view-name:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.auto-view-summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.auto-view-test {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auto-view-why {
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-view-cols {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+}
+.auto-view.narrow .auto-view-cols {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+}
+.auto-view-col {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+}
+.auto-view-col:last-child {
+  border-right: none;
+}
+/* A column narrower than a row's name beside its control (the app's sidebar beside the editor, at 640 px):
+   each name goes above its control. */
+.auto-view-col {
+  container-type: inline-size;
+}
+@container (max-width: 260px) {
+  .auto-param,
+  .auto-entry-field {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .auto-param-name {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+}
+.auto-view-col .auto-view-col {
+  padding: 0;
+  border: none;
+  overflow: visible;
+}
+.auto-view-col-head {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.auto-tabs {
+  display: flex;
+  /* A narrow column (the app's own sidebar beside the editor, at 640 px) puts the second tab under the first. */
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.auto-tab {
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.auto-tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.auto-view-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.auto-param {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+.auto-param-name {
+  padding-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.auto-param.marked .auto-param-name {
+  color: var(--bad);
+}
+.auto-param-control {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auto-param-control .input,
+.auto-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.auto-param.marked .input[aria-invalid],
+.auto-conditions.marked,
+.auto-list.marked {
+  border-color: var(--bad);
+}
+.auto-input.expr {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.auto-toggle {
+  justify-self: start;
+  margin-top: 7px;
+}
+.auto-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.auto-list.marked,
+.auto-conditions.marked {
+  border: 1px solid var(--bad);
+  border-radius: 8px;
+  padding: 4px;
+}
+.auto-entry {
+  align-self: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.auto-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+}
+.auto-entry-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.auto-entry-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+.auto-entry-field {
+  display: grid;
+  grid-template-columns: minmax(70px, 30%) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.auto-field-row {
+  align-self: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.auto-conditions {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auto-conditions .db-filter-row {
+  flex-wrap: wrap;
+}
+.auto-view-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--hover);
+  font-size: 12.5px;
+}
+.auto-view-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.auto-view-empty p {
+  margin: 0;
+}
+.auto-test-data h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.auto-test-data ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.auto-retry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.auto-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.auto-number .auto-input {
+  width: 72px;
+}
+.auto-number-word {
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-note {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+/* The phone's width: one column, the whole screen (the phone's own view, with three tabs, is G's: AU-74). */
+@media (max-width: 639px) {
+  .auto-view {
+    inset: 0;
+    border-radius: 0;
+  }
+  .auto-view-head {
+    flex-wrap: wrap;
+  }
+  .auto-view-cols,
+  .auto-view.narrow .auto-view-cols {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .auto-view-col {
+    overflow: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+}

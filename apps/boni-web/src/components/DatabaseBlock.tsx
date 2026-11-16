@@ -570,6 +570,17 @@ export function controlFits(
   }
 }
 
+/**
+ * What paints a rule's value in place of the views' own control: the step's view of an automation (AU-81), whose
+ * value may be an expression. `fallback` is the views' own control for that field and value.
+ */
+export type FilterValueSlot = (
+  field: DataField,
+  value: DatabaseFilter["value"],
+  onChange: (v: DatabaseFilter["value"]) => void,
+  fallback: ReactNode,
+) => ReactNode;
+
 /** Notion's filter rules, edited: a field, an operator that fits it, a value; add and remove. */
 export function FilterEditor({
   type,
@@ -577,6 +588,7 @@ export function FilterEditor({
   onChange,
   single = false,
   lead,
+  valueSlot,
 }: {
   type: DataType;
   rules: DatabaseFilter[];
@@ -585,6 +597,7 @@ export function FilterEditor({
   single?: boolean;
   /** A group's rules (task 75): what goes before each rule («Donde», «y», «o»); rules, not filters. */
   lead?: (i: number) => ReactNode;
+  valueSlot?: FilterValueSlot;
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
@@ -652,9 +665,19 @@ export function FilterEditor({
                 ))}
               </select>
             )}
-            {!NO_VALUE.has(r.op) && f && r.from === undefined && (
-              <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
-            )}
+            {!NO_VALUE.has(r.op) &&
+              f &&
+              r.from === undefined &&
+              (valueSlot ? (
+                valueSlot(
+                  f,
+                  r.value,
+                  (value) => set({ value }),
+                  <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />,
+                )
+              ) : (
+                <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
+              ))}
             <button
               type="button"
               className="icon-btn tiny"
@@ -698,10 +721,12 @@ export function GroupEditor({
   type,
   group,
   onChange,
+  valueSlot,
 }: {
   type: DataType;
   group: FilterGroup;
   onChange: (next: FilterGroup | null) => void;
+  valueSlot?: FilterValueSlot;
 }) {
   const t = useStore((s) => s.t);
   const lead = (i: number) =>
@@ -726,6 +751,7 @@ export function GroupEditor({
         type={type}
         rules={group.rules}
         lead={lead}
+        valueSlot={valueSlot}
         onChange={(rules) => onChange(rules.length ? { ...group, rules } : null)}
       />
       <button type="button" className="btn ghost small" onClick={() => onChange(null)}>
@@ -736,15 +762,20 @@ export function GroupEditor({
   );
 }
 
-/** A view's whole filter, edited (the settings' «Filtro»): each rule, each advanced filter, and the ways to add one. */
-function FilterItemsEditor({
+/**
+ * A view's whole filter, edited (the settings' «Filtro»): each rule, each advanced filter, and the ways to add one.
+ * The conditions of an automation's step are this same editor (AU-81), with their value painted by `valueSlot`.
+ */
+export function FilterItemsEditor({
   type,
   items,
   onChange,
+  valueSlot,
 }: {
   type: DataType;
   items: FilterItem[];
   onChange: (next: FilterItem[]) => void;
+  valueSlot?: FilterValueSlot;
 }) {
   const t = useStore((s) => s.t);
   const put = (i: number, next: FilterItem[]) =>
@@ -760,6 +791,7 @@ function FilterItemsEditor({
             key={`g-${i}`}
             type={type}
             group={x}
+            valueSlot={valueSlot}
             onChange={(g) => put(i, g ? [g] : [])}
           />
         ) : (
@@ -768,6 +800,7 @@ function FilterItemsEditor({
             type={type}
             rules={[x]}
             single
+            valueSlot={valueSlot}
             onChange={(one) => put(i, one)}
           />
         ),
@@ -909,8 +942,8 @@ function FilterValue({
   );
 }
 
-/** A relation's rule's record: one of its collection's, by title. */
-function RecordValue({
+/** A relation's rule's record: one of its collection's, by title. Also a step's row (`picker` of a row, AU-80). */
+export function RecordValue({
   target,
   value,
   onChange,

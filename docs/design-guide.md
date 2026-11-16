@@ -1158,8 +1158,8 @@ contraseña ni un código aquí» under a question.
   automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
   ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of
   the header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d;
-  «Probar» and the step's view with C2's next PRs (D, E).
-- **The canvas** (F14b C2, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
+  «Probar» with E.
+- **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
   catalogue has none), its name in 13 px semibold and one line of summary in `--muted`, each cut with an ellipsis and
@@ -1167,7 +1167,11 @@ contraseña ni un código aquí» under a question.
   («Libros · Límite 10»; a collection by its name, a citation by its field, a number with its parameter's name, a
   list by how many). Inputs are dots on the left (Combinar's say A and B), outputs on the right with their names
   (none when the only one is «Salida»; a rule of «Elegir rama» by its own); an output with no arrow has a small «+»
-  beside its dot. Selected, a card has the accent's border and ring; an off step is dimmed with a dashed border.
+  beside its dot. Under the summary, one line of labels for what is not at its default (AU-79: «Si falla: seguir»,
+  «Reintenta 2 veces», «Sigue sin filas», «Solo la primera fila», «Nota», «Apagado», an option by its name), small
+  pills in `--hover`; the ones that do not fit are one «+2», which says them on hover. A step with a required
+  parameter marked empty (AU-83) has a 16 px dot of `--bad` on its top right corner. Selected, a card has the accent's
+  border and ring; an off step is dimmed with a dashed border.
   Nothing appears on hover. One step selected shows a bar above it: Probar paso (there, not usable until E) · Apagar
   («Encender» on an off step) · Eliminar · «⋯» with Cambiar nombre · Duplicar · Copiar; a selected arrow, in the
   accent, «+» and a cross («Quitar la flecha») at its middle. The right click on a step: Abrir · Probar paso · Apagar ·
@@ -1182,12 +1186,41 @@ contraseña ni un código aquí» under a question.
   «Buscar filas», «Crear una fila»…), and «Añadir otro disparador» last, in the accent; the search looks in every
   category at once, by the name of a step and of its actions, and with nothing says «Nada con «…»». The step chosen
   is selected, hangs from where it was asked and is named by what it does («Buscar filas», «Filtrar 2» when the name
-  is taken). A box is placed once, as it is added (to the right of the one it hangs from, below if taken), and then
+  is taken), and opens in its view. A box is placed once, as it is added (to the right of the one it hangs from, below if taken), and then
   only moves when Juan drags it: dropped, it goes to the server on its own (never per pixel, never «Guardando…»).
   Keys: Ctrl/⌘+Z and Ctrl/⌘+Mayús+Z (or Ctrl+Y), Ctrl/⌘+C, X, V (pasted at the pointer, with the arrows between the
-  steps), Supr, Intro and Esc (the menu, the panel, then what is selected; with nothing of those, the
+  steps), Supr, Intro (the selected step opens; a double click and «Abrir» too) and Esc (the menu, the panel, the
+  step's view, then what is selected; with nothing of those, the
   app's Esc leaves the editor); a key typed in a field is the field's. Shift+click adds a step to what is selected. A
   step added or pasted out of sight is brought into it, at the same zoom.
+- **The step's view** (F14b D, `AutomationStepView.tsx`; AU-70, AU-73 to AU-83, AU-85; the sketch's screens 4 to 7):
+  over the canvas, 16 px inside the editor's window, on `--bg` with a 12 px radius and the canvas dimmed behind
+  it (black at 28 %); a click on the dimmed canvas closes it, like Esc and the cross. No «Guardar»: every change is a
+  change of the draft, saved and undone like the canvas's (in the view Ctrl+Z and Ctrl+Y are the draft's, inside a
+  field too; a run of keys in one box is one step back). The header: the type's icon, the name edited in place («Nombre
+  del paso», Intro or leaving keeps it, Esc gives it back) with the whole summary under it in `--muted`, wrapped and
+  never cut; at the right «Probar paso» (not usable until E) with why beside it in `--muted` («Falta: Colección», the
+  names of the required parameters that are empty) and the cross. Three columns from 1100 px, ENTRADA · «Parámetros |
+  Ajustes» · SALIDA (1 : 1.3 : 1), each with a small uppercase `--muted` head and its own scroll. ENTRADA before a
+  test says «Prueba los pasos anteriores»; a trigger's is «Datos de prueba», the fields it asks (or «No pide
+  campos»). SALIDA says «Sin probar», with the labels that change the rows above it («Solo la primera fila», «Sigue
+  sin filas», «Apagado»). The middle has two tabs, «Parámetros» and «Ajustes» («Ajustes (2)» counts what is not at its
+  default). «Parámetros» is a row per parameter in sight, its name on the left (30 %, in `--bad` once marked) and its
+  control on the right, seven rows at most (AU-75); an option added has «Quitar» at its end, and «Añadir opción»
+  after the rows lists the ones not there yet (it is gone when none is left). The controls are the seven of the
+  catalogue and no other (AU-80): a value (a box; an expression `{{ … }}` in monospace), a choice (a select), yes or
+  no (a switch), a list (each entry one folded line saying what it holds, «Fila 1» while empty, opened to edit it), the conditions (the views' filter
+  editor, «Propiedad · Condición · valor», «Añadir filtro», «Filtro avanzado» for one level of groups, the value
+  fixed or an expression), the fields of a row («Campo · Valor») and a picker (the account's collections by name).
+  «Ajustes» is the same six rows in every step (AU-78): Si falla (Parar, Seguir, Salir por error), Reintentos (veces
+  and espera), Seguir sin filas, Solo la primera fila, Nota and Apagado. Changing a collection step's action keeps what
+  the two share and says the rest above the rows, «Se quitó: Ordenar por, Límite · Deshacer» (AU-82). A required
+  parameter left empty is not marked on opening; it is once it is left (AU-83), in `--bad`, and on its card. Under
+  1100 px: two columns, «Entrada | Salida» as tabs on the left and «Parámetros | Ajustes» on the right; in a
+  column under 260 px (the app's sidebar beside the editor, near 640 px) each row's name goes above its control and
+  the tabs wrap. Under 640 px the app is the phone's, where the editor is not (the phone's view, only to look, comes with G; the view's styles for
+  it, one column over the whole window, are there). A key typed in the view redraws only
+  its step's card (A-15).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

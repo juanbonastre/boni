@@ -74,6 +74,11 @@ export interface EditorState extends Snapshot {
   left: string[];
   /** What changing an action took away (AU-82): the parameters' keys, for the notice with its «Deshacer». */
   dropped: { step: string; params: string[] } | null;
+  /**
+   * The field being typed in, as the view names it (`<step>.<param>` and the time it was entered): the changes made
+   * while it stays the same are one step of Deshacer, not one per key (AU-68).
+   */
+  typing: string | null;
 }
 
 const fresh = {
@@ -90,6 +95,7 @@ const fresh = {
   problems: [],
   left: [],
   dropped: null,
+  typing: null,
 } satisfies Partial<EditorState>;
 
 /** An empty canvas for «Nueva» (AU-61): nothing saved, the name already worded. */
@@ -124,20 +130,29 @@ const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.s
  * A change of the draft or of the boxes: the state before it goes into `past`, `future` empties, and it is owed to
  * the server (the draft when it differs; each step whose place differs). A change that changes nothing is nothing.
  * On an empty canvas nothing is owed until the draft has its first step: that step makes it (`automations.create`).
+ * `typing`: the field typed in; a change from the same field as the last one joins it in one step of Deshacer.
+ * Whatever a change of action took away is no longer said (AU-82): the notice is of the last change only.
  */
-export function change(state: EditorState, next: Partial<Snapshot>): EditorState {
+export function change(
+  state: EditorState,
+  next: Partial<Snapshot>,
+  typing: string | null = null,
+): EditorState {
   const draft = next.draft ?? state.draft;
   const places = next.places ?? state.places;
   const owed = owing(state, draft, places);
   if (!owed) return state;
+  const joins = typing !== null && typing === state.typing && state.past.length > 0;
   return {
     ...state,
     draft,
     places,
-    past: [...state.past, { draft: state.draft, places: state.places }],
+    past: joins ? state.past : [...state.past, { draft: state.draft, places: state.places }],
     future: [],
     owed,
     save: owed.draft ? "saving" : state.save,
+    dropped: null,
+    typing,
   };
 }
 
@@ -190,6 +205,8 @@ function walked(
     selected: state.selected.filter((id) => ids.has(id)),
     arrow: null,
     open: state.open && ids.has(state.open) ? state.open : null,
+    dropped: null,
+    typing: null,
   };
 }
 

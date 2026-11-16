@@ -6,9 +6,16 @@
  */
 import {
   ACTION,
+  type Automation,
+  type FieldsOf,
+  isExpr,
+  MAIN,
   type ParamSpec,
   type ParamValue,
   paramsOf,
+  paramValue,
+  resultName,
+  SETTINGS_DEFAULTS,
   type Step,
   type StepFailure,
   type StepSettings,
@@ -32,13 +39,22 @@ export interface PanelRow {
  * (AU-75): the same count `catalogue.test.ts` makes. A list (conditions, the fields of a row, a list of rows) is
  * one row: what is inside one of its entries is painted only once that entry is opened.
  */
-export function rowsOf(_step: Step): PanelRow[] {
-  return notBuilt("rowsOf (AU-75, AU-76)");
+export function rowsOf(step: Step): PanelRow[] {
+  const all = paramsOf(step);
+  const row = (param: ParamSpec, added: boolean): PanelRow => ({
+    param,
+    value: step.params[param.key],
+    added,
+  });
+  return [
+    ...all.filter((p) => p.place === "shown").map((p) => row(p, false)),
+    ...all.filter((p) => p.place === "option" && p.key in step.params).map((p) => row(p, true)),
+  ];
 }
 
 /** What «Añadir opción» lists (AU-76): the action's options not added yet; empty hides the button. */
-export function optionsLeft(_step: Step): ParamSpec[] {
-  return notBuilt("optionsLeft (AU-76)");
+export function optionsLeft(step: Step): ParamSpec[] {
+  return paramsOf(step).filter((p) => p.place === "option" && !(p.key in step.params));
 }
 
 /** «Ajustes» (AU-78): the same six rows for every step, in this order. */
@@ -64,13 +80,40 @@ export type CardLabel =
   | { kind: "option"; param: string; changesRows: false };
 
 /** In the order of `SETTINGS_ROWS`, then the added options in the panel's order. */
-export function labelsOf(_step: Step): CardLabel[] {
-  return notBuilt("labelsOf (AU-79)");
+export function labelsOf(step: Step): CardLabel[] {
+  const s = step.settings ?? {};
+  const labels: CardLabel[] = [];
+  for (const key of SETTINGS_ROWS) {
+    if (!changed(s, key)) continue;
+    if (key === "onError" && (s.onError === "continue" || s.onError === "errorOutput"))
+      labels.push({ kind: "onError", value: s.onError, changesRows: false });
+    else if (key === "retry" && s.retry)
+      labels.push({ kind: "retry", times: s.retry.times, changesRows: false });
+    else if (key === "note") labels.push({ kind: "note", changesRows: false });
+    else if (key === "continueEmpty" || key === "firstRowOnly" || key === "off")
+      labels.push({ kind: key, changesRows: true });
+  }
+  for (const r of rowsOf(step))
+    if (r.added) labels.push({ kind: "option", param: r.param.key, changesRows: false });
+  return labels;
+}
+
+/**
+ * Whether a setting says something other than its default. A retry of no times retries nothing, and an empty or
+ * blank note is no note, whatever the rest of it holds.
+ */
+function changed(s: StepSettings, key: keyof StepSettings): boolean {
+  const v = s[key];
+  if (v === undefined) return false;
+  if (key === "retry") return (s.retry?.times ?? 0) > 0;
+  if (key === "note") return typeof v === "string" && v.trim() !== "";
+  return JSON.stringify(v) !== JSON.stringify(SETTINGS_DEFAULTS[key]);
 }
 
 /** How many settings are not at their default: what the tab «Ajustes» counts (AU-79). */
-export function settingsChanged(_step: Step): number {
-  return notBuilt("settingsChanged (AU-79)");
+export function settingsChanged(step: Step): number {
+  const s = step.settings ?? {};
+  return SETTINGS_ROWS.filter((key) => changed(s, key)).length;
 }
 
 /**
@@ -95,16 +138,27 @@ export function summaryOf(
 }
 
 /** The required parameters of the step that are empty, in the panel's order. */
-export function missingOf(_step: Step): ParamSpec[] {
-  return notBuilt("missingOf (AU-73, AU-83)");
+export function missingOf(step: Step): ParamSpec[] {
+  return rowsOf(step)
+    .map((r) => r.param)
+    .filter((p) => p.required && isEmpty(paramValue(step, p)));
 }
+
+/** Nothing written: no value, an empty text, an empty list. An expression is a value, even before it is resolved. */
+export const isEmpty = (v: ParamValue | undefined): boolean =>
+  v === undefined ||
+  v === null ||
+  (typeof v === "string" && v.trim() === "") ||
+  (Array.isArray(v) && v.length === 0) ||
+  (isExpr(v) && v.expr.trim() === "");
 
 /**
  * Which of them are marked (AU-83): none until Juan leaves one (`left`, by key) or a test is asked (`asked`); then
  * those he left, or all.
  */
-export function markedOf(_step: Step, _left: readonly string[], _asked: boolean): ParamSpec[] {
-  return notBuilt("markedOf (AU-83)");
+export function markedOf(step: Step, left: readonly string[], asked: boolean): ParamSpec[] {
+  const missing = missingOf(step);
+  return asked ? missing : missing.filter((p) => left.includes(p.key));
 }
 
 /**
@@ -112,10 +166,12 @@ export function markedOf(_step: Step, _left: readonly string[], _asked: boolean)
  * by their names), or a test is running («Probando…»). Null: it can.
  */
 export function cannotTest(
-  _step: Step,
-  _testing: boolean,
+  step: Step,
+  testing: boolean,
 ): { why: "missing"; params: ParamSpec[] } | { why: "testing" } | null {
-  return notBuilt("cannotTest (AU-73)");
+  if (testing) return { why: "testing" };
+  const params = missingOf(step);
+  return params.length ? { why: "missing", params } : null;
 }
 
 /**
@@ -138,6 +194,9 @@ export interface ConditionField {
   key: string;
   name: string;
   type: string;
+  /** A collection's field brings what the views' editor needs of it: a choice's options, a relation's target. */
+  options?: { id: string; name: string; color?: string }[];
+  relation?: { target: string; many: boolean };
 }
 
 /**
@@ -149,11 +208,149 @@ export interface ConditionField {
  * the rows that arrive by that input in any other step (from the last test; none before one).
  */
 export function conditionFields(
-  _param: ParamSpec,
-  _shapes: {
+  param: ParamSpec,
+  shapes: {
     collection: readonly ConditionField[];
     input: Readonly<Record<string, readonly ConditionField[]>>;
   },
 ): ConditionField[] {
-  return notBuilt("conditionFields (AU-81)");
+  const over = fieldsOver(param);
+  if (!over) return [];
+  return [...(over.of === "collection" ? shapes.collection : (shapes.input[over.input] ?? []))];
 }
+
+/** What a parameter's fields are of: conditions and the fields of a row by `over`, a choice of a field by `options`. */
+export function fieldsOver(param: ParamSpec): FieldsOf | null {
+  if (param.control === "conditions" || param.control === "fields") return param.over;
+  if (param.control === "choice" && !Array.isArray(param.options)) return param.options as FieldsOf;
+  return null;
+}
+
+/** A row's field as the manual trigger asks it (its `type` column) in the views' types of a field. */
+const ASKED: Readonly<Record<string, string>> = {
+  text: "text",
+  number: "number",
+  checkbox: "checkbox",
+  date: "date",
+  datetime: "datetime",
+};
+
+/**
+ * The fields of the rows that arrive by `input` at `step`, as far as the draft says before any test (what
+ * `conditionFields` is given until «Probar» brings the real ones, E): walking back along the arrows, through the steps
+ * that let the rows pass as they are, to where the rows are made: a «Colección» step that reads or writes rows (its
+ * collection's fields, `collection`), the manual trigger (the fields it asks), «Editar campos» (the fields it sets,
+ * and those before it unless it keeps none), «Fecha» (the field it writes), «Agrupar» (what it groups by and its
+ * results) and «Combinar» (both inputs). Anything else: none known.
+ */
+export function knownFields(
+  draft: Automation,
+  step: string,
+  input: string,
+  collection: (key: string) => readonly ConditionField[] | undefined,
+): ConditionField[] {
+  return fieldWalk(draft, collection).into(step, input);
+}
+
+/** The fields of the rows `step` gives, as far as the draft says (a trigger's: the fields it asks, AU-70). */
+export function fieldsOut(
+  draft: Automation,
+  step: string,
+  collection: (key: string) => readonly ConditionField[] | undefined,
+): ConditionField[] {
+  const s = draft.steps.find((x) => x.id === step);
+  return s ? fieldWalk(draft, collection).outOf(s) : [];
+}
+
+function fieldWalk(
+  draft: Automation,
+  collection: (key: string) => readonly ConditionField[] | undefined,
+) {
+  const seen = new Set<string>();
+  const into = (id: string, inp: string): ConditionField[] => {
+    const at = `${id}:${inp}`;
+    if (seen.has(at)) return [];
+    seen.add(at);
+    const from = draft.arrows.filter((a) => a.to.step === id && a.to.input === inp);
+    return unique(
+      from.flatMap((a) => {
+        const s = draft.steps.find((x) => x.id === a.from.step);
+        return s ? outOf(s) : [];
+      }),
+    );
+  };
+  const outOf = (s: Step): ConditionField[] => {
+    const p = s.params;
+    switch (s.type) {
+      case "manual":
+        return entries(p.fields).flatMap((f) =>
+          typeof f.key === "string" && f.key
+            ? [
+                {
+                  key: f.key,
+                  name: typeof f.name === "string" && f.name ? f.name : f.key,
+                  type: ASKED[String(f.type ?? "text")] ?? "text",
+                },
+              ]
+            : [],
+        );
+      case "collection":
+        return typeof p.collection === "string" && p.action !== "aggregate"
+          ? [...(collection(p.collection) ?? [])]
+          : [];
+      case "filter":
+      case "sort":
+      case "limit":
+      case "dedupe":
+      case "if":
+      case "switch":
+      case "split":
+        return into(s.id, MAIN);
+      case "edit": {
+        const set = entries(p.fields).flatMap((f) =>
+          typeof f.field === "string" && f.field
+            ? [{ key: f.field, name: f.field, type: "text" }]
+            : [],
+        );
+        return p.keep === "none" ? set : unique([...into(s.id, MAIN), ...set]);
+      }
+      case "date": {
+        const before = into(s.id, MAIN);
+        return typeof p.to === "string" && p.to
+          ? unique([...before, { key: p.to, name: p.to, type: "text" }])
+          : before;
+      }
+      case "group": {
+        const before = into(s.id, MAIN);
+        const by = entries(p.by).flatMap((b) =>
+          typeof b.field === "string" ? before.filter((f) => f.key === b.field) : [],
+        );
+        const measures = entries(p.measures).flatMap((m) => {
+          if (typeof m.measure !== "string") return [];
+          const key = resultName(m.measure, typeof m.field === "string" ? m.field : undefined);
+          return [{ key, name: key, type: m.measure === "list" ? "text" : "number" }];
+        });
+        return [...by, ...measures];
+      }
+      case "combine":
+        return unique([...into(s.id, "a"), ...into(s.id, "b")]);
+      default:
+        return [];
+    }
+  };
+  return { into, outOf };
+}
+
+/** The rows of a list's value, the ones that are objects. */
+const entries = (v: ParamValue | undefined): Record<string, ParamValue>[] =>
+  Array.isArray(v)
+    ? v.filter(
+        (x): x is Record<string, ParamValue> =>
+          typeof x === "object" && x !== null && !Array.isArray(x) && !isExpr(x),
+      )
+    : [];
+const unique = (fields: ConditionField[]): ConditionField[] => {
+  const by = new Map<string, ConditionField>();
+  for (const f of fields) if (!by.has(f.key)) by.set(f.key, f);
+  return [...by.values()];
+};
