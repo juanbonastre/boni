@@ -10,12 +10,20 @@ import {
   type Automation,
   type Box,
   type BoxJob,
+  type Change,
+  type ChangeWith,
   CODE_LIMITS,
   CODE_TYPE,
+  CONNECTION_ASKS,
   CodeFault,
   type Connection,
+  type Decision,
   FORMAT,
+  guard,
+  type Labelled,
   newConnection,
+  type PolicyCall,
+  run as runAutomation,
 } from "@boni/automations";
 import { monthNames, tzOffsetMs, weekdayNames } from "@boni/calendar";
 import { label, newId } from "@boni/entities";
@@ -33,12 +41,15 @@ import {
 import { startBox } from "@boni/sandbox-runner/src/server.ts";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { handLabel } from "../actions.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { answerOf, BOX_LIMITS, dateNames, requestOf, sandboxBox, zoneTable } from "./box.ts";
 import {
+  automationView,
   createAutomation,
   keepDraft,
   previewExpression,
+  runDeps,
   type ServiceError,
   type TestAnswer,
   testAutomation,
@@ -1081,3 +1092,239 @@ function job(more: Partial<BoxJob> & Pick<BoxJob, "sources">): BoxJob {
     ...more,
   };
 }
+
+// ---------------------------------------------------------------- a run over the real store (S1-c)
+
+/** A «Código» that reads every order and asks to modify each one's note: a step's change of 3,000 rows. */
+const NOTE_ALL = `
+const pedidos = $col('Pedido').find({ limit: 5000 });
+for (const p of pedidos) $col('Pedido').update(p.id, { nota: 'revisado ' + p.importe });
+return [];`;
+
+/** A run's id, as whoever starts one makes it (F14d: the server, when a run is published and saved). */
+const runId = () => newId("o").replace(/^o_/, "r_");
+
+/** The automation as it is saved in the store: what a run reads, never the canvas's copy. */
+const savedOf = (id: string): Automation => {
+  const v = automationView(store, id);
+  if ("error" in v) throw new Error(`service error: ${v.error}`);
+  return v.automation;
+};
+
+/** A run for real, by Juan's hand on his laptop, from the automation's manual trigger. */
+const ranFor = (id: string, trigger: string, run: string) =>
+  runAutomation(
+    {
+      automation: savedOf(id),
+      trigger,
+      fields: { json: {}, label: handLabel(JUAN.device) },
+      test: false,
+    },
+    runDeps(store, id, JUAN, box(), run),
+  );
+
+/** Every order's note, by id: what a change of the step would touch. */
+const notes = () =>
+  new Map(store.list(PEDIDO).map((e) => [e.entity.id, e.entity.values.f_nota ?? null]));
+
+describe("a run over the real store (S1-c)", () => {
+  it("AU-175 · in a run for real a «Código» saves nothing in F14c: with «Sí» to modify, its change of 3,000 rows waits for Juan as one proposal (`YES_SAVES`); one that asks for more than an evaluation or a step may fails with `code.limit`; none leaves an operation in the log", async () => {
+    orders(3000);
+    const before = notes();
+    const yes = [reads("pedido", { update: { mode: "yes" } })];
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", yes)]);
+    const log = store.version();
+
+    const r = runId();
+    const e = await ranFor(a.id, a.step("Inicio"), r);
+    expect(e.state, JSON.stringify(e.error)).toBe("done");
+    expect(e.test).toBe(false);
+    expect(e.steps[a.step("Código")]?.writes?.kind).toBe("asked");
+    expect(e.asked).toHaveLength(3000);
+    expect(new Set(e.asked.map((x) => `${x.step} ${x.kind} ${x.rule}`))).toEqual(
+      new Set([`${a.step("Código")} propose ${CONNECTION_ASKS}`]),
+    );
+    expect(e.asked.every((x) => x.change.kind === "update")).toBe(true);
+
+    // Over the limit of one evaluation, and over the step's with one request per row of 3,000 rows twice.
+    const creates = [reads("pedido", { create: { mode: "yes" } })];
+    const many = chain([
+      ["Inicio", "manual"],
+      code(
+        `for (let i = 0; i < ${CODE_LIMITS.writes + 1}; i++) $col('Pedido').create({ importe: i });\nreturn []`,
+        "all",
+        creates,
+      ),
+    ]);
+    const perRow = chain([
+      ["Inicio", "manual"],
+      find(),
+      code(
+        "$col('Pedido').create({ importe: 1 });\n$col('Pedido').create({ importe: 2 });\nreturn [$json]",
+        "perRow",
+        creates,
+      ),
+    ]);
+    const over = await ranFor(many.id, many.step("Inicio"), runId());
+    const overStep = await ranFor(perRow.id, perRow.step("Inicio"), runId());
+    expect(over.state).toBe("failed");
+    expect(over.error?.why).toMatchObject({
+      code: "code.limit",
+      detail: { limit: "writes", max: CODE_LIMITS.writes },
+    });
+    expect(overStep.state).toBe("failed");
+    expect(overStep.error?.why).toMatchObject({
+      code: "code.limit",
+      detail: { limit: "stepWrites", max: CODE_LIMITS.stepWrites },
+    });
+    expect(over.asked).toEqual([]);
+    expect(overStep.asked).toEqual([]);
+
+    expect(store.version()).toBe(log);
+    expect(store.runOps(r)).toEqual([]);
+    expect(notes()).toEqual(before);
+    expect(store.list(PEDIDO)).toHaveLength(3000);
+  }, 120_000);
+
+  it("AU-174 · AU-185 · a step's change of 3,000 rows is written in one transaction of the user's store, every operation with the run in the log: with the 3,000th changed since it was read none is saved; read again, all are, each value keeping its label, from outside or Juan's (AU-170); and `undoRun` takes back the whole step", async () => {
+    orders(3000, 10);
+    const yes = [reads("pedido", { update: { mode: "yes" } })];
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", yes)]);
+    const r = runId();
+    const real = runDeps(store, a.id, JUAN, box(), r);
+    // The server's own policy, each of its decisions written down: which rule let each read and each write.
+    const decided: { effect: string; d: Decision }[] = [];
+    const deps = {
+      ...real,
+      policy: {
+        decide(call: PolicyCall): Decision {
+          const d = real.policy.decide(call);
+          decided.push({ effect: call.effect, d });
+          return d;
+        },
+      },
+    };
+    const e = await runAutomation(
+      {
+        automation: savedOf(a.id),
+        trigger: a.step("Inicio"),
+        fields: { json: {}, label: handLabel(JUAN.device) },
+        test: false,
+      },
+      deps,
+    );
+    expect(e.asked).toHaveLength(3000);
+    // By Juan's hand every read of the run is allowed and so is every write, from outside too, both by P25 (P1 allows a
+    // read from any other origin): no rule of the server's policy denies an automation's read in F14c (AU-161), nor
+    // proposes what his hand writes (AU-185).
+    const ruled = (effect: string) =>
+      new Set(decided.filter((x) => x.effect === effect).map((x) => `${x.d.kind} ${x.d.rule}`));
+    expect(decided.filter((x) => x.effect === "read").length).toBeGreaterThan(0);
+    expect(ruled("read")).toEqual(new Set(["allow P25"]));
+    expect(decided.filter((x) => x.effect === "write")).toHaveLength(3000);
+    expect(ruled("write")).toEqual(new Set(["allow P25"]));
+    decided.length = 0;
+
+    // The change as F14d writes it once Juan accepts it, through the step's gate, each value with the label the gate
+    // gets it with. This step's one evaluation read notes from outside, so all of its values are from outside
+    // (AU-169); every other one is given Juan's own label here, to see that the store keeps each value's label and
+    // makes none worse.
+    const gate = guard(deps.policy, deps.collections, {
+      automation: { id: a.id, version: 0 },
+      step: a.step("Código"),
+      type: CODE_TYPE,
+      action: "update",
+      effect: "write",
+      destroys: false,
+      control: null,
+      test: false,
+      own: deps.own,
+    });
+    const mine = handLabel(JUAN.device);
+    const want = new Map<string, string>();
+    const changes = e.asked.map(({ change }, i): ChangeWith => {
+      const values: Labelled = {};
+      const from = i % 2 ? mine : OUTSIDE;
+      if (change.kind === "update") {
+        values.nota = { value: change.fields.nota ?? null, label: from, derived: true };
+        want.set(change.row.id, from.integrity);
+      }
+      return { change, values };
+    });
+    expect(new Set(want.values())).toEqual(new Set(["external", "user"]));
+    expect(await gate.decideAll(changes)).toBe("allow");
+    // Each value from outside is let through by P25, by his hand: saved, not proposed (P4 needs a run that starts
+    // alone, F14d, AU-167).
+    expect(decided).toHaveLength(3000);
+    expect(ruled("write")).toEqual(new Set(["allow P25"]));
+
+    // Juan changes the last one on his phone while the change waits: the whole change is refused, nothing saved.
+    const last = changes[2999]?.change as Extract<Change, { kind: "update" }>;
+    store.update(
+      last.row.id,
+      { f_nota: { value: "cambiada a mano", label: handLabel("d_telefono") } },
+      { actor: "user", device: "d_telefono" },
+    );
+    const before = notes();
+    const log = store.version();
+    await expect(gate.writeAll(changes)).rejects.toMatchObject({
+      failure: { code: "row.changed" },
+    });
+    expect(store.version()).toBe(log);
+    expect(store.runOps(r)).toEqual([]);
+    expect(notes()).toEqual(before);
+
+    // Read again, as trying the step again does (AU-16): all 3,000 are saved, once each.
+    const again = await deps.collections.get("pedido", last.row.id);
+    if (!again) throw new Error("no row");
+    changes[2999] = { ...(changes[2999] as ChangeWith), change: { ...last, row: again.origin } };
+    const start = clock();
+    const written = await gate.writeAll(changes);
+    const took = clock() - start;
+    expect(written).toHaveLength(3000);
+    expect(written.every((w) => w.kind === "applied")).toBe(true);
+    const ops = store.logPage(log, 10_000);
+    expect(ops).toHaveLength(3000);
+    expect(new Set(ops.map((o) => `${o.run} ${o.actor} ${o.device} ${o.kind}`))).toEqual(
+      new Set([`${r} user ${JUAN.device} update`]),
+    );
+    expect(store.runOps(r)).toHaveLength(3000);
+    expect(store.runUndoable(r)).toBe(true);
+
+    // In the store each note keeps the label it was written with, from outside or Juan's, and so does it when read
+    // again (AU-170).
+    const saved = store.list(PEDIDO);
+    expect(
+      saved.filter((x) => String(x.entity.values.f_nota).startsWith("revisado ")),
+    ).toHaveLength(3000);
+    expect(saved.every((x) => x.labels.f_nota?.integrity === want.get(x.entity.id))).toBe(true);
+    const read = await deps.collections.find({
+      collection: "pedido",
+      where: [],
+      sort: [],
+      limit: 5000,
+      related: false,
+    });
+    expect(read).toHaveLength(3000);
+    expect(read.every((row) => row.fields?.nota?.label.integrity === want.get(row.origin.id))).toBe(
+      true,
+    );
+
+    // «Deshacer lo que hizo» takes back the whole step: every note as it was, the one from Juan's phone too.
+    const undoStart = clock();
+    const undone = store.undoRun(r, { actor: "user", device: JUAN.device });
+    const undoTook = clock() - undoStart;
+    expect(undone).toHaveLength(3000);
+    expect(notes()).toEqual(before);
+    expect(store.runUndoable(r)).toBe(false);
+
+    timing("S1-c · a step's change of 3,000 rows, written", took);
+    timing("S1-c · the run's 3,000 operations, undone", undoTook);
+    // About a millisecond a row, all of it the store's own `update` (3,000 in one batch cost the same without the
+    // engine): each write deletes its row from the search index by a column the index does not key, so it reads the
+    // whole index, and a write costs more the more records the store has (7 s for these 3,000 among 12,000). The
+    // bound is what that costs today; making the store's write not grow with it is a task of its own.
+    under(took, 10_000, "clock", "a step's change of 3,000 rows in one transaction");
+    under(undoTook, 10_000, "clock", "undoing a run of 3,000 operations");
+  }, 120_000);
+});

@@ -22,8 +22,9 @@
  * does, and filters, sorts and cuts here; a row is made only for what the limit keeps. Timed with 3,000 rows in its
  * test.
  *
- * What a write does: `apply` writes the change or nothing, as the actor and device it was made with, each field with
- * its value's label; «trash» sends to the trash (AU-122). A test never calls it (AU-90): the gate answers `tested`.
+ * What a write does: `apply` writes the change or nothing, as the actor and device it was made with and in the run it
+ * is for, each field with its value's label (AU-170); «trash» sends to the trash (AU-122). A test never calls it
+ * (AU-90): the gate answers `tested`.
  */
 import {
   type Cell,
@@ -58,6 +59,11 @@ export interface CollectionsFor {
   zone: string;
   /** The label of a field written with no label of its own (never in practice: the gate gives every value's). */
   own: Label;
+  /**
+   * The run this is for, when it is one for real: every operation it writes carries it in the log, so `undoRun` takes
+   * back everything the run saved, each step's change whole (AU-174, AU-185). A test writes nothing and has none.
+   */
+  run?: string;
 }
 
 const SYSTEM: ReadonlySet<string> = new Set(SYSTEM_TYPES);
@@ -158,7 +164,11 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
     return { ...row, json, ...(Object.keys(fields).length ? { fields } : {}) };
   };
 
-  const meta = (): OpMeta => ({ actor: who.actor, ...(who.device ? { device: who.device } : {}) });
+  const meta = (): OpMeta => ({
+    actor: who.actor,
+    ...(who.device ? { device: who.device } : {}),
+    ...(who.run ? { run: who.run } : {}),
+  });
   const writesOf = (t: TypeDef, fields: Record<string, Cell>, values: Labelled): Writes => {
     const out: Writes = {};
     for (const [key, value] of Object.entries(fields)) {
