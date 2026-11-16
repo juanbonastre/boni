@@ -14,9 +14,11 @@ import {
   ACTION,
   type Arrow,
   type Automation,
+  actionOf,
   inputsOf,
   isTrigger,
   outputsOf,
+  type ParamSpec,
   type ParamValue,
   renameStep,
   SETTINGS_DEFAULTS,
@@ -25,7 +27,7 @@ import {
   stepType,
   wouldCycle,
 } from "@boni/automations";
-import { notBuilt } from "./pending.ts";
+import { isEmpty, rowsOf } from "./panel.ts";
 import type { AddAt } from "./state.ts";
 import { type Namer, uniqueName } from "./words.ts";
 
@@ -221,26 +223,53 @@ export function setParam(
 ): Automation {
   const before = draft.steps.find((s) => s.id === step);
   if (!before) return draft;
-  const after: Step = { ...before, params: { ...before.params, [key]: value } };
+  return followed(draft, before, { ...before, params: { ...before.params, [key]: value } }, names);
+}
+
+/**
+ * The draft with `after` in place of `before`, and its name following it while it is still the automatic one, with
+ * its number if it took one (AU-86).
+ */
+function followed(draft: Automation, before: Step, after: Step, names: Namer): Automation {
   let out: Automation = {
     ...draft,
-    steps: draft.steps.map((s) => (s.id === step ? after : s)),
+    steps: draft.steps.map((s) => (s.id === before.id ? after : s)),
   };
-  // Still the automatic name, with its number if it took one: it follows the step as it is now.
   const was = names.auto(before);
+  const next = names.auto(after);
+  // A change that is not in the name leaves it, number and all («Limitar 2» stays «Limitar 2»).
+  if (next === was) return out;
   const automatic =
     before.name === was ||
     (before.name.startsWith(`${was} `) && /^\d+$/.test(before.name.slice(was.length + 1)));
   if (automatic) {
-    const now = uniqueName(out, names.auto(after), step);
-    if (now !== before.name) out = renameStep(out, step, now);
+    const now = uniqueName(out, next, before.id);
+    if (now !== before.name) out = renamed(out, before.id, now);
   }
   return out;
 }
 
+/**
+ * `renameStep`, keeping each step it did not change as it was: a card is drawn again only when its step changes
+ * (A-15: a rename in an automation of 200 steps redraws the steps that cite it, not all of them).
+ */
+function renamed(draft: Automation, step: string, name: string): Automation {
+  const out = renameStep(draft, step, name);
+  return {
+    ...out,
+    steps: out.steps.map((s, i) => {
+      const was = draft.steps[i];
+      return was && JSON.stringify(was) === JSON.stringify(s) ? was : s;
+    }),
+  };
+}
+
 /** An added option taken away (AU-76): its key leaves `step.params`, so it is its default again. */
-export function removeOption(_draft: Automation, _step: string, _key: string): Automation {
-  return notBuilt("removeOption (AU-76)");
+export function removeOption(draft: Automation, step: string, key: string): Automation {
+  const before = draft.steps.find((s) => s.id === step);
+  if (!before || !(key in before.params)) return draft;
+  const { [key]: _gone, ...params } = before.params;
+  return { ...draft, steps: draft.steps.map((s) => (s.id === step ? { ...s, params } : s)) };
 }
 
 /** One of the six settings (AU-78); set to its default, it leaves `step.settings`. */
@@ -269,12 +298,46 @@ export function setSetting<K extends keyof StepSettings>(
  * the rest go, and `dropped` names the ones that had a value Juan wrote, in the panel's order, for the notice.
  */
 export function changeAction(
-  _draft: Automation,
-  _step: string,
-  _action: string,
-  _names: Namer,
+  draft: Automation,
+  step: string,
+  action: string,
+  names: Namer,
 ): { draft: Automation; dropped: string[] } {
-  return notBuilt("changeAction (AU-82)");
+  const before = draft.steps.find((s) => s.id === step);
+  const spec = before && stepType(before.type);
+  const next = spec?.actions.find((a) => a.key === action);
+  if (!before || !spec || !next || before.params[ACTION] === action) return { draft, dropped: [] };
+  const was = [...spec.params, ...(actionOf(before)?.params ?? [])];
+  const now = [...spec.params, ...next.params];
+  const params: Record<string, ParamValue> = { [ACTION]: action };
+  const gone = new Set<string>();
+  for (const [key, value] of Object.entries(before.params)) {
+    if (key === ACTION) continue;
+    const p = was.find((q) => q.key === key);
+    const q = now.find((x) => x.key === key);
+    if (p && q && sameKind(p, q)) params[key] = value;
+    else if (!isEmpty(value)) gone.add(key);
+  }
+  // In the panel's order; what the panel did not show (no parameter of the action it had) after it.
+  const shown = rowsOf(before).map((r) => r.param.key);
+  const dropped = [
+    ...shown.filter((k) => gone.has(k)),
+    ...[...gone].filter((k) => !shown.includes(k)),
+  ];
+  return { draft: followed(draft, before, { ...before, params }, names), dropped };
+}
+
+/** Whether a value of `p` is a value of `q`: the same control over the same things («Límite» in two actions). */
+function sameKind(p: ParamSpec, q: ParamSpec): boolean {
+  const kind = (x: ParamSpec) =>
+    JSON.stringify({
+      control: x.control,
+      of: "of" in x ? x.of : undefined,
+      options: "options" in x ? x.options : undefined,
+      over: "over" in x ? x.over : undefined,
+      columns: "columns" in x ? x.columns.map((c) => [c.key, c.control]) : undefined,
+    });
+  return kind(p) === kind(q);
 }
 
 /**
@@ -286,5 +349,5 @@ export function rename(draft: Automation, step: string, name: string): Automatio
   const target = draft.steps.find((s) => s.id === step);
   if (!trimmed || !target) return draft;
   const unique = uniqueName(draft, trimmed, step);
-  return unique === target.name ? draft : renameStep(draft, step, unique);
+  return unique === target.name ? draft : renamed(draft, step, unique);
 }

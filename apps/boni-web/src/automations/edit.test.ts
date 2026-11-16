@@ -1,19 +1,22 @@
-// What the canvas does to a draft (docs/automatizaciones.md §5.7). The tests of D's rules stay pending, each with
-// its rule's id in its name (`make check` reads them).
+// What the canvas and the step's view do to a draft (docs/automatizaciones.md §5.7), each test with its rule's id in
+// its name (`make check` reads them).
 import { type Automation, FORMAT, type Step } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import {
   addStep,
+  changeAction,
   connect,
   copySteps,
   disconnect,
   pasteSteps,
+  removeOption,
   removeSteps,
   rename,
   setParam,
   setSetting,
 } from "./edit.ts";
+import { optionsLeft, rowsOf } from "./panel.ts";
 import { namer } from "./words.ts";
 
 const names = namer(translator("es"), { gastos: "Gastos", ingresos: "Ingresos" });
@@ -82,7 +85,7 @@ describe("adding, connecting and removing", () => {
     const made = (r: { draft: Automation; step: string }) =>
       r.draft.steps.find((s) => s.id === r.step);
     for (const r of [top, output, between, canvas])
-      expect(made(r)).toEqual({ id: "s_nuevo1", name: "Ordenar", type: "sort", params: {} });
+      expect(made(r)).toEqual({ id: "s_nuevo1", name: "Ordenar filas", type: "sort", params: {} });
     expect(top.draft.arrows).toEqual(chain.arrows);
     expect(canvas.draft.arrows).toEqual(chain.arrows);
     expect(output.draft.arrows).toEqual([...chain.arrows, arrow("s_filtrar", "s_nuevo1")]);
@@ -321,12 +324,73 @@ describe("copying, pasting and undoing", () => {
 });
 
 describe("a step's parameters and its name", () => {
-  it.todo(
-    "AU-76 · an option is added by setting it and taken away by removing its key: it is its default again, and it is offered again",
-  );
-  it.todo(
-    "AU-82 · changing the action keeps the parameters the two share and names the ones that go, in the panel's order: only those that had a value Juan wrote",
-  );
+  it("AU-76 · an option is added by setting it and taken away by removing its key: it is its default again, and it is offered again", () => {
+    const withOption = setParam(chain, "s_buscar", "related", true, names);
+    const added = withOption.steps[1] as Step;
+    expect(added.params.related).toBe(true);
+    expect(optionsLeft(added)).toEqual([]);
+    expect(rowsOf(added).at(-1)).toMatchObject({ added: true });
+    const gone = removeOption(withOption, "s_buscar", "related");
+    expect(gone.steps[1]).toEqual(buscar);
+    expect(optionsLeft(gone.steps[1] as Step).map((p) => p.key)).toEqual(["related"]);
+    // Taking away what is not there changes nothing.
+    expect(removeOption(gone, "s_buscar", "related")).toBe(gone);
+  });
+  it("AU-82 · changing the action keeps the parameters the two share and names the ones that go, in the panel's order: only those that had a value Juan wrote", () => {
+    const written = automation([
+      step("s_buscar", "collection", "Buscar filas en Gastos", {
+        // Written in another order: what goes is named in the panel's.
+        limit: 20,
+        related: true,
+        sort: [{ field: "fecha", direction: "desc" }],
+        where: [{ field: "importe", op: "gt", value: 5 }],
+        action: "find",
+        collection: "gastos",
+      }),
+    ]);
+    // «Contar o sumar» shares the collection and the conditions (the same control over the same fields).
+    const counted = changeAction(written, "s_buscar", "aggregate", names);
+    expect(counted.dropped).toEqual(["sort", "limit", "related"]);
+    expect(counted.draft.steps[0]?.params).toEqual({
+      action: "aggregate",
+      collection: "gastos",
+      where: [{ field: "importe", op: "gt", value: 5 }],
+    });
+    // The automatic name follows the action.
+    expect(counted.draft.steps[0]?.name).toBe("Contar o sumar en Gastos");
+    // What had no value goes without a word: a new step names nothing.
+    const bare = automation([
+      step("s_b", "collection", "Buscar filas", { action: "find", sort: [], limit: "" }),
+    ]);
+    const created = changeAction(bare, "s_b", "create", names);
+    expect(created.dropped).toEqual([]);
+    expect(created.draft.steps[0]?.params).toEqual({ action: "create" });
+    expect(created.draft.steps[0]?.name).toBe("Crear una fila");
+    // A name Juan wrote stays; the same action again is no change.
+    const mine = rename(written, "s_buscar", "Lo de este mes");
+    expect(changeAction(mine, "s_buscar", "get", names).draft.steps[0]?.name).toBe(
+      "Lo de este mes",
+    );
+    expect(changeAction(written, "s_buscar", "find", names)).toEqual({
+      draft: written,
+      dropped: [],
+    });
+    // «Modificar» and «Eliminar» share which rows and their conditions.
+    const update = automation([
+      step("s_m", "collection", "Modificar filas en Gastos", {
+        action: "update",
+        collection: "gastos",
+        target: "matching",
+        where: [{ field: "importe", op: "gt", value: 5 }],
+        fields: [{ field: "nota", value: "x" }],
+      }),
+    ]);
+    const trashed = changeAction(update, "s_m", "trash", names);
+    expect(trashed.dropped).toEqual(["fields"]);
+    expect(Object.keys(trashed.draft.steps[0]?.params ?? {}).sort()).toEqual(
+      ["action", "collection", "target", "where"].sort(),
+    );
+  });
   it("AU-86 · the name follows the parameters while it is the automatic one (the collection changes, the name changes) and stops once Juan writes another; a rename rewrites every citation of the step", () => {
     const fresh = addStep(
       chain,
@@ -368,5 +432,22 @@ describe("a step's parameters and its name", () => {
     expect(renamed.steps[3]?.params.fields).toEqual([
       { field: "n", value: { expr: "{{ $('Disparado por el usuario 2').item.json.n }}" } },
     ]);
+    // The steps that do not cite it are the same objects: their cards are not drawn again (A-15).
+    expect(renamed.steps[0]).toBe(cited.steps[0]);
+    expect(renamed.steps[1]).toBe(cited.steps[1]);
+  });
+
+  it("AU-86 · a parameter that is not in the name keeps a numbered name as it is, and changes only its own step", () => {
+    const two = automation(
+      [
+        step("s_limitar", "limit", "Limitar 2", { count: 5 }),
+        step("s_otro", "limit", "Limitar 3", { count: 5 }),
+      ],
+      [],
+    );
+    const after = setParam(two, "s_limitar", "count", 7, names);
+    expect(after.steps[0]?.name).toBe("Limitar 2");
+    expect(after.steps[0]?.params.count).toBe(7);
+    expect(after.steps[1]).toBe(two.steps[1]);
   });
 });

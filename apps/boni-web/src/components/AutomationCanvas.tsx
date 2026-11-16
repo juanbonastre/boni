@@ -5,7 +5,8 @@
  * left zoom, fit and «Ordenar». It decides nothing: every change is a pure function of automations/edit.ts made
  * into one change of automations/state.ts, which Deshacer walks back; where it goes to the server is the page's
  * (AutomationEditor.tsx). A box moves on the screen while it is dragged and is one change when it is dropped, so a
- * drag sends nothing until then. The step's view (D), «Probar» (E) and dragging to cite (F) come later.
+ * drag sends nothing until then. A step opens in its view (D, AutomationStepView.tsx) over the canvas; «Probar» (E)
+ * and dragging to cite (F) come later.
  */
 import {
   type Arrow,
@@ -38,28 +39,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  ArrowUpDown,
-  CalendarDays,
-  Combine,
-  CopyMinus,
-  Database,
-  GitFork,
-  Group,
   LayoutGrid,
-  ListEnd,
-  ListFilter,
-  type LucideIcon,
   Maximize,
-  Merge,
   MoreHorizontal,
-  MousePointerClick,
-  OctagonX,
-  PencilLine,
   Plus,
   Search,
-  Signpost,
-  Split,
-  Workflow,
   X,
   ZoomIn,
   ZoomOut,
@@ -78,33 +62,18 @@ import {
   sameArrow,
   setSetting,
 } from "../automations/edit.ts";
-import { summaryOf } from "../automations/panel.ts";
+import { labelsOf, markedOf, summaryOf } from "../automations/panel.ts";
 import { below, CARD, pastedPlaces, tidy, withPlaces } from "../automations/places.ts";
 import { type AddAt, added, change, type EditorState, redo, undo } from "../automations/state.ts";
-import { DO, entryNames, KEY, namer, summaryWords } from "../automations/words.ts";
+import { DO, entryNames, KEY, labelWord, namer, summaryWords } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { toast, useStore } from "../store.ts";
+import { AutomationStepView } from "./AutomationStepView.tsx";
+import { iconOf } from "./automationIcons.ts";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
-/** Each step type's icon: the catalogue has ids and no drawings (`@boni/automations` depends on no app). */
-const ICONS: Readonly<Record<string, LucideIcon>> = {
-  manual: MousePointerClick,
-  collection: Database,
-  edit: PencilLine,
-  filter: ListFilter,
-  sort: ArrowUpDown,
-  limit: ListEnd,
-  dedupe: CopyMinus,
-  group: Group,
-  split: Split,
-  join: Merge,
-  date: CalendarDays,
-  combine: Combine,
-  if: GitFork,
-  switch: Signpost,
-  stop: OctagonX,
-};
-const iconOf = (type: string): LucideIcon => ICONS[type] ?? Workflow;
+/** How many characters of labels fit in the card's line (AU-79); what does not fit is «+N». */
+const LABEL_BUDGET = 30;
 
 /** What a copy holds between automations of this window (AU-68: a clip pastes into another automation). */
 let clip: Clip | null = null;
@@ -145,6 +114,10 @@ interface CardData extends Record<string, unknown> {
   alone: boolean;
   /** Its name is being edited on the card. */
   renaming: boolean;
+  /** Its settings and options not at their default, in one line (AU-79): those that fit, and the rest. */
+  labels: { shown: string[]; rest: string[] };
+  /** What required is missing once it is marked (AU-83), «Falta: …»; null with nothing marked. */
+  missing: string | null;
 }
 type CardNode = Node<CardData, "step">;
 interface ArrowData extends Record<string, unknown> {
@@ -156,10 +129,15 @@ type ArrowEdge = Edge<ArrowData, "arrow">;
 const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>) {
   const acts = useActs();
   const { t } = acts;
-  const { step, summary, inputs, outputs, alone, renaming } = data;
+  const { step, summary, inputs, outputs, alone, renaming, labels, missing } = data;
   const Icon = iconOf(step.type);
   const off = step.settings?.off === true;
-  const height = Math.max(CARD.height, outputs.length * 22 + 20, inputs.length * 22 + 20);
+  const said = labels.shown.length > 0;
+  const height = Math.max(
+    CARD.height + (said ? 16 : 0),
+    outputs.length * 22 + 20,
+    inputs.length * 22 + 20,
+  );
   return (
     <div
       className={`auto-card${selected ? " selected" : ""}${off ? " off" : ""}`}
@@ -249,7 +227,26 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
             {summary}
           </span>
         )}
+        {said && (
+          <span className="auto-card-labels">
+            {labels.shown.map((l) => (
+              <span key={l} className="auto-label">
+                {l}
+              </span>
+            ))}
+            {labels.rest.length > 0 && (
+              <span className="auto-label more" title={labels.rest.join(" · ")}>
+                {t("auto.label.more", { n: labels.rest.length })}
+              </span>
+            )}
+          </span>
+        )}
       </span>
+      {missing && (
+        <span className="auto-card-mark" title={missing} role="img" aria-label={missing}>
+          !
+        </span>
+      )}
       {outputs.map((output, i) => (
         <Handle
           key={output.id}
@@ -395,38 +392,95 @@ function Canvas({
   const empty = state.draft.steps.length === 0;
 
   const shown = useMemo(() => withPlaces(state.draft, state.places), [state.draft, state.places]);
+  /** Each card as last made, with what it was made from: the same step, place and marks give the same node. */
+  const cards = useRef(new Map<string, { from: unknown[]; node: CardNode }>());
   const made = useMemo<CardNode[]>(() => {
     const used = new Set(state.draft.arrows.map((a) => `${a.from.step}:${a.from.output}`));
-    return state.draft.steps.map((step) => {
-      const ins = inputsOf(step);
-      const outs = outputsOf(step);
-      const ruleNames = new Map<string, string>();
-      if (Array.isArray(step.params.rules))
-        for (const r of step.params.rules as { id?: unknown; name?: unknown }[])
-          if (typeof r?.id === "string")
-            ruleNames.set(r.id, typeof r.name === "string" && r.name ? r.name : r.id);
-      return {
-        id: step.id,
-        type: "step",
-        position: shown[step.id] ?? { x: 0, y: 0 },
-        selected: state.selected.includes(step.id),
-        data: {
-          step,
-          summary: summaryOf(step, summaryWords(t, collections, step)).join(" · "),
-          inputs: ins.map((id) => ({ id, label: ins.length > 1 ? t(KEY.input(id)) : null })),
-          // The only output «main» needs no name (AU-63); a rule of «Elegir rama» is said by its own.
-          outputs: outs.map((id) => ({
-            id,
-            label:
-              outs.length === 1 && id === MAIN ? null : (ruleNames.get(id) ?? t(KEY.output(id))),
-            free: !used.has(`${step.id}:${id}`),
-          })),
-          alone: state.selected.length === 1,
-          renaming: renaming === step.id,
-        },
-      };
+    const alone = state.selected.length === 1;
+    const kept = new Map<string, { from: unknown[]; node: CardNode }>();
+    const nodes = state.draft.steps.map((step) => {
+      const at = shown[step.id] ?? { x: 0, y: 0 };
+      const selected = state.selected.includes(step.id);
+      const left = state.left
+        .filter((x) => x.startsWith(`${step.id}.`))
+        .map((x) => x.slice(step.id.length + 1));
+      const free = outputsOf(step)
+        .map((id) => (used.has(`${step.id}:${id}`) ? "" : id))
+        .join(",");
+      const from = [
+        step,
+        at.x,
+        at.y,
+        selected,
+        selected && alone,
+        renaming === step.id,
+        left.join(","),
+        free,
+        t,
+        collections,
+      ];
+      const was = cards.current.get(step.id);
+      if (was && was.from.every((x, i) => x === from[i])) {
+        kept.set(step.id, was);
+        return was.node;
+      }
+      const node = cardOf(step, at, selected, selected && alone, left, used);
+      kept.set(step.id, { from, node });
+      return node;
     });
-  }, [state.draft, state.selected, shown, t, collections, renaming]);
+    cards.current = kept;
+    return nodes;
+  }, [state.draft, state.selected, state.left, shown, t, collections, renaming]);
+  function cardOf(
+    step: Step,
+    at: { x: number; y: number },
+    selected: boolean,
+    alone: boolean,
+    left: string[],
+    used: Set<string>,
+  ): CardNode {
+    const ins = inputsOf(step);
+    const outs = outputsOf(step);
+    const ruleNames = new Map<string, string>();
+    if (Array.isArray(step.params.rules))
+      for (const r of step.params.rules as { id?: unknown; name?: unknown }[])
+        if (typeof r?.id === "string")
+          ruleNames.set(r.id, typeof r.name === "string" && r.name ? r.name : r.id);
+    const words = labelsOf(step).map((l) => labelWord(t, step, l));
+    const shownLabels: string[] = [];
+    let room = LABEL_BUDGET;
+    for (const w of words) {
+      if (shownLabels.length && w.length > room) break;
+      shownLabels.push(w);
+      room -= w.length + 2;
+    }
+    const marked = markedOf(step, left, false);
+    return {
+      id: step.id,
+      type: "step",
+      position: at,
+      selected,
+      data: {
+        step,
+        summary: summaryOf(step, summaryWords(t, collections, step)).join(" · "),
+        inputs: ins.map((id) => ({ id, label: ins.length > 1 ? t(KEY.input(id)) : null })),
+        // The only output «main» needs no name (AU-63); a rule of «Elegir rama» is said by its own.
+        outputs: outs.map((id) => ({
+          id,
+          label: outs.length === 1 && id === MAIN ? null : (ruleNames.get(id) ?? t(KEY.output(id))),
+          free: !used.has(`${step.id}:${id}`),
+        })),
+        alone,
+        renaming: renaming === step.id,
+        labels: { shown: shownLabels, rest: words.slice(shownLabels.length) },
+        missing: marked.length
+          ? t("auto.view.missing", {
+              names: marked.map((p) => t(KEY.param(step.type, p.key))).join(", "),
+            })
+          : null,
+      },
+    };
+  }
   // While a box is dragged React Flow moves it; the draft's places change only once it is dropped.
   const [nodes, setNodes] = useState<CardNode[]>(made);
   useEffect(() => {
@@ -435,6 +489,13 @@ function Canvas({
       return made.map((n) => {
         const old = by.get(n.id);
         if (!old) return n;
+        // The same card where it was: the node React Flow has, so it is not drawn again.
+        if (
+          old.data === n.data &&
+          old.selected === n.selected &&
+          (old.dragging || (old.position.x === n.position.x && old.position.y === n.position.y))
+        )
+          return old;
         // A box being dragged stays under the pointer while what is selected changes.
         return {
           ...n,
@@ -555,9 +616,18 @@ function Canvas({
   // The keys (AU-68), while the editor is open; a key typed in a field is the field's.
   const keys = useRef<(e: KeyboardEvent) => void>(() => {});
   keys.current = (e: KeyboardEvent) => {
-    if (typing(e) || renaming) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // In the step's view a change typed is one step of Deshacer (AU-68): Ctrl+Z there is the editor's, not the field's.
+    const inView = !!(e.target as HTMLElement | null)?.closest?.(".auto-view");
+    if (state.open && inView && mod && (k === "z" || k === "y")) {
+      e.preventDefault();
+      apply(k === "y" || e.shiftKey ? redo : undo);
+      return;
+    }
+    if (typing(e) || renaming) return;
+    // Open, the view is what the keys reach: Esc closes it, and nothing else acts on the canvas behind.
+    if (state.open && !(mod && (k === "z" || k === "y")) && e.key !== "Escape") return;
     if (mod && k === "z") {
       e.preventDefault();
       apply(e.shiftKey ? redo : undo);
@@ -585,11 +655,11 @@ function Canvas({
     } else if (e.key === "Escape") {
       // A menu open closes itself first; with nothing to close here, Esc is the app's (it leaves the editor).
       if (e.defaultPrevented || document.querySelector(".pop-box")) return;
-      // The step open is not painted until its view (D), so it closes with what is selected, not by a press of
-      // its own.
+      // Then the panel, then the step's view (its step stays selected), then what is selected.
       if (state.adding) apply((s) => ({ ...s, adding: null }));
-      else if (state.selected.length || state.arrow || state.open)
-        apply((s) => ({ ...s, selected: [], arrow: null, open: null }));
+      else if (state.open) apply((s) => ({ ...s, open: null }));
+      else if (state.selected.length || state.arrow)
+        apply((s) => ({ ...s, selected: [], arrow: null }));
       else return;
       e.preventDefault();
     }
@@ -800,6 +870,14 @@ function Canvas({
             first={state.id === null}
             onChoose={choose}
             onClose={() => apply((s) => ({ ...s, adding: null }))}
+          />
+        )}
+        {state.open && (
+          <AutomationStepView
+            state={state}
+            apply={apply}
+            names={names}
+            collectionNames={collections}
           />
         )}
       </div>

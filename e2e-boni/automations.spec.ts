@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { CATALOGUE, type ParamSpec, paramsOf } from "../packages/automations/src/catalogue.ts";
 import {
   FLOW_CATALOG,
   FLOW_CHECK,
@@ -137,6 +138,127 @@ const BRANCH = {
   ],
 };
 const CANVAS = [...AUTOMATIONS, CHAIN, BRANCH];
+/**
+ * «Revisar libros», for the step's view: a «Buscar filas» with conditions, an order and a limit; a «Filtrar» with a
+ * long name and an expression for a value; a «Limitar» with every setting changed; a «Buscar filas» with no collection.
+ */
+const VIEWED = {
+  id: "a_01jx8t7q9s1u3w5y7a9c1e3g5j",
+  name: "Revisar libros",
+  updated: 1761960000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual"),
+    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+      collection: "libros",
+      action: "find",
+      where: [{ field: "estado", op: "is", value: "o_pendiente" }],
+      sort: [{ field: "paginas", direction: "asc" }],
+      limit: 10,
+    }),
+    step(
+      "s_01jfiltrar",
+      "Solo los libros largos que siguen pendientes y que nadie ha marcado todavía como favoritos",
+      "filter",
+      { where: [{ field: "paginas", op: "gt", value: { expr: "{{ $json.minimo }}" } }] },
+    ),
+    {
+      ...step("s_01jlimitar", "Limitar", "limit", { count: 5 }),
+      settings: {
+        onError: "continue",
+        retry: { times: 2, waitMs: 1000 },
+        continueEmpty: true,
+        firstRowOnly: true,
+        note: "Solo para probar",
+        off: true,
+      },
+    },
+    step("s_01jnueva", "Buscar filas", "collection", { action: "find" }),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jbuscar"),
+    arrow("s_01jbuscar", "s_01jfiltrar"),
+    arrow("s_01jfiltrar", "s_01jlimitar"),
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jfiltrar", x: 600, y: 0 },
+    { step: "s_01jlimitar", x: 900, y: 0 },
+    { step: "s_01jnueva", x: 300, y: 220 },
+  ],
+};
+/** «Ordenar la biblioteca»: the five steps that have conditions (AU-81), each with its own fields. */
+const CONDITIONS = {
+  id: "a_01jx8w9s1u3w5y7a9c1e3g5j7m",
+  name: "Ordenar la biblioteca",
+  updated: 1761970000000,
+  steps: [
+    // It asks the value the filter cites (`$json.minimo`).
+    step("s_inicio", "Disparado por el usuario", "manual", {
+      fields: [{ key: "minimo", name: "Mínimo", type: "number" }],
+    }),
+    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+      collection: "libros",
+      action: "find",
+      where: [{ field: "estado", op: "is", value: "o_pendiente" }],
+      limit: 50,
+    }),
+    step("s_01jfiltrar", "Filtrar", "filter", {
+      where: [{ field: "paginas", op: "gt", value: { expr: "{{ $json.minimo }}" } }],
+    }),
+    step("s_01jsi", "Si", "if"),
+    step("s_01jmodificar", "Modificar filas en Libros", "collection", {
+      collection: "libros",
+      action: "update",
+      target: "matching",
+    }),
+    step("s_01jeliminar", "Eliminar filas en Libros", "collection", {
+      collection: "libros",
+      action: "trash",
+      target: "matching",
+    }),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jbuscar"),
+    arrow("s_01jbuscar", "s_01jfiltrar"),
+    arrow("s_01jfiltrar", "s_01jsi"),
+    arrow("s_01jsi", "s_01jmodificar", "yes"),
+    arrow("s_01jsi", "s_01jeliminar", "no"),
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jfiltrar", x: 600, y: 0 },
+    { step: "s_01jsi", x: 900, y: 0 },
+    { step: "s_01jmodificar", x: 1200, y: -110 },
+    { step: "s_01jeliminar", x: 1200, y: 110 },
+  ],
+};
+/** The keys a choice offers, when they are keys and not fields. */
+const keysOf = (p: ParamSpec): readonly string[] =>
+  p.control === "choice" && Array.isArray(p.options) ? (p.options as readonly string[]) : [];
+/**
+ * «Todos los pasos» (AU-75, AU-78): one step of each type of the catalogue with each of its actions, and one more for
+ * each value of a choice that brings other parameters into sight («Sobre: las que cumplan»), in a grid of boxes.
+ */
+const SEA_STEPS = CATALOGUE.flatMap((spec) =>
+  spec.actions.flatMap((a) => {
+    const base: Record<string, unknown> = spec.actions.length > 1 ? { action: a.key } : {};
+    const all = [...spec.params, ...a.params];
+    const shows = all.filter((p) => keysOf(p).length && all.some((q) => q.when?.param === p.key));
+    return [base, ...shows.flatMap((p) => keysOf(p).map((o) => ({ ...base, [p.key]: o })))].map(
+      (params) => ({ type: spec.type, params }),
+    );
+  }),
+).map((x, i) => step(`s_01jmar${String(i).padStart(3, "0")}`, `Paso ${i + 1}`, x.type, x.params));
+const SEA = {
+  id: "a_01jx8v8r0t2v4x6z8b0d2f4h6k",
+  name: "Todos los pasos",
+  updated: 1761980000000,
+  steps: SEA_STEPS,
+  arrows: [],
+  places: SEA_STEPS.map((s, i) => ({ step: s.id, x: (i % 8) * 300, y: Math.floor(i / 8) * 200 })),
+};
 const node = (page: Page, id: string) => page.locator(`[data-testid="rf__node-${id}"]`);
 const card = (page: Page, id: string) => page.locator(`.auto-card[data-step="${id}"]`);
 const cards = (page: Page) => page.locator(".auto-card");
@@ -230,10 +352,29 @@ const settled = async (page: Page) => {
     )
     .toBe(true);
 };
-/** Chooses `name` in «Añadir un paso». */
-const choose = (page: Page, name: string) =>
-  panel(page).getByRole("button", { name, exact: true }).click();
 const press = (page: Page, keys: string) => page.keyboard.press(keys);
+/** The step's view (D, AU-70), its rows of «Parámetros», one of them by its key, one setting of «Ajustes». */
+const view = (page: Page) => page.locator(".auto-view");
+const paramRows = (page: Page) => view(page).locator(".auto-param[data-param]");
+const param = (page: Page, key: string) => view(page).locator(`.auto-param[data-param="${key}"]`);
+const nameIn = (page: Page) => view(page).getByRole("textbox", { name: "Nombre del paso" });
+/** Clicks `name` in «Añadir un paso»: the step is added, and opens (AU-65). */
+const pick = (page: Page, name: string) =>
+  panel(page).getByRole("button", { name, exact: true }).click();
+/** Chooses `name` in «Añadir un paso»: the step added opens (AU-65), and Esc closes its view, the step selected. */
+async function choose(page: Page, name: string) {
+  await pick(page, name);
+  await expect(view(page)).toBeVisible();
+  await press(page, "Escape");
+  await expect(view(page)).toHaveCount(0);
+}
+/** Opens step `id` with a double click on its card. */
+async function openStep(page: Page, id: string) {
+  await card(page, id).dblclick();
+  await expect(view(page)).toHaveAttribute("data-step", id);
+}
+/** The texts of a select's options. */
+const optionsIn = (l: ReturnType<Page["locator"]>) => l.locator("option").allTextContents();
 
 test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -571,7 +712,40 @@ test.describe("the editor", () => {
       card(page, "s_inicio").getByRole("button", { name: "Añadir un paso" }),
     ).toBeVisible();
   });
-  test.fixme("AU-63 · the whole name and summary in the step's view, and the mark on the card of a step that lacks something required once the parameter is marked (D: the step's view, AU-83)", async () => {});
+  test("AU-63 · the whole name and summary are in the step's view, and a step that lacks something required has a mark on its card once that parameter is marked (AU-83)", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    // On the card both are cut; in the view, whole.
+    const long = VIEWED.steps[2]?.name as string;
+    await expect(card(page, "s_01jfiltrar").locator(".auto-card-name")).toHaveAttribute(
+      "title",
+      long,
+    );
+    await openStep(page, "s_01jfiltrar");
+    await expect(nameIn(page)).toHaveValue(long);
+    expect(await nameIn(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await press(page, "Escape");
+    const summary = card(page, "s_01jbuscar").locator(".auto-card-summary");
+    const said = (await summary.getAttribute("title")) as string;
+    expect(await summary.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+    await openStep(page, "s_01jbuscar");
+    const whole = view(page).locator(".auto-view-summary");
+    await expect(whole).toHaveText(said);
+    expect(await whole.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await press(page, "Escape");
+    // The mark: none on opening; once «Colección» is left empty, on the card too, saying what is missing.
+    const nueva = card(page, "s_01jnueva");
+    await expect(nueva.locator(".auto-card-mark")).toHaveCount(0);
+    await openStep(page, "s_01jnueva");
+    await param(page, "collection").getByRole("combobox").focus();
+    await press(page, "Tab");
+    await press(page, "Escape");
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
+    await expect(nueva.locator(".auto-card-mark")).toHaveAttribute("title", "Falta: Colección");
+  });
   test.fixme("AU-64 · bottom left: zoom in, zoom out, fit and «Ordenar»; bottom centre: «Probar»; top right: «+»; at the bottom «Registro», folded, with one line: «Sin probar», then the last test", async () => {});
   test.fixme("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async () => {});
   test("AU-65 · a step is added from the «+» of the top, the «+» of an output with no arrow (or dragging from it), the «+» of a selected arrow and a right click on the canvas: the four open the same panel, and the step chosen ends connected and selected", async ({
@@ -593,8 +767,8 @@ test.describe("the editor", () => {
     // The «+» of an output with no arrow: the new step hangs from it.
     await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
     await expect(panel(page)).toBeVisible();
-    await choose(page, "Ordenar");
-    await expect(selected.locator(".auto-card-name")).toHaveText("Ordenar 2");
+    await choose(page, "Ordenar filas");
+    await expect(selected.locator(".auto-card-name")).toHaveText("Ordenar filas");
     const second = (await selected.getAttribute("data-step")) as string;
     await expect.poll(() => arrowsSeen(page)).toContain(`s_01jordenar>${second}`);
     // Dragging from that output and letting go on the canvas: the same panel, and the step hangs from it.
@@ -637,7 +811,30 @@ test.describe("the editor", () => {
     await expect(saved(page)).toHaveText("Guardado");
     expect((await lastDraft(page, CHAIN.id))?.steps).toHaveLength(9);
   });
-  test.fixme("AU-65 · the step chosen ends open: its view opens as it is added (D: the step's view, AU-70)", async () => {});
+  test("AU-65 · the step chosen ends open: its view opens as it is added, and Esc leaves it selected on the canvas", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    const selected = page.locator(".auto-card.selected");
+    await page.locator(".auto-add-top").click();
+    await pick(page, "Filtrar");
+    await expect(view(page)).toBeVisible();
+    await expect(nameIn(page)).toHaveValue("Filtrar 2");
+    const made = (await selected.getAttribute("data-step")) as string;
+    await expect(view(page)).toHaveAttribute("data-step", made);
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
+    await expect(selected).toHaveAttribute("data-step", made);
+    // From the «+» of an output: the same.
+    await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
+    await pick(page, "Limitar");
+    await expect(nameIn(page)).toHaveValue("Limitar");
+    await expect(view(page)).toHaveAttribute(
+      "data-step",
+      (await selected.getAttribute("data-step")) as string,
+    );
+  });
   test("AU-66 · a selected step shows a short bar, Probar paso · Apagar · Eliminar · ⋯ (Cambiar nombre · Duplicar · Copiar); a selected arrow, «+» and delete; the right click on a step has seven things; nothing appears on hover; an off step says «Encender»", async ({
     page,
   }) => {
@@ -696,6 +893,19 @@ test.describe("the editor", () => {
     await expect(arrowBar.getByRole("button", { name: "Añadir un paso" })).toBeVisible();
     await arrowBar.getByRole("button", { name: "Quitar la flecha" }).click();
     await expect.poll(() => arrowsSeen(page)).not.toContain("s_inicio>s_01jbuscar");
+  });
+  test("AU-66 · «Abrir» of a step's right click opens its view, the step selected", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
+    await openCanvas(page, "Libros por leer", 4);
+    await card(page, "s_01jfiltrar").click({ button: "right" });
+    await page.getByRole("menuitemradio", { name: "Abrir" }).click();
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jfiltrar");
+    await expect(nameIn(page)).toHaveValue("Filtrar");
+    await expect(page.locator(".auto-card.selected")).toHaveAttribute("data-step", "s_01jfiltrar");
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
   });
   test("AU-66 · deleting a step between two others joins them with one arrow; deleting one with two outputs in use takes its arrows", async ({
     page,
@@ -849,7 +1059,47 @@ test.describe("the editor", () => {
       .poll(() => cardNames(page))
       .toEqual(expect.arrayContaining(["Buscar filas en Libros", "Filtrar"]));
   });
-  test.fixme("AU-68 · Ctrl+Z undoes a parameter or a setting changed in the step's view, and Intro opens the selected step (D: the step's view, AU-70)", async () => {});
+  test("AU-68 · Ctrl+Z undoes a parameter or a setting changed in the step's view, a run of keys at once, and Ctrl+Y redoes it; Intro opens the selected step", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    const limitar = card(page, "s_01jlimitar");
+    // Intro opens the selected step.
+    await limitar.click();
+    await press(page, "Enter");
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jlimitar");
+    // A number typed at a person's pace is one change.
+    const count = param(page, "count").getByRole("spinbutton");
+    await count.click();
+    await press(page, "Control+a");
+    await count.pressSequentially("25", { delay: 120 });
+    await expect(limitar.locator(".auto-card-summary")).toHaveText("Cuántas 25");
+    await press(page, "Control+z");
+    await expect(count).toHaveValue("5");
+    await expect(limitar.locator(".auto-card-summary")).toHaveText("Cuántas 5");
+    await press(page, "Control+y");
+    await expect(count).toHaveValue("25");
+    // A setting: «Apagado» taken off, then put back with Ctrl+Z.
+    await view(page)
+      .getByRole("tab", { name: /^Ajustes/ })
+      .click();
+    await view(page).getByRole("checkbox", { name: "Apagado" }).uncheck();
+    await expect(limitar).not.toHaveClass(/\boff\b/);
+    await press(page, "Control+z");
+    await expect(limitar).toHaveClass(/\boff\b/);
+    await expect(view(page).getByRole("checkbox", { name: "Apagado" })).toBeChecked();
+    await press(page, "Control+Shift+z");
+    await expect(limitar).not.toHaveClass(/\boff\b/);
+    await press(page, "Control+z");
+    // What was undone is saved: the count is 25 and the step is off.
+    await expect(saved(page)).toHaveText("Guardado");
+    const kept = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jlimitar") as
+      | { params: Record<string, unknown>; settings?: { off?: boolean } }
+      | undefined;
+    expect(kept?.params.count).toBe(25);
+    expect(kept?.settings?.off).toBe(true);
+  });
   test("AU-05 · a box stays where it is dropped, opened again too, and moving it does not say «Guardando…» nor send the draft; a new step goes to the right of the one it hangs from and no other box moves; «Ordenar» moves them all and Ctrl+Z puts them back", async ({
     page,
   }) => {
@@ -953,6 +1203,10 @@ test.describe("adding a step", () => {
     await p.getByRole("button", { name: "Disparado por el usuario" }).click();
     await expect(cards(page)).toHaveCount(1);
     await expect(panel(page)).toHaveCount(0);
+    // The step chosen opens (AU-65); Esc closes its view.
+    await expect(view(page)).toBeVisible();
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
     // Then: the three categories, said by what one wants to do, each step in one; «Añadir otro disparador» last.
     await page.locator(".auto-add-top").click();
     await expect(p.locator("h3")).toHaveText([
@@ -1014,6 +1268,26 @@ test.describe("adding a step", () => {
         .toBe(true);
     }
   });
+  test("AU-69 · the step chosen in the panel opens in its view: the trigger of an empty canvas, and a step after it", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { agent: BEFORE() });
+    await list(page);
+    await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
+    await pick(page, "Disparado por el usuario");
+    await expect(cards(page)).toHaveCount(1);
+    const trigger = (await cards(page).getAttribute("data-step")) as string;
+    await expect(view(page)).toHaveAttribute("data-step", trigger);
+    await expect(view(page).getByRole("region", { name: "Entrada" })).toContainText(
+      "Datos de prueba",
+    );
+    await press(page, "Escape");
+    await page.locator(".auto-add-top").click();
+    await pick(page, "Buscar filas");
+    await expect(view(page)).toBeVisible();
+    await expect(nameIn(page)).toHaveValue("Buscar filas");
+    await expect(view(page)).not.toHaveAttribute("data-step", trigger);
+  });
   test("AU-86 · a new step is named by what it does («Buscar filas», «Buscar filas en Libros» with its collection); a second «Filtrar» is «Filtrar 2»; a step renamed keeps its name", async ({
     page,
   }) => {
@@ -1054,7 +1328,33 @@ test.describe("adding a step", () => {
       "Solo los pendientes",
     ]);
   });
-  test.fixme("AU-86 · the name follows the step's collection, chosen in its view, until Juan renames it (D: the step's view); renaming a step changes the chips that cite it (F: AU-21)", async () => {});
+  test("AU-86 · the name follows the step's collection, chosen in its view, until Juan renames it", async ({
+    page,
+  }) => {
+    // «agenda» brings Tareas, a second collection to choose.
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE(), agenda: true });
+    await openCanvas(page, VIEWED.name, 5);
+    const nueva = card(page, "s_01jnueva").locator(".auto-card-name");
+    await openStep(page, "s_01jnueva");
+    const collection = param(page, "collection").getByRole("combobox");
+    await collection.selectOption({ label: "Tareas" });
+    await expect(nueva).toHaveText("Buscar filas en Tareas");
+    await expect(nameIn(page)).toHaveValue("Buscar filas en Tareas");
+    // A name taken gets a number.
+    await collection.selectOption({ label: "Libros" });
+    await expect(nueva).toHaveText("Buscar filas en Libros 2");
+    // Renamed in the header: the collection no longer names it.
+    await nameIn(page).fill("Mis libros");
+    await nameIn(page).press("Enter");
+    await expect(nueva).toHaveText("Mis libros");
+    await collection.selectOption({ label: "Tareas" });
+    await expect(nueva).toHaveText("Mis libros");
+    await expect(saved(page)).toHaveText("Guardado");
+    const kept = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jnueva");
+    expect(kept?.name).toBe("Mis libros");
+    expect(kept?.params.collection).toBe("tareas");
+  });
+  test.fixme("AU-86 · renaming a step changes the chips that cite it (F: AU-21)", async () => {});
   test("A-15 · with 200 steps, dragging a box, adding a step and «Ordenar» keep the canvas moving", async ({
     page,
   }, info) => {
@@ -1105,10 +1405,13 @@ test.describe("adding a step", () => {
     const adding = await timed(
       async () => {
         await page.locator(".auto-add-top").click();
-        await choose(page, "Limitar");
+        await pick(page, "Limitar");
       },
       () => expect(cards(page)).toHaveCount(201),
     );
+    await expect(view(page)).toBeVisible();
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
     const tidying = await timed(
       () => page.locator(".auto-zoom").getByRole("button", { name: "Ordenar" }).click(),
       () => expect.poll(() => at(page, "s_inicio")).toEqual({ x: 0, y: 0 }),
@@ -1125,27 +1428,507 @@ test.describe("adding a step", () => {
 });
 
 test.describe("the step's view", () => {
-  test.fixme("AU-70 · a double click or Intro opens the step over the dimmed canvas in three columns, ENTRADA · «Parámetros | Ajustes» · SALIDA, with its icon, its name (edited there), «Probar paso» and close; Esc closes; there is no «Guardar»; a trigger's ENTRADA is its «Datos de prueba»", async () => {});
+  test("AU-70 · a double click or Intro opens the step over the dimmed canvas in three columns, ENTRADA · «Parámetros | Ajustes» · SALIDA, with its icon, its name (edited there), «Probar paso» and close; Esc closes; there is no «Guardar»; a trigger's ENTRADA is its «Datos de prueba»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [CONDITIONS, VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jbuscar");
+    // Over the canvas, which is dimmed behind it.
+    const back = page.locator(".auto-view-back");
+    const board = await page.locator(".auto-board").boundingBox();
+    const dim = await back.boundingBox();
+    expect(Math.abs((dim?.width ?? 0) - (board?.width ?? 0))).toBeLessThan(2);
+    expect(await back.evaluate((el) => getComputedStyle(el).backgroundColor)).not.toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+    // Three columns, in this order.
+    const cols = view(page).locator(".auto-view-cols > .auto-view-col");
+    await expect(cols).toHaveCount(3);
+    const xs = await cols.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().x));
+    expect([...xs].sort((a, z) => a - z)).toEqual(xs);
+    await expect(cols.nth(0)).toHaveAttribute("aria-label", "Entrada");
+    await expect(cols.nth(2)).toHaveAttribute("aria-label", "Salida");
+    await expect(view(page).locator(".auto-view-col-head")).toHaveText(["Entrada", "Salida"]);
+    await expect(cols.nth(1).getByRole("tab")).toHaveText(["Parámetros", "Ajustes"]);
+    // The header: icon, name, «Probar paso» and close; no «Guardar».
+    const header = view(page).locator(".auto-view-head");
+    await expect(header.locator(".auto-card-icon svg")).toHaveCount(1);
+    await expect(nameIn(page)).toHaveValue("Buscar filas en Libros");
+    await expect(header.getByRole("button", { name: "Probar paso" })).toBeVisible();
+    await expect(header.getByRole("button", { name: "Cerrar" })).toBeVisible();
+    await expect(view(page).getByRole("button", { name: /Guardar/ })).toHaveCount(0);
+    // Before any test: ENTRADA asks to test the steps before, SALIDA says «Sin probar».
+    await expect(cols.nth(0)).toContainText("Prueba los pasos anteriores");
+    await expect(cols.nth(0).getByRole("button", { name: "Probar los anteriores" })).toBeVisible();
+    await expect(cols.nth(2)).toContainText("Sin probar");
+    await page.screenshot({ path: `${SHOTS}/automation-step-view.png` });
+    // The name is edited there.
+    await nameIn(page).fill("Libros pendientes");
+    await nameIn(page).press("Enter");
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-name")).toHaveText(
+      "Libros pendientes",
+    );
+    // Esc closes, the step still selected; Intro opens it again; «Cerrar» and a click on the dimmed canvas close.
+    await press(page, "Escape");
+    await expect(view(page)).toHaveCount(0);
+    await expect(page.locator(".auto-card.selected")).toHaveAttribute("data-step", "s_01jbuscar");
+    await press(page, "Enter");
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jbuscar");
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    await expect(view(page)).toHaveCount(0);
+    await openStep(page, "s_01jbuscar");
+    const edge = await back.boundingBox();
+    await page.mouse.click((edge?.x ?? 0) + 6, (edge?.y ?? 0) + 6);
+    await expect(view(page)).toHaveCount(0);
+    // A trigger's ENTRADA: its «Datos de prueba».
+    await openStep(page, "s_inicio");
+    await expect(view(page).getByRole("region", { name: "Entrada" })).toContainText(
+      "Datos de prueba",
+    );
+    await expect(view(page).getByRole("region", { name: "Entrada" })).toContainText(
+      "No pide campos",
+    );
+    // One that asks fields lists them there.
+    await press(page, "Escape");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, CONDITIONS.name, 6);
+    await openStep(page, "s_inicio");
+    const asked = view(page).getByRole("region", { name: "Entrada" });
+    await expect(asked).toContainText("Datos de prueba");
+    await expect(asked.locator(".auto-test-data li")).toHaveText(["Mínimo"]);
+    await expect(asked).not.toContainText("No pide campos");
+  });
   test.fixme("AU-71 · ENTRADA says which step its rows come from and how many, lets any earlier step of the path be chosen, and is seen as «Esquema» (first, each field with a sample value cut to a line), «Tabla» or «JSON»; with more than ten fields it has a search; a related row unfolds one level; empty, it says «Prueba los pasos anteriores» with its button, which tests them; «Combinar» has a tab per input", async () => {});
   test.fixme("AU-71 · «Tabla» and «JSON» show the first 50 rows of a test of 3,000 and «N filas más» brings 50 more: the rows never arrive all at once; a table of 40 fields scrolls sideways with its cells cut to a line; a value that looks like HTML or a link is painted as text (A-01)", async () => {});
   test.fixme("AU-72 · SALIDA is seen as «Tabla» (first; «Esquema» with one row), «Esquema» or «JSON», with how many rows and a tab per output («sí (3)», «no (125)»); its foot says when it was tested and how long it took; untested it says «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas», with no rows «0 filas»", async () => {});
   test.fixme("AU-72 · a step that writes shows «Haría esto» in a test: a row per row written, each field that changes with its value before and after; creating, only after; deleting, the row as it was", async () => {});
-  test.fixme("AU-73 · «Probar paso» is at the top right; when it cannot be pressed it says why beside it: «Falta: Colección», by the names of the required parameters that are empty, or «Probando…»", async () => {});
-  test.fixme("AU-74 · under 1100 px the step's view has two columns, «Entrada | Salida» as tabs on the left and «Parámetros | Ajustes» on the right, and nothing is cut or scrolls sideways", async () => {});
+  test("AU-73 · «Probar paso» is at the top right; when it cannot be pressed it says why beside it: «Falta: Colección», by the names of the required parameters that are empty", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jnueva");
+    const box = await view(page).boundingBox();
+    const test = view(page).locator(".auto-view-head").getByRole("button", { name: "Probar paso" });
+    const at = await test.boundingBox();
+    expect((at?.x ?? 0) + (at?.width ?? 0)).toBeGreaterThan(
+      (box?.x ?? 0) + (box?.width ?? 0) - 120,
+    );
+    expect((at?.y ?? 0) - (box?.y ?? 0)).toBeLessThan(40);
+    await expect(test).toBeDisabled();
+    const why = view(page).locator(".auto-view-why");
+    await expect(why).toHaveText("Falta: Colección");
+    expect((await why.boundingBox())?.x ?? 0).toBeLessThan(at?.x ?? 0);
+    // With its collection, nothing is missing.
+    await param(page, "collection").getByRole("combobox").selectOption({ label: "Libros" });
+    await expect(why).toHaveCount(0);
+  });
+  test.fixme("AU-73 · while the step is tested, «Probando…» is said beside «Probar paso» (E: «Probar», AU-91)", async () => {});
+  test("AU-74 · under 1100 px the step's view has two columns, «Entrada | Salida» as tabs on the left and «Parámetros | Ajustes» on the right, and nothing is cut or scrolls sideways", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openApp(page, "/?still", { automations: [CONDITIONS, VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jbuscar");
+    await expect(view(page)).toHaveClass(/\bnarrow\b/);
+    const cols = view(page).locator(".auto-view-cols > .auto-view-col");
+    await expect(cols).toHaveCount(2);
+    await expect(cols.nth(0).getByRole("tab")).toHaveText(["Entrada", "Salida"]);
+    await expect(cols.nth(1).getByRole("tab")).toHaveText(["Parámetros", "Ajustes"]);
+    await expect(cols.nth(0)).toContainText("Prueba los pasos anteriores");
+    await cols.nth(0).getByRole("tab", { name: "Salida" }).click();
+    await expect(cols.nth(0)).toContainText("Sin probar");
+    // Nothing cut and nothing sideways, on each tab, down to 640 px: under it the app is the phone's,
+    // with no editor (the phone's view, only to look, is G's).
+    const sideways = () =>
+      page.evaluate(() => {
+        const wide = [
+          document.documentElement,
+          ...document.querySelectorAll(".auto-view, .auto-view-col, .auto-param, .auto-view-head"),
+        ].filter((el) => el.scrollWidth > el.clientWidth + 1);
+        return wide.map((el) => (el as HTMLElement).className || el.tagName);
+      });
+    for (const width of [1000, 640]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const tab of ["Parámetros", "Ajustes"]) {
+        await view(page)
+          .getByRole("tab", { name: new RegExp(`^${tab}`) })
+          .click();
+        await expect.poll(sideways, { message: `${width} px, ${tab}` }).toEqual([]);
+      }
+    }
+    // The widest rows: conditions with their three controls.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await press(page, "Escape");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, CONDITIONS.name, 6);
+    await openStep(page, "s_01jfiltrar");
+    await expect.poll(sideways).toEqual([]);
+  });
   test.fixme("AU-74 · on the phone the list is the collection's page and an automation opens its canvas only to look: it pans and zooms, a step opens in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something, no «Probar» and no «Probar paso», and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async () => {});
   test.fixme("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async () => {});
   test.fixme("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async () => {});
   test.fixme("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async () => {});
+  test("A-15 · with 200 steps, a step's view opens at once and each key typed in it is drawn at once", async ({
+    page,
+  }, info) => {
+    const many = Array.from({ length: 200 }, (_, i) =>
+      i === 0
+        ? step("s_inicio", "Disparado por el usuario", "manual")
+        : step(`s_01jpaso${String(i).padStart(4, "0")}`, `Limitar ${i + 1}`, "limit", { count: 5 }),
+    );
+    const long = {
+      id: "a_01jx8x0t2v4x6z8b0d2f4h6k8n",
+      name: "Doscientos límites",
+      updated: 1761995000000,
+      steps: many,
+      arrows: many.slice(1).map((s, i) => arrow(many[i]?.id as string, s.id)),
+      places: many.map((s, i) => ({ step: s.id, x: (i % 20) * 300, y: Math.floor(i / 20) * 200 })),
+    };
+    await openApp(page, "/?still", { automations: [long], agent: BEFORE() });
+    const rows = await list(page);
+    await rows.getByText("Doscientos límites", { exact: true }).click();
+    await expect(cards(page)).toHaveCount(200);
+    // Intro to the view drawn, measured in the page.
+    await card(page, "s_01jpaso0001").click();
+    await page.evaluate(() => {
+      const w = window as unknown as { __open: { key: number; shown: number } };
+      w.__open = { key: 0, shown: 0 };
+      document.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key === "Enter") w.__open.key = performance.now();
+        },
+        { capture: true, once: true },
+      );
+      const seen = new MutationObserver(() => {
+        if (!document.querySelector(".auto-view")) return;
+        seen.disconnect();
+        requestAnimationFrame(() => {
+          w.__open.shown = performance.now();
+        });
+      });
+      seen.observe(document.body, { childList: true, subtree: true });
+    });
+    await press(page, "Enter");
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jpaso0001");
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __open: { shown: number } }).__open.shown),
+      )
+      .toBeGreaterThan(0);
+    const opening = await page.evaluate(() => {
+      const o = (window as unknown as { __open: { key: number; shown: number } }).__open;
+      return o.shown - o.key;
+    });
+    // Each key typed at a person's pace, from the key to its frame; and the frames meanwhile.
+    const count = param(page, "count").getByRole("spinbutton");
+    await count.click();
+    await press(page, "Control+a");
+    await page.evaluate(() => {
+      const w = window as unknown as { __keys: number[]; __frames: number[]; __run: boolean };
+      w.__keys = [];
+      w.__frames = [];
+      w.__run = true;
+      document.addEventListener(
+        "input",
+        () => {
+          const t0 = performance.now();
+          requestAnimationFrame(() => w.__keys.push(performance.now() - t0));
+        },
+        { capture: true },
+      );
+      const tick = (t: number) => {
+        w.__frames.push(t);
+        if (w.__run) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+    await count.pressSequentially("1234567", { delay: 120 });
+    await expect(card(page, "s_01jpaso0001").locator(".auto-card-summary")).toHaveText(
+      "Cuántas 1234567",
+    );
+    const { keys, frames } = await page.evaluate(() => {
+      const w = window as unknown as { __keys: number[]; __frames: number[]; __run: boolean };
+      w.__run = false;
+      return {
+        keys: w.__keys,
+        frames: w.__frames.slice(1).map((t, i) => t - (w.__frames[i] as number)),
+      };
+    });
+    const worstKey = Math.max(...keys);
+    const worstFrame = Math.max(...frames);
+    const mean = frames.reduce((a, z) => a + z, 0) / frames.length;
+    info.annotations.push({
+      type: "A-15",
+      description: `200 steps: the view opened in ${opening.toFixed(0)} ms; ${keys.length} keys typed, the worst drawn in ${worstKey.toFixed(1)} ms; frames meanwhile mean ${mean.toFixed(1)} ms, worst ${worstFrame.toFixed(1)} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    // Measured here (2026-11-16, headless Chrome with no GPU): opened in 68 to 112 ms, the worst key 57 to 66 ms,
+    // frames 29 to 31 ms; a key redraws its own card only (it redrew all 200 on the first key until a name that
+    // follows nothing stopped being renamed). The margins are for CI.
+    expect(keys).toHaveLength(7);
+    expect(opening).toBeLessThan(400);
+    expect(worstKey).toBeLessThan(120);
+    expect(mean).toBeLessThan(45);
+  });
 });
 
 test.describe("against a sea of options", () => {
-  test.fixme("AU-75 · every step type of the catalogue, with each of its actions, paints seven rows at most in «Parámetros» before «Añadir opción»: the rows are counted on the screen, type by type and action by action; a list is one row, and what is inside one of its entries is seen only once it is opened", async () => {});
-  test.fixme("AU-76 · «Añadir opción» lists the options of the action that are not there yet; an added one is a row that can be taken away, and is then its default again; with none left the button is not there", async () => {});
-  test.fixme("AU-78 · «Ajustes» has the same six rows in every step type: Si falla, Reintentar, Seguir sin filas, Solo la primera fila, Nota and Apagado", async () => {});
-  test.fixme("AU-79 · every setting or option not at its default is a short label on the step's card («Si falla: seguir», «Reintenta 2 veces», «Sigue sin filas», «Solo la primera fila», «Nota», «Apagado», an option by its name), in a line under the summary, with the ones that do not fit joined in «+2», which says them on hover; the tab «Ajustes» counts what changed; the three that change the rows are said above SALIDA too; an off step's card is dimmed", async () => {});
-  test.fixme("AU-81 · the conditions of «Filtrar», «Si», «Buscar filas», «Modificar filas» and «Eliminar filas» are the same control, the views' filter: «todas» by default, groups «y» or «o» of one level, operators by the field's type, and the value fixed or an expression", async () => {});
-  test.fixme("AU-82 · changing a step's action keeps what the two share and a notice says what went, «Se quitó: Ordenar por, Límite · Deshacer»; its «Deshacer» brings it all back", async () => {});
-  test.fixme("AU-83 · a required parameter left empty is not marked on opening the step; it is once Juan leaves it, and all of them are after «Probar» or «Probar paso», with the mark on the step's card too", async () => {});
+  test("AU-75 · every step type of the catalogue, with each of its actions, paints seven rows at most in «Parámetros» before «Añadir opción»: the rows are counted on the screen, type by type and action by action; a list is one row, and what is inside one of its entries is seen only once it is opened", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [SEA, VIEWED], agent: BEFORE() });
+    await openCanvas(page, SEA.name, SEA.steps.length);
+    const counted: string[] = [];
+    for (const s of SEA.steps) {
+      await openStep(page, s.id);
+      const shown = paramsOf(s as never).filter((p) => p.place === "shown").length;
+      await expect(paramRows(page)).toHaveCount(shown);
+      const rows = await paramRows(page).count();
+      expect(rows, `${s.type} ${JSON.stringify(s.params)}`).toBeLessThanOrEqual(7);
+      // «Añadir opción», when there is one, comes after them.
+      const add = view(page).getByRole("button", { name: "Añadir opción" });
+      if (await add.count())
+        expect((await add.boundingBox())?.y ?? 0).toBeGreaterThan(
+          (await paramRows(page).last().boundingBox())?.y ?? 0,
+        );
+      counted.push(`${s.type}${s.params.action ? `.${s.params.action}` : ""}: ${rows}`);
+      await press(page, "Escape");
+      await expect(view(page)).toHaveCount(0);
+    }
+    expect(new Set(SEA.steps.map((s) => s.type)).size).toBe(CATALOGUE.length);
+    console.log(`AU-75 · rows in «Parámetros»: ${counted.join(", ")}`);
+    // A list is one row; what is in its entry is seen once it is opened.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jbuscar");
+    const sort = param(page, "sort");
+    await expect(sort.locator(".auto-entry")).toHaveCount(1);
+    await expect(sort.locator(".auto-entry-body")).toHaveCount(0);
+    await sort.locator(".auto-entry-line").click();
+    await expect(sort.locator(".auto-entry-body .auto-entry-field")).toHaveCount(2);
+    await sort.locator(".auto-entry-line").click();
+    await expect(sort.locator(".auto-entry-body")).toHaveCount(0);
+  });
+  test("AU-76 · «Añadir opción» lists the options of the action that are not there yet; an added one is a row that can be taken away, and is then its default again; with none left the button is not there", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jbuscar");
+    const add = view(page).getByRole("button", { name: "Añadir opción" });
+    await expect(param(page, "related")).toHaveCount(0);
+    await add.click();
+    await expect(page.locator(".pop-box .menu-item")).toHaveText(["Incluir relacionadas"]);
+    await page.getByRole("menuitemradio", { name: "Incluir relacionadas" }).click();
+    // A row of its own, on: with none left, no button.
+    await expect(param(page, "related").getByRole("checkbox")).toBeChecked();
+    await expect(add).toHaveCount(0);
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-labels")).toContainText(
+      "Incluir relacionadas",
+    );
+    await expect(saved(page)).toHaveText("Guardado");
+    const on = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jbuscar");
+    expect(on?.params.related).toBe(true);
+    // Taken away: its default again, and the button back.
+    await view(page).getByRole("button", { name: "Quitar: Incluir relacionadas" }).click();
+    await expect(param(page, "related")).toHaveCount(0);
+    await expect(add).toBeVisible();
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-labels")).toHaveCount(0);
+    await expect(saved(page)).toHaveText("Guardado");
+    const off = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jbuscar");
+    expect(off?.params).not.toHaveProperty("related");
+    // A step with no options has no button.
+    await press(page, "Escape");
+    await openStep(page, "s_01jfiltrar");
+    await expect(view(page).getByRole("button", { name: "Añadir opción" })).toHaveCount(0);
+  });
+  test("AU-78 · «Ajustes» has the same six rows in every step type: Si falla, Reintentos, Seguir sin filas, Solo la primera fila, Nota and Apagado", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [SEA], agent: BEFORE() });
+    await openCanvas(page, SEA.name, SEA.steps.length);
+    const seen = new Set<string>();
+    for (const s of SEA.steps) {
+      if (seen.has(s.type)) continue;
+      seen.add(s.type);
+      await openStep(page, s.id);
+      await view(page)
+        .getByRole("tab", { name: /^Ajustes/ })
+        .click();
+      await expect(view(page).locator(".auto-param[data-setting] .auto-param-name")).toHaveText([
+        "Si falla",
+        "Reintentos",
+        "Seguir sin filas",
+        "Solo la primera fila",
+        "Nota",
+        "Apagado",
+      ]);
+      await press(page, "Escape");
+      await expect(view(page)).toHaveCount(0);
+    }
+    expect(seen.size).toBe(CATALOGUE.length);
+  });
+  test("AU-79 · every setting or option not at its default is a short label on the step's card («Si falla: seguir», «Reintenta 2 veces», «Sigue sin filas», «Solo la primera fila», «Nota», «Apagado», an option by its name), in a line under the summary, with the ones that do not fit joined in «+2», which says them on hover; the tab «Ajustes» counts what changed; the three that change the rows are said above SALIDA too; an off step's card is dimmed", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    const limitar = card(page, "s_01jlimitar");
+    const labels = limitar.locator(".auto-card-labels");
+    // What fits, then «+5», which says the rest on hover.
+    await expect(labels.locator(".auto-label")).toHaveText(["Si falla: seguir", "+5"]);
+    await expect(labels.locator(".auto-label.more")).toHaveAttribute(
+      "title",
+      "Reintenta 2 veces · Sigue sin filas · Solo la primera fila · Nota · Apagado",
+    );
+    // One line, under the summary.
+    const line = await labels.boundingBox();
+    const summary = await limitar.locator(".auto-card-summary").boundingBox();
+    expect(line?.y ?? 0).toBeGreaterThanOrEqual((summary?.y ?? 0) + (summary?.height ?? 0) - 1);
+    expect(await labels.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+    // Off: dimmed.
+    await expect(limitar).toHaveClass(/\boff\b/);
+    expect(Number(await limitar.evaluate((el) => getComputedStyle(el).opacity))).toBeLessThan(1);
+    // In the view: «Ajustes (6)», and the three that change the rows above SALIDA.
+    await openStep(page, "s_01jlimitar");
+    const tab = view(page).getByRole("tab", { name: /^Ajustes/ });
+    await expect(tab).toHaveText("Ajustes (6)");
+    const out = view(page).getByRole("region", { name: "Salida" }).locator(".auto-label");
+    await expect(out).toHaveText(["Sigue sin filas", "Solo la primera fila", "Apagado"]);
+    // A change is on the card at once.
+    await tab.click();
+    await view(page).getByRole("checkbox", { name: "Seguir sin filas" }).uncheck();
+    await expect(tab).toHaveText("Ajustes (5)");
+    await expect(labels.locator(".auto-label.more")).toHaveText("+4");
+    await expect(out).toHaveText(["Solo la primera fila", "Apagado"]);
+    await view(page).getByRole("combobox", { name: "Si falla" }).selectOption({ label: "Parar" });
+    await expect(labels.locator(".auto-label").first()).toHaveText("Reintenta 2 veces");
+    await expect(tab).toHaveText("Ajustes (4)");
+    // A step at its defaults has no labels.
+    await expect(card(page, "s_01jfiltrar").locator(".auto-card-labels")).toHaveCount(0);
+  });
+  test("AU-81 · the conditions of «Filtrar», «Si», «Buscar filas», «Modificar filas» and «Eliminar filas» are the same control, the views' filter: «todas» by default, groups «y» or «o» of one level, operators by the field's type, and the value fixed or an expression", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [CONDITIONS], agent: BEFORE() });
+    await openCanvas(page, CONDITIONS.name, 6);
+    const where = () => param(page, "where");
+    const ops = (row = 0) =>
+      optionsIn(
+        where().locator(".db-filter-row").nth(row).getByRole("combobox", { name: "Condición" }),
+      );
+    // The same control in the five.
+    for (const id of [
+      "s_01jbuscar",
+      "s_01jfiltrar",
+      "s_01jsi",
+      "s_01jmodificar",
+      "s_01jeliminar",
+    ]) {
+      await openStep(page, id);
+      await expect(where().locator(".auto-conditions")).toHaveCount(1);
+      await expect(where().getByRole("button", { name: "Añadir filtro" })).toBeVisible();
+      await expect(where().getByRole("button", { name: "Filtro avanzado" })).toBeVisible();
+      await press(page, "Escape");
+      await expect(view(page)).toHaveCount(0);
+    }
+    // Operators by the field's type: a choice, a number with an expression for its value.
+    await openStep(page, "s_01jbuscar");
+    expect(await ops()).toEqual(["es", "no es", "está vacío", "no está vacío"]);
+    await press(page, "Escape");
+    await openStep(page, "s_01jfiltrar");
+    expect(await ops()).toEqual(["es", "mayor que", "menor que", "está vacío", "no está vacío"]);
+    const expr = where().locator(".auto-input.expr");
+    await expect(expr).toHaveValue("{{ $json.minimo }}");
+    // A run of keys in a condition's value is one step of Deshacer, and Ctrl+Y brings it back (AU-68).
+    await expr.fill("");
+    await expr.pressSequentially("{{ $json.maximo }}", { delay: 40 });
+    await press(page, "Control+z");
+    await expect(expr).toHaveValue("{{ $json.minimo }}");
+    await press(page, "Control+y");
+    await expect(expr).toHaveValue("{{ $json.maximo }}");
+    await press(page, "Escape");
+    await expect(expr).not.toBeFocused();
+    await press(page, "Escape");
+    // «Si» with none: «todas»; the fields are those of the rows that reach it.
+    await openStep(page, "s_01jsi");
+    await expect(where()).toContainText("Sin filtros: se ven todos.");
+    await where().getByRole("button", { name: "Añadir filtro" }).click();
+    const field = where()
+      .locator(".db-filter-row")
+      .first()
+      .getByRole("combobox", { name: "Propiedad" });
+    expect(await optionsIn(field)).toEqual(
+      expect.arrayContaining(["Título", "Estado", "Páginas", "Terminado", "Favorito"]),
+    );
+    await field.selectOption({ label: "Favorito" });
+    expect(await ops()).toEqual(["marcado", "sin marcar"]);
+    await field.selectOption({ label: "Terminado" });
+    expect(await ops()).toEqual(["es", "antes de", "después de", "está vacío", "no está vacío"]);
+    // A group «y» or «o», of one level.
+    await where().getByRole("button", { name: "Filtro avanzado" }).click();
+    await expect(saved(page)).toHaveText("Guardado");
+    const si = (await lastDraft(page, CONDITIONS.id))?.steps.find((s) => s.id === "s_01jsi");
+    const items = si?.params.where as { join?: string; rules?: unknown[] }[];
+    expect(items).toHaveLength(2);
+    expect(["and", "or"]).toContain(items[1]?.join);
+    expect(Array.isArray(items[1]?.rules)).toBe(true);
+  });
+  test("AU-82 · changing a step's action keeps what the two share and a notice says what went, «Se quitó: Ordenar por, Límite · Deshacer»; its «Deshacer» brings it all back", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jbuscar");
+    await param(page, "action").getByRole("combobox").selectOption({ label: "Contar o sumar" });
+    const notice = view(page).locator(".auto-view-notice");
+    await expect(notice).toContainText("Se quitó: Ordenar por, Límite");
+    await expect(param(page, "sort")).toHaveCount(0);
+    await expect(param(page, "limit")).toHaveCount(0);
+    // What the two share stays: the collection and the conditions.
+    await expect(param(page, "collection").getByRole("combobox")).toHaveValue("libros");
+    await expect(param(page, "where").locator(".db-filter-row")).toHaveCount(1);
+    await expect(saved(page)).toHaveText("Guardado");
+    const changed = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jbuscar");
+    expect(changed?.params.action).toBe("aggregate");
+    expect(changed?.params).not.toHaveProperty("sort");
+    // «Deshacer» brings it all back.
+    await notice.getByRole("button", { name: "Deshacer" }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(param(page, "action").getByRole("combobox")).toHaveValue("find");
+    await expect(param(page, "sort")).toHaveCount(1);
+    await expect(param(page, "limit").getByRole("spinbutton")).toHaveValue("10");
+    await expect(saved(page)).toHaveText("Guardado");
+    const back = (await lastDraft(page, VIEWED.id))?.steps.find((s) => s.id === "s_01jbuscar");
+    expect(back?.params).toEqual(VIEWED.steps[1]?.params);
+  });
+  test("AU-83 · a required parameter left empty is not marked on opening the step; it is once Juan leaves it, with the mark on the step's card too", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VIEWED], agent: BEFORE() });
+    await openCanvas(page, VIEWED.name, 5);
+    await openStep(page, "s_01jnueva");
+    const row = param(page, "collection");
+    await expect(row).not.toHaveClass(/\bmarked\b/);
+    await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveCount(0);
+    // Left empty: marked, in the view and on the card.
+    await row.getByRole("combobox").focus();
+    await press(page, "Tab");
+    await expect(row).toHaveClass(/\bmarked\b/);
+    await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveAttribute(
+      "title",
+      "Falta: Colección",
+    );
+    // Given a value, the mark goes.
+    await row.getByRole("combobox").selectOption({ label: "Libros" });
+    await expect(row).not.toHaveClass(/\bmarked\b/);
+    await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveCount(0);
+  });
+  test.fixme("AU-83 · after «Probar» or «Probar paso» every required parameter left empty is marked, on its card too (E: «Probar», AU-90, AU-91)", async () => {});
   test.fixme("AU-84 · each empty, stale or failed state says what to do next: a list with nothing (with «Nueva»), an empty canvas, an ENTRADA with no data, a SALIDA never tested, a stale one, a failed step (with «Ir al parámetro», which opens that parameter), a search with nothing and a draft not saved", async () => {});
 });
 

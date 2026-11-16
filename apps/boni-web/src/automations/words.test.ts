@@ -1,9 +1,11 @@
 // The words of «Automatizaciones» (docs/automatizaciones.md AU-25, AU-60, AU-85, AU-86). Pending but the first: the
 // builder's PRs bring the words into i18n.ts and turn each into a real test, the rule's id kept in its name.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { FORMAT, type Step } from "@boni/automations";
 import { describe, expect, it } from "vitest";
-import { KEYS, translator } from "../i18n.ts";
+import { KEYS, type Lang, translator } from "../i18n.ts";
 import { catalogueKeys, DO, namer, uniqueName } from "./words.ts";
 
 describe("the words of «Automatizaciones»", () => {
@@ -12,9 +14,37 @@ describe("the words of «Automatizaciones»", () => {
     expect(new Set(keys).size).toBe(keys.length);
     for (const k of keys) expect(k).toMatch(/^auto\.do\.[a-zA-Z]+$/);
   });
-  it.todo(
-    "AU-85 · the word of each thing the editor does is said by one key of i18n.ts: no other key of auto. says the same in either language, and no component names an auto.do. key but through DO",
-  );
+  it("AU-85 · the word of each thing the editor does is said by one key of i18n.ts: no other key of auto. says the same in either language, and no component names an auto.do. key but through DO", () => {
+    const own = new Set<string>(Object.values(DO));
+    for (const lang of ["es", "en"] as Lang[]) {
+      const t = translator(lang);
+      const others = new Map<string, string>();
+      for (const k of KEYS)
+        if (k.startsWith("auto.") && !own.has(k)) others.set(t(k).toLowerCase(), k);
+      for (const k of own) {
+        const word = t(k);
+        expect(word, `${k} (${lang})`).not.toBe(k);
+        expect(others.get(word.toLowerCase()), `${k} «${word}» (${lang})`).toBeUndefined();
+      }
+    }
+    // The components and the rest of the app say them through DO: no `auto.do.` written anywhere but words.ts.
+    const src = join(import.meta.dirname, "..");
+    const files = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory()
+          ? files(join(dir, e.name))
+          : /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)
+            ? [join(dir, e.name)]
+            : [],
+      );
+    const named = files(src).filter(
+      (f) =>
+        !f.endsWith("/i18n.ts") &&
+        !f.endsWith("/automations/words.ts") &&
+        readFileSync(f, "utf8").includes('"auto.do.'),
+    );
+    expect(named).toEqual([]);
+  });
   it("AU-86 · every step type, action, parameter, choice, output, setting, measure, problem and failure the catalogue has is worded in i18n.ts in both languages: a name, a card and a panel never show a key", () => {
     const keys = catalogueKeys();
     // Each kind is there: a few of each, so the list is the catalogue's and not an empty one.
