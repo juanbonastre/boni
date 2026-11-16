@@ -516,10 +516,10 @@ test.describe("the editor", () => {
     await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
     await expect(nameBox(page)).toHaveValue("Libros por leer (copia)");
     await expect(cards(page)).toHaveCount(4);
-    expect(await placesOf(page, CHAIN_IDS)).toEqual(was);
-    expect(await arrowsSeen(page)).toEqual(
-      CHAIN.arrows.map((a) => `${a.from.step}>${a.to.step}`).sort(),
-    );
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(was);
+    await expect
+      .poll(() => arrowsSeen(page))
+      .toEqual(CHAIN.arrows.map((a) => `${a.from.step}>${a.to.step}`).sort());
   });
   test("AU-63 · the canvas reads left to right: each step a card of one width with its icon, its name and one line of summary, both cut with an ellipsis and whole on hover; the outputs on the right with their names; a canvas with only its trigger says nothing more", async ({
     page,
@@ -587,14 +587,14 @@ test.describe("the editor", () => {
     await expect(cards(page)).toHaveCount(5);
     await expect(selected).toHaveCount(1);
     await expect(selected.locator(".auto-card-name")).toHaveText("Filtrar 2");
-    expect(await arrowsSeen(page)).toHaveLength(3);
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(3);
     // The «+» of an output with no arrow: the new step hangs from it.
     await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
     await expect(panel(page)).toBeVisible();
     await choose(page, "Ordenar");
     await expect(selected.locator(".auto-card-name")).toHaveText("Ordenar 2");
     const second = (await selected.getAttribute("data-step")) as string;
-    expect(await arrowsSeen(page)).toContain(`s_01jordenar>${second}`);
+    await expect.poll(() => arrowsSeen(page)).toContain(`s_01jordenar>${second}`);
     // Dragging from that output and letting go on the canvas: the same panel, and the step hangs from it.
     const out = node(page, second).locator(".react-flow__handle.source");
     const from = await middle(out);
@@ -693,7 +693,7 @@ test.describe("the editor", () => {
     await expect(arrowBar.getByRole("button")).toHaveCount(2);
     await expect(arrowBar.getByRole("button", { name: "Añadir un paso" })).toBeVisible();
     await arrowBar.getByRole("button", { name: "Quitar la flecha" }).click();
-    expect(await arrowsSeen(page)).not.toContain("s_inicio>s_01jbuscar");
+    await expect.poll(() => arrowsSeen(page)).not.toContain("s_inicio>s_01jbuscar");
   });
   test("AU-66 · deleting a step between two others joins them with one arrow; deleting one with two outputs in use takes its arrows", async ({
     page,
@@ -703,13 +703,15 @@ test.describe("the editor", () => {
     await card(page, "s_01jbuscar").click();
     await bar(page).getByRole("button", { name: "Eliminar" }).click();
     await expect(cards(page)).toHaveCount(3);
-    expect(await arrowsSeen(page)).toEqual(["s_01jfiltrar>s_01jordenar", "s_inicio>s_01jfiltrar"]);
+    await expect
+      .poll(() => arrowsSeen(page))
+      .toEqual(["s_01jfiltrar>s_01jordenar", "s_inicio>s_01jfiltrar"]);
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     await openCanvas(page, "Separar por estado", 4);
     await card(page, "s_01jsi").click({ button: "right" });
     await page.getByRole("menuitemradio", { name: "Eliminar" }).click();
     await expect(cards(page)).toHaveCount(3);
-    expect(await arrowsSeen(page)).toEqual([]);
+    await expect.poll(() => arrowsSeen(page)).toEqual([]);
   });
   test("AU-68 · Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+Y redoes a step added, removed, connected, moved and renamed; Ctrl+C, X and V copy, cut and paste the selected steps with the arrows between them; Supr deletes, Esc closes; what was undone is saved; a key typed in a field is the field's; after a reload there is nothing to undo", async ({
     page,
@@ -723,7 +725,7 @@ test.describe("the editor", () => {
     await expect(cards(page)).toHaveCount(3);
     await press(page, "Control+z");
     await expect(cards(page)).toHaveCount(4);
-    expect(await arrowsSeen(page)).toEqual(chain);
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
     await press(page, "Control+Shift+z");
     await expect(cards(page)).toHaveCount(3);
     await press(page, "Control+z");
@@ -761,17 +763,17 @@ test.describe("the editor", () => {
     // Disconnected and connected again by dragging from an output to an input.
     await page.mouse.click(...xy(await arrowMiddle(page, "s_01jfiltrar", "s_01jordenar")));
     await page.locator(".auto-arrow-bar").getByRole("button", { name: "Quitar la flecha" }).click();
-    expect(await arrowsSeen(page)).toHaveLength(2);
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(2);
     await drag(
       page,
       await middle(node(page, "s_01jfiltrar").locator(".react-flow__handle.source")),
       await middle(node(page, "s_01jordenar").locator(".react-flow__handle.target")),
     );
-    expect(await arrowsSeen(page)).toEqual(chain);
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
     await press(page, "Control+z");
-    expect(await arrowsSeen(page)).toHaveLength(2);
+    await expect.poll(() => arrowsSeen(page)).toHaveLength(2);
     await press(page, "Control+z");
-    expect(await arrowsSeen(page)).toEqual(chain);
+    await expect.poll(() => arrowsSeen(page)).toEqual(chain);
     // What was undone is saved: the draft as it was opened.
     await expect(saved(page)).toHaveText("Guardado");
     const back = await lastDraft(page, CHAIN.id);
@@ -786,14 +788,14 @@ test.describe("the editor", () => {
     await page.mouse.move(flow.x + flow.width / 2, flow.y + flow.height - 120);
     await press(page, "Control+v");
     await expect(cards(page)).toHaveCount(6);
-    expect(await cardNames(page)).toEqual(
-      expect.arrayContaining(["Buscar filas en Libros 2", "Filtrar 2"]),
-    );
+    await expect
+      .poll(() => cardNames(page))
+      .toEqual(expect.arrayContaining(["Buscar filas en Libros 2", "Filtrar 2"]));
     const pasted = await page
       .locator(".auto-card.selected")
       .evaluateAll((els) => els.map((e) => e.getAttribute("data-step") as string));
     expect(pasted).toHaveLength(2);
-    expect(await arrowsSeen(page)).toContain(`${pasted[0]}>${pasted[1]}`);
+    await expect.poll(() => arrowsSeen(page)).toContain(`${pasted[0]}>${pasted[1]}`);
     // Cut: gone, and pasted again.
     await press(page, "Control+x");
     await expect(cards(page)).toHaveCount(4);
@@ -841,9 +843,9 @@ test.describe("the editor", () => {
     expect(pasted).not.toContain("s_01jbuscar");
     expect(pasted).not.toContain("s_01jfiltrar");
     await expect.poll(() => arrowsSeen(page)).toEqual([`${pasted[0]}>${pasted[1]}`]);
-    expect(await cardNames(page)).toEqual(
-      expect.arrayContaining(["Buscar filas en Libros", "Filtrar"]),
-    );
+    await expect
+      .poll(() => cardNames(page))
+      .toEqual(expect.arrayContaining(["Buscar filas en Libros", "Filtrar"]));
   });
   test.fixme("AU-68 · Ctrl+Z undoes a parameter or a setting changed in the step's view, and Intro opens the selected step (D: the step's view, AU-70)", async () => {});
   test("AU-05 · a box stays where it is dropped, opened again too, and moving it does not say «Guardando…» nor send the draft; a new step goes to the right of the one it hangs from and no other box moves; «Ordenar» moves them all and Ctrl+Z puts them back", async ({
@@ -868,17 +870,19 @@ test.describe("the editor", () => {
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     await rows.getByText("Libros por leer", { exact: true }).click();
     await expect(cards(page)).toHaveCount(4);
-    expect(await at(page, "s_01jfiltrar")).toEqual(dropped);
+    await expect.poll(() => at(page, "s_01jfiltrar")).toEqual(dropped);
     // A new step: to the right of the one it hangs from, at its height; no other box moves.
     const before = await placesOf(page, CHAIN_IDS);
     await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
     await choose(page, "Limitar");
     const made = (await page.locator(".auto-card.selected").getAttribute("data-step")) as string;
-    expect(await at(page, made)).toEqual({
-      x: before.s_01jordenar.x + 300,
-      y: before.s_01jordenar.y,
-    });
-    expect(await placesOf(page, CHAIN_IDS)).toEqual(before);
+    await expect
+      .poll(() => at(page, made))
+      .toEqual({
+        x: before.s_01jordenar.x + 300,
+        y: before.s_01jordenar.y,
+      });
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(before);
     // Its box is kept like one dropped, once the server has the step.
     await expect
       .poll(async () => (await layouts(page, CHAIN.id)).at(-1))
@@ -904,7 +908,7 @@ test.describe("the editor", () => {
     const opened = await placesOf(page, CHAIN_IDS);
     await page.waitForTimeout(1500);
     expect(await asked(page)).toEqual([`GET ${CHAIN.id}`]);
-    expect(await placesOf(page, CHAIN_IDS)).toEqual(opened);
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(opened);
     // One step added: that step, its one arrow, and nothing else.
     await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();
     await choose(page, "Filtrar");
@@ -915,7 +919,7 @@ test.describe("the editor", () => {
     const made = after?.steps[4];
     expect(made).toEqual({ id: made?.id, name: "Filtrar 2", type: "filter", params: {} });
     expect(after?.arrows).toEqual([...CHAIN.arrows, arrow("s_01jordenar", made?.id as string)]);
-    expect(await placesOf(page, CHAIN_IDS)).toEqual(opened);
+    await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(opened);
     // A step of «Colección» carries its action and nothing more.
     await page.locator(".auto-add-top").click();
     await choose(page, "Buscar filas");
