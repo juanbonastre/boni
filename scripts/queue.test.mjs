@@ -184,9 +184,11 @@ test("runs in line are served in the order they arrived, each saying its place o
     /queue: waiting, place 4 in line \(3 ahead of us\), the queue is held by .*repo/,
   );
   assert.match(rs[3].out, /queue: our turn after \d+ s/);
-  // One line per change of place at most, never one per look at the line.
+  // One line per change of place at most, never one per look at the line. One line alone is right too: on a fast
+  // machine the three ahead can run and end between two looks, and the next look finds the queue free (main's ci,
+  // 2026-11-16, after PR 466: only «place 4» was said; task 134).
   const lines = rs[3].out.match(/queue: waiting/g).length;
-  assert.ok(lines >= 2 && lines <= 8, rs[3].out);
+  assert.ok(lines >= 1 && lines <= 8, rs[3].out);
 });
 
 test("a run killed while waiting never takes its turn nor blocks the next", async () => {
