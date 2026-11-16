@@ -510,8 +510,10 @@ test.describe("the editor", () => {
   }) => {
     await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
     await openCanvas(page, "Libros por leer", 4);
+    await expect
+      .poll(() => placesOf(page, CHAIN_IDS))
+      .toEqual(Object.fromEntries(CHAIN.places.map((p) => [p.step, { x: p.x, y: p.y }])));
     const was = await placesOf(page, CHAIN_IDS);
-    expect(was).toEqual(Object.fromEntries(CHAIN.places.map((p) => [p.step, { x: p.x, y: p.y }])));
     await head(page).getByRole("button", { name: "Más" }).click();
     await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
     await expect(nameBox(page)).toHaveValue("Libros por leer (copia)");
@@ -615,8 +617,8 @@ test.describe("the editor", () => {
     await expect(panel(page)).toBeVisible();
     await choose(page, "Quitar duplicados");
     const between = (await selected.getAttribute("data-step")) as string;
+    await expect.poll(() => arrowsSeen(page)).toContain(`s_01jbuscar>${between}`);
     const seen = await arrowsSeen(page);
-    expect(seen).toContain(`s_01jbuscar>${between}`);
     expect(seen).toContain(`${between}>s_01jfiltrar`);
     expect(seen).not.toContain("s_01jbuscar>s_01jfiltrar");
     // A right click on the canvas: connected to nothing, its box where the click was.
@@ -856,8 +858,8 @@ test.describe("the editor", () => {
     await expect(saved(page)).toHaveText("Guardado");
     const c = await middle(card(page, "s_01jfiltrar"));
     await drag(page, c, { x: c.x + 30, y: c.y + 150 });
+    await expect.poll(async () => (await at(page, "s_01jfiltrar")).y).toBeGreaterThan(100);
     const dropped = await at(page, "s_01jfiltrar");
-    expect(dropped.y).toBeGreaterThan(100);
     // Never «Guardando…»: the draft did not change. One request when it is dropped, with that box alone.
     await expect(saved(page)).toHaveText("Guardado");
     await expect
