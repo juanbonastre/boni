@@ -1070,7 +1070,7 @@ return $col('Tienda').find().map((t) => ({ tienda: t.nombre, gastado: gastado[t.
     timing("AU-38 · an empty call's share of an average call", (100 * bare) / call, "%");
     timing("AU-38 · the server's heap grew at most", grew / 2 ** 20, "MB");
 
-    under(took, 15_000, "clock", "a test of five steps of JavaScript over 3,000 rows");
+    under(took, 10_000, "clock", "a test of five steps of JavaScript over 3,000 rows");
     expect(grew).toBeLessThan(160 * 2 ** 20);
   }, 120_000);
 });
