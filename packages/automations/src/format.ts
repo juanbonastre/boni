@@ -6,6 +6,7 @@
  * Contracts of phase F14a: the types are final, the functions marked «not built» are the builder's.
  */
 import type { FILTER_OPS } from "@boni/views";
+import type { Connection } from "./connections.ts";
 import { renameInExpression } from "./expression.ts";
 
 /**
@@ -42,6 +43,11 @@ export interface Step {
   params: Record<string, ParamValue>;
   /** The same six for every type (AU-78); a missing one is its default (`SETTINGS_DEFAULTS`). */
   settings?: StepSettings;
+  /**
+   * What the step may do in the collections it is joined to (§5.5, connections.ts). F14c: only «Código» has them,
+   * and only to read. Not read yet: until F14c's engine is in, a saved step with it does not validate.
+   */
+  connections?: Connection[];
 }
 
 /** From one output of a step to one input of another, by their ids and the names the catalogue gives them (AU-03). */

@@ -28,6 +28,7 @@
  * that failed and goes on; «Salir por error» sends them out by `OUT.error`, each with the field `ERROR_FIELD`.
  */
 import type { Label, Labeled } from "@boni/entities";
+import type { Box, ConsoleLine, ReadRecord } from "./box.ts";
 import {
   actionOf,
   inputsOf,
@@ -107,6 +108,12 @@ export interface StepRecord {
   asked: number;
   /** Why it failed, when `state` is `failed`; with «Seguir», the first failure of a row. */
   error?: StepError;
+  /** «Consola» (AU-33, F14c): what its JavaScript wrote, cut to `CODE_LIMITS.consoleLines`; `dropped` counts the rest. */
+  console?: { lines: ConsoleLine[]; dropped: number };
+  /** The reads its JavaScript made through the step's connections (AU-161, F14c): what, how much, never the rows. */
+  reads?: ReadRecord[];
+  /** Whether its JavaScript read the clock or chance (AU-34, F14c): what the screen says of a kept step that did. */
+  uses?: { clock: boolean; random: boolean };
 }
 
 export interface Execution {
@@ -118,6 +125,11 @@ export interface Execution {
   state: "done" | "failed";
   /** Epoch ms, from the clock. */
   started: number;
+  /**
+   * The seed of its chance (AU-34, F14c): with `started`, which is also the instant its JavaScript sees, all a run
+   * knows of the clock and of chance. Absent until F14c's engine is in.
+   */
+  seed?: number;
   ms: number;
   /** `executionOrder`: the steps that hang from the trigger, in the order they were decided. */
   order: string[];
@@ -152,6 +164,11 @@ export interface RunDeps {
   own: Label;
   /** The language «Dar formato» writes in. */
   locale: string;
+  /**
+   * Where JavaScript runs (box.ts, F14c). Not read yet. Without one, an automation with JavaScript does not run:
+   * validation refuses it (`expr.code`) as it does today.
+   */
+  box?: Box;
 }
 
 /**

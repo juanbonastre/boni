@@ -1,11 +1,16 @@
+export * from "./box.ts";
 export * from "./catalogue.ts";
+export * from "./code.ts";
+export * from "./connections.ts";
 export * from "./effects.ts";
 export * from "./engine.ts";
 export * from "./expression.ts";
 export * from "./failures.ts";
 export * from "./format.ts";
 export * from "./graph.ts";
+export * from "./javascript.ts";
 export * from "./partial.ts";
+export * from "./preview.ts";
 export * from "./rows.ts";
 export { canonical, compare, measure } from "./steps.ts";
 export * from "./validate.ts";

@@ -49,6 +49,11 @@ export interface Kept {
   record: StepRecord;
   /** When that test ran (epoch ms): «probado hace 2 min». */
   at: number;
+  /**
+   * The instant and the seed its JavaScript ran with (AU-34, F14c): what a preview of one of its expressions is
+   * calculated with, so it shows what the test gave (AU-27). Absent on a step kept before F14c's engine.
+   */
+  clock?: { now: number; seed: number };
 }
 
 /**
