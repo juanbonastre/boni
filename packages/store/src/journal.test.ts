@@ -371,3 +371,83 @@ describe("flows (docs/flujos.md, F1)", () => {
     expect(j.flowDraft("resumen")).toBeNull();
   });
 });
+
+describe("the rows of a kept test of an automation (AU-71, AU-91)", () => {
+  // Rows shaped like his after a step that adds fields: an id like the app's and 40 fields of short text.
+  const rowOf = (i: number) => ({
+    json: Object.fromEntries(
+      Array.from({ length: 40 }, (_, f) => [
+        `campo_${f}`,
+        `un valor de ejemplo ${f} de la fila ${i}`,
+      ]),
+    ),
+    origin: { collection: "gasto", id: `o_01ejemplo${String(i).padStart(14, "0")}`, version: 1 },
+  });
+  const opened = () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-tests-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const path = join(dir, "user.db");
+    const store = openUserStore(path);
+    cleanups.push(() => store.close());
+    return { store, path };
+  };
+  const keep = (store: ReturnType<typeof openUserStore>, step: string, rows: readonly object[]) =>
+    store.journal.keepAutomationTests("a_ejemplo", [
+      { step, print: "p", at: 1, record: "{}", rows: { main: rows.map((r) => JSON.stringify(r)) } },
+    ]);
+  const parses = (read: () => unknown) => {
+    let n = 0;
+    const real = JSON.parse;
+    JSON.parse = ((text: string, ...rest: []) => {
+      n++;
+      return real(text, ...rest);
+    }) as typeof JSON.parse;
+    try {
+      read();
+    } finally {
+      JSON.parse = real;
+    }
+    return n;
+  };
+
+  it("each chunk is parsed once and gives the rows as values: a page in one chunk is one parse, not one per row", () => {
+    const { store } = opened();
+    const rows = Array.from({ length: 120 }, (_, i) => rowOf(i));
+    keep(store, "s_1", rows);
+    expect(store.journal.automationTestRows("a_ejemplo", "s_1", "main", 0, 1000)).toEqual(rows);
+    expect(store.journal.automationTestRows("a_ejemplo", "s_1", "main", 45, 10)).toEqual(
+      rows.slice(45, 55),
+    );
+    expect(parses(() => store.journal.automationTestRows("a_ejemplo", "s_1", "main", 60, 30))).toBe(
+      1,
+    );
+  });
+
+  it("a chunk kept before 2026-11-16, a list of rows each as JSON text, is read as before", () => {
+    const { store, path } = opened();
+    const rows = Array.from({ length: 3 }, (_, i) => rowOf(i));
+    const db = new DatabaseSync(path);
+    cleanups.push(() => db.close());
+    db.prepare(
+      "INSERT INTO automation_test_rows (id, step, output, chunk, rows) VALUES (?, ?, ?, ?, ?)",
+    ).run("a_ejemplo", "s_viejo", "main", 0, JSON.stringify(rows.map((r) => JSON.stringify(r))));
+    expect(store.journal.automationTestRows("a_ejemplo", "s_viejo", "main", 0, 10)).toEqual(rows);
+  });
+
+  it("reading back 3,003 kept rows of 40 fields, as «Probar paso» does for each step it reuses, is timed (A-15)", () => {
+    const { store } = opened();
+    keep(
+      store,
+      "s_1",
+      Array.from({ length: 3003 }, (_, i) => rowOf(i)),
+    );
+    store.journal.automationTestRows("a_ejemplo", "s_1", "main", 0, 3003);
+    const start = cpu();
+    for (let i = 0; i < 5; i++)
+      expect(store.journal.automationTestRows("a_ejemplo", "s_1", "main", 0, 3003)).toHaveLength(
+        3003,
+      );
+    // About 15 ms of CPU on the laptop at load 8 (2026-11-16), from about 30 with a second parse of each row.
+    under((cpu() - start) / 5, 200, "cpu", "reading back 3,003 kept rows of 40 fields");
+  });
+});

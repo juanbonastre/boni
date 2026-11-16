@@ -116,14 +116,17 @@ export interface AutomationsJournal {
       rows: Readonly<Record<string, readonly string[]>>;
     })[],
   ): void;
-  /** Some rows of one output of a step's last test, in order, each as it was kept (JSON). */
+  /**
+   * Some rows of one output of a step's last test, in order, each parsed once from its chunk: what was kept as JSON,
+   * as a value. A chunk kept before 2026-11-16 (a list of rows each as JSON text) is read too.
+   */
   automationTestRows(
     id: string,
     step: string,
     output: string,
     offset: number,
     limit: number,
-  ): string[];
+  ): unknown[];
 }
 
 /** Migration 25 (see the top of this file). It may run again on a database that has it (a test rewinds
@@ -296,12 +299,13 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
           put.run(id, s.step, s.print, s.at, s.record);
           for (const [output, rows] of Object.entries(s.rows))
             for (let i = 0; i * TEST_ROWS_CHUNK < rows.length; i++)
+              // One JSON list of the rows as they were given (each already JSON), so a read parses it once.
               chunk.run(
                 id,
                 s.step,
                 output,
                 i,
-                JSON.stringify(rows.slice(i * TEST_ROWS_CHUNK, (i + 1) * TEST_ROWS_CHUNK)),
+                `[${rows.slice(i * TEST_ROWS_CHUNK, (i + 1) * TEST_ROWS_CHUNK).join(",")}]`,
               );
         }
       }),
@@ -315,7 +319,9 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
            WHERE id = ? AND step = ? AND output = ? AND chunk BETWEEN ? AND ? ORDER BY chunk`,
         )
         .all(id, step, output, first, last) as { chunk: number; rows: string }[];
-      const rows = chunks.flatMap((c) => JSON.parse(c.rows) as string[]);
+      const rows = chunks.flatMap((c) =>
+        (JSON.parse(c.rows) as unknown[]).map((r) => (typeof r === "string" ? JSON.parse(r) : r)),
+      );
       const from = offset - first * TEST_ROWS_CHUNK;
       return rows.slice(from, from + limit);
     },
