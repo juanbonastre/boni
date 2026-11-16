@@ -26,6 +26,7 @@
     "zustand": "5.0.15"
   },
   "devDependencies": {
+    "@boni/pace": "workspace:*",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",

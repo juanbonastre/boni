@@ -1179,7 +1179,10 @@ contraseña ni un código aquí» under a question.
   Cambiar nombre · Duplicar · Copiar · Eliminar (danger). Cambiar nombre edits the name on the card (Intro keeps it,
   Esc or an empty box leaves it); Duplicar puts the copy one box below. Bottom left, in one small bar: zoom in, zoom
   out, fit and «Ordenar» (it places every box again, columns by the longest way from a trigger, and fits); top right,
-  «+». A step is added four ways, which open the same panel: the «+» of the top, the «+» of an output with no arrow
+  «+». A box dropped is saved where it is, on the server, apart from the draft and without «Guardando…»: it is there
+  after a reload, in the desktop app opened again and on another computer of the account. One that does not arrive
+  says «Sin guardar · Reintentar» in the header, and «Guardado» once the server keeps it (unless a change of the draft
+  is still owed); one the server refuses stays where it was dropped and is not sent again. A step is added four ways, which open the same panel: the «+» of the top, the «+» of an output with no arrow
   (or dragging from it and letting go on the canvas), the «+» of a selected arrow (the step goes between its ends)
   and a right click on the canvas (its box goes there). The panel, 300 px at the right, beside the canvas from 1100 px
   and over it below that: the search on top («Buscar un paso», focused), then the three categories of F14b by what

@@ -16,13 +16,6 @@ const LEFT: Record<string, string> = {
   "apps/boni-web/src/core/inline.test.ts": "apps/boni-web: as above",
   "apps/boni-web/src/core/tableCalc.test.ts": "apps/boni-web: as above",
   "apps/boni-web/src/core/unsent.test.ts": "apps/boni-web: as above",
-  "apps/boni-web/src/automations/places.test.ts":
-    "Automatizaciones (tasks 126, 127): its session converts it",
-  "apps/boni-web/src/automations/cite.test.ts":
-    "the canvas session converts them in its closing PR of F14b (G)",
-  "apps/boni-web/src/automations/words.test.ts":
-    "the canvas session converts them in its closing PR of F14b (G)",
-  "e2e-boni/automations.spec.ts": "Automatizaciones (task 126): its session converts it",
   "scripts/queue.test.mjs":
     "the queue's own waits, bounded by their limit or twenty free runs measured the same way (T-08, task 116)",
 };

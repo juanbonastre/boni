@@ -1,4 +1,4 @@
-import { under } from "@boni/pace";
+import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { CATALOGUE, type ParamSpec, paramsOf } from "../packages/automations/src/catalogue.ts";
 import {
@@ -1846,10 +1846,10 @@ test.describe("adding a step", () => {
     const mean = frames.reduce((a, z) => a + z, 0) / frames.length;
     // A click and its change drawn: adding a step and «Ordenar».
     const timed = async (act: () => Promise<void>, done: () => Promise<void>) => {
-      const t0 = Date.now();
+      const t0 = clock();
       await act();
       await done();
-      return Date.now() - t0;
+      return clock() - t0;
     };
     const adding = await timed(
       async () => {
@@ -1870,9 +1870,11 @@ test.describe("adding a step", () => {
       description: `200 steps: drag ${frames.length} frames, mean ${mean.toFixed(1)} ms, worst ${worst.toFixed(1)} ms; adding a step ${adding} ms; «Ordenar» ${tidying} ms`,
     });
     console.log(info.annotations.at(-1)?.description);
-    expect(mean).toBeLessThan(50);
-    expect(adding).toBeLessThan(2000);
-    expect(tidying).toBeLessThan(2000);
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 8 on 8 cores, on the clock): frames while
+    // dragging a mean of 16.7 ms; adding a step 210 to 233 ms; «Ordenar» 99 to 113 ms. The margins are for CI.
+    under(mean, 50, "clock", "the mean frame while a box is dragged among 200");
+    under(adding, 2000, "clock", "adding a step to 200");
+    under(tidying, 2000, "clock", "«Ordenar» with 200 steps");
   });
 });
 
@@ -2788,55 +2790,29 @@ test.describe("the step's view", () => {
     const rows = await list(page);
     await rows.getByText("Doscientos límites", { exact: true }).click();
     await expect(cards(page)).toHaveCount(200);
-    // Intro to the view drawn, measured in the page.
+    // Intro to the view drawn: from the key to the frame that shows it, polled in the page frame by frame.
     await card(page, "s_01jpaso0001").click();
-    await page.evaluate(() => {
-      const w = window as unknown as { __open: { key: number; shown: number } };
-      w.__open = { key: 0, shown: 0 };
-      document.addEventListener(
-        "keydown",
-        (e) => {
-          if (e.key === "Enter") w.__open.key = performance.now();
-        },
-        { capture: true, once: true },
-      );
-      const seen = new MutationObserver(() => {
-        if (!document.querySelector(".auto-view")) return;
-        seen.disconnect();
-        requestAnimationFrame(() => {
-          w.__open.shown = performance.now();
-        });
-      });
-      seen.observe(document.body, { childList: true, subtree: true });
-    });
+    const pressed = clock();
     await press(page, "Enter");
-    await expect(view(page)).toHaveAttribute("data-step", "s_01jpaso0001");
-    await expect
-      .poll(() =>
-        page.evaluate(() => (window as unknown as { __open: { shown: number } }).__open.shown),
-      )
-      .toBeGreaterThan(0);
-    const opening = await page.evaluate(() => {
-      const o = (window as unknown as { __open: { key: number; shown: number } }).__open;
-      return o.shown - o.key;
-    });
+    await page.waitForFunction(
+      () => document.querySelector(".auto-view")?.getAttribute("data-step") === "s_01jpaso0001",
+      null,
+      { polling: "raf" },
+    );
+    const opening = clock() - pressed;
     // Each key typed at a person's pace, from the key to its frame; and the frames meanwhile.
     const count = param(page, "count").getByRole("spinbutton");
     await count.click();
     await press(page, "Control+a");
+    await keysIn(page);
     await page.evaluate(() => {
       const w = window as unknown as { __keys: number[]; __frames: number[]; __run: boolean };
       w.__keys = [];
       w.__frames = [];
       w.__run = true;
-      document.addEventListener(
-        "input",
-        () => {
-          const t0 = performance.now();
-          requestAnimationFrame(() => w.__keys.push(performance.now() - t0));
-        },
-        { capture: true },
-      );
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (e.name === "keydown") w.__keys.push(e.duration);
+      }).observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
       const tick = (t: number) => {
         w.__frames.push(t);
         if (w.__run) requestAnimationFrame(tick);
@@ -2847,29 +2823,26 @@ test.describe("the step's view", () => {
     await expect(card(page, "s_01jpaso0001").locator(".auto-card-summary")).toHaveText(
       "Cuántas 1234567",
     );
-    const { keys, frames } = await page.evaluate(() => {
-      const w = window as unknown as { __keys: number[]; __frames: number[]; __run: boolean };
+    const worstKey = await worstOf(page, 7);
+    const frames = await page.evaluate(() => {
+      const w = window as unknown as { __frames: number[]; __run: boolean };
       w.__run = false;
-      return {
-        keys: w.__keys,
-        frames: w.__frames.slice(1).map((t, i) => t - (w.__frames[i] as number)),
-      };
+      return w.__frames.slice(1).map((t, i) => t - (w.__frames[i] as number));
     });
-    const worstKey = Math.max(...keys);
     const worstFrame = Math.max(...frames);
     const mean = frames.reduce((a, z) => a + z, 0) / frames.length;
     info.annotations.push({
       type: "A-15",
-      description: `200 steps: the view opened in ${opening.toFixed(0)} ms; ${keys.length} keys typed, the worst drawn in ${worstKey.toFixed(1)} ms; frames meanwhile mean ${mean.toFixed(1)} ms, worst ${worstFrame.toFixed(1)} ms`,
+      description: `200 steps: the view opened in ${opening.toFixed(0)} ms; 7 keys typed, the worst drawn in ${worstKey.toFixed(1)} ms; frames meanwhile mean ${mean.toFixed(1)} ms, worst ${worstFrame.toFixed(1)} ms`,
     });
     console.log(info.annotations.at(-1)?.description);
-    // Measured here (2026-11-16, headless Chrome with no GPU): opened in 68 to 112 ms, the worst key 57 to 66 ms,
-    // frames 29 to 31 ms; a key redraws its own card only (it redrew all 200 on the first key until a name that
-    // follows nothing stopped being renamed). The margins are for CI.
-    expect(keys).toHaveLength(7);
-    expect(opening).toBeLessThan(400);
-    expect(worstKey).toBeLessThan(120);
-    expect(mean).toBeLessThan(45);
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 8 on 8 cores, on the clock): opened in 57 to
+    // 60 ms from the key; the worst key 56 to 72 ms as Event Timing gives it (from the key to the frame that shows it,
+    // in steps of 8 ms); frames meanwhile a mean of 18 to 19 ms. A key redraws its own card only (it redrew all 200 on
+    // the first key until a name that follows nothing stopped being renamed). The margins are for CI.
+    under(opening, 400, "clock", "opening a step's view among 200");
+    under(worstKey, 120, "clock", "the worst key typed in a step among 200");
+    under(mean, 45, "clock", "the mean frame while typing in a step among 200");
   });
 
   test("AU-21, A-15 · with 200 steps whose counts cite a field, each card says it by the field's name, as the view's header does; the canvas opens and each key typed in a step is drawn at once", async ({
@@ -2897,37 +2870,16 @@ test.describe("the step's view", () => {
     };
     await openApp(page, "/?still", { automations: [long], agent: BEFORE() });
     const rows = await list(page);
-    // From the click on its row to the frame with its 200 cards, measured in the page.
-    await page.evaluate(() => {
-      const w = window as unknown as { __open: { click: number; shown: number } };
-      w.__open = { click: 0, shown: 0 };
-      document.addEventListener(
-        "click",
-        () => {
-          w.__open.click = performance.now();
-        },
-        { capture: true, once: true },
-      );
-      const seen = new MutationObserver(() => {
-        if (document.querySelectorAll(".auto-card").length < 200) return;
-        seen.disconnect();
-        requestAnimationFrame(() => {
-          w.__open.shown = performance.now();
-        });
-      });
-      seen.observe(document.body, { childList: true, subtree: true });
+    // From the click on its row to the frame with its 200 cards, polled in the page frame by frame. The click is the
+    // mouse's own: a locator's click() waits on its row first, which is not what Juan waits for.
+    const at = await middle(rows.getByText("Doscientas citas", { exact: true }));
+    const clicked = clock();
+    await page.mouse.click(at.x, at.y);
+    await page.waitForFunction(() => document.querySelectorAll(".auto-card").length >= 200, null, {
+      polling: "raf",
     });
-    await rows.getByText("Doscientas citas", { exact: true }).click();
+    const opening = clock() - clicked;
     await expect(cards(page)).toHaveCount(200);
-    await expect
-      .poll(() =>
-        page.evaluate(() => (window as unknown as { __open: { shown: number } }).__open.shown),
-      )
-      .toBeGreaterThan(0);
-    const opening = await page.evaluate(() => {
-      const o = (window as unknown as { __open: { click: number; shown: number } }).__open;
-      return o.shown - o.click;
-    });
     // Each card citing «paginas» of «Libros» says «Páginas», the name the collection gives it; the view's header too.
     const summary = (id: string) => card(page, id).locator(".auto-card-summary");
     await expect(summary("s_01jpaso0003")).toHaveText("Páginas");
@@ -2941,36 +2893,47 @@ test.describe("the step's view", () => {
     const count = param(page, "count").getByRole("spinbutton");
     await count.click();
     await press(page, "Control+a");
+    await keysIn(page);
     await page.evaluate(() => {
       const w = window as unknown as { __keys: number[] };
       w.__keys = [];
-      document.addEventListener(
-        "input",
-        () => {
-          const t0 = performance.now();
-          requestAnimationFrame(() => w.__keys.push(performance.now() - t0));
-        },
-        { capture: true },
-      );
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) if (e.name === "keydown") w.__keys.push(e.duration);
+      }).observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
     });
     await count.pressSequentially("1234567", { delay: 120 });
     await expect(summary("s_01jpaso0002")).toHaveText("Cuántas 1234567");
     await expect(summary("s_01jpaso0199")).toHaveText("Páginas");
-    const keys = await page.evaluate(() => (window as unknown as { __keys: number[] }).__keys);
-    const worstKey = Math.max(...keys);
+    const worstKey = await worstOf(page, 7);
     info.annotations.push({
       type: "A-15",
-      description: `200 cards citing a field: the canvas opened in ${opening.toFixed(0)} ms; ${keys.length} keys typed, the worst drawn in ${worstKey.toFixed(1)} ms`,
+      description: `200 cards citing a field: the canvas opened in ${opening.toFixed(0)} ms; 7 keys typed, the worst drawn in ${worstKey.toFixed(1)} ms`,
     });
     console.log(info.annotations.at(-1)?.description);
-    expect(keys).toHaveLength(7);
-    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 6 on 8 cores): opened in 347 to 360 ms, and
-    // 330 to 333 ms with the cards saying the key instead (naming 198 citations costs about 20 ms); the worst key 17 to
-    // 19 ms. The margins are for CI, as the view's test above.
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 8 on 8 cores, on the clock): opened in 380 to
+    // 389 ms from the mouse's click (347 to 360 ms in G1, measured in the page from the click event; naming 198
+    // citations costs about 20 ms of it); the worst key 56 to 64 ms as Event Timing gives it. The margins are for CI,
+    // as the view's test above.
     under(opening, 1100, "clock", "opening 200 cards that cite a field");
     under(worstKey, 120, "clock", "the worst key typed with 200 cards that cite a field");
   });
 });
+
+/** A frame and a little more: what Event Timing reports of the keys before it has arrived by then. */
+const keysIn = (page: Page) =>
+  page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50))));
+
+/**
+ * The worst of the keys typed since the page's observer of «keydown» started: from each key to the frame that shows
+ * it, as the browser measures it (Event Timing), as `editor.spec.ts` does. Under 16 ms the browser does not report a
+ * key: those count as 16.
+ */
+async function worstOf(page: Page, typed: number): Promise<number> {
+  await keysIn(page);
+  const keys = await page.evaluate(() => (window as unknown as { __keys: number[] }).__keys);
+  expect(keys.length).toBeLessThanOrEqual(typed);
+  return Math.max(16, ...keys);
+}
 
 test.describe("against a sea of options", () => {
   test("AU-75 · every step type of the catalogue, with each of its actions, paints seven rows at most in «Parámetros» before «Añadir opción»: the rows are counted on the screen, type by type and action by action; a list is one row, and what is inside one of its entries is seen only once it is opened", async ({
@@ -3512,9 +3475,9 @@ test.describe("testing", () => {
     await openCanvas(page, TESTED.name, 7);
     const took: Record<string, number> = {};
     const time = async (what: string, act: () => Promise<void>) => {
-      const t0 = Date.now();
+      const t0 = clock();
       await act();
-      took[what] = Date.now() - t0;
+      took[what] = clock() - t0;
     };
     await time("Probar", async () => {
       await testGo(page).click();
@@ -3535,6 +3498,8 @@ test.describe("testing", () => {
       await expect(salida(page).locator("tbody tr")).toHaveCount(50);
     });
     console.log(`A-15 timing (3,000 rows × 40 fields): ${JSON.stringify(took)}`);
-    for (const [what, ms] of Object.entries(took)) expect(ms, what).toBeLessThan(1500);
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 8 on 8 cores, on the clock): «Probar» 377 to
+    // 558 ms, opening the step's rows 130 to 479 ms, «N filas más» 138 to 190 ms, «Probar paso» 166 to 196 ms.
+    for (const [what, ms] of Object.entries(took)) under(ms, 1500, "clock", what);
   });
 });

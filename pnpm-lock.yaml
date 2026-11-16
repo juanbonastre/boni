@@ -227,6 +227,9 @@ importers:
         specifier: 5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
+      '@boni/pace':
+        specifier: workspace:*
+        version: link:../../packages/pace
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
