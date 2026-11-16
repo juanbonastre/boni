@@ -9,6 +9,7 @@ import {
   type Pace,
   pace,
   TIMEOUT_CAP,
+  TIMEOUT_FLOOR,
   timeouts,
   under,
 } from "./index.ts";
@@ -100,20 +101,21 @@ describe("the machine's pace (T-11, task 134)", () => {
     under(one * 0.9, one, "cpu", "most of a round", p);
   });
 
-  it("T-11: vitest's limits stretch with the machine, six times at most, so a hang still fails", () => {
-    expect(timeouts(free)).toEqual({ testTimeout: 5000, hookTimeout: 10_000 });
-    expect(timeouts({ clock: 1, cpu: 1, load: 1 })).toEqual({
-      testTimeout: 10_000,
-      hookTimeout: 20_000,
+  it("T-11: vitest's limits stretch with the machine, four times at least and six at most, so a hang still fails", () => {
+    // Four times on any machine: a load that comes after a package's tests start is not in the factor read then.
+    expect(timeouts(free)).toEqual({ testTimeout: 20_000, hookTimeout: 40_000 });
+    expect(timeouts({ clock: CLOCK_CAP, cpu: 1.15, load: 0.5 })).toEqual({
+      testTimeout: 20_000,
+      hookTimeout: 40_000,
     });
-    // 17 s at 2.5 per core, a test of mail.test.ts this morning (task 134), is under the limit then.
+    expect(timeouts({ clock: 1, cpu: 1, load: 2 })).toEqual({
+      testTimeout: 20_000,
+      hookTimeout: 40_000,
+    });
+    // 17 s at 2.5 per core, a test of mail.test.ts (task 134), is under the limit then.
     expect(timeouts({ clock: 1, cpu: 1, load: 2.5 })).toEqual({
       testTimeout: 25_000,
       hookTimeout: 50_000,
-    });
-    expect(timeouts({ clock: CLOCK_CAP, cpu: 1.15, load: 0.5 })).toEqual({
-      testTimeout: 12_500,
-      hookTimeout: 25_000,
     });
     // A wave that just ebbed: a login of the API v1 took 14.2 s with the minute at 1 per core and the five minutes at
     // 2.5 (http.test.ts, task 134); 0.45 s free.
@@ -125,6 +127,7 @@ describe("the machine's pace (T-11, task 134)", () => {
       testTimeout: 5000 * TIMEOUT_CAP,
       hookTimeout: 10_000 * TIMEOUT_CAP,
     });
+    expect(TIMEOUT_FLOOR).toBeLessThan(TIMEOUT_CAP);
   });
 
   it("T-11: what it adds is small: one measure of the machine is a few ms of CPU", () => {
