@@ -259,6 +259,213 @@ const SEA = {
   arrows: [],
   places: SEA_STEPS.map((s, i) => ({ step: s.id, x: (i % 8) * 300, y: Math.floor(i / 8) * 200 })),
 };
+/**
+ * «Revisar pendientes», for «Probar» (E): a trigger that asks «Mínimo», a «Buscar filas», a «Si», a step that changes
+ * rows and one that sends them to the trash on its two outputs, a «Combinar» of both and a «Crear una fila» at the
+ * end, whose output has no arrow. What the server answers a test of it is given by each test (`testOf`).
+ */
+const TESTED = {
+  id: "a_01jx8x0t2v4x6z8b0d2f4h6k8n",
+  name: "Revisar pendientes",
+  updated: 1761990000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual", {
+      fields: [{ key: "minimo", name: "Mínimo", type: "number" }],
+    }),
+    step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+      collection: "libros",
+      action: "find",
+      where: [{ field: "estado", op: "is", value: "o_pendiente" }],
+      limit: 200,
+    }),
+    step("s_01jsi", "Si", "if", { where: [{ field: "paginas", op: "gt", value: 300 }] }),
+    step("s_01jmodificar", "Modificar filas en Libros", "collection", {
+      collection: "libros",
+      action: "update",
+      target: "incoming",
+      fields: [{ field: "notas", value: "Revisar" }],
+    }),
+    step("s_01jeliminar", "Eliminar filas en Libros", "collection", {
+      collection: "libros",
+      action: "trash",
+      target: "incoming",
+    }),
+    step("s_01jcombinar", "Combinar", "combine", { by: "all" }),
+    step("s_01jcrear", "Crear una fila en Libros", "collection", {
+      collection: "libros",
+      action: "create",
+      fields: [{ field: "titulo", value: "Resumen de pendientes" }],
+    }),
+  ],
+  arrows: [
+    arrow("s_inicio", "s_01jbuscar"),
+    arrow("s_01jbuscar", "s_01jsi"),
+    arrow("s_01jsi", "s_01jmodificar", "yes"),
+    arrow("s_01jsi", "s_01jeliminar", "no"),
+    { from: { step: "s_01jmodificar", output: "main" }, to: { step: "s_01jcombinar", input: "a" } },
+    { from: { step: "s_01jeliminar", output: "main" }, to: { step: "s_01jcombinar", input: "b" } },
+    arrow("s_01jcombinar", "s_01jcrear"),
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jsi", x: 600, y: 0 },
+    { step: "s_01jmodificar", x: 900, y: -130 },
+    { step: "s_01jeliminar", x: 900, y: 130 },
+    { step: "s_01jcombinar", x: 1200, y: 0 },
+    { step: "s_01jcrear", x: 1500, y: 0 },
+  ],
+};
+/**
+ * A book as a test brings it: the keys of Libros and some more (thirteen fields), a related row, a list, and a title
+ * and a value that look like HTML and like a link (A-01).
+ */
+const book = (i: number) => ({
+  json: {
+    titulo: i === 1 ? "<b>Rayuela</b>" : `Libro ${i}`,
+    estado: "o_pendiente",
+    paginas: 200 + i,
+    fin: null,
+    fav: false,
+    notas: null,
+    web: "https://ejemplo.example.com/libros/1",
+    editorial: "Editorial de ejemplo",
+    anio: 1963,
+    idioma: "es",
+    isbn: `978-0-00-0000${String(i).padStart(2, "0")}-0`,
+    autor: { nombre: "Autora de ejemplo", pais: "Chile" },
+    relacionado: [{ titulo: "Libro 2" }, { titulo: "Libro 3" }],
+  },
+  label: {},
+});
+const books = (n: number, from = 1) => Array.from({ length: n }, (_, i) => book(from + i));
+/** What «Modificar filas» would do to a book: its «notas», from empty to «Revisar». */
+const changed = (i: number) => {
+  const b = book(i);
+  return { json: { ...b.json, notas: "Revisar" }, before: b.json, would: "update", label: {} };
+};
+const trashed = (i: number) => ({ ...book(i), before: book(i).json, would: "trash" });
+/** Every step of «Revisar pendientes» tested and fine: 128 books, 3 to change, 125 to the trash, one made. */
+const ALL_DONE = {
+  s_inicio: { rows: { "out:main": [{ json: { minimo: 300 }, label: {} }] }, ms: 10 },
+  s_01jbuscar: {
+    rows: { "in:main": [{ json: { minimo: 300 }, label: {} }], "out:main": books(128) },
+    ms: 180,
+  },
+  s_01jsi: {
+    rows: { "in:main": books(128), "out:yes": books(3, 126), "out:no": books(125) },
+    ms: 40,
+  },
+  s_01jmodificar: {
+    rows: { "in:main": books(3, 126), "out:main": [126, 127, 128].map(changed) },
+    wouldWrite: 3,
+    ms: 60,
+  },
+  s_01jeliminar: {
+    rows: {
+      "in:main": books(125),
+      "out:main": Array.from({ length: 125 }, (_, i) => trashed(i + 1)),
+    },
+    wouldWrite: 125,
+    ms: 90,
+  },
+  s_01jcombinar: {
+    rows: {
+      "in:a": [126, 127, 128].map(changed),
+      "in:b": Array.from({ length: 125 }, (_, i) => trashed(i + 1)),
+      "out:main": [{ json: { total: 128 }, label: {} }],
+    },
+    ms: 20,
+  },
+  s_01jcrear: {
+    rows: {
+      "in:main": [{ json: { total: 128 }, label: {} }],
+      "out:main": [
+        {
+          json: { titulo: "Resumen de pendientes", estado: null, paginas: null },
+          before: null,
+          would: "create",
+          label: {},
+        },
+      ],
+    },
+    wouldWrite: 1,
+    ms: 30,
+  },
+};
+/** «Si» fails on its condition's value: what hung from it is «parado». */
+const SI_FAILS = {
+  s_inicio: ALL_DONE.s_inicio,
+  s_01jbuscar: ALL_DONE.s_01jbuscar,
+  s_01jsi: {
+    state: "failed" as const,
+    rows: { "in:main": books(128) },
+    out: { yes: 0, no: 0 },
+    error: {
+      message: "where.0.value: expected a number",
+      failure: { code: "value.type", param: "where.0.value", detail: { needs: "number" } },
+    },
+  },
+  s_01jmodificar: { state: "stopped" as const, in: {}, out: {} },
+  s_01jeliminar: { state: "stopped" as const, in: {}, out: {} },
+  s_01jcombinar: { state: "stopped" as const, in: {}, out: {} },
+  s_01jcrear: { state: "stopped" as const, in: {}, out: {} },
+};
+/** No book passes «Si»: «Modificar filas» gets no rows and is «saltado»; «Combinar» was never tested. */
+const NONE_PASS = {
+  s_inicio: ALL_DONE.s_inicio,
+  s_01jbuscar: ALL_DONE.s_01jbuscar,
+  s_01jsi: { rows: { "in:main": books(128), "out:yes": [], "out:no": books(128) } },
+  s_01jmodificar: { state: "skipped" as const, in: { main: 0 }, out: { main: 0 } },
+  s_01jeliminar: ALL_DONE.s_01jeliminar,
+};
+/** «Revisar pendientes» with what a test of it answers; `kept`: tested already, that long ago. */
+const testOf = (
+  steps: Record<string, unknown>,
+  more: {
+    kept?: number;
+    state?: string;
+    failedAt?: string;
+    problems?: unknown[];
+    tested?: unknown;
+  } = {},
+  base: { id: string; name: string } = TESTED,
+) => ({
+  ...TESTED,
+  ...base,
+  test: {
+    steps,
+    ...(more.kept !== undefined ? { kept: Date.now() - more.kept } : {}),
+    ...(more.state ? { state: more.state } : {}),
+    ...(more.failedAt ? { failedAt: more.failedAt } : {}),
+    ...(more.problems ? { problems: more.problems } : {}),
+    tested: (more.tested as Record<string, Record<string, unknown>>) ?? {
+      s_inicio: { minimo: 300 },
+    },
+  },
+});
+const FIVE_MIN = 5 * 60_000;
+/** What the app asked to test (`window.__autoTests`, the bodies), and the pages of rows it asked. */
+const testsAsked = (page: Page) =>
+  page.evaluate(() =>
+    ((window as unknown as { __autoTests?: string[] }).__autoTests ?? []).map(
+      (b) => JSON.parse(b) as { trigger: string; fields: Record<string, unknown>; step?: string },
+    ),
+  );
+const rowsAsked = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __autoRows?: string[] }).__autoRows ?? []);
+/** The bottom centre (AU-64): «Probar» and the «Registro». */
+const testBar = (page: Page) => page.locator(".auto-test-bar");
+const testGo = (page: Page) => testBar(page).locator(".auto-test-go");
+const logLine = (page: Page) => testBar(page).locator(".auto-log-line");
+/** The count an arrow says, by the ids of its two steps. */
+const countOn = (page: Page, from: string, to: string) =>
+  page.locator(`.auto-arrow-count[data-arrow^="${from}:"][data-arrow*=">${to}:"]`);
+const stateOf = (page: Page, id: string) => card(page, id).locator(".auto-card-state");
+const entrada = (page: Page) => view(page).getByRole("region", { name: "Entrada" });
+const salida = (page: Page) => view(page).getByRole("region", { name: "Salida" });
+const showAs = (l: ReturnType<Page["locator"]>, name: string) =>
+  l.getByRole("radiogroup", { name: "Ver como" }).getByRole("radio", { name, exact: true });
 const node = (page: Page, id: string) => page.locator(`[data-testid="rf__node-${id}"]`);
 const card = (page: Page, id: string) => page.locator(`.auto-card[data-step="${id}"]`);
 const cards = (page: Page) => page.locator(".auto-card");
@@ -746,8 +953,124 @@ test.describe("the editor", () => {
     await expect(view(page)).toHaveCount(0);
     await expect(nueva.locator(".auto-card-mark")).toHaveAttribute("title", "Falta: Colección");
   });
-  test.fixme("AU-64 · bottom left: zoom in, zoom out, fit and «Ordenar»; bottom centre: «Probar»; top right: «+»; at the bottom «Registro», folded, with one line: «Sin probar», then the last test", async () => {});
-  test.fixme("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async () => {});
+  test("AU-64 · bottom left: zoom in, zoom out, fit and «Ordenar»; bottom centre: «Probar»; top right: «+»; at the bottom «Registro», folded, with one line: «Sin probar», then the last test", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    const flow = await page.locator(".auto-flow").boundingBox();
+    if (!flow) throw new Error("no canvas");
+    const zoom = await page.locator(".auto-zoom").boundingBox();
+    const go = await testGo(page).boundingBox();
+    const add = await page.locator(".auto-add-top").boundingBox();
+    const zooms = page.locator(".auto-zoom").getByRole("button");
+    await expect(zooms).toHaveCount(4);
+    for (const [i, name] of ["Acercar", "Alejar", "Encajar", "Ordenar"].entries())
+      await expect(zooms.nth(i)).toHaveAccessibleName(name);
+    // Bottom left, bottom centre, top right.
+    expect((zoom?.x ?? 0) - flow.x).toBeLessThan(40);
+    expect(flow.y + flow.height - ((zoom?.y ?? 0) + (zoom?.height ?? 0))).toBeLessThan(40);
+    const goMiddle = (go?.x ?? 0) + (go?.width ?? 0) / 2;
+    expect(Math.abs(goMiddle - (flow.x + flow.width / 2))).toBeLessThan(160);
+    expect(flow.y + flow.height - ((go?.y ?? 0) + (go?.height ?? 0))).toBeLessThan(40);
+    expect(flow.x + flow.width - ((add?.x ?? 0) + (add?.width ?? 0))).toBeLessThan(40);
+    expect((add?.y ?? 0) - flow.y).toBeLessThan(40);
+    // «Registro»: one line, «Sin probar».
+    await expect(testBar(page).locator(".auto-log-name")).toHaveText("Registro");
+    await expect(logLine(page)).toHaveText("Sin probar");
+    expect(await logLine(page).evaluate((el) => getComputedStyle(el).whiteSpace)).toBe("nowrap");
+    // Then the last test: when, how, how many steps, how long, and that it wrote nothing.
+    await testGo(page).click();
+    await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+    await expect(logLine(page)).toHaveText(
+      "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+    );
+    // Opened again: the line of the tests the server keeps.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, TESTED.name, 7);
+    await expect(logLine(page)).toHaveText(
+      "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+    );
+  });
+  test("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async ({
+    page,
+  }) => {
+    // Two triggers: the second asks nothing.
+    const two = testOf(ALL_DONE, { tested: { s_inicio: { minimo: 250 } } });
+    two.steps = [...two.steps, step("s_01jotro", "Disparado por el usuario 2", "manual")];
+    two.arrows = [...two.arrows, arrow("s_01jotro", "s_01jbuscar")];
+    two.places = [...two.places, { step: "s_01jotro", x: 0, y: 200 }];
+    const invalid = {
+      ...CHAIN,
+      test: {
+        steps: {},
+        state: "invalid" as const,
+        problems: [
+          { code: "param.required", severity: "error", step: "s_01jfiltrar", param: "where" },
+          {
+            code: "output.unconnected",
+            severity: "error",
+            step: "s_01jordenar",
+            detail: { output: "main" },
+          },
+        ],
+      },
+    };
+    await openApp(page, "/?still", {
+      automations: [two, invalid],
+      agent: BEFORE(),
+      slow: { path: `api/agent/automations/${TESTED.id}/test`, ms: 900 },
+    });
+    await openCanvas(page, TESTED.name, 8);
+    // A menu to choose which trigger.
+    await testGo(page).click();
+    const menu = testBar(page).getByRole("menu", { name: "Probar desde" });
+    await expect(menu.locator(".menu-item")).toHaveText([
+      "Disparado por el usuario",
+      "Disparado por el usuario 2",
+    ]);
+    // The one with fields: a small box with those of the last test.
+    await menu.getByText("Disparado por el usuario", { exact: true }).click();
+    const box = testBar(page).getByRole("dialog");
+    const minimo = box.getByRole("spinbutton", { name: "Mínimo" });
+    await expect(minimo).toHaveValue("250");
+    await minimo.fill("320");
+    await box.getByRole("button", { name: "Probar" }).click();
+    // «Probando…», and it cannot be pressed meanwhile.
+    await expect(testGo(page)).toHaveText("Probando…");
+    await expect(testGo(page)).toBeDisabled();
+    await expect(testGo(page)).toHaveText("Probar");
+    await expect(testGo(page)).toBeEnabled();
+    expect((await testsAsked(page)).at(-1)).toEqual({
+      trigger: "s_inicio",
+      fields: { minimo: 320 },
+    });
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+    // The one with none starts without asking.
+    await testGo(page).click();
+    await menu.getByText("Disparado por el usuario 2", { exact: true }).click();
+    await expect(testGo(page)).toHaveText("Probando…");
+    await expect(testBar(page).getByRole("dialog")).toHaveCount(0);
+    await expect(testGo(page)).toHaveText("Probar");
+    expect((await testsAsked(page)).at(-1)).toEqual({ trigger: "s_01jotro", fields: {} });
+    // With problems: nothing tested, each step with one marked, «Registro» says how many and leads to the first.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, CHAIN.name, 4);
+    await testGo(page).click();
+    await expect(logLine(page)).toHaveText("2 problemas");
+    await expect(card(page, "s_01jfiltrar")).toHaveClass(/\bproblem\b/);
+    await expect(card(page, "s_01jordenar")).toHaveClass(/\bproblem\b/);
+    await expect(card(page, "s_01jbuscar")).not.toHaveClass(/\bproblem\b/);
+    await expect(card(page, "s_01jordenar").locator(".auto-card-mark")).toHaveAttribute(
+      "title",
+      /La salida «main» no va a ningún sitio/,
+    );
+    await expect(page.locator(".auto-card-state")).toHaveCount(0);
+    await expect(page.locator(".auto-arrow-count")).toHaveCount(0);
+    expect(await rowsAsked(page)).toEqual([]);
+    await logLine(page).click();
+    await expect(page.locator(".auto-card.selected")).toHaveAttribute("data-step", "s_01jfiltrar");
+  });
   test("AU-65 · a step is added from the «+» of the top, the «+» of an output with no arrow (or dragging from it), the «+» of a selected arrow and a right click on the canvas: the four open the same panel, and the step chosen ends connected and selected", async ({
     page,
   }) => {
@@ -1150,7 +1473,26 @@ test.describe("the editor", () => {
     await expect.poll(() => placesOf(page, all)).toEqual(untidy);
     await expect(saved(page)).toHaveText("Guardado");
   });
-  test.fixme("AU-05 · over the real server, a box dropped is there after a reload and in another window, (G: the desktop app); moving it ages no test (E: AU-92)", async () => {});
+  test("AU-05 · moving a box ages no test (AU-92): its counts and its SALIDA stay as they were, and the draft is not sent", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    await expect(countOn(page, "s_01jbuscar", "s_01jsi")).toHaveText("128 filas");
+    const c = await middle(card(page, "s_01jsi"));
+    await drag(page, c, { x: c.x + 20, y: c.y + 160 });
+    await expect.poll(async () => (await layouts(page, TESTED.id)).length).toBe(1);
+    await page.waitForTimeout(1500);
+    expect(await sent(page, `PUT api/agent/automations/${TESTED.id}/draft `)).toEqual([]);
+    await expect(page.locator(".auto-card-state.stale")).toHaveCount(0);
+    await expect(page.locator(".auto-arrow-count.dim")).toHaveCount(0);
+    await openStep(page, "s_01jsi");
+    await expect(salida(page).locator(".auto-out-stale")).toHaveCount(0);
+  });
+  test.fixme("AU-05 · over the real server, a box dropped is there after a reload and in another window (G: the desktop app)", async () => {});
   test("AU-87 · adding a step puts that step and nothing else: no other step, arrow or option appears, and nothing changes on the canvas that Juan did not do", async ({
     page,
   }) => {
@@ -1178,7 +1520,94 @@ test.describe("the editor", () => {
     await expect(saved(page)).toHaveText("Guardado");
     expect((await lastDraft(page, CHAIN.id))?.steps.at(-1)?.params).toEqual({ action: "find" });
   });
-  test.fixme("AU-67 · after a test each arrow says how many rows passed («128 filas»; «0 filas» dimmed), an output with no arrow its count too, and each step how it ended (bien, falló, saltado, parado); a step that failed says why on its card in two lines at most, whole in its SALIDA with «Ir al parámetro», and in «Registro»; the ones that hung from it are «saltados»", async () => {});
+  test("AU-67 · after a test each arrow says how many rows passed («128 filas»; «0 filas» dimmed), an output with no arrow its count too, and each step how it ended (bien, falló, saltado, parado); a step that failed says why on its card in two lines at most, whole in its SALIDA with «Ir al parámetro», and in «Registro»; the ones that hung from it are «parados»; «saltado» is a step no rows came to", async ({
+    page,
+  }) => {
+    const fails = testOf(
+      SI_FAILS,
+      { state: "failed", failedAt: "s_01jsi" },
+      { id: "a_01jx8y1v3x5z7b9d1f3h5k7m9p", name: "Revisar cortos" },
+    );
+    const none = testOf(
+      NONE_PASS,
+      {},
+      { id: "a_01jx8z2w4y6a8c0e2g4j6m8p0r", name: "Revisar largos" },
+    );
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE), fails, none],
+      agent: BEFORE(),
+    });
+    // All fine: the count on each arrow and on the output with none, and «Bien» on each card.
+    await openCanvas(page, TESTED.name, 7);
+    await expect(page.locator(".auto-arrow-count")).toHaveCount(0);
+    await testGo(page).click();
+    await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+    await expect(countOn(page, "s_inicio", "s_01jbuscar")).toHaveText("1 fila");
+    await expect(countOn(page, "s_01jbuscar", "s_01jsi")).toHaveText("128 filas");
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveText("3 filas");
+    await expect(countOn(page, "s_01jsi", "s_01jeliminar")).toHaveText("125 filas");
+    await expect(page.locator(".auto-arrow-count.dim")).toHaveCount(0);
+    await expect(card(page, "s_01jcrear").locator(".auto-out-count")).toHaveText("1 fila");
+    for (const id of TESTED.steps.map((s) => s.id))
+      await expect(stateOf(page, id)).toHaveText("Bien");
+    // «Si» fails: why on its card, in two lines at most; what hung from it, «Parado».
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Revisar cortos", 7);
+    await testGo(page).click();
+    await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Falló");
+    const why = card(page, "s_01jsi").locator(".auto-card-why");
+    await expect(why).toHaveText("Un valor no es del tipo que hace falta");
+    expect(await why.evaluate((el) => getComputedStyle(el).webkitLineClamp)).toBe("2");
+    await expect(why).toHaveAttribute("title", "Un valor no es del tipo que hace falta");
+    for (const id of ["s_01jmodificar", "s_01jeliminar", "s_01jcombinar", "s_01jcrear"])
+      await expect(stateOf(page, id)).toHaveText("Parado");
+    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Bien");
+    // No count on the arrows the test did not reach.
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveText("0 filas");
+    await expect(countOn(page, "s_01jmodificar", "s_01jcombinar")).toHaveCount(0);
+    // In «Registro»: in which step; a click selects it.
+    await expect(logLine(page)).toContainText("falló en «Si»");
+    await logLine(page).click();
+    await expect(page.locator(".auto-card.selected")).toHaveAttribute("data-step", "s_01jsi");
+    // Whole in its SALIDA, with the parameter and «Ir al parámetro», which opens that parameter.
+    await press(page, "Enter");
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jsi");
+    await view(page).getByRole("tab", { name: "Ajustes" }).click();
+    const failed = salida(page).locator('[data-out="failed"]');
+    await expect(failed).toContainText("Un valor no es del tipo que hace falta");
+    await expect(failed).toContainText("Condiciones");
+    await failed.getByRole("button", { name: "Ir al parámetro" }).click();
+    await expect(view(page).getByRole("tab", { name: "Parámetros" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(param(page, "where").locator(":focus")).toHaveCount(1);
+    // A step the test did not reach says where it stopped.
+    await press(page, "Escape");
+    await press(page, "Escape");
+    await openStep(page, "s_01jmodificar");
+    await expect(salida(page).locator('[data-out="stopped"]')).toHaveText(
+      "Parado: la prueba paró en «Si»",
+    );
+    // No rows came to «Modificar filas»: «Saltado», and the arrow to it «0 filas», dimmed.
+    await press(page, "Escape");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Revisar largos", 7);
+    await testGo(page).click();
+    await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+    await expect(stateOf(page, "s_01jmodificar")).toHaveText("Saltado");
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveText("0 filas");
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveClass(/\bdim\b/);
+    await expect(page.locator(`[data-testid^="rf__edge-s_01jsi:yes>"] .auto-arrow`)).toHaveClass(
+      /\bdim\b/,
+    );
+    await expect(countOn(page, "s_01jsi", "s_01jeliminar")).not.toHaveClass(/\bdim\b/);
+    await openStep(page, "s_01jmodificar");
+    await expect(salida(page).locator('[data-out="skipped"]')).toHaveText(
+      "Saltado: no le llegaron filas",
+    );
+  });
 });
 
 test.describe("adding a step", () => {
@@ -1496,13 +1925,290 @@ test.describe("the step's view", () => {
     await openStep(page, "s_inicio");
     const asked = view(page).getByRole("region", { name: "Entrada" });
     await expect(asked).toContainText("Datos de prueba");
-    await expect(asked.locator(".auto-test-data li")).toHaveText(["Mínimo"]);
+    // E: each one a box to fill in for the next test (AU-94).
+    await expect(asked.locator(".auto-trial-name")).toHaveText(["Mínimo"]);
+    await expect(asked.getByRole("spinbutton", { name: "Mínimo" })).toBeVisible();
     await expect(asked).not.toContainText("No pide campos");
   });
-  test.fixme("AU-71 · ENTRADA says which step its rows come from and how many, lets any earlier step of the path be chosen, and is seen as «Esquema» (first, each field with a sample value cut to a line), «Tabla» or «JSON»; with more than ten fields it has a search; a related row unfolds one level; empty, it says «Prueba los pasos anteriores» with its button, which tests them; «Combinar» has a tab per input", async () => {});
-  test.fixme("AU-71 · «Tabla» and «JSON» show the first 50 rows of a test of 3,000 and «N filas más» brings 50 more: the rows never arrive all at once; a table of 40 fields scrolls sideways with its cells cut to a line; a value that looks like HTML or a link is painted as text (A-01)", async () => {});
-  test.fixme("AU-72 · SALIDA is seen as «Tabla» (first; «Esquema» with one row), «Esquema» or «JSON», with how many rows and a tab per output («sí (3)», «no (125)»); its foot says when it was tested and how long it took; untested it says «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas», with no rows «0 filas»", async () => {});
-  test.fixme("AU-72 · a step that writes shows «Haría esto» in a test: a row per row written, each field that changes with its value before and after; creating, only after; deleting, the row as it was", async () => {});
+  test("AU-71 · ENTRADA says which step its rows come from and how many, lets any earlier step of the path be chosen, and is seen as «Esquema» (first, each field with a sample value cut to a line), «Tabla» or «JSON»; with more than ten fields it has a search; a related row unfolds one level; empty, it says «Prueba los pasos anteriores» with its button, which tests them; «Combinar» has a tab per input", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    // Empty: «Prueba los pasos anteriores», and its button tests them.
+    await openStep(page, "s_01jsi");
+    const empty = entrada(page).locator('[data-in="untested"]');
+    await expect(empty).toContainText("Prueba los pasos anteriores");
+    await empty.getByRole("button", { name: "Probar los anteriores" }).click();
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+      "De «Buscar filas en Libros» · 128 filas",
+    );
+    expect((await testsAsked(page)).at(-1)).toEqual({
+      trigger: "s_inicio",
+      fields: { minimo: 300 },
+      step: "s_01jbuscar",
+    });
+    // «Esquema» first: each field with the first row's value, in one line; with thirteen, a search.
+    await expect(showAs(entrada(page), "Esquema")).toHaveAttribute("aria-checked", "true");
+    const fields = entrada(page).locator(".auto-schema-list:not(.nested) > .auto-schema-field");
+    await expect(fields).toHaveCount(13);
+    const title = fields.filter({ hasText: "Título" });
+    await expect(title.locator(".auto-schema-value")).toHaveText("<b>Rayuela</b>");
+    expect(
+      await title.locator(".auto-schema-value").evaluate((el) => getComputedStyle(el).whiteSpace),
+    ).toBe("nowrap");
+    await expect(fields.filter({ hasText: "Páginas" }).locator(".auto-schema-value")).toHaveText(
+      "201",
+    );
+    const find = entrada(page).getByRole("searchbox", { name: "Buscar un campo" });
+    await find.pressSequentially("edit", { delay: 60 });
+    await expect(fields).toHaveCount(1);
+    await expect(fields.locator(".auto-schema-name")).toHaveText("editorial");
+    await find.fill("zzz");
+    await expect(entrada(page)).toContainText("Nada con «zzz»");
+    await find.fill("");
+    // A related row and a list unfold one level.
+    const autor = fields.filter({ hasText: "autor" });
+    await expect(autor.locator("summary .auto-schema-value")).toHaveText("2 campos");
+    await autor.locator("summary").click();
+    await expect(autor.locator(".nested .auto-schema-field")).toHaveText([
+      "nombreAutora de ejemplo",
+      "paisChile",
+    ]);
+    await expect(
+      fields.filter({ hasText: "Relacionado" }).locator("summary .auto-schema-value"),
+    ).toHaveText("2 elementos");
+    // «Tabla» and «JSON».
+    await showAs(entrada(page), "Tabla").click();
+    await expect(entrada(page).locator(".auto-table tbody tr")).toHaveCount(50);
+    await showAs(entrada(page), "JSON").click();
+    const json = JSON.parse((await entrada(page).locator(".auto-rows-json").textContent()) ?? "[]");
+    expect(json).toHaveLength(50);
+    expect(json[0].titulo).toBe("<b>Rayuela</b>");
+    // Any earlier step of the path.
+    const source = entrada(page).getByRole("combobox", { name: "Ver los datos de" });
+    expect(await optionsIn(source)).toEqual([
+      "Lo que llega",
+      "Buscar filas en Libros",
+      "Disparado por el usuario",
+    ]);
+    await source.selectOption({ label: "Disparado por el usuario" });
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+      "De «Disparado por el usuario» · 1 fila",
+    );
+    // «Combinar»: a tab per input, with its count.
+    await press(page, "Escape");
+    await testGo(page).click();
+    await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+    await expect(stateOf(page, "s_01jcombinar")).toHaveText("Bien");
+    await openStep(page, "s_01jcombinar");
+    const tabs = entrada(page).getByRole("tablist", { name: "Entrada" }).getByRole("tab");
+    await expect(tabs).toHaveText(["A (3)", "B (125)"]);
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+      "De «Modificar filas en Libros» · 3 filas",
+    );
+    await tabs.nth(1).click();
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+      "De «Eliminar filas en Libros» · 125 filas",
+    );
+  });
+  test("AU-71 · «Tabla» and «JSON» show the first 50 rows of a test of 3,000 and «N filas más» brings 50 more: the rows never arrive all at once; a table of 40 fields scrolls sideways with its cells cut to a line; a value that looks like HTML or a link is painted as text (A-01)", async ({
+    page,
+  }) => {
+    const big = { count: 3000, fields: 40 };
+    const steps = {
+      ...ALL_DONE,
+      s_01jbuscar: { rows: { "in:main": [{ json: { minimo: 300 }, label: {} }], "out:main": big } },
+      s_01jsi: { rows: { "in:main": big, "out:yes": books(3), "out:no": big } },
+    };
+    await openApp(page, "/?still", {
+      automations: [testOf(steps, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    await openStep(page, "s_01jsi");
+    await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+      "De «Buscar filas en Libros» · 3000 filas",
+    );
+    await showAs(entrada(page), "Tabla").click();
+    const rows = entrada(page).locator(".auto-table tbody tr");
+    await expect(rows).toHaveCount(50);
+    const inAsked = async () => (await rowsAsked(page)).filter((r) => r.includes(" in:"));
+    expect(await inAsked()).toEqual(["s_01jsi in:main 0"]);
+    const more = entrada(page).getByRole("button", { name: "2950 filas más" });
+    await more.click();
+    await expect(rows).toHaveCount(100);
+    await expect(entrada(page).getByRole("button", { name: "2900 filas más" })).toBeVisible();
+    expect(await inAsked()).toEqual(["s_01jsi in:main 0", "s_01jsi in:main 50"]);
+    await expect(rows.nth(99).locator("td").first()).toHaveText("valor 100-1");
+    // Forty fields: the table scrolls sideways in its own box, each cell in one line; the view does not.
+    const wrap = entrada(page).locator(".auto-table-wrap");
+    expect(await wrap.evaluate((el) => el.scrollWidth > el.clientWidth + 100)).toBe(true);
+    await expect(entrada(page).locator(".auto-table thead th")).toHaveCount(40);
+    const cell = rows.first().locator("td").nth(3);
+    expect(
+      await cell.evaluate((el) => [
+        getComputedStyle(el).whiteSpace,
+        getComputedStyle(el).textOverflow,
+      ]),
+    ).toEqual(["nowrap", "ellipsis"]);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    expect(await view(page).evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    // «JSON» shows the rows that came, never all of them.
+    await showAs(entrada(page), "JSON").click();
+    const json = JSON.parse((await entrada(page).locator(".auto-rows-json").textContent()) ?? "[]");
+    expect(json).toHaveLength(100);
+    // A value like HTML or a link is text: no element of its own, no link.
+    const yes = salida(page)
+      .getByRole("tablist", { name: "Salida" })
+      .getByRole("tab", { name: "sí (3)" });
+    await yes.click();
+    await showAs(salida(page), "Tabla").click();
+    const out = salida(page).locator(".auto-table");
+    await expect(out.locator("td", { hasText: "<b>Rayuela</b>" })).toHaveCount(1);
+    await expect(
+      out.locator("td", { hasText: "https://ejemplo.example.com/libros/1" }),
+    ).toHaveCount(3);
+    await expect(out.locator("b, a")).toHaveCount(0);
+    // Full of rows, at 1100 px and over, at 1000 and at 640, only the tables' own boxes scroll sideways.
+    await showAs(entrada(page), "Tabla").click();
+    const sideways = () =>
+      page.evaluate(() =>
+        [
+          document.documentElement,
+          ...document.querySelectorAll(".auto-view, .auto-view-col, .auto-rows, .auto-view-head"),
+        ]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => (el as HTMLElement).className || el.tagName),
+      );
+    for (const width of [1280, 1100, 1000, 640]) {
+      await page.setViewportSize({ width, height: 800 });
+      if (width < 1100)
+        for (const side of ["Entrada", "Salida"]) {
+          await view(page)
+            .locator(".auto-view-cols > .auto-view-col")
+            .first()
+            .getByRole("tab", { name: side, exact: true })
+            .click();
+          await expect.poll(sideways, { message: `${width} px, ${side}` }).toEqual([]);
+        }
+      else await expect.poll(sideways, { message: `${width} px` }).toEqual([]);
+    }
+  });
+  test("AU-72 · SALIDA is seen as «Tabla» (first; «Esquema» with one row), «Esquema» or «JSON», with how many rows and a tab per output («sí (3)», «no (125)»); its foot says when it was tested and how long it took; untested it says «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas», with no rows «0 filas»", async ({
+    page,
+  }) => {
+    const none = testOf(
+      NONE_PASS,
+      { kept: FIVE_MIN },
+      { id: "a_01jx8z2w4y6a8c0e2g4j6m8p0r", name: "Revisar largos" },
+    );
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN }), none],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    // «Tabla» first, a tab per output with its count; how many rows; when and how long at the foot.
+    await openStep(page, "s_01jsi");
+    const tabs = salida(page).getByRole("tablist", { name: "Salida" }).getByRole("tab");
+    await expect(tabs).toHaveText(["sí (3)", "no (125)"]);
+    await expect(tabs.nth(0)).toHaveAttribute("aria-selected", "true");
+    await expect(salida(page).locator(".auto-out-count")).toHaveText("3 filas");
+    await expect(showAs(salida(page), "Tabla")).toHaveAttribute("aria-checked", "true");
+    await expect(salida(page).locator(".auto-table tbody tr")).toHaveCount(3);
+    await expect(salida(page).locator(".auto-out-foot")).toHaveText("probado hace 5 min · 0,0 s");
+    await tabs.nth(1).click();
+    await expect(salida(page).locator(".auto-out-count")).toHaveText("125 filas");
+    await expect(salida(page).locator(".auto-table tbody tr")).toHaveCount(50);
+    await expect(salida(page).getByRole("button", { name: "75 filas más" })).toBeVisible();
+    await showAs(salida(page), "Esquema").click();
+    await expect(
+      salida(page).locator(".auto-schema-list:not(.nested) > .auto-schema-field"),
+    ).toHaveCount(13);
+    await showAs(salida(page), "JSON").click();
+    await expect(salida(page).locator(".auto-rows-json")).toContainText('"titulo": "Libro 2"');
+    // One row: «Esquema» first.
+    await press(page, "Escape");
+    await openStep(page, "s_01jbuscar");
+    await press(page, "Escape");
+    await openStep(page, "s_inicio");
+    await expect(showAs(salida(page), "Esquema")).toHaveAttribute("aria-checked", "true");
+    await expect(salida(page).locator(".auto-schema-field")).toHaveText(["Mínimo300"]);
+    await expect(salida(page).locator(".auto-out-foot")).toHaveText("probado hace 5 min · 0,0 s");
+    // Untested, skipped, no rows.
+    await press(page, "Escape");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, "Revisar largos", 7);
+    await openStep(page, "s_01jcombinar");
+    const untested = salida(page).locator('[data-out="untested"]');
+    await expect(untested).toContainText("Sin probar");
+    await expect(untested.getByRole("button", { name: "Probar paso" })).toBeEnabled();
+    await press(page, "Escape");
+    await openStep(page, "s_01jmodificar");
+    await expect(salida(page).locator('[data-out="skipped"]')).toHaveText(
+      "Saltado: no le llegaron filas",
+    );
+    await press(page, "Escape");
+    await openStep(page, "s_01jsi");
+    await expect(salida(page).locator(".auto-out-count")).toHaveText("128 filas");
+    await salida(page).getByRole("tab", { name: "sí (0)" }).click();
+    await expect(salida(page).locator(".auto-out-count")).toHaveText("0 filas");
+    await expect(salida(page).locator(".auto-rows")).toHaveCount(0);
+  });
+  test("AU-72 · a step that writes shows «Haría esto» in a test: a row per row written, each field that changes with its value before and after; creating, only after; deleting, the row as it was", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    // Changing: one row per row, the field that changes before and after, the rest as they are.
+    await openStep(page, "s_01jmodificar");
+    await expect(showAs(salida(page), "Haría esto")).toHaveAttribute("aria-checked", "true");
+    const would = salida(page).locator(".auto-would tbody tr");
+    await expect(would).toHaveCount(3);
+    await expect(salida(page).locator(".auto-would thead th").first()).toHaveText("Haría esto");
+    for (let i = 0; i < 3; i++) {
+      const r = would.nth(i);
+      await expect(r).toHaveAttribute("data-would", "update");
+      await expect(r.locator("td").first()).toHaveText("Cambiaría");
+      await expect(r.locator("td.changed")).toHaveCount(1);
+      await expect(r.locator("td.changed del")).toHaveText("vacío");
+      await expect(r.locator("td.changed ins")).toHaveText("Revisar");
+    }
+    await expect(would.first().locator("td.same").first()).toHaveText("Libro 126");
+    // Deleting: to the trash, the row as it was.
+    await press(page, "Escape");
+    await openStep(page, "s_01jeliminar");
+    await expect(showAs(salida(page), "Haría esto")).toHaveAttribute("aria-checked", "true");
+    const gone = salida(page).locator(".auto-would tbody tr");
+    await expect(gone).toHaveCount(50);
+    await expect(gone.first()).toHaveAttribute("data-would", "trash");
+    await expect(gone.first().locator("td").first()).toHaveText("A la papelera");
+    await expect(gone.first().locator("td").nth(1)).toHaveText("<b>Rayuela</b>");
+    await expect(salida(page).locator(".auto-would del, .auto-would ins")).toHaveCount(0);
+    await expect(salida(page).getByRole("button", { name: "75 filas más" })).toBeVisible();
+    // Creating: only the value after.
+    await press(page, "Escape");
+    await openStep(page, "s_01jcrear");
+    const made = salida(page).locator(".auto-would tbody tr");
+    await expect(made).toHaveCount(1);
+    await expect(made).toHaveAttribute("data-would", "create");
+    await expect(made.locator("td")).toHaveText([
+      "Crearía",
+      "Resumen de pendientes",
+      "vacío",
+      "vacío",
+    ]);
+    await expect(made.locator("del")).toHaveCount(0);
+    // A step that only reads has no «Haría esto».
+    await press(page, "Escape");
+    await openStep(page, "s_01jbuscar");
+    await expect(showAs(salida(page), "Haría esto")).toHaveCount(0);
+  });
   test("AU-73 · «Probar paso» is at the top right; when it cannot be pressed it says why beside it: «Falta: Colección», by the names of the required parameters that are empty", async ({
     page,
   }) => {
@@ -1524,7 +2230,43 @@ test.describe("the step's view", () => {
     await param(page, "collection").getByRole("combobox").selectOption({ label: "Libros" });
     await expect(why).toHaveCount(0);
   });
-  test.fixme("AU-73 · while the step is tested, «Probando…» is said beside «Probar paso» (E: «Probar», AU-91)", async () => {});
+  test("AU-73 · while the step is tested, «Probando…» is said beside «Probar paso», in the step's bar, its menu and its view, and none can be pressed (AU-66, AU-91)", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE)],
+      agent: BEFORE(),
+      slow: { path: `api/agent/automations/${TESTED.id}/test`, ms: 900 },
+    });
+    await openCanvas(page, TESTED.name, 7);
+    // From the step's bar.
+    await card(page, "s_01jbuscar").click();
+    const fromBar = bar(page).getByRole("button", { name: /Probar paso|Probando…/ });
+    await expect(fromBar).toHaveText("Probar paso");
+    await fromBar.click();
+    await expect(fromBar).toHaveText("Probando…");
+    await expect(fromBar).toBeDisabled();
+    await expect(testGo(page)).toBeDisabled();
+    await expect(fromBar).toHaveText("Probar paso");
+    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Bien");
+    expect((await testsAsked(page)).at(-1)?.step).toBe("s_01jbuscar");
+    // From the right click.
+    await card(page, "s_01jsi").click({ button: "right" });
+    await page.locator(".pop-box .menu-item", { hasText: "Probar paso" }).click();
+    await expect.poll(async () => (await testsAsked(page)).at(-1)?.step).toBe("s_01jsi");
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+    // From the view: «Probando…» beside it, and it cannot be pressed.
+    await openStep(page, "s_01jmodificar");
+    const inView = view(page)
+      .locator(".auto-view-head")
+      .getByRole("button", { name: "Probar paso" });
+    await inView.click();
+    await expect(inView).toBeDisabled();
+    await expect(view(page).locator(".auto-view-why")).toHaveText("Probando…");
+    await expect(inView).toBeEnabled();
+    await expect(view(page).locator(".auto-view-why")).toHaveCount(0);
+    await expect(salida(page).locator(".auto-would tbody tr")).toHaveCount(3);
+  });
   test("AU-74 · under 1100 px the step's view has two columns, «Entrada | Salida» as tabs on the left and «Parámetros | Ajustes» on the right, and nothing is cut or scrolls sideways", async ({
     page,
   }) => {
@@ -1571,6 +2313,7 @@ test.describe("the step's view", () => {
   test.fixme("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async () => {});
   test.fixme("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async () => {});
   test.fixme("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async () => {});
+  test.fixme("AU-71 · a field of ENTRADA's «Esquema», of the step before or of an earlier one chosen in its header, is dragged into a parameter (F: AU-21)", async () => {});
   test("A-15 · with 200 steps, a step's view opens at once and each key typed in it is drawn at once", async ({
     page,
   }, info) => {
@@ -1928,13 +2671,315 @@ test.describe("against a sea of options", () => {
     await expect(row).not.toHaveClass(/\bmarked\b/);
     await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveCount(0);
   });
-  test.fixme("AU-83 · after «Probar» or «Probar paso» every required parameter left empty is marked, on its card too (E: «Probar», AU-90, AU-91)", async () => {});
-  test.fixme("AU-84 · each empty, stale or failed state says what to do next: a list with nothing (with «Nueva»), an empty canvas, an ENTRADA with no data, a SALIDA never tested, a stale one, a failed step (with «Ir al parámetro», which opens that parameter), a search with nothing and a draft not saved", async () => {});
+  test("AU-83 · after «Probar» or «Probar paso» every required parameter left empty is marked, on its card too (E: «Probar», AU-90, AU-91)", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [CHAIN, VIEWED], agent: BEFORE() });
+    // «Probar»: «Filtrar» and «Ordenar» lack what they need, and are marked before they are opened.
+    await openCanvas(page, CHAIN.name, 4);
+    await expect(page.locator(".auto-card-mark")).toHaveCount(0);
+    await testGo(page).click();
+    await expect(card(page, "s_01jfiltrar").locator(".auto-card-mark")).toHaveAttribute(
+      "title",
+      /Falta: /,
+    );
+    await expect(card(page, "s_01jordenar").locator(".auto-card-mark")).toHaveCount(1);
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-mark")).toHaveCount(0);
+    await openStep(page, "s_01jfiltrar");
+    await expect(param(page, "where")).toHaveClass(/\bmarked\b/);
+    // «Probar paso» of another automation marks too.
+    await press(page, "Escape");
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, VIEWED.name, 5);
+    await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveCount(0);
+    await card(page, "s_01jbuscar").click();
+    await bar(page).getByRole("button", { name: "Probar paso" }).click();
+    await expect(card(page, "s_01jnueva").locator(".auto-card-mark")).toHaveAttribute(
+      "title",
+      "Falta: Colección",
+    );
+    await openStep(page, "s_01jnueva");
+    await expect(param(page, "collection")).toHaveClass(/\bmarked\b/);
+  });
+  test("AU-83 · the conditions editor and a row picker do not mark a required parameter while Juan is still in them: adding a condition and taking it away, a value's control taken out, a picker opened and left with Esc", async ({
+    page,
+  }) => {
+    const picker = {
+      ...CONDITIONS,
+      steps: [
+        ...CONDITIONS.steps,
+        step("s_01jleer", "Leer una fila en Libros", "collection", {
+          collection: "libros",
+          action: "get",
+        }),
+      ],
+      arrows: [...CONDITIONS.arrows, arrow("s_01jbuscar", "s_01jleer")],
+      places: [...CONDITIONS.places, { step: "s_01jleer", x: 600, y: 220 }],
+    };
+    await openApp(page, "/?still", { automations: [picker], agent: BEFORE() });
+    await openCanvas(page, CONDITIONS.name, 7);
+    // «Si»: a condition added, its field chosen and taken away, all in the same control, marks nothing.
+    await openStep(page, "s_01jsi");
+    const where = param(page, "where");
+    await where.getByRole("button", { name: "Añadir filtro" }).click();
+    const field = where
+      .locator(".db-filter-row")
+      .first()
+      .getByRole("combobox", { name: "Propiedad" });
+    await field.selectOption({ label: "Favorito" });
+    await where.getByRole("button", { name: "Quitar filtro" }).click();
+    await page.waitForTimeout(300);
+    await expect(where).not.toHaveClass(/\bmarked\b/);
+    await expect(card(page, "s_01jsi").locator(".auto-card-mark")).toHaveCount(0);
+    // Leaving it empty marks it.
+    await nameIn(page).click();
+    await expect(where).toHaveClass(/\bmarked\b/);
+    await press(page, "Escape");
+    await press(page, "Escape");
+    // A row picker: opened and left with Esc marks nothing; leaving the row does.
+    await openStep(page, "s_01jleer");
+    const row = param(page, "row");
+    const select = row.getByRole("combobox");
+    await select.click();
+    await press(page, "Escape");
+    await page.waitForTimeout(300);
+    await expect(row).not.toHaveClass(/\bmarked\b/);
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jleer");
+    await select.focus();
+    await press(page, "Tab");
+    await expect(row).toHaveClass(/\bmarked\b/);
+    await expect(card(page, "s_01jleer").locator(".auto-card-mark")).toHaveAttribute(
+      "title",
+      /Falta: Fila/,
+    );
+  });
+  test("AU-84 · each empty, stale or failed state says what to do next: a list with nothing (with «Nueva»), an empty canvas, an ENTRADA with no data, a SALIDA never tested, a stale one, a failed step (with «Ir al parámetro», which opens that parameter), a search with nothing and a draft not saved", async ({
+    page,
+  }) => {
+    // A list with nothing, with «Nueva»; an empty canvas; a search with nothing.
+    const empty = await page.context().newPage();
+    await empty.setViewportSize({ width: 1440, height: 900 });
+    await openApp(empty, "/?still", { automations: [], agent: BEFORE([]) });
+    await list(empty);
+    const nueva = empty.getByRole("button", { name: "Nueva", exact: true });
+    await expect(nueva.first()).toBeVisible();
+    await nueva.first().click();
+    await expect(panel(empty)).toContainText("¿Cómo empieza?");
+    await panel(empty)
+      .getByRole("textbox", { name: "Buscar un paso" })
+      .pressSequentially("zzz", { delay: 40 });
+    await expect(panel(empty)).toContainText("Nada con «zzz»");
+    await empty.close();
+    // ENTRADA with no data; SALIDA never tested.
+    const fails = testOf(SI_FAILS, { state: "failed", failedAt: "s_01jsi" });
+    await openApp(page, "/?still", { automations: [fails], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    await openStep(page, "s_01jsi");
+    await expect(entrada(page).locator('[data-in="untested"]')).toContainText(
+      "Prueba los pasos anteriores",
+    );
+    await expect(
+      entrada(page).getByRole("button", { name: "Probar los anteriores" }),
+    ).toBeVisible();
+    await expect(salida(page).locator('[data-out="untested"]')).toContainText("Sin probar");
+    await expect(salida(page).getByRole("button", { name: "Probar paso" })).toBeVisible();
+    // A failed step: why, and «Ir al parámetro», which opens that parameter.
+    await view(page).getByRole("button", { name: "Probar paso" }).first().click();
+    const failed = salida(page).locator('[data-out="failed"]');
+    await expect(failed).toContainText("Un valor no es del tipo que hace falta");
+    await view(page).getByRole("tab", { name: "Ajustes" }).click();
+    await failed.getByRole("button", { name: "Ir al parámetro" }).click();
+    await expect(param(page, "where").locator(":focus")).toHaveCount(1);
+    // A stale one: «puede estar vieja» with «Probar paso». Esc in the field is the field's.
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    await openStep(page, "s_01jbuscar");
+    await param(page, "limit").getByRole("spinbutton").fill("150");
+    await expect(saved(page)).toHaveText("Guardado");
+    const stale = salida(page).locator(".auto-out-stale");
+    await expect(stale).toContainText("puede estar vieja");
+    await expect(stale.getByRole("button", { name: "Probar paso" })).toBeEnabled();
+    // A draft not saved: «Sin guardar · Reintentar».
+    await serverDown(page, true);
+    await param(page, "limit").getByRole("spinbutton").fill("120");
+    await expect(head(page)).toContainText("Sin guardar");
+    await expect(head(page).getByRole("button", { name: "Reintentar" })).toBeVisible();
+    await serverDown(page, false);
+    await head(page).getByRole("button", { name: "Reintentar" }).click();
+    await expect(saved(page)).toHaveText("Guardado");
+  });
 });
 
 test.describe("testing", () => {
-  test.fixme("AU-90 · «Probar» runs the whole draft and «Registro» says how it went and that it wrote nothing; the step that would write shows what it would do and the collection is as it was", async () => {});
-  test.fixme("AU-91 · «Probar paso» tests that step and what it lacks: the steps before it that had not changed keep the time of their test, and the steps after it are not tested", async () => {});
-  test.fixme("AU-92 · after a step changes, its SALIDA says «puede estar vieja» and the counts of its arrows and of what hangs from it are dimmed; moving it or renaming it marks nothing; testing it again clears the mark", async () => {});
-  test.fixme("AU-94 · the fields a trigger asks are asked in the box of «Probar» and in the trigger's ENTRADA, with those of the last test filled in; a trigger with no fields starts without asking", async () => {});
+  test("AU-90 · «Probar» runs the whole draft and «Registro» says how it went and that it wrote nothing; the step that would write shows what it would do and the collection is as it was", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    await testGo(page).click();
+    const box = testBar(page).getByRole("dialog");
+    await box.getByRole("button", { name: "Probar" }).click();
+    await expect(logLine(page)).toContainText("bien");
+    await expect(logLine(page)).toContainText("7 pasos");
+    await expect(logLine(page)).toContainText("no escribió nada");
+    await expect(logLine(page)).toContainText("habría escrito 129 filas");
+    // The whole draft: no step named, the trigger and its fields.
+    const asks = await testsAsked(page);
+    expect(asks).toHaveLength(1);
+    expect(asks[0]?.step).toBeUndefined();
+    expect(asks[0]).toMatchObject({ trigger: "s_inicio", fields: { minimo: 300 } });
+    for (const id of TESTED.steps.map((s) => s.id))
+      await expect(stateOf(page, id)).toHaveText("Bien");
+    // The step that would write shows it; nothing was written to the collection.
+    await openStep(page, "s_01jmodificar");
+    await expect(showAs(salida(page), "Haría esto")).toBeChecked();
+    await expect(salida(page).locator("tr[data-would=update]")).toHaveCount(3);
+    const wrote = await page.evaluate(() =>
+      ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+        /^(POST|PUT|PATCH|DELETE) api\/data/.test(b),
+      ),
+    );
+    expect(wrote).toEqual([]);
+  });
+  test("AU-91 · «Probar paso» tests that step and what it lacks: the steps before it that had not changed keep the time of their test, and the steps after it are not tested", async ({
+    page,
+  }) => {
+    // Kept from five minutes ago: the trigger and «Buscar»; «Si» and what follows were never tested.
+    const keptOnly = testOf(ALL_DONE, { kept: FIVE_MIN });
+    (keptOnly.test as { keptOnly?: string[] }).keptOnly = ["s_inicio", "s_01jbuscar"];
+    await openApp(page, "/?still", { automations: [keptOnly], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    await openStep(page, "s_01jsi");
+    await view(page).getByRole("button", { name: "Probar paso" }).first().click();
+    await expect(salida(page).locator(".auto-out-foot")).toContainText("hace un momento");
+    const asks = await testsAsked(page);
+    expect(asks.at(-1)).toMatchObject({ step: "s_01jsi", trigger: "s_inicio" });
+    // Those before it keep their time; those after it are not tested.
+    await press(page, "Escape");
+    await openStep(page, "s_01jbuscar");
+    await expect(salida(page).locator(".auto-out-foot")).toContainText("hace 5 min");
+    await press(page, "Escape");
+    for (const id of ["s_01jmodificar", "s_01jeliminar", "s_01jcombinar", "s_01jcrear"])
+      await expect(stateOf(page, id)).toHaveCount(0);
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+  });
+  test("AU-92 · after a step changes, its SALIDA says «puede estar vieja» and the counts of its arrows and of what hangs from it are dimmed; moving it or renaming it marks nothing; testing it again clears the mark", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN })],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name, 7);
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).not.toHaveClass(/\bdim\b/);
+    // Renamed: nothing is marked.
+    await openStep(page, "s_01jsi");
+    await nameIn(page).fill("Si es largo");
+    await press(page, "Enter");
+    await expect(saved(page)).toHaveText("Guardado");
+    await expect(salida(page).locator(".auto-out-stale")).toHaveCount(0);
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    // Moved: nothing is marked.
+    const from = await middle(card(page, "s_01jcrear"));
+    await drag(page, from, { x: from.x + 80, y: from.y + 60 });
+    await settled(page);
+    await expect(page.locator(".auto-arrow-count.dim")).toHaveCount(0);
+    // Changed: its SALIDA and the counts after it are dimmed; what is before it is not.
+    await openStep(page, "s_01jsi");
+    await view(page).getByRole("tab", { name: "Parámetros" }).click();
+    const value = param(page, "where").getByRole("spinbutton", { name: "Valor" }).first();
+    await value.fill("400");
+    // A condition's value is kept on Intro or on leaving it, as in a view's filter.
+    await press(page, "Enter");
+    await expect(saved(page)).toHaveText("Guardado");
+    const stale = salida(page).locator(".auto-out-stale");
+    await expect(stale).toContainText("puede estar vieja");
+    await press(page, "Escape");
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveClass(/\bdim\b/);
+    await expect(countOn(page, "s_01jsi", "s_01jeliminar")).toHaveClass(/\bdim\b/);
+    await expect(countOn(page, "s_01jmodificar", "s_01jcombinar")).toHaveClass(/\bdim\b/);
+    await expect(countOn(page, "s_01jbuscar", "s_01jsi")).not.toHaveClass(/\bdim\b/);
+    // Tested again: the mark goes.
+    await openStep(page, "s_01jsi");
+    await stale.getByRole("button", { name: "Probar paso" }).click();
+    await expect(stale).toHaveCount(0);
+    await press(page, "Escape");
+    await expect(countOn(page, "s_01jsi", "s_01jmodificar")).not.toHaveClass(/\bdim\b/);
+  });
+  test("AU-94 · the fields a trigger asks are asked in the box of «Probar» and in the trigger's ENTRADA, with those of the last test filled in; a trigger with no fields starts without asking", async ({
+    page,
+  }) => {
+    const tested = testOf(ALL_DONE, { tested: { s_inicio: { minimo: 250 } } });
+    await openApp(page, "/?still", { automations: [tested, CHAIN], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    // The trigger's ENTRADA: «Datos de prueba» with the last test's value.
+    await openStep(page, "s_inicio");
+    const here = view(page).getByRole("spinbutton", { name: "Mínimo" });
+    await expect(here).toHaveValue("250");
+    await here.fill("280");
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    // The box of «Probar» asks the same, with what was typed there.
+    await testGo(page).click();
+    const box = testBar(page).getByRole("dialog");
+    const minimo = box.getByRole("spinbutton", { name: "Mínimo" });
+    await expect(minimo).toHaveValue("280");
+    await box.getByRole("button", { name: "Probar" }).click();
+    await expect(logLine(page)).toContainText("bien");
+    expect((await testsAsked(page)).at(-1)).toMatchObject({ fields: { minimo: 280 } });
+    // Opened again, both say the last test's.
+    await openStep(page, "s_inicio");
+    await expect(here).toHaveValue("280");
+    await press(page, "Escape");
+    // A trigger with no fields starts at once.
+    await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+    await openCanvas(page, CHAIN.name, 4);
+    await testGo(page).click();
+    await expect(testBar(page).getByRole("dialog")).toHaveCount(0);
+    await expect.poll(async () => (await testsAsked(page)).length).toBe(2);
+    expect((await testsAsked(page)).at(-1)).toMatchObject({ trigger: "s_inicio", fields: {} });
+  });
+  test("A-15 · «Probar» and «Probar paso» over 3,000 rows of 40 fields: the test, opening a step's rows and «N filas más» each answer in less than 1.5 s", async ({
+    page,
+  }) => {
+    const big = { count: 3000, fields: 40 };
+    const heavy = testOf(
+      {
+        s_inicio: ALL_DONE.s_inicio,
+        s_01jbuscar: { rows: { "in:main": ALL_DONE.s_inicio.rows["out:main"], "out:main": big } },
+        s_01jsi: { rows: { "in:main": big, "out:yes": big, "out:no": { count: 0, fields: 40 } } },
+        s_01jmodificar: { rows: { "in:main": big, "out:main": big }, wouldWrite: 3000 },
+        s_01jeliminar: { state: "skipped", in: { main: 0 }, out: { main: 0 } },
+        s_01jcombinar: { rows: { "in:a": big, "out:main": big } },
+        s_01jcrear: { rows: { "in:main": big, "out:main": big }, wouldWrite: 3000 },
+      },
+      { kept: FIVE_MIN },
+    );
+    await openApp(page, "/?still", { automations: [heavy], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    const took: Record<string, number> = {};
+    const time = async (what: string, act: () => Promise<void>) => {
+      const t0 = Date.now();
+      await act();
+      took[what] = Date.now() - t0;
+    };
+    await time("Probar", async () => {
+      await testGo(page).click();
+      await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
+      await expect(logLine(page)).toContainText("habría escrito 6000 filas");
+    });
+    await time("open the step's rows", async () => {
+      await openStep(page, "s_01jsi");
+      await expect(salida(page).locator("tbody tr")).toHaveCount(50);
+    });
+    await time("N filas más", async () => {
+      await salida(page).getByRole("button", { name: "2950 filas más" }).click();
+      await expect(salida(page).locator("tbody tr")).toHaveCount(100);
+    });
+    await time("Probar paso", async () => {
+      await view(page).getByRole("button", { name: "Probar paso" }).first().click();
+      await expect(salida(page).locator(".auto-out-foot")).toContainText("hace un momento");
+      await expect(salida(page).locator("tbody tr")).toHaveCount(50);
+    });
+    console.log(`A-15 timing (3,000 rows × 40 fields): ${JSON.stringify(took)}`);
+    for (const [what, ms] of Object.entries(took)) expect(ms, what).toBeLessThan(1500);
+  });
 });

@@ -12421,6 +12421,325 @@ tr[data-boni-pointed] > td {
   padding-left: 18px;
   font-size: 13px;
 }
+/* «Probar» (E, AU-64): bottom centre of the canvas, with the «Registro» folded beside it in one line. */
+.auto-test-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 220px);
+  padding: 4px 4px 4px 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.auto-test-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.auto-log {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding-right: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-log-name {
+  flex: none;
+  font-weight: 600;
+}
+.auto-log-line {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+button.auto-log-line {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.auto-log-line.bad {
+  color: var(--bad);
+}
+.auto-trial-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  min-width: 240px;
+}
+.auto-trial {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.auto-trial-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+.auto-trial-name {
+  color: var(--muted);
+}
+.auto-pop-head {
+  margin: 4px 10px 2px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+/* After a test (AU-67): what passed by each arrow and by each output left free; 0 rows or a stale count dims it. */
+.auto-arrow.dim {
+  opacity: 0.45;
+}
+.auto-arrow-count {
+  position: absolute;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.auto-arrow-count.dim,
+.auto-out-count.dim {
+  opacity: 0.55;
+}
+.auto-out-count {
+  position: absolute;
+  top: 50%;
+  left: 38px;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* How a step ended (AU-67): a mark on its card; a failure says why in two lines at most. */
+.auto-card-state {
+  position: absolute;
+  bottom: -9px;
+  right: 10px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.auto-card-state.done {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
+}
+.auto-card-state.failed {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+}
+.auto-card-state.stale {
+  opacity: 0.6;
+}
+.auto-card-why {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--bad);
+}
+.auto-card.problem {
+  border-color: var(--bad);
+}
+/* ENTRADA and SALIDA of a tested step (AU-71, AU-72): a head with the count and «Ver como», then the rows. */
+.auto-in,
+.auto-out {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.auto-out-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.auto-out-count,
+.auto-in-from {
+  font-weight: 600;
+}
+.auto-out .auto-out-count {
+  position: static;
+  transform: none;
+  font-size: 12.5px;
+  color: var(--text);
+  pointer-events: auto;
+}
+.auto-out-stale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn, #d9a441);
+}
+.auto-out-foot {
+  margin: 0;
+}
+.auto-out-failure {
+  color: var(--bad);
+}
+.auto-show {
+  margin-left: auto;
+}
+.auto-in-source select {
+  max-width: 100%;
+}
+.auto-side-tabs {
+  flex-wrap: wrap;
+}
+.auto-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.auto-rows-wait {
+  height: 40px;
+}
+.auto-rows-more {
+  align-self: flex-start;
+}
+.auto-rows-json {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 8px;
+  font-size: 11.5px;
+  background: var(--surface-2);
+  border-radius: 6px;
+  white-space: pre;
+}
+.auto-schema {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auto-schema-find {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+.auto-schema-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+.auto-schema-list.nested {
+  padding-left: 14px;
+}
+.auto-schema-field > span,
+.auto-schema-field summary {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.auto-schema-field {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+}
+.auto-schema-field > details {
+  min-width: 0;
+  flex: 1;
+}
+.auto-schema-field summary {
+  cursor: pointer;
+}
+.auto-schema-name {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.auto-schema-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* A wide table scrolls sideways in its own box; each cell is one line (AU-71). */
+.auto-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.auto-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.auto-table th,
+.auto-table td {
+  max-width: 220px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auto-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+/* «Haría esto» (AU-72): what a test would write, the value before struck and the one after beside it. */
+.auto-would td.same {
+  color: var(--muted);
+}
+.auto-would td.changed del {
+  color: var(--bad);
+}
+.auto-would td.changed ins {
+  color: var(--good);
+  text-decoration: none;
+}
+.auto-would-what {
+  font-weight: 600;
+}
+.auto-would tr.would-trash td {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.auto-would tr.would-trash td.auto-would-what {
+  text-decoration: none;
+  color: var(--bad);
+}
 .auto-retry {
   display: flex;
   flex-wrap: wrap;

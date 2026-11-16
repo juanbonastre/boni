@@ -1,8 +1,8 @@
-// The editor's own state (docs/automatizaciones.md §5.7). What comes after a test is E's, pending.
-import { FORMAT } from "@boni/automations";
+// The editor's own state (docs/automatizaciones.md §5.7).
+import { type Arrow, FORMAT, type Step } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
-import type { Opened } from "./client.ts";
+import type { Opened, StepTest, TestAnswer } from "./client.ts";
 import {
   addStep,
   changeAction,
@@ -12,20 +12,28 @@ import {
   setParam,
   setSetting,
 } from "./edit.ts";
+import { outputSays } from "./panel.ts";
 import {
   added,
+  arrowCount,
+  askTest,
   change,
   created,
   emptyEditor,
+  failedAt,
+  logLine,
   openedEditor,
+  outputCount,
   owedPlaces,
   placesKept,
   redo,
   saved,
   saveFailed,
+  tested,
+  testLost,
   undo,
 } from "./state.ts";
-import { namer } from "./words.ts";
+import { logWords, namer } from "./words.ts";
 
 const names = namer(translator("es"), { gastos: "Gastos" });
 const ids = () => {
@@ -313,16 +321,197 @@ describe("undo", () => {
 });
 
 describe("after a test", () => {
-  it.todo(
-    "AU-64 · «Registro» says untested, then the last test in one line (when, how it ended, how many steps, how long, that it wrote nothing) or the step it failed in; with problems it says how many and tests nothing",
-  );
-  it.todo(
-    "AU-67 · every arrow has the rows that passed by it and every output with no arrow its count; a failed step's dependants are skipped",
-  );
-  it.todo(
-    "AU-92 · the steps the server says are stale after a save keep their counts, marked; a test of them clears the mark",
-  );
-  it.todo(
-    "AU-83 (E, «Probar») · the problems shown after a test was asked leave a step as soon as it changes, and none is shown before one is asked",
-  );
+  const filter = { id: "s_filtro", name: "Filtrar", type: "filter", params: {} };
+  const sort = { id: "s_orden", name: "Ordenar", type: "sort", params: {} };
+  const three: Opened = {
+    ...opened,
+    automation: {
+      ...opened.automation,
+      steps: [trigger, filter, sort],
+      arrows: [
+        { from: { step: "s_inicio", output: "main" }, to: { step: "s_filtro", input: "main" } },
+        { from: { step: "s_filtro", output: "yes" }, to: { step: "s_orden", input: "main" } },
+      ],
+    },
+  };
+  const stepTest = (over: Partial<StepTest>): StepTest => ({
+    state: "done",
+    at: 1_000,
+    ms: 100,
+    in: { main: 1 },
+    out: { main: 1 },
+    retries: 0,
+    failed: 0,
+    wouldWrite: 0,
+    stale: false,
+    ...over,
+  });
+  const done: TestAnswer = {
+    state: "done",
+    problems: [],
+    ms: 4_100,
+    ran: ["s_inicio", "s_filtro", "s_orden"],
+    reused: [],
+    tests: {
+      s_inicio: stepTest({ in: {}, out: { main: 128 } }),
+      s_filtro: stepTest({ in: { main: 128 }, out: { yes: 3, no: 125 } }),
+      s_orden: stepTest({ in: { main: 3 }, out: { main: 3 }, wouldWrite: 0 }),
+    },
+  };
+  const t = translator("es");
+  const nameOf = (id: string) => three.automation.steps.find((s) => s.id === id)?.name ?? id;
+  it("AU-64 · «Registro» says untested, then the last test in one line (when, how it ended, how many steps, how long, that it wrote nothing) or the step it failed in; with problems it says how many and tests nothing", () => {
+    const s = openedEditor(three);
+    expect(logLine(s)).toEqual({ kind: "untested" });
+    expect(logWords(t, "es", logLine(s), nameOf, 0)).toBe("Sin probar");
+    const asking = askTest(s, null);
+    expect(asking.testing).toEqual({ step: null });
+    const answered = tested(asking, done, 10_000, {
+      trigger: "s_inicio",
+      fields: { mes: "marzo" },
+    });
+    expect(answered.testing).toBeNull();
+    expect(logLine(answered)).toEqual({
+      kind: "tested",
+      at: 10_000,
+      ok: true,
+      steps: 3,
+      ms: 4_100,
+      wouldWrite: 0,
+    });
+    expect(logWords(t, "es", logLine(answered), nameOf, 10_000 + 2 * 60_000 + 5_000)).toBe(
+      "Última prueba hace 2 min · bien · 3 pasos · 4,1 s · no escribió nada",
+    );
+    // The fields it was tested with are what «Probar» offers next (AU-94).
+    expect(answered.tested.s_inicio).toEqual({ mes: "marzo" });
+    const failed = tested(
+      askTest(answered, null),
+      {
+        ...done,
+        state: "failed",
+        failedAt: "s_filtro",
+        ran: ["s_inicio", "s_filtro"],
+        tests: {
+          ...done.tests,
+          s_filtro: stepTest({ state: "failed", out: {} }),
+          s_orden: stepTest({ state: "stopped", in: {}, out: {} }),
+        },
+      },
+      20_000,
+    );
+    expect(logWords(t, "es", logLine(failed), nameOf, 20_000)).toBe(
+      "Última prueba hace un momento · falló en «Filtrar» · 2 pasos · 4,1 s",
+    );
+    expect(failedAt(failed)).toBe("s_filtro");
+    // With problems nothing is tested: the tests kept stay, and «Registro» says how many and which step first.
+    const invalid = tested(
+      askTest(failed, null),
+      {
+        state: "invalid",
+        problems: [
+          { code: "param.required", severity: "error", step: "s_orden", param: "by" },
+          { code: "param.required", severity: "error", step: "s_filtro", param: "where" },
+        ],
+        ms: 0,
+        ran: [],
+        reused: [],
+        tests: {},
+      },
+      30_000,
+    );
+    expect(invalid.tests).toBe(failed.tests);
+    expect(invalid.problems).toHaveLength(2);
+    expect(logLine(invalid)).toEqual({ kind: "problems", count: 2, first: "s_orden" });
+    expect(logWords(t, "es", logLine(invalid), nameOf, 30_000)).toBe("2 problemas");
+    // A test that never arrived leaves things as they were, but no longer running.
+    expect(testLost(askTest(failed, null)).testing).toBeNull();
+    // Opened again on another device, «Registro» says what the kept tests say.
+    const again = openedEditor({ ...three, tests: done.tests });
+    expect(logLine(again)).toMatchObject({ kind: "tested", ok: true, steps: 3 });
+  });
+  it("AU-67 · every arrow has the rows that passed by it and every output with no arrow its count; a step the test did not reach because it stopped is «parado», and «saltado» only one that got no rows", () => {
+    const s = tested(askTest(openedEditor(three), null), done, 10_000);
+    const [first, second] = three.automation.arrows;
+    expect(arrowCount(openedEditor(three), first as Arrow)).toBeNull();
+    expect(arrowCount(s, first as Arrow)).toEqual({ rows: 128, stale: false });
+    expect(arrowCount(s, second as Arrow)).toEqual({ rows: 3, stale: false });
+    // «no» has no arrow: its 125 rows are seen too.
+    expect(outputCount(s, "s_filtro", "no")).toEqual({ rows: 125, stale: false });
+    expect(outputCount(s, "s_orden", "main")).toEqual({ rows: 3, stale: false });
+    const stopped = tested(
+      s,
+      {
+        ...done,
+        state: "failed",
+        failedAt: "s_filtro",
+        tests: {
+          ...done.tests,
+          s_filtro: stepTest({ state: "failed", out: {} }),
+          s_orden: stepTest({ state: "stopped", in: {}, out: {} }),
+        },
+      },
+      20_000,
+    );
+    // The failed step's outputs gave no rows; the one it stopped before says nothing of rows.
+    expect(arrowCount(stopped, second as Arrow)).toEqual({ rows: 0, stale: false });
+    expect(outputCount(stopped, "s_orden", "main")).toBeNull();
+    expect(outputSays(sort as Step, stopped.tests.s_orden)).toEqual({ kind: "stopped" });
+    const skipped = {
+      ...done.tests,
+      s_orden: stepTest({ state: "skipped", in: { main: 0 }, out: {} }),
+    };
+    expect(outputSays(sort as Step, skipped.s_orden)).toEqual({ kind: "skipped" });
+  });
+  it("AU-92 · the steps the server says are stale after a save keep their counts, marked; a test of them clears the mark", () => {
+    const s = tested(askTest(openedEditor(three), null), done, 10_000);
+    const edited = change(s, { draft: setParam(s.draft, "s_filtro", "where", [], names) });
+    const kept = saved(edited, { rev: 4, stale: ["s_filtro", "s_orden"] }, edited.draft);
+    expect(kept.tests.s_filtro?.stale).toBe(true);
+    expect(kept.tests.s_orden?.stale).toBe(true);
+    expect(kept.tests.s_inicio?.stale).toBe(false);
+    expect(arrowCount(kept, three.automation.arrows[1] as Arrow)).toEqual({ rows: 3, stale: true });
+    expect(outputCount(kept, "s_filtro", "no")).toEqual({ rows: 125, stale: true });
+    // A step the server does not name is left as it was; one with no test has nothing to mark.
+    expect(saved(edited, { rev: 4, stale: ["s_nada"] }, edited.draft).tests).toEqual(s.tests);
+    // Tested again: the server's tests are not stale.
+    const again = tested(askTest(kept, "s_orden"), done, 30_000);
+    expect(again.tests.s_orden?.stale).toBe(false);
+    expect(arrowCount(again, three.automation.arrows[1] as Arrow)?.stale).toBe(false);
+  });
+  it("AU-83 (E, «Probar») · the problems shown after a test was asked leave a step as soon as it changes, and none is shown before one is asked", () => {
+    const s = openedEditor(three);
+    expect(s.problems).toEqual([]);
+    expect(s.asked).toBe(false);
+    const asked = askTest(s, null);
+    expect(asked.asked).toBe(true);
+    const invalid = tested(
+      asked,
+      {
+        state: "invalid",
+        problems: [
+          { code: "param.required", severity: "error", step: "s_orden", param: "by" },
+          { code: "param.required", severity: "error", step: "s_filtro", param: "where" },
+          { code: "trigger.none", severity: "error" },
+        ],
+        ms: 0,
+        ran: [],
+        reused: [],
+        tests: {},
+      },
+      1,
+    );
+    expect(invalid.problems).toHaveLength(3);
+    // A change elsewhere keeps them; the step that changes loses its own, and only those.
+    const renamed = change(invalid, { draft: { ...invalid.draft, name: "Otro nombre" } });
+    expect(renamed.problems).toHaveLength(3);
+    const changed = change(renamed, {
+      draft: setParam(renamed.draft, "s_orden", "by", [{ field: "fecha" }], names),
+    });
+    expect(changed.problems.map((p) => p.step)).toEqual(["s_filtro", undefined]);
+    // Deshacer gives the step back as it was, not its problem: it shows again with the next test.
+    expect(undo(changed).problems.map((p) => p.step)).toEqual(["s_filtro", undefined]);
+    // A step taken away takes its problems with it.
+    const gone = change(changed, { draft: removeSteps(changed.draft, ["s_filtro"]) });
+    expect(gone.problems.map((p) => p.step)).toEqual([undefined]);
+  });
 });

@@ -1,7 +1,8 @@
-// «Automatizaciones» over HTTP in C1 and C2 of F14b (docs/automatizaciones.md §7, AU-168, AU-62, AU-05): the six
-// routes C1 adds and C2's layout («Ordenar» and a box dropped), as the app calls them, each running its action through `runAction` (actions.ts in this folder). Without the list
-// of actions each is refused by the policy (P0) before anything runs, the read too. The rest of AU-168 (what an
-// origin that is not Juan's hand reads; «Probar» and the rows) stays pending in automations.test.ts.
+// «Automatizaciones» over HTTP in C1, C2 and E of F14b (docs/automatizaciones.md §7, AU-168, AU-62, AU-05, AU-90,
+// AU-91): the six routes C1 adds, C2's layout («Ordenar» and a box dropped) and E's «Probar» with the rows and the
+// sample of its last test, as the app calls them, each running its action through `runAction` (actions.ts in this
+// folder). Without the list of actions each is refused by the policy (P0) before anything runs, the read too. What
+// an origin that is not Juan's hand reads is in automations.test.ts.
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
@@ -22,7 +23,7 @@ import { ROUTES } from "../routes.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES } from "./routes.ts";
 
 const SIGN_IN = "una contraseña larga de ejemplo";
-/** The editor's routes that are in ROUTES today: C1's six and C2's layout. «Probar» and the rows arrive with E. */
+/** C1's and C2's routes (E's are checked with every route of AUTOMATION_ROUTES in automations.test.ts). */
 const EDITOR = [
   "POST /api/agent/automations",
   "GET /api/agent/automations/:id",
@@ -181,5 +182,101 @@ describe("C1's and C2's routes (AU-168, AU-62, AU-05)", () => {
     expect((await call("POST", `/api/agent/automations/${id}/restore`)).status).toBe(200);
     expect((await call("GET", `/api/agent/automations/${id}`)).status).toBe(200);
     expect((await call("GET", "/api/agent/automations/a_nadie")).status).toBe(404);
+  });
+
+  it("AU-90 · «Probar», «Probar paso», the rows and the sample, as the editor calls them", async () => {
+    const call = await signedIn(await start());
+    const doc = {
+      ...first,
+      name: "Probar por HTTP",
+      steps: [
+        {
+          id: "s_inicio",
+          name: "Inicio",
+          type: "manual",
+          params: { fields: [{ key: "nota", name: "Nota", type: "text" }] },
+        },
+        {
+          id: "s_marcar",
+          name: "Marcar",
+          type: "edit",
+          params: { fields: [{ field: "visto", value: true }] },
+        },
+      ],
+      arrows: [
+        { from: { step: "s_inicio", output: "main" }, to: { step: "s_marcar", input: "main" } },
+      ],
+    };
+    const made = await call("POST", "/api/agent/automations", { automation: doc });
+    const id = made.body.id as string;
+    const path = `/api/agent/automations/${id}`;
+    const log = host.store(1).logPage(0, 1_000_000).length;
+
+    const tested = await call("POST", `${path}/test`, {
+      trigger: "s_inicio",
+      fields: { nota: "de ejemplo" },
+    });
+    expect(tested.status).toBe(200);
+    expect(tested.body).toMatchObject({ state: "done", ran: ["s_inicio", "s_marcar"], reused: [] });
+    expect(
+      (tested.body.tests as Record<string, { out: { main: number } }>).s_marcar?.out.main,
+    ).toBe(1);
+    // «Probar paso»: that step alone, the trigger's test reused.
+    const one = await call("POST", `${path}/test`, {
+      trigger: "s_inicio",
+      fields: { nota: "de ejemplo" },
+      step: "s_marcar",
+    });
+    expect(one.body).toMatchObject({ state: "done", ran: ["s_marcar"], reused: ["s_inicio"] });
+    // A test writes in no collection.
+    expect(host.store(1).logPage(0, 1_000_000).length).toBe(log);
+
+    const out = await call("GET", `${path}/test/rows?step=s_marcar&side=out&name=main`);
+    expect(out.status).toBe(200);
+    expect(out.body.total).toBe(1);
+    expect((out.body.rows as { json: unknown }[])[0]?.json).toEqual({
+      nota: "de ejemplo",
+      visto: true,
+    });
+    const into = await call("GET", `${path}/test/rows?step=s_marcar&side=in&name=main&offset=0`);
+    expect((into.body.rows as { json: unknown }[])[0]?.json).toEqual({ nota: "de ejemplo" });
+    expect(
+      (await call("GET", `${path}/test/rows?step=s_marcar&side=out&name=main&offset=5`)).body,
+    ).toEqual({ rows: [], total: 1 });
+    const sample = await call("GET", `${path}/test/sample?step=s_marcar`);
+    expect(sample.status).toBe(200);
+    expect(sample.body).toMatchObject({ current: { json: { nota: "de ejemplo" } }, total: 1 });
+    expect(Object.keys(sample.body.steps as object)).toEqual(["Inicio"]);
+
+    // What the app may get wrong is worded as before: 400 for a request that is not one, 404 for what is not there.
+    expect((await call("POST", `${path}/test`, { trigger: "s_inicio" })).status).toBe(400);
+    expect(
+      (await call("POST", `${path}/test`, { trigger: "s_inicio", fields: { otra: 1 } })).body,
+    ).toMatchObject({ state: "invalid" });
+    expect(
+      (await call("GET", `${path}/test/rows?step=s_marcar&side=arriba&name=main`)).status,
+    ).toBe(400);
+    expect(
+      (await call("GET", `${path}/test/rows?step=s_marcar&side=out&name=main&offset=-3`)).status,
+    ).toBe(400);
+    expect((await call("GET", `${path}/test/rows?step=s_marcar&side=out&name=otra`)).status).toBe(
+      400,
+    );
+    expect((await call("GET", `${path}/test/rows?step=s_nadie&side=out&name=main`)).status).toBe(
+      404,
+    );
+    expect((await call("GET", `${path}/test/sample?step=s_nadie`)).status).toBe(400);
+    expect((await call("GET", `${path}/test/sample`)).status).toBe(400);
+    expect(
+      (
+        await call("POST", "/api/agent/automations/a_nadie/test", {
+          trigger: "s_inicio",
+          fields: {},
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (await call("GET", "/api/agent/automations/a_nadie/test/sample?step=s_inicio")).status,
+    ).toBe(404);
   });
 });

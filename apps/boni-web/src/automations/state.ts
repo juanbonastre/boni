@@ -8,8 +8,7 @@
  * through `change`, which is what makes it undoable and owed to the server (AU-62, AU-68).
  */
 import { type Arrow, type Automation, type Cell, FORMAT, type Problem } from "@boni/automations";
-import type { Opened, Place, StepTest, TestAnswer } from "./client.ts";
-import { notBuilt } from "./pending.ts";
+import type { Opened, Place, StepTest, TestAnswer, TestRequest } from "./client.ts";
 import { type Places, placeFor, withPlaces } from "./places.ts";
 
 /**
@@ -65,6 +64,13 @@ export interface EditorState extends Snapshot {
   testing: { step: string | null } | null;
   /** The last «Probar» or «Probar paso» answered here, for «Registro». */
   last: (TestAnswer & { at: number }) | null;
+  /** A test was asked since the editor opened: every required parameter left empty is marked (AU-83). */
+  asked: boolean;
+  /**
+   * The fields typed for the next test, by trigger id (AU-94): what the box of «Probar» and the trigger's «Datos de
+   * prueba» hold, starting from `tested`. Not the draft's: never undone, never saved.
+   */
+  trial: Record<string, Record<string, Cell>>;
   /**
    * The problems shown: none until a test is asked (AU-64, AU-83); then those of the draft as it was then, each
    * dropped as soon as its step changes.
@@ -92,6 +98,8 @@ const fresh = {
   save: "saved",
   testing: null,
   last: null,
+  asked: false,
+  trial: {},
   problems: [],
   left: [],
   dropped: null,
@@ -153,6 +161,7 @@ export function change(
     save: owed.draft ? "saving" : state.save,
     dropped: null,
     typing,
+    problems: problemsKept(state, draft),
   };
 }
 
@@ -207,6 +216,7 @@ function walked(
     open: state.open && ids.has(state.open) ? state.open : null,
     dropped: null,
     typing: null,
+    problems: problemsKept(state, to.draft),
   };
 }
 
@@ -304,43 +314,119 @@ export function saveFailed(state: EditorState): EditorState {
 }
 
 /**
- * «Probar» or «Probar paso» was asked: with problems of `validate` in what it would run, nothing is tested and they
- * are shown (AU-64); otherwise `testing` says so until `tested`.
+ * «Probar» or «Probar paso» was asked (AU-64, AU-73): `testing` says so until `tested`, and from now on every
+ * required parameter left empty is marked (AU-83). The server validates before it runs: with problems it answers
+ * `invalid` and nothing is tested.
  */
-export function askTest(
-  _state: EditorState,
-  _step: string | null,
-  _problems: readonly Problem[],
+export function askTest(state: EditorState, step: string | null): EditorState {
+  return { ...state, testing: { step }, asked: true };
+}
+
+/**
+ * A test answered: every step's test as the server now has it, and the fields the trigger was tested with (AU-94).
+ * `invalid`: nothing ran and the problems are shown (AU-64); the tests kept stay as they were.
+ */
+export function tested(
+  state: EditorState,
+  answer: TestAnswer,
+  now: number,
+  request?: TestRequest,
 ): EditorState {
-  return notBuilt("askTest (AU-64)");
+  const last = { ...answer, at: now };
+  if (answer.state === "invalid")
+    return { ...state, testing: null, last, problems: answer.problems, asked: true };
+  return {
+    ...state,
+    testing: null,
+    last,
+    problems: [],
+    tests: answer.tests,
+    tested: request ? { ...state.tested, [request.trigger]: request.fields } : state.tested,
+    asked: true,
+  };
 }
 
-/** A test answered: every step's test as the server now has it. */
-export function tested(_state: EditorState, _answer: TestAnswer, _now: number): EditorState {
-  return notBuilt("tested (AU-67)");
+/** A test that did not arrive (offline, the server down): nothing changes but that it is no longer running. */
+export function testLost(state: EditorState): EditorState {
+  return { ...state, testing: null };
 }
 
-/** The line of «Registro» (AU-64). */
-export function logLine(_state: EditorState): LogLine {
-  return notBuilt("logLine (AU-64)");
+/** The test failed in this step: the last one answered here, or the one the kept tests say failed. */
+export function failedAt(state: EditorState): string | null {
+  if (state.last) return state.last.state === "failed" ? (state.last.failedAt ?? null) : null;
+  return Object.entries(state.tests).find(([, t]) => t.state === "failed")?.[0] ?? null;
+}
+
+/**
+ * The line of «Registro» (AU-64): the last test answered here or, opened again, what the kept tests say of it (the
+ * server keeps each step's, AU-91: they are seen the same on another device).
+ */
+export function logLine(state: EditorState): LogLine {
+  const last = state.last;
+  if (last?.state === "invalid") {
+    const errors = last.problems.filter((p) => p.severity === "error");
+    const shown = errors.length ? errors : last.problems;
+    return { kind: "problems", count: shown.length, first: shown.find((p) => p.step)?.step ?? "" };
+  }
+  if (last) {
+    const steps = last.ran.length + last.reused.length;
+    if (last.state === "failed" && last.failedAt)
+      return {
+        kind: "tested",
+        at: last.at,
+        ok: false,
+        failedAt: last.failedAt,
+        steps,
+        ms: last.ms,
+      };
+    const wouldWrite = [...last.ran, ...last.reused].reduce(
+      (n, s) => n + (last.tests[s]?.wouldWrite ?? 0),
+      0,
+    );
+    return { kind: "tested", at: last.at, ok: true, steps, ms: last.ms, wouldWrite };
+  }
+  const kept = Object.values(state.tests).filter((t) => t.state !== "stopped");
+  if (!kept.length) return { kind: "untested" };
+  const at = Math.max(...kept.map((t) => t.at));
+  const ms = kept.reduce((n, t) => n + t.ms, 0);
+  const failed = failedAt(state);
+  if (failed) return { kind: "tested", at, ok: false, failedAt: failed, steps: kept.length, ms };
+  const wouldWrite = kept.reduce((n, t) => n + t.wouldWrite, 0);
+  return { kind: "tested", at, ok: true, steps: kept.length, ms, wouldWrite };
 }
 
 /**
  * What an arrow says after a test (AU-67): the rows that passed by it, and whether the count is of a test that is
- * stale (AU-92). Null before any test of its step. An output with no arrow has its count too: `outputCount`.
+ * stale (AU-92). Null before any test of its step, and for a step the test did not reach («parado»). An output with
+ * no arrow has its count too: `outputCount`.
  */
 export function arrowCount(
-  _state: EditorState,
-  _arrow: Arrow,
+  state: EditorState,
+  arrow: Arrow,
 ): { rows: number; stale: boolean } | null {
-  return notBuilt("arrowCount (AU-67, AU-92)");
+  return outputCount(state, arrow.from.step, arrow.from.output);
 }
 export function outputCount(
-  _state: EditorState,
-  _step: string,
-  _output: string,
+  state: EditorState,
+  step: string,
+  output: string,
 ): { rows: number; stale: boolean } | null {
-  return notBuilt("outputCount (AU-67)");
+  const t = state.tests[step];
+  if (!t || t.state === "stopped" || t.state === "queued" || t.state === "running") return null;
+  return { rows: t.out[output] ?? 0, stale: t.stale };
+}
+
+/** The problems shown that are of steps no longer as they were: a step that changes leaves them (AU-83). */
+function problemsKept(state: EditorState, draft: Automation): Problem[] {
+  if (!state.problems.length || draft === state.draft) return state.problems;
+  const was = new Map(state.draft.steps.map((s) => [s.id, s]));
+  const now = new Map(draft.steps.map((s) => [s.id, s]));
+  return state.problems.filter((p) => {
+    if (!p.step) return true;
+    const a = was.get(p.step);
+    const b = now.get(p.step);
+    return !!b && (a === b || same(a, b));
+  });
 }
 
 export type { Place };

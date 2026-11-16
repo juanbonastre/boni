@@ -5,8 +5,9 @@
  * left zoom, fit and «Ordenar». It decides nothing: every change is a pure function of automations/edit.ts made
  * into one change of automations/state.ts, which Deshacer walks back; where it goes to the server is the page's
  * (AutomationEditor.tsx). A box moves on the screen while it is dragged and is one change when it is dropped, so a
- * drag sends nothing until then. A step opens in its view (D, AutomationStepView.tsx) over the canvas; «Probar» (E)
- * and dragging to cite (F) come later.
+ * drag sends nothing until then. A step opens in its view (D, AutomationStepView.tsx) over the canvas. After a
+ * test (E, AutomationTest.tsx) each arrow and each output left free says how many rows passed and each card how its
+ * step ended (AU-67), and a step with a problem is marked (AU-64); dragging to cite (F) comes later.
  */
 import {
   type Arrow,
@@ -62,13 +63,30 @@ import {
   sameArrow,
   setSetting,
 } from "../automations/edit.ts";
-import { labelsOf, markedOf, summaryOf } from "../automations/panel.ts";
+import { cannotTest, labelsOf, markedOf, summaryOf } from "../automations/panel.ts";
 import { below, CARD, pastedPlaces, tidy, withPlaces } from "../automations/places.ts";
-import { type AddAt, added, change, type EditorState, redo, undo } from "../automations/state.ts";
-import { DO, entryNames, KEY, labelWord, namer, summaryWords } from "../automations/words.ts";
+import {
+  type AddAt,
+  added,
+  change,
+  type EditorState,
+  outputCount,
+  redo,
+  undo,
+} from "../automations/state.ts";
+import {
+  DO,
+  entryNames,
+  KEY,
+  labelWord,
+  namer,
+  rowsWords,
+  summaryWords,
+} from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { toast, useStore } from "../store.ts";
 import { AutomationStepView } from "./AutomationStepView.tsx";
+import { stateMark, TestBar, useTester } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
@@ -101,6 +119,8 @@ interface Acts {
   duplicate: (step: string) => void;
   copy: (steps: string[]) => void;
   disconnect: (arrow: Arrow) => void;
+  /** «Probar paso» (AU-66, AU-91). */
+  testStep: (step: string) => void;
 }
 const ActsContext = createContext<Acts | null>(null);
 const useActs = () => useContext(ActsContext) as Acts;
@@ -109,7 +129,13 @@ interface CardData extends Record<string, unknown> {
   step: Step;
   summary: string;
   inputs: { id: string; label: string | null }[];
-  outputs: { id: string; label: string | null; free: boolean }[];
+  /** `count`: what passed by an output with no arrow in the last test (AU-67), dimmed at 0 or when stale. */
+  outputs: {
+    id: string;
+    label: string | null;
+    free: boolean;
+    count: { words: string; dim: boolean } | null;
+  }[];
   /** The only one selected: its bar is shown (AU-66). */
   alone: boolean;
   /** Its name is being edited on the card. */
@@ -118,10 +144,18 @@ interface CardData extends Record<string, unknown> {
   labels: { shown: string[]; rest: string[] };
   /** What required is missing once it is marked (AU-83), «Falta: …»; null with nothing marked. */
   missing: string | null;
+  /** The problems a test found in it (AU-64), in words; null with none. */
+  problem: string | null;
+  /** How it ended in its last test (AU-67); null before one. */
+  mark: ReturnType<typeof stateMark>;
+  /** Its bar's «Probar paso» (AU-73): why it cannot be pressed, and whether this step is being tested. */
+  test: { blocked: boolean; testing: boolean };
 }
 type CardNode = Node<CardData, "step">;
 interface ArrowData extends Record<string, unknown> {
   arrow: Arrow;
+  /** «128 filas» after a test (AU-67), dimmed with 0 rows or a stale count (AU-92). */
+  count: { words: string; dim: boolean } | null;
 }
 type ArrowEdge = Edge<ArrowData, "arrow">;
 
@@ -129,7 +163,8 @@ type ArrowEdge = Edge<ArrowData, "arrow">;
 const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>) {
   const acts = useActs();
   const { t } = acts;
-  const { step, summary, inputs, outputs, alone, renaming, labels, missing } = data;
+  const { step, summary, inputs, outputs, alone, renaming, labels, missing, problem, mark, test } =
+    data;
   const Icon = iconOf(step.type);
   const off = step.settings?.off === true;
   const said = labels.shown.length > 0;
@@ -140,14 +175,20 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
   );
   return (
     <div
-      className={`auto-card${selected ? " selected" : ""}${off ? " off" : ""}`}
-      style={{ width: CARD.width, height }}
+      className={`auto-card${selected ? " selected" : ""}${off ? " off" : ""}${problem ? " problem" : ""}`}
+      style={{ width: CARD.width, height: height + (mark?.why ? 30 : 0) }}
       data-step={step.id}
+      data-state={mark?.state}
     >
       <NodeToolbar isVisible={alone && selected} position={Position.Top} className="auto-bar">
-        {/* «Probar paso» is E's (AU-73): there, and not usable yet. */}
-        <button type="button" className="auto-bar-btn" disabled>
-          {t(DO.testStep)}
+        <button
+          type="button"
+          className="auto-bar-btn"
+          data-boni-action="automations.test"
+          disabled={test.blocked}
+          onClick={() => acts.testStep(step.id)}
+        >
+          {t(test.testing ? "auto.view.testing" : DO.testStep)}
         </button>
         <button
           type="button"
@@ -227,6 +268,11 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
             {summary}
           </span>
         )}
+        {mark?.why && (
+          <span className="auto-card-why" title={mark.why}>
+            {mark.why}
+          </span>
+        )}
         {said && (
           <span className="auto-card-labels">
             {labels.shown.map((l) => (
@@ -242,9 +288,19 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
           </span>
         )}
       </span>
-      {missing && (
-        <span className="auto-card-mark" title={missing} role="img" aria-label={missing}>
+      {(missing || problem) && (
+        <span
+          className="auto-card-mark"
+          title={[problem, missing].filter(Boolean).join(" · ")}
+          role="img"
+          aria-label={[problem, missing].filter(Boolean).join(" · ")}
+        >
           !
+        </span>
+      )}
+      {mark && (
+        <span className={`auto-card-state ${mark.state}${mark.stale ? " stale" : ""}`}>
+          {mark.word}
         </span>
       )}
       {outputs.map((output, i) => (
@@ -257,6 +313,11 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
           style={{ top: `${((i + 1) / (outputs.length + 1)) * 100}%` }}
         >
           {output.label && <span className="auto-out-label">{output.label}</span>}
+          {output.free && output.count && (
+            <span className={`auto-out-count${output.count.dim ? " dim" : ""}`}>
+              {output.count.words}
+            </span>
+          )}
           {output.free && (
             <button
               type="button"
@@ -315,9 +376,25 @@ function ArrowLine(p: EdgeProps<ArrowEdge>) {
   const acts = useActs();
   const [path, lx, ly] = getBezierPath(p);
   const arrow = p.data?.arrow;
+  const count = p.data?.count;
   return (
     <>
-      <BaseEdge id={p.id} path={path} className={`auto-arrow${p.selected ? " selected" : ""}`} />
+      <BaseEdge
+        id={p.id}
+        path={path}
+        className={`auto-arrow${p.selected ? " selected" : ""}${count?.dim ? " dim" : ""}`}
+      />
+      {count && !p.selected && (
+        <EdgeLabelRenderer>
+          <div
+            className={`auto-arrow-count${count.dim ? " dim" : ""}`}
+            data-arrow={p.id}
+            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
+          >
+            {count.words}
+          </div>
+        </EdgeLabelRenderer>
+      )}
       {p.selected && arrow && (
         <EdgeLabelRenderer>
           <div
@@ -381,6 +458,8 @@ function Canvas({
   apply: (f: (s: EditorState) => EditorState) => void;
 }) {
   const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
+  const tester = useTester();
   const collections = useCollectionNames();
   const names = useMemo(() => namer(t, collections), [t, collections]);
   const flow = useReactFlow();
@@ -407,6 +486,12 @@ function Canvas({
       const free = outputsOf(step)
         .map((id) => (used.has(`${step.id}:${id}`) ? "" : id))
         .join(",");
+      const problems = state.problems
+        .filter((p) => p.step === step.id)
+        .map((p) => p.code)
+        .join(",");
+      const testing =
+        selected && alone ? (state.testing ? (state.testing.step ?? "") : null) : null;
       const from = [
         step,
         at.x,
@@ -418,19 +503,43 @@ function Canvas({
         free,
         t,
         collections,
+        state.tests[step.id],
+        problems,
+        state.asked,
+        testing,
+        lang,
       ];
       const was = cards.current.get(step.id);
       if (was && was.from.every((x, i) => x === from[i])) {
         kept.set(step.id, was);
         return was.node;
       }
-      const node = cardOf(step, at, selected, selected && alone, left, used);
+      const node = cardOf(step, at, selected, selected && alone, left, used, testing);
       kept.set(step.id, { from, node });
       return node;
     });
     cards.current = kept;
     return nodes;
-  }, [state.draft, state.selected, state.left, shown, t, collections, renaming]);
+  }, [
+    state.draft,
+    state.selected,
+    state.left,
+    state.tests,
+    state.problems,
+    state.asked,
+    state.testing,
+    shown,
+    t,
+    lang,
+    collections,
+    renaming,
+  ]);
+  /** What an output says it gave in the last test: «128 filas», dimmed at 0 or stale (AU-67, AU-92). */
+  // A declaration, not a const: the cards' memo above calls it while the component renders.
+  function countOf(step: string, output: string) {
+    const c = outputCount(state, step, output);
+    return c ? { words: rowsWords(t, lang, c.rows), dim: c.rows === 0 || c.stale } : null;
+  }
   function cardOf(
     step: Step,
     at: { x: number; y: number },
@@ -438,6 +547,7 @@ function Canvas({
     alone: boolean,
     left: string[],
     used: Set<string>,
+    testing: string | null,
   ): CardNode {
     const ins = inputsOf(step);
     const outs = outputsOf(step);
@@ -454,7 +564,8 @@ function Canvas({
       shownLabels.push(w);
       room -= w.length + 2;
     }
-    const marked = markedOf(step, left, false);
+    const marked = markedOf(step, left, state.asked);
+    const problems = state.problems.filter((p) => p.step === step.id);
     return {
       id: step.id,
       type: "step",
@@ -469,6 +580,7 @@ function Canvas({
           id,
           label: outs.length === 1 && id === MAIN ? null : (ruleNames.get(id) ?? t(KEY.output(id))),
           free: !used.has(`${step.id}:${id}`),
+          count: used.has(`${step.id}:${id}`) ? null : countOf(step.id, id),
         })),
         alone,
         renaming: renaming === step.id,
@@ -478,6 +590,14 @@ function Canvas({
               names: marked.map((p) => t(KEY.param(step.type, p.key))).join(", "),
             })
           : null,
+        problem: problems.length
+          ? problems.map((p) => t(KEY.problem(p.code), { ...(p.detail ?? {}) })).join(" · ")
+          : null,
+        mark: stateMark(t, step, state.tests[step.id]),
+        test: {
+          blocked: !tester || cannotTest(step, state.testing !== null) !== null,
+          testing: testing === step.id,
+        },
       },
     };
   }
@@ -515,9 +635,9 @@ function Canvas({
         target: a.to.step,
         targetHandle: a.to.input,
         selected: !!state.arrow && sameArrow(state.arrow, a),
-        data: { arrow: a },
+        data: { arrow: a, count: countOf(a.from.step, a.from.output) },
       })),
-    [state.draft.arrows, state.arrow],
+    [state.draft.arrows, state.arrow, state.tests, t, lang],
   );
 
   /** One change of the draft (an edit of edit.ts), with what is selected kept to the steps there still are. */
@@ -588,6 +708,10 @@ function Canvas({
     copy: copyThese,
     disconnect: (arrow) =>
       apply((s) => ({ ...change(s, { draft: disconnect(s.draft, arrow) }), arrow: null })),
+    testStep: (step) => {
+      setMenu(null);
+      tester?.run(step);
+    },
   };
   const last = useRef(now);
   last.current = now;
@@ -604,6 +728,7 @@ function Canvas({
       duplicate: (step) => last.current.duplicate(step),
       copy: (steps) => last.current.copy(steps),
       disconnect: (arrow) => last.current.disconnect(arrow),
+      testStep: (step) => last.current.testStep(step),
     }),
     [],
   );
@@ -851,6 +976,7 @@ function Canvas({
               <LayoutGrid size={16} strokeWidth={1.8} />
             </button>
           </div>
+          {!empty && <TestBar state={state} apply={apply} />}
           {!empty && (
             <button
               type="button"
@@ -892,7 +1018,15 @@ function Canvas({
                   apply((s) => ({ ...s, selected: [menuStep.id], open: menuStep.id }));
                 }}
               />
-              <MenuRow label={t(DO.testStep)} disabled onClick={() => {}} />
+              <MenuRow
+                label={t(state.testing?.step === menuStep.id ? "auto.view.testing" : DO.testStep)}
+                boniAction="automations.test"
+                disabled={!tester || cannotTest(menuStep, state.testing !== null) !== null}
+                onClick={() => {
+                  close();
+                  acts.testStep(menuStep.id);
+                }}
+              />
               <MenuRow
                 label={t(menuStep.settings?.off ? DO.turnOn : DO.turnOff)}
                 boniAction="automations.edit"

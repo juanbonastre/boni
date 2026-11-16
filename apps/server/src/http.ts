@@ -431,6 +431,7 @@ export function makeApp(opts: ServerOptions): App {
           store,
           trust: s.trust,
           device: s.device,
+          zone: (opts.agent as AgentHost).tz,
           ...(opts.actions ? { registry: opts.actions } : {}),
         });
         if ("refused" in r) return send(res, 403, { error: "policy", rule: r.refused });
@@ -470,6 +471,36 @@ export function makeApp(opts: ServerOptions): App {
           return automation("automations.delete", { id });
         case "POST /api/agent/automations/:id/restore":
           return automation("automations.restore", { id });
+        // «Probar» and «Probar paso» (AU-90, AU-91): the trigger, its fields and, for one step, that step.
+        case "POST /api/agent/automations/:id/test": {
+          const b = await bodyOf(req);
+          return automation("automations.test", {
+            id,
+            trigger: b.trigger,
+            fields: b.fields,
+            ...(b.step !== undefined ? { step: b.step } : {}),
+          });
+        }
+        // The last test's rows, a page at a time (AU-71, AU-72), and the sample a step's expressions preview with
+        // (AU-20): reads of the automation, so automations.read, told which part.
+        case "GET /api/agent/automations/:id/test/rows": {
+          const q = url.searchParams;
+          const offset = Number(q.get("offset") ?? "0");
+          return automation("automations.read", {
+            id,
+            part: "rows",
+            step: q.get("step") ?? "",
+            side: q.get("side") ?? "",
+            name: q.get("name") ?? "",
+            offset: Number.isInteger(offset) ? offset : -1,
+          });
+        }
+        case "GET /api/agent/automations/:id/test/sample":
+          return automation("automations.read", {
+            id,
+            part: "sample",
+            step: url.searchParams.get("step") ?? "",
+          });
         default:
           return send(res, 404, { error: "not-found" });
       }
