@@ -7,6 +7,7 @@
  */
 import { type StepFailure, StepFault } from "./failures.ts";
 import type { Problem } from "./validate.ts";
+import type { WriteProblemCode } from "./writes.ts";
 
 // ---------------------------------------------------------------- the step
 
@@ -179,8 +180,6 @@ export const CODE_PROBLEMS = [
   "connection.repeated",
   /** More than `MAX_CONNECTIONS`. */
   "connection.many",
-  /** A permission to create, modify or remove on a step that only reads (AU-32, AU-41). `detail.action`. */
-  "connection.write",
   /** A limit that is not one: a field the collection does not have (`detail.field`), a filter that is not the views', a limit that is not a whole number from 1 to `CODE_LIMITS.readRows`. `detail.why`: "field", "where", "limit". */
   "connection.limits",
 ] as const;
@@ -189,5 +188,9 @@ export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
 /** The codes of `CODE_PROBLEMS` that are only warnings; every other is an error. */
 export const CODE_WARNINGS: readonly CodeProblemCode[] = ["code.fieldNotGiven"];
 
-/** A `Problem` with one of F14c's codes. Citations of steps keep the codes they have (`expr.unknownStep`, `expr.notBefore`, `expr.cannotPair`, `expr.noCurrentRow`). */
-export type CodeProblem = Omit<Problem, "code"> & { code: CodeProblemCode };
+/**
+ * A `Problem` with one of F14c's codes: these, and those of saving from code (`WRITE_PROBLEMS`, writes.ts), which the
+ * build of saving joins to this list with their words. Citations of steps keep the codes they have
+ * (`expr.unknownStep`, `expr.notBefore`, `expr.cannotPair`, `expr.noCurrentRow`).
+ */
+export type CodeProblem = Omit<Problem, "code"> & { code: CodeProblemCode | WriteProblemCode };

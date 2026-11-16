@@ -1,5 +1,7 @@
 // The engine's rules (docs/automatizaciones.md §5.2). Real tests use the repo's invented seeds and fakes of `Policy`,
 // `Collections`, `Clock` and `Dates` (run.test-util.ts): never a store.
+
+import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { rng } from "../../entities/src/random.test-util.ts";
 import { cite, collection, ids, knowing, sketch } from "./automation.test-util.ts";
@@ -634,9 +636,9 @@ describe("how an automation runs", () => {
     };
     const once = async () => {
       const { s, db, totals } = build();
-      const t = performance.now();
+      const t = now();
       const e = await start(s.build(), s.id("Inicio"), {}, { collections: db });
-      return { e, s, saved: db.rows(totals.key), ms: performance.now() - t };
+      return { e, s, saved: db.rows(totals.key), ms: now() - t };
     };
     const a = await once();
     const b = await once();
@@ -653,7 +655,7 @@ describe("how an automation runs", () => {
     expect(b.saved).toEqual(a.saved);
     console.info(`F14a criterion: 3,000 rows in ${a.ms.toFixed(0)} ms, then ${b.ms.toFixed(0)} ms`);
     // Not a benchmark: a ceiling far above what it takes, so a slip of the engine into quadratic work shows.
-    expect(a.ms).toBeLessThan(5000);
+    under(a.ms, 5000, "clock", "3,000 rows through the engine");
   });
 
   it("AU-38 · A-15: a step with a `{{ }}` of JavaScript and a «Código» once per row over 3,000 rows take the engine's batches, and the engine's own part of it stays far under its ceiling", async () => {
@@ -689,9 +691,9 @@ describe("how an automation runs", () => {
       .arrow("Inicio", "Buscar")
       .arrow("Buscar", "Más")
       .arrow("Más", "Código");
-    const t = performance.now();
+    const t = now();
     const e = await start(s.build(), s.id("Inicio"), {}, { collections: db, box });
-    const ms = performance.now() - t;
+    const ms = now() - t;
     expect(e.state).toBe("done");
     expect(sizes).toEqual([
       ...Array(6).fill(["expressions", 500]),
@@ -702,7 +704,7 @@ describe("how an automation runs", () => {
       `A-15 (E3): 3,000 rows through two JavaScript steps, ${sizes.length} calls, ${ms.toFixed(0)} ms of the engine`,
     );
     // Not a benchmark: a ceiling far above what it takes, so a slip of the engine into work per row or quadratic work shows.
-    expect(ms).toBeLessThan(5000);
+    under(ms, 5000, "clock", "the engine's part of 3,000 rows through two JavaScript steps");
   });
 
   it("every action of the catalogue that is not a trigger's has an executor of its mode", () => {

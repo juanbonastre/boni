@@ -1,8 +1,9 @@
 /**
  * A step's connections with collections and their limits (docs/automatizaciones.md §5.5): what the step may do in each
- * collection it is joined to. In F14c only «Código» has them and only to read (AU-41, AU-46); writing arrives with the
- * «Agente» (F15), and the format already holds its three actions so it does not change again. A connection only
- * narrows: it never lets a step do what the policy does not (the policy is asked for every read all the same, AU-161).
+ * collection it is joined to. In F14c only «Código» has them: it always reads, and may be let create, modify or remove
+ * (AU-41, AU-46, AU-176; Juan, 2026-11-16); the «Agente» (F15) takes the same four. A connection only narrows: it
+ * never lets a step do what the policy does not (the policy is asked for every read and every write all the same,
+ * AU-161, AU-174).
  */
 import { type FilterItem, filterErrors, isFilterGroup } from "@boni/views";
 import { CODE_LIMITS, CODE_TYPE, CodeFault, type CodeProblem } from "./code.ts";
@@ -31,12 +32,14 @@ export interface Connection {
   /** The collection's key: a literal, so the map knows it before any run (D-48). One connection per collection. */
   collection: string;
   read: false | ReadLimits;
-  /** F15. In F14c anything but `false` does not validate (`connection.write`). */
+  /**
+   * The three write actions: `false` is «No», `ask` «Preguntar», `yes` «Sí», each on its own (AU-176). Their own
+   * limits (`where`, `fields`, `fixed`) are F15's (AU-48); in F14c a write keeps to the read's limits (AU-177).
+   */
   create: false | { mode: "ask" | "yes"; fields?: string[]; fixed?: Record<string, ParamValue> };
-  /** F15. */
   update: false | { mode: "ask" | "yes"; where?: FilterItem[]; fields?: string[] };
-  /** F15. To the trash; never "yes". */
-  remove: false | { mode: "ask"; where?: FilterItem[] };
+  /** Always to the trash (AU-122); a `yes` removes without asking only as AU-186 says. */
+  remove: false | { mode: "ask" | "yes"; where?: FilterItem[] };
 }
 
 export const CONNECTION_ACTIONS = ["read", "create", "update", "remove"] as const;
@@ -85,13 +88,13 @@ export type NarrowedAsk = ReadAsk & {
 };
 
 /**
- * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46): «Código», `read`
- * alone; every other type of F14c, none (a connection on it does not validate). F15 adds the «Agente» with the four.
+ * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46, AU-176): «Código»,
+ * the four; every other type of F14c, none (a connection on it does not validate). F15 gives the «Agente» the same.
  */
 export function connectionActions(type: string): readonly ConnectionAction[] {
-  return type === CODE_TYPE ? READ_ONLY : NONE;
+  return type === CODE_TYPE ? ALL : NONE;
 }
-const READ_ONLY: readonly ConnectionAction[] = Object.freeze(["read"]);
+const ALL: readonly ConnectionAction[] = Object.freeze([...CONNECTION_ACTIONS]);
 const NONE: readonly ConnectionAction[] = Object.freeze([]);
 
 /** What connecting a collection gives (AU-41): reading with no limits, and no permission to write. */
@@ -99,7 +102,23 @@ export function newConnection(collection: string): Connection {
   return { collection, read: {}, create: false, update: false, remove: false };
 }
 
-/** Every permission a step's connections give, in the order of its connections and of `CONNECTION_ACTIONS`. */
+/**
+ * The fix of `code.write.notAllowed` (AU-176): the connection with that action's cell at «Preguntar». Never «Sí»: that
+ * only the person's hand sets (AU-188). A cell that already allows it is left as it is.
+ */
+export function allowing(
+  connection: Connection,
+  action: Exclude<ConnectionAction, "read">,
+): Connection {
+  if (connection[action] !== false) return connection;
+  return { ...connection, [action]: { mode: "ask" } };
+}
+
+/**
+ * Every permission a step's connections give, in the order of its connections and of `CONNECTION_ACTIONS`, each with
+ * its mode: reading is always `yes`; a write `ask` («pregunta antes») or `yes` (a removal so is «sin preguntar»,
+ * AU-178, AU-189).
+ */
 export function permissions(connections: readonly Connection[]): Permission[] {
   const out: Permission[] = [];
   for (const c of connections)
@@ -247,9 +266,6 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
       add("connection.unknown", { collection: c.collection });
       continue;
     }
-    for (const action of CONNECTION_ACTIONS)
-      if (c[action] !== false && !actions.includes(action))
-        add("connection.write", { collection: c.collection, action });
     const keys = new Set(shape.fields.map((f) => f.key));
     const limits = (why: string, extra: Record<string, string | number> = {}) =>
       add("connection.limits", { collection: c.collection, why, ...extra });
@@ -361,7 +377,7 @@ export function parseConnection(
     if (!isObj(remove)) throw new FormatError(`${path}.remove`, "false or its permission");
     closedKeys(remove, ["mode", "where"], `${path}.remove`);
     const r: Exclude<Connection["remove"], false> = {
-      mode: modeOf(remove.mode, `${path}.remove.mode`, ["ask"]) as "ask",
+      mode: modeOf(remove.mode, `${path}.remove.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (remove.where !== undefined) r.where = filterOf(remove.where, `${path}.remove.where`);
     out.remove = r;

@@ -4,16 +4,19 @@
  * gate and the same executor as a «Colección» step's action, all or nothing. What the code may ask is read from it
  * before it runs (the analysis, an upper bound the engine enforces) and allowed by its connection (the permission,
  * checked again at run time). The box still has no way to the store: a request is data in what an evaluation gives.
- * Contracts of F14c: nothing here is built yet (pending.ts), and these lists stay apart from `CODE_LIMITS`,
- * `CODE_FAILURES` and `CODE_PROBLEMS` until the PR that builds them joins them (the screen has words for each entry).
+ * Built in W1: the analysis (`readWrites`, `grantsOf`), what validation says of it (`writeProblems`, joined into
+ * `codeProblems`) and what the step's view says (`connectionUses`). The rest are contracts (pending.ts), and these
+ * lists stay apart from `CODE_LIMITS`, `CODE_FAILURES` and `CODE_PROBLEMS` until the PR that builds saving joins them
+ * (the screen has words for each entry).
  */
 import type { Label } from "@boni/entities";
 import type { Fields } from "./box.ts";
+import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import type { Connection } from "./connections.ts";
 import type { Asked, Change, Labelled, StoredRow, WriteResult } from "./effects.ts";
 import { type StepFailure, StepFault } from "./failures.ts";
 import type { Automation, Step } from "./format.ts";
-import type { CodeContext, Span } from "./javascript.ts";
+import { type CodeContext, type CodeReading, readCode, type Span } from "./javascript.ts";
 import { notBuilt } from "./pending.ts";
 import type { Cell } from "./rows.ts";
 import type { Problem } from "./validate.ts";
@@ -194,12 +197,18 @@ export interface WriteReading {
 }
 
 /**
- * Reads one piece of JavaScript with the parser `readCode` uses (javascript.ts) and the same walk, and never runs it.
- * The build folds it into `readCode` (a field `writes` of `CodeReading`) or calls the same parse: one reading.
+ * Reads one piece of JavaScript with `readCode` (javascript.ts), and never runs it: its `writes`, and its problems of
+ * `$col`'s form. One reading: `readCode` finds both in the same walk, and validation takes them from it.
  */
 export function readWrites(source: string, as: "expression" | "code"): WriteReading {
-  return notBuilt(`readWrites(${as}, ${source.length})`);
+  return writesOf(readCode(source, as));
 }
+
+/** The part of a reading `readWrites` gives. */
+export const writesOf = (reading: CodeReading): WriteReading => ({
+  writes: reading.writes,
+  problems: reading.problems.filter((p): p is WriteProblem => p.code === "code.colUse"),
+});
 
 /** One collection with one action the code may ask for: the analysis's upper bound, one entry per pair. */
 export interface WriteGrant {
@@ -217,16 +226,66 @@ export function grantsOf(
   reading: WriteReading,
   collectionNamed: (name: string) => string | undefined,
 ): WriteGrant[] {
-  return notBuilt(`grantsOf(${reading.writes.length}, ${typeof collectionNamed})`);
+  const out: WriteGrant[] = [];
+  for (const site of reading.writes) {
+    const collection = collectionNamed(site.name);
+    if (collection === undefined) continue;
+    if (!out.some((g) => g.collection === collection && g.action === site.action))
+      out.push({ collection, action: site.action });
+  }
+  return out;
 }
 
-/** Everything wrong with a «Código»'s writes for `validate` to add (`WRITE_PROBLEMS`), given a `CodeContext`. */
+/**
+ * Everything wrong with a «Código»'s writes for `validate` to add (`WRITE_PROBLEMS`), given a `CodeContext`: `$col`
+ * in a form that cannot be followed (`code.colUse`) and an action its connection does not give
+ * (`code.write.notAllowed`, AU-176), at every call that asks for it. Any other step saves nothing from code: none.
+ * `validate` gives the same through `codeProblems`, from the one reading of the step's code.
+ */
 export function writeProblems(
   step: Step,
-  automation: Automation,
+  _automation: Automation,
   context: CodeContext,
 ): WriteProblem[] {
-  return notBuilt(`writeProblems(${step.id}, ${automation.steps.length}, ${typeof context})`);
+  const source = step.params[CODE_PARAMS.source];
+  if (step.type !== CODE_TYPE || typeof source !== "string") return [];
+  const reading = readWrites(source, "code");
+  return [
+    ...reading.problems.map((p) => ({ ...p, step: step.id, param: CODE_PARAMS.source })),
+    ...notAllowed(step, reading, context.collectionNamed),
+  ];
+}
+
+/**
+ * `code.write.notAllowed` at each call that asks for an action the step's connection to that collection does not give
+ * (AU-176). A collection with no connection is `code.notConnected` already, and one with no name, `code.unknownCollection`.
+ */
+export function notAllowed(
+  step: Step,
+  reading: WriteReading,
+  collectionNamed: (name: string) => string | undefined,
+): WriteProblem[] {
+  const out: WriteProblem[] = [];
+  for (const site of reading.writes) {
+    const collection = collectionNamed(site.name);
+    const connection = (step.connections ?? []).find((c) => c.collection === collection);
+    if (collection === undefined || !connection || connection[site.action] !== false) continue;
+    out.push({
+      code: "code.write.notAllowed",
+      severity: "error",
+      step: step.id,
+      param: CODE_PARAMS.source,
+      detail: {
+        collection,
+        action: site.action,
+        line: site.at.line,
+        column: site.at.column,
+        from: site.at.from,
+        to: site.at.to,
+      },
+    });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- what the person sees
@@ -254,9 +313,18 @@ export function connectionUses(
   reading: WriteReading,
   collectionNamed: (name: string) => string | undefined,
 ): ConnectionUse[] {
-  return notBuilt(
-    `connectionUses(${connections.length}, ${reading.writes.length}, ${typeof collectionNamed})`,
-  );
+  const out: ConnectionUse[] = [];
+  for (const c of connections)
+    for (const action of WRITE_ACTIONS) {
+      const given = c[action];
+      const allowed = given === false ? false : given.mode;
+      const at = reading.writes
+        .filter((w) => w.action === action && collectionNamed(w.name) === c.collection)
+        .map((w) => w.at);
+      if (allowed === false && at.length === 0) continue;
+      out.push({ collection: c.collection, action, allowed, used: at.length > 0, at });
+    }
+  return out;
 }
 
 /**
