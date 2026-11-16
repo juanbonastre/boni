@@ -21,7 +21,7 @@ import {
   type StepSettings,
 } from "@boni/automations";
 import type { FilterItem } from "@boni/views";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { citedName } from "../automations/cite.ts";
 import type { Sample } from "../automations/client.ts";
@@ -595,13 +595,16 @@ function FieldsControl({ param, value, set, path, label, marked }: ControlProps)
               set={(x, typing) => put(i, { value: x }, typing)}
               typing={(n) => v.typing(`${path}.${i}.value`, n)}
             />
+            {/* The same trash as a condition's, so «{ }» closes every value's row in one column (AU-20). */}
             <button
               type="button"
-              className="btn ghost small"
+              className="icon-btn tiny"
+              aria-label={v.t(DO.eraseRow)}
+              title={v.t(DO.eraseRow)}
               data-boni-action="automations.edit"
               onClick={() => set(rows.filter((_, j) => j !== i))}
             >
-              {v.t(DO.eraseRow)}
+              <Trash2 size={13} strokeWidth={1.8} />
             </button>
           </div>
         );

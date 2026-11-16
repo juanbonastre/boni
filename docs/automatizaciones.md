@@ -308,17 +308,20 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 ### 5.3 Los valores: fijo o expresión
 
 - **AU-20** (F14b, hecho) · Un parámetro que es un valor es «Fijo» (su control: texto, número, fecha, una opción
-  del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», dentro del propio control y siempre a
-  la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
+  del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», que cierra la línea del valor y siempre
+  está a la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
   resuelve el servidor (AU-162); el JavaScript llega con la F14c (AU-22).
   En la F14b: soltar un campo en un valor de texto añade la cita donde está el cursor (al final si no lo hay); en un
   número, una fecha o una opción, la cita sustituye al valor. Pasar a «Expresión» con «{ }» conserva lo escrito,
   como texto de la expresión; volver a «Fijo» deja el control vacío, y las dos cosas se pueden deshacer. Después de una prueba, debajo de un valor que es una expresión se lee lo que da con la primera fila
   de la entrada («= 5 · con la fila 1 de 128»); sin prueba no se lee nada debajo.
-  Hecho en F: «{ }» al final de cada valor de la vista (dentro de un texto, un número o una fecha; al lado de una
-  opción o de una casilla), soltar en un texto donde está el cursor y en lo demás en lugar del valor, el paso a
+  Hecho en F: «{ }» al final de cada valor de la vista, soltar en un texto donde está el cursor y en lo demás en lugar del valor, el paso a
   «Expresión» y vuelta con Deshacer, y lo que da con la primera fila de la última prueba, que se calcula en la app a
   cada tecla, sin preguntar al servidor (A-15).
+  Hecho en G (Juan, 2026-11-16: «lo que mejor sea para la usabilidad»): «{ }» va al lado de su control en todos
+  los valores, en una columna: el mismo borde derecho, tamaño y aspecto en un texto, un número, una fecha, una
+  opción, una casilla o una expresión, de una condición o de «Campo · Valor», también tras pasar a expresión y
+  volver; la papelera de «Campo · Valor» es la de una condición; Tab va de cada control a su «{ }».
 - **AU-21** (F14b, hecho) · Arrastrar un campo de «Entrada» a un parámetro lo cita. Una cita sencilla se ve
   como una ficha con el icono de su paso y el nombre del campo («Importe mínimo»), nunca como código; si dos pasos
   tienen un campo que se llama igual, la ficha lleva también el paso («Buscar gastos › Importe»).

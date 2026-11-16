@@ -12362,6 +12362,7 @@ tr[data-boni-pointed] > td {
   flex: 1;
   min-width: 0;
 }
+/* «{ }» closes every value's row, beside its control, in one column whatever the value is (AU-20). */
 .auto-expr-toggle {
   flex: none;
   min-width: 30px;
@@ -12383,23 +12384,6 @@ tr[data-boni-pointed] > td {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-}
-/* On a box of text, a number, a date or an expression, «{ }» sits inside it, at its right end (AU-20). */
-.auto-value-row:has(> .auto-expr, > .auto-value-fixed > input.input:not([type="checkbox"])) {
-  position: relative;
-}
-.auto-value-row:has(> .auto-expr, > .auto-value-fixed > input.input:not([type="checkbox"]))
-  > .auto-expr-toggle {
-  position: absolute;
-  right: 3px;
-  top: 3px;
-  height: 24px;
-  min-width: 26px;
-  border-color: transparent;
-}
-.auto-value-row > .auto-expr,
-.auto-value-row > .auto-value-fixed > input.input:not([type="checkbox"]) {
-  padding-right: 34px;
 }
 /* The expression's editor: one line that wraps, its citations as chips (AU-21). */
 /* One line while it fits; a longer expression wraps between words and the box grows. */

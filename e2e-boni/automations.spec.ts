@@ -225,6 +225,34 @@ const CONDITIONS = {
     { step: "s_01jeliminar", x: 1200, y: 110 },
   ],
 };
+/** «Marcar los leídos»: one value of each kind in one view, a condition's and «Campo · Valor»'s (AU-20). */
+const KINDS = {
+  id: "a_01jx8w9s1u3w5y7a9c1e3g5k2p",
+  name: "Marcar los leídos",
+  updated: 1761970000000,
+  steps: [
+    step("s_inicio", "Disparado por el usuario", "manual"),
+    step("s_01jmarcar", "Modificar filas en Libros", "collection", {
+      collection: "libros",
+      action: "update",
+      target: "matching",
+      where: [{ field: "estado", op: "is", value: "o_leyendo" }],
+      fields: [
+        { field: "titulo", value: "Leído entero" },
+        { field: "estado", value: "o_leido" },
+        { field: "paginas", value: 320 },
+        { field: "fin", value: "2026-11-01" },
+        { field: "fav", value: true },
+        { field: "relacionado", value: { expr: "{{ $json.titulo }}" } },
+      ],
+    }),
+  ],
+  arrows: [arrow("s_inicio", "s_01jmarcar")],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jmarcar", x: 300, y: 0 },
+  ],
+};
 /** The keys a choice offers, when they are keys and not fields. */
 const keysOf = (p: ParamSpec): readonly string[] =>
   p.control === "choice" && Array.isArray(p.options) ? (p.options as readonly string[]) : [];
@@ -2478,7 +2506,7 @@ test.describe("the step's view", () => {
       { field: "notas", value: { expr: "Rev{{ $json.titulo }}isar ya" } },
     ]);
   });
-  test("AU-20 · every control of a value has «{ }» inside it, always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async ({
+  test("AU-20 · every control of a value ends with «{ }», always in sight: it turns a fixed value into an expression keeping what was written, and back leaves the control empty; Ctrl+Z undoes either", async ({
     page,
   }) => {
     await openApp(page, "/?still", { automations: [CONDITIONS], agent: BEFORE() });
@@ -2506,6 +2534,78 @@ test.describe("the step's view", () => {
     await expect.poll(() => exprOf(limit.getByRole("textbox", { name: "Límite" }))).toBe("50");
     await press(page, "Control+z");
     await expect(limit.getByRole("spinbutton", { name: "Límite" })).toHaveValue("50");
+  });
+  test("AU-20 · «{ }» closes every value's row in one column: the same right edge, size and look on a text, a number, a date, a select, a checkbox and an expression, of a condition and of «Campo · Valor», also after a value goes to an expression and back; Tab goes from each control to its «{ }»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [KINDS], agent: BEFORE() });
+    await openCanvas(page, KINDS.name, 2);
+    await openStep(page, "s_01jmarcar");
+    const values = view(page).locator(".auto-value");
+    // The condition's value and the six of «Campo · Valor».
+    await expect(values).toHaveCount(7);
+    await expect(view(page).locator(".auto-expr")).toHaveCount(1);
+    for (const kind of ["text", "number", "date", "checkbox"])
+      await expect(view(page).locator(`.auto-value-fixed input[type="${kind}"]`)).toHaveCount(1);
+    await expect(view(page).locator(".auto-value-fixed select")).toHaveCount(2);
+    /** Each «{ }»'s right edge, width, height and look, as the screen draws it. */
+    const toggles = () =>
+      view(page)
+        .locator(".auto-expr-toggle")
+        .evaluateAll((all) =>
+          all.map((b) => {
+            const r = b.getBoundingClientRect();
+            const c = getComputedStyle(b);
+            return {
+              right: Math.round(r.right),
+              width: Math.round(r.width),
+              height: Math.round(r.height),
+              look: `${c.borderTopWidth} ${c.borderTopStyle} ${c.borderRadius} ${c.fontSize}`,
+              on: b.classList.contains("on"),
+            };
+          }),
+        );
+    const oneColumn = async () => {
+      const all = await toggles();
+      expect(all).toHaveLength(7);
+      for (const t of all) {
+        expect(t.right).toBe(all[0]?.right);
+        expect(t.width).toBe(all[0]?.width);
+        expect(t.height).toBe(all[0]?.height);
+        expect(t.look).toBe(all[0]?.look);
+      }
+      // Pressed or not, it is the same button: only its colour says «Expresión».
+      expect(all.filter((t) => t.on)).toHaveLength(await view(page).locator(".auto-expr").count());
+    };
+    await oneColumn();
+    // A text and a number to an expression, and back: still one column.
+    const fields = param(page, "fields");
+    for (const name of ["Título", "Páginas"]) {
+      const row = fields
+        .locator(".auto-value")
+        .filter({ has: page.getByLabel(name, { exact: true }) });
+      await row.getByRole("button", { name: "Usar una expresión" }).click();
+      await expect(row.locator(".auto-expr")).toHaveCount(1);
+    }
+    await oneColumn();
+    for (const name of ["Título", "Páginas"]) {
+      const row = fields
+        .locator(".auto-value")
+        .filter({ has: page.getByLabel(name, { exact: true }) });
+      await row.getByRole("button", { name: "Usar un valor fijo" }).click();
+      await expect(row.locator(".auto-expr")).toHaveCount(0);
+    }
+    await oneColumn();
+    // Tab: from each control (a date's last part, too) to its own «{ }».
+    for (const v of await values.all()) {
+      const control = v.locator("input, select, [contenteditable]").first();
+      await control.focus();
+      for (let i = 0; i < 4; i++) {
+        if (!(await control.evaluate((c) => c === document.activeElement))) break;
+        await press(page, "Tab");
+      }
+      await expect(v.locator(".auto-expr-toggle")).toBeFocused();
+    }
   });
   test("AU-21 · dragging a field from ENTRADA into a parameter writes its citation, painted as a chip with its step's icon and the field's name: of the step before, of an earlier step chosen in ENTRADA's header, and of a result («Suma de Importe», never its key); with two steps of the path that have a field of the same name the chip says the step too («Buscar gastos › Importe»); a citation of a step that is gone is a red chip", async ({
     page,
