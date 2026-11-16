@@ -3,9 +3,55 @@
  * parameter's value becomes, and how an expression is painted and previewed. The citation's grammar and its
  * resolving are `@boni/automations`'s (`printCitation`, `parseExpression`, `resolve`); nothing here parses by hand.
  */
-import type { Automation, Cell, Citation, CiteFailure, ParamValue } from "@boni/automations";
-import type { Sample } from "./client.ts";
-import { notBuilt } from "./pending.ts";
+import {
+  type Automation,
+  actionOf,
+  type Cell,
+  type Citation,
+  CiteError,
+  type CiteFailure,
+  inputsOf,
+  isExpr,
+  type ParamValue,
+  parseExpression,
+  printCitation,
+  type Row,
+  resolve,
+  type Scope,
+} from "@boni/automations";
+import type { RowView, Sample } from "./client.ts";
+import { stepsBefore } from "./panel.ts";
+
+/** The steps `into` hangs from, by id: the start of every arrow into it. */
+const parentsOf = (draft: Automation, into: string): string[] => [
+  ...new Set(draft.arrows.filter((a) => a.to.step === into).map((a) => a.from.step)),
+];
+
+/**
+ * Whether some way along the arrows from `from` down to `into` passes a step that remakes the rows: then the row
+ * `into` gets cannot be followed back to one of `from`'s (AU-13). The steps strictly between count; `from` and
+ * `into` do not.
+ */
+function remadeBetween(draft: Automation, from: string, into: string): boolean {
+  const byId = new Map(draft.steps.map((s) => [s.id, s]));
+  // The steps that reach `into`: only those can be on a way from `from` to it.
+  const reaches = new Set([into, ...stepsBefore(draft, into)]);
+  const seen = new Set<string>();
+  const walk = (id: string): boolean => {
+    for (const a of draft.arrows) {
+      if (a.from.step !== id || !reaches.has(a.to.step)) continue;
+      const next = a.to.step;
+      if (next === into) continue;
+      const s = byId.get(next);
+      if (s && actionOf(s)?.pairs === false) return true;
+      if (seen.has(next)) continue;
+      seen.add(next);
+      if (walk(next)) return true;
+    }
+    return false;
+  };
+  return walk(from);
+}
 
 /**
  * The citation a dragged field writes (AU-21). `from` is the step whose output the field is of, `into` the step
@@ -16,12 +62,45 @@ import { notBuilt } from "./pending.ts";
  * - `into` has two inputs («Combinar»), so it has no current row: `$('Paso').first().campo`, whichever input.
  */
 export function citationFor(
-  _draft: Automation,
-  _into: string,
-  _from: string,
-  _path: readonly string[],
+  draft: Automation,
+  into: string,
+  from: string,
+  path: readonly string[],
 ): Citation {
-  return notBuilt("citationFor (AU-21)");
+  const here = draft.steps.find((s) => s.id === into);
+  const source = draft.steps.find((s) => s.id === from);
+  const name = source?.name ?? from;
+  const p = [...path];
+  if (here && inputsOf(here).length > 1) return { step: name, pick: "first", path: p };
+  if (parentsOf(draft, into).includes(from)) return { step: null, pick: "item", path: p };
+  return { step: name, pick: remadeBetween(draft, from, into) ? "first" : "item", path: p };
+}
+
+/**
+ * The step whose fields a step's own input lets drag (AU-21), given the arrows into that input: the step they come
+ * from, or, with several, the first of them when the step has one input, since a field of its row is cited as
+ * `$json` whichever arrow brought it. Several arrows into one input of a step with two («Combinar») say no step:
+ * its fields are cited by step, and that one is chosen in ENTRADA's header.
+ */
+export function dragFrom(
+  draft: Automation,
+  into: string,
+  arrows: readonly { from: { step: string } }[],
+) {
+  const here = draft.steps.find((s) => s.id === into);
+  if (arrows.length === 1 || (here && inputsOf(here).length === 1)) return arrows[0]?.from.step;
+  return undefined;
+}
+
+/** A citation as it goes into an expression's text. */
+const written = (cite: Citation) => `{{ ${printCitation(cite)} }}`;
+
+/** A fixed value as an expression's text: a number or a date as its text, nothing as nothing. */
+function asText(value: ParamValue | undefined): string {
+  if (value === undefined || value === null) return "";
+  if (isExpr(value)) return value.expr;
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
 }
 
 /**
@@ -31,24 +110,28 @@ export function citationFor(
  * `start` and `end` at its length: the citation goes at the end.
  */
 export function dropCitation(
-  _value: ParamValue | undefined,
-  _on: { text: true; start: number; end: number } | { text: false },
-  _cite: Citation,
+  value: ParamValue | undefined,
+  on: { text: true; start: number; end: number } | { text: false },
+  cite: Citation,
 ): ParamValue {
-  return notBuilt("dropCitation (AU-20)");
+  if (!on.text) return { expr: written(cite) };
+  const text = asText(value);
+  const start = Math.max(0, Math.min(on.start, text.length));
+  const end = Math.max(start, Math.min(on.end, text.length));
+  return { expr: text.slice(0, start) + written(cite) + text.slice(end) };
 }
 
 /**
  * «{ }» (AU-20), the small button inside every control of a value, always in sight. To «Expresión»: what was
  * written stays, as the expression's text (a number or a date as its text; nothing, an empty expression).
  */
-export function toExpression(_value: ParamValue | undefined): ParamValue {
-  return notBuilt("toExpression (AU-20)");
+export function toExpression(value: ParamValue | undefined): ParamValue {
+  return isExpr(value) ? value : { expr: asText(value) };
 }
 
 /** «{ }» back to «Fijo»: the control is left empty (null). Both ways are changes like any other: undone (AU-68). */
 export function toFixed(_value: ParamValue | undefined): ParamValue {
-  return notBuilt("toFixed (AU-20)");
+  return null;
 }
 
 /** An expression as it is painted: text as typed, and each citation a chip. */
@@ -75,25 +158,158 @@ export type Painted =
   /** Not a simple citation: shown as typed until F14c (AU-22). */
   | { kind: "code"; source: string };
 
-export function paint(
-  _expr: string,
-  _draft: Automation,
-  /** The step being edited, by id: what `$json` is the row of. */
-  _into: string,
-  /** Field names by step name, then by key: from the last test's rows and the collections' shapes. */
-  _names: Readonly<Record<string, Readonly<Record<string, string>>>>,
-): Painted[] {
-  return notBuilt("paint (AU-21)");
+/**
+ * The fields a step makes itself, by key: those of its names that none of the steps it hangs from gives. A field
+ * that only passes through («Filtrar» lets «Importe» by) is its maker's, not every step's after it.
+ */
+function ownFields(
+  draft: Automation,
+  id: string,
+  names: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  nameOf: (id: string) => string | undefined,
+): Map<string, string> {
+  const mine = names[nameOf(id) ?? ""] ?? {};
+  const passed = new Set(
+    parentsOf(draft, id).flatMap((p) => Object.keys(names[nameOf(p) ?? ""] ?? {})),
+  );
+  return new Map(Object.entries(mine).filter(([k]) => !passed.has(k)));
 }
+
+/** The step a field comes from: back along the first arrow in while the field only passes through. */
+function makerOf(
+  draft: Automation,
+  id: string,
+  key: string,
+  names: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  nameOf: (id: string) => string | undefined,
+): string {
+  const seen = new Set<string>();
+  let at = id;
+  while (!seen.has(at)) {
+    seen.add(at);
+    const up = parentsOf(draft, at).find((p) => key in (names[nameOf(p) ?? ""] ?? {}));
+    if (!up) return at;
+    at = up;
+  }
+  return at;
+}
+
+export function paint(
+  expr: string,
+  draft: Automation,
+  /** The step being edited, by id: what `$json` is the row of. */
+  into: string,
+  /** Field names by step name, then by key: from the last test's rows and the collections' shapes. */
+  names: Readonly<Record<string, Readonly<Record<string, string>>>>,
+): Painted[] {
+  const parts = parseExpression(expr);
+  if (!parts.some((p) => p.kind === "cite")) return parts as Painted[];
+  const byName = new Map(draft.steps.map((s) => [s.name, s.id]));
+  const nameOf = (id: string) => draft.steps.find((s) => s.id === id)?.name;
+  const path = stepsBefore(draft, into);
+  // The names each step of the path makes itself, made once for the whole expression.
+  const own = new Map(path.map((id) => [id, ownFields(draft, id, names, nameOf)]));
+  return parts.map((p): Painted => {
+    if (p.kind !== "cite") return p;
+    const { cite } = p;
+    const step = cite.step === null ? (parentsOf(draft, into)[0] ?? null) : byName.get(cite.step);
+    const [key = "", ...rest] = cite.path;
+    if (step === undefined)
+      return {
+        kind: "chip",
+        cite,
+        name: cite.path.join(" › "),
+        step: null,
+        withStep: true,
+        broken: "step.unknown",
+      };
+    const known = step === null ? undefined : names[nameOf(step) ?? ""];
+    const field = known?.[key];
+    const name = [field ?? key, ...rest].join(" › ");
+    // A field is missing only where the step's shape is known (a test, a collection): else its key is all there is.
+    const missing = !!known && Object.keys(known).length > 0 && field === undefined;
+    let withStep = false;
+    if (step !== null && field !== undefined) {
+      const maker = makerOf(draft, step, key, names, nameOf);
+      for (const [id, fields] of own)
+        if (id !== maker && [...fields.values()].includes(field)) withStep = true;
+    }
+    return {
+      kind: "chip",
+      cite,
+      name,
+      step,
+      withStep,
+      ...(missing ? { broken: "field.unknown" as const } : {}),
+    };
+  });
+}
+
+/** A row of the sample as the engine reads it: what a citation picks. */
+const rowOf = (v: RowView): Row => ({
+  json: v.json,
+  label: v.label,
+  ...(v.fields
+    ? {
+        fields: Object.fromEntries(
+          Object.entries(v.fields).map(([k, label]) => [k, { label, derived: false }]),
+        ),
+      }
+    : {}),
+  path: null,
+  parent: null,
+});
 
 /**
  * What an expression gives with the first row of the last test (AU-20), resolved here on every keystroke: the
- * value, with which row and of how many («= 5 · con la fila 1 de 128»); why not, as the engine says it; or null
- * when the step has no test to preview with.
+ * value, with which row and of how many («= 5 · con la fila 1 de 128»); why not, as the engine says it, with the
+ * step it cites; or null when the step has no test to preview with.
  */
 export function preview(
-  _value: ParamValue,
-  _sample: Sample | null,
-): { value: Cell; row: 1; of: number } | { failure: CiteFailure | "expr.code" } | null {
-  return notBuilt("preview (AU-20)");
+  value: ParamValue,
+  sample: Sample | null,
+):
+  | { value: Cell; row: 1; of: number }
+  | { failure: CiteFailure | "expr.code"; step?: string }
+  | null {
+  if (!sample || !isExpr(value)) return null;
+  const parts = parseExpression(value.expr);
+  if (parts.some((p) => p.kind === "code")) return { failure: "expr.code" };
+  const current = sample.current ? rowOf(sample.current) : null;
+  const scope: Scope = {
+    current,
+    row(step, pick) {
+      const at = sample.steps[step];
+      const cite: Citation = { step, pick, path: ["_"] };
+      if (!at) throw new CiteError("notRun", cite);
+      const v = at[pick];
+      if (v) return rowOf(v);
+      throw new CiteError(pick === "item" && at.first ? "noPair" : "noRows", cite);
+    },
+    literal: sample.current?.label ?? {
+      integrity: "user",
+      sensitivity: "personal",
+      thirdParty: false,
+      sources: [],
+    },
+  };
+  try {
+    return { value: resolve(value, scope).value, row: 1, of: sample.total };
+  } catch (e) {
+    if (e instanceof CiteError)
+      return { failure: e.failure, ...(e.cite.step !== null ? { step: e.cite.step } : {}) };
+    return { failure: "expr.code" };
+  }
+}
+
+/** A citation alone said by its field's name, as its chip says it: what a step's summary says (AU-21). */
+export function citedName(
+  draft: Automation,
+  into: string,
+  names: Readonly<Record<string, Readonly<Record<string, string>>>>,
+): (cite: Citation) => string | undefined {
+  return (cite) => {
+    const [p] = paint(written(cite), draft, into, names);
+    return p?.kind === "chip" && !p.broken ? p.name : undefined;
+  };
 }

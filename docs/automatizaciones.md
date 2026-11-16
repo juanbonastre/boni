@@ -307,7 +307,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 
 ### 5.3 Los valores: fijo o expresión
 
-- **AU-20** (F14b, pendiente) · Un parámetro que es un valor es «Fijo» (su control: texto, número, fecha, una opción
+- **AU-20** (F14b, hecho) · Un parámetro que es un valor es «Fijo» (su control: texto, número, fecha, una opción
   del campo, una fila) o «Expresión». Se cambia con un botón pequeño, «{ }», dentro del propio control y siempre a
   la vista; arrastrarle un campo lo cambia también. Hasta la F14c una expresión es texto con citas (AU-21), que
   resuelve el servidor (AU-162); el JavaScript llega con la F14c (AU-22).
@@ -315,7 +315,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   número, una fecha o una opción, la cita sustituye al valor. Pasar a «Expresión» con «{ }» conserva lo escrito,
   como texto de la expresión; volver a «Fijo» deja el control vacío, y las dos cosas se pueden deshacer. Después de una prueba, debajo de un valor que es una expresión se lee lo que da con la primera fila
   de la entrada («= 5 · con la fila 1 de 128»); sin prueba no se lee nada debajo.
-- **AU-21** (F14b, pendiente) · Arrastrar un campo de «Entrada» a un parámetro lo cita. Una cita sencilla se ve
+  Hecho en F: «{ }» al final de cada valor de la vista (dentro de un texto, un número o una fecha; al lado de una
+  opción o de una casilla), soltar en un texto donde está el cursor y en lo demás en lugar del valor, el paso a
+  «Expresión» y vuelta con Deshacer, y lo que da con la primera fila de la última prueba, que se calcula en la app a
+  cada tecla, sin preguntar al servidor (A-15).
+- **AU-21** (F14b, hecho) · Arrastrar un campo de «Entrada» a un parámetro lo cita. Una cita sencilla se ve
   como una ficha con el icono de su paso y el nombre del campo («Importe mínimo»), nunca como código; si dos pasos
   tienen un campo que se llama igual, la ficha lleva también el paso («Buscar gastos › Importe»).
   En la F14b: se arrastran los campos de la entrada del paso y los de cualquier paso anterior de su camino, que se
@@ -327,6 +331,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   El icono de la ficha es el del paso del que es el campo (en `$json`, el paso del que cuelga). La ficha lleva
   también el paso cuando otro paso del camino tiene un campo con el mismo nombre. Un paso con dos entradas
   («Combinar») no tiene fila actual: un campo soltado en un valor suyo se cita por su paso, con `first()`.
+  Hecho en F: arrastrar desde «Esquema» (de la entrada y de un paso anterior elegido en la cabecera, y un campo de
+  una fila relacionada), las tres formas de cita, la ficha con el icono y el nombre (con el paso cuando hace falta),
+  la ficha en rojo con el motivo, y el nombre de los resultados. Donde se enseña un valor de una fila («Esquema»,
+  «Tabla», «Haría esto», una ficha, lo que da una expresión), una opción se lee por su nombre, nunca por su id;
+  «JSON» la deja como está.
 - **AU-22** (F14c, en parte) · Una expresión es texto con JavaScript entre `{{ }}`:
   `Hola {{ $json.nombre }}, llevas {{ $('Sumar gastos').first().total }} € este mes`. Escribir `{{` en un valor fijo
   lo pasa a expresión.
@@ -837,8 +846,9 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   paso es una marca en su tarjeta (bien, falló, saltado, parado). El motivo de un fallo se lee en tres sitios: en la
   tarjeta, en dos líneas como mucho; entero, en la SALIDA del paso, en lugar de las filas, con el parámetro que lo
   causa y «Ir al parámetro» (AU-84); y en el «Registro», que dice en qué paso fue (AU-64). Un paso parado dice en su
-  SALIDA «Parado: la prueba paró en «Si»».
-  Hecho en E: todo lo de arriba.
+  SALIDA «Parado: la prueba paró en «Si»». Las flechas y las salidas de un paso que falló no dicen cuenta: no pasó
+  ninguna fila por ellas.
+  Hecho en E: todo lo de arriba. Hecho en F: sin cuenta en las flechas de un paso que falló.
 - **AU-68** (F14b, hecho) · Deshacer y rehacer en el lienzo, y copiar y pegar pasos, con las teclas de siempre.
   En la F14b: `Ctrl`/`⌘`+`Z` deshace y `Ctrl`/`⌘`+`Mayús`+`Z` (o `Ctrl`+`Y`) rehace; `Ctrl`/`⌘`+`C`, `X` y `V` copian,
   cortan y pegan los pasos seleccionados con las flechas que hay entre ellos; `Supr` elimina lo seleccionado, `Intro`
@@ -876,7 +886,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Hecho en D: la vista encima del lienzo atenuado, sus tres columnas, la cabecera con el icono, el nombre que se edita
   ahí, «Probar paso» y cerrar, `Esc`, ningún «Guardar», y los «Datos de prueba» de un disparador con los campos que
   pide. Hecho en E: lo de la última prueba en ellos (AU-94). Falta: su captura de referencia (G).
-- **AU-71** (F14b, en parte) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
+- **AU-71** (F14b, hecho) · ENTRADA dice de qué paso viene y se ve como «Esquema» (por defecto: los campos con un
   valor de muestra, que se arrastran), «Tabla» o «JSON». Vacía, dice «Prueba los pasos anteriores» con su botón.
   En la F14b: la cabecera de ENTRADA dice «De «Buscar gastos» · 128 filas» y deja elegir cualquier paso anterior del
   camino para ver y arrastrar sus campos (AU-21). «Combinar» tiene una pestaña por entrada. «Esquema» lista todos los
@@ -886,7 +896,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   desplaza de lado y sus celdas se cortan a una línea.
   Hecho en E: la cabecera con el paso y las filas, elegir un paso anterior, las pestañas de «Combinar», «Esquema»,
   «Tabla» y «JSON», el buscador, desplegar un nivel, 50 filas y «N filas más», y «Prueba los pasos anteriores» con su
-  botón. Falta: arrastrar los campos (F, AU-21).
+  botón. Hecho en F: arrastrar los campos de «Esquema», también los de una fila relacionada desplegada.
 - **AU-72** (F14b, hecho) · SALIDA se ve como «Tabla» (por defecto; «Esquema» si sale una sola fila), «Esquema»
   o «JSON», con cuántas filas y una pestaña por salida («sí (3)», «no (125)»). En una prueba, un paso que escribe
   enseña «Haría esto», con el antes y el después de cada fila. Su cabecera lleva «Fijar» desde la F14d (AU-93);
@@ -954,13 +964,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   paso, automatización, bloque), código y la tabla de conexiones (los dos últimos llegan con la F14c). Un tipo de
   paso no puede traer un control suyo.
   Hecho en D: los siete controles de la F14b, uno por tipo de `ParamSpec`, y la vista no pinta otros.
-- **AU-81** (F14b, en parte) · Las condiciones son siempre el filtro de las vistas: «todas» por defecto, grupos «y»
+- **AU-81** (F14b, hecho) · Las condiciones son siempre el filtro de las vistas: «todas» por defecto, grupos «y»
   u «o» de un nivel, operadores según el tipo del campo, y el valor, fijo o una expresión (AU-20); el de un control
   de la página se cita como cualquier otro (`$page.mes`, F17). Modificar y eliminar piden al menos una condición (lo
   comprueba la validación: AU-121).
   Hecho en D: en los cinco pasos que tienen condiciones, el editor del filtro de las vistas con «todas», un nivel de
   grupos («Filtro avanzado»), los operadores por el tipo del campo y el valor fijo o una expresión, que se escribe como
-  texto. Falta: la expresión con sus fichas (F, AU-20).
+  texto. Hecho en F: la expresión con sus fichas y su «{ }».
 - **AU-82** (F14b, hecho) · Cambiar la acción de un paso conserva lo que las dos comparten y dice lo que se va,
   con Deshacer. Nada escrito se pierde en silencio.
   En la F14b lo dice un aviso: «Se quitó: Ordenar por, Límite · Deshacer».
@@ -979,7 +989,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Hecho en E: todos.
 - **AU-85** (F14b, hecho) · Una palabra por acción: una prueba comprueba que cada acción («Probar paso», «Añadir
   opción» y, cuando lleguen, «Fijar» y «Publicar») sale de una sola clave de `i18n.ts`.
-- **AU-86** (F14b, en parte) · Un paso nuevo se llama como lo que hace («Buscar filas en Gastos») y el nombre sigue
+- **AU-86** (F14b, hecho) · Un paso nuevo se llama como lo que hace («Buscar filas en Gastos») y el nombre sigue
   a sus parámetros hasta que Juan lo cambia.
   En la F14b: el nombre sale de `i18n.ts` con la acción y, si la hay, la colección («Buscar filas en Gastos»; sin
   colección, «Buscar filas»). Dos pasos no se llaman igual, porque se citan por su nombre: al segundo se le añade un
@@ -987,7 +997,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   mientras sea igual al que saldría de sus parámetros de antes del cambio: no se guarda una marca aparte.
   Hecho en C2: el nombre por la acción y la colección, el número de un nombre repetido, cambiar el nombre en la
   tarjeta y que las citas lo sigan. Hecho en D: el nombre sigue a la colección elegida en la vista del paso hasta que
-  Juan lo cambia. Falta: las fichas de las citas (F, AU-21).
+  Juan lo cambia. Hecho en F: las fichas de las citas cambian con el nombre.
 - **AU-87** (F14b, hecho) · Boni no mete pasos por su cuenta: lo que hay en el lienzo lo puso Juan o lo aceptó.
 - **AU-180** (F14c, pendiente) · La tarjeta de un paso que puede cambiar una colección lo dice sin abrirlo, con la
   colección: «Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas». Es la misma marca para todo paso

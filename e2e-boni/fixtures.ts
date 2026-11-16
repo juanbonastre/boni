@@ -1154,8 +1154,57 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           }
           return [200, JSON.stringify({ rows, total })];
         }
-        if (rest === "/test/sample" && method === "GET")
-          return [200, JSON.stringify({ current: null, total: 0, steps: {} })];
+        // The first rows of the last test as `step` sees them (AU-20), as the server's `testSample` gives them:
+        // `window.__autoSample` has every step asked.
+        if (rest === "/test/sample" && method === "GET") {
+          const step = new URLSearchParams(query).get("step") ?? "";
+          record("__autoSample", step);
+          const arrows = (a.doc.arrows ?? []) as {
+            from: { step: string; output: string };
+            to: { step: string };
+          }[];
+          // A row's label as the server gives it (the spec's rows say `{}`): what a preview joins with the text
+          // around a citation.
+          const label = {
+            integrity: "user",
+            sensitivity: "personal",
+            thirdParty: false,
+            sources: [],
+          };
+          const rowAt = (id: string, output: string, i: number | "last") => {
+            if (!a.tests[id]) return null;
+            const r = testRows(a.spec?.steps[id], `out:${output}`);
+            const n = countOf(r);
+            const at = i === "last" ? n - 1 : i;
+            if (!r || at < 0 || at >= n) return null;
+            if (Array.isArray(r)) return { ...(r[at] as Record<string, unknown>), label };
+            const json: Record<string, unknown> = {};
+            for (let f = 1; f <= r.fields; f++) json[`campo_${f}`] = `valor ${at + 1}-${f}`;
+            return { json, label };
+          };
+          const into = arrows.filter((x) => x.to.step === step);
+          const total = into.reduce(
+            (n, x) =>
+              n +
+              (a.tests[x.from.step]
+                ? countOf(testRows(a.spec?.steps[x.from.step], `out:${x.from.output}`))
+                : 0),
+            0,
+          );
+          const first = into[0] ? rowAt(into[0].from.step, into[0].from.output, 0) : null;
+          const steps: Record<string, unknown> = {};
+          for (const id of stepsBefore(a, step)) {
+            const s = (a.doc.steps as { id: string; name: string }[]).find((x) => x.id === id);
+            const out = arrows.find((x) => x.from.step === id)?.from.output ?? "main";
+            if (s && a.tests[id])
+              steps[s.name] = {
+                item: rowAt(id, out, 0),
+                first: rowAt(id, out, 0),
+                last: rowAt(id, out, "last"),
+              };
+          }
+          return [200, JSON.stringify({ current: first, total, steps })];
+        }
         if (rest === "/duplicate" && method === "POST") {
           if (typeof b.name !== "string" || !b.name.trim()) return bad;
           const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;

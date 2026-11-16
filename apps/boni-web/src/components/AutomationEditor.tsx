@@ -214,6 +214,11 @@ export function AutomationPage({ id }: { id: string | null }) {
         const id = latest.current?.id;
         return id ? client.rows(id, { ...at, offset }) : Promise.resolve({ rows: [], total: 0 });
       },
+      sample: (step) => {
+        const id = latest.current?.id;
+        // With no test yet the server has nothing to give: the preview says nothing (AU-20).
+        return id ? client.sample(id, step).catch(() => null) : Promise.resolve(null);
+      },
     }),
     [apply, keep, t],
   );

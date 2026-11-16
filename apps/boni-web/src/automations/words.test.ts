@@ -3,10 +3,20 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FORMAT, type Step } from "@boni/automations";
+import { type Automation, FORMAT, type Step } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { KEYS, type Lang, translator } from "../i18n.ts";
-import { catalogueKeys, DO, namer, uniqueName } from "./words.ts";
+import { fieldsOut } from "./panel.ts";
+import {
+  catalogueKeys,
+  choiceNames,
+  DO,
+  fieldNames,
+  namedRow,
+  namer,
+  summaryWords,
+  uniqueName,
+} from "./words.ts";
 
 describe("the words of «Automatizaciones»", () => {
   it("AU-85 · each thing the editor does has a key of its own", () => {
@@ -126,7 +136,133 @@ describe("the words of «Automatizaciones»", () => {
     // The step being named does not count against itself.
     expect(uniqueName(draft, "Ordenar", "s_3")).toBe("Ordenar");
   });
-  it.todo(
-    "AU-21 · a result is named by its measure and its field's name («Suma de Importe», «Número de filas»), never by its key, wherever a field's name is read: a chip, «Esquema», a table's header, a summary",
-  );
+  it("AU-21 · a result is named by its measure and its field's name («Suma de Importe», «Número de filas»), never by its key, wherever a field's name is read: a chip, «Esquema», a table's header, a summary", () => {
+    const t = translator("es");
+    const gastos = [
+      { key: "importe", name: "Importe", type: "money" },
+      {
+        key: "categoria",
+        name: "Categoría",
+        type: "select",
+        options: [{ id: "opt_comida", name: "Comida" }],
+      },
+    ];
+    const draft = {
+      format: FORMAT,
+      id: "a_01jresultados",
+      name: "Resultados",
+      steps: [
+        {
+          id: "s_buscar",
+          name: "Buscar gastos",
+          type: "collection",
+          params: { action: "find", collection: "gastos" },
+        },
+        {
+          id: "s_agrupar",
+          name: "Agrupar",
+          type: "group",
+          params: {
+            by: [{ field: "categoria" }],
+            measures: [{ measure: "sum", field: "importe" }, { measure: "count" }],
+          },
+        },
+        {
+          id: "s_contar",
+          name: "Contar o sumar",
+          type: "collection",
+          params: {
+            action: "aggregate",
+            collection: "gastos",
+            measure: "max",
+            field: "importe",
+            groupBy: "categoria",
+          },
+        },
+      ],
+      arrows: [
+        { from: { step: "s_buscar", output: "main" }, to: { step: "s_agrupar", input: "main" } },
+      ],
+      settings: {},
+    } as unknown as Automation;
+    const of = (key: string) => (key === "gastos" ? gastos : undefined);
+    // What chips (`paint`'s names), «Esquema» and the tables' headers read: one map by key.
+    expect(fieldNames(t, fieldsOut(draft, "s_agrupar", of))).toEqual({
+      categoria: "Categoría",
+      sum_importe: "Suma de Importe",
+      count: "Número de filas",
+    });
+    expect(fieldNames(t, fieldsOut(draft, "s_contar", of))).toEqual({
+      categoria: "Categoría",
+      max_importe: "Máximo de Importe",
+    });
+    // A choice's options by their names, for a row's values.
+    expect(choiceNames(fieldsOut(draft, "s_agrupar", of))).toEqual({
+      categoria: { opt_comida: "Comida" },
+    });
+    // The card's summary says a citation of a result by the same name.
+    const names = fieldNames(t, fieldsOut(draft, "s_agrupar", of));
+    const limit = {
+      id: "s_l",
+      name: "Limitar",
+      type: "limit",
+      params: { count: { expr: "{{ $json.sum_importe }}" } },
+    } as unknown as Step;
+    const say = summaryWords(t, {}, limit, (c) =>
+      c.step === null ? names[c.path[0] ?? ""] : undefined,
+    );
+    expect(
+      say({ key: "count", control: "value", of: "number", place: "shown" } as never, {
+        expr: "{{ $json.sum_importe }}",
+      }),
+    ).toBe("Suma de Importe");
+  });
+  it("AU-21 · wherever a row's value is shown, a choice is said by its option's name, also inside a list and in the value before of «Haría esto»; naming 3,000 rows of 40 fields stays within a frame a page, and a row with no choice is the same row (A-15)", () => {
+    const label = {
+      integrity: "user",
+      sensitivity: "personal",
+      thirdParty: false,
+      sources: [],
+    } as const;
+    const choices = {
+      estado: { opt_01jpend: "Pendiente", opt_01jleido: "Leído" },
+      temas: { opt_01jnovela: "Novela", opt_01jensayo: "Ensayo" },
+    };
+    const one = namedRow(
+      {
+        json: { titulo: "Rayuela", estado: "opt_01jleido", temas: ["opt_01jnovela", "otro"] },
+        label,
+        before: { estado: "opt_01jpend" },
+        would: "update",
+      },
+      choices,
+    );
+    expect(one.json).toEqual({ titulo: "Rayuela", estado: "Leído", temas: ["Novela", "otro"] });
+    expect(one.before).toEqual({ estado: "Pendiente" });
+    const plain = { json: { titulo: "Rayuela" }, label };
+    expect(namedRow(plain, choices)).toEqual(plain);
+    expect(namedRow(plain, choices).json).toBe(plain.json);
+    // His volume: a test's 3,000 rows of 40 fields, three of them choices, named in one go.
+    const rows = Array.from({ length: 3000 }, (_, i) => ({
+      json: Object.fromEntries(
+        Array.from({ length: 40 }, (_, f) => [
+          `campo_${f}`,
+          f === 0 ? "opt_01jpend" : f === 1 ? ["opt_01jnovela"] : `valor ${i}-${f}`,
+        ]),
+      ),
+      label,
+    }));
+    const many = {
+      campo_0: choices.estado,
+      campo_1: choices.temas,
+      campo_2: { opt_01jx: "X" },
+    };
+    const start = performance.now();
+    const named = rows.map((r) => namedRow(r, many));
+    const ms = performance.now() - start;
+    expect(named[2999]?.json.campo_0).toBe("Pendiente");
+    expect(named[2999]?.json.campo_1).toEqual(["Novela"]);
+    // A table names a page of 50 rows when it comes: a frame (16 ms) a page is the bound; a few ms for all here.
+    expect(ms / (rows.length / 50)).toBeLessThan(16);
+  });
 });

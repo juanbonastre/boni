@@ -212,6 +212,11 @@ export interface ConditionField {
   /** A collection's field brings what the views' editor needs of it: a choice's options, a relation's target. */
   options?: { id: string; name: string; color?: string }[];
   relation?: { target: string; many: boolean };
+  /**
+   * A result of «Agrupar» or «Contar o sumar»: its measure and the name of the field it is of. Its name is made from
+   * them in `i18n.ts` (`fieldName`, «Suma de Importe»), never its key `sum_importe` (AU-21, AU-25).
+   */
+  result?: { measure: string; of?: string };
 }
 
 /**
@@ -309,10 +314,16 @@ function fieldWalk(
               ]
             : [],
         );
-      case "collection":
-        return typeof p.collection === "string" && p.action !== "aggregate"
-          ? [...(collection(p.collection) ?? [])]
-          : [];
+      case "collection": {
+        if (typeof p.collection !== "string") return [];
+        const fields = collection(p.collection) ?? [];
+        if (p.action !== "aggregate") return [...fields];
+        // «Contar o sumar»: what it groups by, and its result.
+        const measure = typeof p.measure === "string" ? p.measure : "count";
+        const of = measure !== "count" && typeof p.field === "string" ? p.field : undefined;
+        const by = typeof p.groupBy === "string" ? fields.filter((f) => f.key === p.groupBy) : [];
+        return [...by, resultField(measure, of, fields)];
+      }
       case "filter":
       case "sort":
       case "limit":
@@ -340,11 +351,17 @@ function fieldWalk(
         const by = entries(p.by).flatMap((b) =>
           typeof b.field === "string" ? before.filter((f) => f.key === b.field) : [],
         );
-        const measures = entries(p.measures).flatMap((m) => {
-          if (typeof m.measure !== "string") return [];
-          const key = resultName(m.measure, typeof m.field === "string" ? m.field : undefined);
-          return [{ key, name: key, type: m.measure === "list" ? "text" : "number" }];
-        });
+        const measures = entries(p.measures).flatMap((m) =>
+          typeof m.measure === "string"
+            ? [
+                resultField(
+                  m.measure,
+                  m.measure !== "count" && typeof m.field === "string" ? m.field : undefined,
+                  before,
+                ),
+              ]
+            : [],
+        );
         return [...by, ...measures];
       }
       case "combine":
@@ -354,6 +371,22 @@ function fieldWalk(
     }
   };
   return { into, outOf };
+}
+
+/** A result's field: keyed as the engine writes it, named by its measure and its field's name. */
+function resultField(
+  measure: string,
+  of: string | undefined,
+  among: readonly ConditionField[],
+): ConditionField {
+  const key = resultName(measure, of);
+  const name = of === undefined ? undefined : (among.find((f) => f.key === of)?.name ?? of);
+  return {
+    key,
+    name: key,
+    type: measure === "list" ? "text" : "number",
+    result: name === undefined ? { measure } : { measure, of: name },
+  };
 }
 
 /** The rows of a list's value, the ones that are objects. */
