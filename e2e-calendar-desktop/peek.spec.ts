@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clock, under } from "@boni/pace";
 import {
   type ElectronApplication,
   _electron as electron,
@@ -189,9 +190,9 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   expect(where).toEqual({ onTop: false, parentIsCalendar: true });
   // Going to another window keeps it; a click in the calendar puts it away at once.
   await main.mouse.click(600, 400);
-  const t0 = Date.now();
+  const t0 = clock();
   await expect.poll(peekVisible).toBe(false);
-  expect(Date.now() - t0).toBeLessThan(1000);
+  under(clock() - t0, 1000, "clock", "the peek put away");
   // The next double click opens straight on the note, no login.
   await doubleClick();
   await expect.poll(peekVisible).toBe(true);

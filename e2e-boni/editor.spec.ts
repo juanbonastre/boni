@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { openApp, recorded } from "./fixtures.ts";
 
@@ -160,7 +161,7 @@ async function openRayuela(
     .click();
   const row = page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true });
   await expect(row).toBeVisible();
-  const clicked = Date.now();
+  const clicked = clock();
   await row.click();
   return clicked;
 }
@@ -570,21 +571,21 @@ test("a page of a thousand blocks opens and is typed in without lag (A-15)", asy
   await openApp(page, "/?still", {
     pages: [{ id: "diario", title: "Diario", spec: { version: 1, blocks } }],
   });
-  const started = Date.now();
+  const started = clock();
   await page
     .locator(".sidebar")
     .getByRole("list", { name: "Páginas" })
     .getByRole("button", { name: "Diario", exact: true })
     .click();
   await expect(lines(page)).toHaveCount(1000, { timeout: 15000 });
-  const opened = Date.now() - started;
+  const opened = clock() - started;
   const { usual, worst } = await typeTimed(page, lines(page).nth(501));
   console.info(
     `1000 blocks: opened in ${opened} ms; a letter shown ${usual} ms after its key (at worst ${worst})`,
   );
-  expect(opened).toBeLessThan(4000);
-  expect(usual).toBeLessThan(100);
-  expect(worst).toBeLessThan(250);
+  under(opened, 4000, "clock", "opening 1000 blocks");
+  under(usual, 100, "clock", "the usual letter");
+  under(worst, 250, "clock", "the worst letter");
 });
 
 test("a note of three thousand paragraphs opens and is typed in without lag (A-15)", async ({
@@ -600,12 +601,12 @@ test("a note of three thousand paragraphs opens and is typed in without lag (A-1
   const started = await openRayuela(page, `${paragraphs.join("\n\n")}\n`);
   const text = page.locator(".row-doc .blk-input");
   await expect(text).toHaveCount(3000, { timeout: 15000 });
-  const opened = Date.now() - started;
+  const opened = clock() - started;
   const { usual, worst } = await typeTimed(page, text.nth(1501));
   console.info(
     `3000 paragraphs: opened in ${opened} ms; a letter shown ${usual} ms after its key (at worst ${worst})`,
   );
-  expect(opened).toBeLessThan(6000);
-  expect(usual).toBeLessThan(100);
-  expect(worst).toBeLessThan(250);
+  under(opened, 6000, "clock", "opening 3000 paragraphs");
+  under(usual, 100, "clock", "the usual letter");
+  under(worst, 250, "clock", "the worst letter");
 });

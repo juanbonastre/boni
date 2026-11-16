@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
 import { blame } from "./blame.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { MIGRATIONS } from "./migrations.ts";
 import { BODY, type OpMeta, openUserStore, type UserStore } from "./store.ts";
 
@@ -254,7 +254,7 @@ describe("the audit", () => {
       "mcp:claude-ejemplo|t_nota": { reads: 7501, writes: 0 },
       "user:portatil|t_nota": { reads: 0, writes: 50 },
     });
-    expect(againMs).toBeLessThan(Math.max(50, firstMs / 2));
+    under(againMs, Math.max(50, firstMs / 2), "cpu", "the activity after a restart");
     // The window moving later leaves the earlier quarters out; the whole audit stays summed in the table.
     // (the day 39's fifty reads are all the reader's, and the one read added after.)
     expect(sum(again.audit.activitySince(0, 0, at0 + 39 * DAY_AHEAD).rows)).toEqual({

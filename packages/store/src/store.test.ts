@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
+import { clock } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
 import { open, openFile, seal, sealFile, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
 import { MIGRATIONS } from "./migrations.ts";
@@ -982,9 +983,9 @@ describe("two processes on one store", () => {
       { eval: true, workerData: path },
     );
     await new Promise((r) => worker.once("message", r));
-    const t0 = Date.now();
+    const t0 = clock();
     const e = store.create("t_libro", { f_titulo: { value: "Espera", label: JUAN } }, me);
-    expect(Date.now() - t0).toBeGreaterThanOrEqual(200);
+    expect(clock() - t0).toBeGreaterThanOrEqual(200);
     expect(store.get(e.entity.id)?.entity.values.f_titulo).toBe("Espera");
     await worker.terminate();
   });

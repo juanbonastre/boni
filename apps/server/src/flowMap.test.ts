@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent, coreTools, ensureSystemTypes, fakePlanner } from "@boni/agent";
 import { label } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTO_AREA } from "./autoAccept.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { createCollection, createRow } from "./data.ts";
 import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
 import { BUDGET_FLOW, ensureFlow, FETCH_FLOW, REVIEW_FLOW } from "./flows.ts";
@@ -963,7 +963,7 @@ describe("Boni's map, computed (F8; A-16)", () => {
     const m = mapOf(30, null);
     const ms = cpu() - t0;
     expect(m.nodes.filter((n) => n.kind === "block").length).toBe(1 + 20 * 11);
-    expect(ms).toBeLessThan(1500);
+    under(ms, 1500, "cpu", "it");
   }, 120_000);
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {
@@ -1038,7 +1038,7 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(leer?.steps?.find((s) => s.id === "r")?.calls).toBe(inPeriod);
     // What the period's runs told, counted from the journal's lines in the same time.
     expect(edgeOf(m, "flow:leer-correo", "dev:all", "tells")?.n).toBe(inPeriod);
-    expect(ms).toBeLessThan(1500);
+    under(ms, 1500, "cpu", "it");
     // What is measured is the map (above); writing a year of runs first takes longer than vitest's 5 s on CI's machine.
   }, 120_000);
 });

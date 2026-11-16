@@ -9,11 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakePlanner, plain, type Val } from "@boni/agent";
 import { label, type TypeDef } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { createPage } from "./pages.ts";
 import { screenOf } from "./screen.ts";
 import { seed } from "./seed.test-util.ts";
@@ -305,7 +305,7 @@ describe("a page's values on the server (F11, D-59)", () => {
     console.log(
       `A-15 page values: 4 blocks over ${N + 3} movements, median ${median.toFixed(1)} ms`,
     );
-    expect(median).toBeLessThan(1500);
+    under(median, 1500, "cpu", "the page's values, median");
 
     // The page's table, filtered by the server with the category's control (task 102): what the app asks each time
     // a control changes, over every movement, never the app's copy.
@@ -331,7 +331,7 @@ describe("a page's values on the server (F11, D-59)", () => {
     console.log(
       `A-15 page table: ${N / 5 + 2} of ${N + 3} movements, median ${rowMedian.toFixed(1)} ms`,
     );
-    expect(rowMedian).toBeLessThan(1500);
+    under(rowMedian, 1500, "cpu", "the page's table, median");
   }, 120_000);
 });
 

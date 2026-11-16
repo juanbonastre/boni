@@ -1,8 +1,8 @@
 import { ensureSystemTypes } from "@boni/agent";
+import { cpu, under } from "@boni/pace";
 import { BODY, openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { createByName } from "./byName.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { addFile, DataError, FILES_INTO, fileInline, rowUiOf, setRowUi } from "./data.ts";
 import { createPage } from "./pages.ts";
 import { relatedTo, titledRows } from "./related.ts";
@@ -287,6 +287,6 @@ describe("the records a mention names (task 110, D-71)", () => {
     console.log(
       `seeded in ${seeded.toFixed(0)} ms of CPU; titledRows: median ${times[25]?.toFixed(2)} ms, worst ${times.at(-1)?.toFixed(2)} ms of CPU`,
     );
-    expect(times[25]).toBeLessThan(15);
+    under(times[25] ?? Number.POSITIVE_INFINITY, 15, "cpu", "titledRows, median");
   }, 120_000);
 });

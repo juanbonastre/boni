@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureSystemTypes } from "@boni/agent";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import { mcpAnswer } from "./mcp.ts";
 import { charCount, charSlice, OUTLINE_MAX, outlineOf, PART } from "./noteParts.ts";
 import { seed } from "./seed.test-util.ts";
@@ -342,6 +342,8 @@ describe("a long note is always readable in parts (task 112, A-30)", () => {
     console.log(
       `read of a ${charCount(BIG)}-character note: outline ${outline.toFixed(1)} ms, section ${section.toFixed(1)} ms, range ${range.toFixed(1)} ms`,
     );
-    for (const ms of [outline, section, range]) expect(ms).toBeLessThan(250);
+    under(outline, 250, "cpu", "the outline");
+    under(section, 250, "cpu", "a section");
+    under(range, 250, "cpu", "a range");
   }, 120_000);
 });

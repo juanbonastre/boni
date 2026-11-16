@@ -18,11 +18,11 @@ import {
   type Val,
 } from "@boni/agent";
 import { label } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { BODY, openUserStore } from "@boni/store";
 import { markdownToBlocks, partKey, partOf } from "@boni/views";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { openDb } from "./db.ts";
 import { createPage } from "./pages.ts";
 import { MAX_POINTED, MAX_VISIBLE, type SavedChart, screenOf, screenRefs } from "./screen.ts";
@@ -656,7 +656,7 @@ describe("the screen as data (F9, task 85)", () => {
       // Its rows are read once for the twenty blocks, never once per block.
       expect(lists.filter((x) => x === def.id)).toHaveLength(1);
       // Twenty charts over 3,000 rows, well under a second on any machine (a turn takes seconds).
-      expect(ms).toBeLessThan(1500);
+      under(ms, 1500, "cpu", "it");
     } finally {
       store.close();
     }
@@ -1252,7 +1252,7 @@ describe("the map, a flow's steps, a note's paragraphs and the screen without po
       expect(screen.pointed[0]).toMatchObject({ text: "Lo que falta por hacer." });
       expect(screen.visible).toHaveLength(MAX_VISIBLE);
       // A turn takes seconds; what the screen adds to it stays well under a fraction of one on any machine.
-      expect(ms).toBeLessThan(500);
+      under(ms, 500, "cpu", "it");
     } finally {
       store.close();
     }

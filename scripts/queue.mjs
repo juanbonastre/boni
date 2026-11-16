@@ -25,6 +25,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { availableParallelism, loadavg } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -191,6 +192,15 @@ function run(cmd, env) {
   child.on("exit", (code, signal) => process.exit(code ?? (signal ? 128 : 1)));
 }
 
+/**
+ * How loaded the machine is as a run starts (T-11, task 134): the timed tests widen their bounds by what they measure
+ * then (@boni/pace), and this line says what the run started into, so a failure reads against it.
+ */
+export function machineLoad(avg = loadavg(), cores = availableParallelism()) {
+  const per = (x) => ((x ?? 0) / cores).toFixed(2);
+  return `the machine's load is ${per(avg[0])} per core (${per(avg[1])} over five minutes, ${cores} cores)`;
+}
+
 /** Inside the lock: leaves its line, says who holds it, then runs the command, on the virtual screen if asked. */
 function holder(screen, waitedSince, cmd) {
   const ticket = process.env[TICKET];
@@ -213,6 +223,7 @@ function holder(screen, waitedSince, cmd) {
       console.error(
         `queue: our turn after ${Math.round((Date.now() - Number(waitedSince)) / 1000)} s`,
       );
+    console.error(`queue: ${machineLoad()}`);
   }
   const env = { ...process.env, [HELD]: "1" };
   delete env.BONI_QUEUE_WAITED;

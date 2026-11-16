@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import {
   attachmentText,
   fileState,
@@ -219,8 +219,8 @@ describe("the file reader, shared with the mail's attachments (A-24)", () => {
     console.log(
       `A-15: ${N} pages of text ${textMs.toFixed(0)} ms; a 15 MB scan ${scanMs.toFixed(0)} ms`,
     );
-    expect(textMs).toBeLessThan(800);
-    expect(scanMs).toBeLessThan(800);
+    under(textMs, 800, "cpu", "textMs");
+    under(scanMs, 800, "cpu", "scanMs");
   }, 120_000);
 
   it("a mail's PDF attachment gives its text too", () => {

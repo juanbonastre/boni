@@ -1,4 +1,5 @@
 // The minute's line about slowness (task 35): what it counts and what it never says.
+import { clock } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type CpuProfile,
@@ -19,8 +20,8 @@ describe("the minute's line about slowness", () => {
     noteRequest("GET /api/snapshot", SLOW_REQUEST_MS - 1); // fast enough: not counted
     noteRequest("GET /api/stream", 60_000); // a live stream is not slow
     const busy = () => {
-      const end = performance.now() + 30;
-      while (performance.now() < end);
+      const end = clock() + 30;
+      while (clock() < end);
       return 1;
     };
     expect(timed("calendar poll", 10, busy)).toBe(1);
@@ -116,8 +117,8 @@ describe("the minute's line about slowness", () => {
     expect(watcher).not.toBeNull();
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
     function holdTheLoop(ms = 600) {
-      const end = performance.now() + ms;
-      while (performance.now() < end);
+      const end = clock() + ms;
+      while (clock() < end);
     }
     // Busy at once, as the server is when it starts: the watchdog still starts (it used to end before it watched).
     holdTheLoop(300);
