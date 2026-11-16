@@ -23,6 +23,7 @@ import {
   type Automation,
   actionOf,
   arrowsInto,
+  type Box,
   CannotRun,
   type Cell,
   type Collections,
@@ -31,11 +32,14 @@ import {
   inputsOf,
   isTrigger,
   type Kept,
+  keep,
   OUT,
   outputsOf,
+  type Preview,
   type Print,
   type Problem,
   parseAutomation,
+  preview,
   type Row,
   runTest,
   SETTINGS_DEFAULTS,
@@ -49,7 +53,8 @@ import {
 import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
-import { storeCollections } from "./collections.ts";
+import { sandboxBox } from "./box.ts";
+import { collectionNamed, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { handPolicy } from "./policy.ts";
 
@@ -391,6 +396,7 @@ export async function testAutomation(
   id: string,
   request: TestRequest,
   hand: Hand & { trust: Trust; zone: string },
+  box: Box = sandboxBox(),
 ): Promise<TestAnswer | ServiceError> {
   const o = open(store, id);
   if (!o) return NOT_FOUND;
@@ -418,7 +424,7 @@ export async function testAutomation(
     for (const [step, t] of keptRows) {
       if (step === request.step || !before.has(step)) continue;
       if (t.kept.state !== "done" || t.print !== prints[step]) continue;
-      kept[step] = { print: t.print, at: t.at, record: recordOf(store, id, t.kept, step) };
+      kept[step] = keptOf(store, id, t, step);
     }
   }
 
@@ -461,6 +467,8 @@ export async function testAutomation(
         dates: serverDates,
         own,
         locale: "es",
+        box,
+        collectionNamed: collectionNamed(store),
       },
     );
   } catch (e) {
@@ -496,11 +504,13 @@ export async function testAutomation(
         });
       }
       const { out, ...rest } = record;
+      const clock = keep(execution, step, prints[step] ?? "")?.clock;
       const keptRecord: KeptRecord = {
         ...rest,
         out: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.length])),
         wouldWrite,
         trigger: request.trigger,
+        ...(clock ? { clock } : {}),
       };
       return [
         { step, print: prints[step] ?? "", at: started, record: JSON.stringify(keptRecord), rows },
@@ -518,9 +528,24 @@ export async function testAutomation(
   };
 }
 
+/** A step's kept test as the engine keeps one: its record with its rows read back, and the instant and seed it ran with. */
+function keptOf(
+  store: UserStore,
+  id: string,
+  t: AutomationTestRow & { kept: KeptRecord },
+  step: string,
+): Kept {
+  return {
+    print: t.print,
+    at: t.at,
+    record: recordOf(store, id, t.kept, step),
+    ...(t.kept.clock ? { clock: t.kept.clock } : {}),
+  };
+}
+
 /** A kept test as the engine's record, its rows read back: what «Probar paso» reuses. */
 function recordOf(store: UserStore, id: string, k: KeptRecord, step: string): StepRecord {
-  const { out, wouldWrite: _w, trigger: _t, ...rest } = k;
+  const { out, wouldWrite: _w, trigger: _t, clock: _c, ...rest } = k;
   const rows: Record<string, Row[]> = {};
   for (const [output, n] of Object.entries(out))
     rows[output] = store.journal
@@ -749,4 +774,70 @@ export type KeptRecord = Omit<StepRecord, "out"> & {
   wouldWrite: number;
   /** The trigger that test started in: what tells which arrows brought its input (`arrowsInto`). */
   trigger: string;
+  /**
+   * The instant and the seed its JavaScript ran with (AU-34), when it had any: what a preview of one of its
+   * expressions is calculated with, so it shows what the test gave (AU-27).
+   */
+  clock?: { now: number; seed: number };
 };
+
+/** Which value to preview: the step, the path to the value in its parameters (as `Problem.param`) and the row. */
+export interface PreviewRequest {
+  step: string;
+  param: string;
+  row: number;
+}
+
+/**
+ * The line under an expression (AU-23, AU-27): what it is worth with one row of its step's kept input, calculated by
+ * the engine's `preview` with the box, the rows the draft's tests kept and the instant and seed of the step's own kept
+ * test, so it is what the test gave. It reads no collection and keeps nothing. What the screens' route calls; that
+ * route, and timing it with the user's volume while he types (A-15), are the screens' PR's.
+ */
+export async function previewExpression(
+  store: UserStore,
+  id: string,
+  request: PreviewRequest,
+  hand: Hand & { zone: string },
+  box: Box = sandboxBox(),
+): Promise<Preview | ServiceError> {
+  const o = open(store, id);
+  if (!o) return NOT_FOUND;
+  const a = o.automation;
+  if (
+    !request ||
+    typeof request.step !== "string" ||
+    typeof request.param !== "string" ||
+    !Number.isSafeInteger(request.row) ||
+    request.row < 0 ||
+    !a.steps.some((s) => s.id === request.step)
+  )
+    return BAD;
+  const keptRows = keptTests(store, id);
+  const prints = stepPrints(a, testedFields(store, a, keptRows), sha256);
+  const kept: Record<string, Kept> = {};
+  // A stale test is never what the preview is calculated with (`preview` says to test it again): its rows are not read.
+  for (const [step, t] of keptRows)
+    if (t.kept.state === "done" && t.print === prints[step])
+      kept[step] = keptOf(store, id, t, step);
+  const clock = kept[request.step]?.clock ?? { now: hand.now, seed: 0 };
+  try {
+    return await preview(
+      {
+        automation: a,
+        ...request,
+        kept,
+        prints,
+        now: clock.now,
+        seed: clock.seed,
+        zone: hand.zone,
+        locale: "es",
+      },
+      box,
+    );
+  } catch (e) {
+    // `preview` throws only for a parameter the step does not have.
+    if (e instanceof Error && !("why" in e)) return BAD;
+    throw e;
+  }
+}
