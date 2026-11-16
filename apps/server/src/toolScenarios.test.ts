@@ -15,6 +15,9 @@ import { TURN_ONLY } from "./flows.ts";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const AGENT = "packages/agent/test/agent.test.ts";
 const MAIL = "apps/server/src/mail.test.ts";
+const AUTOMATION_ROUTES = "apps/server/src/automations/routes.test.ts";
+const AUTOMATION_TEST =
+  "AU-62 · create, read, keep the draft, duplicate, delete and restore, as the editor calls them";
 const FUNCTIONS = "apps/server/src/functionSteps.test.ts";
 
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
@@ -218,6 +221,13 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "asks to confirm it, by its name; once confirmed it runs as a run of its own and its answers come in the turn",
     },
   ],
+  // «Automatizaciones» (C1 of F14b): the editor's own routes, each run as its action (AU-168).
+  "automations.read": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.create": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.edit": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.duplicate": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.delete": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.restore": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "flows.save": [
     {
       file: AGENT,

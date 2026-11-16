@@ -109,6 +109,7 @@ export function App() {
           {toast.action && (
             <button
               type="button"
+              data-boni-action={toast.action.boniAction}
               onClick={() => {
                 toast.action?.run();
                 dismissToast();

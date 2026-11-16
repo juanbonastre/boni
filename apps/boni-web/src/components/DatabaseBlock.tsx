@@ -78,7 +78,7 @@ import {
   setChosenRows,
   setColumnWidth,
   setNotesInTree,
-  showFlow,
+  showAutomation,
   showMapOf,
   showOrigin,
   tableAsk,
@@ -252,11 +252,11 @@ export function DatabaseBlock({
   const lookOnly = flows && phoneLayout();
   const canAdd = (!type?.system || !!type.editable) && !lookOnly;
   const add = async (values: Record<string, DataValue> = {}) => {
-    const row = await addRow(source, values);
-    // A new flow opens in its editor.
-    const made = flows && row ? flowRowTarget(row.id) : null;
-    if (made) showFlow(made);
+    // «Nueva» of «Automatizaciones» opens the empty canvas and saves nothing: its first step makes it (AU-61).
+    if (flows) return showAutomation(null);
+    await addRow(source, values);
   };
+  const newWord = flows ? t("auto.new") : t("db.new");
   return (
     <PageControls.Provider value={controls ?? NO_CONTROLS}>
       <section
@@ -343,7 +343,7 @@ export function DatabaseBlock({
               />
             )}
           </div>
-          {canAdd && (
+          {canAdd && !flows && (
             <button
               type="button"
               className="btn primary small"
@@ -351,7 +351,14 @@ export function DatabaseBlock({
               onClick={() => void add()}
             >
               <Plus size={14} strokeWidth={2} />
-              {t("db.new")}
+              {newWord}
+            </button>
+          )}
+          {canAdd && flows && (
+            // It opens a screen and saves nothing: no action of the list (AU-61).
+            <button type="button" className="btn primary small" onClick={() => void add()}>
+              <Plus size={14} strokeWidth={2} />
+              {newWord}
             </button>
           )}
         </header>
@@ -424,6 +431,7 @@ export function DatabaseBlock({
             system={view.system ?? []}
             columns={data.columns ?? {}}
             onAdd={canAdd ? () => void add() : null}
+            addWord={newWord}
             picked={picked}
             onPick={setPicked}
             kept={sorted}
@@ -1368,6 +1376,7 @@ function TableView({
   system,
   columns,
   onAdd,
+  addWord,
   picked,
   onPick: setPicked,
   kept,
@@ -1387,6 +1396,8 @@ function TableView({
   columns: Record<string, SystemColumns>;
   /** «Nuevo» under its rows; null: nothing is added here. */
   onAdd: (() => void) | null;
+  /** The add row's word: «Nuevo», or «Nueva» in «Automatizaciones» (AU-61). */
+  addWord?: string;
   picked: Set<string>;
   onPick: React.Dispatch<React.SetStateAction<Set<string>>>;
   /** Every row the view keeps (not only those shown): what a column's calculation counts. */
@@ -1960,7 +1971,7 @@ function TableView({
       {onAdd && (
         <button type="button" className="db-add-row" onClick={onAdd}>
           <Plus size={14} strokeWidth={1.8} />
-          {t("db.new")}
+          {addWord ?? t("db.new")}
         </button>
       )}
       {colMenu && (

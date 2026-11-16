@@ -433,7 +433,7 @@ export const CATALOGUE: readonly BlockKind[] = [
         options: [
           { value: "screen", label: "Formulario" },
           { value: "action", label: "Acción" },
-          { value: "flow", label: "Flujo" },
+          { value: "flow", label: "Automatización" },
           { value: "page", label: "Página" },
         ],
         optional: true,
@@ -526,7 +526,7 @@ export const CATALOGUE: readonly BlockKind[] = [
       },
       {
         key: "flow",
-        label: "Flujo",
+        label: "Automatización",
         type: "choice",
         options: "flows",
         when: { key: "does", is: ["flow"] },

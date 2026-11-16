@@ -423,39 +423,55 @@ test("Ajustes → Modelos over the real server: the budget and a key, kept seale
   await expect(w.locator(".modal")).toHaveCount(0);
 });
 
-test("«Flujos» over the real server is a collection (F8): «Nuevo» makes a flow by hand and opens it; the map, computed, puts it in the centre", async () => {
+test("«Automatizaciones» over the real server is a collection (F8, AU-61, AU-62): «Nueva» opens the empty canvas, its first step makes it, its name saves itself, «Eliminar» and its «Deshacer»; the map, computed, has the flows of before", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await w
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await expect(w.getByRole("tab", { name: "Tabla" })).toBeVisible();
   // Boni's own «Aviso del presupuesto» is among the account's flows from the start (D-53): what starts it, on.
   const budget = w.locator(".db-table tbody tr", { hasText: "Aviso del presupuesto" });
   await expect(budget).toContainText("El gasto llega al aviso");
-  await expect(budget).toContainText("Encendido");
-  await w.locator(".db-head").getByRole("button", { name: "Nuevo" }).click();
-  // A new flow opens on its own page, by hand and off.
-  await expect(w.locator(".flow-crumbs")).toContainText("Nuevo flujo");
-  await expect(w.locator(".flow-editor .fl-node.source")).toContainText("Disparado por el usuario");
-  await w.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
-  await expect(w.locator(".db-table tbody tr", { hasText: "Nuevo flujo" })).toContainText(
-    "Apagado",
-  );
-  // The map from the server's journal and audit. What Boni tells is on the whole of it (A-16): its «Aviso del
-  // presupuesto», which reads and writes no collection, joined to «Dispositivos» by «avisa».
+  await expect(budget).toContainText("Encendida");
+  const rows = await w.locator(".db-table tbody tr").count();
+  await w.locator(".db-head").getByRole("button", { name: "Nueva" }).click();
+  // The empty canvas, nothing saved: its first step makes it.
+  await expect(w.locator(".auto-start")).toContainText("¿Cómo empieza?");
+  await w.getByRole("button", { name: "Disparado por el usuario" }).click();
+  await expect(w.locator(".auto-saved")).toHaveText("Guardado");
+  const name = w.getByRole("textbox", { name: "Nombre de la automatización" });
+  await expect(name).toHaveValue("Nueva automatización");
+  await name.fill("Revisar gastos ejemplo");
+  await expect(w.locator(".auto-saved")).toHaveText("Guardado");
+  await w.getByRole("button", { name: "Volver a Automatizaciones" }).click();
+  const made = w.locator(".db-table tbody tr", { hasText: "Revisar gastos ejemplo" });
+  await expect(made).toContainText("Sin publicar");
+  await expect(made).toContainText("Disparado por el usuario");
+  await expect(w.locator(".db-table tbody tr")).toHaveCount(rows + 1);
+  // Opened again: as it was left.
+  await made.getByText("Revisar gastos ejemplo", { exact: true }).click();
+  await expect(name).toHaveValue("Revisar gastos ejemplo");
+  // The map from the server's journal and audit: the flows of before; an automation not published is not on it.
+  await w.getByRole("button", { name: "Volver a Automatizaciones" }).click();
   await w.getByRole("tab", { name: "Mapa" }).click();
   await expect(w.locator(".mp-card", { hasText: "Aviso del presupuesto" })).toBeVisible();
   await expect(w.locator(".mp-card", { hasText: "Dispositivos" })).toBeVisible();
-  // The new flow, found by name and put in the centre.
-  await w.getByRole("combobox", { name: "Buscar en el mapa" }).click();
-  await w.keyboard.type("Nuevo flujo", { delay: 10 });
-  await w.keyboard.press("Enter");
-  await expect(w.locator(".mp-centre")).toContainText("Nuevo flujo");
-  await expect(w.locator(".mp-card", { hasText: "Nuevo flujo" })).toBeVisible();
+  await expect(w.locator(".mp-card", { hasText: "Revisar gastos ejemplo" })).toHaveCount(0);
   await shot(w, "flows-map");
-  // Back as it was for the tests after this one: the table, and the flow gone.
+  // «Eliminar» without asking, and its «Deshacer»; then gone, as it was for the tests after this one.
   await w.getByRole("tab", { name: "Tabla" }).click();
-  await w.locator(".db-table tbody tr", { hasText: "Nuevo flujo" }).click({ button: "right" });
-  await w.getByRole("menuitemradio", { name: "Borrar" }).click();
-  await expect(w.locator(".db-table tbody tr", { hasText: "Nuevo flujo" })).toHaveCount(0);
+  await made.getByText("Revisar gastos ejemplo", { exact: true }).click();
+  await w.locator(".auto-head").getByRole("button", { name: "Más" }).click();
+  await w.getByRole("menuitemradio", { name: "Eliminar" }).click();
+  await expect(made).toHaveCount(0);
+  await w.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(made).toHaveCount(1);
+  await made.getByText("Revisar gastos ejemplo", { exact: true }).click();
+  await w.locator(".auto-head").getByRole("button", { name: "Más" }).click();
+  await w.getByRole("menuitemradio", { name: "Eliminar" }).click();
+  await expect(made).toHaveCount(0);
+  await expect(w.locator(".db-table tbody tr")).toHaveCount(rows);
 });
 
 test("Boni's template pages over the real server: counted from its records, modified, restored", async () => {

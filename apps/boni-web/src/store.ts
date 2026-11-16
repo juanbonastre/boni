@@ -1,5 +1,6 @@
 import { newId as entityId } from "@boni/entities";
 import {
+  automationRowTarget,
   type ControlBlock,
   type DatabaseFilter,
   type DatabaseView,
@@ -194,11 +195,14 @@ export type View =
   | { kind: "allPages" }
   /**
    * «Flujos» (docs/sistema.md §4.4, F8): Boni's collection of flows with its views («Tabla», «Mapa»); `flow`: one flow
-   * on a page of its own, in its editor; `map`: the map opened on something («Ver en el mapa»), `n` new each time.
+   * on a page of its own, in its editor; `automation`: an automation of the new format in its editor (F14b,
+   * docs/automatizaciones.md §5.7), null for «Nueva»'s empty canvas; `map`: the map opened on something («Ver en el
+   * mapa»), `n` new each time.
    */
   | {
       kind: "flows";
       flow?: string;
+      automation?: string | null;
       map?: {
         center: string | null;
         pages?: boolean;
@@ -286,7 +290,8 @@ export type SubmitOutcome =
 export interface Toast {
   id: number;
   text: string;
-  action?: { label: string; run: () => void };
+  /** `boniAction`: the action of the list (F10) its button runs, as any control says it. */
+  action?: { label: string; run: () => void; boniAction?: string };
 }
 
 interface State {
@@ -3969,6 +3974,9 @@ export const showAllPages = () => {
 export const showFlows = () => set({ view: { kind: "flows" }, panel: null });
 /** One flow on a page of its own, in its editor. */
 export const showFlow = (id: string) => set({ view: { kind: "flows", flow: id }, panel: null });
+/** An automation of the new format in its editor; null: «Nueva», the empty canvas, with nothing saved (AU-61). */
+export const showAutomation = (id: string | null) =>
+  set({ view: { kind: "flows", automation: id }, panel: null });
 let mapAsks = 0;
 /**
  * «Ver en el mapa» of a row: a flow's row its flow, a row of «Mis datos» what it is (Boni's own records are on no
@@ -3976,6 +3984,7 @@ let mapAsks = 0;
  */
 export function showMapOf(type: string, row: string) {
   if (type === SYS.flows.id) {
+    // An automation of the new format is on no map until it is published (AU-61, F14d).
     const flow = flowRowTarget(row);
     return showMap(flow ? `flow:${flow}` : null);
   }
@@ -4724,8 +4733,10 @@ export const openTitled = (r: Titled) =>
 
 /** A row opened as a page: its properties and its text (a note's body). */
 export async function openRow(type: string, id: string) {
-  // A row of «Flujos» opens its flow's page.
+  // A row of «Automatizaciones» opens its editor: the new one, or a flow's of before (AU-151).
   if (type === SYS.flows.id) {
+    const automation = automationRowTarget(id);
+    if (automation) return showAutomation(automation);
     const flow = flowRowTarget(id);
     if (flow) showFlow(flow);
     return;

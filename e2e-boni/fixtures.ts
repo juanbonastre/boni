@@ -34,6 +34,12 @@ export interface Options {
   titled?: { id: string; type: string; collection: string; title: string; updated: number }[];
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
+  /**
+   * Automations of the new format the account has (F14b, docs/automatizaciones.md §5.7): served by the routes of
+   * apps/server/src/automations/routes.ts as the server keeps them (made, read, kept, duplicated, deleted and
+   * restored here) and listed in «Automatizaciones» before the flows of before. `trigger`: its first step's type.
+   */
+  automations?: { id: string; name: string; trigger?: string | null; updated?: number }[];
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
    * api/agent/turn"); the last one repeats. */
   agent?: Record<string, unknown[]>;
@@ -843,6 +849,110 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       // a change to a row done to its flow with the server's rules (Boni's keep their name and are never deleted).
       const FL = "t_sys_flujos";
       const FR = "sys_flow_";
+      // The automations of the new format (AU-61): their rows first, the newest first; never a draft parsed.
+      const AR = "sys_auto_";
+      type AutoHere = {
+        id: string;
+        rev: number;
+        doc: { name: string; steps: { type: string }[] } & Record<string, unknown>;
+        updated: number;
+        deleted: boolean;
+      };
+      const autoDoc = (id: string, name: string, trigger?: string | null) => ({
+        format: 1,
+        id,
+        version: 0,
+        name,
+        steps: trigger
+          ? [{ id: "s_inicio", name: "Disparado por el usuario", type: trigger, params: {} }]
+          : [],
+        arrows: [],
+        settings: {},
+      });
+      const autos: AutoHere[] = (opts.automations ?? []).map((a) => ({
+        id: a.id,
+        rev: 1,
+        doc: autoDoc(a.id, a.name, a.trigger),
+        updated: a.updated ?? 0,
+        deleted: false,
+      }));
+      const autoTrigger = (a: AutoHere) => {
+        const first = a.doc.steps[0]?.type;
+        return first === "manual" ? "Disparado por el usuario" : (first ?? "—");
+      };
+      const liveAutos = () => autos.filter((a) => !a.deleted).sort((a, z) => z.updated - a.updated);
+      const autoView = (a: AutoHere) =>
+        JSON.stringify({
+          id: a.id,
+          rev: a.rev,
+          automation: a.doc,
+          places: [],
+          tests: {},
+          tested: {},
+          device: "d_portatil",
+          updated: a.updated,
+        });
+      const automationAnswer = (
+        method: string,
+        id: string | undefined,
+        rest: string | undefined,
+        body: unknown,
+      ): [number, string] => {
+        // What the app asked of these routes, every method (`window.__automations`: "METHOD id/rest"); with
+        // `window.__automationsDown` set, the server is down and each is answered 503.
+        record("__automations", `${method} ${[id, rest].filter(Boolean).join("")}`.trim());
+        if (w.__automationsDown) return [503, '{"error":"unavailable"}'];
+        const b = (body ?? {}) as { automation?: AutoHere["doc"]; name?: string };
+        const bad: [number, string] = [400, '{"error":"bad-request"}'];
+        const gone: [number, string] = [404, '{"error":"not-found"}'];
+        if (!id) {
+          if (method !== "POST" || !Array.isArray(b.automation?.steps)) return bad;
+          const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
+          const a = {
+            id: made,
+            rev: 1,
+            doc: { ...b.automation, id: made },
+            updated: Date.now(),
+            deleted: false,
+          };
+          autos.push(a);
+          return [200, autoView(a)];
+        }
+        const a = autos.find((x) => x.id === id);
+        if (!a) return gone;
+        if (rest === "/restore" && method === "POST") {
+          a.deleted = false;
+          return [200, '{"ok":true}'];
+        }
+        if (a.deleted) return gone;
+        if (!rest && method === "GET") return [200, autoView(a)];
+        if (!rest && method === "DELETE") {
+          a.deleted = true;
+          return [200, '{"ok":true}'];
+        }
+        if (rest === "/draft" && method === "PUT") {
+          if (!Array.isArray(b.automation?.steps) || typeof b.automation?.name !== "string")
+            return bad;
+          a.doc = { ...b.automation, id: a.id };
+          a.rev++;
+          a.updated = Date.now();
+          return [200, JSON.stringify({ rev: a.rev, stale: [] })];
+        }
+        if (rest === "/duplicate" && method === "POST") {
+          if (typeof b.name !== "string" || !b.name.trim()) return bad;
+          const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
+          const copy = {
+            id: made,
+            rev: 1,
+            doc: { ...JSON.parse(JSON.stringify(a.doc)), id: made, name: b.name },
+            updated: Date.now(),
+            deleted: false,
+          };
+          autos.push(copy);
+          return [200, autoView(copy)];
+        }
+        return bad;
+      };
       type FlowHere = {
         id: string;
         name: string;
@@ -890,7 +1000,21 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         return "Disparado por el usuario";
       };
       const wordId = (w: string) => `o_disp_${w.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
-      const flowRows = () =>
+      const autoRows = () =>
+        liveAutos().map((a) => ({
+          id: `${AR}${a.id}`,
+          values: {
+            f_titulo: a.doc.name,
+            f_disparador: wordId(autoTrigger(a)),
+            f_estado: "o_estado_sin_publicar",
+            f_ejecuciones: 0,
+            f_de: "o_de_tu",
+          },
+          updated: a.updated,
+          fixed: ["f_titulo", "f_estado"],
+        }));
+      const flowRows = () => [...autoRows(), ...oldFlowRows()];
+      const oldFlowRows = () =>
         flowsNow()
           .slice()
           .sort(
@@ -903,21 +1027,20 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               f_disparador: wordId(flowWords(f.trigger)),
               f_estado: f.enabled ? "o_estado_encendido" : "o_estado_apagado",
               f_de: f.by === "preset" ? "o_de_boni" : "o_de_tu",
-              f_pasos: f.steps,
               f_ejecuciones: f.runs,
               ...(f.last !== null ? { f_ultima: new Date(f.last).toISOString() } : {}),
-              f_version: f.version,
             },
             updated: f.last ?? 0,
             ...(f.by === "preset" ? { fixed: ["f_titulo"] } : {}),
           }));
+      // As apps/server/src/flowsCollection.ts makes it (AU-60, AU-61): six columns.
       const flowsType = () => ({
         id: FL,
         key: "flujos",
-        name: "Flujos",
+        name: "Automatizaciones",
         icon: "⚡",
         titleField: "f_titulo",
-        count: flowsNow().length,
+        count: flowsNow().length + liveAutos().length,
         level: "private",
         rules: [],
         rowUi: flowsUi,
@@ -928,12 +1051,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           {
             id: "f_disparador",
             key: "disparador",
-            name: "Disparador",
+            name: "Se inicia",
             type: "select",
-            options: [...new Set(flowsNow().map((f) => flowWords(f.trigger)))].map((w) => ({
-              id: wordId(w),
-              name: w,
-            })),
+            options: [
+              ...new Set([
+                ...liveAutos().map(autoTrigger),
+                ...flowsNow().map((f) => flowWords(f.trigger)),
+              ]),
+            ].map((w) => ({ id: wordId(w), name: w })),
           },
           {
             id: "f_estado",
@@ -941,24 +1066,23 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             name: "Estado",
             type: "select",
             options: [
-              { id: "o_estado_encendido", name: "Encendido" },
-              { id: "o_estado_apagado", name: "Apagado" },
+              { id: "o_estado_encendido", name: "Encendida" },
+              { id: "o_estado_apagado", name: "Apagada" },
+              { id: "o_estado_sin_publicar", name: "Sin publicar" },
             ],
           },
+          { id: "f_ultima", key: "ultima", name: "Última ejecución", type: "datetime" },
+          { id: "f_ejecuciones", key: "ejecuciones", name: "Ejecuciones", type: "number" },
           {
             id: "f_de",
             key: "de",
-            name: "Versión de",
+            name: "De",
             type: "select",
             options: [
+              { id: "o_de_tu", name: "Tú" },
               { id: "o_de_boni", name: "Boni" },
-              { id: "o_de_tu", name: "Ti" },
             ],
           },
-          { id: "f_pasos", key: "pasos", name: "Pasos", type: "number" },
-          { id: "f_ejecuciones", key: "ejecuciones", name: "Ejecuciones", type: "number" },
-          { id: "f_ultima", key: "ultima", name: "Última", type: "datetime" },
-          { id: "f_version", key: "version", name: "Versión", type: "number" },
         ],
       });
       const flowsAnswer = (method: string, p: string, body?: unknown): [number, string] | null => {
@@ -999,6 +1123,16 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         if (p === `api/data/types/${FL}/row-ui`) {
           flowsUi = { ...flowsUi, ...((body ?? {}) as Partial<typeof flowsUi>) };
           return [200, JSON.stringify(flowsUi)];
+        }
+        // «Eliminar» of an automation's row and its Undo (AU-62); the rest of the row is read only.
+        const am = /^api\/data\/rows\/(sys_auto_[^/]+?)(\/restore)?$/.exec(p);
+        if (am) {
+          const a = autos.find((x) => `${AR}${x.id}` === am[1]);
+          if (!a) return [404, '{"error":"not-found"}'];
+          if (am[2] && method === "POST") a.deleted = false;
+          else if (method === "DELETE") a.deleted = true;
+          else return [400, '{"error":"read-only"}'];
+          return [200, "{}"];
         }
         const m = /^api\/data\/rows\/(sys_flow_[^/]+?)(\/restore)?$/.exec(p);
         if (!m) return null;
@@ -1514,6 +1648,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             JSON.stringify({ pages: trash.map((x) => ({ ...x, spec: undefined, deleted: 1 })) }),
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
+        const automation =
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/duplicate|\/restore)?$/.exec(p);
+        if (automation) return automationAnswer(method, automation[1], automation[2], body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
         if (p === "api/agent/requests" && asked) return [200, JSON.stringify({ requests: asked })];

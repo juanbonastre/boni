@@ -1,12 +1,14 @@
 /**
- * «Flujos» as a collection (docs/sistema.md §4.4, F8; Juan's «Las recomendadas», decision 3): Boni makes a row per
- * flow of the account, Boni's and the user's, and the section is that collection's page, with the views, filters and
+ * «Automatizaciones» as a collection (docs/sistema.md §4.4, F8; docs/automatizaciones.md AU-60, AU-61, AU-151): Boni
+ * makes a row per automation of the new format and per flow of before, Boni's and the user's, and the section is that
+ * collection's page, with the views, filters and
  * «Nuevo» of any other; its «Mapa» is the collection's diagram (`flowMap.ts`). Like «Mis datos», a change to a row
  * is done to what the row is, by the same functions as the flow's editor and with their rules: a name and an on or
  * off, a flow turned on only with an empty checklist, Boni's own flows turned off and never deleted. Made on each
  * read (a dozen rows), never stored, outside the store's schema: no model and no assistant sees it.
  */
 import { createHash } from "node:crypto";
+import { chatTrigger } from "@boni/agent";
 import {
   type Entity,
   type FieldDef,
@@ -16,9 +18,10 @@ import {
   type TypeDef,
 } from "@boni/entities";
 import type { FlowRow, UserStore } from "@boni/store";
-import { flowRowTarget, SYS } from "@boni/views";
+import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
 import { DataError } from "./data.ts";
-import { createFlow, type Problem, renamable, renameFlow, stepsOf } from "./flows.ts";
+import { createFlow, type Problem, renamable, renameFlow } from "./flows.ts";
+import { getPage } from "./pages.ts";
 import type { SystemCollections } from "./systemCollections.ts";
 
 const F = SYS.flows;
@@ -60,23 +63,40 @@ const triggerId = (words: string) =>
 /** Boni's own flows: one Boni saved a version of (the user's may run instead; Boni's stays to go back to). */
 const isBoni = (store: UserStore, id: string) => !renamable(store, id);
 
-function typeOf(triggers: SelectOption[]): TypeDef {
+/**
+ * What starts an automation of the new format, as «Se inicia» says it (AU-61): by its first trigger's type, kept at
+ * save (the draft is never parsed to list it). F14b's one trigger says what a flow by hand says; «—» with none.
+ */
+const AUTOMATION_TRIGGERS: Readonly<Record<string, string>> = {
+  manual: "Disparado por el usuario",
+};
+export const NO_TRIGGER = "—";
+export const automationTriggerWords = (type: string | null): string =>
+  type === null ? NO_TRIGGER : (AUTOMATION_TRIGGERS[type] ?? type);
+
+function typeOf(triggers: SelectOption[], whose: SelectOption[]): TypeDef {
   return {
     id: SYS_FLOWS,
     key: "flujos",
-    name: "Flujos",
+    // AU-60: the section's name; its key and the ids of its fields stay until F16.
+    name: "Automatizaciones",
     icon: "⚡",
+    // AU-61: six columns.
     fields: [
       field(F.title, "Nombre", "text"),
-      field(F.trigger, "Disparador", "select", { options: triggers }),
+      field(F.trigger, "Se inicia", "select", { options: triggers }),
       field(F.state, "Estado", "select", {
-        options: [opt(F.on, "Encendido"), opt(F.off, "Apagado")],
+        options: [
+          opt(F.on, "Encendida"),
+          opt(F.off, "Apagada"),
+          opt(F.unpublished, "Sin publicar"),
+        ],
       }),
-      field(F.by, "Versión de", "select", { options: [opt(F.boni, "Boni"), opt(F.user, "Ti")] }),
-      field(F.steps, "Pasos", "number"),
+      field(F.last, "Última ejecución", "datetime"),
       field(F.runs, "Ejecuciones", "number"),
-      field(F.last, "Última", "datetime"),
-      field(F.version, "Versión", "number"),
+      field(F.by, "De", "select", {
+        options: [opt(F.user, "Tú"), opt(F.boni, "Boni"), ...whose],
+      }),
     ],
     titleField: F.title,
     sensitivity: "personal",
@@ -85,40 +105,71 @@ function typeOf(triggers: SelectOption[]): TypeDef {
   };
 }
 
-/** The collection and its rows: the flows on first, then by name. */
+/**
+ * The collection and its rows (AU-61, AU-151): the automations of the new format, the newest first, then the flows
+ * of before, those on first and then by name. An automation is read from its row of the store (its name and its
+ * trigger kept at save): no draft is parsed.
+ */
 export function flowsCollection(store: UserStore): { type: TypeDef; rows: Entity[] } {
   const types = Object.values(store.schema().types);
   const typeName = (key: string) => types.find((t) => t.key === key)?.name ?? null;
   const triggers = new Map<string, SelectOption>();
+  const whose = new Map<string, SelectOption>();
+  const triggerOption = (words: string) => {
+    const tid = triggerId(words);
+    if (!triggers.has(tid)) triggers.set(tid, opt(tid, words));
+    return tid;
+  };
+  const autos: Entity[] = store.journal.automations().map((a, i) => ({
+    id: F.automation + a.id,
+    type: SYS_FLOWS,
+    values: {
+      [F.title]: a.name,
+      [F.trigger]: triggerOption(automationTriggerWords(a.trigger)),
+      [F.state]: F.unpublished,
+      [F.runs]: 0,
+      [F.by]: F.user,
+    },
+    created: i,
+    updated: a.updated,
+    version: a.rev,
+  }));
   const flows = store.journal
     .flows()
     .slice()
     .sort((a, b) => Number(b.enabled) - Number(a.enabled) || a.name.localeCompare(b.name, "es"));
   const rows: Entity[] = flows.map((f, i) => {
-    const words = triggerWords(f.trigger, typeName);
-    const tid = triggerId(words);
-    if (!triggers.has(tid)) triggers.set(tid, opt(tid, words));
     const runs = store.journal.flowRuns(f.id);
     return {
       id: F.row + f.id,
       type: SYS_FLOWS,
       values: {
         [F.title]: f.name,
-        [F.trigger]: tid,
+        [F.trigger]: triggerOption(triggerWords(f.trigger, typeName)),
         [F.state]: f.enabled ? F.on : F.off,
-        [F.by]: f.by === "preset" ? F.boni : F.user,
-        [F.steps]: stepsOf(f.plan).length,
+        [F.by]: whoseFlow(store, f, whose),
         [F.runs]: runs.runs,
         ...(runs.last !== null ? { [F.last]: new Date(runs.last).toISOString() } : {}),
-        [F.version]: f.version,
       },
       // The order they are listed in, kept by «created» (a view sorts them otherwise if asked).
-      created: i,
+      created: autos.length + i,
       updated: runs.last ?? f.created,
       version: f.version,
     };
   });
-  return { type: typeOf([...triggers.values()]), rows };
+  return { type: typeOf([...triggers.values()], [...whose.values()]), rows: [...autos, ...rows] };
+}
+
+/** «De» of a flow of before (AU-61): a page's chat is that page's («Página «Gastos»»), else Boni's or the user's. */
+function whoseFlow(store: UserStore, f: FlowRow, pages: Map<string, SelectOption>): string {
+  const chat = chatTrigger(f.trigger);
+  if (chat) {
+    const id = F.page + chat.page;
+    if (!pages.has(id))
+      pages.set(id, opt(id, `Página «${getPage(store, chat.page)?.title || "—"}»`));
+    return id;
+  }
+  return f.by === "preset" ? F.boni : F.user;
 }
 
 /** Boni's collections with «Flujos» among them: made only when asked for, then kept for the request. */
@@ -133,8 +184,18 @@ export function withFlows(store: UserStore, base: SystemCollections): SystemColl
       return { ...base.types, [SYS_FLOWS]: mine().type };
     },
     rows: (t) => (t === SYS_FLOWS ? mine().rows : base.rows(t)),
-    count: (t) => (t === SYS_FLOWS ? store.journal.flows().length : base.count(t)),
+    count: (t) =>
+      t === SYS_FLOWS
+        ? store.journal.flows().length + store.journal.automations().length
+        : base.count(t),
   };
+}
+
+/** «Eliminar» a row of an automation of the new format (AU-62), and its Undo: out of the list and back. */
+export function deleteAutomationRow(store: UserStore, row: string, deleted: boolean): void {
+  const id = automationRowTarget(row);
+  if (!id || !store.journal.automation(id)) throw new DataError("not-found");
+  store.journal.setAutomationDeleted(id, deleted);
 }
 
 /** The flow a row of «Flujos» is, or not-found. */

@@ -487,8 +487,20 @@ for (const language of ["es", "en"] as const) {
 
 /** «Flujos» (F8): its table, its map with a node's panel, its filters open and a flow unfolded, and a flow's page. */
 const FLOWS_TEXT = {
-  es: { nav: "Flujos", table: "Tabla", map: "Mapa", filters: "Filtros", steps: "Ver los pasos" },
-  en: { nav: "Flows", table: "Table", map: "Map", filters: "Filters", steps: "Show the steps" },
+  es: {
+    nav: "Automatizaciones",
+    table: "Tabla",
+    map: "Mapa",
+    filters: "Filtros",
+    steps: "Ver los pasos",
+  },
+  en: {
+    nav: "Automations",
+    table: "Table",
+    map: "Map",
+    filters: "Filters",
+    steps: "Show the steps",
+  },
 };
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {

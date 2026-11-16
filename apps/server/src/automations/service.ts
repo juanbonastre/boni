@@ -148,6 +148,9 @@ function open(store: UserStore, id: string) {
 const isError = (x: unknown): x is ServiceError =>
   typeof x === "object" && x !== null && "error" in x && Object.keys(x).length === 1;
 
+/** What the list says starts it (AU-61): its first trigger's type, kept at each save so no list parses a draft. */
+export const triggerOf = (a: Automation): string | null => a.steps.find(isTrigger)?.type ?? null;
+
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */
 export function createAutomation(
   store: UserStore,
@@ -159,7 +162,14 @@ export function createAutomation(
   if (isError(a)) return a;
   store.journal.createAutomation(
     { id, by: "user", created: hand.now },
-    { id, name: a.name, doc: JSON.stringify(a), device: hand.device, updated: hand.now },
+    {
+      id,
+      name: a.name,
+      trigger: triggerOf(a),
+      doc: JSON.stringify(a),
+      device: hand.device,
+      updated: hand.now,
+    },
   );
   return automationView(store, id);
 }
@@ -265,6 +275,7 @@ export function keepDraft(
   const rev = store.journal.saveAutomationDraft({
     id,
     name: a.name,
+    trigger: triggerOf(a),
     doc: JSON.stringify(a),
     device: hand.device,
     updated: hand.now,

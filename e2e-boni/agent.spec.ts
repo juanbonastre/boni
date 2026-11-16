@@ -229,9 +229,12 @@ test("Boni's window moved by its bar (F9, task 85, I-35): it stays where it is l
   // A drag never selects the bar's words.
   expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
   // Another screen: it is where it was.
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await expect(
-    page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }),
+    page.locator(".sidebar").getByRole("button", { name: "Automatizaciones", exact: true }),
   ).toBeVisible();
   expect(await placeOf(page)).toEqual(moved);
   // Closed with Esc and opened again; docked and floated again: the same place.
@@ -610,7 +613,7 @@ test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragr
     request: "¿qué hace esto?",
     at: 1761900000000,
     pointed: [
-      { ref: { kind: "flow", id: "leer-correo" }, title: "Flujo: Leer correo" },
+      { ref: { kind: "flow", id: "leer-correo" }, title: "Automatización: Leer correo" },
       { ref: { kind: "node", id: "conn:mail" }, title: "Nodo: Correo" },
     ],
   };
@@ -633,7 +636,10 @@ test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragr
       ],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Mapa" }).click();
   const map = page.locator(".mp-stage");
   const card = (name: string) =>
@@ -646,10 +652,10 @@ test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragr
   await card("Leer correo").click();
   const win = page.getByRole("dialog", { name: "Boni" });
   const chips = win.locator(".chat-pointed:not(.turn-pointed) .chat-chip");
-  await expect(chips).toHaveText(["Flujo: Leer correo"]);
+  await expect(chips).toHaveText(["Automatización: Leer correo"]);
   await page.keyboard.press("Control+Shift+e");
   await card("Correo").click();
-  await expect(chips).toHaveText(["Flujo: Leer correo", "Nodo: Correo"]);
+  await expect(chips).toHaveText(["Automatización: Leer correo", "Nodo: Correo"]);
   await expect(map).toBeVisible();
   const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
   await box.fill("¿qué hace esto?");
@@ -661,19 +667,19 @@ test("Señalar (F9, task 85, A-22, I-33): a flow and a node of the map, a paragr
   ]);
   // The chips go with the message as it was written (I-33): the bar is clean, the message shows them.
   expect(sent.chips).toEqual([
-    { ref: { kind: "flow", id: "leer-correo" }, title: "Flujo: Leer correo" },
+    { ref: { kind: "flow", id: "leer-correo" }, title: "Automatización: Leer correo" },
     { ref: { kind: "node", id: "conn:mail" }, title: "Nodo: Correo" },
   ]);
   await expect(win.locator(".turn-answer")).toHaveCount(1);
   await expect(chips).toHaveCount(0);
   const sentChips = win.locator(".turn-pointed .chat-chip");
-  await expect(sentChips).toHaveText(["Flujo: Leer correo", "Nodo: Correo"]);
+  await expect(sentChips).toHaveText(["Automatización: Leer correo", "Nodo: Correo"]);
   await page.screenshot({ path: `${SHOTS}/boni-pointed-sent.png` });
   // Opened again from the list, the conversation shows each message with what was pointed at in it.
   await win.getByRole("button", { name: "Ampliar" }).click();
   await page.locator(".chat-item-open", { hasText: "Lo del mapa" }).click();
   await expect(page.locator(".turn-pointed .chat-chip")).toHaveText([
-    "Flujo: Leer correo",
+    "Automatización: Leer correo",
     "Nodo: Correo",
   ]);
   // A paragraph of a note: by its row, its words' key and which of the same it is.

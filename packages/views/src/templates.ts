@@ -78,18 +78,22 @@ export const SYS = {
     runs: "f_ejecuciones",
     last: "f_ultima",
     version: "f_version",
-    /** «Estado». */
+    /** «Estado»: a flow of before is on or off; an automation of the new format is unpublished until F14d. */
     on: "o_estado_encendido",
     off: "o_estado_apagado",
-    /** «De». */
+    unpublished: "o_estado_sin_publicar",
+    /** «De»: Boni's, the user's, or a page's (this, then the page's id). */
     boni: "o_de_boni",
     user: "o_de_tu",
+    page: "o_de_pagina_",
     /** «Disparador»: what kind of thing starts it. */
     record: "o_disp_llega",
     schedule: "o_disp_horario",
     manual: "o_disp_mano",
     /** A row's id: this, then the flow's own id. */
     row: "sys_flow_",
+    /** The row of an automation of the new format (AU-151): this, then the automation's id. */
+    automation: "sys_auto_",
     /** What a person changes in a row (the rest is computed). */
     editable: ["f_titulo", "f_estado"],
   },
@@ -113,6 +117,9 @@ export const dataRowTarget = (row: string): string | null =>
 /** A row of «Flujos» as its flow's id; null for any other row. */
 export const flowRowTarget = (row: string): string | null =>
   row.startsWith(SYS.flows.row) ? row.slice(SYS.flows.row.length) : null;
+/** The automation of the new format a row of «Automatizaciones» is (AU-151), or null for a flow of before. */
+export const automationRowTarget = (row: string): string | null =>
+  row.startsWith(SYS.flows.automation) ? row.slice(SYS.flows.automation.length) : null;
 
 const at = (row: string, col: number, w: number, h?: "s" | "m" | "l") => ({
   row,

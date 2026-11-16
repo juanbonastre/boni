@@ -90,7 +90,7 @@ function flows() {
 }
 
 describe("«Flujos» as a collection", () => {
-  it("a row per flow, those on first: what starts it, its state, whose version runs, its steps and runs", () => {
+  it("a row per flow, those on first: what starts it, its state, whose it is and its runs", () => {
     flows();
     store.journal.startRun({
       id: "r1",
@@ -108,10 +108,9 @@ describe("«Flujos» as a collection", () => {
     expect(mail?.values[F.state]).toBe(F.on);
     expect(mail?.values[F.by]).toBe(F.boni);
     expect(mail?.values[F.runs]).toBe(1);
-    expect(mail?.values[F.steps]).toBe(1);
     expect(mine?.values[F.state]).toBe(F.off);
     expect(mine?.values[F.by]).toBe(F.user);
-    // «Disparador» as a person says it, an option the same for the same words on every read.
+    // «Se inicia» as a person says it, an option the same for the same words on every read.
     const type = sys().types[SYS_FLOWS];
     const trigger = type?.fields.find((f) => f.id === F.trigger);
     expect(trigger?.options?.map((x) => x.name)).toEqual([
@@ -194,7 +193,8 @@ describe("«Flujos» as a collection", () => {
     const my = withMyData(store, base, o).rows(SYS_DATA);
     expect(
       my.some(
-        (r) => r.id === `${SYS.data.row}${SYS_FLOWS}` && r.values[SYS.data.title] === "Flujos",
+        (r) =>
+          r.id === `${SYS.data.row}${SYS_FLOWS}` && r.values[SYS.data.title] === "Automatizaciones",
       ),
     ).toBe(true);
   });

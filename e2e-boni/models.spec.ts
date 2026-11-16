@@ -90,7 +90,10 @@ async function settled(page: Page) {
 }
 
 async function openFlow(page: Page, name = "Leer correo") {
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   const table = page.getByRole("tab", { name: "Tabla" });
   if ((await table.getAttribute("aria-selected")) !== "true") await table.click();
   await page.locator(".db-table").getByText(name, { exact: true }).click();
@@ -352,18 +355,21 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
       "POST api/agent/flows/check": [FLOW_CHECK],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
   // Its views as tabs, as any collection's: «Tabla» first, «Mapa» second; no «Modelos».
   await expect(page.getByRole("tab")).toHaveText(["Tabla", "Mapa"]);
   await expect(page.getByRole("radio", { name: "Modelos" })).toHaveCount(0);
   const rows = page.locator(".db-table tbody tr");
   await expect(rows).toHaveCount(2);
   // The flows on first; what starts each as a person says it; whose version runs.
-  for (const text of ["Leer correo", "Llega a Correos", "Encendido", "Boni", "42"])
+  for (const text of ["Leer correo", "Llega a Correos", "Encendida", "Boni", "42"])
     await expect(rows.first()).toContainText(text);
   await expect(rows.nth(1)).toContainText("Disparado por el usuario");
-  await expect(rows.nth(1)).toContainText("Apagado");
+  await expect(rows.nth(1)).toContainText("Apagada");
   await page.screenshot({ path: `${SHOTS}/flows-table.png` });
 
   await page.getByRole("tab", { name: "Mapa" }).click();
@@ -520,7 +526,7 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await map.locator(".mp-frame.flow .mp-frame-label", { hasText: "Leer correo" }).click();
   await panel.getByRole("button", { name: "Abrir" }).click();
   await expect(page.locator(".flow-crumbs")).toContainText("Leer correo");
-  await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
+  await page.locator(".flow-crumbs").getByRole("button", { name: "Automatizaciones" }).click();
   // The map's lenses stay on this device; its view too.
   await expect(page.getByRole("tab", { name: "Mapa" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("combobox", { name: "Agrupar" })).toHaveValue("collection");
@@ -540,7 +546,7 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   // The collection's right button in the sidebar.
   await page.locator(".sidebar").getByText("Libros", { exact: true }).click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "Ver en el mapa" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
   await expect(page.getByRole("tab", { name: "Mapa" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".mp-centre")).toContainText("Libros");
   const map = page.locator(".mp-stage");
@@ -1037,7 +1043,7 @@ test("«¿De dónde viene?» from a row: the reading that proposed it on the map
   // A book a mail recommended: «Leer correo» proposed it to Libros, and Juan accepted it.
   await rows.filter({ hasText: "Pedro Páramo" }).click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "¿De dónde viene?" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
   await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
   // Told in words over the map: the mail, the reading, its own proposal (and how many more), the «Aceptar».
   const way = page.locator(".mp-way");
@@ -1087,11 +1093,14 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
       "POST api/agent/flows/:id/revert": [{ ...FLOW_DETAIL, version: 5 }],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await expect(page.locator(".topbar h1")).toHaveText("Automatizaciones");
   const row = page.locator(".db-table tbody tr");
   await expect(row).toHaveCount(1);
-  for (const text of ["Leer correo", "Llega a Correos", "Encendido", "42"])
+  for (const text of ["Leer correo", "Llega a Correos", "Encendida", "42"])
     await expect(row.first()).toContainText(text);
   // A flow opens on a page of its own, the way back to «Flujos» above it (docs/sistema.md §4.4).
   await row.first().getByText("Leer correo", { exact: true }).click();
@@ -1321,7 +1330,10 @@ test("the decider's panel on the map: what it chooses among and the guide's rule
       "GET api/agent/decisions": [ACCURACY],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Mapa" }).click();
   const map = page.locator(".mp-stage");
   await map
@@ -1690,10 +1702,10 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
     trigger: unknown;
   };
   expect(sent.trigger).toEqual({ schedule: { every: "day", at: "07:30" } });
-  // A flow never runs another: «Ejecutar flujo» is not offered as a step.
+  // A flow never runs another: «Ejecutar automatización» is not offered as a step.
   await page.getByRole("button", { name: "Añadir paso" }).click();
   await expect(page.getByRole("menuitemradio", { name: "Avisar" })).toBeVisible();
-  await expect(page.getByRole("menuitemradio", { name: "Ejecutar flujo" })).toHaveCount(0);
+  await expect(page.getByRole("menuitemradio", { name: "Ejecutar automatización" })).toHaveCount(0);
   // With no extension's function active, nothing to name: no «Funciones» (task 93).
   await expect(page.getByRole("menuitemradio", { name: "Función", exact: true })).toHaveCount(0);
 });
@@ -1720,7 +1732,10 @@ test("a flow's name changes from the list and from its editor, which the list sh
       "POST api/agent/flows/check": [{ problems: [], refs: {} }],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   const table = page.locator(".db-table");
   // From the list: a double click on its name, as any row's title.
   await table.getByRole("button", { name: "Resumen diario", exact: true }).dblclick();
@@ -1741,7 +1756,7 @@ test("a flow's name changes from the list and from its editor, which the list sh
     .toContain("Resumen de la mañana");
   await expect(name).toHaveValue("Resumen de la mañana");
   await expect(page.getByRole("button", { name: "Guardar", exact: true })).toBeDisabled();
-  await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
+  await page.locator(".flow-crumbs").getByRole("button", { name: "Automatizaciones" }).click();
   await expect(
     table.getByRole("button", { name: "Resumen de la mañana", exact: true }),
   ).toBeVisible();
@@ -1799,9 +1814,9 @@ test("what is changed in a flow is kept as its draft on its own: left and opened
   // Not saved: the flow that is on runs its version; «Ejecutar» is not offered over a draft.
   expect(await bodies(page, "PUT api/agent/flows/resumen-diario ")).toEqual([]);
   await expect(page.getByRole("button", { name: "Ejecutar", exact: true })).toHaveCount(0);
-  await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
+  await page.locator(".flow-crumbs").getByRole("button", { name: "Automatizaciones" }).click();
   await expect(page.locator(".db-table tbody tr", { hasText: "Resumen diario" })).toContainText(
-    "Encendido",
+    "Encendida",
   );
   // Opened again (here, or on another device): the draft, as it was left.
   await page.locator(".db-table").getByText("Resumen diario", { exact: true }).click();
@@ -1862,9 +1877,12 @@ test("«Aviso del presupuesto» is one of Boni's flows (D-53): started by the mo
     },
   });
   // «Flujos»: its row says what starts it, that it is on and that it is Boni's.
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   const row = page.locator(".db-table tbody tr", { hasText: "Aviso del presupuesto" });
-  for (const text of ["El gasto llega al aviso", "Encendido", "Boni"])
+  for (const text of ["El gasto llega al aviso", "Encendida", "Boni"])
     await expect(row).toContainText(text);
   await openFlow(page, "Aviso del presupuesto");
   const canvas = page.locator(".flow-editor .flow-canvas");
@@ -1937,7 +1955,10 @@ test("«Revisar la guía» has its settings (F7): how many new decisions make it
       "POST api/agent/flows/check": [FLOW_REVIEW_CHECK],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await openFlow(page, "Revisar la guía");
   const canvas = page.locator(".flow-editor .flow-canvas");
   const trigger = canvas.locator(".fl-node.source");
@@ -2069,7 +2090,7 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Aviso del presupuesto");
   await expect(panel.locator("h3")).toHaveText("Aviso del presupuesto");
-  for (const text of ["Flujo · De Boni", "El gasto llega al aviso", "1 ejecución"])
+  for (const text of ["Automatización · De Boni", "El gasto llega al aviso", "1 ejecución"])
     await expect(panel).toContainText(text);
   await expect(panel.getByRole("region", { name: "Sale" })).toContainText(
     "Dispositivos · avisa · 1",
@@ -2147,7 +2168,10 @@ test("who tells, on the whole map: Boni's flow, a flow of the user's that has to
       "GET api/agent/flows": [FLOWS_WITH_BUDGET],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Mapa" }).click();
   for (const name of ["Aviso del presupuesto", "Resumen diario", "Conversación"])
     await expect(mapCard(page, name), name).toBeVisible();
@@ -2388,7 +2412,7 @@ test("a flow a model proposed waits in the inbox, drawn with what it changes; «
   const cards = page.locator(".proposal.flow-proposal");
   await expect(cards).toHaveCount(2);
   const made = cards.first();
-  await expect(made.locator(".inbox-kind")).toHaveText("Flujo propuesto");
+  await expect(made.locator(".inbox-kind")).toHaveText("Automatización propuesta");
   await expect(made.locator("h3")).toHaveText("Resumen del lunes");
   await expect(made.locator(".inbox-what")).toHaveText("Cada lunes a las 08:00 · 2 pasos");
   await expect(made.locator(".fl-node")).toHaveCount(3);

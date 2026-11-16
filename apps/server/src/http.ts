@@ -10,7 +10,7 @@ import {
 } from "@boni/calendar";
 import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
-import { dataRowTarget, flowRowTarget } from "@boni/views";
+import { automationRowTarget, dataRowTarget, flowRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { argNames, ROUTE_ACTIONS, ROUTE_RUNS, routeDecision, runAction } from "./actions.ts";
 import { type AgentHost, serveAgent, tryFlow } from "./agent.ts";
@@ -70,6 +70,7 @@ import type { Feeds } from "./feeds.ts";
 import { checkFlow } from "./flows.ts";
 import {
   createFlowRow,
+  deleteAutomationRow,
   deleteFlowRow,
   restoreFlowRow,
   SYS_FLOWS,
@@ -414,6 +415,61 @@ export function makeApp(opts: ServerOptions): App {
         params,
         listener,
       );
+    // «Automatizaciones» (docs/automatizaciones.md §7, AU-168): each route runs its action (automations/actions.ts)
+    // through `runAction`, which asks the policy with the real arguments as Juan's hand. Changing one is from a
+    // personal device, as a flow (D-41); reading one, any of his.
+    if (url.pathname.startsWith("/api/agent/automations")) {
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (!opts.agent) return send(res, 503, { error: "agent-off" });
+      if (req.method !== "GET" && s.trust !== "personal")
+        return send(res, 403, { error: "personal-device-only" });
+      const store = opts.agent.store(s.user.id);
+      const id = params.id ?? "";
+      const automation = async (name: string, args: Record<string, unknown>) => {
+        const r = await runAction(name, args, {
+          store,
+          trust: s.trust,
+          device: s.device,
+          ...(opts.actions ? { registry: opts.actions } : {}),
+        });
+        if ("refused" in r) return send(res, 403, { error: "policy", rule: r.refused });
+        if ("error" in r) {
+          const status =
+            r.error === "not-found"
+              ? 404
+              : r.error === "too-large"
+                ? 413
+                : r.error === "not-available"
+                  ? 503
+                  : 400;
+          return send(res, status, { error: r.error });
+        }
+        return send(res, 200, r.out ?? {});
+      };
+      switch (route) {
+        case "GET /api/agent/automations/:id":
+          return automation("automations.read", { id });
+        case "POST /api/agent/automations": {
+          const b = await bodyOf(req);
+          return automation("automations.create", { automation: b.automation });
+        }
+        case "PUT /api/agent/automations/:id/draft": {
+          const b = await bodyOf(req);
+          return automation("automations.edit", { id, automation: b.automation });
+        }
+        case "POST /api/agent/automations/:id/duplicate": {
+          const b = await bodyOf(req);
+          return automation("automations.duplicate", { id, name: b.name });
+        }
+        case "DELETE /api/agent/automations/:id":
+          return automation("automations.delete", { id });
+        case "POST /api/agent/automations/:id/restore":
+          return automation("automations.restore", { id });
+        default:
+          return send(res, 404, { error: "not-found" });
+      }
+    }
     if (url.pathname.startsWith("/api/agent/")) {
       if (
         req.method !== "GET" &&
@@ -745,6 +801,18 @@ export function makeApp(opts: ServerOptions): App {
           }
           if (route === "POST /api/data/rows/:id/restore") {
             restoreFlowRow(store, id);
+            return send(res, 200, {});
+          }
+        }
+        // A row of an automation of the new format (AU-62): «Eliminar» and its Undo; it changes in its editor.
+        if (automationRowTarget(params.id ?? "") !== null) {
+          const id = params.id ?? "";
+          if (route === "PUT /api/data/rows/:id") throw new DataError("read-only");
+          if (
+            route === "DELETE /api/data/rows/:id" ||
+            route === "POST /api/data/rows/:id/restore"
+          ) {
+            deleteAutomationRow(store, id, route === "DELETE /api/data/rows/:id");
             return send(res, 200, {});
           }
         }

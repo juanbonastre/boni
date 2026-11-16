@@ -71,6 +71,7 @@ export * from "./pageValues.ts";
 export { pyRound, pySum } from "./pyround.ts";
 export * from "./tableRows.ts";
 export {
+  automationRowTarget,
   dataLevel,
   dataRowFixed,
   dataRowTarget,

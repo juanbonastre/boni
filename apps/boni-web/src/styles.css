@@ -11735,3 +11735,90 @@ tr[data-boni-pointed] > td {
 .chat-mode-chip {
   background: var(--accent-soft);
 }
+
+/* «Automatizaciones» (docs/automatizaciones.md §5.7, C1 of F14b): the editor's header, and nothing else of its own
+   (AU-62): back, the name edited in place, «Guardado» and «⋯»; under it the canvas's place, which C2 fills. */
+.auto-page .doc {
+  max-width: none;
+}
+.auto-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  min-width: 0;
+}
+.auto-name {
+  flex: 0 1 420px;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  text-overflow: ellipsis;
+}
+.auto-name:hover:not(:disabled) {
+  border-color: var(--line);
+}
+.auto-name:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.auto-saved {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.auto-saved.failed {
+  color: var(--text);
+}
+.auto-canvas {
+  height: calc(100vh - 170px);
+  min-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auto-start {
+  width: min(320px, 100%);
+  padding: 16px;
+}
+.auto-start h2 {
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+.auto-start ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.auto-start-row {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+.auto-start-row:hover {
+  background: var(--hover);
+}
+/* A flow of before, in the editor of before (AU-151). */
+.former-format {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}

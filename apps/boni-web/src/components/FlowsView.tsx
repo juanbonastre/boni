@@ -1,9 +1,11 @@
 /**
- * «Flujos» (docs/sistema.md §4.4, F8; Juan's «Las recomendadas», decision 3): Boni's collection of the account's
- * flows (apps/server flowsCollection.ts) on a page of its own, with what any collection's page has (its views as
+ * «Automatizaciones» (docs/automatizaciones.md §5.7, AU-60, AU-61; before, «Flujos»: docs/sistema.md §4.4, F8):
+ * Boni's collection of the account's automations and flows of before (apps/server flowsCollection.ts) on a page of
+ * its own, with what any collection's page has (its views as
  * tabs, the bar of order and filters, «Nuevo»), starting with two views: «Tabla» and «Mapa» (`FlowMap`, the map of
- * everything that brings, starts, reads and writes the data). A flow opens on a page of its own, in its editor
- * (`FlowPage`), with the way back to «Flujos» above it. «Modelos» is no more: what configures the models is in
+ * everything that brings, starts, reads and writes the data). An automation opens in its editor
+ * (AutomationEditor.tsx); a flow of before on a page of its own, in the editor of before (`FlowPage`), marked
+ * «Formato anterior» by its name (AU-151), with the way back above it. «Modelos» is no more: what configures the models is in
  * Ajustes → Modelos, and what they do and cost is on the map's steps. Docs: docs/design-guide.md «Flujos».
  */
 import { type DatabaseView, SYS } from "@boni/views";
@@ -20,6 +22,7 @@ import {
   useStore,
   useViews,
 } from "../store.ts";
+import { AutomationPage } from "./AutomationEditor.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { draftKept, FlowEditor } from "./FlowEditor.tsx";
 
@@ -63,7 +66,7 @@ function FlowsCollection() {
   );
 }
 
-/** One flow on a page of its own: the way back to «Flujos», its period, its editor. */
+/** One flow of before on a page of its own: the way back, «Formato anterior», its period, its editor. */
 function FlowPage({ id }: { id: string }) {
   const t = useStore((s) => s.t);
   const [detail, setDetail] = useState<FlowDetailView | null>(null);
@@ -103,6 +106,7 @@ function FlowPage({ id }: { id: string }) {
           </button>
           <ChevronRight size={14} strokeWidth={1.8} aria-hidden />
           <span className="flow-crumb-here">{detail?.name ?? "…"}</span>
+          <span className="former-format">{t("auto.formerFormat")}</span>
           <span className="spacer" />
           <div className="segmented small" role="radiogroup" aria-label={t("flow.period")}>
             {PERIODS.map((d) => (
@@ -143,5 +147,8 @@ function FlowPage({ id }: { id: string }) {
 
 export function FlowsView() {
   const flow = useStore((s) => (s.view.kind === "flows" ? (s.view.flow ?? null) : null));
+  // undefined: no automation open; null: «Nueva»'s empty canvas.
+  const automation = useStore((s) => (s.view.kind === "flows" ? s.view.automation : undefined));
+  if (automation !== undefined) return <AutomationPage id={automation} />;
   return flow ? <FlowPage id={flow} /> : <FlowsCollection />;
 }

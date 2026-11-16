@@ -49,14 +49,20 @@ const FLOW_AGENT = {
 
 test("Flujos", async ({ page }) => {
   await open(page, FLOW_AGENT);
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.locator(".db-table tbody tr").first().waitFor();
   await shot(page, "flujos");
 });
 
 test("Flujos: el mapa", async ({ page }) => {
   await open(page, FLOW_AGENT);
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.getByRole("tab", { name: "Mapa" }).click();
   await page.locator(".mp-card").first().waitFor();
   await page.waitForTimeout(600); // the map fits what it shows with a short motion
@@ -65,7 +71,10 @@ test("Flujos: el mapa", async ({ page }) => {
 
 test("Flujos: un flujo", async ({ page }) => {
   await open(page, FLOW_AGENT);
-  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
   await page.locator(".db-table").getByText("Leer correo", { exact: true }).click();
   await page.locator(".flow-editor .flow-canvas .fl-node").first().waitFor();
   await page.getByRole("button", { name: "Añadir paso" }).waitFor();

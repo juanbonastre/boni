@@ -36,7 +36,7 @@ test("the sidebar: «Mis datos» by Buscar and Conversación, then «Recientes»
     /^Buscar/,
     "Conversación",
     "Mis datos",
-    "Flujos",
+    "Automatizaciones",
   ]);
   const pages = side.getByRole("list", { name: "Páginas" });
   // The user's pages, then the collections (folded), then Boni's own things.
@@ -570,9 +570,9 @@ test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes
   await tareas.locator(".dg-name").click();
   const panel = page.locator(".data-panel");
   await expect(panel).toContainText("Leer correo");
-  await expect(panel).toContainText("flujo encendido");
+  await expect(panel).toContainText("automatización encendida");
   await expect(panel).toContainText("Resumen diario");
-  await expect(panel).toContainText("flujo apagado");
+  await expect(panel).toContainText("automatización apagada");
 });
 
 test("the diagram gives control (task 77): an arrow left anywhere on a collection relates it, left on the canvas makes a related one; the right button's actions; what changes shows in the table at once", async ({

@@ -195,7 +195,7 @@ test("a button's panel: what it does, the flow it starts and where each input co
   const panel = page.locator(".side-panel");
   await expect(panel.locator("h2")).toHaveText("Botón");
   await expect(panel.getByRole("combobox", { name: "Hace" })).toHaveValue("flow");
-  await expect(panel.getByRole("combobox", { name: "Flujo" })).toHaveValue(FLOW);
+  await expect(panel.getByRole("combobox", { name: "Automatización" })).toHaveValue(FLOW);
   // One row per input of the flow: a control of the page, or a value saved with the page.
   await expect(panel.getByRole("combobox", { name: "categoria" })).toHaveValue("$b_cat");
   await expect(panel.getByRole("combobox", { name: "nota" })).toHaveValue("=");

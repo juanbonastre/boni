@@ -173,7 +173,7 @@ export function withScreenActions(r: ToolRegistry): ToolRegistry {
     area: "screen",
     title: "Abrir",
     describe:
-      'Open ONE thing on the user\'s screen, lit: a collection (its key from "schema"), a record (a record a tool or "screen" gave, whole), a place ("inbox", "flows", "log" or "data"), a run (a run\'s id as a tool gave it) or a flow (its id); map: true opens it on the map of «Flujos» («Ver en el mapa»: a run drawn on it with the step that stopped it lit). When he asks to open, show or go to something',
+      'Open ONE thing on the user\'s screen, lit: a collection (its key from "schema"), a record (a record a tool or "screen" gave, whole), a place ("inbox", "flows", "log" or "data"), a run (a run\'s id as a tool gave it) or a flow (its id); map: true opens it on the map of «Automatizaciones» («Ver en el mapa»: a run drawn on it with the step that stopped it lit). When he asks to open, show or go to something',
     args: {
       collection: { role: "type", describe: "a collection's key" },
       record: { role: "entity", describe: "a record a tool or the screen gave, whole" },

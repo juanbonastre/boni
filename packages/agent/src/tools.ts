@@ -1078,7 +1078,7 @@ export function coreTools(): ToolRegistry {
     undo: { none: "what the flow did, its own run's Undo takes back" },
     effect: "flow",
     area: "flows",
-    title: "Ejecutar flujo",
+    title: "Ejecutar automatización",
     describe:
       'Run one of the user\'s flows (input "flows": its id and the names its form asks for); the user confirms it',
     args: {
@@ -1098,7 +1098,7 @@ export function coreTools(): ToolRegistry {
     undo: ["version"],
     effect: "flow_save",
     area: "flows",
-    title: "Proponer flujo",
+    title: "Proponer automatización",
     describe:
       'Propose a flow for the user, a plan that runs on its own trigger: it waits in his inbox until he accepts it. trigger: {"lit": {"manual": true, "inputs": [{"name": "..."}]}} (by hand, with a form) or {"lit": {"schedule": {"every": "day" | "week" | "hour", "at": "HH:MM", "day": 0-6}}}; plan: {"lit": {"version": 1, "steps": [...]}} in this same plan language, its form\'s names and $today (on a schedule) as refs; flow: the id of one of "flows" to change',
     args: {

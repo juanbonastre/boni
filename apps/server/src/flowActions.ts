@@ -96,9 +96,9 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
     effect: "touch",
     area: "flows",
     service: "flows",
-    title: "Encender flujo",
+    title: "Encender automatización",
     describe:
-      "Switch one of Juan's flows on (on: true) or off (on: false), as its switch in «Flujos» does; Juan confirms it on a card",
+      "Switch one of Juan's flows on (on: true) or off (on: false), as its switch in «Automatizaciones» does; Juan confirms it on a card",
     args: { flow, on: { role: "value", required: true, describe: "true: on; false: off" } },
     run(c, a) {
       const on = a.on ? plain(a.on) : null;
@@ -117,7 +117,7 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
     service: "flows",
     // Deleting is Juan's card (docs/sistema.md §4.1, P5): to the trash, back with Undo.
     alwaysConfirm: true,
-    title: "Borrar flujo",
+    title: "Borrar automatización",
     describe:
       "Send one of Juan's flows to the trash (Boni's own are only turned off); he confirms it",
     args: { flow },
@@ -131,7 +131,7 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
     effect: "read",
     area: "flows",
     service: "flows",
-    title: "Probar flujo",
+    title: "Probar automatización",
     describe:
       "Try one of Juan's flows as «Probar» does: it runs dry, changes nothing, and says what each step would do (inputs: its form's values by name, obj(name, value, ...))",
     args: {
@@ -162,7 +162,7 @@ export function withFlowActions(r: ToolRegistry): ToolRegistry {
     effect: "read",
     area: "flows",
     service: "flows",
-    title: "Ejecuciones de un flujo",
+    title: "Ejecuciones de una automatización",
     describe: `The runs of one of Juan's flows (or of all of them, without flow), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did. To answer «¿por qué paró…?» and open that run on the map (screen.open with its run, map: true)`,
     args: {
       flow: { ...flow, required: false },

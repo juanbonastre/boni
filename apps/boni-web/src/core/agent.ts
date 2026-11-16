@@ -3096,6 +3096,12 @@ export class AgentApi {
     const r = await this.call("PUT", `flows/${encodeURIComponent(id)}/draft`, body);
     return parseFlowDraft(isObj(r) ? r.draft : null);
   };
+  /**
+   * A call to «Automatizaciones» (docs/automatizaciones.md §7): `path` under `automations/`, empty for the
+   * collection itself. automations/client.ts reads the answers.
+   */
+  automations = (method: "GET" | "POST" | "PUT" | "DELETE", path: string, body?: unknown) =>
+    this.call(method, path ? `automations/${path}` : "automations", body);
   /** «Descartar»: the draft dropped; the flow as it was saved. */
   discardFlowDraft = async (id: string) =>
     parseFlowDetail(await this.call("DELETE", `flows/${encodeURIComponent(id)}/draft`));

@@ -968,7 +968,7 @@ const TOOLS: Tool[] = [
     name: "origin",
     actions: ["entities.origin"],
     description:
-      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni; who: the flow's, the assistant's or the device's name), when, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own), and its run. By id, or by collection and exact title.",
+      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni; who: the automation's, the assistant's or the device's name), when, the automation whose run made or proposed it, the note that started that run (a mail, as read gives it), when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own), and its run. By id, or by collection and exact title.",
     inputSchema: obj(REF),
     call(c, a) {
       const v = view(c);
@@ -997,7 +997,7 @@ const TOOLS: Tool[] = [
     name: "inbox",
     actions: ["inbox.pending"],
     description:
-      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, its day and its state checked now (state: done, the same task already done; calendar, already in the calendar; past, its day or hour has passed; null), when it was proposed, who proposed it (by: flow or chat; who: the flow's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
+      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, its day and its state checked now (state: done, the same task already done; calendar, already in the calendar; past, its day or hour has passed; null), when it was proposed, who proposed it (by: flow or chat; who: the automation's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
     inputSchema: obj({
       text: { type: "string", description: "Words of its title" },
       limit: { type: "number", description: "At most 50 (default 20)" },
@@ -1468,14 +1468,14 @@ const TOOLS: Tool[] = [
     notAction:
       "a proposal of an extension for Juan to see in Ajustes; switching one on is his (P16, extensions.enable)",
     description:
-      "Proposes an extension or a new version of one: its manifest with its functions (code and its sha256, what each reads field by field, what it may write) and their tests. It is checked, its tests run in Boni's box and each function is tried on Juan's data without saving anything (`data`: what each function would get from its flow, by name). Only if every test passes does it wait in Boni for Juan; nothing is activated here.",
+      "Proposes an extension or a new version of one: its manifest with its functions (code and its sha256, what each reads field by field, what it may write) and their tests. It is checked, its tests run in Boni's box and each function is tried on Juan's data without saving anything (`data`: what each function would get from its automation, by name). Only if every test passes does it wait in Boni for Juan; nothing is activated here.",
     inputSchema: obj(
       {
         manifest: { type: "object" },
         data: {
           type: "object",
           description:
-            "For the dry run: what each function would get from its flow, by the function's name",
+            "For the dry run: what each function would get from its automation, by the function's name",
         },
       },
       ["manifest"],
@@ -1516,7 +1516,7 @@ const TOOLS: Tool[] = [
       {
         extension: { type: "string" },
         function: { type: "string" },
-        data: { description: "What the function gets from its flow" },
+        data: { description: "What the function gets from its automation" },
         apply: { type: "boolean" },
       },
       ["extension", "function"],
@@ -1559,7 +1559,7 @@ const TOOLS: Tool[] = [
     name: "flows_describe",
     notAction: "the catalogue of steps and triggers a flow may use, read from the code",
     description:
-      "What Boni's flows may be made of and Juan's flows: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the active extensions' functions a «Función» step may run, the collections a flow may read and write (by key, with their fields), the triggers, and each flow with its trigger and plan. A flow is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
+      "What Boni's automations of the format of before may be made of, and Juan's automations of that format: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the active extensions' functions a «Función» step may run, the collections an automation may read and write (by key, with their fields), the triggers, and each automation with its trigger and plan. An automation is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
     inputSchema: obj({}),
     call(c) {
       const catalog = flowCatalog(ACTIONS, c.store, ["tasks", "events"]);
@@ -1603,10 +1603,13 @@ const TOOLS: Tool[] = [
     actions: ["flows.save"],
     proposes: true,
     description:
-      "Proposes a flow for Juan, or a change of one of his (`flow`: its id): a name, a trigger (by hand with a form, or on a schedule) and a plan in Boni's plan language. It is checked as Boni's editor checks a flow and waits in Boni's inbox, drawn; nothing runs until Juan accepts it, which turns it on.",
+      "Proposes an automation of the format of before for Juan, or a change of one of his (flow: its id): a name, a trigger (by hand with a form, or on a schedule) and a plan in Boni's plan language. It is checked as Boni's editor checks one and waits in Boni's inbox, drawn; nothing runs until Juan accepts it, which turns it on.",
     inputSchema: obj(
       {
-        flow: { type: "string", description: "The id of the flow it changes (none: a new one)" },
+        flow: {
+          type: "string",
+          description: "The id of the automation it changes (none: a new one)",
+        },
         name: { type: "string" },
         trigger: { type: "object" },
         plan: { type: "object" },
@@ -1647,7 +1650,7 @@ const TOOLS: Tool[] = [
     name: "flows_test",
     actions: ["flows.test"],
     description:
-      "Tries one of Juan's flows as «Probar» does in Boni (flow: its id, from flows_describe; inputs: its form's values by name): it runs dry, changes nothing, and says what each step would decide and call (no texts). A flow started by mail is tried in Boni.",
+      "Tries one of Juan's automations of the format of before as «Probar» does in Boni (flow: its id, from flows_describe; inputs: its form's values by name): it runs dry, changes nothing, and says what each step would decide and call (no texts). One started by mail is tried in Boni.",
     inputSchema: obj(
       {
         flow: { type: "string" },
@@ -1672,7 +1675,7 @@ const TOOLS: Tool[] = [
   {
     name: "flows_runs",
     actions: ["flows.runs"],
-    description: `The runs of one of Juan's flows (flow: its id, from flows_describe; without it, every flow's), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did (codes, no texts).`,
+    description: `The runs of one of Juan's automations of the format of before (flow: its id, from flows_describe; without it, every one's), the newest first, up to ${MAX_RUNS}: the day and time each started, its status and the step that stopped it, if one did (codes, no texts).`,
     inputSchema: obj({ flow: { type: "string" }, limit: { type: "number" } }, []),
     call(c, a) {
       const flow = a.flow === undefined ? null : str(a.flow, "flow", 80);
