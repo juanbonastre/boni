@@ -11781,13 +11781,285 @@ tr[data-boni-pointed] > td {
   min-height: 360px;
   border: 1px solid var(--line);
   border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+/* The canvas (C2, AU-63, AU-65, AU-66): the board and, at its right, «Añadir un paso»; beside it from 1100 px,
+   over it below that. */
+.auto-board {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-width: 0;
+}
+.auto-flow {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.auto-flow .react-flow__background {
+  color: var(--line-strong);
+}
+.auto-flow .react-flow__node {
+  cursor: grab;
+}
+.auto-flow .react-flow__node.dragging {
+  cursor: grabbing;
+}
+.auto-card {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
-.auto-start {
-  width: min(320px, 100%);
-  padding: 16px;
+.auto-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.auto-card.off {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.auto-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--muted);
+}
+.auto-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.auto-card-name,
+.auto-card-summary {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.auto-card-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.auto-card-summary {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.auto-card-rename {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 1px 4px;
+  min-width: 0;
+  width: 100%;
+}
+.auto-card .react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+}
+.auto-card .react-flow__handle:hover,
+.auto-card .react-flow__handle.connectingfrom,
+.auto-card .react-flow__handle.connectingto {
+  border-color: var(--accent);
+}
+.auto-in-label,
+.auto-out-label {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.auto-in-label {
+  left: 10px;
+}
+.auto-out-label {
+  right: 10px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auto-out-add {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.auto-out-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.auto-bar {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.auto-bar-btn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.auto-bar-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+.auto-bar-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.auto-arrow {
+  stroke: var(--line-strong);
+  stroke-width: 1.6;
+}
+.auto-arrow.selected {
+  stroke: var(--accent);
+}
+.auto-arrow-bar {
+  position: absolute;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  pointer-events: all;
+}
+.auto-zoom {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.auto-add-top {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.auto-panel {
+  flex: none;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: 100%;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  overflow-y: auto;
+}
+@media (max-width: 1099px) {
+  .auto-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    box-shadow: var(--shadow);
+  }
+}
+.auto-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--muted);
+}
+.auto-panel-find {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+.auto-panel-find:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.auto-panel-section h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 12px 0 6px;
+}
+.auto-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.auto-panel .auto-start-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auto-panel-none {
+  color: var(--muted);
+  font-size: 13px;
+}
+.auto-panel-more {
+  margin-top: 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
 }
 .auto-start h2 {
   font-size: 15px;

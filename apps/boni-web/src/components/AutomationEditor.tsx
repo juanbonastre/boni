@@ -4,22 +4,25 @@
  * draft saves itself a moment after each change and on leaving, one request at a time, again after a failure
  * (automations/state.ts says what is owed; automations/client.ts asks the server). «Nueva» opens it with nothing
  * saved: the automation is made by its first step, which the empty canvas asks for («¿Cómo empieza?»). The canvas
- * itself, its steps and «Probar» are C2's and after (docs/automatizaciones.md §8).
+ * (AutomationCanvas.tsx, C2) changes the state; the boxes that moved go to the server after the draft, by their own
+ * route (AU-05). «Probar» and the step's view come later (docs/automatizaciones.md §8).
  */
-import { CATALOGUE } from "@boni/automations";
 import { SYS } from "@boni/views";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { automationsClient } from "../automations/client.ts";
 import {
   change,
+  created,
   type EditorState,
   emptyEditor,
   openedEditor,
+  owedPlaces,
+  placesKept,
   saved,
   saveFailed,
 } from "../automations/state.ts";
-import { DO, KEY } from "../automations/words.ts";
+import { DO } from "../automations/words.ts";
 import { ApiError } from "../core/api.ts";
 import { DRAFT_PAUSE_MS, draftRetryMs } from "../core/flowEdit.ts";
 import {
@@ -31,13 +34,12 @@ import {
   toast,
   useStore,
 } from "../store.ts";
+import { AutomationCanvas } from "./AutomationCanvas.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
 /** What each editor left on its way to the server, by automation: opening it again waits for it. */
 const pending = new Map<string, Promise<void>>();
-const TRIGGERS = CATALOGUE.filter((s) => s.category === "trigger");
-const newStepId = () => `s_${Math.random().toString(36).slice(2, 10)}`;
 
 /** `id` null: «Nueva»'s empty canvas. */
 export function AutomationPage({ id }: { id: string | null }) {
@@ -63,18 +65,35 @@ export function AutomationPage({ id }: { id: string | null }) {
     flight.current = flight.current.then(async () => {
       for (;;) {
         const s = latest.current;
-        if (!s?.owed.draft) return;
+        if (!s) return;
+        if (!s.owed.draft) {
+          // The boxes, once the server has the steps they belong to (AU-05): never one request per pixel, since a
+          // drag is one change when the box is dropped.
+          const boxes = s.id ? owedPlaces(s) : [];
+          if (!s.id || boxes.length === 0) return;
+          try {
+            await client.place(s.id, boxes);
+            apply((cur) => placesKept(cur, boxes));
+            failures.current = 0;
+          } catch (e) {
+            if (e instanceof ApiError && e.status >= 400 && e.status < 500) {
+              // Refused: these boxes stay where they are on the screen and are owed no more.
+              apply((cur) => ({ ...cur, owed: { ...cur.owed, places: [] } }));
+              return;
+            }
+            apply(saveFailed);
+            pause.current = setTimeout(() => void keep(), draftRetryMs(failures.current++));
+            return;
+          }
+          continue;
+        }
         const sent = s.draft;
         try {
           if (s.id === null) {
-            // The first step makes it (AU-61); what changed while it was on its way is owed after.
+            // The first step makes it (AU-61); what changed while it was on its way is owed after, and so are
+            // the boxes, which the server had nowhere to keep before.
             const made = await client.create(sent);
-            const was = latest.current as EditorState;
-            const opened = openedEditor(made);
-            latest.current =
-              was.draft === sent
-                ? opened
-                : change(opened, { draft: { ...was.draft, id: made.id } });
+            latest.current = created(latest.current as EditorState, made, sent);
             setState(latest.current);
             // The address of an automation that exists: Back and a reload find it.
             showAutomation(made.id);
@@ -136,11 +155,12 @@ export function AutomationPage({ id }: { id: string | null }) {
   // A moment after each change.
   const draft = state?.draft;
   const owed = state?.owed.draft ?? false;
+  const boxes = state?.owed.places.length ? state.places : null;
   useEffect(() => {
-    if (!owed) return;
+    if (!owed && !boxes) return;
     if (pause.current) clearTimeout(pause.current);
     pause.current = setTimeout(() => void keep(), DRAFT_PAUSE_MS);
-  }, [draft, owed, keep]);
+  }, [draft, owed, boxes, keep]);
   // Leaving the editor, or the window hidden (closing the app): what is owed is sent now.
   useEffect(() => {
     const hidden = () => {
@@ -193,17 +213,6 @@ export function AutomationPage({ id }: { id: string | null }) {
           .catch((e) => toast(errorText(t, e))),
     });
   };
-  /** The first step of an empty canvas: a trigger (AU-61). */
-  const start = (type: string) =>
-    apply((s) =>
-      change(s, {
-        draft: {
-          ...s.draft,
-          steps: [{ id: newStepId(), name: t(KEY.step(type)), type, params: {} }],
-        },
-      }),
-    );
-
   return (
     <div className="content page-doc full auto-page" data-boni-action="automations.read">
       <div className="doc">
@@ -220,25 +229,7 @@ export function AutomationPage({ id }: { id: string | null }) {
           <div className="page-loading" role="status" aria-busy="true" />
         ) : (
           <section className="auto-canvas" aria-label={state.draft.name}>
-            {state.draft.steps.length === 0 && (
-              <div className="auto-start">
-                <h2>{t("auto.start")}</h2>
-                <ul>
-                  {TRIGGERS.map((s) => (
-                    <li key={s.type}>
-                      <button
-                        type="button"
-                        className="auto-start-row"
-                        data-boni-action="automations.create"
-                        onClick={() => start(s.type)}
-                      >
-                        {t(KEY.step(s.type))}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <AutomationCanvas state={state} apply={apply} />
           </section>
         )}
       </div>

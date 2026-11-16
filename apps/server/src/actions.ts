@@ -106,6 +106,7 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   // «Automatizaciones» (automations/actions.ts, AU-168): each route is its action, run by `runAction`.
   "POST /api/agent/automations": ["automations.create"],
   "PUT /api/agent/automations/:id/draft": ["automations.edit"],
+  "PUT /api/agent/automations/:id/layout": ["automations.arrange"],
   "POST /api/agent/automations/:id/duplicate": ["automations.duplicate"],
   "DELETE /api/agent/automations/:id": ["automations.delete"],
   "POST /api/agent/automations/:id/restore": ["automations.restore"],
@@ -217,6 +218,7 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "PUT /api/data/types/:type/roles": "schema.set_roles",
   "POST /api/agent/automations": "automations.create",
   "PUT /api/agent/automations/:id/draft": "automations.edit",
+  "PUT /api/agent/automations/:id/layout": "automations.arrange",
   "POST /api/agent/automations/:id/duplicate": "automations.duplicate",
   "DELETE /api/agent/automations/:id": "automations.delete",
   "POST /api/agent/automations/:id/restore": "automations.restore",
@@ -545,6 +547,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "automations.read": { why: NO_MCP_YET },
   "automations.create": { why: NO_MCP_YET },
   "automations.edit": { why: NO_MCP_YET },
+  "automations.arrange": { why: NO_MCP_YET },
   "automations.duplicate": { why: NO_MCP_YET },
   "automations.delete": { why: NO_MCP_YET },
   "automations.restore": { why: NO_MCP_YET },

@@ -62,7 +62,7 @@ export const AUTOMATION_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   "automations.arrange": {
     effect: "touch",
     undo: "the editor's own «Deshacer» (AU-68): the boxes back where they were",
-    control: "«Ordenar»",
+    control: "«Ordenar», and a box dropped on the canvas",
   },
   "automations.duplicate": {
     effect: "touch",

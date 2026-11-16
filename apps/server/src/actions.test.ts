@@ -116,6 +116,7 @@ describe("one list of actions (D-41, F10)", () => {
         .sort(),
     ).toEqual([
       // «Automatizaciones» (automations/routes.ts): what changes one is his touch (AU-168).
+      "automations.arrange",
       "automations.create",
       "automations.delete",
       "automations.duplicate",

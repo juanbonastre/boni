@@ -3,8 +3,7 @@
  * decides nothing. It is made from the catalogue alone: a category is there when the catalogue has a step of it, so
  * a later phase's category appears with its first step and nothing here changes.
  */
-import type { Category } from "@boni/automations";
-import { notBuilt } from "./pending.ts";
+import { CATALOGUE, type Category, type StepTypeSpec } from "@boni/automations";
 
 /**
  * The panel's categories in its order, by the catalogue's: said by what one wants to do through `KEY.category`
@@ -45,9 +44,24 @@ export type PanelList =
  * «Añadir otro disparador». Otherwise the categories, each with its entries in the catalogue's order; every step
  * type is in exactly one.
  */
-export function panelList(_showing: "empty" | "triggers" | "steps"): PanelList {
-  return notBuilt("panelList (AU-69)");
+export function panelList(showing: "empty" | "triggers" | "steps"): PanelList {
+  if (showing !== "steps") return { kind: "triggers", entries: entriesOf("trigger") };
+  return {
+    kind: "steps",
+    sections: PANEL_CATEGORIES.map((category) => ({ category, entries: entriesOf(category) })),
+    anotherTrigger: true,
+  };
 }
+
+const entriesOf = (category: Category): PanelEntry[] =>
+  CATALOGUE.filter((t) => t.category === category).flatMap(entriesOfType);
+const entriesOfType = (spec: StepTypeSpec): PanelEntry[] =>
+  ACTIONS_AS_ENTRIES.includes(spec.type)
+    ? spec.actions.map((a) => ({ type: spec.type, action: a.key }))
+    : [{ type: spec.type }];
+
+/** A word as the search compares it: lower case, with no accents. */
+export const folded = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
 
 /**
  * The search (AU-69): over every category at once, and over the triggers when the panel lists them, by a step's
@@ -55,9 +69,13 @@ export function panelList(_showing: "empty" | "triggers" | "steps"): PanelList {
  * name matches gives its entries; an action whose name matches gives that entry. Empty: «Nada con «…»».
  */
 export function searchPanel(
-  _query: string,
-  _showing: "empty" | "triggers" | "steps",
-  _say: (entry: PanelEntry) => string[],
+  query: string,
+  showing: "empty" | "triggers" | "steps",
+  say: (entry: PanelEntry) => string[],
 ): PanelEntry[] {
-  return notBuilt("searchPanel (AU-69)");
+  const q = folded(query);
+  const list = panelList(showing);
+  const all = list.kind === "triggers" ? list.entries : list.sections.flatMap((s) => s.entries);
+  if (!q) return all;
+  return all.filter((e) => say(e).some((name) => folded(name).includes(q)));
 }

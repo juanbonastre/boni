@@ -1,6 +1,6 @@
 /**
- * The actions of «Automatizaciones» that C1 of F14b makes real (docs/automatizaciones.md §7, AU-168; routes.ts in
- * this folder): reading an automation, making it, keeping its draft, duplicating, deleting and restoring it. Each
+ * The actions of «Automatizaciones» that F14b makes real (docs/automatizaciones.md §7, AU-168; routes.ts in
+ * this folder): reading an automation, making it, keeping its draft and where its boxes are (C2), duplicating, deleting and restoring it. Each
  * runs the function of service.ts its route names. They run only by Juan's hand: the routes reach them through
  * `runAction`, which gives the service `{ store, meta }` with the actor «user»; a turn, a flow or the MCP has no
  * service «automations» in F14b (agent.ts gives none), so the action answers `not-available` there. What a model may
@@ -16,6 +16,7 @@ import {
   duplicateAutomation,
   type Hand,
   keepDraft,
+  placeSteps,
   type ServiceError,
   setDeleted,
 } from "./service.ts";
@@ -51,7 +52,7 @@ const id = {
 };
 const undoOf = (name: string) => ({ none: AUTOMATION_ACTIONS[name]?.undo ?? "" });
 
-/** The automations' actions of C1, added to a registry. */
+/** The automations' actions of C1 and C2, added to a registry. */
 export function withAutomationActions(r: ToolRegistry): ToolRegistry {
   r.register({
     name: "automations.read",
@@ -104,6 +105,26 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       const s = handOf(c.service);
       const doc = a.automation ? plain(a.automation) : null;
       return leaf(answer(keepDraft(s.store, idOf(a.id), doc, hand(s))) as never, code);
+    },
+  });
+  r.register({
+    name: "automations.arrange",
+    icon: "LayoutGrid",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.arrange"),
+    title: "Ordenar automatización",
+    describe:
+      "Keep where an automation's boxes are: each step named with its place; the draft and its tests do not change",
+    args: {
+      id,
+      places: { role: "definition", required: true, describe: "the boxes: [{step, x, y}]" },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      const places = a.places ? plain(a.places) : null;
+      return leaf(answer(placeSteps(s.store, idOf(a.id), places as never)) as never, code);
     },
   });
   r.register({
