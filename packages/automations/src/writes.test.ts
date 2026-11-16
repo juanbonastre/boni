@@ -41,9 +41,11 @@ describe("the lists of saving from code", () => {
     expect(problems.size).toBe(PROBLEMS.length + CODE_PROBLEMS.length + WRITE_PROBLEMS.length);
   });
 
-  it("the write actions are the connection's, removing never saves without asking, and `$col` has no other method", () => {
-    for (const action of WRITE_ACTIONS) expect(CONNECTION_ACTIONS).toContain(action);
-    expect(WRITE_MODES.remove).toEqual(["ask"]);
+  it("the write actions are the connection's, each takes «Preguntar» or «Sí» on its own, and `$col` has no other method", () => {
+    for (const action of WRITE_ACTIONS) {
+      expect(CONNECTION_ACTIONS).toContain(action);
+      expect(WRITE_MODES[action]).toEqual(["ask", "yes"]);
+    }
     expect(new Set(COL_METHODS).size).toBe(COL_METHODS.length);
   });
 
@@ -84,7 +86,7 @@ describe("all or nothing", () => {
     "AU-174 · a step's requests are written in one transaction of the store: a failure in the middle (the 3,000th of 3,000) leaves every row as it was",
   );
   it.todo(
-    "AU-174 · a «Preguntar» on any action asked for, or a remove, makes the whole step's change wait as one proposal: modifying 12 rows and removing one proposes 13, and saves none",
+    "AU-174 · a «Preguntar» on any action asked for makes the whole step's change wait as one proposal («todo junto», Juan, 2026-11-16): modifying 12 rows with «Sí» and removing one with «Preguntar» proposes 13, and saves none",
   );
   it.todo(
     "AU-174 · a code that throws after its requests, or a step that fails for any other reason, saves nothing; under «Si falla: seguir» the requests of the failed row are dropped and the others are saved",
@@ -102,7 +104,7 @@ describe("all or nothing", () => {
 
 describe("the connection's permission", () => {
   it.todo(
-    "AU-176 · a «Código»'s connection takes `create` and `update` with «Preguntar» or «Sí» and `remove` with «Preguntar» only; a new connection only reads, and `connectionActions('code')` gives the four",
+    "AU-176 · a «Código»'s connection takes «No», «Preguntar» or «Sí» for `create`, `update` and `remove`, each on its own (modify «Sí» with remove «No» holds as written); a new connection only reads, and `connectionActions('code')` gives the four",
   );
   it.todo(
     "AU-176 · a code that asks for an action its connection does not give is `code.write.notAllowed` with the collection and the action, and cannot run; its fix sets that cell to «Preguntar», never «Sí»",
@@ -163,5 +165,41 @@ describe("the analysis binds", () => {
   );
   it.todo(
     "AU-185 · until F18 no automation starts on a change of a row, so a code's write starts nothing; F18's loop guard (AU-113) counts it as any write of a «Colección» step",
+  );
+});
+
+describe("removing without asking (Juan, 2026-11-16)", () => {
+  it.todo(
+    "AU-186 · a removal from a published version's «Código» whose connection says «Sí», with nothing from outside in what the evaluation received, goes to the trash without a proposal, carries the run, and undoing the run brings the row back",
+  );
+  it.todo(
+    "AU-186 · the same removal with something from outside in what the evaluation received (a value from a mail, or the path, AU-164) is proposed, and with it everything the step asks to save",
+  );
+  it.todo(
+    "AU-186 · an «Agente»'s removal with «Sí» and something from outside in what it received is proposed, as any write of it (F15)",
+  );
+  it.todo(
+    "AU-186 · nothing in an automation deletes for ever, whatever the cells say: every removal of a «Código», «Colección» or «Agente» step is the trash act, and the policy is told so",
+  );
+  it.todo(
+    "AU-186 · a removal without the person's «Sí» for that collection, or from a draft, still confirms (P5); the assistant's own removals outside automations keep P5 and P24 as they are",
+  );
+  it.todo(
+    "AU-186 · `consentOf` gives the published version's cell for a collection and action, and the server reads it from the version as saved: a «Sí» claimed by the box's answer or a browser is not one",
+  );
+  it.todo(
+    "AU-187 · «Eliminar filas» of a «Colección» step takes «Permiso»: «Preguntar» by default, or «Sí»; with «Sí» a published run sends the rows to the trash without asking, with something from outside it proposes them",
+  );
+  it.todo(
+    "AU-188 · an automation proposed by the assistant, by «Pedir a Boni» or «Escribir con IA», or brought by a package or a template, arrives with every «Sí» of saving lowered to «Preguntar» (`lowerYes`), for create, modify and remove alike",
+  );
+  it.todo(
+    "AU-188 · a «Sí» the draft already had from the person's hand stays when a proposal is made over it; a «Sí» the proposal adds or changes is lowered, and the fix of a missing permission sets «Preguntar»",
+  );
+  it.todo(
+    "AU-189 · a removal that will not ask reads «sin preguntar» in the connection's chip, the card's mark and «Haría esto», from `permissions` and `stepChanges`; creating and modifying with «Sí» add nothing",
+  );
+  it.todo(
+    "AU-189 · «Lo que podrá hacer» names each removal that will not ask, apart from those that ask (F14d)",
   );
 });

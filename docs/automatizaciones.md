@@ -83,7 +83,8 @@ Con esto queda decidida la decisión 1 de la tarea 103 (ni A ni B ni C tal cual:
 
 - La política (`packages/agent/src/policy.ts`, `docs/nucleo.md` §7.5): cada llamada pasa por `decide`, que permite,
   niega, pide confirmar o propone. Un dato de fuera nunca es un destino (P2, P14), una escritura con datos de fuera
-  se propone (P4), eliminar se confirma (P5).
+  se propone (P4), eliminar se confirma (P5). En una automatización publicada, mandar a la papelera con el «Sí» de
+  Juan para esa colección no pregunta (AU-186, 2026-11-16); borrar para siempre no existe en ella (AU-122).
 - Las etiquetas: cada valor sabe de dónde viene (de Juan, propio, importado, de un modelo, de fuera) y cómo de
   sensible es, y al mezclarse gana lo peor. Lo privado no llega a un modelo.
 - La caja (A-08): QuickJS en un contenedor sin red ni disco, un intérprete nuevo por llamada.
@@ -563,10 +564,11 @@ return [];
   validación, su fila cambió, la política la niega, se sale de la conexión), no se guarda ninguna y el paso falla
   diciendo cuál. Reintentar el paso (AU-16) no escribe dos veces.
   En la F14c: el motor pregunta a la política por todas antes de guardar la primera, y las guarda en una sola
-  transacción del almacén. Si la política pide preguntar alguna (algo de fuera, P4; eliminar, P5) o la conexión dice
-  «Preguntar», el cambio entero del paso espera a Juan como una sola propuesta («Esta ejecución quiere modificar 12
-  filas en Gastos»), y no se guarda nada de él hasta que la acepta: un código que elimina pregunta siempre, y con él
-  todo lo que guarda ese paso. En «Una vez por fila» con «Si falla: seguir» o «salir por error», lo que pidió una fila
+  transacción del almacén. Si la política pide preguntar alguna (algo de fuera, P4; eliminar sin lo que pide
+  AU-186, P5) o la conexión dice «Preguntar» en una acción que pide, el cambio entero del paso espera a Juan como
+  una sola propuesta («Esta ejecución quiere modificar 12 filas en Gastos»), y no se guarda nada de él hasta que la
+  acepta: modificar con «Sí» y eliminar con «Preguntar» en el mismo paso espera entero («todo junto», Juan,
+  2026-11-16). En «Una vez por fila» con «Si falla: seguir» o «salir por error», lo que pidió una fila
   que falló se tira y lo de las demás es el cambio del paso. Cada escritura lleva la ejecución en el registro de
   operaciones, así que «Deshacer lo que hizo» (AU-18, AU-100: F14d) la deshace con todo lo de esa ejecución, como las
   de un paso «Colección».
@@ -592,7 +594,7 @@ interface Connection {
   read:   false | { where?: FilterItem[]; fields?: string[]; limit?: number };
   create: false | { mode: "ask" | "yes"; fields?: string[]; fixed?: Record<string, Param> };
   update: false | { mode: "ask" | "yes"; where?: FilterItem[]; fields?: string[] };
-  remove: false | { mode: "ask"; where?: FilterItem[] };   // to the trash; never "yes"
+  remove: false | { mode: "ask" | "yes"; where?: FilterItem[] };   // to the trash (AU-122); "yes" by hand (AU-188)
 }
 ```
 
@@ -603,10 +605,11 @@ interface Connection {
   Hecho en E2: el formato (cerrado: una clave que no conoce no se lee), `connection.repeated`, `connection.unknown`
   y `connection.many`, y `permissions`, de donde salen sus palabras. Falta: la ficha en el lienzo (pantallas).
 - **AU-41** (F14c, en parte) · En la vista del paso es una tabla: una fila por colección y una columna por acción.
-  Leer es «No» o «Sí»; crear y modificar, «No», «Preguntar» o «Sí»; eliminar, solo «No» o «Preguntar», y manda a la
-  papelera. Al conectar una colección solo se lee; cada permiso de escribir se da a mano. La fila se abre para poner
-  los límites de cada acción (AU-43, AU-48), y un permiso con límites lo dice en su celda: «Sí · con filtro». En
-  «Código» la tabla es la misma, con las cuatro columnas (AU-176, Juan, 2026-11-16).
+  Leer es «No» o «Sí»; crear, modificar y eliminar, «No», «Preguntar» o «Sí», cada una por su lado (Juan, 2026-11-16;
+  antes eliminar era solo «No» o «Preguntar»). Eliminar manda siempre a la papelera (AU-122), y lo que no pregunta lo
+  dice AU-186. Al conectar una colección solo se lee; cada permiso de escribir se da a mano. La fila se abre para
+  poner los límites de cada acción (AU-43, AU-48), y un permiso con límites lo dice en su celda: «Sí · con filtro». En
+  «Código» y en «Agente» la tabla es la misma, con las cuatro columnas (AU-176, Juan, 2026-11-16).
   En la F14c: en un «Código», leer es siempre «Sí» (sin leer no hay conexión) y las tres de escribir son las de
   arriba.
   Hecho en E2: `newConnection` solo lee, `connectionActions` de «Código» es leer, eliminar con «Sí» no se lee, y un
@@ -639,8 +642,9 @@ interface Connection {
   Hecho en E2: `permissions` da todo lo que la frase necesita (cada colección que se lee, con filtro, con menos
   campos o con límite) y nada para un paso sin conexiones. Falta: la frase con sus palabras (pantallas).
 - **AU-45** (F15, pendiente) · Una conexión solo restringe. Nunca deja hacer lo que la política no deja: un dato de
-  fuera se propone aunque diga «Sí», una colección privada no se puede conectar a un paso de IA, eliminar se
-  pregunta siempre.
+  fuera se propone aunque diga «Sí», una colección privada no se puede conectar a un paso de IA. Eliminar pregunta
+  salvo en lo que dice AU-186, que es la política y no la conexión (hasta el 2026-11-16: «eliminar se pregunta
+  siempre»).
 - **AU-46** (F14c, en parte) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
@@ -653,10 +657,10 @@ interface Connection {
 las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
 
 - **AU-176** (F14c, pendiente) · El permiso está en la conexión. La de un «Código» siempre lee, dentro de sus límites
-  (AU-43); además puede dejarle crear, modificar o eliminar, con las columnas de AU-41: crear y modificar «No»,
-  «Preguntar» o «Sí»; eliminar «No» o «Preguntar». Una conexión nueva solo lee: cada permiso de guardar se da a mano.
-  «Sí» guarda cuando la política lo deja (lo de fuera se propone igual: la política es el suelo, AU-165); «Preguntar»
-  manda el cambio del paso a Juan antes de guardarlo (AU-174).
+  (AU-43); además puede dejarle crear, modificar o eliminar, con las columnas de AU-41: cada una «No», «Preguntar»
+  o «Sí», por su lado. Una conexión nueva solo lee: cada permiso de guardar se da a mano, y un «Sí» solo lo pone su
+  mano (AU-188). «Sí» guarda sin preguntar cuando la política lo deja (AU-186: lo de fuera se propone igual, la
+  política es el suelo, AU-165); «Preguntar» manda el cambio del paso a Juan antes de guardarlo (AU-174).
   En la F14c: la tabla es una lista y cuenta como una de las siete cosas del paso (AU-75); los permisos se cambian
   dentro de su fila, no son controles aparte. Pedir con el código una acción que su conexión no permite no pasa la
   validación (`code.write.notAllowed`): dice «Permite modificar en «Gastos»», con el botón que pone esa celda en
@@ -671,8 +675,8 @@ las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
   Lo que una escritura devuelve no llega al código (AU-172), así que AU-171 no tiene nada que hacer aquí.
 - **AU-178** (F14c, pendiente) · La conexión dice sin abrirla si el código puede cambiar esa colección. Su ficha
   (AU-40): «Solo lee» frente a «Lee y modifica», «Lee, crea y modifica», con «pregunta antes» cuando es «Preguntar»
-  («Lee y elimina · pregunta antes»). La frase del paso (AU-44): «Puede leer Categorías, y leer y modificar Gastos
-  (solo los de este año). No puede crear ni eliminar nada.»
+  («Lee y elimina · pregunta antes»), y «sin preguntar» cuando elimina con «Sí» (AU-189). La frase del paso (AU-44):
+  «Puede leer Categorías, y leer y modificar Gastos (solo los de este año). No puede crear ni eliminar nada.»
   En la F14c: las palabras de las acciones son las de AU-85 (Crear, Modificar, Eliminar, en minúscula en la frase),
   de `i18n.ts`, las mismas que la tabla; la ficha y la frase salen de `permissions` (`connections.ts`).
 - **AU-179** (F14c, pendiente) · En la vista del paso, cada permiso de guardar dice si el código lo usa, según el
@@ -955,7 +959,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-180** (F14c, pendiente) · La tarjeta de un paso que puede cambiar una colección lo dice sin abrirlo, con la
   colección: «Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas». Es la misma marca para todo paso
   que guarda: un «Colección» que crea, modifica o elimina, un «Código» que puede guardar y, desde la F15, un «Agente»
-  con permiso de escribir. Un código que solo calcula no enseña nada.
+  con permiso de escribir. Un código que solo calcula no enseña nada. Eliminar sin preguntar lo dice (AU-189).
   En la F14c: de un «Código» enseña lo que dice el análisis (AU-183), aunque la conexión no lo permita todavía (eso
   es un problema y se marca como tal, AU-83). Cambiar en memoria las filas que le llegan al código (AU-37) no es
   guardar y nunca se marca. La marca va en la línea de las etiquetas de AU-79 y sale de un solo sitio
@@ -1016,17 +1020,34 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-181** (F14c, pendiente) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
   pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
   aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
-  el antes y el después. Lo que el código devuelve sigue siendo su salida.
+  el antes y el después, y si preguntaría (AU-189). Lo que el código devuelve sigue siendo su salida.
   En la F14c: «Haría esto» es una franja plegable como «Consola», encima de ella, con cuántas peticiones y en qué
   colecciones («Modificaría 12 filas en Gastos»). Una petición que haría fallar la ejecución hace fallar la prueba
   igual, con el mismo motivo. El registro de una ejecución de verdad (AU-99, AU-101) lista lo que el paso guardó, o
   lo que propuso, como el de un «Colección».
 - **AU-182** (F14d, pendiente) · Lo que se acepta sin haberlo escrito Juan dice lo que puede cambiar. «Lo que podrá
-  hacer» de «Publicar» (AU-96) nombra cada colección que puede cambiar cada «Código», con la acción, según el
-  análisis y sus conexiones; y lo mismo, antes de aceptarla, una automatización que propone el asistente (AU-140,
-  F16), «Pedir a Boni» o «Escribir con IA» (AU-141, AU-39: F19) o un paquete (AU-145, F19).
-  Un «Código» que guarda no corre nunca solo antes de eso: solo corre de verdad una versión publicada (AU-95), y
+  hacer» de «Publicar» (AU-96) nombra cada colección que puede cambiar cada «Código», con la acción, según el análisis
+  y sus conexiones, y si eliminará sin preguntar (AU-189); y lo mismo, antes de aceptarla, una automatización que
+  propone el asistente (AU-140, F16), «Pedir a Boni» o «Escribir con IA» (AU-141, AU-39: F19) o un paquete (AU-145,
+  F19). Un «Código» que guarda no corre nunca solo antes de eso: solo corre de verdad una versión publicada (AU-95), y
   «Publicar» llega con esto en la misma fase (F14d). Hasta entonces sus peticiones solo se prueban (AU-181).
+- **AU-188** (F14d, pendiente) · Un «Sí» solo lo pone la mano de Juan. Lo que llega sin haberlo escrito él (una
+  automatización que propone el asistente, AU-140, o `automations_propose` del MCP, AU-144; «Pedir a Boni» y «Escribir
+  con IA», AU-141, AU-39; un paquete o una plantilla, AU-145, AU-146) llega con cada «Sí» de guardar bajado a
+  «Preguntar»: en crear, modificar y eliminar, en las conexiones y en «Eliminar filas» (AU-187), una sola regla para
+  los tres. Su aceptación dice lo que podrá cambiar (AU-182). El botón que arregla un permiso que falta pone
+  «Preguntar» (AU-176). Para que un paso guarde sin preguntar, Juan pone el «Sí» en su celda y publica.
+  En la F14d: lo baja una sola función (`lowerYes`, `writes.ts`) por la que pasa todo lo que llega así antes de ser
+  borrador. Un «Sí» que el borrador ya tenía de su mano se queda; uno nuevo o cambiado baja. El servidor lee el «Sí»
+  de la versión publicada, nunca de la caja, de un navegador ni de un modelo.
+- **AU-189** (F14c, pendiente) · Eliminar sin preguntar se ve a simple vista, aparte de lo que pregunta, con dos
+  palabras, «sin preguntar»: en la ficha de la conexión («Lee y elimina · sin preguntar», AU-178), en la marca de la
+  tarjeta («Elimina en Gastos · sin preguntar», AU-180), en «Haría esto» («Eliminaría 3 filas en Gastos · sin
+  preguntar», AU-181) y en «Lo que podrá hacer» (AU-182, F14d). Crear y modificar con «Sí» no llevan nada: lo que se
+  marca es lo que va a la papelera sin pasar por Juan. Las palabras salen de `i18n.ts`, sin explicaciones dentro de la
+  app.
+  En la F14c: la ficha, la marca y «Haría esto» salen de `permissions` y `stepChanges`, que dicen el modo de cada
+  acción; un «Colección» con «Sí» en «Eliminar filas» (AU-187) se marca igual desde la F14d.
 
 ### 5.9 Cómo empieza: los disparadores
 
@@ -1097,6 +1118,11 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   elige una.
 - **AU-122** (F14a, hecho) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
   automatización. El paso da las filas como estaban antes de ir a la papelera.
+- **AU-187** (F14d, pendiente) · «Eliminar filas» de un paso «Colección» lleva el mismo permiso que la columna
+  eliminar de una conexión: un parámetro «Permiso», «Preguntar» (por defecto) o «Sí», con las palabras de AU-41. Con
+  «Sí», lo que el paso manda a la papelera no pregunta en lo que dice AU-186. Hasta el 2026-11-16 eliminar preguntaba
+  siempre (P5), y así un paso que escribió y publicó Juan preguntaba más que un código que hiciera lo mismo. Crear y
+  modificar no lo llevan: ya escriben solos con Deshacer lo que es propio (decisión 5 del §10, AU-167).
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
 - **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
@@ -1261,7 +1287,26 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   unas filas que dependen de algo de fuera se trata como de fuera (P15).
 - **AU-165** (F15, pendiente) · La política es el suelo. Una conexión, un ajuste o un «Sí» nunca dejan hacer lo que
   `decide` no deja: lo de fuera se propone (P4), un destino nunca sale de un dato de fuera ni de un modelo (P2),
-  eliminar se pregunta (P5).
+  eliminar se pregunta (P5) salvo en lo que dice AU-186.
+- **AU-186** (F14d, pendiente) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
+  preguntar solo si cumple tres cosas. Viene de un paso «Código», «Colección» o «Agente» de una versión publicada
+  (AU-95). Lleva el «Sí» de Juan para esa colección y esa acción. Y no hay nada de fuera en lo que recibió, ni en sus
+  valores ni en su camino (P4, P15, AU-164, AU-169). Si falta una, se propone o se confirma, y con ella todo el paso
+  (AU-174). Eliminar es siempre mandar a la papelera con la ejecución (AU-122), así que «Deshacer lo que hizo» la
+  devuelve (AU-18). Borrar para siempre no existe en una automatización, digan lo que digan las celdas. Lo que el
+  asistente elimina fuera de una automatización sigue como hoy (P5, P24). Juan, 2026-11-16: «la logica de "no", "si",
+  "preguntar" deberia ser la misma para modificar y eliminar, por separado», y del «Agente»: «es responsabilidad del
+  usuario limitarlo si no quiere arriesgar».
+  En la F14d: cambia una frase de la política, la fila P5 de `docs/nucleo.md` §7.5. «borrar a petición del agente»
+  pasa a «borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera con el «Sí» de
+  Juan para esa colección (AU-186)». P4, P15 y P7 van antes y no cambian; P24 ya dejaba al asistente del MCP mandar
+  una nota a la papelera, y tampoco cambia. El acto «Eliminar filas» de `apps/server/src/automations/policy.ts` deja
+  de llevar `alwaysConfirm` fijo: la llamada a `decide` lleva el «Sí» de la versión publicada, de su conexión o de
+  AU-187, leído por el servidor de lo guardado (AU-188); sin él confirma, como hoy. Para crear y modificar, la regla
+  de segundo plano (decisión 5, AU-167) ya decía esto de lo que es propio; esta regla la extiende a eliminar y la dice
+  una vez para los tres tipos de paso (el «Agente», desde la F15). Lo de fuera se sigue proponiendo. Que Boni pueda un
+  día aceptar una propuesta por su cuenta, con pruebas (la seudoaceptación de `docs/fiabilidad.md`), es del diseño de
+  la F15, y esta regla no lo cierra.
 - **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
 - **AU-167** (F14d, pendiente) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
@@ -1395,8 +1440,8 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en curso |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en curso |
-| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182) | pendiente |
-| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos | pendiente |
+| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189) | pendiente |
+| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10) | pendiente |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |
 | **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar | pendiente |
@@ -1481,6 +1526,8 @@ Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo 
      guarda junto o no se guarda (AU-174), y si hay que preguntar, va a la Bandeja como una sola propuesta. Lo nuevo
      que no estaba en ninguna de las dos: Boni lee el código sin ejecutarlo y sabe qué puede cambiar (AU-183), lo
      dice en la tarjeta y en la conexión (AU-178 a AU-180), y lo que el análisis no vio no se guarda.
+   - **Decidido por Juan el 2026-11-16**, preguntado si un paso que modifica 12 filas con «Sí» y elimina 1 con
+     «Preguntar» debía esperar entero: «todo junto». AU-174 se queda como está, ahora por su palabra.
 
 5. **Lo que una automatización escribe sola en segundo plano** (programada o por un cambio). Hoy, nada: todo se
    propone. El 2026-11-05 eligió que lo disparado por sus propios datos escribiera con Deshacer; la tarea 103 lo
@@ -1488,9 +1535,17 @@ Cada una con lo que vería al final. Las cinco primeras deshacen o cambian algo 
    - Recomendada: **según de dónde venga el dato, y solo de una versión que él publicó**. Todo propio y calculado por
      código: escribe con Deshacer y un aviso por ejecución («Tarea repetida creó 1 fila en Tareas · Deshacer»).
      Decidido por un modelo a partir de datos propios: solo si esa conexión dice «Sí»; si no, a la Bandeja. Con
-     algo de fuera (un correo, una web): siempre a la Bandeja. Enviar, eliminar o lo irreversible: nunca solo.
+     algo de fuera (un correo, una web): siempre a la Bandeja. Enviar, ~~eliminar~~ o lo irreversible: nunca solo.
    - La otra: todo a la Bandeja, como hoy. «Crear la tarea de la semana siguiente» esperaría cada vez a que la
      acepte.
+   - **Cambiada por Juan el 2026-11-16** (eliminar): «entiendo que la conexion entre la coleccion y el codigo tiene
+     varios tipos de permisos.: leer, modificar, eliminar. la logica de "no", "si", "preguntar" deberia ser la
+     misma para modificar y eliminar, por separado.» Y del «Agente»: «Creo que el sistema deberia permitir que los
+     agentes sean capaces de eliminar modificar o crear de forma autonoma, es responsabilidad del usuario limitarlo
+     si no quiere arriesgar». Mandar a la papelera con el «Sí» de su mano en esa colección, en una versión publicada
+     y sin nada de fuera, va solo y se deshace con la ejecución (AU-186 a AU-188), sea un «Código», un «Colección»
+     o un «Agente». Enviar y lo irreversible siguen sin ir nunca solos, y borrar para siempre no existe en una
+     automatización. Antes eliminar era solo «No» o «Preguntar», y un código que eliminaba preguntaba siempre.
 
 6. **Probar no escribe.** En n8n, ejecutar el borrador envía y escribe de verdad.
    - Recomendada: **como hoy en Boni**. «Probar» lee, calcula y llama a los modelos, y enseña «Haría esto: crear 1
@@ -1525,6 +1580,16 @@ Menores; no dijo nada de ellas, así que van así: los nombres del código son l
 los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar»; lo que pasa por una flecha se llama
 «fila»; en el teléfono las automatizaciones se ven y se ejecutan, no se editan, como hoy (AU-74).
 
+**Decidida el 2026-11-16.**
+
+10. **Aprender de lo que contesta, fuera de las automatizaciones.** Preguntado si aprender de sus respuestas
+    vive aparte de cada automatización: «Si, lo recomendado, las automatizaciones solo cumplen con su funcion, la
+    logica de aprender va fuera». Una automatización hace lo que es para y nunca se cambia a sí misma. Lo que Boni
+    aprende de sus respuestas (aceptar, rechazar o corregir una propuesta, deshacer, un botón) lo junta Boni, no
+    cada automatización, y lo que cambie se propone a la vista: lo que sabe un agente (`docs/preferencias.md`),
+    cuánto hace solo (`docs/fiabilidad.md`) o una versión nueva de la automatización. Su diseño, con sus reglas y
+    sus pruebas, abre la F15 (§8).
+
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
 | Principio | Su prueba | Fase |
@@ -1549,6 +1614,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Una conexión solo restringe (AU-45, AU-165) | «Sí» con un dato de fuera sigue proponiendo; privada no se conecta a IA | F15 |
 | Al conectar, solo leer (AU-41) | Una conexión nueva no tiene ningún permiso de escribir | F14c |
 | Segundo plano: quién escribe solo (decisión 5; cambia P7) | Una fila por caso de la regla | F14d, F15 |
+| Solo no pregunta lo publicado, con el «Sí» de Juan y sin nada de fuera (AU-186, AU-188; cambia P5 en una automatización, 2026-11-16) | Una eliminación con «Sí» de un «Código», un «Colección» o un «Agente» publicados va a la papelera sin propuesta y se deshace con la ejecución; con algo de fuera, se propone; un «Sí» que no puso su mano baja a «Preguntar»; fuera de una automatización, P5 sigue | F14d, F15 |
 | Una automatización llama a otra solo con permiso, tres niveles, sin ciclos (AU-112; cambia D-44) | Sin permiso no se puede elegir; un ciclo no publica | F18 |
 | Un bloque tiene nombre único en su página (AU-130) | Dos bloques no pueden llamarse igual; renombrar no rompe lo enlazado | F17 |
 | Un fallo no hace una cadena (AU-118) | Una automatización iniciada por «Falla una automatización» que falla no inicia otra | F18 |

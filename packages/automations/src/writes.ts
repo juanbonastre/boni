@@ -34,12 +34,15 @@ export type ColMethod = (typeof COL_METHODS)[number];
 
 /**
  * The cells of each write action in a «Código»'s connection, the same as the «Agente»'s (AU-41, AU-176): `false` is
- * «No» and the default; «Preguntar» is `ask`; «Sí» is `yes`, which removing never has (P5).
+ * «No» and the default; «Preguntar» is `ask`; «Sí» is `yes`. The three alike, each on its own (Juan, 2026-11-16: until
+ * then removing had no `yes`). Removing is always to the trash (AU-122). A `yes` saves without asking only as AU-186
+ * says, and only the person's hand sets it (AU-188).
  */
-export const WRITE_MODES: { readonly [A in WriteAction]: readonly ("ask" | "yes")[] } = {
+export type WriteMode = "ask" | "yes";
+export const WRITE_MODES: { readonly [A in WriteAction]: readonly WriteMode[] } = {
   create: ["ask", "yes"],
   update: ["ask", "yes"],
-  remove: ["ask"],
+  remove: ["ask", "yes"],
 };
 
 /**
@@ -256,21 +259,52 @@ export function connectionUses(
   );
 }
 
-/** One collection a step can change, with how: the card's mark (AU-180) and «Lo que podrá hacer» (AU-182). */
+/**
+ * One action a step can take on a collection, with whether it asks: `yes` saves without asking where AU-186 lets it
+ * (a removal so is «sin preguntar» on the card, AU-189), `ask` waits for the person, `false` is used by the code
+ * without its connection's permission (the problem of AU-176).
+ */
+export interface StepAction {
+  action: WriteAction;
+  mode: false | WriteMode;
+}
+
+/** One collection a step can change, with how: the card's mark (AU-180, AU-189) and «Lo que podrá hacer» (AU-182). */
 export interface StepChange {
   /** The collection's key. */
   collection: string;
-  actions: readonly WriteAction[];
+  actions: readonly StepAction[];
 }
 
 /**
  * What a step can change, whatever its type, from one place: a «Colección» step's write action (from the catalogue,
- * AU-19), a «Código»'s analysis (whether its connection allows it yet or not: that is a problem apart), and from F15
- * an «Agente»'s write permissions. Empty for a step that only reads or calculates. Changing in memory the rows that
- * reach the code (AU-37) is never in it.
+ * AU-19: creating and modifying `yes`, as the rule of the background says of what is its own, decision 5; removing
+ * its «Permiso», AU-187), a «Código»'s analysis with its connection's cells (whether its connection allows it yet or
+ * not: that is a problem apart), and from F15 an «Agente»'s write permissions. Empty for a step that only reads or
+ * calculates. Changing in memory the rows that reach the code (AU-37) is never in it.
  */
 export function stepChanges(step: Step, context: CodeContext): StepChange[] {
   return notBuilt(`stepChanges(${step.id}, ${typeof context})`);
+}
+
+/**
+ * What a published version's step says for one collection and one action (AU-186): its connection's cell, or for a
+ * «Colección» step what `stepChanges` gives. What the server tells `decide` with each write of a run, read from the
+ * version as saved: never from the box, a browser or a model. A `yes` is not yet a write without asking: the policy
+ * still proposes one with something from outside (P4, P15).
+ */
+export function consentOf(step: Step, collection: string, action: WriteAction): false | WriteMode {
+  return notBuilt(`consentOf(${step.id}, ${collection}, ${action})`);
+}
+
+/**
+ * An automation that arrives not written by the person (AU-188: the assistant's proposal, «Pedir a Boni», «Escribir
+ * con IA», a package, a template, the MCP's `automations_propose`), with each `yes` of saving lowered to `ask`:
+ * create, modify and remove alike, in connections and in «Eliminar filas». A `yes` that `current` (the draft it is
+ * proposed over, if any) already had at the same step, collection and action stays; a new or changed one is lowered.
+ */
+export function lowerYes(proposed: Automation, current?: Automation): Automation {
+  return notBuilt(`lowerYes(${proposed.id}, ${current?.version ?? "new"})`);
 }
 
 // ---------------------------------------------------------------- saving
@@ -330,9 +364,15 @@ export interface WriteRecord {
 export type StepWrites =
   /** Saved, all of them, in one transaction. */
   | { kind: "applied"; records: readonly WriteRecord[] }
-  /** A test: nothing saved; the rows as they would be. */
-  | { kind: "tested"; records: readonly WriteRecord[] }
-  /** Nothing saved: the whole change waits for Juan as one proposal (a «Preguntar», P4 or P5). */
+  /**
+   * A test: nothing saved; the rows as they would be, and whether a run would ask first (all of the step together,
+   * AU-174): «Haría esto» says «sin preguntar» of removals that would not (AU-189).
+   */
+  | { kind: "tested"; records: readonly WriteRecord[]; asks: boolean }
+  /**
+   * Nothing saved: the whole change waits for Juan as one proposal: a «Preguntar» on an action asked for, something
+   * from outside (P4, P15), or a removal without what AU-186 asks (P5).
+   */
   | { kind: "asked"; records: readonly WriteRecord[]; asked: readonly Asked[] };
 
 /**
