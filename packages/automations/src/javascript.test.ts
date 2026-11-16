@@ -3,11 +3,14 @@
 // say nothing of anyone's data (D-14).
 import { describe, expect, it } from "vitest";
 import { collection, ids, knowing, sketch } from "./automation.test-util.ts";
+import type { Box, BoxJob } from "./box.ts";
 import { CODE_LIMITS, CODE_TYPE } from "./code.ts";
 import { newConnection } from "./connections.ts";
+import { run } from "./engine.ts";
 import { codeParts, joinParts, parseExpression, printExpression } from "./expression.ts";
 import { renameStep } from "./format.ts";
 import { type CodeContext, completions, readCode } from "./javascript.ts";
+import { deps, OWN, store } from "./run.test-util.ts";
 import { canRun, validate } from "./validate.ts";
 
 const next = ids(7);
@@ -360,9 +363,50 @@ describe("what an evaluation receives", () => {
       expect(readCode(source, "code").problems, source).toEqual([]);
   });
 
-  it.todo(
-    "AU-163 · code that hides a citation from the reader (a name built at run time, `$` inside `eval` or `Function`) gets nothing by it: the job the engine sends holds only the steps `readCode` listed (E3: the job is box.ts' `evaluate`)",
-  );
+  it("AU-163 · code that hides a citation from the reader (a name built at run time, `$` inside `eval` or `Function`) gets nothing by it: the job the engine sends holds only the steps `readCode` listed (E3: the job is box.ts' `evaluate`)", async () => {
+    // A name built at run time is a problem of the draft: it does not run.
+    for (const source of [
+      "const n = 'Bus' + 'car'\nreturn $(n).all()",
+      "const f = $\nreturn f('Buscar').all()",
+      "return globalThis['$']('Buscar').all()",
+    ])
+      expect(codes(readCode(source, "code").problems), source).toContain("code.computed");
+    // Inside a text given to `eval` or `Function` the reader sees no citation, and the job holds no step.
+    for (const source of [
+      `return eval("$('Buscar').all()")`,
+      `return Function("return $('Buscar').all()")()`,
+    ]) {
+      expect(readCode(source, "code").steps).toEqual([]);
+      const jobs: BoxJob[] = [];
+      const box: Box = {
+        run: async (job) => {
+          jobs.push(structuredClone(job));
+          return {
+            evaluations: [{ state: "done", values: [[]], clock: false, random: false }],
+            console: [],
+            dropped: 0,
+            ms: 1,
+          };
+        },
+      };
+      const { a, s } = withCode(source, "all", []);
+      const e = await run(
+        { automation: a, trigger: s.id("Inicio"), fields: { json: {}, label: OWN }, test: true },
+        deps({
+          box,
+          collections: store(
+            [orders],
+            { [orders.key]: [{ [orders.fields[0]?.key as string]: "x" }] },
+            ids(8),
+          ),
+          collectionNamed: (n) => NAMES[n],
+        }),
+      );
+      expect(e.state, source).toBe("done");
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0]?.steps).toEqual({});
+    }
+  });
 
   it("AU-31 · `$col('Name')` of a collection the step has no reading connection to is `code.notConnected` with the collection's key, and of a name no collection has, `code.unknownCollection`: with either, `canRun` is false", () => {
     const notConnected = withCode("return $col('Notas').find({})");

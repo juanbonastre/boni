@@ -3,7 +3,9 @@
 import { describe, expect, it } from "vitest";
 import { rng } from "../../entities/src/random.test-util.ts";
 import { cite, collection, ids, knowing, sketch } from "./automation.test-util.ts";
+import type { Box, Evaluated } from "./box.ts";
 import { CATALOGUE, isTrigger } from "./catalogue.ts";
+import { CODE_TYPE } from "./code.ts";
 import type { Dates } from "./effects.ts";
 import { CannotRun, ERROR_FIELD, EXECUTORS, executorKey, STEP_STATES } from "./engine.ts";
 import { MAIN, OUT } from "./format.ts";
@@ -652,6 +654,55 @@ describe("how an automation runs", () => {
     console.info(`F14a criterion: 3,000 rows in ${a.ms.toFixed(0)} ms, then ${b.ms.toFixed(0)} ms`);
     // Not a benchmark: a ceiling far above what it takes, so a slip of the engine into quadratic work shows.
     expect(a.ms).toBeLessThan(5000);
+  });
+
+  it("AU-38 · A-15: a step with a `{{ }}` of JavaScript and a «Código» once per row over 3,000 rows take the engine's batches, and the engine's own part of it stays far under its ceiling", async () => {
+    const next = ids(38);
+    const items = collection(next, ["number"]);
+    const [n] = items.fields.map((f) => f.key) as [string];
+    const db = store(
+      [items],
+      { [items.key]: Array.from({ length: 3000 }, (_, i) => ({ [n]: i })) },
+      ids(39),
+    );
+    const sizes: [string, number][] = [];
+    // A box that answers at once, so what is timed is the engine's work (the box's own time is S1's to measure).
+    const box: Box = {
+      async run(job) {
+        sizes.push([job.kind, job.input.length]);
+        const evaluations: Evaluated[] = job.input.map((r) => ({
+          state: "done",
+          values: job.sources.map(() =>
+            job.kind === "expressions" ? (r[n] as number) + 1 : { m: r[n] ?? null },
+          ),
+          clock: false,
+          random: false,
+        }));
+        return { evaluations, console: [], dropped: 0, ms: 0 };
+      },
+    };
+    const s = sketch(38)
+      .step("Inicio", "manual")
+      .step("Buscar", "collection", { collection: items.key, action: "find", limit: 5000 })
+      .step("Más", "edit", { fields: [{ field: "p", value: { expr: `{{ $json.${n} + 1 }}` } }] })
+      .step("Código", CODE_TYPE, { mode: "perRow", source: `return { m: $json.${n} }` })
+      .arrow("Inicio", "Buscar")
+      .arrow("Buscar", "Más")
+      .arrow("Más", "Código");
+    const t = performance.now();
+    const e = await start(s.build(), s.id("Inicio"), {}, { collections: db, box });
+    const ms = performance.now() - t;
+    expect(e.state).toBe("done");
+    expect(sizes).toEqual([
+      ...Array(6).fill(["expressions", 500]),
+      ...Array(6).fill(["code", 500]),
+    ]);
+    expect(outOf(e, s.id("Código"))).toHaveLength(3000);
+    console.info(
+      `A-15 (E3): 3,000 rows through two JavaScript steps, ${sizes.length} calls, ${ms.toFixed(0)} ms of the engine`,
+    );
+    // Not a benchmark: a ceiling far above what it takes, so a slip of the engine into work per row or quadratic work shows.
+    expect(ms).toBeLessThan(5000);
   });
 
   it("every action of the catalogue that is not a trigger's has an executor of its mode", () => {

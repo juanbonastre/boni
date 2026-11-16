@@ -8,6 +8,7 @@
  * F14a: «Disparado por el usuario» and the steps of Datos, Transformar and Lógica. Nothing here is text for a person:
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
+import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type Step } from "./format.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
@@ -791,11 +792,46 @@ export const stepType = (type: string): StepTypeSpec | undefined =>
   CATALOGUE.find((t) => t.type === type);
 
 /**
+ * «Código» (code.ts, F14c): reachable by its type but not in `CATALOGUE` until the screen has its words, so the canvas
+ * does not offer it and validation without a `CodeContext` refuses it (`step.unknownType`). One input, one output,
+ * no parameter the catalogue paints (its two are the editor's, validated by `validate`), and one action whose mode is
+ * its «Se ejecuta». Its effect is `none`: it changes the rows it receives, and what it reads goes through its
+ * connections (box.ts), not through an action that reads.
+ */
+const CODE_STEP: StepTypeSpec = {
+  type: CODE_TYPE,
+  category: "transform",
+  inputs: [MAIN],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "all",
+      pairs: false,
+      outputs: [MAIN],
+      params: [],
+    },
+  ],
+};
+const CODE_PER_ROW: ActionSpec = {
+  ...(CODE_STEP.actions[0] as ActionSpec),
+  mode: "perRow",
+  pairs: true,
+};
+
+/** A type the engine can run by its key: the catalogue's, or «Código». */
+const specOf = (type: string): StepTypeSpec | undefined =>
+  type === CODE_TYPE ? CODE_STEP : stepType(type);
+
+/**
  * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when
  * its type is not in the catalogue, or its action is missing, an expression (AU-26) or not one of its type's.
  */
 export function actionOf(step: Step): ActionSpec | undefined {
-  const spec = stepType(step.type);
+  if (step.type === CODE_TYPE && step.params[CODE_PARAMS.mode] === "perRow") return CODE_PER_ROW;
+  const spec = specOf(step.type);
   if (!spec) return undefined;
   if (spec.actions.length === 1) return spec.actions[0];
   const key = step.params[ACTION];
@@ -807,7 +843,7 @@ export function actionOf(step: Step): ActionSpec | undefined {
  * `when` holds. What AU-75 counts (`place: "shown"`) and what validation walks.
  */
 export function paramsOf(step: Step): ParamSpec[] {
-  const spec = stepType(step.type);
+  const spec = specOf(step.type);
   if (!spec) return [];
   const params: ParamSpec[] = [...spec.params];
   if (spec.actions.length > 1) params.push(actionParam(spec));
@@ -871,7 +907,7 @@ export function outputsOf(step: Step): string[] {
 export const OUTPUT_BRANCHES: ReadonlySet<string> = new Set(["if", "switch"]);
 
 /** The names of a step's inputs: its type's. Empty for a trigger or an unknown type. */
-export const inputsOf = (step: Step): readonly string[] => stepType(step.type)?.inputs ?? [];
+export const inputsOf = (step: Step): readonly string[] => specOf(step.type)?.inputs ?? [];
 
 /** Whether a step starts an automation (AU-110): a step of the category `trigger`. */
 export const isTrigger = (step: Step): boolean => stepType(step.type)?.category === "trigger";

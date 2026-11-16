@@ -9,13 +9,21 @@
  * does not have and says which; the engine makes it through the step's connection and the policy, and runs the job
  * again with it. Code has no clock or chance of its own (AU-34), so the repetition goes the same way up to that read.
  * `evaluate` hides this: if measuring says an interpreter that waits is needed, the port and what is above it stay.
- * Contracts of F14c: nothing here is built yet (pending.ts).
+ * Built in F14c's E3; the box itself is apps/sandbox (E1), and the server's port to it is S1's.
  */
-import type { Label } from "@boni/entities";
-import type { CodeFailure, CodeMode } from "./code.ts";
-import type { Connection, ReadAsk } from "./connections.ts";
-import type { Gate } from "./effects.ts";
-import { notBuilt } from "./pending.ts";
+import { join, type Label } from "@boni/entities";
+import { type FilterItem, filterErrors, isFilterGroup, matchesFilters } from "@boni/views";
+import { CODE_LIMITS, type CodeFailure, CodeFault, type CodeMode } from "./code.ts";
+import {
+  asRead,
+  type Connection,
+  cutRead,
+  type NarrowedAsk,
+  narrow,
+  type ReadAsk,
+} from "./connections.ts";
+import type { Gate, Labelled, StoredRow } from "./effects.ts";
+import { type FieldsRead, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
 
 /** A row as code sees it: its fields by key, and nothing of its labels or of where it was read from. */
@@ -140,8 +148,16 @@ export interface EvaluateInput {
   now: number;
   zone: string;
   locale: string;
+  /** The civil day `now` falls on in `zone` («hoy» of a connection's filter, as in the views). */
+  today: string;
   seed: number;
   run: BoxJob["run"];
+  /**
+   * The place of `input[0]` in the step's whole input, when `input` is part of it (a preview of one row: preview.ts):
+   * what each row's chance and a console line's row are counted from, so a row gives what it gave in the run. 0 by
+   * default.
+   */
+  offset?: number;
 }
 
 /**
@@ -150,9 +166,493 @@ export interface EvaluateInput {
  * its rows come labelled: AU-161) and repeats until no evaluation needs one, within `CODE_LIMITS`. A read's values
  * are judged as calculated from everything the evaluation had received before it. It rejects with `CodeFault` only
  * for what stops the whole step (no box, `stepReads`, `stepReadBytes`); one row's failure is that row's `failed`.
+ *
+ * How, where the contract leaves it open:
+ * - «Una vez con todas las filas» is one evaluation with every row; every other case is one per row, in batches of
+ *   `batchRows`, except code that asks for `$input.all()` row by row, which needs every row in each call: then the
+ *   batch is the whole input. Expressions with no row at all (a step that works with all the rows, or one run with
+ *   an empty list) are one evaluation of one empty row.
+ * - The rows sent are copies (AU-37): what the box or code does to them never reaches the step's input.
+ * - Every `needs` of a call is served together, then the call is sent again with all of them in `reads`, for the
+ *   rows from the first to the last that still need one; a row already answered keeps its first answer and its
+ *   console lines (a row that answered `needs` wrote none). A batch's `reads` hold only what that batch asked for.
+ * - The label of an evaluation is the worst of its own rows (the fields sent and the row's), every row sent of every
+ *   step it cites, the code's own and every read in the call that answered it: never finer, sometimes coarser.
+ * - A read the policy refuses rejects the whole step (`Denied`): the code never learns why and cannot go on. A read
+ *   that is not one, or of a collection not connected, fails the rows that asked for it.
  */
-export function evaluate(input: EvaluateInput, box: Box, gate: Gate): Promise<StepEvaluation> {
-  return notBuilt(`evaluate(${input.kind}, ${input.input.length}, ${typeof box}, ${typeof gate})`);
+export async function evaluate(
+  input: EvaluateInput,
+  box: Box,
+  gate: Gate,
+): Promise<StepEvaluation> {
+  const readings = input.sources.map((s) =>
+    readCode(s, input.kind === "code" ? "code" : "expression"),
+  );
+  const ownFields = unionFields(readings.flatMap((r) => (r.input ? [r.input.fields] : [])));
+  const wholeInput = readings.some((r) => r.input?.all);
+  const cited = new Map<string, FieldsRead>();
+  for (const r of readings)
+    for (const s of r.steps)
+      cited.set(
+        s.name,
+        unionFields([...(cited.has(s.name) ? [cited.get(s.name) as FieldsRead] : []), s.fields]),
+      );
+
+  // What every call of the step carries: the code's label and the rows of the steps it cites (AU-163).
+  const shared: Label[] = [input.literal];
+  const steps: Record<string, { rows: Fields[]; item?: readonly (number | null)[] }> = {};
+  for (const [name, fields] of cited) {
+    const s = input.steps[name];
+    if (!s) continue;
+    const rows: Fields[] = [];
+    const labels = new Set<Label>();
+    for (const r of s.rows) {
+      const sent = fieldsOf(r, fields);
+      rows.push(sent.fields);
+      for (const l of sent.labels) labels.add(l);
+    }
+    shared.push(...labels);
+    steps[name] = { rows, ...(s.item ? { item: s.item } : {}) };
+  }
+
+  // The evaluations: their rows as sent, and the label of each before any read.
+  const noRow = input.kind === "expressions" && input.input.length === 0;
+  const sent: Fields[] = [];
+  const own: Label[] = [];
+  for (const r of input.input) {
+    const f = fieldsOf(r, ownFields);
+    sent.push(f.fields);
+    own.push(join(...(f.labels as [Label, ...Label[]])));
+  }
+  if (noRow) sent.push({});
+  const all = input.kind === "code" && input.mode === "all";
+  const count = all ? 1 : sent.length;
+  const base: Label[] = [];
+  const sharedLabel = join(...(shared as [Label, ...Label[]]));
+  if (all) base.push(join(sharedLabel, ...own));
+  else
+    for (let i = 0; i < count; i++)
+      base.push(own[i] ? join(sharedLabel, own[i] as Label) : sharedLabel);
+
+  const out: StepEvaluation = {
+    evaluations: [],
+    labels: [],
+    console: [],
+    dropped: 0,
+    reads: [],
+    calls: 0,
+    clock: false,
+    random: false,
+  };
+  const final: (Exclude<Evaluated, { state: "needs" }> | undefined)[] = new Array(count);
+  const labels: Label[] = new Array(count);
+  const lines: ConsoleLine[][] = Array.from({ length: count }, () => []);
+  const asked: Set<string>[] = Array.from({ length: count }, () => new Set());
+  const reader = new Reader(input, gate);
+
+  const whole = all || wholeInput;
+  const offset = input.offset ?? 0;
+  const size = whole ? Math.max(count, 1) : CODE_LIMITS.batchRows;
+  for (let lo = 0; lo < count; lo += size) {
+    const batch = { lo, hi: Math.min(count, lo + size) };
+    // What this batch has read so far: its key, and the label the rows that read it take on.
+    const reads: Record<string, Cell> = {};
+    const readLabels: Label[] = [];
+    let first = batch.lo;
+    let last = batch.hi;
+    while (first < last) {
+      // With every row in each call, the call is always the whole input; else the rows still to answer.
+      const from = whole ? 0 : first;
+      const to = whole ? sent.length : last;
+      const job: BoxJob = {
+        kind: input.kind,
+        sources: input.sources,
+        mode: input.kind === "code" ? input.mode : "perRow",
+        input: whole ? sent : sent.slice(from, to),
+        from: offset + from,
+        steps: whole ? steps : sliceItems(steps, from, to),
+        now: input.now,
+        zone: input.zone,
+        locale: input.locale,
+        seed: input.seed,
+        run: input.run,
+        reads,
+      };
+      const bytes = jsonBytes(job);
+      if (bytes > CODE_LIMITS.inputBytes)
+        throw limitFault("inputBytes", CODE_LIMITS.inputBytes, bytes);
+      const answer = await box.run(job);
+      out.calls++;
+      if (answer.evaluations.length !== (all ? 1 : to - from))
+        throw new CodeFault("the box gave another number of evaluations than it was sent", {
+          code: "code.unavailable",
+          detail: { why: "unavailable" },
+        });
+      out.dropped += answer.dropped;
+      const answered = new Set<number>();
+      const needed = new Map<string, { read: CodeRead; by: number[] }>();
+      answer.evaluations.forEach((e, j) => {
+        const at = all ? 0 : from + j;
+        if (final[at]) return;
+        if (e.state === "needs") {
+          // A read it was handed and asks for again: the box is not doing what it says, and it would never end.
+          if (Object.hasOwn(reads, e.key))
+            throw new CodeFault("the box asked again for a read it was handed", {
+              code: "code.limit",
+              detail: { limit: "reads", max: CODE_LIMITS.reads },
+            });
+          const mine = asked[at] as Set<string>;
+          mine.add(e.key);
+          if (mine.size > CODE_LIMITS.reads) {
+            final[at] = failedBy(limitFailure("reads", CODE_LIMITS.reads, mine.size));
+            labels[at] = joinWith(base[at] as Label, readLabels);
+            answered.add(at);
+            return;
+          }
+          const n = needed.get(e.key);
+          if (n) n.by.push(at);
+          else needed.set(e.key, { read: e.read, by: [at] });
+          return;
+        }
+        final[at] = e;
+        labels[at] = joinWith(base[at] as Label, readLabels);
+        answered.add(at);
+      });
+      for (const line of answer.console) {
+        const at = all ? 0 : (line.row ?? offset + from) - offset;
+        if (answered.has(at)) (lines[at] as ConsoleLine[]).push(line);
+      }
+      for (const [key, { read, by }] of needed) {
+        // The filter's values are judged with the worst of what the rows asking had received until now (AU-161).
+        const before = join(
+          ...(by.map((at) => joinWith(base[at] as Label, readLabels)) as [Label, ...Label[]]),
+        );
+        const made = await reader.read(key, read, before);
+        if ("failure" in made)
+          for (const at of by) {
+            final[at] = failedBy(made.failure);
+            labels[at] = joinWith(base[at] as Label, readLabels);
+          }
+        else {
+          reads[key] = made.value;
+          if (made.label) readLabels.push(made.label);
+        }
+      }
+      while (first < last && final[first]) first++;
+      while (last > first && final[last - 1]) last--;
+    }
+  }
+
+  out.reads = reader.records;
+  out.evaluations = final as Exclude<Evaluated, { state: "needs" }>[];
+  out.labels = labels;
+  const kept: ConsoleLine[] = [];
+  for (const l of lines.flat())
+    if (kept.length < CODE_LIMITS.consoleLines)
+      kept.push(
+        l.text.length > CODE_LIMITS.consoleLineChars
+          ? { ...l, text: l.text.slice(0, CODE_LIMITS.consoleLineChars) }
+          : l,
+      );
+    else out.dropped++;
+  out.console = kept;
+  for (const e of out.evaluations)
+    if (e.state === "done") {
+      out.clock ||= e.clock;
+      out.random ||= e.random;
+    }
+  return out;
+}
+
+const failedBy = (failure: CodeFailure): Exclude<Evaluated, { state: "needs" }> => ({
+  state: "failed",
+  failure,
+  source: 0,
+});
+
+const limitFailure = (limit: string, max: number, got?: number): CodeFailure => ({
+  code: "code.limit",
+  detail: { limit, max, ...(got === undefined ? {} : { got }) },
+});
+
+/** A limit of the whole step passed: what stops all of it (`code.limit`, with which limit and how far). */
+export const limitFault = (limit: string, max: number, got?: number): CodeFault =>
+  new CodeFault(`over the limit ${limit} (${max})`, limitFailure(limit, max, got));
+
+const joinWith = (label: Label, more: readonly Label[]): Label =>
+  more.length ? join(label, ...more) : label;
+
+/** Which fields of some rows are read by every piece of code together. */
+function unionFields(all: readonly FieldsRead[]): FieldsRead {
+  if (all.some((f) => f === "all")) return "all";
+  return [...new Set((all as readonly (readonly string[])[]).flat())];
+}
+
+/** The `item` of each step cited, for the input rows from `lo` to `hi`. */
+function sliceItems(
+  steps: Record<string, { rows: Fields[]; item?: readonly (number | null)[] }>,
+  lo: number,
+  hi: number,
+): BoxJob["steps"] {
+  const out: BoxJob["steps"] = {};
+  for (const [name, s] of Object.entries(steps))
+    out[name] = s.item ? { rows: s.rows, item: s.item.slice(lo, hi) } : { rows: s.rows };
+  return out;
+}
+
+/** A row as it is sent: a copy of the fields the code reads, and the labels of what was sent (the row's own first). */
+function fieldsOf(row: Row, read: FieldsRead): { fields: Fields; labels: Label[] } {
+  const keys =
+    read === "all" ? Object.keys(row.json) : read.filter((k) => Object.hasOwn(row.json, k));
+  const labels = new Set<Label>([row.label]);
+  const fields: Fields = {};
+  for (const k of keys) {
+    define(fields, k, copyCell(row.json[k] as Cell));
+    // Only the row's own entry: a field named `toString` or `__proto__` is not the map's inherited member (AU-25).
+    const own = row.fields && Object.hasOwn(row.fields, k) ? row.fields[k] : undefined;
+    if (own) labels.add(own.label);
+  }
+  return { fields, labels: [...labels] };
+}
+
+/** A key that is data: defined, never assigned, so `__proto__` is a field like any other (AU-25). */
+function define(o: Record<string, Cell>, k: string, v: Cell): void {
+  Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+}
+
+/** A copy of a value, its keys defined as data. */
+function copyCell(v: Cell): Cell {
+  if (Array.isArray(v)) return v.map(copyCell);
+  if (typeof v === "object" && v !== null) {
+    const o: Record<string, Cell> = {};
+    for (const k of Object.keys(v)) define(o, k, copyCell(v[k] as Cell));
+    return o;
+  }
+  return v;
+}
+
+/** Bytes of a value as JSON in UTF-8: what a limit of bytes counts. */
+export function jsonBytes(v: unknown): number {
+  const s = JSON.stringify(v) ?? "";
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}
+
+const READ_OPS: readonly string[] = ["find", "get", "count", "sum"];
+
+/** The reads of one step in one run: each made once, counted against the step's limits. */
+class Reader {
+  readonly input: EvaluateInput;
+  readonly gate: Gate;
+  readonly records: ReadRecord[] = [];
+  readonly made = new Map<string, { value: Cell; label?: Label } | { failure: CodeFailure }>();
+  bytes = 0;
+
+  constructor(input: EvaluateInput, gate: Gate) {
+    this.input = input;
+    this.gate = gate;
+  }
+
+  /** A read by the box's key: made once for the step, through the connection and the gate. */
+  async read(
+    key: string,
+    asked: CodeRead,
+    label: Label,
+  ): Promise<{ value: Cell; label?: Label } | { failure: CodeFailure }> {
+    const done = this.made.get(key);
+    if (done) return done;
+    if (this.records.length >= CODE_LIMITS.stepReads)
+      throw limitFault("stepReads", CODE_LIMITS.stepReads, this.records.length + 1);
+    let made: { value: Cell; label?: Label } | { failure: CodeFailure };
+    const start = Date.now();
+    let record: ReadRecord | undefined;
+    try {
+      const ask = this.ask(asked);
+      const narrowed = narrow(ask, this.input.connections);
+      const r = await this.make(narrowed, asked, label);
+      record = { collection: ask.collection, op: ask.op, rows: r.rows, bytes: r.bytes, ms: 0 };
+      made = { value: r.value, ...(r.label ? { label: r.label } : {}) };
+    } catch (e) {
+      if (!(e instanceof CodeFault) || this.stops(e)) throw e;
+      made = { failure: e.why };
+    }
+    if (record) {
+      record.ms = Date.now() - start;
+      this.records.push(record);
+      this.bytes += record.bytes;
+      if (this.bytes > CODE_LIMITS.stepReadBytes)
+        throw limitFault("stepReadBytes", CODE_LIMITS.stepReadBytes, this.bytes);
+    }
+    this.made.set(key, made);
+    return made;
+  }
+
+  /** What stops the whole step rather than the rows that asked. */
+  stops(e: CodeFault): boolean {
+    const limit = e.why.detail?.limit;
+    return e.why.code === "code.limit" && (limit === "stepReads" || limit === "stepReadBytes");
+  }
+
+  /** The read as code wrote it, checked: a collection the step is connected to, by its key, and a query that is one. */
+  ask(r: CodeRead): ReadAsk {
+    const query = (why: string, more: Record<string, string> = {}) =>
+      new CodeFault(`a read of ${r.collection} that is not one (${why})`, {
+        code: "code.read.query",
+        detail: { collection: r.collection, why, ...more },
+      });
+    const collection = this.input.collectionNamed(r.collection);
+    if (
+      collection === undefined ||
+      !this.input.connections.some((c) => c.collection === collection)
+    )
+      throw new CodeFault(`no connection reads ${r.collection}`, {
+        code: "code.read.notConnected",
+        detail: { collection: r.collection },
+      });
+    if (!READ_OPS.includes(r.op)) throw query("op");
+    if (r.where !== undefined && filterErrors(r.where).length) throw query("where");
+    if (
+      r.sort !== undefined &&
+      (!Array.isArray(r.sort) ||
+        !r.sort.every(
+          (s) =>
+            typeof s === "object" &&
+            s !== null &&
+            typeof s.field === "string" &&
+            (s.direction === "asc" || s.direction === "desc"),
+        ))
+    )
+      throw query("sort");
+    if (r.limit !== undefined && !(Number.isInteger(r.limit) && r.limit >= 1)) throw query("limit");
+    if (r.op === "get" && typeof r.id !== "string") throw query("id");
+    if (r.op === "sum" && typeof r.field !== "string") throw query("field");
+    const shape = this.gate.shape(collection);
+    const types = new Map((shape?.fields ?? []).map((f) => [f.key, f.type]));
+    const named = [
+      ...(r.where ?? []).flatMap((i) => (isFilterGroup(i) ? i.rules : [i]).map((x) => x.field)),
+      ...(r.sort ?? []).map((s) => s.field),
+      ...(r.field === undefined ? [] : [r.field]),
+    ];
+    for (const field of named)
+      if (field !== "id" && !types.has(field)) throw query("field", { field });
+    if (r.op === "sum" && types.get(r.field as string) !== "number")
+      throw query("notNumber", { field: r.field as string });
+    const ask: ReadAsk = { collection, op: r.op };
+    if (r.where !== undefined) ask.where = r.where;
+    if (r.sort !== undefined) ask.sort = r.sort;
+    if (r.limit !== undefined) ask.limit = r.limit;
+    if (r.id !== undefined) ask.id = r.id;
+    if (r.field !== undefined) ask.field = r.field;
+    return ask;
+  }
+
+  /** Makes one narrowed read through the gate: the policy is asked with the code's values, judged as calculated. */
+  async make(
+    ask: NarrowedAsk,
+    asked: CodeRead,
+    label: Label,
+  ): Promise<{ value: Cell; label?: Label; rows: number; bytes: number }> {
+    const values: Labelled = {};
+    const judged = (value: Cell) => ({ value, label, derived: true });
+    (asked.where ?? []).forEach((item, i) => {
+      if (isFilterGroup(item))
+        item.rules.forEach((rule, j) => {
+          values[`where.${i}.rules.${j}.value`] = judged(rule.value ?? null);
+        });
+      else values[`where.${i}.value`] = judged(item.value ?? null);
+    });
+    if (asked.limit !== undefined) values.limit = judged(asked.limit);
+    const where: FilterItem[] = [...(ask.where ?? [])];
+    if (ask.op === "find") {
+      const found = await this.gate.find(
+        {
+          collection: ask.collection,
+          where,
+          sort: ask.sort ?? [],
+          limit: ask.limit,
+          related: false,
+        },
+        values,
+      );
+      const rows = cutRead(found, ask);
+      const value: Cell[] = [];
+      let bytes = 2;
+      const labels: Label[] = [];
+      for (const r of rows) {
+        const one = asRead(r.origin.id, r.json, ask) as Fields;
+        bytes += jsonBytes(one) + 1;
+        if (bytes > CODE_LIMITS.readBytes)
+          throw limitFault("readBytes", CODE_LIMITS.readBytes, bytes);
+        value.push(one);
+        labels.push(...rowLabels(r, ask.fields));
+      }
+      return {
+        value,
+        ...(labels.length ? { label: joinAllOf(labels) } : {}),
+        rows: rows.length,
+        bytes,
+      };
+    }
+    if (ask.op === "get") {
+      const id = judged(ask.id ?? null);
+      const found = await this.gate.get(ask.collection, id);
+      // A row outside the connection's «Solo estas filas» is not there for the code.
+      const connection = this.input.connections.find((c) => c.collection === ask.collection)?.read;
+      const filter = connection ? (connection.where ?? []) : [];
+      const shape = this.gate.shape(ask.collection);
+      const typeOf = (f: string) => shape?.fields.find((x) => x.key === f)?.type;
+      const row =
+        found &&
+        (!filter.length || matchesFilters(found.json, typeOf, filter, this.input.today, "fail"))
+          ? found
+          : undefined;
+      if (!row) return { value: null, rows: 0, bytes: 4 };
+      const one = asRead(row.origin.id, row.json, ask) as Fields;
+      const bytes = jsonBytes(one);
+      if (bytes > CODE_LIMITS.readBytes)
+        throw limitFault("readBytes", CODE_LIMITS.readBytes, bytes);
+      return { value: one, label: joinAllOf(rowLabels(row, ask.fields)), rows: 1, bytes };
+    }
+    const [result] = await this.gate.aggregate(
+      {
+        collection: ask.collection,
+        where,
+        measure: ask.op === "count" ? "count" : "sum",
+        ...(ask.field === undefined ? {} : { field: ask.field }),
+      },
+      values,
+    );
+    const value = result?.value ?? (ask.op === "count" ? 0 : null);
+    return {
+      value,
+      ...(result ? { label: result.label } : {}),
+      rows: 1,
+      bytes: jsonBytes(value),
+    };
+  }
+}
+
+/** The labels of what a read gives of a row: the row's and those of the fields it gives that have their own. */
+function rowLabels(row: StoredRow, fields: readonly string[] | undefined): Label[] {
+  const out = [row.label];
+  for (const [k, f] of Object.entries(row.fields ?? {}))
+    if (!fields || fields.includes(k)) out.push(f.label);
+  return out;
+}
+
+function joinAllOf(labels: readonly Label[]): Label {
+  const unique = [...new Set(labels)];
+  return join(...(unique as [Label, ...Label[]]));
 }
 
 /**
@@ -160,7 +660,14 @@ export function evaluate(input: EvaluateInput, box: Box, gate: Gate): Promise<St
  * gives the same) and the step's id. The same whatever the batch size, the order of steps or the retries.
  */
 export function seedOf(runSeed: number, step: string): number {
-  return notBuilt(`seedOf(${runSeed}, ${step})`);
+  // FNV-1a over the run's seed and the step's id: a whole number from 0 to 2³² - 1.
+  let h = 0x811c9dc5;
+  const text = `${runSeed}\u0000${step}`;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 /**
@@ -170,5 +677,15 @@ export function seedOf(runSeed: number, step: string): number {
  * other, and never reach an object's prototype.
  */
 export function rowsOf(value: Cell): Fields[] {
-  return notBuilt(`rowsOf(${typeof value})`);
+  const isRow = (v: Cell): v is Record<string, Cell> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
+  const notRows = () =>
+    new CodeFault("the code gave something that is not rows", {
+      code: "code.result",
+      detail: { why: "notRows" },
+    });
+  if (value === null) return [];
+  if (isRow(value)) return [copyCell(value) as Fields];
+  if (!Array.isArray(value) || !value.every(isRow)) throw notRows();
+  return value.map((v) => copyCell(v) as Fields);
 }
