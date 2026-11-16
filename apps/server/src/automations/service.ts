@@ -41,6 +41,7 @@ import {
   parseAutomation,
   preview,
   type Row,
+  type RunDeps,
   runTest,
   SETTINGS_DEFAULTS,
   type Step,
@@ -391,6 +392,42 @@ const writes = (step: Step) => actionOf(step)?.effect === "write";
  * A trigger of any type is tested this way, by hand, with the fields it declares (AU-115).
  * `zone`: Juan's IANA time zone, the day «hoy» is.
  */
+/**
+ * What an automation runs with on the server, by Juan's hand: the user's store behind the policy, his clock and zone,
+ * the box and the collections by name. A test has no `run` and writes nothing. A run for real (F14d: only a published
+ * version runs, AU-95) gives its id, and every operation it saves carries it in the log, so `undoRun` takes back all
+ * the run saved, each step's change whole (AU-174, AU-185). Make one per run: the policy's counter is the run's.
+ */
+export function runDeps(
+  store: UserStore,
+  id: string,
+  hand: Hand & { trust: Trust; zone: string },
+  box: Box = sandboxBox(),
+  run?: string,
+): RunDeps & { policy: ReturnType<typeof handPolicy> } {
+  const own = automationLabel(id);
+  return {
+    policy: handPolicy({ trust: hand.trust, device: hand.device, own }),
+    collections: storeCollections(store, {
+      actor: "user",
+      device: hand.device,
+      zone: hand.zone,
+      own,
+      ...(run ? { run } : {}),
+    }),
+    clock: {
+      now: () => Date.now(),
+      zone: hand.zone,
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    },
+    dates: serverDates,
+    own,
+    locale: "es",
+    box,
+    collectionNamed: collectionNamed(store),
+  };
+}
+
 export async function testAutomation(
   store: UserStore,
   id: string,
@@ -428,13 +465,8 @@ export async function testAutomation(
     }
   }
 
-  const own = automationLabel(id);
-  const real = storeCollections(store, {
-    actor: "user",
-    device: hand.device,
-    zone: hand.zone,
-    own,
-  });
+  const deps = runDeps(store, id, hand, box);
+  const real = deps.collections;
   // The saved rows a write reads to say what it would leave (AU-168: part of the write the policy allowed).
   const saved = new Map<string, Record<string, Cell>>();
   const collections: Collections = {
@@ -456,20 +488,7 @@ export async function testAutomation(
         prints,
         ...(request.step !== undefined ? { step: request.step, kept } : {}),
       },
-      {
-        policy: handPolicy({ trust: hand.trust, device: hand.device, own }),
-        collections,
-        clock: {
-          now: () => Date.now(),
-          zone: hand.zone,
-          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-        },
-        dates: serverDates,
-        own,
-        locale: "es",
-        box,
-        collectionNamed: collectionNamed(store),
-      },
+      { ...deps, collections },
     );
   } catch (e) {
     if (e instanceof CannotRun)

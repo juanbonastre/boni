@@ -640,7 +640,7 @@ return [];
   Hecho en W2: la evaluación devuelve sus peticiones con la respuesta (`writes`), solo las de la última pasada; el
   motor las aplica en ese orden con `applyWrites` (`writes.ts`), que lee cada fila una vez antes y guarda con su
   versión.
-- **AU-174** (F14c, en parte) · Todo o nada. Lo que pide un paso es un solo cambio: se guarda entero o no se guarda
+- **AU-174** (F14c, hecho) · Todo o nada. Lo que pide un paso es un solo cambio: se guarda entero o no se guarda
   nada. Si el código lanza un error, si el paso falla o si una sola petición no se puede guardar (no pasa la
   validación, su fila cambió, la política la niega, se sale de la conexión), no se guarda ninguna y el paso falla
   diciendo cuál. Reintentar el paso (AU-16) no escribe dos veces.
@@ -656,8 +656,13 @@ return [];
   Hecho en W2: la política se pregunta por todas antes de guardar (`decideAll`), las guarda una sola transacción
   (`applyAll`, también en el almacén del servidor: dos cambios de una fila van en orden y, si el último falla, no
   queda ninguno), el cambio que espera es una sola propuesta del paso, y con «seguir» o «salir por error» lo de una
-  fila que falló se tira. Falta: que cada escritura lleve la ejecución en el registro de operaciones, con las rutas y
-  el almacén de verdad (S1).
+  fila que falló se tira.
+  Hecho en S1-c: en el almacén de verdad, cada operación que guarda un paso lleva la ejecución en el registro
+  (`runDeps`, `CollectionsFor.run`): el cambio de 3.000 filas de un paso va en una transacción; si la fila 3.000 cambió
+  desde que se leyó no se guarda ninguna, leída otra vez se guardan todas, y `undoRun` deshace el paso entero. Lo
+  mide su prueba: unos 3 s para guardar las 3.000 y otros tantos para deshacerlas, todo del `update` del almacén, que
+  tarda más cuantos más registros tiene (una tarea aparte). Las rutas de una ejecución de verdad y «Deshacer lo que
+  hizo» son de la F14d (AU-95, AU-18, AU-100).
 - **AU-175** (F14c, en parte) · Lo que se puede pedir tiene topes, cada uno un número con nombre
   (`WRITE_LIMITS`, `writes.ts`): peticiones por evaluación (5.000) y por paso (5.000), el tamaño de una (64 KB) y el
   de todas las de un paso (4 MB). Pasarse hace fallar el paso, dice cuál y por cuánto, y no guarda nada: nunca se
@@ -669,8 +674,11 @@ return [];
   Hecho en W2: los cuatro topes, en la caja los de una evaluación y en el motor los del paso, y las peticiones
   cuentan en el tamaño de la respuesta (`outputBytes`).
   Hecho en S1: el adaptador de la caja del servidor da la falta `writes` como `code.limit`, y un «Código» que pide
-  guardar 5.001 filas falla así en una prueba (que no escribe nunca). Falta (S1-c): que en una ejecución no se guarde
-  nada; (F14d): los topes de la ejecución, con AU-17.
+  guardar 5.001 filas falla así en una prueba (que no escribe nunca).
+  Hecho en S1-c: en una ejecución de verdad sobre el almacén y la caja reales tampoco se guarda nada: con «Sí», el
+  cambio de 3.000 filas espera como una sola propuesta (`YES_SAVES`), y pasarse de las peticiones de una evaluación
+  (5.001) o de las de un paso (dos por fila de 3.000) falla con `code.limit`, sin propuesta y sin una operación en el
+  registro. Falta (F14d): los topes de la ejecución, con AU-17.
 
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.
@@ -1417,7 +1425,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   «Si falla» del paso, sin reintento y sin el motivo de la política; la cuenta de cada lectura queda en `StepRecord.reads`.
   Hecho en S1: sobre el servidor real, una caja que pide una colección que el paso no tiene conectada no lee nada
   (`code.read.notConnected`): la conexión es la de la automatización guardada en el almacén, no la de la petición.
-  Falta (S1-c): una lectura negada por la política del servidor, con su fila por el «Si falla» del paso.
+  Falta (la fase que traiga la primera regla de la política que niegue una lectura de una automatización, según la
+  tarea 127): esa negación sobre el servidor real. En la F14c no hay ninguna: sobre el servidor real cada lectura de
+  una ejecución se deja, y lo comprueba la prueba de AU-174. Su camino por el «Si falla» ya lo prueba E3 con una
+  política que niega.
 - **AU-162** (F14a, hecho) · Una cita sencilla (un campo de la fila actual o de un paso anterior: `$json.importe`,
   `$('Buscar gastos').first().total`; lo que deja arrastrar un campo) la resuelve el servidor, sin caja, y conserva
   la etiqueta exacta de ese campo.
@@ -1429,8 +1440,9 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   código y de lo leído, por fila en «Una vez por fila» y en las expresiones; lo calculado llega derivado a la política
   y a los campos de las filas que da «Código», y la etiqueta del camino (AU-164) pasa por él.
   Hecho en S1: sobre el servidor real, cada fila que da un «Código» con todas las filas lleva la peor etiqueta de lo
-  que leyó, y también el campo que escribiría un paso «Colección» después. Falta (S1-c): que la política del servidor
-  niegue un destino calculado (P14) sobre el servidor real.
+  que leyó, y también el campo que escribiría un paso «Colección» después. Falta: P14 sobre un destino, cuando una
+  acción de una automatización lo tenga (F16, F20); ninguna de las de la F14c tiene destino, así que hoy solo lo
+  sostienen las pruebas con una política que niega.
 - **AU-163** (F14c, hecho) · Qué recibe una evaluación lo decide el servidor leyendo el código antes de correrlo:
   los pasos y los campos que cita. Un paso citado con un nombre calculado no se admite.
   En la F14c: tampoco se admite `$col` con un nombre calculado, ni darle otro nombre a `$` o a `$col`. El lector no es
@@ -1519,7 +1531,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   automatización la vuelva a iniciar (AU-113, F18) vale igual para estas, porque van por el mismo camino; hasta la
   F18 ningún cambio de una colección inicia nada.
   Hecho en W2: cada cambio lleva la versión, el paso y la etiqueta de lo que la evaluación recibió, y con algo de
-  fuera se propone. Falta: la ejecución en el cambio, con el almacén de verdad (S1), y lo de AU-113 (F18).
+  fuera se propone.
+  Hecho en S1-c: en el almacén de verdad, cada operación del cambio lleva la ejecución en el registro, y un valor de
+  fuera queda guardado como de fuera y se lee otra vez de fuera (AU-170): a mano, la política lo deja guardar (P25), y
+  no se propone. Falta: la propuesta de P4 sobre el servidor real, que necesita una ejecución que empiece sola (F14d,
+  AU-167); lo de AU-113 (F18).
 
 Lo que cambia, regla por regla:
 
