@@ -343,7 +343,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   la ficha en rojo con el motivo, y el nombre de los resultados. Donde se enseña un valor de una fila («Esquema»,
   «Tabla», «Haría esto», una ficha, lo que da una expresión), una opción se lee por su nombre, nunca por su id;
   «JSON» la deja como está.
-- **AU-22** (F14c, en parte) · Una expresión es texto con JavaScript entre `{{ }}`:
+- **AU-22** (F14c, hecho) · Una expresión es texto con JavaScript entre `{{ }}`:
   `Hola {{ $json.nombre }}, llevas {{ $('Sumar gastos').first().total }} € este mes`. Escribir `{{` en un valor fijo
   lo pasa a expresión.
   En la F14c: cada `{{ }}` es una cita sencilla (la resuelve el servidor, AU-162) o JavaScript (va a la caja), y las
@@ -356,8 +356,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   `null`.
   Hecho en E2: leerlos (`codeParts`, `isWholeExpression`, `joinParts`): dónde termina cada `{{ }}`, uno sin cerrar
   da `code.syntax` con su sitio, una sentencia o una asignación no pasan, un valor de un solo `{{ }}` conserva su
-  tipo, y `expr.code` solo sale sin caja. Falta: que el motor los mande a la caja (E3) y escribirlos en el editor
-  (pantallas).
+  tipo, y `expr.code` solo sale sin caja.
+  Hecho en P1: en el editor, un `{{ }}` de JavaScript se ve como su texto en letra de código, junto a las fichas de
+  las citas sencillas, y escribir `{{` en un valor fijo lo pasa a expresión con el cursor donde estaba (la prueba de
+  AU-22 en `e2e-boni/automations-code.spec.ts`). Con la caja del servidor (S1-b) el motor los manda a la caja al
+  probar y al ejecutar: lo comprueba la prueba de AU-27 en la app de escritorio.
 - **AU-23** (F14c, en parte) · Debajo de una expresión se ve lo que vale con la fila actual («= 5 · con la fila 3
   de 128»), y se pasa de fila. Si no se puede calcular dice qué hacer: «Prueba los pasos anteriores».
   En la F14c: el valor lo calcula el servidor en la caja (AU-27) con las filas que guardó la prueba y con su hora y su
@@ -369,9 +372,16 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   caja y dice cuáles, en el orden de probarlos; un fallo da su código.
   Hecho en S1: `previewExpression` (`apps/server/src/automations/service.ts`) da ese valor con las pruebas que guarda
   el almacén y con la hora y la semilla de la prueba del paso, sin leer una prueba desfasada: con el «Código» de antes
-  cambiado da «sin probar» y cuál (la prueba de AU-27 sobre la caja real). Falta (pantallas): la ruta, con su prueba y sus caminos en `Net.kt` y `paths.cjs`;
-  medirla con 3.000 filas mientras Juan escribe (A-15); pedirlo cuando deja de escribir, que una respuesta anterior no
-  pise una posterior, y pintarlo debajo.
+  cambiado da «sin probar» y cuál (la prueba de AU-27 sobre la caja real).
+  Hecho en P1: la ruta `GET …/test/preview` (`routes.ts`, con su prueba), con la fila que se pide; una cita sencilla
+  se resuelve en la app y el JavaScript se pide al servidor 300 ms después de la última tecla, y la respuesta de un
+  texto anterior no pisa la de uno posterior (mientras llega, la línea se atenúa). «‹ ›» pasa por las filas que
+  llegan al paso. Un paso anterior sin probar dice cuáles probar antes, y un fallo dice su línea y su mensaje como
+  texto. Cada valor de la petición va escapado del todo (`queryValue`), así que cabe en los caminos que dejan
+  pasar `Net.kt` y `paths.cjs` sin cambiarlos (`client.test.ts`). Con 3.000 filas, el servidor calcula cada línea
+  mientras se escribe en menos de 600 ms (`box.test.ts`, A-15). Lo comprueban las pruebas de AU-23 en
+  `e2e-boni/automations-code.spec.ts` y, en la app de escritorio sobre la caja real, la de AU-27. Falta: en el
+  móvil, que se vea sin poder escribir (AU-74, con la vista del paso en el móvil).
 - **AU-24** (F14c, en parte) · Lo que se puede citar, igual en expresiones y en «Código»: `$json` (la fila actual),
   `$input` (`.all()`, `.first()`, `.last()`, `.item`), `$('Nombre de un paso')`, `$now` y `$today`, `$run` (si es
   prueba, quién la inició), `$page` (los valores de la página que la inició: F17) y las ayudas de fechas, texto y
@@ -385,8 +395,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en E1: en la caja, todo lo de la lista con su sentido, `$json` y `.item` fallan con todas las filas, un paso
   que la petición no trae falla por su nombre y nada se añade a los prototipos.
   Hecho en E2: `readCode` lee los mismos nombres en los dos sitios, y la validación da `code.unknownGlobal`,
-  `expr.noCurrentRow`, `expr.notBefore`, `expr.cannotPair`, `code.readInExpression` y `code.cannotWait`. Falta:
-  verlos en el editor (pantallas).
+  `expr.noCurrentRow`, `expr.notBefore`, `expr.cannotPair`, `code.readInExpression` y `code.cannotWait`.
+  Hecho en P1: cada uno de esos problemas tiene sus palabras en los dos idiomas (`words.ts`, `words.test.ts`), y se
+  ven en la tarjeta del paso en el lienzo, y los de la vista previa debajo de la expresión. Falta: marcarlos en su
+  sitio del editor y en la vista del paso (AU-36, P2).
 - **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
@@ -400,8 +412,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   pasa la fila entera o calcula la clave, que los lee todos.
   Hecho en E3: al salir, `rowsOf` toma las claves de lo que dio la caja como campos y nada más: `__proto__`,
   `constructor` o `toString` son campos de la fila y no tocan ningún objeto del motor; al entrar, una fila o la de un
-  paso citado con esas claves se manda con ellas, y su etiqueta es la de sus campos, nunca un miembro heredado. Falta:
-  las claves en la vista (pantallas).
+  paso citado con esas claves se manda con ellas, y su etiqueta es la de sus campos, nunca un miembro heredado.
+  Falta: las claves en la vista de un «Código» y en el autocompletado (P2).
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, en parte) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
@@ -413,8 +425,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   comprueba `box.test.ts`).
   Hecho en S1: la misma igualdad sobre la caja real y el almacén, para una tabla de expresiones con fechas en la zona
   de Juan en los días de cambio de hora de 2026, también a la hora que no existe y a la que hay dos veces, y con azar
-  (`apps/server/src/automations/box.test.ts`). Falta: la
-  línea debajo de la expresión (pantallas).
+  (`apps/server/src/automations/box.test.ts`).
+  Hecho en P1: la línea debajo de la expresión. En la app de escritorio sobre el servidor y la caja reales, con
+  3.000 filas, lo que dice fila a fila es lo que dio la prueba a esa fila, y lo escrito después lo calcula la caja
+  (`e2e-boni-desktop/automations-code.spec.ts`). Falta: que lo mismo valga para «Código» (AU-30, P2).
 - **AU-28** (F14c, hecho) · Las fechas tienen una ayuda propia y pequeña sobre `packages/calendar/src/time.ts`
   (`$now.plus({days: 7})`, `.startOf('month')`, `.format(…)`), con la zona horaria de Juan. La caja no tiene `Intl`,
   así que no se promete la biblioteca de fechas de n8n entera.
@@ -489,8 +503,9 @@ return categorias.map((c) => ({
   por un campo, no por «Las filas que llegan».
   Hecho en E1: `$col(…)` de la caja tiene solo `find`, `get`, `count` y `sum`, y una expresión no tiene `$col`.
   Hecho en E3: el motor no le pide a la puerta ninguna escritura por lo que responda la caja, y las filas de «Código»
-  no tienen origen: un paso «Colección» con «Las filas que llegan» detrás falla con `row.notSaved`. Falta: pedir
-  guardar (AU-172 a AU-176, sus PR).
+  no tienen origen: un paso «Colección» con «Las filas que llegan» detrás falla con `row.notSaved`.
+  Comprobado en P1: la vista previa no escribe (en una expresión no hay `$col`, AU-184). Falta: pedir guardar por una
+  conexión, que lo guarda el motor (AU-175, F14d), y la conexión que lo permite en la app (AU-176, P3).
 - **AU-33** (F14c, en parte) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
   salida, con la línea que lo escribió. Un error señala su línea en el editor y dice el mensaje tal cual.
   En la F14c: la consola se guarda con la prueba del paso: hasta 200 líneas de 2.000 caracteres. Las que sobran se
@@ -544,7 +559,10 @@ return categorias.map((c) => ({
   con el tope (un bucle sin fin lo para la cuenta de operaciones de la caja real); sin caja, con la puerta llena o con
   una respuesta que no es del protocolo (no es JSON, es de otra llamada o es demasiado larga), `code.unavailable` («busy»
   con la puerta llena), y no se lee nada; a una caja que no contesta no se la espera más que el tiempo de la llamada y
-  un margen de 5 s. Una respuesta de 2 MB pasa y una de 5 MB falla. Falta: sus palabras en la app (pantallas).
+  un margen de 5 s. Una respuesta de 2 MB pasa y una de 5 MB falla.
+  Hecho en P1: cada tope tiene sus palabras en los dos idiomas, con cuál y, donde se sabe, por cuánto (`words.ts`,
+  `words.test.ts`), y un `{{ }}` demasiado largo lo dice debajo antes de probar, sin pedir nada al servidor (la
+  prueba de AU-35 en `e2e-boni/automations-code.spec.ts`). Falta: que un «Código» lo diga en su editor (P2).
 - **AU-36** (F14c, en parte) · El editor completa los pasos anteriores, los campos por su nombre y las colecciones
   conectadas, y marca lo que no existe antes de probar.
   En la F14c: el editor lee el código con el mismo lector que el servidor (`readCode`, `javascript.ts`), así que lo
@@ -1497,7 +1515,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   las filas y los campos que su conexión le deja leer. Sin permiso de leer, devuelve lo que escribió y nada más, en
   una prueba también. Hasta la F15 solo escriben los pasos de «Colección» que pone Juan, que no llevan límites de
   conexión.
-- **AU-183** (F14c, en parte) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
+- **AU-183** (F14c, hecho) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
   el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que
   puede cambiar y cómo (crear, modificar, eliminar), esté donde esté la llamada: en un `if`, en un bucle, en una
   función. Al ejecutar, el motor solo acepta una petición si el análisis del código guardado encontró esa colección
@@ -1517,8 +1535,9 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   o pasado («kept»), un método por un nombre calculado («computed») o uno que no tiene («unknown»). Hecho en W2: la
   caja recibe con el trabajo lo que el análisis encontró y su `$col` solo tiene esos métodos; el motor rechaza una
   petición que el análisis no vio (`code.write.unseen`); y `code.colUse` y `code.write.notAllowed` están en
-  `CODE_PROBLEMS` (A-34). Falta: sus palabras en los `i18n.ts`, con las de los demás problemas del código
-  (pantallas).
+  `CODE_PROBLEMS` (A-34).
+  Hecho en P1: `code.colUse` (con cada porqué), `code.write.notAllowed` y `code.write.unseen` tienen sus palabras en
+  los dos idiomas, con las de los demás problemas y fallos del código (`words.ts`, `words.test.ts`).
 - **AU-184** (F14c, hecho) · Las expresiones nunca guardan. En un `{{ }}` no hay `$col` (AU-22, AU-46): una
   expresión que lo usa, para leer o para guardar, no pasa la validación (`code.readInExpression`), y una petición en
   la respuesta de una evaluación de expresiones hace fallar el paso sin guardar nada.

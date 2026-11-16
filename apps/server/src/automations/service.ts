@@ -26,15 +26,18 @@ import {
   type Box,
   CannotRun,
   type Cell,
+  CODE_LIMITS,
   type Collections,
   executionOrder,
   FormatError,
   inputsOf,
+  isExpr,
   isTrigger,
   type Kept,
   keep,
   OUT,
   outputsOf,
+  type ParamValue,
   type Preview,
   type Print,
   type Problem,
@@ -805,13 +808,46 @@ export interface PreviewRequest {
   step: string;
   param: string;
   row: number;
+  /**
+   * The expression as it is being written (AU-23): the line under it is asked when Juan stops typing, before the
+   * draft with it is kept, so it is previewed in the draft's place. Absent: the draft's own value.
+   */
+  expr?: string;
+}
+
+/**
+ * The longest text a preview takes: a `{{ }}`'s own limit (`code.long`), so that the request's line, with the text in
+ * it, stays under what the server reads of a request's head (16 KB). The app asks for none longer.
+ */
+export const PREVIEW_CHARS = CODE_LIMITS.expressionChars;
+
+/** The parameters with the value at `path` (as `Problem.param` writes one) replaced; undefined if it has none. */
+function withValue(
+  params: Step["params"],
+  path: string,
+  value: ParamValue,
+): Step["params"] | undefined {
+  const put = (v: ParamValue, keys: string[]): ParamValue | undefined => {
+    const [k, ...rest] = keys;
+    if (k === undefined) return value;
+    if (Array.isArray(v)) {
+      const i = Number(k);
+      if (!Number.isInteger(i) || i < 0 || i >= v.length) return undefined;
+      const inner = put(v[i] as ParamValue, rest);
+      return inner === undefined ? undefined : v.map((x, j) => (j === i ? inner : x));
+    }
+    if (typeof v !== "object" || v === null || isExpr(v) || !Object.hasOwn(v, k)) return undefined;
+    const inner = put((v as Record<string, ParamValue>)[k] as ParamValue, rest);
+    return inner === undefined ? undefined : { ...(v as Record<string, ParamValue>), [k]: inner };
+  };
+  return put(params as ParamValue, path.split(".")) as Step["params"] | undefined;
 }
 
 /**
  * The line under an expression (AU-23, AU-27): what it is worth with one row of its step's kept input, calculated by
  * the engine's `preview` with the box, the rows the draft's tests kept and the instant and seed of the step's own kept
- * test, so it is what the test gave. It reads no collection and keeps nothing. What the screens' route calls; that
- * route, and timing it with the user's volume while he types (A-15), are the screens' PR's.
+ * test, so it is what the test gave. It reads no collection and keeps nothing. `GET …/test/preview` calls it (F14c
+ * P1), with the text being typed in `expr`; box.test.ts times it with 3,000 rows as he types (A-15).
  */
 export async function previewExpression(
   store: UserStore,
@@ -829,22 +865,43 @@ export async function previewExpression(
     typeof request.param !== "string" ||
     !Number.isSafeInteger(request.row) ||
     request.row < 0 ||
-    !a.steps.some((s) => s.id === request.step)
+    !a.steps.some((s) => s.id === request.step) ||
+    (request.expr !== undefined &&
+      (typeof request.expr !== "string" || request.expr.length > PREVIEW_CHARS))
   )
     return BAD;
+  let draft = a;
+  if (request.expr !== undefined) {
+    const text = request.expr;
+    const steps: Step[] = [];
+    for (const s of a.steps) {
+      if (s.id !== request.step) {
+        steps.push(s);
+        continue;
+      }
+      const params = withValue(s.params, request.param, { expr: text });
+      if (!params) return BAD;
+      steps.push({ ...s, params });
+    }
+    draft = { ...a, steps };
+  }
   const keptRows = keptTests(store, id);
-  const prints = stepPrints(a, testedFields(store, a, keptRows), sha256);
+  const prints = stepPrints(draft, testedFields(store, draft, keptRows), sha256);
   const kept: Record<string, Kept> = {};
   // A stale test is never what the preview is calculated with (`preview` says to test it again): its rows are not read.
   for (const [step, t] of keptRows)
     if (t.kept.state === "done" && t.print === prints[step])
       kept[step] = keptOf(store, id, t, step);
-  const clock = kept[request.step]?.clock ?? { now: hand.now, seed: 0 };
+  // The step's own test gives the instant and the seed even once its expression changed (it is being typed, or was
+  // kept since): the rows it previews with are of that test, and so is their hour.
+  const clock = keptRows.get(request.step)?.kept.clock ?? { now: hand.now, seed: 0 };
   try {
     return await preview(
       {
-        automation: a,
-        ...request,
+        automation: draft,
+        step: request.step,
+        param: request.param,
+        row: request.row,
         kept,
         prints,
         now: clock.now,

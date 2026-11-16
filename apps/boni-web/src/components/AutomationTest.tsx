@@ -18,7 +18,7 @@ import {
 import { Play } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { dragFrom } from "../automations/cite.ts";
-import type { Sample } from "../automations/client.ts";
+import type { ExprPreview, Sample } from "../automations/client.ts";
 import {
   type ConditionField,
   cannotTest,
@@ -34,8 +34,11 @@ import {
   DO,
   fieldNames,
   KEY,
+  localeOf,
   logWords,
   rowsWords,
+  type SaidNames,
+  said,
   secsWords,
 } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
@@ -53,6 +56,13 @@ export interface Tester {
   rows: (at: { step: string; side: "in" | "out"; name: string }) => RowsAsk;
   /** The first rows of the last test as `step` sees them: what the preview of an expression reads (AU-20). */
   sample: (step: string) => Promise<Sample | null>;
+  /** What an expression being typed gives with one row of the step's last test, worked out by the server (AU-23). */
+  preview: (at: {
+    step: string;
+    param: string;
+    row: number;
+    expr: string;
+  }) => Promise<ExprPreview | null>;
 }
 export const TesterContext = createContext<Tester | null>(null);
 export const useTester = () => useContext(TesterContext);
@@ -402,6 +412,8 @@ export function StepOutput({
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
+  const types = useStore((s) => s.dataTypes);
+  const collectionName = (key: string) => types?.find((d) => d.key === key)?.name;
   const tester = useTester();
   const phone = usePhone();
   const now = useNow();
@@ -440,7 +452,7 @@ export function StepOutput({
       body = (
         <>
           <p className="auto-out-failure">
-            {t(KEY.failure(failure.code), { ...(failure.detail ?? {}) })}
+            {said(t, "failure", failure, localeOf(lang), { collection: collectionName })}
           </p>
           {param && !phone && (
             <>
@@ -667,6 +679,8 @@ export function stateMark(
   t: T,
   step: Step,
   test: EditorState["tests"][string] | undefined,
+  locale = "es-ES",
+  names: SaidNames = {},
 ): {
   state: "done" | "failed" | "skipped" | "stopped";
   word: string;
@@ -677,9 +691,6 @@ export function stateMark(
   const s = test.state;
   if (s !== "done" && s !== "failed" && s !== "skipped" && s !== "stopped") return null;
   const says = s === "failed" ? outputSays(step, test) : null;
-  const why =
-    says?.kind === "failed"
-      ? t(KEY.failure(says.failure.code), { ...(says.failure.detail ?? {}) })
-      : null;
+  const why = says?.kind === "failed" ? said(t, "failure", says.failure, locale, names) : null;
   return { state: s, word: t(`auto.state.${s}`), why, stale: test.stale };
 }

@@ -3,15 +3,23 @@
  * routes of apps/server/src/automations/routes.ts and the shapes of its service.ts, as the wire carries them. The
  * app cannot import the server, so the shapes are written twice: the desktop e2e (the real app on the real server)
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
- * and Android's `Net.kt` already allow. C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
+ * and Android's `Net.kt` already allow, each query value escaped strictly (`queryValue`). C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
  * places, E the test, its rows and the sample.
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
  */
-import type { Automation, Cell, Problem, StepError, StepState } from "@boni/automations";
+import type {
+  Automation,
+  Cell,
+  CodeFailure,
+  Problem,
+  StepError,
+  StepFailure,
+  StepState,
+} from "@boni/automations";
 import type { Label } from "@boni/entities";
-import type { AgentApi } from "../core/agent.ts";
+import { type AgentApi, queryValue } from "../core/agent.ts";
 
 /** Where a step's box is on the canvas, in the canvas's own units (AU-05). */
 export interface Place {
@@ -93,6 +101,17 @@ export interface Sample {
   steps: Record<string, { item: RowView | null; first: RowView | null; last: RowView | null }>;
 }
 
+/**
+ * What an expression gives with one row of its step's last test, as the server works it out in the box (AU-23,
+ * AU-27): `preview` of `@boni/automations` over the rows, the instant and the seed that test kept. `row` and `of`:
+ * which row, from 0, and how many came in. `untested`: the steps to test first, by id, in the order to test them.
+ */
+export type ExprPreview =
+  | { state: "value"; value: Cell; row: number; of: number }
+  | { state: "noRows" }
+  | { state: "untested"; steps: string[] }
+  | { state: "failed"; failure: StepFailure | CodeFailure; row: number; of: number };
+
 export interface AutomationsClient {
   /** `GET automations/:id`. */
   open(id: string): Promise<Opened>;
@@ -116,6 +135,14 @@ export interface AutomationsClient {
   ): Promise<{ rows: RowView[]; total: number }>;
   /** `GET automations/:id/test/sample`. */
   sample(id: string, step: string): Promise<Sample>;
+  /**
+   * `GET automations/:id/test/preview`: the value at `param` of `step` (a path as `Problem.param` writes one) with
+   * row `row`, written as `expr` and not as the draft has it, so what is being typed is asked before it is saved.
+   */
+  preview(
+    id: string,
+    at: { step: string; param: string; row: number; expr: string },
+  ): Promise<ExprPreview>;
 }
 
 /** The way to the server the client needs: `AgentApi.automations` (offline and errors are its own). */
@@ -207,5 +234,37 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
         steps: isObj(o.steps) ? (o.steps as unknown as Sample["steps"]) : {},
       };
     },
+    preview: async (id, at) => {
+      // Escaped strictly: the expression's `*`, `(` or `...` would not pass the apps' allowed paths otherwise.
+      const q = Object.entries({
+        step: at.step,
+        param: at.param,
+        row: String(at.row),
+        expr: at.expr,
+      })
+        .map(([k, v]) => `${k}=${queryValue(v)}`)
+        .join("&");
+      return previewOf(await api.automations("GET", path(id, `/test/preview?${q}`)));
+    },
   };
+}
+
+/** What `GET automations/:id/test/preview` answers, read as the line under an expression needs it. */
+export function previewOf(x: unknown): ExprPreview {
+  const o = isObj(x) ? x : {};
+  const at = {
+    row: typeof o.row === "number" ? o.row : 0,
+    of: typeof o.of === "number" ? o.of : 0,
+  };
+  if (o.state === "value") return { state: "value", value: (o.value ?? null) as Cell, ...at };
+  if (o.state === "untested")
+    return {
+      state: "untested",
+      steps: Array.isArray(o.steps)
+        ? o.steps.filter((s): s is string => typeof s === "string")
+        : [],
+    };
+  if (o.state === "failed" && isObj(o.failure) && typeof o.failure.code === "string")
+    return { state: "failed", failure: o.failure as unknown as StepFailure, ...at };
+  return { state: "noRows" };
 }

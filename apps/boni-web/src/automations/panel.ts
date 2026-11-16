@@ -8,6 +8,7 @@ import {
   ACTION,
   type Automation,
   actionOf,
+  type CodeFailure,
   type FieldsOf,
   isExpr,
   isTrigger,
@@ -187,7 +188,7 @@ export type OutputSays =
   | { kind: "untested" }
   | { kind: "skipped" }
   | { kind: "stopped" }
-  | { kind: "failed"; failure: StepFailure; param?: ParamSpec }
+  | { kind: "failed"; failure: StepFailure | CodeFailure; param?: ParamSpec }
   | { kind: "empty" };
 
 export function outputSays(step: Step, test: StepTest | undefined): OutputSays | null {
@@ -196,7 +197,9 @@ export function outputSays(step: Step, test: StepTest | undefined): OutputSays |
   if (test.state === "skipped") return { kind: "skipped" };
   if (test.state === "stopped") return { kind: "stopped" };
   if (test.state === "failed") {
-    const failure: StepFailure = test.error?.failure ?? { code: "other" };
+    // A failure of JavaScript says which in `why` (`CodeFault`): that is what is said, not its general `other`.
+    const failure: StepFailure | CodeFailure = test.error?.why ??
+      test.error?.failure ?? { code: "other" };
     // `param` is written as a problem's is: the parameter's key, then the path inside it.
     const key = failure.param?.split(".")[0];
     const param = key ? paramsOf(step).find((p) => p.key === key) : undefined;

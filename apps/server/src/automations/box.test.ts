@@ -1075,6 +1075,53 @@ return $col('Tienda').find().map((t) => ({ tienda: t.nombre, gastado: gastado[t.
   }, 120_000);
 });
 
+describe("the line under an expression over the user's volume (AU-23, A-15)", () => {
+  it("AU-23 · while Juan types an expression of JavaScript in a step after 3,000 rows, each line under it is worked out within the time written here, the one that sends every row too, and each is what the box gives that text", async () => {
+    orders(3000);
+    const a = chain([
+      START(),
+      find(),
+      [
+        "Doble",
+        "edit",
+        { keep: "all", fields: [{ field: "doble", value: { expr: "{{ $json.importe * 2 }}" } }] },
+      ],
+    ]);
+    const t = await tested(a.id, { trigger: a.step("Inicio"), fields: {} });
+    expect(t.state).toBe("done");
+    const at = { step: a.step("Doble"), param: "fields.0.value", row: 41 };
+    const importe = rowsOf(a.id, a.step("Buscar"))[41]?.json.importe as number;
+    // What he types, a pause at a time: each pause is one request (the app asks when he stops typing).
+    const typed = [
+      ["{{ $json.importe * 3 }}", importe * 3],
+      ["{{ $json.importe * 3 + }}", null],
+      ["{{ $json.importe * 3 + 1 }}", importe * 3 + 1],
+      ["{{ Math.round($json.importe / 7) }}", Math.round(importe / 7)],
+      ["{{ $input.all().length }} pedidos", "3000 pedidos"],
+    ] as const;
+    const took: number[] = [];
+    for (const [expr, value] of typed) {
+      const start = clock();
+      const p = ok(await previewExpression(store, a.id, { ...at, expr }, JUAN, box()));
+      took.push(clock() - start);
+      if (value === null) expect(p, expr).toMatchObject({ state: "failed", row: 41, of: 3000 });
+      else expect(p, expr).toEqual({ state: "value", value, row: 41, of: 3000 });
+    }
+    for (const [i, ms] of took.entries()) timing(`AU-23 · the line under «${typed[i]?.[0]}»`, ms);
+    for (const ms of took) under(ms, 600, "clock", "the line under an expression after 3,000 rows");
+
+    // `$input.all()` row by row needs every row in each call, in the run too (box.ts): there, one that goes through
+    // all the rows for each of 3,000 is cut at the call's time, and the line says the same, no later than the run.
+    const slow = "{{ $input.all().filter((p) => p.importe > $json.importe).length }}";
+    const start = clock();
+    const p = ok(await previewExpression(store, a.id, { ...at, expr: slow }, JUAN, box()));
+    const cut = clock() - start;
+    timing("AU-23 · the line under an expression cut at the call's time", cut);
+    expect(p).toMatchObject({ state: "failed", failure: { code: "code.limit" } });
+    under(cut, CODE_LIMITS.ms + 2_000, "clock", "a line cut at the call's time");
+  }, 60_000);
+});
+
 /** A job as the engine makes them, with what a test does not care about filled in. */
 function job(more: Partial<BoxJob> & Pick<BoxJob, "sources">): BoxJob {
   return {

@@ -124,8 +124,9 @@ export interface StepError {
   /** Why, as a key the screen can say, with the parameter at fault (failures.ts; set from F14b on). */
   failure?: StepFailure;
   /**
-   * F14c: why its JavaScript failed (code.ts), while `failure.code` is `other` until the screen has words for these
-   * codes. The code's own message (`code.threw`) is here, in `detail.message`, and never in `message`.
+   * F14c: why its JavaScript failed (code.ts), while `failure.code` is `other`: the screen says this one, with the
+   * words of `CODE_FAILURES` (boni-web's `words.ts`). The code's own message (`code.threw`) is here, in
+   * `detail.message`, and never in `message`.
    */
   why?: CodeFailure;
 }

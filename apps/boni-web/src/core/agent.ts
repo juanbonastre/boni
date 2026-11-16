@@ -2516,10 +2516,13 @@ export interface Titled {
   updated: number;
 }
 
-/** A text as a query's value: every character but letters, digits and `-_.` escaped (the apps' paths allow no other). */
+/**
+ * A text as a query's value: every character but letters, digits and `-_` escaped (the apps' paths allow no other,
+ * and refuse a path with `..` in it: «…» typed as three dots, or `[...rows]` in an expression, AU-23).
+ */
 export const queryValue = (s: string) =>
   encodeURIComponent(s).replace(
-    /[!'()*~]/g,
+    /[!'()*~.]/g,
     (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 

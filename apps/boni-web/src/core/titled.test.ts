@@ -12,9 +12,11 @@ describe("a mention's title asked of the server", () => {
       "Plan A/B: ¿sí? ¡no! *v2* ~x 'y'",
       "Café & té = 100 %",
       "—",
+      "Notas... de [...todo]",
     ]) {
       const v = queryValue(title);
       expect(v).toMatch(ALLOWED);
+      expect(v).not.toContain("..");
       expect(new URLSearchParams(`title=${v}`).get("title")).toBe(title);
     }
   });

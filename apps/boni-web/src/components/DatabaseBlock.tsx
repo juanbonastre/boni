@@ -579,6 +579,8 @@ export type FilterValueSlot = (
   value: DatabaseFilter["value"],
   onChange: (v: DatabaseFilter["value"]) => void,
   fallback: ReactNode,
+  /** Where the rule is in the whole filter: «2», or «1.rules.0» for a rule of an advanced filter. */
+  place: string,
 ) => ReactNode;
 
 /** Notion's filter rules, edited: a field, an operator that fits it, a value; add and remove. */
@@ -589,6 +591,7 @@ export function FilterEditor({
   single = false,
   lead,
   valueSlot,
+  place = String,
 }: {
   type: DataType;
   rules: DatabaseFilter[];
@@ -598,6 +601,8 @@ export function FilterEditor({
   /** A group's rules (task 75): what goes before each rule («Donde», «y», «o»); rules, not filters. */
   lead?: (i: number) => ReactNode;
   valueSlot?: FilterValueSlot;
+  /** Where each rule is in the whole filter, for `valueSlot`; by default its index. */
+  place?: (i: number) => string;
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
@@ -674,6 +679,7 @@ export function FilterEditor({
                   r.value,
                   (value) => set({ value }),
                   <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />,
+                  place(i),
                 )
               ) : (
                 <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
@@ -722,11 +728,14 @@ export function GroupEditor({
   group,
   onChange,
   valueSlot,
+  place = "0",
 }: {
   type: DataType;
   group: FilterGroup;
   onChange: (next: FilterGroup | null) => void;
   valueSlot?: FilterValueSlot;
+  /** Where the group is in the whole filter: its rules are `<place>.rules.<i>`. */
+  place?: string;
 }) {
   const t = useStore((s) => s.t);
   const lead = (i: number) =>
@@ -752,6 +761,7 @@ export function GroupEditor({
         rules={group.rules}
         lead={lead}
         valueSlot={valueSlot}
+        place={(j) => `${place}.rules.${j}`}
         onChange={(rules) => onChange(rules.length ? { ...group, rules } : null)}
       />
       <button type="button" className="btn ghost small" onClick={() => onChange(null)}>
@@ -792,6 +802,7 @@ export function FilterItemsEditor({
             type={type}
             group={x}
             valueSlot={valueSlot}
+            place={String(i)}
             onChange={(g) => put(i, g ? [g] : [])}
           />
         ) : (
@@ -801,6 +812,7 @@ export function FilterItemsEditor({
             rules={[x]}
             single
             valueSlot={valueSlot}
+            place={() => String(i)}
             onChange={(one) => put(i, one)}
           />
         ),

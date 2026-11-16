@@ -122,6 +122,7 @@ function ValueControl(p: ControlProps) {
       text={param.of === "text"}
       label={label}
       marked={marked}
+      param={path}
       onFocus={() => {
         run.current = ++entered;
       }}
@@ -364,16 +365,19 @@ function asType(fields: readonly ConditionField[]): AppType {
  * A condition's value, fixed as the views edit it or with «{ }» an expression with its chips (AU-20, AU-81): a run
  * of typing in it is the conditions' own (ConditionsControl).
  */
-const exprValue: FilterValueSlot = (field, value, onChange, fallback) => (
-  <ValueBox
-    value={value as unknown as ParamValue}
-    set={(x) => onChange(x as unknown as string)}
-    text={!NUMERIC.has(field.type) && !DATES.has(field.type) && !CHOICES.has(field.type)}
-    label={field.name}
-  >
-    {fallback}
-  </ValueBox>
-);
+const exprValue =
+  (path: string): FilterValueSlot =>
+  (field, value, onChange, fallback, place) => (
+    <ValueBox
+      value={value as unknown as ParamValue}
+      set={(x) => onChange(x as unknown as string)}
+      text={!NUMERIC.has(field.type) && !DATES.has(field.type) && !CHOICES.has(field.type)}
+      label={field.name}
+      param={`${path}.${place}.value`}
+    >
+      {fallback}
+    </ValueBox>
+  );
 
 /** The views' filter (AU-81): «todas» by default, groups «y» or «o» of one level, operators by the field's type. */
 function ConditionsControl({ param, value, set, path, label, marked }: ControlProps) {
@@ -395,7 +399,7 @@ function ConditionsControl({ param, value, set, path, label, marked }: ControlPr
       <FilterItemsEditor
         type={asType(fields)}
         items={items}
-        valueSlot={exprValue}
+        valueSlot={exprValue(path)}
         onChange={(next) => set(next as unknown as ParamValue, v.typing(path, run.current))}
       />
     </div>
@@ -409,12 +413,15 @@ function FieldValue({
   set,
   label,
   typing,
+  param,
 }: {
   field: ConditionField | undefined;
   value: ParamValue | undefined;
   set: (x: ParamValue, typing?: string) => void;
   label: string;
   typing: (entered: number) => string;
+  /** Where the value is in the step (`Problem.param`): what its line is asked for (AU-23). */
+  param: string;
 }) {
   const run = useRef(0);
   const kind = field?.type ?? "text";
@@ -431,6 +438,7 @@ function FieldValue({
           kind !== "checkbox")
       }
       label={label}
+      param={param}
       onFocus={() => {
         run.current = ++entered;
       }}
@@ -594,6 +602,7 @@ function FieldsControl({ param, value, set, path, label, marked }: ControlProps)
               label={field?.name ?? v.t("auto.view.value")}
               set={(x, typing) => put(i, { value: x }, typing)}
               typing={(n) => v.typing(`${path}.${i}.value`, n)}
+              param={`${path}.${i}.value`}
             />
             {/* The same trash as a condition's, so «{ }» closes every value's row in one column (AU-20). */}
             <button
@@ -786,6 +795,10 @@ export function AutomationStepView({
     ...citeNames(t, state.draft, step.id, fieldsOf, seen),
     sample: seen,
     locale: lang === "en" ? "en-GB" : "es-ES",
+    ask: tester
+      ? (param, row, expr) => tester.preview({ step: step.id, param, row, expr })
+      : undefined,
+    said: { collection: (key) => collections.find((c) => c.key === key)?.name },
   };
 
   const edit = (f: (d: Automation) => Automation, typing?: string) =>

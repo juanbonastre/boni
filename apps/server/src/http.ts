@@ -501,6 +501,21 @@ export function makeApp(opts: ServerOptions): App {
             part: "sample",
             step: url.searchParams.get("step") ?? "",
           });
+        // The line under an expression (AU-23, AU-27): what it is worth with one row, worked out by the box with the
+        // text being typed (`expr`), asked when Juan stops typing. A read: it keeps nothing.
+        case "GET /api/agent/automations/:id/test/preview": {
+          const q = url.searchParams;
+          const row = Number(q.get("row") ?? "0");
+          const expr = q.get("expr");
+          return automation("automations.read", {
+            id,
+            part: "preview",
+            step: q.get("step") ?? "",
+            param: q.get("param") ?? "",
+            row: Number.isInteger(row) ? row : -1,
+            ...(expr !== null ? { expr } : {}),
+          });
+        }
         default:
           return send(res, 404, { error: "not-found" });
       }

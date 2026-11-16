@@ -1278,8 +1278,14 @@ contraseña ni un código aquí» under a question.
   dragged (the grab cursor; a related row's fields once unfolded): over a value the box takes an `--accent` border;
   dropped on a text it goes in at the caret, on anything else it replaces the value and makes it an expression, and
   the caret stays after it. After a test, under an expression in 12 px `--muted`: «= 201 · con la fila 1 de 128», what
-  it gives with the first row of the last test, as plain text, following each key with no call to the server; one
-  that cannot be read says why in `--bad`; with no test, nothing.
+  it gives with the first row of the last test, as plain text; one that cannot be read says why in `--bad`; with no
+  test, nothing. A citation alone follows each key with no call to the server; JavaScript (F14c, AU-22, AU-23) is
+  the text of its `{{ }}` in the monospace font among the chips, and its line is asked of the server 300 ms after the
+  last key, dimmed while it comes, the answer to an older text never covering a newer one. «‹ ›» (12 px, «Fila
+  anterior», «Fila siguiente», off at the ends) go through the rows that reach the step. A step before not tested
+  says «Sin probar: prueba antes «…»»; a failure says its line and message («El código falló en la línea 1: …»), and
+  an expression too long says its length and the limit before any test, all in `--bad` and as plain text. Typing
+  `{{` in a fixed text makes it an expression, the caret where it was.
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an
