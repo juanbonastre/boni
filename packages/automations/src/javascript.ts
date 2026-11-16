@@ -11,6 +11,8 @@ import { type Options, parse, parseExpressionAt } from "acorn";
 import type { CodeProblem } from "./code.ts";
 import type { Automation, Step } from "./format.ts";
 import type { ValidationContext } from "./validate.ts";
+// writes.ts imports readCode back: both modules use each other's values only inside functions, never at the top.
+import { COL_METHODS, WRITE_ACTIONS, type WriteAction, type WriteSite } from "./writes.ts";
 
 /**
  * Everything code can name that is not JavaScript's own, the same in an expression and in «Código» (AU-24); `$col`
@@ -92,8 +94,13 @@ export interface CodeReading {
     all: boolean;
     at: readonly Span[];
   }[];
-  /** `$col('Name')`: one entry per collection cited, by the name written. */
+  /** `$col('Name')`: one entry per collection cited, by the name written, to read or to save. */
   collections: readonly { name: string; at: readonly Span[] }[];
+  /**
+   * Every call that asks to save (`$col('Name').create(…)`, `.update(…)`, `.remove(…)`), in the order of the source,
+   * wherever it sits: an `if` never taken, a loop, a function never called (AU-183). None in an expression.
+   */
+  writes: readonly WriteSite[];
   /** `$now`, `$today` or `$date`; `$run`; `$page`. */
   uses: { clock: boolean; run: boolean; page: boolean };
   /** What is wrong in the code by itself: syntax, a computed name, an unknown `$name`, code that waits. */
@@ -391,7 +398,7 @@ export function readCode(source: string, as: "expression" | "code"): CodeReading
   ) => problems.push({ code, severity: "error", detail: { ...detail, ...placeOf(at) } });
   if ("error" in parsed) {
     problem("code.syntax", parsed.error.at, { message: parsed.error.message });
-    return { input: null, steps: [], collections: [], uses: { ...NONE }, problems };
+    return { input: null, steps: [], collections: [], writes: [], uses: { ...NONE }, problems };
   }
   const up = parents(parsed.root);
   const bound = bindings(up);
@@ -402,6 +409,7 @@ export function readCode(source: string, as: "expression" | "code"): CodeReading
     { fields: FieldsRead[]; item: boolean; all: boolean; at: Span[] }
   >();
   const collections = new Map<string, Span[]>();
+  const writes: WriteSite[] = [];
   const uses = { ...NONE };
 
   /** A row, or a list of rows, cited: what it is picked as and what of it is read. */
@@ -485,8 +493,25 @@ export function readCode(source: string, as: "expression" | "code"): CodeReading
         continue;
       }
       if (name === "$col") {
-        if (as === "expression") problem("code.readInExpression", spanOf(call), { name: cited });
         collections.set(cited, [...(collections.get(cited) ?? []), spanOf(call)]);
+        // An expression reads no collection and saves nothing (AU-46, AU-184): that is its one problem.
+        if (as === "expression") {
+          problem("code.readInExpression", spanOf(call), { name: cited });
+          continue;
+        }
+        // Only `$col('Nombre').método(…)`, for reading and for saving alike (AU-183): kept, passed or called by a
+        // computed name, what it does could not be read here, so the analysis could not say what the code saves.
+        const used = methodCalled(call, up);
+        if ("why" in used) {
+          problem("code.colUse", spanOf(used.at ?? call), {
+            why: used.why,
+            name: cited,
+            ...(used.method !== undefined ? { method: used.method } : {}),
+          });
+          continue;
+        }
+        if ((WRITE_ACTIONS as readonly string[]).includes(used.method))
+          writes.push({ name: cited, action: used.method as WriteAction, at: spanOf(used.at) });
         continue;
       }
       const s = steps.get(cited) ?? { fields: [], item: false, all: false, at: [] };
@@ -509,9 +534,34 @@ export function readCode(source: string, as: "expression" | "code"): CodeReading
       at: s.at,
     })),
     collections: [...collections].map(([name, at]) => ({ name, at })),
+    writes,
     uses,
     problems,
   };
+}
+
+/**
+ * How a `$col('…')` call is used (AU-183): called at once by one of `COL_METHODS` written by its name (`method`, and
+ * `at` the whole call, arguments and all), or why not: "kept" (anything else: a variable, an argument, a return, a
+ * method taken without calling it), "computed" (`[accion]`), "unknown" (a method it does not have). `at`: the member,
+ * when there is one.
+ */
+function methodCalled(
+  call: N,
+  up: Map<N, Where>,
+): { method: string; at: N } | { why: "kept" | "computed" | "unknown"; method?: string; at?: N } {
+  const where = up.get(call);
+  const member =
+    where?.parent.type === "MemberExpression" && where.key === "object" ? where.parent : undefined;
+  if (!member) return { why: "kept" };
+  if (member.computed) return { why: "computed", at: member };
+  const method = String((member.property as N).name);
+  if (!(COL_METHODS as readonly string[]).includes(method))
+    return { why: "unknown", method, at: member };
+  const outer = up.get(member);
+  if (outer?.parent.type !== "CallExpression" || outer.key !== "callee")
+    return { why: "kept", method, at: member };
+  return { method, at: outer.parent };
 }
 
 /** A span as a problem's detail says it (AU-36). */

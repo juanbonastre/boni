@@ -92,7 +92,7 @@ describe("the format", () => {
         read: { where: [{ field: state, op: "is", value: "abierto" }], fields: [price], limit: 50 },
       },
       newConnection(notes.key),
-      // F15's actions are in the format already: they read and write back, and validation refuses them in F14c.
+      // The write actions with their F15 limits (AU-48) are in the format already: they read and write back.
       {
         collection: "c_otra",
         read: false,
@@ -188,7 +188,7 @@ describe("the format", () => {
     ]);
   });
 
-  it("AU-41 · `newConnection` reads with no limits and gives no permission to write; `connectionActions` of «Código» is `read` alone, and a «Código» whose connection creates, modifies or removes is `connection.write`", () => {
+  it("AU-41 · AU-176 · `newConnection` reads with no limits and gives no permission to write; `connectionActions` of «Código» gives the four, and a «Código» whose connection creates, modifies or removes, with «Preguntar» or «Sí», validates", () => {
     expect(newConnection(orders.key)).toEqual({
       collection: orders.key,
       read: {},
@@ -196,27 +196,42 @@ describe("the format", () => {
       update: false,
       remove: false,
     });
-    expect(connectionActions(CODE_TYPE)).toEqual(["read"]);
+    expect(connectionActions(CODE_TYPE)).toEqual(["read", "create", "update", "remove"]);
     expect(Object.isFrozen(connectionActions(CODE_TYPE))).toBe(true);
-    const writes: [Partial<Connection>, string][] = [
-      [{ create: { mode: "ask" } }, "create"],
-      [{ update: { mode: "yes" } }, "update"],
-      [{ remove: { mode: "ask" } }, "remove"],
-    ];
-    for (const [change, action] of writes)
-      expect(
-        connectionProblems(stepWith([{ ...newConnection(orders.key), ...change }]), context),
-      ).toMatchObject([{ code: "connection.write", detail: { collection: orders.key, action } }]);
+    for (const mode of ["ask", "yes"] as const)
+      for (const change of [
+        { create: { mode } },
+        { update: { mode } },
+        { remove: { mode } },
+      ] as Partial<Connection>[])
+        expect(
+          connectionProblems(stepWith([{ ...newConnection(orders.key), ...change }]), context),
+          JSON.stringify(change),
+        ).toEqual([]);
   });
 
-  it("AU-41 · a connection never holds `remove` with `yes`, and a limit that is not one (a field the collection does not have, a limit of 0 or over `CODE_LIMITS.readRows`) is `connection.limits` with what is wrong", () => {
+  it("AU-41 · AU-176 · removing takes «Preguntar» or «Sí» like creating and modifying (Juan, 2026-11-16), each on its own and kept as written; any other mode is not read; and a limit that is not one (a field the collection does not have, a limit of 0 or over `CODE_LIMITS.readRows`) is `connection.limits` with what is wrong", () => {
     const saved = sketch(3).step("Código", CODE_TYPE, { mode: "all", source: "return []" }).build();
-    (saved.steps[0] as Step).connections = [
-      { ...newConnection(orders.key), remove: { mode: "yes" as "ask" } },
-    ];
-    expect(() => parseAutomation(JSON.parse(JSON.stringify({ ...saved, version: 1 })))).toThrow(
-      FormatError,
-    );
+    const parsed = (connection: unknown) => {
+      const copy = JSON.parse(JSON.stringify({ ...saved, version: 1 }));
+      copy.steps[0].connections = [connection];
+      return parseAutomation(copy).steps[0]?.connections;
+    };
+    const written: Connection = {
+      ...newConnection(orders.key),
+      update: { mode: "yes" },
+      remove: { mode: "yes" },
+    };
+    expect(parsed(written)).toEqual([written]);
+    expect(parsed({ ...written, update: false, remove: { mode: "ask" } })).toEqual([
+      { ...written, update: false, remove: { mode: "ask" } },
+    ]);
+    for (const action of ["create", "update", "remove"])
+      for (const mode of ["always", "no", true, undefined])
+        expect(
+          () => parsed({ ...newConnection(orders.key), [action]: { mode } }),
+          `${action} ${String(mode)}`,
+        ).toThrow(FormatError);
     const limits = (read: Connection["read"]) =>
       connectionProblems(stepWith([{ ...newConnection(orders.key), read }]), context).map(
         (p) => p.detail,

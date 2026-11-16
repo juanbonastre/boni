@@ -2,7 +2,7 @@
 // real `Collections` and `Policy`, and the test run. Pending: the first PR of the phase brings one test per rule,
 // and the builder turns each into a real one, keeping the rule's id in its name (`make check` reads them). Real
 // tests open a store with the repo's invented seeds (seed.test-util.ts: generated ids, keys and names like Juan's)
-// and, where a rule is about volume, thousands of rows. Bounds on time are in this thread's CPU time (cpu.test-util.ts).
+// and, where a rule is about volume, thousands of rows. Bounds on time are in this thread's CPU time, at the machine's pace (@boni/pace, T-11).
 import { randomBytes } from "node:crypto";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
@@ -28,13 +28,13 @@ import {
   stepPrints,
 } from "@boni/automations";
 import { label, newId } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTION_MCP, ACTIONS, ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
 import { AgentHost } from "../agent.ts";
 import { addUser } from "../auth.ts";
-import { cpu } from "../cpu.test-util.ts";
 import { DataError, listRows } from "../data.ts";
 import { openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
@@ -701,7 +701,7 @@ describe("where an automation lives", () => {
     timing("the list with 1000 automations and 40 flows (listRows, CPU)", ms);
     expect(page.rows).toHaveLength(1040);
     expect(read).not.toHaveBeenCalled();
-    expect(ms).toBeLessThan(250);
+    under(ms, 250, "cpu", "the list with 1000 automations and 40 flows");
     read.mockRestore();
   });
 
@@ -952,7 +952,7 @@ describe("the real Collections and the real Policy", () => {
     }
     const second = await c.find(query);
     expect(second.map((r) => r.origin.id)).toEqual(first.map((r) => r.origin.id));
-    expect(ms).toBeLessThan(1500);
+    under(ms, 1500, "cpu", "a search with two conditions over 3,000 rows");
   }, 120_000);
 
   it("AU-19 · for each action of «Colección» the real policy answers what decide answers for the list's action that does the same to a record, with the same labelled arguments and origin: the trash is asked about (P5)", () => {
@@ -1309,7 +1309,7 @@ describe("«Probar» and «Probar paso»", () => {
     timing("«Probar» of four steps over 3,003 rows of 40 fields (CPU)", all);
     expect(whole.state).toBe("done");
     // About 0.9 s of CPU on the laptop (2026-11-16); the bound has room for CI's slower machines.
-    expect(all).toBeLessThan(4000);
+    under(all, 4000, "cpu", "«Probar» of four steps over 3,003 rows");
     expect(whole.tests[step("Ampliar")]?.out.main).toBe(3003);
     start = cpu();
     const last = await tested(id, { trigger: step("Inicio"), fields: {}, step: step("Marcar") });
@@ -1326,7 +1326,7 @@ describe("«Probar» and «Probar paso»", () => {
     expect(Object.keys(row?.json ?? {})).toHaveLength(41);
     // About 0.7 s of CPU on the laptop (2026-11-16), near half of it reading the 6,007 kept rows back (`recordOf`);
     // the bound has room for CI's slower machines.
-    expect(ms).toBeLessThan(3000);
+    under(ms, 3000, "cpu", "«Probar paso» of the last step over kept tests");
   }, 120_000);
 
   it("AU-92 · a save of the draft answers the steps whose kept test is stale, and the view marks them; moving a box or renaming a step marks none", async () => {
@@ -1379,7 +1379,7 @@ describe("«Probar» and «Probar paso»", () => {
         .map(([s]) => s)
         .sort(),
     ).toEqual(expected);
-    expect(ms).toBeLessThan(1000);
+    under(ms, 1000, "cpu", "a save of a draft of 300 steps");
   }, 120_000);
 
   it("AU-94 · a test of «Disparado por el usuario» takes the fields it declares, labelled as Juan's from his device: one it lacks is null, one it does not declare is refused, and the view offers the last ones again, read from the row the trigger gave in its kept test", async () => {
@@ -1648,7 +1648,7 @@ describe("«Probar» and «Probar paso»", () => {
       store.journal.automationTestRows(id, step("Buscar"), "main", 1500, 50),
     ).length;
     expect(parsed).toBeLessThan((oneChunk + keptRecords) * 3);
-    expect(ms).toBeLessThan(20);
+    under(ms, 20, "cpu", "a page of 50 rows of a kept test of 3,003 rows (mean of 100)");
   }, 120_000);
 
   it("AU-84 · a step that fails because of a parameter names it: the error carries the parameter's path as validation writes one", async () => {

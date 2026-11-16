@@ -39,6 +39,7 @@ import {
   readCode,
   type Span,
 } from "./javascript.ts";
+import { notAllowed, writesOf } from "./writes.ts";
 
 /**
  * Every problem there is. A code is a key: each app says it to Juan in its `i18n.ts`, with what `detail` carries.
@@ -686,12 +687,16 @@ export function codeProblems(
           if (!tested.some((f) => f.key === field))
             add("code.fieldNotGiven", s.at[0], { name: s.name, field });
     }
-    if (piece.as === "code")
+    if (piece.as === "code") {
       for (const c of reading.collections) {
         const key = context.collectionNamed(c.name);
         if (key === undefined) add("code.unknownCollection", c.at[0], { name: c.name });
         else if (!connected.has(key)) add("code.notConnected", c.at[0], { collection: key });
       }
+      // What it asks to save and its connection does not give (AU-176), from this same reading.
+      for (const p of notAllowed(step, writesOf(reading), context.collectionNamed))
+        add(p.code, spanFrom(p.detail ?? {}), withoutPlace(p.detail));
+    }
   }
   return out;
 }

@@ -4,19 +4,74 @@
 // to get around it (A-01): the rules such code could get around have their attack here. Real tests use the fakes of
 // run.test-util.ts; collection and field names in them are invented («Gastos», «Categorías», «Notas»).
 import { describe, expect, it } from "vitest";
-import { CODE_FAILURES, CODE_LIMITS, CODE_PROBLEMS } from "./code.ts";
-import { CONNECTION_ACTIONS } from "./connections.ts";
+import { collection, ids, knowing, sketch } from "./automation.test-util.ts";
+import { CODE_FAILURES, CODE_LIMITS, CODE_PROBLEMS, CODE_TYPE } from "./code.ts";
+import {
+  allowing,
+  CONNECTION_ACTIONS,
+  type Connection,
+  connectionActions,
+  newConnection,
+  permissions,
+} from "./connections.ts";
 import { STEP_FAILURES, StepFault } from "./failures.ts";
-import { PROBLEMS } from "./validate.ts";
+import type { Step } from "./format.ts";
+import { type CodeContext, readCode } from "./javascript.ts";
+import { canRun, PROBLEMS, validate } from "./validate.ts";
 import {
   COL_METHODS,
+  connectionUses,
+  grantsOf,
+  readWrites,
   WRITE_ACTIONS,
   WRITE_FAILURES,
   WRITE_LIMITS,
   WRITE_MODES,
   WRITE_PROBLEMS,
   WriteFault,
+  writeProblems,
 } from "./writes.ts";
+
+const next = ids(13);
+const expenses = collection(next, ["number", "text"]);
+const categories = collection(next, ["text"]);
+const notes = collection(next, ["text"]);
+const NAMES: Record<string, string> = {
+  Gastos: expenses.key,
+  Categorías: categories.key,
+  Notas: notes.key,
+};
+const named = (name: string) => NAMES[name];
+const ctx: CodeContext = {
+  ...knowing(expenses, categories, notes),
+  collectionNamed: named,
+  collectionName: (key) => Object.entries(NAMES).find(([, k]) => k === key)?.[0],
+};
+
+/** A trigger, a search, then a «Código» with that source and those connections. */
+function withCode(source: string, connections: Connection[]) {
+  const s = sketch(5)
+    .step("Inicio", "manual", { fields: [] })
+    .step("Buscar", "collection", { collection: expenses.key, action: "find" })
+    .step("Código", CODE_TYPE, { mode: "all", source })
+    .arrow("Inicio", "Buscar")
+    .arrow("Buscar", "Código");
+  const a = s.build();
+  const step = a.steps.find((x) => x.name === "Código") as Step;
+  step.connections = connections;
+  return { a, step };
+}
+const codes = (problems: readonly { code: string }[]) => problems.map((p) => p.code);
+const ofStep = <P extends { step?: string }>(problems: readonly P[], step: Step) =>
+  problems.filter((p) => p.step === step.id);
+/** A connection to «Gastos» that reads and gives these write cells. */
+const toExpenses = (cells: Partial<Pick<Connection, "create" | "update" | "remove">> = {}) => ({
+  ...newConnection(expenses.key),
+  ...cells,
+});
+/** The text a site or a problem's place points at. */
+const cut = (source: string, at: { from: number | string; to: number | string }) =>
+  source.slice(Number(at.from), Number(at.to));
 
 describe("the lists of saving from code", () => {
   it("every limit of saving is a whole number over zero, and none has the key of a limit of `CODE_LIMITS`", () => {
@@ -61,6 +116,37 @@ describe("the lists of saving from code", () => {
 });
 
 describe("asking to save", () => {
+  it("AU-172 · the three methods that ask to save are `.create({ … })`, `.update(id, { … })` and `.remove(id)` of `$col('Nombre')`, with the words of «Colección» (create, update, remove), and the analysis reads each call as one request of its action, in the order of the source, at the whole call; the four that read are no request", () => {
+    expect(COL_METHODS.filter((m) => !(WRITE_ACTIONS as readonly string[]).includes(m))).toEqual([
+      "find",
+      "get",
+      "count",
+      "sum",
+    ]);
+    const source = [
+      "const rows = $col('Gastos').find({ limit: 3 })",
+      "$col('Notas').create({ texto: 'resumen' })",
+      "for (const r of rows) $col('Gastos').update(r.id, { categoria: 'Casa' })",
+      "$col('Gastos').remove(rows[0].id)",
+      "return [{ n: $col('Notas').count() + $col('Gastos').sum('importe') }]",
+    ].join("\n");
+    const reading = readWrites(source, "code");
+    expect(reading.problems).toEqual([]);
+    expect(reading.writes.map((w) => [w.name, w.action, cut(source, w.at)])).toEqual([
+      ["Notas", "create", "$col('Notas').create({ texto: 'resumen' })"],
+      ["Gastos", "update", "$col('Gastos').update(r.id, { categoria: 'Casa' })"],
+      ["Gastos", "remove", "$col('Gastos').remove(rows[0].id)"],
+    ]);
+    expect(reading.writes.map((w) => [w.at.line, w.at.column])).toEqual([
+      [2, 1],
+      [3, 23],
+      [4, 1],
+    ]);
+    // `readCode` gives the same, in the same walk that finds the collections it cites.
+    const read = readCode(source, "code");
+    expect(read.writes).toEqual(reading.writes);
+    expect(read.collections.map((c) => c.name)).toEqual(["Gastos", "Notas"]);
+  });
   it.todo(
     "AU-172 · `$col('Gastos').update(id, { categoria })`, `.create({ … })` and `.remove(id)` return `undefined` and save nothing while the code runs: the evaluation's result lists them as requests, in the order asked",
   );
@@ -103,12 +189,72 @@ describe("all or nothing", () => {
 });
 
 describe("the connection's permission", () => {
-  it.todo(
-    "AU-176 · a «Código»'s connection takes «No», «Preguntar» or «Sí» for `create`, `update` and `remove`, each on its own (modify «Sí» with remove «No» holds as written); a new connection only reads, and `connectionActions('code')` gives the four",
-  );
-  it.todo(
-    "AU-176 · a code that asks for an action its connection does not give is `code.write.notAllowed` with the collection and the action, and cannot run; its fix sets that cell to «Preguntar», never «Sí»",
-  );
+  it("AU-176 · a «Código»'s connection takes «No», «Preguntar» or «Sí» for `create`, `update` and `remove`, each on its own (modify «Sí» with remove «No» holds as written); a new connection only reads, and `connectionActions('code')` gives the four", () => {
+    expect(connectionActions(CODE_TYPE)).toEqual(CONNECTION_ACTIONS);
+    expect(permissions([newConnection(expenses.key)])).toEqual([
+      { collection: expenses.key, action: "read", mode: "yes" },
+    ]);
+    const source = "$col('Gastos').update('r_1', { importe: 1 })\nreturn []";
+    for (const create of [false, { mode: "ask" }, { mode: "yes" }] as const)
+      for (const update of [{ mode: "ask" }, { mode: "yes" }] as const)
+        for (const remove of [false, { mode: "ask" }, { mode: "yes" }] as const) {
+          const c = toExpenses({ create, update, remove });
+          const { a, step } = withCode(source, [c]);
+          const said = JSON.stringify({ create, update, remove });
+          expect(ofStep(validate(a, ctx), step), said).toEqual([]);
+          // Each cell is said as written, with its mode: what the chip and «sin preguntar» read (AU-178, AU-189).
+          expect(
+            permissions([c]).map((p) => [p.action, p.mode]),
+            said,
+          ).toEqual([
+            ["read", "yes"],
+            ...(create ? [["create", create.mode]] : []),
+            ["update", update.mode],
+            ...(remove ? [["remove", remove.mode]] : []),
+          ]);
+        }
+  });
+  it("AU-176 · a code that asks for an action its connection does not give is `code.write.notAllowed` with the collection's key, the action and the call's place, at every call, and cannot run; its fix sets that cell to «Preguntar», never «Sí», and leaves a cell that allows it as it is", () => {
+    const source = [
+      "for (const r of $input.all()) {",
+      "  if (r.json.importe > 100) $col('Gastos').remove(r.json.id)",
+      "  $col('Gastos').update(r.json.id, { importe: 0 })",
+      "}",
+      "if (false) $col('Gastos').remove('r_1')",
+      "return []",
+    ].join("\n");
+    const { a, step } = withCode(source, [toExpenses({ update: { mode: "yes" } })]);
+    const problems = ofStep(validate(a, ctx), step);
+    expect(codes(problems)).toEqual(["code.write.notAllowed", "code.write.notAllowed"]);
+    expect(problems.map((p) => p.detail?.action)).toEqual(["remove", "remove"]);
+    expect(problems[0]).toMatchObject({
+      severity: "error",
+      param: "source",
+      detail: { collection: expenses.key, line: 2, column: 29 },
+    });
+    expect(problems.map((p) => cut(source, p.detail as { from: number; to: number }))).toEqual([
+      "$col('Gastos').remove(r.json.id)",
+      "$col('Gastos').remove('r_1')",
+    ]);
+    expect(canRun(problems)).toBe(false);
+    // `writeProblems` says the same of the step alone.
+    expect(writeProblems(step, a, ctx)).toEqual(problems);
+    // The fix: «Preguntar».
+    const fixed = allowing(toExpenses({ update: { mode: "yes" } }), "remove");
+    expect(fixed).toEqual(toExpenses({ update: { mode: "yes" }, remove: { mode: "ask" } }));
+    step.connections = [fixed];
+    expect(ofStep(validate(a, ctx), step)).toEqual([]);
+    for (const action of WRITE_ACTIONS) {
+      expect(allowing(newConnection(expenses.key), action)[action]).toEqual({ mode: "ask" });
+      const given = toExpenses({ [action]: { mode: "yes" } });
+      expect(allowing(given, action)).toBe(given);
+    }
+    // A collection with no connection says so as before (AU-31), not as a permission.
+    const unconnected = withCode("$col('Notas').create({ texto: 'x' })\nreturn []", []);
+    expect(codes(ofStep(validate(unconnected.a, ctx), unconnected.step))).toEqual([
+      "code.notConnected",
+    ]);
+  });
   it.todo(
     "AU-176 · a connection changed after the code was checked is what counts: the engine holds each request to the connection as saved, and one it no longer allows fails with `code.write.notAllowed` and saves nothing",
   );
@@ -118,12 +264,52 @@ describe("the connection's permission", () => {
   it.todo(
     "AU-177 · with «Solo estos campos» a code cannot set a field outside them (`code.write.hidden`), even one it never read, and creating fills the rest with the collection's defaults",
   );
+  it("AU-178 · AU-189 · `permissions` gives each write the connection allows with its mode, which is all the chip, the sentence and «sin preguntar» need: «Solo lee» has only `read`; a removal with «Sí» is told apart from one that asks, and creating or modifying with «Sí» carry the same mode", () => {
+    expect(permissions([newConnection(expenses.key)]).map((p) => p.action)).toEqual(["read"]);
+    const said = (c: Connection) => permissions([c]).map((p) => `${p.action}:${p.mode}`);
+    expect(said(toExpenses({ update: { mode: "ask" }, remove: { mode: "yes" } }))).toEqual([
+      "read:yes",
+      "update:ask",
+      "remove:yes",
+    ]);
+    expect(said(toExpenses({ create: { mode: "yes" }, remove: { mode: "ask" } }))).toEqual([
+      "read:yes",
+      "create:yes",
+      "remove:ask",
+    ]);
+  });
   it.todo(
     "AU-178 · the chip and the sentence of a connection say what it can save: «Solo lee», «Lee y modifica», «Lee, crea y modifica», «· pregunta antes», from `permissions` and the words of `i18n.ts`",
   );
-  it.todo(
-    "AU-179 · `connectionUses` says of each write action allowed whether the code uses it, and lists one used and not allowed: «Sí · lo usa», «Preguntar · sin usar», and the problem for the third; one allowed and unused is not a problem",
-  );
+  it("AU-179 · `connectionUses` says of each write action allowed whether the code uses it, and lists one used and not allowed: «Sí · lo usa», «Preguntar · sin usar», and the problem for the third; one allowed and unused is not a problem", () => {
+    const source = [
+      "$col('Gastos').create({ importe: 1 })",
+      "$col('Gastos').update('r_1', { importe: 2 })",
+      "$col('Gastos').update('r_2', { importe: 3 })",
+      "$col('Categorías').find()",
+      "return []",
+    ].join("\n");
+    const connections = [
+      toExpenses({ update: { mode: "yes" }, remove: { mode: "ask" } }),
+      newConnection(categories.key),
+    ];
+    const uses = connectionUses(connections, readWrites(source, "code"), named);
+    expect(
+      uses.map((u) => [u.collection, u.action, u.allowed, u.used, u.at.map((s) => s.line)]),
+    ).toEqual([
+      [expenses.key, "create", false, true, [1]],
+      [expenses.key, "update", "yes", true, [2, 3]],
+      [expenses.key, "remove", "ask", false, []],
+    ]);
+    // The one used and not allowed is the problem; the one allowed and unused is none.
+    const { a, step } = withCode(source, connections);
+    expect(
+      ofStep(validate(a, ctx), step).map((p) => [p.code, p.detail?.action, p.detail?.line]),
+    ).toEqual([["code.write.notAllowed", "create", 1]]);
+    expect(connectionUses([newConnection(notes.key)], readWrites(source, "code"), named)).toEqual(
+      [],
+    );
+  });
 });
 
 describe("what the person sees", () => {
@@ -145,20 +331,109 @@ describe("what the person sees", () => {
 });
 
 describe("the analysis binds", () => {
-  it.todo(
-    "AU-183 · `readWrites` finds every call that asks to save wherever it sits (an `if` never taken, a loop, a function never called) and `grantsOf` gives one pair per collection and action",
-  );
-  it.todo(
-    "AU-183 · only `$col('Nombre').método(…)` validates, for reading too: `const g = $col('Gastos')`, passing it, returning it, `$col('Gastos')[accion](…)` and a method `$col` does not have are `code.colUse` with the fix",
-  );
+  it("AU-183 · `readWrites` finds every call that asks to save wherever it sits (an `if` never taken, a loop, a function never called) and `grantsOf` gives one pair per collection and action", () => {
+    const source = [
+      "if (false) $col('Gastos').remove('r_1')",
+      "while ($json.n > 0) { $col('Gastos').update('r_2', { importe: 1 }); break }",
+      "function nunca() { return $col('Notas').create({ texto: 'x' }) }",
+      "const flecha = () => $col('Gastos').update('r_3', { importe: 2 })",
+      "try { throw 1 } catch { $col('Categorías').create({ nombre: 'y' }) }",
+      "[1].map(() => $col('Gastos')?.remove('r_4'))",
+      "$col('Nadie').create({})",
+      "return []",
+    ].join("\n");
+    const reading = readWrites(source, "code");
+    expect(reading.problems).toEqual([]);
+    expect(reading.writes.map((w) => `${w.name}.${w.action}@${w.at.line}`)).toEqual([
+      "Gastos.remove@1",
+      "Gastos.update@2",
+      "Notas.create@3",
+      "Gastos.update@4",
+      "Categorías.create@5",
+      "Gastos.remove@6",
+      "Nadie.create@7",
+    ]);
+    // One pair per collection and action, by its key; a name no collection has gives none (it is
+    // `code.unknownCollection` already).
+    expect(grantsOf(reading, named)).toEqual([
+      { collection: expenses.key, action: "remove" },
+      { collection: expenses.key, action: "update" },
+      { collection: notes.key, action: "create" },
+      { collection: categories.key, action: "create" },
+    ]);
+    expect(grantsOf(readWrites("return $col('Gastos').find()", "code"), named)).toEqual([]);
+  });
+  it("AU-183 · only `$col('Nombre').método(…)` validates, for reading too: `const g = $col('Gastos')`, passing it, returning it, `$col('Gastos')[accion](…)` and a method `$col` does not have are `code.colUse` with the fix", () => {
+    const forms = [
+      ["const g = $col('Gastos'); g.update('r_1', { importe: 1 })", "kept", undefined],
+      ["const g = $col('Gastos'); return g.find()", "kept", undefined],
+      ["guardar($col('Gastos'))", "kept", undefined],
+      ["return $col('Gastos')", "kept", undefined],
+      ["const { update } = $col('Gastos')", "kept", undefined],
+      ["(0, $col('Gastos')).remove('r_1')", "kept", undefined],
+      ["const u = $col('Gastos').update; u('r_1', {})", "kept", "update"],
+      ["$col('Gastos').update.call(null, 'r_1', {})", "kept", "update"],
+      ["$col('Gastos')[accion]('r_1')", "computed", undefined],
+      ["$col('Gastos')['update']('r_1', {})", "computed", undefined],
+      ["$col('Gastos').delete('r_1')", "unknown", "delete"],
+      ["$col('Gastos').constructor", "unknown", "constructor"],
+    ] as const;
+    const connected = [
+      toExpenses({ create: { mode: "ask" }, update: { mode: "ask" }, remove: { mode: "ask" } }),
+    ];
+    for (const [line, why, method] of forms) {
+      const source = `${line}\nreturn []`;
+      const reading = readWrites(source, "code");
+      expect(reading.writes, line).toEqual([]);
+      expect(reading.problems, line).toMatchObject([
+        { code: "code.colUse", severity: "error", detail: { why, name: "Gastos", line: 1 } },
+      ]);
+      expect(reading.problems[0]?.detail?.method, line).toBe(method);
+      const { a, step } = withCode(source, connected);
+      const problems = ofStep(validate(a, ctx), step).filter((p) => p.code === "code.colUse");
+      expect(problems, line).toMatchObject([{ param: "source", detail: { why, name: "Gastos" } }]);
+      expect(canRun(problems), line).toBe(false);
+    }
+    // The fix is the direct form, which validates.
+    const { a, step } = withCode(
+      "$col('Gastos').update('r_1', { importe: 1 })\nreturn $col('Gastos').find()",
+      connected,
+    );
+    expect(ofStep(validate(a, ctx), step)).toEqual([]);
+  });
   it.todo(
     "AU-183 · `$col` reached any other way (`globalThis['$c' + 'ol']`, `this`, `eval`, `Function`, a getter, a `Proxy`) gives no method the grants do not have: in the box, `$col` of a collection has only the write methods granted",
   );
   it.todo(
     "AU-183 · a request the analysis did not see fails the step with `code.write.unseen` and saves nothing, even when the box's answer is forged to carry it; the server reads the grants from the code as saved at every run, never from the box or a browser",
   );
+  it("AU-184 · an expression never saves: `{{ $col('Gastos').update(…) }}` is `code.readInExpression`, to read or to save, and the analysis gives it no request", () => {
+    for (const expr of [
+      "$col('Gastos').update('r_1', { importe: 1 })",
+      "$col('Gastos').create({ importe: 1 })",
+      "$col('Gastos').remove('r_1')",
+      "$col('Gastos').count()",
+      "$col('Gastos')",
+    ]) {
+      expect(codes(readCode(expr, "expression").problems), expr).toEqual(["code.readInExpression"]);
+      expect(readWrites(expr, "expression"), expr).toEqual({ writes: [], problems: [] });
+    }
+    const s = sketch(5)
+      .step("Inicio", "manual", { fields: [] })
+      .step("Buscar", "collection", { collection: expenses.key, action: "find" })
+      .step("Editar", "edit", {
+        fields: [
+          { field: "nuevo", value: { expr: "{{ $col('Gastos').update('r_1', { importe: 1 }) }}" } },
+        ],
+      })
+      .arrow("Inicio", "Buscar")
+      .arrow("Buscar", "Editar");
+    const problems = validate(s.build(), ctx).filter((p) => p.step === s.id("Editar"));
+    expect(codes(problems)).toEqual(["code.readInExpression"]);
+    expect(canRun(problems)).toBe(false);
+  });
   it.todo(
-    "AU-184 · an expression never saves: `{{ $col('Gastos').update(…) }}` is `code.readInExpression`, and an evaluation of expressions whose answer carries a request fails the step with `code.write.unseen` (`expression`)",
+    "AU-184 · an evaluation of expressions whose answer carries a request fails the step with `code.write.unseen` (`expression`) and saves nothing",
   );
   it.todo(
     "AU-185 · a code's write is a change of its step: it carries the run, the version and the step, and its label (AU-169), so a value from outside is proposed (P4) and stored as from outside (AU-170)",

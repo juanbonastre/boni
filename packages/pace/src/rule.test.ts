@@ -22,13 +22,6 @@ const LEFT: Record<string, string> = {
     "the canvas session converts them in its closing PR of F14b (G)",
   "apps/boni-web/src/automations/words.test.ts":
     "the canvas session converts them in its closing PR of F14b (G)",
-  "apps/sandbox/test/cpu.test-util.ts": "Automatizaciones (task 127): its session converts it",
-  "apps/sandbox/test/evaluate.test.ts": "Automatizaciones (task 127): its session converts it",
-  "apps/server/src/automations/automations.test.ts":
-    "Automatizaciones (tasks 126, 127): its session converts it",
-  "apps/server/src/cpu.test-util.ts":
-    "only re-exports @boni/pace's cpu() for automations.test.ts, until it is converted",
-  "packages/automations/src/engine.test.ts": "Automatizaciones (task 127): its session converts it",
   "e2e-boni/automations.spec.ts": "Automatizaciones (task 126): its session converts it",
   "scripts/queue.test.mjs":
     "the queue's own waits, bounded by their limit or twenty free runs measured the same way (T-08, task 116)",

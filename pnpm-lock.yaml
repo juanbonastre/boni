@@ -313,6 +313,9 @@ importers:
       '@boni/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
+      '@boni/pace':
+        specifier: workspace:*
+        version: link:../../packages/pace
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -412,6 +415,9 @@ importers:
         specifier: 8.19.0
         version: 8.19.0
     devDependencies:
+      '@boni/pace':
+        specifier: workspace:*
+        version: link:../pace
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2

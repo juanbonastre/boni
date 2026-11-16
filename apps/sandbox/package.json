@@ -20,6 +20,7 @@
   "devDependencies": {
     "@boni/automations": "workspace:*",
     "@boni/calendar": "workspace:*",
+    "@boni/pace": "workspace:*",
     "@types/node": "24.19.2",
     "vitest": "5.0.4"
   }

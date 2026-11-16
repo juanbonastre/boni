@@ -17,6 +17,7 @@ import {
   toLocal,
   weekday,
 } from "@boni/calendar";
+import { cpu, under } from "@boni/pace";
 import {
   EVAL_DEFAULT_LIMITS,
   EVAL_MAX_LIMITS,
@@ -30,7 +31,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { evaluateCall, readKey } from "../src/evaluate.ts";
 import { type Box, startBox } from "../src/server.ts";
 import { call } from "./call.ts";
-import { cpu } from "./cpu.test-util.ts";
 import {
   categoriesLike,
   dateNames,
@@ -1090,10 +1090,10 @@ return $json.i;`;
     };
     // Measured 2026-11-16 on the laptop, in CPU ms: about 60, 80, 75 and 120 (§6, risk 4; the PR of E1). The bounds
     // are several times that, so a loaded machine passes and a slower path does not.
-    expect(times.expression).toBeLessThan(1_000);
-    expect(times.perRow).toBeLessThan(1_000);
-    expect(times.all).toBeLessThan(800);
-    expect(times.reading).toBeLessThan(1_000);
+    under(times.expression, 1_000, "cpu", "3,000 expressions in batches");
+    under(times.perRow, 1_000, "cpu", "a «Código» once per row over 3,000 rows");
+    under(times.all, 800, "cpu", "a «Código» once over 3,000 rows");
+    under(times.reading, 1_000, "cpu", "a «Código» reading 3,000 rows");
   }, 120_000);
 });
 

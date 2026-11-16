@@ -24,6 +24,7 @@ import { type Connection, newConnection } from "./connections.ts";
 import type { Gate, PolicyCall } from "./effects.ts";
 import { CLOSED, ERROR_FIELD, type Execution, type RunDeps, run } from "./engine.ts";
 import { ACTION, type Automation, MAIN, OUT, type Step } from "./format.ts";
+import { readCode } from "./javascript.ts";
 import { keep, runTest, stepPrints, type TestExecution } from "./partial.ts";
 import { preview } from "./preview.ts";
 import type { Cell, Row } from "./rows.ts";
@@ -328,7 +329,12 @@ describe("«Código» as a step", () => {
   });
 
   it("AU-32 · nothing code can call writes: `evaluate` never asks the gate for a write, whatever the box answers, and a read the box asks for with an operation that is not find, get, count or sum is `code.read.query`", async () => {
-    const source = "return $col('Pedidos').insert({})";
+    // A method `$col` does not have does not validate (AU-183): the code is refused before it runs.
+    expect(readCode("return $col('Pedidos').insert({})", "code").problems).toMatchObject([
+      { code: "code.colUse", detail: { why: "unknown", method: "insert" } },
+    ]);
+    // So the box's answer is forged: the code reads, and the box asks for an operation it never wrote.
+    const source = "return $col('Pedidos').find()";
     const box = fakeBox({
       [source]: ({ job }) =>
         "k" in job.reads ? [] : ask("k", { collection: "Pedidos", op: "insert" as "find" }),
