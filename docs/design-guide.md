@@ -1286,6 +1286,29 @@ contraseña ni un código aquí» under a question.
   says «Sin probar: prueba antes «…»»; a failure says its line and message («El código falló en la línea 1: …»), and
   an expression too long says its length and the limit before any test, all in `--bad` and as plain text. Typing
   `{{` in a fixed text makes it an expression, the caret where it was.
+- **«Código»** (F14c P2, `AutomationCode.tsx`, `CodeEditor.tsx`, `automations/code.ts`; AU-30 to AU-36): in «Añadir
+  paso» under «Transformar» with the `Braces` icon (and found by «código»), born named «Código». Its view: «Se
+  ejecuta» as two pills side by side, «Una vez con todas las filas» first and on by default, «Una vez por fila»
+  (radios; the one on in `--accent`); then the code, a CodeMirror 6 editor loaded the first time one opens (an empty
+  120 px box while it loads), from 120 to 420 px high and then scrolling, in the monospace font with 20 px lines and
+  line numbers in a `--surface` gutter, its colours the app's own (`--bg` and `--text`, the selection in
+  `--accent-soft`, `--line-strong` for its border, a 2 px `--accent` outline when focused), with
+  `return $input.all();` as its hint. What it completes is the core's `completions`: the steps before by name inside
+  `$('`, the connected collections inside `$col('`, the fields after `$json.`, `$input.first().` and
+  `$('Paso').first().`, each written by its key and shown by its name. Each problem of validation with a place is
+  underlined where it is (an error in `--bad`, a warning in `--warn`) with its words on hover; under the editor in
+  12 px `--muted` «1.234 de 20.000 caracteres», and below it what has no place (too long) in `--bad`. A collection
+  cited and not connected: a notice «Conecta «Categorías» a este paso» with «Conectar» (small button), once per
+  collection; it connects it to read only. While the code is empty, or has an error, «Probar paso» cannot be pressed
+  and says why in `--muted` («Escribe el código para probarlo», «Corrige lo marcado en el código para probarlo»); a
+  warning never stops it. In the ENTRADA of a «Código» each field's header says its name and its key, «Importe · importe» (the one
+  place outside an expression where a key is seen). Keyboard: Tab indents, Escape first
+  closes the completion list and stays in the editor (the view's Escape goes on only when the editor did not use
+  it). Under the SALIDA, «Consola», a `<details>` folded while empty («nada escrito») and open when something was
+  written: up to 240 px of lines in the monospace font at 12 px, each as plain text with «línea 7» and, per row,
+  «fila 3» at its right in `--muted`, a warning in `--warn` and an error in `--bad`, and «y 340 líneas más» when the
+  box cut them. A failure says its line and message under the output and marks that line in the editor. On the
+  phone, the editor is read only (AU-74).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

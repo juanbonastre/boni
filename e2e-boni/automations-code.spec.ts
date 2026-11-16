@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
-import { ALL_DONE, TESTED, testOf } from "./automation-data.ts";
+import { ALL_DONE, books, TESTED, testOf } from "./automation-data.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -231,19 +231,433 @@ test.describe("an expression with JavaScript", () => {
   test.fixme("AU-25 · a field dragged into JavaScript is written by its key (`$json.precio`), the entry and the completion show its name («Precio»), and nowhere outside an expression or a «Código» is a key read", async () => {});
 });
 
+/** A «Código» that reads the books it receives and writes a line per book to «Consola» (AU-30, AU-33). */
+const SOURCE = [
+  "const out = [];",
+  "for (const fila of $input.all()) {",
+  "  console.log('fila', fila.json.titulo);",
+  "  out.push({ titulo: fila.json.titulo, total: fila.json.paginas * 2 });",
+  "}",
+  "return out;",
+].join("\n");
+/**
+ * «Calcular con código»: the trigger, «Buscar filas en Libros», a «Código» with `source` and `connections`, and a
+ * «Limitar» after it.
+ */
+const coded = (id: string, source: string = SOURCE, connections?: unknown[]) => ({
+  id,
+  name: "Calcular con código",
+  updated: 1761990000000,
+  steps: [
+    TESTED.steps[0],
+    TESTED.steps[1],
+    {
+      id: "s_01jcodigo",
+      name: "Código",
+      type: "code",
+      params: { source },
+      ...(connections ? { connections } : {}),
+    },
+    { id: "s_01jlimitar", name: "Limitar", type: "limit", params: { count: 10 } },
+  ],
+  arrows: [
+    { from: { step: "s_inicio", output: "main" }, to: { step: "s_01jbuscar", input: "main" } },
+    { from: { step: "s_01jbuscar", output: "main" }, to: { step: "s_01jcodigo", input: "main" } },
+    { from: { step: "s_01jcodigo", output: "main" }, to: { step: "s_01jlimitar", input: "main" } },
+  ],
+  places: [
+    { step: "s_inicio", x: 0, y: 0 },
+    { step: "s_01jbuscar", x: 300, y: 0 },
+    { step: "s_01jcodigo", x: 600, y: 0 },
+    { step: "s_01jlimitar", x: 900, y: 0 },
+  ],
+});
+const totals = books(128).map((b) => ({
+  json: { titulo: b.json.titulo, total: b.json.paginas * 2 },
+  label: {},
+}));
+/** Its test: 128 books in, 128 rows out, and what the code wrote, with HTML and a link in it (A-01). */
+const CODE_DONE = (code: Record<string, unknown> = {}) => ({
+  s_inicio: ALL_DONE.s_inicio,
+  s_01jbuscar: ALL_DONE.s_01jbuscar,
+  s_01jcodigo: {
+    rows: { "in:main": books(128), "out:main": totals },
+    ms: 40,
+    console: {
+      lines: [
+        { level: "log", text: "fila <b>Rayuela</b> [aquí](https://ejemplo.example.com)", line: 3 },
+        { level: "warn", text: "fila Libro 2", line: 3, row: 1 },
+      ],
+      dropped: 340,
+    },
+    ...code,
+  },
+  s_01jlimitar: { rows: { "in:main": totals, "out:main": totals.slice(0, 10) }, ms: 5 },
+});
+/** A test of the «Código» that failed with `why` (a `CodeFailure`). */
+const failedWith = (why: Record<string, unknown>) =>
+  CODE_DONE({
+    state: "failed",
+    rows: { "in:main": books(128) },
+    out: { main: 0 },
+    console: undefined,
+    error: { message: "ignored", failure: { code: "other" }, why },
+  });
+const editorOf = (page: Page) => param(page, "source").locator(".cm-editor");
+const contentOf = (page: Page) => editorOf(page).locator(".cm-content");
+const options = (page: Page) => page.locator(".cm-tooltip-autocomplete li");
+/** The text of the editor, as CodeMirror holds it. */
+const sourceIn = (page: Page) =>
+  contentOf(page).evaluate((el) =>
+    [...el.querySelectorAll(".cm-line")].map((l) => l.textContent).join("\n"),
+  );
+/** The step's «Probar paso», in the view's head. */
+const testStep = (page: Page) =>
+  view(page).locator(".auto-view-test").getByRole("button", { name: "Probar paso" });
+/** «Calcular con código» opened, with its «Código» open. */
+async function openCode(page: Page, automation: unknown) {
+  await openApp(page, "/?still", { automations: [automation as never], agent: BEFORE() });
+  await openCanvas(page, "Calcular con código", 4);
+  await openStep(page, "s_01jcodigo");
+  await expect(editorOf(page)).toBeVisible();
+}
+/** The drafts the app saved of `id`, as the mock received them. */
+const drafts = (page: Page, id: string) =>
+  page.evaluate(
+    (st) =>
+      ((window as unknown as { __bodies?: string[] }).__bodies ?? [])
+        .filter((b) => b.startsWith(st))
+        .map(
+          (b) =>
+            JSON.parse(b.slice(st.length)).automation as {
+              steps: { id: string; connections?: unknown[] }[];
+            },
+        ),
+    `PUT api/agent/automations/${id}/draft `,
+  );
+/** Types at a person's pace and waits until no completion is open, so the Enter after it is a new line. */
+async function typeLine(page: Page, text: string) {
+  await page.keyboard.type(text, { delay: 60 });
+  await expect(options(page)).toHaveCount(0);
+  await page.keyboard.press("Enter");
+}
+
 test.describe("«Código»", () => {
-  test.fixme("AU-30 · «Código» is in «Añadir paso» under «Transformar»; opened, it shows «Se ejecuta» with «Una vez con todas las filas» chosen and «Una vez por fila», and the editor: no more than seven rows of «Parámetros»", async () => {});
-  test.fixme("AU-25 · in the view of a «Código» step each field of its input shows its key beside its name, and a field that the code made is seen in the steps after it by the name the code gave it (`total`)", async () => {});
-  test.fixme("AU-33 · after «Probar paso», «Consola» is a strip under the step's output, folded when it is empty, with each line and the line of the code that wrote it; with lines left out it says how many", async () => {});
-  test.fixme("AU-33 · code that throws marks its line in the editor and says the message as it is, as plain text: a message with HTML or a link is read letter by letter", async () => {});
-  test.fixme("AU-33 · what the code wrote to «Consola» is painted as plain text: a line with HTML, Markdown or a link is read letter by letter, and nothing in it can be clicked", async () => {});
-  test.fixme("AU-35 · a «Código» that passes a limit says which and the limit («Ha tardado más de 5 s», «Ha devuelto 12.000 filas; el máximo son 10.000») in the step, in the app's words", async () => {});
-  test.fixme("AU-35 · a «Código» that is too long says so with its limit before any test", async () => {});
-  test.fixme("AU-36 · the editor completes `$('` with the steps before this one, after a step its fields by name, and `$col('` with the collections connected; a step, a field or a collection that does not exist is underlined before any test, with what is wrong on hover and for a keyboard", async () => {});
-  test.fixme("AU-36 · the editor is the app's: its colours are the theme's in light and in dark, it is used whole with the keyboard (Tab leaves it after Escape), and it is not loaded until a «Código» or an expression is opened", async () => {});
-  test.fixme("AU-36 · what the editor underlines is what validation says, no more and no less: the problems the server gives for the same code are the marks, each at its place", async () => {});
-  test.fixme("AU-36 · a field the cited step's last test did not give is underlined as a warning and «Probar paso» still runs; a step or a collection that does not exist is an error and it does not", async () => {});
-  test.fixme("AU-31 · `$col('Libros')` with «Libros» not connected marks the step, cannot be tested, and says «Conecta «Libros» a este paso» with the button that connects it; pressed, the problem goes and the table has its row", async () => {});
+  test("AU-30 · «Código» is in «Añadir paso» under «Transformar»; opened, it shows «Se ejecuta» with «Una vez con todas las filas» chosen and «Una vez por fila», and the editor: no more than seven rows of «Parámetros»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+    await openCanvas(page, "Revisar pendientes", 7);
+    // The editor is not loaded until a «Código» is opened (AU-36).
+    const loaded = () =>
+      page.evaluate(() =>
+        performance.getEntriesByType("resource").some((r) => /CodeEditor/.test(r.name)),
+      );
+    expect(await loaded()).toBe(false);
+    await page.locator(".auto-add-top").click();
+    const transform = page
+      .locator(".auto-panel .auto-panel-section")
+      .filter({ has: page.getByRole("heading", { name: "Transformar filas" }) });
+    await expect(transform.locator(".auto-start-row").last()).toHaveText("Código");
+    await transform.locator(".auto-start-row").last().click();
+    await expect(view(page).getByRole("textbox", { name: "Nombre del paso" })).toHaveValue(
+      "Código",
+    );
+    const mode = param(page, "mode");
+    await expect(mode.getByRole("radio")).toHaveCount(2);
+    await expect(mode.getByRole("radio", { name: "Una vez con todas las filas" })).toBeChecked();
+    await mode.getByText("Una vez por fila").click();
+    await expect(mode.getByRole("radio", { name: "Una vez por fila" })).toBeChecked();
+    await expect(editorOf(page)).toBeVisible();
+    expect(await loaded()).toBe(true);
+    const rows = await view(page).locator(".auto-view-rows .auto-param").count();
+    expect(rows).toBeGreaterThanOrEqual(2);
+    expect(rows).toBeLessThanOrEqual(7);
+    // Empty, it cannot be tested yet, and says why.
+    await expect(testStep(page)).toBeDisabled();
+    await expect(view(page).locator(".auto-view-why")).toHaveText(
+      "Escribe el código para probarlo",
+    );
+  });
+
+  test("AU-25 · in the view of a «Código» step each field of its input shows its key beside its name, and a field that the code made is seen in the steps after it by the name the code gave it (`total`)", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c01");
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, a));
+    const input = view(page).getByRole("region", { name: "Entrada" });
+    await expect(input).toContainText("Título · titulo");
+    await expect(input).toContainText("Páginas · paginas");
+    // The step after it: the field the code made, by the name it gave it, and no key beside a name.
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    await openStep(page, "s_01jlimitar");
+    const after = view(page).getByRole("region", { name: "Entrada" });
+    await expect(after).toContainText("total");
+    await expect(after).not.toContainText("· titulo");
+  });
+
+  test("AU-33 · after «Probar paso», «Consola» is a strip under the step's output, folded when it is empty, with each line and the line of the code that wrote it; with lines left out it says how many", async ({
+    page,
+  }) => {
+    await openCode(page, testOf(CODE_DONE(), {}, coded("a_01jx8x0t2v4x6z8b0d2f4h6c02")));
+    const strip = view(page).getByRole("region", { name: "Salida" }).locator(".auto-console");
+    // Not tested yet: folded, nothing written.
+    await expect(strip).not.toHaveAttribute("open");
+    await expect(strip.locator("summary")).toContainText("Consola");
+    await expect(strip.locator("summary")).toContainText("nada escrito");
+    await testStep(page).click();
+    await expect(strip).toHaveAttribute("open");
+    const lines = strip.locator(".auto-console-line");
+    await expect(lines).toHaveCount(2);
+    await expect(lines.first().locator(".auto-console-where")).toHaveText("línea 3");
+    await expect(lines.nth(1)).toHaveClass(/warn/);
+    // A line written for a row says which, counted from 1.
+    await expect(lines.nth(1).locator(".auto-console-where")).toHaveText("línea 3 · fila 2");
+    await expect(strip.locator(".auto-console-more")).toHaveText("y 340 líneas más");
+  });
+
+  test("AU-33 · code that throws marks its line in the editor and says the message as it is, as plain text: a message with HTML or a link is read letter by letter", async ({
+    page,
+  }) => {
+    const message = "<i>sin</i> <a href='https://ejemplo.example.com'>título</a>";
+    const failed = failedWith({
+      code: "code.threw",
+      param: "source",
+      detail: { line: 4, message },
+    });
+    await openCode(page, testOf(failed, { kept: FIVE_MIN }, coded("a_01jx8x0t2v4x6z8b0d2f4h6c04")));
+    const output = view(page).getByRole("region", { name: "Salida" });
+    await expect(output).toContainText(`El código falló en la línea 4: ${message}`);
+    await expect(output.locator("i, a[href]")).toHaveCount(0);
+    // Its line, the fourth, is marked; the one before it is not.
+    const lines = contentOf(page).locator(".cm-line");
+    await expect(lines.nth(3).locator(".cm-lintRange-error")).toHaveCount(1);
+    await expect(lines.nth(2).locator(".cm-lintRange-error")).toHaveCount(0);
+  });
+
+  test("AU-33 · what the code wrote to «Consola» is painted as plain text: a line with HTML, Markdown or a link is read letter by letter, and nothing in it can be clicked", async ({
+    page,
+  }) => {
+    await openCode(
+      page,
+      testOf(CODE_DONE(), { kept: FIVE_MIN }, coded("a_01jx8x0t2v4x6z8b0d2f4h6c05")),
+    );
+    const strip = view(page).locator(".auto-console");
+    await expect(strip.locator(".auto-console-text").first()).toHaveText(
+      "fila <b>Rayuela</b> [aquí](https://ejemplo.example.com)",
+    );
+    await expect(strip.locator("ol b, ol a, ol button")).toHaveCount(0);
+  });
+
+  test("AU-35 · a «Código» that passes a limit says which and the limit in the step, in the app's words", async ({
+    page,
+  }) => {
+    const failed = failedWith({
+      code: "code.limit",
+      param: "source",
+      detail: { limit: "ms", max: 5000 },
+    });
+    await openCode(page, testOf(failed, { kept: FIVE_MIN }, coded("a_01jx8x0t2v4x6z8b0d2f4h6c06")));
+    await expect(view(page).getByRole("region", { name: "Salida" })).toContainText(
+      "Se pasó del tope de tiempo de una llamada: 5 s",
+    );
+  });
+
+  test("AU-35 · a «Código» that is too long says so with its limit before any test", async ({
+    page,
+  }) => {
+    const long = `return [];\n${"// una nota que no hace nada\n".repeat(720)}`;
+    await openCode(page, testOf(CODE_DONE(), {}, coded("a_01jx8x0t2v4x6z8b0d2f4h6c07", long)));
+    await expect(param(page, "source").locator(".auto-code-problem")).toHaveText(
+      `Es demasiado largo: ${long.length.toLocaleString("es-ES")} caracteres, y caben 20.000`,
+    );
+    await expect(testStep(page)).toBeDisabled();
+    const tests = await page.evaluate(
+      () => (window as unknown as { __autoTests?: string[] }).__autoTests ?? [],
+    );
+    expect(tests).toEqual([]);
+  });
+
+  test("AU-36 · the editor completes `$('` with the steps before this one, after a step its fields by name, and `$col('` with the collections connected; a step, a field or a collection that does not exist is underlined before any test, with what is wrong on hover and for a keyboard", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c08", "return [];", [
+      { collection: "libros", read: {}, create: false, update: false, remove: false },
+    ]);
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, a));
+    await contentOf(page).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+    // `$('`: the steps before this one, by name; one chosen is written whole.
+    await page.keyboard.type("$('", { delay: 60 });
+    await expect(options(page)).toHaveText(["Disparado por el usuario", "Buscar filas en Libros"]);
+    // Chosen with the keyboard at a person's pace: CodeMirror leaves a list's keys to the editor for its first 75 ms
+    // (`interactionDelay`), so an ArrowDown sooner than a person's would move the caret and close the list.
+    await page.waitForTimeout(250);
+    await page.keyboard.press("ArrowDown");
+    await expect(options(page).nth(1)).toHaveAttribute("aria-selected", "true");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sourceIn(page)).toContain("$('Buscar filas en Libros')");
+    await typeLine(page, "').first();");
+    // A row of its input: the fields that reach it, by key with their names beside.
+    await page.keyboard.type("$input.first().", { delay: 60 });
+    await expect(options(page).filter({ hasText: "titulo" })).toContainText("Título");
+    await typeLine(page, "titulo;");
+    // `$col('`: the collections it is connected to.
+    await page.keyboard.type("$col('", { delay: 60 });
+    await expect(options(page)).toHaveText(["Libros"]);
+    // A collection it is not connected to and a step that does not exist: underlined before any test.
+    await typeLine(page, "Tareas').count();");
+    await page.keyboard.type("$('Nada').first();", { delay: 40 });
+    await expect.poll(() => sourceIn(page)).toContain("$('Buscar filas en Libros').first();");
+    const errors = contentOf(page).locator(".cm-lintRange-error");
+    await expect(errors).toHaveCount(2);
+    await errors.last().hover();
+    await expect(page.locator(".cm-tooltip-lint")).toContainText("Ningún paso se llama «Nada»");
+    // For a keyboard: CodeMirror's list of what is wrong, opened with Ctrl+Shift+M.
+    await contentOf(page).focus();
+    await page.keyboard.press("Control+Shift+M");
+    await expect(page.locator(".cm-panel-lint")).toContainText("Ningún paso se llama «Nada»");
+  });
+
+  test("AU-36 · the editor is the app's: its colours are the theme's in light and in dark, it is used whole with the keyboard (Tab leaves it after Escape), and it is not loaded until a «Código» or an expression is opened", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c09", "return [];");
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, a));
+    const seen: string[] = [];
+    for (const theme of ["dark", "light"]) {
+      // The theme as Settings › Apariencia sets it (theme.ts): the root's `data-theme`.
+      await page.evaluate((th) => {
+        document.documentElement.dataset.theme = th;
+      }, theme);
+      const [bg, own, text, ownText] = await editorOf(page).evaluate((el) => {
+        const root = getComputedStyle(document.documentElement);
+        const resolved = (v: string) => {
+          const probe = document.createElement("div");
+          probe.style.color = root.getPropertyValue(v);
+          document.body.append(probe);
+          const c = getComputedStyle(probe).color;
+          probe.remove();
+          return c;
+        };
+        const style = getComputedStyle(el);
+        return [style.backgroundColor, resolved("--bg"), style.color, resolved("--text")];
+      });
+      expect(bg, theme).toBe(own);
+      expect(text, theme).toBe(ownText);
+      seen.push(bg as string);
+    }
+    expect(seen[0]).not.toBe(seen[1]);
+    // The keyboard: Tab indents inside it; Escape and then Tab leave it.
+    await contentOf(page).click();
+    await page.keyboard.press("ControlOrMeta+Home");
+    await page.keyboard.press("Tab");
+    await expect.poll(() => sourceIn(page)).toBe("  return [];");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Tab");
+    const inside = await page.evaluate(() => !!document.activeElement?.closest(".cm-editor"));
+    expect(inside).toBe(false);
+    await expect(view(page)).toBeVisible();
+    // With the completion list open, Escape closes the list, and the editor and the view stay.
+    await contentOf(page).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("$input.", { delay: 60 });
+    await expect(options(page).first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(options(page)).toHaveCount(0);
+    expect(await page.evaluate(() => !!document.activeElement?.closest(".cm-editor"))).toBe(true);
+    await expect(view(page)).toBeVisible();
+  });
+
+  test("AU-36 · a field the cited step's last test did not give is underlined as a warning and «Probar paso» still runs; a step or a collection that does not exist is an error and it does not", async ({
+    page,
+  }) => {
+    const a = coded(
+      "a_01jx8x0t2v4x6z8b0d2f4h6c10",
+      "return [{ x: $('Buscar filas en Libros').first().nada }];",
+    );
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, a));
+    await expect(contentOf(page).locator(".cm-lintRange-warning")).toHaveCount(1);
+    await expect(contentOf(page).locator(".cm-lintRange-error")).toHaveCount(0);
+    await expect(testStep(page)).toBeEnabled();
+    // A step that does not exist: an error, and «Probar paso» waits.
+    await contentOf(page).click();
+    await page.keyboard.press("ControlOrMeta+End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("$('Nada').first();", { delay: 40 });
+    await expect(contentOf(page).locator(".cm-lintRange-error")).toHaveCount(1);
+    await expect(testStep(page)).toBeDisabled();
+    await expect(view(page).locator(".auto-view-why")).toHaveText(
+      "Corrige lo marcado en el código para probarlo",
+    );
+  });
+
+  test("AU-31 · `$col('Libros')` with «Libros» not connected marks the step, cannot be tested, and says «Conecta «Libros» a este paso» with the button that connects it; pressed, the problem goes", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c11", "return [{ n: $col('Libros').count() }];");
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, a));
+    const notice = param(page, "source").locator(".auto-code-connect");
+    await expect(notice).toContainText("Conecta «Libros» a este paso");
+    await expect(contentOf(page).locator(".cm-lintRange-error")).toHaveCount(1);
+    await expect(testStep(page)).toBeDisabled();
+    await notice.getByRole("button", { name: "Conectar" }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(contentOf(page).locator(".cm-lintRange-error")).toHaveCount(0);
+    await expect(testStep(page)).toBeEnabled();
+    // Saved with the draft: it reads «Libros», with no limits, and nothing more.
+    await expect
+      .poll(async () => {
+        const last = (await drafts(page, a.id)).at(-1);
+        return last?.steps.find((s) => s.id === "s_01jcodigo")?.connections ?? null;
+      })
+      .toEqual([{ collection: "libros", read: {}, create: false, update: false, remove: false }]);
+  });
+});
+
+test.describe("«Código» on the phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("AU-74 · on the phone a «Código» is there to read: its code is shown and cannot be changed, «Se ejecuta» cannot be changed, a collection not connected is said with no «Conectar», and there is no «Probar paso»", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    const source = "return [$col('Libros').count()];";
+    await openApp(page, "/?still", {
+      automations: [
+        testOf(CODE_DONE(), {}, coded("a_01jx8x0t2v4x6z8b0d2f4h6c09", source)) as never,
+      ],
+      agent: BEFORE(),
+    });
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText("Calcular con código", { exact: true }).first().tap();
+    await expect(page.locator(".auto-card")).toHaveCount(4);
+    await card(page, "s_01jcodigo").tap();
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jcodigo");
+    await expect(view(page)).toHaveClass(/\bphone\b/);
+    await expect(editorOf(page)).toBeVisible();
+    await expect.poll(() => sourceIn(page)).toBe(source);
+    await expect(contentOf(page)).toHaveAttribute("contenteditable", "false");
+    await expect(view(page).locator("[contenteditable=true]")).toHaveCount(0);
+    const modes = param(page, "mode").getByRole("radio");
+    await expect(modes).toHaveCount(2);
+    for (const m of await modes.all()) await expect(m).toBeDisabled();
+    await expect(param(page, "source").locator(".auto-code-connect")).toContainText(
+      "Conecta «Libros» a este paso",
+    );
+    await expect(view(page).getByRole("button", { name: "Conectar" })).toHaveCount(0);
+    await expect(view(page).getByRole("button", { name: "Probar paso" })).toHaveCount(0);
+    // Typing in it changes nothing, and no draft is saved.
+    await contentOf(page).tap();
+    await page.keyboard.type("x");
+    await expect.poll(() => sourceIn(page)).toBe(source);
+    expect(await drafts(page, "a_01jx8x0t2v4x6z8b0d2f4h6c09")).toEqual([]);
+  });
 });
 
 test.describe("connections", () => {

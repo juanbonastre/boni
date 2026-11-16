@@ -25,7 +25,7 @@ import {
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
-  stepType,
+  specOf,
   WRITE_ACTIONS,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
@@ -87,6 +87,8 @@ export const DO = {
   /** «‹ ›» under an expression: the row before and after the one it is worked out with (AU-23). */
   rowBefore: "auto.do.rowBefore",
   rowAfter: "auto.do.rowAfter",
+  /** «Conecta «Gastos» a este paso» (AU-31): connects the collection the code cites. */
+  connect: "auto.do.connect",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
@@ -136,7 +138,7 @@ export function catalogueKeys(): string[] {
  * an entry of one action («Buscar filas») by that action's and its type's.
  */
 export function entryNames(t: T, entry: { type: string; action?: string }): string[] {
-  const spec = stepType(entry.type);
+  const spec = specOf(entry.type);
   const own = t(KEY.step(entry.type));
   if (entry.action) return [t(KEY.action(entry.type, entry.action)), own];
   return spec && spec.actions.length > 1
@@ -288,7 +290,7 @@ export interface Namer {
 export function namer(t: T, collections: Readonly<Record<string, string>>): Namer {
   return {
     auto(step) {
-      const spec = stepType(step.type);
+      const spec = specOf(step.type);
       if (!spec) return step.type;
       const action = spec.actions.length > 1 ? actionOf(step) : undefined;
       const phrase = action ? t(KEY.action(spec.type, action.key)) : t(KEY.step(spec.type));
@@ -366,6 +368,27 @@ export function namedValues(
     out[k] = named;
   }
   return out ?? json;
+}
+/**
+ * A value worked out by the box (a preview, AU-23) with each option said by its name, as a row's are (AU-21): the box
+ * read the rows as they are kept, with ids, and what it gave is not tied to a field, so any text that is an option's
+ * id of a step before is said by that option's name, also inside a list or an object.
+ */
+export function namedCell(value: Cell, choices: Readonly<Record<string, Choices>>): Cell {
+  const names = new Map<string, string>();
+  for (const byField of Object.values(choices))
+    for (const opts of Object.values(byField))
+      for (const [id, name] of Object.entries(opts)) names.set(id, name);
+  if (!names.size) return value;
+  const walk = (v: Cell): Cell =>
+    typeof v === "string"
+      ? (names.get(v) ?? v)
+      : Array.isArray(v)
+        ? v.map(walk)
+        : v && typeof v === "object"
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]))
+          : v;
+  return walk(value);
 }
 export const namedRow = (r: RowView, choices: Choices | undefined): RowView =>
   choices

@@ -32,13 +32,14 @@ import {
   toExpression,
   toFixed,
 } from "../automations/cite.ts";
-import type { ExprPreview, RowView, Sample } from "../automations/client.ts";
+import { type ExprPreview, previewFits, type RowView, type Sample } from "../automations/client.ts";
 import { type ConditionField, fieldsOutOf, stepsBefore } from "../automations/panel.ts";
 import {
   type Choices,
   choiceNames,
   DO,
   fieldNames,
+  namedCell,
   namedRow,
   type SaidNames,
   said,
@@ -398,12 +399,14 @@ function Preview({ value, param }: { value: { expr: string }; param?: string }) 
   const ask = param === undefined ? undefined : view.ask;
   const code = hasCode(expr);
   const long = expr.length > CODE_LIMITS.expressionChars;
+  // Within the limit but too big once escaped for a request (AU-23): said so too, and not asked.
+  const big = !long && code && !previewFits(expr);
   const remote = !!ask && (code || row > 0);
   // The view makes `ask` again on each render: the latest is called, and only a new text, row or test asks again.
   const latest = useRef(ask);
   latest.current = ask;
   useEffect(() => {
-    if (!remote || long || param === undefined) return;
+    if (!remote || long || big || param === undefined) return;
     const n = ++asked.current;
     const timer = setTimeout(() => {
       void latest.current?.(param, row, expr).then((p) => {
@@ -411,7 +414,7 @@ function Preview({ value, param }: { value: { expr: string }; param?: string }) 
       });
     }, PREVIEW_WAIT);
     return () => clearTimeout(timer);
-  }, [remote, long, param, row, expr, view.sample]);
+  }, [remote, long, big, param, row, expr, view.sample]);
 
   const t = view.t;
   const of = (n: number) => n.toLocaleString(view.locale);
@@ -471,6 +474,7 @@ function Preview({ value, param }: { value: { expr: string }; param?: string }) 
       "auto-preview failed",
       t("auto.preview.long", { got: of(expr.length), max: of(CODE_LIMITS.expressionChars) }),
     );
+  if (big) return line("auto-preview failed", t("auto.preview.big", { got: of(expr.length) }));
   if (!answer) return null;
   const pending = answer.expr !== expr || answer.row !== row;
   const p = answer.p;
@@ -495,7 +499,11 @@ function Preview({ value, param }: { value: { expr: string }; param?: string }) 
     );
   return line(
     cls(false),
-    t("auto.preview", { value: cellText(t, p.value), row: p.row + 1, of: of(p.of) }),
+    t("auto.preview", {
+      value: cellText(t, namedCell(p.value, view.choices)),
+      row: p.row + 1,
+      of: of(p.of),
+    }),
     p.row,
     p.of,
   );

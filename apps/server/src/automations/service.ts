@@ -90,6 +90,8 @@ export interface StepTestView {
   error?: StepError;
   /** Its kept test no longer stands for the step as it is (AU-92). */
   stale: boolean;
+  /** «Consola» (AU-33): what its JavaScript wrote, the code's own text, for the app to paint as plain text. */
+  console?: KeptRecord["console"];
 }
 
 /** What the editor opens with. */
@@ -246,6 +248,7 @@ function views(
       failed: k.failed,
       wouldWrite: k.wouldWrite,
       ...(k.error ? { error: k.error } : {}),
+      ...(k.console ? { console: k.console } : {}),
       stale: prints[step] !== undefined && prints[step] !== t.print,
     };
   }

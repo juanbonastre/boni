@@ -28,6 +28,8 @@ export interface AutoTestSpec {
   wouldWrite?: number;
   error?: Record<string, unknown>;
   rows?: Record<string, Record<string, unknown>[] | { count: number; fields: number }>;
+  /** «Consola» of a «Código» (AU-33), as the server keeps it with the step's test. */
+  console?: { lines: Record<string, unknown>[]; dropped: number };
 }
 
 export interface Options {
@@ -954,6 +956,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         failed: 0,
         wouldWrite: spec.wouldWrite ?? 0,
         ...(spec.error ? { error: spec.error } : {}),
+        ...(spec.console ? { console: spec.console } : {}),
         stale: false,
       });
       const stepsBefore = (a: AutoHere, step: string) => {

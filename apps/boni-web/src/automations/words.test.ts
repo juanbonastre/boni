@@ -21,6 +21,7 @@ import {
   choiceNames,
   DO,
   fieldNames,
+  namedCell,
   namedRow,
   namer,
   REASONS,
@@ -276,6 +277,17 @@ describe("the words of «Automatizaciones»", () => {
     // A table names a page of 50 rows when it comes: a frame (16 ms) a page is the bound. Measured here (2026-11-16,
     // its CPU time, load 5 to 7 on 8 cores): 0.10 to 0.12 ms a page.
     under(ms / (rows.length / 50), 16, "cpu", "naming a page of 50 rows");
+  });
+  it("AU-23 AU-21 · a value the box worked out says each option by its name, at any row and inside a list or an object", () => {
+    const choices = {
+      s_01jbuscar: { estado: { opt_01jpend: "Pendiente", opt_01jleido: "Leído" } },
+      s_01jotro: { temas: { opt_01jnovela: "Novela" } },
+    };
+    expect(namedCell("opt_01jleido", choices)).toBe("Leído");
+    expect(namedCell(["opt_01jnovela", "otro", 3], choices)).toEqual(["Novela", "otro", 3]);
+    expect(namedCell({ a: "opt_01jpend", b: null }, choices)).toEqual({ a: "Pendiente", b: null });
+    expect(namedCell(7, choices)).toBe(7);
+    expect(namedCell("opt_01jleido", {})).toBe("opt_01jleido");
   });
 });
 
