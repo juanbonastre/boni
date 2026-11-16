@@ -175,6 +175,11 @@ async function openAutomation(page: Page, name: string, width = 1440, height = 9
     automations: [testOf(ALL_DONE), ONLY_TRIGGER],
     agent: AUTOMATION_AGENT,
   });
+  // The start page shown first, as `open` waits for it: otherwise whether it reached «Recientes» before the click on
+  // «Automatizaciones» was a race, and the sidebar of the capture changed between runs (CI, 2026-11-16).
+  await expect(page.locator(".sidebar").getByRole("list", { name: "Recientes" })).toHaveText(
+    "Gastos",
+  );
   await page
     .locator(".sidebar")
     .getByRole("button", { name: "Automatizaciones", exact: true })
