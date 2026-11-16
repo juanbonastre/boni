@@ -14,13 +14,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { coreTools, fakePlanner, plain, type Val } from "@boni/agent";
 import { label, type TypeDef } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import type { PageBlock } from "@boni/views";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { computeBlocks } from "./blocks.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { checkFlow, createFlow, saveUserFlow } from "./flows.ts";
@@ -579,6 +579,6 @@ describe("a page's chat (D-61)", () => {
     console.log(
       `A-15 page chat: its turn's chat and screen over ${made.length} movements, median ${median.toFixed(1)} ms`,
     );
-    expect(median).toBeLessThan(1500);
+    under(median, 1500, "cpu", "a turn of the chat, median");
   }, 120_000);
 });

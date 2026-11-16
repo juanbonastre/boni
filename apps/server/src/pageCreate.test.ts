@@ -5,10 +5,10 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { label, newId } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -166,7 +166,7 @@ describe("a new page created twice is one page (task 109, D-70)", () => {
     );
     // In the thread's CPU time (task 116: the server and fetch run on this thread), generous for a slower CI machine;
     // on the laptop both are a few ms.
-    expect(create).toBeLessThan(250);
-    expect(repeat).toBeLessThan(100);
+    under(create, 250, "cpu", "a page created");
+    under(repeat, 100, "cpu", "a page created again");
   }, 120_000);
 });

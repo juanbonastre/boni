@@ -8,11 +8,11 @@ import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { fakePlanner } from "@boni/agent";
 import { label, newId } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { MAX_UPLOAD_BYTES } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { createRow } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { DROP_FOLDER, dropName } from "./drops.ts";
@@ -220,7 +220,8 @@ describe("a file dropped on Boni's window (A-24)", () => {
     console.log(
       `drop among 3,000: ${Math.round(drop)} ms; twenty files' facts: ${Math.round(facts)} ms`,
     );
-    expect([drop < 300, facts < 50]).toEqual([true, true]);
+    under(drop, 300, "cpu", "a drop among 3,000");
+    under(facts, 50, "cpu", "twenty files' facts");
   }, 120_000);
 
   it("streams: 128 MB in and out with the server's memory growing by far less", async () => {

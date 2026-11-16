@@ -124,5 +124,8 @@ calls for five messages, context near a million; the cost was re-reading, not te
   IndexedDB stores `boni-calendar-server*`, the server's start log line and the Docker image tag.
 - Boni Android's `Net.kt` (`Paths.apiRequest`) and Boni desktop's `paths.cjs` allow the same paths: a new API the app
   uses goes into both.
+- A test that bounds time reads its clock from `@boni/pace` (`clock()`, `cpu()`) and checks the bound with
+  `under(ms, bound, kind)`, which widens it by how loaded the machine is right then (T-11); a package's vitest limits
+  come from its `vitest.config.ts` (`timeouts()`).
 - Evaluations with real models (`packages/agent/eval`) are run by hand with a budget, never in CI.
 - Biome lints and formats; React's hook-dependency lint is off on purpose (the calendar grid is an imperative engine).

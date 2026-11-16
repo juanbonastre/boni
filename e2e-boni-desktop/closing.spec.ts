@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { clock, under } from "@boni/pace";
 import {
   type Browser,
   chromium,
@@ -193,7 +194,7 @@ async function close(how: Close): Promise<number> {
     return 0;
   }
   const done = new Promise<void>((resolve) => a.process().once("exit", () => resolve()));
-  const from = Date.now();
+  const from = clock();
   if (how === "quit") void a.evaluate(({ app: e }) => e.quit()).catch(() => undefined);
   else if (how === "tray")
     // The tray's menu as Boni builds it (rebuilt when the page sends its labels), and its «Salir» clicked.
@@ -212,7 +213,7 @@ async function close(how: Close): Promise<number> {
       .catch(() => undefined);
   else a.process().kill(how === "sigint" ? "SIGINT" : "SIGTERM");
   await within(done, 20_000, `Boni ending (${how})`);
-  const took = Date.now() - from;
+  const took = clock() - from;
   app = await launch();
   return took;
 }
@@ -698,7 +699,7 @@ test("quitting with a write the server does not answer takes a second or so, and
     await w.keyboard.type(" sin respuesta");
     await w.waitForTimeout(800);
     const took = await close("quit");
-    expect(took, `quitting took ${took} ms`).toBeLessThan(3000);
+    under(took, 3000, "clock", "quitting");
     expect(unsentText()).toContain("Antes sin respuesta");
   } finally {
     (server as ChildProcess).kill("SIGCONT");

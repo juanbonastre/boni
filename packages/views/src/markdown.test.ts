@@ -1,5 +1,5 @@
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import {
   blocksToMarkdown,
   findPart,
@@ -312,7 +312,7 @@ describe("a note's text does not change by being read, nor where it was not edit
     expect(blocks.length).toBeGreaterThan(2000);
     expect(out.length).toBe(md.length + 1);
     // 2,000 blocks: read and written in about 40 to 70 ms on a laptop; with room for a slow machine.
-    expect(ms).toBeLessThan(500);
+    under(ms, 500, "cpu", "it");
   }, 120_000);
 
   it("a block whose text alone is edited keeps its marker, spacing and closing as written", () => {

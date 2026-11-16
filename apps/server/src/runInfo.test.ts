@@ -1,7 +1,7 @@
 import { label } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type RunRow, type UserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import { proposalsByRun, runInfo } from "./runInfo.ts";
 
 /** Invented mail and tasks (never real ones), as the journal and the log keep them. */
@@ -90,7 +90,7 @@ describe("what each run of the Registro was, and what came of it", () => {
     const counts = proposalsByRun(store);
     const ms = cpu() - t0;
     console.log(`proposals of 300 runs counted: ${ms.toFixed(1)} ms`);
-    expect(ms).toBeLessThan(100);
+    under(ms, 100, "cpu", "it");
     expect(counts.size).toBe(300);
     // The same the proposals themselves say.
     const slow = new Map<string, Record<string, number>>();

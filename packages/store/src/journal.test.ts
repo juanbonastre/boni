@@ -2,8 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { cpu, under } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import { CALLS_BY_STEP } from "./journal.ts";
 import { openUserStore } from "./store.ts";
 
@@ -54,7 +54,7 @@ describe("the journal's model calls by when (task 43)", () => {
       cost: 0.01,
     });
     expect(spend.reduce((n, r) => n + r.calls, 0)).toBe(300);
-    expect(ms).toBeLessThan(200);
+    under(ms, 200, "cpu", "it");
     store.close();
     cleanups.pop();
     // The plan: both queries served by the covering index (the rows, with their texts, are never read).

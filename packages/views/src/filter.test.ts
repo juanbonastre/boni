@@ -1,5 +1,5 @@
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import { filterErrors, matchesFilters } from "./filter.ts";
 
 const TYPES: Record<string, string> = {
@@ -157,6 +157,6 @@ describe("filters", () => {
     expect(kept).toBeGreaterThan(0);
     expect(kept).toBeLessThan(5000);
     // Measured at 2026-11-12 on the laptop: see the PR; the bound only catches a change of order.
-    expect(each).toBeLessThan(100);
+    under(each, 100, "cpu", "a group over his volume");
   }, 120_000);
 });

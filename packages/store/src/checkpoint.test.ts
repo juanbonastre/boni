@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label } from "@boni/entities";
+import { clock } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkpointOnce, startCheckpoints, walBytes } from "./checkpoint.ts";
 import { openUserStore, type UserStore } from "./store.ts";
@@ -109,9 +110,9 @@ describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
     });
     cleanups.push(() => cp.stop());
     const until = async (ok: () => boolean, ms = 15_000) => {
-      const t0 = Date.now();
+      const t0 = clock();
       while (!ok()) {
-        if (Date.now() - t0 > ms) return false;
+        if (clock() - t0 > ms) return false;
         await new Promise((r) => setTimeout(r, 50));
       }
       return true;

@@ -1301,8 +1301,13 @@ describe("a thread of mail (task 46)", () => {
     });
     expect(await m.check(1)).toMatchObject({ count: 4, lastError: null });
     log.mockRestore();
-    // Every mail of the thread carries the first message's id.
-    const mails = store.list(m.state(1).type as string).map((x) => x.entity.values);
+    // Every mail of the thread carries the first message's id. In the order they came (their message ids): the
+    // store lists by creation and then by id, and with this test's fixed clock all four are created in the same
+    // millisecond, so their ids' random part orders them (task 134: once, in CI, the reply came first).
+    const mails = store
+      .list(m.state(1).type as string)
+      .map((x) => x.entity.values)
+      .sort((a, b) => String(a.f_id_mensaje).localeCompare(String(b.f_id_mensaje)));
     expect(mails.map((v) => v.f_hilo)).toEqual(Array(4).fill("m41@example.com"));
     expect(mails.map((v) => v.f_en_respuesta_a ?? null)).toEqual([
       null,

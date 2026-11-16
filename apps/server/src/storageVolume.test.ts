@@ -5,11 +5,11 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { clock, cpu, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -128,7 +128,7 @@ function whole(path: string) {
   const sql = new DatabaseSync(path, { readOnly: true });
   try {
     const c0 = cpu();
-    const t0 = performance.now();
+    const t0 = clock();
     const history = sql
       .prepare(
         `SELECT x.type AS type, sum(coalesce(octet_length(o.before), 0) + coalesce(octet_length(o.after), 0)) AS b
@@ -148,7 +148,7 @@ function whole(path: string) {
       )
       .get() as { a: number; x: number; b: number };
     return {
-      ms: performance.now() - t0,
+      ms: clock() - t0,
       cpu: cpu() - c0,
       figures: {
         history: Object.fromEntries(history.map((r) => [r.type, Number(r.b)])),
@@ -179,11 +179,11 @@ async function asked<T = Figures>(
   let held = 0;
   let cpuHeld = 0;
   let long = 0;
-  let last = performance.now();
+  let last = clock();
   let lastCpu = cpu();
   let on = true;
   const tick = () => {
-    const now = performance.now();
+    const now = clock();
     const nowCpu = cpu();
     held = Math.max(held, now - last);
     cpuHeld = Math.max(cpuHeld, nowCpu - lastCpu);
@@ -193,13 +193,13 @@ async function asked<T = Figures>(
     if (on) setTimeout(tick, 0);
   };
   setTimeout(tick, 0);
-  const t0 = performance.now();
+  const t0 = clock();
   const c0 = cpu();
   const r = await fetch(`${base}${path}`, {
     headers: { authorization: `Bearer ${t}` },
   });
   const body = (await r.json()) as T;
-  const ms = performance.now() - t0;
+  const ms = clock() - t0;
   const cpuMs = cpu() - c0;
   on = false;
   expect(r.status).toBe(200);
@@ -229,11 +229,11 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
     expect(figures(first.body)).toEqual(before.figures);
     expect(figures(again.body)).toEqual(before.figures);
     // The loop is free between slices: never held for the whole sum (the route as it was held it all of `ref`).
-    expect(first.cpuHeld).toBeLessThan(Math.max(80, ref / 2));
+    under(first.cpuHeld, Math.max(80, ref / 2), "cpu", "the first sum's longest hold");
     // And given back between slices: the old route held it once, for all of it.
     expect(first.long).toBeGreaterThanOrEqual(4);
     // Then only what is new is counted: no table read whole again.
-    expect(again.cpuMs).toBeLessThan(Math.max(40, ref / 4));
+    under(again.cpuMs, Math.max(40, ref / 4), "cpu", "the next sum");
   }, 120_000);
 });
 
@@ -243,7 +243,7 @@ describe("the storage figures with Juan's volume (task 107, A-28)", () => {
  */
 function summedBefore(store: UserStore, from: number, to: number) {
   const c0 = cpu();
-  const t0 = performance.now();
+  const t0 = clock();
   const inRange = (at: number | null) => at !== null && at >= from && at < to;
   const activity = store.audit.activity(from, to);
   const byType = store.audit.byType(from, to);
@@ -254,7 +254,7 @@ function summedBefore(store: UserStore, from: number, to: number) {
     .filter((a) => a.tool === "model.reader").length;
   return {
     readingsCut: readings,
-    ms: performance.now() - t0,
+    ms: clock() - t0,
     cpu: cpu() - c0,
     figures: {
       activity,
@@ -340,7 +340,7 @@ describe("the activity of the last thirty days with Juan's volume (task 108, A-2
     expect(all).toBeGreaterThan(before.readingsCut);
     expect(got.body.totals.readings).toBe(all);
     // Never held for the old count (the route as it was held the loop all of `ref`): kept sums and counts on indexes.
-    expect(got.cpuHeld).toBeLessThan(Math.max(40, ref / 3));
-    expect(again.cpuHeld).toBeLessThan(Math.max(40, ref / 3));
+    under(got.cpuHeld, Math.max(40, ref / 3), "cpu", "a hold of the sum");
+    under(again.cpuHeld, Math.max(40, ref / 3), "cpu", "a hold of the next sum");
   }, 120_000);
 });

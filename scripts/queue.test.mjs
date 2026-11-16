@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lockPath, screenEnv, ticketDir } from "./queue.mjs";
+import { lockPath, machineLoad, screenEnv, ticketDir } from "./queue.mjs";
 
 const QUEUE = fileURLToPath(new URL("queue.mjs", import.meta.url));
 const tmp = mkdtempSync(join(tmpdir(), "boni-queue-"));
@@ -359,4 +359,18 @@ test("the virtual screen's environment cannot reach Wayland: no WAYLAND_DISPLAY,
   assert.equal(e.WAYLAND_DISPLAY, undefined);
   assert.equal(e.XDG_SESSION_TYPE, "x11");
   assert.equal(e.HOME, "/home/ejemplo");
+});
+
+test("T-11: a run says the machine's load as it starts, per core (task 134)", () => {
+  assert.equal(
+    machineLoad([16.4, 12, 9], 8),
+    "the machine's load is 2.05 per core (1.50 over five minutes, 8 cores)",
+  );
+  const r = spawnSync(process.execPath, [QUEUE, "--", process.execPath, "-e", ""], {
+    cwd: main,
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /queue: the machine's load is \d+\.\d\d per core/);
 });

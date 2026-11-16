@@ -1,8 +1,8 @@
 import type { FieldDef, TypeDef } from "@boni/entities";
 import { label } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cpu } from "./cpu.test-util.ts";
 import { TargetMemo } from "./mailTargets.ts";
 
 const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
@@ -102,7 +102,7 @@ describe("the collections a mail may go to, remembered by parts (task 43)", () =
     const targets = memo.targetsFor(store, ["t_agenda", "t_tarea"]);
     const first = cpu() - t0;
     console.log(`targets of 3,000 + 20 records (and 100 people): ${first.toFixed(0)} ms`);
-    expect(first).toBeLessThan(2000);
+    under(first, 2000, "cpu", "first");
     // What a target is made of: the due field, up to three latest titles, the fields to fill.
     expect(targets.map((t) => [t.key, t.date, t.optionRefs?.length])).toEqual([
       ["agenda", "fecha", 3],
@@ -143,7 +143,7 @@ describe("the collections a mail may go to, remembered by parts (task 43)", () =
     const again = memo.targetsFor(store, ["t_agenda", "t_tarea"]);
     const agenda = cpu() - t1;
     console.log(`the agenda's part again, 3,001 records: ${agenda.toFixed(0)} ms`);
-    expect(agenda).toBeLessThan(1000);
+    under(agenda, 1000, "cpu", "agenda");
     expect(types()).toEqual({ read: ["t_agenda"], listed: [] });
     expect(again[0]?.option).toContain("Clase nueva");
     // The schema changed: everything again. The levels or the rules changing too.

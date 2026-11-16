@@ -16,6 +16,7 @@ import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { ensureSystemTypes } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
+import { clock } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { exportChunks, exportFiles } from "./export.ts";
@@ -189,7 +190,7 @@ describe("ZIP64", () => {
   });
 
   it("a real backup past 4 GB: four files of 1 GB stream through onto a sparse file, read back past 4 GB", () => {
-    const t0 = performance.now();
+    const t0 = clock();
     const zero = Buffer.alloc(16 * MB);
     const gb = (n: number): ZipEntry => ({
       path: `files/${"0".repeat(63)}${n}`,
@@ -234,9 +235,7 @@ describe("ZIP64", () => {
     for (const part of z.chunks(gb(5).path, 16 * MB)) n += part.length;
     expect(n).toBe(1024 * MB);
     expect(python(file, "views.json")).toEqual({ names: 8, entry: "{}\n" });
-    console.log(
-      `5 GB backup (sparse) written and read back in ${Math.round(performance.now() - t0)} ms`,
-    );
+    console.log(`5 GB backup (sparse) written and read back in ${Math.round(clock() - t0)} ms`);
   }, 60_000);
 });
 
@@ -255,7 +254,7 @@ describe("a backup with big files comes back whole", () => {
     });
     const file = join(dir, "copia.zip");
     const m = meter();
-    const t0 = performance.now();
+    const t0 = clock();
     // ZIP64 with lowered limits: past 8 MB every position is ZIP64, and the 3,200-odd entries are past 1,000.
     const fd = openSync(file, "w");
     let written = 0;
@@ -272,13 +271,13 @@ describe("a backup with big files comes back whole", () => {
     } finally {
       closeSync(fd);
     }
-    const exported = performance.now() - t0;
+    const exported = clock() - t0;
     const exportPeak = m.peak;
     expect(readFileSync(file).subarray(-42).readUInt32LE(0)).toBe(0x07064b50); // it took the ZIP64 path
 
     const b = store(join(dir, "b.db"));
     const m2 = meter();
-    const t1 = performance.now();
+    const t1 = clock();
     const z = openZipFile(file);
     cleanups.push(() => z.close());
     let parts = 0;
@@ -294,7 +293,7 @@ describe("a backup with big files comes back whole", () => {
           : Reflect.get(t, k),
     });
     const r = importExport(measured, b, { apply: true, trustLabels: true });
-    const imported = performance.now() - t1;
+    const imported = clock() - t1;
     expect(r.files).toEqual({ added: 203, present: 0, missing: [] });
     expect(r.failed).toEqual([]);
     expect(b.list(TYPE)).toHaveLength(ids.length);

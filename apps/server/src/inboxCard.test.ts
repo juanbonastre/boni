@@ -1,8 +1,8 @@
 import { label } from "@boni/entities";
+import { cpu, under } from "@boni/pace";
 import { openUserStore, type ProposalRow, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setSplit } from "./calendarStore.ts";
-import { cpu } from "./cpu.test-util.ts";
 import { ghostRows, listRows } from "./data.ts";
 import {
   crossCalendar,
@@ -768,7 +768,7 @@ describe("a card checked again each time it is seen (task 73)", () => {
     spy.mockRestore();
     expect(served.every((c) => c.now.state === null && c.now.fromToday === null)).toBe(true);
     expect(docencia).toBeLessThanOrEqual(1);
-    expect(first).toBeLessThan(1000);
-    expect(again).toBeLessThan(200);
+    under(first, 1000, "cpu", "first");
+    under(again, 200, "cpu", "again");
   }, 120_000);
 });

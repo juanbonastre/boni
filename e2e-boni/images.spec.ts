@@ -1,3 +1,4 @@
+import { under } from "@boni/pace";
 import { expect, type Locator, type Page, test } from "@playwright/test";
 import { type Options, openApp, recorded } from "./fixtures.ts";
 
@@ -326,8 +327,8 @@ test("a note of three thousand paragraphs and sixty large images is typed in wit
   console.info(
     `3000 paragraphs, 120 images: a letter shown ${usual} ms after its key (at worst ${worst})`,
   );
-  expect(usual).toBeLessThan(100);
-  expect(worst).toBeLessThan(250);
+  under(usual, 100, "clock", "the usual letter");
+  under(worst, 250, "clock", "the worst letter");
   // Typing asked for no image again, nor drew them again.
   expect(await asked()).toBe(before);
 });
