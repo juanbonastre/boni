@@ -659,9 +659,10 @@ return categorias.map((c) => ({
   Medido en S1 (2026-11-16, sobre el servidor con la caja real y el almacén, carga 1,3 a 1,7 en 8 núcleos): los mismos
   cinco pasos sobre 3.000 filas hacen 27 llamadas (el «Código» con todas las filas lee dos colecciones) y la prueba
   entera tarda de 5,4 a 6,0 s; cada llamada, unos 140 ms de media, de los que la caja cuenta 47. Una llamada vacía
-  cuesta 100 ms y la caja cuenta 11: unos 90 ms por llamada son arrancar su hilo y su intérprete, casi dos tercios de
-  una llamada media. La prueba fija 15 s de reloj (ensanchados por la carga, `under`) y que el montón del servidor no
-  crezca 160 MB (creció entre 44 y 85). Falta: en la app de escritorio (pantallas).
+  cuesta 100 ms y la caja cuenta 11: unos 90 ms por llamada eran arrancar su hilo y su intérprete, casi dos tercios de
+  una llamada media; con hilos de reserva arrancados antes (tarea 138, medido el mismo día con carga 2 a 3), la vacía
+  cuesta de 68 a 74 ms, la media unos 98 y la prueba entera 3,3 s. La prueba fija 10 s de reloj (ensanchados por la
+  carga, `under`) y que el montón del servidor no crezca 160 MB (creció entre 44 y 85). Falta: en la app de escritorio (pantallas).
 **El código que guarda** (Juan, 2026-11-16, decisiones 1 y 4 del §10). Un «Código» puede pedir crear, modificar o
 eliminar filas de una colección conectada, si su conexión lo permite (AU-176). Lo pide; lo guarda el motor, por el
 mismo camino que un paso «Colección». Antes de ejecutarlo, Boni ya sabe qué puede cambiar, porque lee el código

@@ -1,8 +1,19 @@
 // The tests' way to make an evaluation's request, as Boni's server will (E3): the hash from the sources, the zone's
 // table and the names of months and days from packages/calendar/src/time.ts, which the box has no `Intl` for.
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { monthNames, tzOffsetMs, weekdayNames } from "@boni/calendar";
-import { type DateNames, type EvalRequest, ZONE_YEARS, type ZoneTable } from "@boni/sandbox";
+import {
+  type DateNames,
+  type EvalRequest,
+  type EvalResponse,
+  type WireEvaluated,
+  ZONE_YEARS,
+  type ZoneTable,
+} from "@boni/sandbox";
+import { expect } from "vitest";
+import { evaluateCall } from "../src/evaluate.ts";
 
 const tables = new Map<string, ZoneTable>();
 /** Every change of `zone`'s offset over `ZONE_YEARS`: found by weeks, then to the minute. */
@@ -97,3 +108,51 @@ export const categoriesLike = () =>
     nombre: `Categoría ${i}`,
     presupuesto: 100 + i,
   }));
+
+// ---------------------------------------------------------------- the cases of test/cases/evaluacion
+
+/** The evaluations of an answer that has them (a test fails here when the call failed whole). */
+export const evals = (r: EvalResponse): readonly WireEvaluated[] => {
+  if (!r.ok) throw new Error(`the call failed: ${r.error}: ${r.message}`);
+  return r.evaluations;
+};
+export const CASES = join(import.meta.dirname, "cases", "evaluacion");
+export const caseCode = (name: string) => readFileSync(join(CASES, name), "utf8");
+/** A case tried the three ways: «Código» with all the rows, «Código» once per row, and as an expression. */
+const FORMS: { label: string; req: (body: string) => EvalRequest }[] = [
+  { label: "«Código», all the rows", req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }]) },
+  {
+    label: "«Código», per row",
+    req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }], { mode: "perRow" }),
+  },
+  {
+    label: "an expression",
+    req: (b) => evalRequest("expressions", [`(() => {\n${b}\n})()`], [{ i: 0 }, { i: 1 }]),
+  },
+];
+export async function tryCase(
+  name: string,
+  opts: { through?: (req: EvalRequest) => Promise<EvalResponse> } = {},
+) {
+  const code = caseCode(name);
+  const want = /^\/\/ expect: (.*)$/m.exec(code)?.[1] ?? "";
+  for (const form of FORMS) {
+    const at = `${name}, ${form.label}`;
+    const r = await (opts.through ?? evaluateCall)(form.req(code));
+    if (want.startsWith("call ")) {
+      expect(r.ok, at).toBe(false);
+      expect(want.slice(5).split("|"), at).toContain(!r.ok && r.error);
+      continue;
+    }
+    expect(r.ok, `${at}: ${!r.ok && r.message}`).toBe(true);
+    for (const e of evals(r)) {
+      if (want.startsWith("done ")) {
+        expect(e, at).toMatchObject({ state: "done" });
+        expect(e.state === "done" && e.values[0], at).toEqual(JSON.parse(want.slice(5)));
+      } else {
+        expect(e.state, at).toBe("failed");
+        expect(want.split("|"), at).toContain(e.state === "failed" && e.fault);
+      }
+    }
+  }
+}

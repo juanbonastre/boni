@@ -492,7 +492,12 @@ siempre lo mismo.
   respuesta: salida o error `timeout` / `memory` / `output` / `exception`), el subconjunto de JSON Schema con el que se
   validan entradas y salidas, y los límites por defecto (500 ms, 64 MB, 1 MB de salida).
 - `apps/sandbox`: el ejecutor. Node con `quickjs-emscripten`; un hilo por llamada que se mata al pasar el límite, y en él
-  un intérprete nuevo cada vez (nada pasa de una llamada a otra). El intérprete se compila una vez, al arrancar la caja,
+  un intérprete nuevo cada vez (nada pasa de una llamada a otra). Arrancar el hilo y cargar sus módulos es la mayor parte
+  de una llamada vacía (~70 ms de ~105, tarea 138), así que la caja tiene dos hilos de reserva arrancados antes de que
+  llegue nada: uno de reserva solo ha recibido el intérprete compilado, aún no ha hecho su instancia y sirve una única
+  llamada; sin uno listo, o si muere antes de tomarla, la llamada arranca el suyo como antes. Llamadas y reservas nunca
+  pasan de `workers` hilos, para que la memoria de la caja en lo peor sea la de antes. El intérprete se compila una vez,
+  al arrancar la caja,
   y cada llamada hace su propia instancia con su propia memoria; el tiempo de la función empieza cuando su intérprete
   está listo (medido el 2026-10-31 en el NAS: compilarlo en cada llamada se comía ~600 ms de su segundo). Sin `fetch`, `require`, `process`, temporizadores,
   promesas, `Date.now` ni `Math.random` (el día y una semilla vienen en la petición). El límite principal es un
@@ -503,7 +508,7 @@ siempre lo mismo.
   servidor. La memoria entera de cada intérprete tiene un tope (su límite más 16 MB): probado el 2026-10-31 en un
   contenedor de 256 MB, sin ese tope una función que pide memoria sin parar hacía crecer el proceso hasta que el
   contenedor entero moría; con él, esa llamada acaba en «memory» en menos de medio segundo y la caja sigue (dos a la
-  vez, también). En reposo usa unos 25 MB.
+  vez, también). En reposo usa unos 25 MB, más unos 26 a 32 MB por hilo de reserva (medido en el portátil, 2026-11-16).
 - En el servidor, `src/sandbox.ts`: el cliente (tiempo de espera, reintento si el ejecutor se reinicia). Sin caja, las
   funciones no están disponibles y lo dice; nada más se rompe.
 - Pruebas: un **corpus de fugas** en el CI (`apps/sandbox/test/escape/`: red, `require`, `process`, `eval` de algo de
