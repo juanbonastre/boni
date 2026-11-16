@@ -7,6 +7,7 @@ import {
   printCitation,
   type Step,
 } from "@boni/automations";
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import {
@@ -341,21 +342,22 @@ describe("the citation a dragged field writes", () => {
         "Hola {{ $json.campo_10 }}, {{ $('Inicio').item.campo_199 }} y {{ $json.campo_42 }} más";
       const many: Record<string, string> = {};
       for (let i = 0; i < 200; i++) many[`campo_${i}`] = `Campo ${i}`;
-      const start = performance.now();
+      const start = cpu();
       for (let n = 1; n <= typed.length; n++) {
         const expr = typed.slice(0, n);
         preview({ expr }, sample);
         paint(expr, draft, "s_orden", { Filtrar: many, Inicio: many });
       }
-      const ms = performance.now() - start;
+      const ms = cpu() - start;
       expect(preview({ expr: typed }, sample)).toEqual({
         value: "Hola texto 10, texto 199 y 42 más",
         row: 1,
         of: 3000,
       });
       expect(calls).toHaveLength(0);
-      // About a millisecond for the whole run here; a frame (16 ms) per key is the bound.
-      expect(ms / typed.length).toBeLessThan(16);
+      // A frame (16 ms) per key is the bound. Measured here (2026-11-16, its CPU time, load 5 to 7 on 8 cores): 0.14
+      // to 0.25 ms a key.
+      under(ms / typed.length, 16, "cpu", "a key's preview and chips, with 200 fields");
     } finally {
       globalThis.fetch = was;
     }

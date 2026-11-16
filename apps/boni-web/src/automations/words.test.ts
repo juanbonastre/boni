@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type Automation, FORMAT, type Step } from "@boni/automations";
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { KEYS, type Lang, translator } from "../i18n.ts";
 import { fieldsOut } from "./panel.ts";
@@ -257,12 +258,13 @@ describe("the words of «Automatizaciones»", () => {
       campo_1: choices.temas,
       campo_2: { opt_01jx: "X" },
     };
-    const start = performance.now();
+    const start = cpu();
     const named = rows.map((r) => namedRow(r, many));
-    const ms = performance.now() - start;
+    const ms = cpu() - start;
     expect(named[2999]?.json.campo_0).toBe("Pendiente");
     expect(named[2999]?.json.campo_1).toEqual(["Novela"]);
-    // A table names a page of 50 rows when it comes: a frame (16 ms) a page is the bound; a few ms for all here.
-    expect(ms / (rows.length / 50)).toBeLessThan(16);
+    // A table names a page of 50 rows when it comes: a frame (16 ms) a page is the bound. Measured here (2026-11-16,
+    // its CPU time, load 5 to 7 on 8 cores): 0.10 to 0.12 ms a page.
+    under(ms / (rows.length / 50), 16, "cpu", "naming a page of 50 rows");
   });
 });

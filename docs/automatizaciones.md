@@ -249,7 +249,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   «Parar con error» no tiene salida.
 - **AU-04** (F14a, hecho) · Por las flechas pasan filas: objetos con campos. Una fila leída de una colección
   recuerda de qué fila guardada viene, para poder modificarla o eliminarla después sin buscarla otra vez.
-- **AU-05** (F14b, en parte) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
+- **AU-05** (F14b, hecho) · El sitio de cada paso se guarda aparte de la automatización. Mover un paso no hace
   una versión ni enciende «Publicar»; un paso sin sitio lo coloca Boni junto al paso del que cuelga; «Ordenar»
   recoloca todo. (Cambia I-26; decisión 2 del §10.)
   En la F14b: los sitios se guardan en el servidor, por automatización y no por dispositivo, al soltar el paso (una
@@ -261,8 +261,12 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en E: mover una caja no envejece ninguna prueba (AU-92). Falta: que una caja soltada siga ahí al recargar y
   en otra ventana, con el servidor de verdad (G, la app de escritorio).
   Hecho en C2: el sitio se guarda al soltar, aparte del borrador y sin «Guardando…»; un paso nuevo va junto al suyo y
-  no mueve ningún otro; «Ordenar» y su Deshacer. Falta (G): la prueba en la app de escritorio sobre el servidor real,
-  tras cerrarla y abrirla.
+  no mueve ningún otro; «Ordenar» y su Deshacer. Un disparador nuevo debajo del último y un paso que no cuelga de nada
+  a la derecha de la caja más a la derecha los guarda la prueba de `places.ts` (en la F14b el catálogo tiene un solo
+  disparador). Un paso sin sitio guardado se coloca por sus flechas cada vez que se pinta, hasta que se suelta o se
+  añade un paso: así queda. Hecho en G: en la app de escritorio sobre el servidor real, una caja soltada sigue ahí al
+  recargar, al cerrar la app y abrirla y en la app de otro ordenador de la cuenta; un sitio que el servidor rechaza
+  (4xx) no se reintenta, y uno que no llega dice «Sin guardar · Reintentar» y se guarda al volver el servidor.
 - **AU-06** (F14a, hecho) · Una automatización puede tener varios disparadores. Cada ejecución empieza en uno.
 - **AU-07** (F14a, hecho) · No hay ciclos: el editor no deja conectar una flecha que vuelva atrás. Repetir por
   tandas será un paso («Por tandas», F18), no un dibujo. En la F14a lo dice la validación (una automatización
@@ -821,7 +825,7 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 
 **El editor** (pantalla 2)
 
-- **AU-62** (F14b, en parte) · La cabecera tiene seis cosas propias: volver y el nombre (se edita ahí), las pestañas
+- **AU-62** (F14b, hecho) · La cabecera tiene seis cosas propias: volver y el nombre (se edita ahí), las pestañas
   «Editor | Ejecuciones», «Guardado» (el borrador se guarda solo; dice además «cambios sin publicar» o «publicada la
   versión 3»), el interruptor de encendida, «Publicar» y «⋯» (Ejecutar, Versiones, Duplicar, Ajustes, Eliminar).
   Debajo no hay más barras, y al lado solo lo que la barra de Boni lleva en todas las pantallas (plegar la barra
@@ -833,8 +837,9 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   tras una pausa corta y al salir del editor; no hay botón de guardar. «Duplicar» crea «<nombre> (copia)» con los
   mismos pasos y sitios y la abre. «Eliminar» la quita de la lista sin preguntar y su aviso lleva «Deshacer».
   Hecho en C1: la cabecera, «Guardado» con sus tres estados, la pausa y la salida, «Duplicar» y «Eliminar» con su
-  «Deshacer». Hecho en C2: en el lienzo, la copia tiene cada paso en el mismo sitio. Falta (G): la prueba en la app de
-  escritorio sobre el servidor real.
+  «Deshacer». Hecho en C2: en el lienzo, la copia tiene cada paso en el mismo sitio. Hecho en G: en la app de
+  escritorio sobre el servidor real, la cabecera, «Guardado», «Duplicar» con los mismos sitios y «Eliminar» con su
+  «Deshacer».
 - **AU-63** (F14b, hecho) · El lienzo va de izquierda a derecha. Un paso es una tarjeta con su icono, su nombre y
   una línea que resume lo que hace («Gastos · este mes · hasta 500»). Las salidas están a la derecha con su nombre;
   las conexiones cuelgan debajo (desde la F14c: AU-40).
@@ -860,11 +865,13 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   probar» antes de la primera prueba; después, «Última prueba hace 2 min · bien · 6 pasos · 4,1 s · no escribió nada»,
   o «… · falló en «Filtrar»», y un clic selecciona ese paso.
   Hecho en E: todo lo de arriba; el «Registro» que se despliega es de la F14d (AU-101).
-- **AU-65** (F14b, en parte) · Un paso se añade de cuatro maneras, y las cuatro abren el mismo panel: el «+» de
+- **AU-65** (F14b, hecho) · Un paso se añade de cuatro maneras, y las cuatro abren el mismo panel: el «+» de
   arriba, el «+» de una salida sin conectar (o arrastrar desde ella), el «+» de una flecha seleccionada y el clic
   derecho en el lienzo (I-24 se queda).
   Hecho en C2: las cuatro maneras abren el mismo panel y el paso elegido queda conectado y seleccionado. Hecho en D:
-  el paso elegido se abre en su vista. Falta: la prueba en la app de escritorio (G).
+  el paso elegido se abre en su vista. Hecho en G: en la app de escritorio sobre el servidor real, «Buscar filas» en
+  una colección de 3.000 filas, «Filtrar» y «Si» añadidos desde el «+» de una salida y rellenados arrastrando campos,
+  cada paso abierto con lo que entra y lo que sale, «Probar», y nada escrito en la colección (el criterio de la F14b).
 - **AU-66** (F14b, hecho) · Un paso seleccionado enseña una barra corta: Probar paso · Apagar · Eliminar · ⋯; una
   flecha seleccionada, «+» y eliminar. El clic derecho da lo mismo y poco más (cambiar nombre, duplicar, copiar).
   Nada sale solo al pasar el ratón.
@@ -1021,7 +1028,8 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
 - **AU-83** (F14b, en parte) · Un parámetro obligatorio vacío no se marca hasta salir de él, probar o publicar.
   Hecho en D: sin marca al abrir el paso; al salir de él, la marca en el parámetro y en la tarjeta, que se va cuando
   tiene valor. Hecho en E: al «Probar» o «Probar paso» se marcan todos, también en su tarjeta; entrar en el editor de
-  condiciones o en una lista de filas no es salir. Falta: marcarlos al publicar (F14d).
+  condiciones o en una lista de filas no es salir. Falta: marcarlos al publicar, que es de la F14d (llega con
+  «Publicar», AU-17); la F14b no publica.
 - **AU-84** (F14b, hecho) · Cada estado vacío, viejo o de error dice qué hacer después, y un error nombra el
   parámetro que lo causa.
   En la F14b: el motivo de un fallo es una clave de una lista cerrada (`STEP_FAILURES`), con el parámetro que lo causa
@@ -1567,7 +1575,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 |---|---|---|---|
 | Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
-| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en curso |
+| **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en main |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en curso |
 | **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189) | pendiente |
 | **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10) | pendiente |

@@ -1,5 +1,6 @@
 // Where the boxes go when nobody has put them anywhere (docs/automatizaciones.md AU-05), and «Ordenar» (AU-64).
 import { type Automation, FORMAT, type Step } from "@boni/automations";
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { CARD, placeFor, tidy, withPlaces } from "./places.ts";
 
@@ -120,14 +121,15 @@ describe("the places of the boxes", () => {
       .slice(1)
       .map((s, i) => arrow(i === 0 ? "t" : `s${Math.floor((i - 1) / 2)}`, s.id, "main"));
     const big = automation(many, arrows);
-    const started = performance.now();
+    const started = cpu();
     const placed = tidy(big);
-    const ms = performance.now() - started;
+    const ms = cpu() - started;
     expect(Object.keys(placed)).toHaveLength(300);
     expect(overlap(placed)).toBe(false);
     for (const a of big.arrows)
       expect(placed[a.to.step]?.x ?? 0).toBeGreaterThan(placed[a.from.step]?.x ?? 0);
-    // One press of «Ordenar», not a frame: well under what a person notices.
-    expect(ms).toBeLessThan(50);
+    // One press of «Ordenar», not a frame: well under what a person notices. Measured here (2026-11-16, its CPU
+    // time, load 5 to 7 on 8 cores): 1 to 2 ms.
+    under(ms, 50, "cpu", "«Ordenar» over 300 steps");
   });
 });

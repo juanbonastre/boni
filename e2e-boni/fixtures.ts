@@ -1014,9 +1014,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         query = "",
       ): [number, string] => {
         // What the app asked of these routes, every method (`window.__automations`: "METHOD id/rest"); with
-        // `window.__automationsDown` set, the server is down and each is answered 503.
+        // `window.__automationsDown` set, the server is down and each is answered 503; with
+        // `window.__automationsRefuse` naming a route's end («/layout»), that route is refused with a 409.
         record("__automations", `${method} ${[id, rest].filter(Boolean).join("")}`.trim());
         if (w.__automationsDown) return [503, '{"error":"unavailable"}'];
+        if (rest && w.__automationsRefuse === rest) return [409, '{"error":"conflict"}'];
         const b = (body ?? {}) as {
           automation?: AutoHere["doc"];
           name?: string;
