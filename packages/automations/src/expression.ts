@@ -19,6 +19,7 @@
  */
 import { join, type Label, type Labeled } from "@boni/entities";
 import { isExpr, type ParamValue } from "./format.ts";
+import { isWholeExpression, renameInCode } from "./javascript.ts";
 import { type Cell, cellOf, type Row } from "./rows.ts";
 
 export interface Citation {
@@ -36,8 +37,11 @@ export type ExprPart =
   /** Not a simple citation. F14c: JavaScript for the sandbox. Until then, the problem `expr.code`. */
   | { kind: "code"; source: string };
 
-/** A part with where it is in the text: for a citation, the span of the citation itself (not of its `{{ }}`). */
-type Spanned = ExprPart & { start: number; end: number };
+/**
+ * A part with where it is in the text: for a citation, the span of the citation itself (not of its `{{ }}`); for code,
+ * the span of its `{{ }}`, and `at`, where its source starts.
+ */
+type Spanned = ExprPart & { start: number; end: number; at?: number };
 
 const IDENT = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*$/u;
 const IDENT_AT = /[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*/uy;
@@ -106,8 +110,17 @@ function citation(s: string, i: number): { cite: Citation; end: number } | null 
   return { cite: { step, pick, path }, end: j };
 }
 
-function parse(expr: string): Spanned[] {
+/** The end of the `{{` at `open`: the first `}}` that leaves a whole JavaScript expression before it, else the first. */
+function closing(expr: string, open: number): number {
+  const first = expr.indexOf("}}", open + 2);
+  for (let c = first; c >= 0; c = expr.indexOf("}}", c + 1))
+    if (isWholeExpression(expr.slice(open + 2, c))) return c;
+  return first;
+}
+
+function scan(expr: string): { parts: Spanned[]; open?: number } {
   const parts: Spanned[] = [];
+  let open: number | undefined;
   const text = (t: string, start: number) => {
     if (!t) return;
     const last = parts[parts.length - 1];
@@ -118,36 +131,70 @@ function parse(expr: string): Spanned[] {
   };
   let i = 0;
   while (i < expr.length) {
-    const open = expr.indexOf("{{", i);
-    if (open < 0) break;
-    const inner = skip(expr, open + 2);
+    const from = expr.indexOf("{{", i);
+    if (from < 0) break;
+    const inner = skip(expr, from + 2);
     const c = citation(expr, inner);
     const after = c ? skip(expr, c.end) : -1;
     if (c && expr.startsWith("}}", after)) {
-      text(expr.slice(i, open), i);
+      text(expr.slice(i, from), i);
       parts.push({ kind: "cite", cite: c.cite, start: inner, end: c.end });
       i = after + 2;
       continue;
     }
-    const close = expr.indexOf("}}", open + 2);
-    // An unclosed `{{` is text.
-    if (close < 0) break;
-    text(expr.slice(i, open), i);
+    const close = closing(expr, from);
+    // An unclosed `{{` is text (and, for validation, `code.syntax`: `codeParts`).
+    if (close < 0) {
+      open = from;
+      break;
+    }
+    text(expr.slice(i, from), i);
     parts.push({
       kind: "code",
-      source: expr.slice(open + 2, close).trim(),
-      start: open,
+      source: expr.slice(from + 2, close).trim(),
+      start: from,
       end: close + 2,
+      at: inner,
     });
     i = close + 2;
   }
   text(expr.slice(i), i);
-  return parts;
+  return open === undefined ? { parts } : { parts, open };
 }
+
+const parse = (expr: string): Spanned[] => scan(expr).parts;
 
 /** An expression's text in parts, in order. Never throws: what it cannot read as a citation is `code`. */
 export function parseExpression(expr: string): ExprPart[] {
-  return parse(expr).map(({ start: _s, end: _e, ...part }) => part as ExprPart);
+  return parse(expr).map(({ start: _s, end: _e, at: _a, ...part }) => part as ExprPart);
+}
+
+/**
+ * The JavaScript of an expression's text: each code part's source with where it starts in the text, and where a `{{`
+ * that never closes is (AU-22: it does not validate). What validation and the editor read (javascript.ts).
+ */
+export function codeParts(expr: string): {
+  parts: { source: string; at: number }[];
+  open?: number;
+} {
+  const { parts, open } = scan(expr);
+  const out = parts.flatMap((p) =>
+    p.kind === "code" ? [{ source: p.source, at: p.at ?? p.start + 2 }] : [],
+  );
+  return open === undefined ? { parts: out } : { parts: out, open };
+}
+
+/** The parts written back as a text: what `parseExpression` reads as the same parts (AU-22). */
+export function printExpression(parts: readonly ExprPart[]): string {
+  return parts
+    .map((p) =>
+      p.kind === "text"
+        ? p.text
+        : p.kind === "cite"
+          ? `{{ ${printCitation(p.cite)} }}`
+          : `{{ ${p.source} }}`,
+    )
+    .join("");
 }
 
 const quote = (t: string, q: string) =>
@@ -181,6 +228,40 @@ export function renameInExpression(expr: string, from: string, to: string): stri
     i = p.end;
   }
   return out + expr.slice(i);
+}
+
+/**
+ * `renameInExpression`, and in the JavaScript of every other `{{ }}` each `$('from')` written as `$('to')`
+ * (`renameInCode`): what renaming a step does to a value (AU-02, F14c). Text and comments stay as they are.
+ */
+export function renameInText(expr: string, from: string, to: string): string {
+  let out = "";
+  let i = 0;
+  for (const p of parse(expr)) {
+    if (p.kind !== "code" || p.at === undefined) continue;
+    const renamed = renameInCode(p.source, from, to);
+    if (renamed === p.source) continue;
+    out += expr.slice(i, p.at) + renamed;
+    i = p.at + p.source.length;
+  }
+  return renameInExpression(out + expr.slice(i), from, to);
+}
+
+/**
+ * A value from its parts and what each `{{ }}` gave, in order (AU-22): a value that is one `{{ }}` alone keeps the type
+ * of what it gave (a number, a list, a date as the box gives it); with text around it, it is text, and each value is
+ * written in it as text: `null` as nothing, a number with its digits, a list or an object as its JSON.
+ */
+export function joinParts(parts: readonly ExprPart[], values: readonly Cell[]): Cell {
+  if (parts.length === 1 && parts[0]?.kind !== "text") return values[0] ?? null;
+  let i = 0;
+  return parts
+    .map((p) => {
+      if (p.kind === "text") return p.text;
+      const v = values[i++] ?? null;
+      return v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+    })
+    .join("");
 }
 
 // ---------------------------------------------------------------- resolving

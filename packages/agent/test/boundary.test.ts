@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
 const PACKAGES = join(import.meta.dirname, "..", "..");
 const CORE = ["entities", "store", "agent", "views", "automations"];
 const CORE_NAMES = new Set(CORE.map((p) => `@boni/${p}`));
-const ALLOWED_OUTSIDE = new Set(["@anthropic-ai/sdk"]);
+// Libraries of no edge: the model's SDK, and the parser that reads automations' JavaScript as text (F14c, AU-163).
+const ALLOWED_OUTSIDE = new Set(["@anthropic-ai/sdk", "acorn"]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {

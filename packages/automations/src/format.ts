@@ -6,8 +6,10 @@
  * Contracts of phase F14a: the types are final, the functions marked «not built» are the builder's.
  */
 import type { FILTER_OPS } from "@boni/views";
-import type { Connection } from "./connections.ts";
-import { renameInExpression } from "./expression.ts";
+import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
+import { type Connection, parseConnection } from "./connections.ts";
+import { renameInText } from "./expression.ts";
+import { renameInCode } from "./javascript.ts";
 
 /**
  * The version of this format. A saved automation carries the one it was written with, and a deploy migrates it to
@@ -250,7 +252,7 @@ function count(v: unknown, path: string): number {
 
 function parseStep(v: unknown, path: string): Step {
   const s = record(v, path);
-  closed(s, path, ["id", "name", "type", "params"], ["settings"]);
+  closed(s, path, ["id", "name", "type", "params"], ["settings", "connections"]);
   const params = record(s.params, at(path, "params"));
   const step: Step = {
     id: text(s.id, at(path, "id")),
@@ -261,6 +263,10 @@ function parseStep(v: unknown, path: string): Step {
     ),
   };
   if (s.settings !== undefined) step.settings = parseStepSettings(s.settings, at(path, "settings"));
+  if (s.connections !== undefined)
+    step.connections = list(s.connections, at(path, "connections")).map((c, i) =>
+      parseConnection(c, at(at(path, "connections"), i), parseParam),
+    );
   return step;
 }
 
@@ -331,7 +337,8 @@ function parseSettings(v: unknown, path: string): AutomationSettings {
 
 /**
  * The same automation with a step renamed: every expression that cites the old name cites the new one (through
- * `renameInExpression`; F14c adds the code of «Código» steps), and nothing else changes: arrows use ids (AU-02).
+ * `renameInText`, and through `renameInCode` the source of every «Código»), and nothing else changes: arrows use ids
+ * (AU-02).
  * Throws when no step has that id; the new name's uniqueness is `validate`'s.
  */
 export function renameStep(automation: Automation, step: string, name: string): Automation {
@@ -339,7 +346,7 @@ export function renameStep(automation: Automation, step: string, name: string): 
   if (!target) throw new Error(`no step has the id ${step}`);
   const from = target.name;
   const rewrite = (v: ParamValue): ParamValue => {
-    if (isExpr(v)) return { expr: renameInExpression(v.expr, from, name) };
+    if (isExpr(v)) return { expr: renameInText(v.expr, from, name) };
     if (Array.isArray(v)) return v.map(rewrite);
     if (typeof v === "object" && v !== null)
       return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rewrite(x)]));
@@ -350,7 +357,14 @@ export function renameStep(automation: Automation, step: string, name: string): 
     steps: automation.steps.map((s) => ({
       ...s,
       ...(s.id === step ? { name } : {}),
-      params: Object.fromEntries(Object.entries(s.params).map(([k, v]) => [k, rewrite(v)])),
+      params: Object.fromEntries(
+        Object.entries(s.params).map(([k, v]) => [
+          k,
+          s.type === CODE_TYPE && k === CODE_PARAMS.source && typeof v === "string"
+            ? renameInCode(v, from, name)
+            : rewrite(v),
+        ]),
+      ),
     })),
   };
 }
