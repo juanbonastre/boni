@@ -30,6 +30,7 @@ import {
   type ConditionField,
   cannotTest,
   conditionFields,
+  conditionFieldsOf,
   fieldsOut,
   isEmpty,
   knownFields,
@@ -55,6 +56,7 @@ import {
   TestStepButton,
   TrialFields,
   trialOf,
+  usePhone,
   useTester,
 } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
@@ -703,7 +705,10 @@ export function AutomationStepView({
   const types = useStore((s) => s.dataTypes);
   const lang = useStore((s) => s.settings.language);
   const wide = useWide();
+  const phone = usePhone();
   const [tab, setTab] = useState<"params" | "settings">("params");
+  /** The phone's one column (AU-74): «Entrada | Parámetros | Salida». */
+  const [pane, setPane] = useState<"input" | "params" | "output">("params");
   const [side, setSide] = useState<"input" | "output">("input");
   const box = useRef<HTMLDivElement>(null);
   const step = state.draft.steps.find((s) => s.id === state.open);
@@ -713,6 +718,7 @@ export function AutomationStepView({
     box.current?.focus();
     setTab("params");
     setSide("input");
+    setPane("params");
   }, [stepId]);
   // The last test's first rows as this step sees them, asked once when it opens and again after a test of it or of a
   // step before it, never on a key (AU-20, A-15): what the preview of an expression reads.
@@ -746,16 +752,10 @@ export function AutomationStepView({
   if (!step) return null;
 
   const collections = types ?? [];
-  const fieldsOf = (key: string): ConditionField[] | undefined =>
-    collections
-      .find((d) => d.key === key)
-      ?.fields.map((f) => ({
-        key: f.key ?? f.id,
-        name: f.name,
-        type: f.type,
-        ...(f.options ? { options: f.options } : {}),
-        ...(f.relation ? { relation: f.relation } : {}),
-      }));
+  const fieldsOf = (key: string): ConditionField[] | undefined => {
+    const d = collections.find((c) => c.key === key);
+    return d ? conditionFieldsOf(d) : undefined;
+  };
   const picker = paramsOf(step).find((p) => p.control === "picker" && p.of === "collection");
   const own = picker ? step.params[picker.key] : undefined;
   const view: View = {
@@ -925,84 +925,87 @@ export function AutomationStepView({
 
   const params = (
     <div className="auto-view-rows" role="tabpanel" aria-label={t("auto.view.params")}>
-      {dropped && (
-        <div className="auto-view-notice" role="status">
-          <span>{t("auto.view.dropped", { names: dropped.map(paramName).join(", ") })}</span>
-          <button type="button" className="btn ghost small" onClick={() => apply(undo)}>
-            {t(DO.undo)}
-          </button>
-        </div>
-      )}
-      {rowsOf(step).map((row) => {
-        const { param } = row;
-        const Painted = PARAM_CONTROLS[row.param.control];
-        const name = paramName(param.key);
-        const isMarked = marked.has(param.key);
-        return (
-          <div
-            key={param.key}
-            className={`auto-param${isMarked ? " marked" : ""}`}
-            data-param={param.key}
-            onFocus={(e) => {
-              if (param.required) watch(e.currentTarget, param.key);
-            }}
-            onBlur={(e) => {
-              if (param.required) blurred(e.currentTarget, e.relatedTarget, param.key);
-            }}
-          >
-            <span className="auto-param-name">{name}</span>
-            <div className="auto-param-control">
-              <Painted
-                param={param}
-                value={row.value}
-                path={param.key}
-                label={name}
-                marked={isMarked}
-                set={(value, typing) =>
-                  param.key === ACTION && typeof value === "string"
-                    ? setAction(value)
-                    : edit((d) => setParam(d, step.id, param.key, value, names), typing)
-                }
-              />
-            </div>
-            {row.added && (
-              <button
-                type="button"
-                className="btn ghost small auto-param-remove"
-                data-boni-action="automations.edit"
-                aria-label={`${t(DO.removeOption)}: ${name}`}
-                onClick={() => edit((d) => removeOption(d, step.id, param.key))}
-              >
-                {t(DO.removeOption)}
-              </button>
-            )}
+      {/* On the phone the parameters are read, never changed (AU-74): every control inside is disabled. */}
+      <fieldset className="auto-view-look" disabled={phone}>
+        {dropped && (
+          <div className="auto-view-notice" role="status">
+            <span>{t("auto.view.dropped", { names: dropped.map(paramName).join(", ") })}</span>
+            <button type="button" className="btn ghost small" onClick={() => apply(undo)}>
+              {t(DO.undo)}
+            </button>
           </div>
-        );
-      })}
-      {options.length > 0 && (
-        <PopButton
-          label={t(DO.addOption)}
-          title={t(DO.addOption)}
-          className="btn ghost small"
-          align="start"
-        >
-          {(done) =>
-            options.map((o) => (
-              <MenuRow
-                key={o.key}
-                label={paramName(o.key)}
-                boniAction="automations.edit"
-                onClick={() => {
-                  done();
-                  const start: ParamValue =
-                    o.default !== undefined ? (o.control === "toggle" ? true : o.default) : "";
-                  edit((d) => setParam(d, step.id, o.key, start, names));
-                }}
-              />
-            ))
-          }
-        </PopButton>
-      )}
+        )}
+        {rowsOf(step).map((row) => {
+          const { param } = row;
+          const Painted = PARAM_CONTROLS[row.param.control];
+          const name = paramName(param.key);
+          const isMarked = marked.has(param.key);
+          return (
+            <div
+              key={param.key}
+              className={`auto-param${isMarked ? " marked" : ""}`}
+              data-param={param.key}
+              onFocus={(e) => {
+                if (param.required) watch(e.currentTarget, param.key);
+              }}
+              onBlur={(e) => {
+                if (param.required) blurred(e.currentTarget, e.relatedTarget, param.key);
+              }}
+            >
+              <span className="auto-param-name">{name}</span>
+              <div className="auto-param-control">
+                <Painted
+                  param={param}
+                  value={row.value}
+                  path={param.key}
+                  label={name}
+                  marked={isMarked}
+                  set={(value, typing) =>
+                    param.key === ACTION && typeof value === "string"
+                      ? setAction(value)
+                      : edit((d) => setParam(d, step.id, param.key, value, names), typing)
+                  }
+                />
+              </div>
+              {row.added && (
+                <button
+                  type="button"
+                  className="btn ghost small auto-param-remove"
+                  data-boni-action="automations.edit"
+                  aria-label={`${t(DO.removeOption)}: ${name}`}
+                  onClick={() => edit((d) => removeOption(d, step.id, param.key))}
+                >
+                  {t(DO.removeOption)}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {options.length > 0 && (
+          <PopButton
+            label={t(DO.addOption)}
+            title={t(DO.addOption)}
+            className="btn ghost small"
+            align="start"
+          >
+            {(done) =>
+              options.map((o) => (
+                <MenuRow
+                  key={o.key}
+                  label={paramName(o.key)}
+                  boniAction="automations.edit"
+                  onClick={() => {
+                    done();
+                    const start: ParamValue =
+                      o.default !== undefined ? (o.control === "toggle" ? true : o.default) : "";
+                    edit((d) => setParam(d, step.id, o.key, start, names));
+                  }}
+                />
+              ))
+            }
+          </PopButton>
+        )}
+      </fieldset>
     </div>
   );
 
@@ -1117,7 +1120,7 @@ export function AutomationStepView({
         <div className="auto-view-back" onPointerDown={close} aria-hidden />
         <div
           ref={box}
-          className={`auto-view${wide ? "" : " narrow"}`}
+          className={`auto-view${phone ? " phone" : wide ? "" : " narrow"}`}
           role="dialog"
           aria-label={step.name}
           tabIndex={-1}
@@ -1141,16 +1144,22 @@ export function AutomationStepView({
               <Icon size={18} strokeWidth={1.7} />
             </span>
             <div className="auto-view-title">
-              <NameBox
-                key={step.name}
-                name={step.name}
-                label={t("auto.view.name")}
-                onDone={(name) => edit((d) => rename(d, step.id, name))}
-              />
+              {phone ? (
+                <h2 className="auto-view-name look" title={step.name}>
+                  {step.name}
+                </h2>
+              ) : (
+                <NameBox
+                  key={step.name}
+                  name={step.name}
+                  label={t("auto.view.name")}
+                  onDone={(name) => edit((d) => rename(d, step.id, name))}
+                />
+              )}
               {summary && <p className="auto-view-summary">{summary}</p>}
             </div>
             <div className="auto-view-test">
-              {why && (
+              {why && !phone && (
                 <span className="auto-view-why">
                   {why.why === "testing"
                     ? t("auto.view.testing")
@@ -1171,7 +1180,27 @@ export function AutomationStepView({
               <X size={16} strokeWidth={1.8} />
             </button>
           </header>
-          {wide ? (
+          {phone ? (
+            <div className="auto-view-cols one">
+              <section className="auto-view-col">
+                <div className="auto-tabs" role="tablist">
+                  {(["input", "params", "output"] as const).map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      role="tab"
+                      aria-selected={pane === p}
+                      className="auto-tab"
+                      onClick={() => setPane(p)}
+                    >
+                      {t(`auto.view.${p}`)}
+                    </button>
+                  ))}
+                </div>
+                {pane === "input" ? input : pane === "output" ? output : params}
+              </section>
+            </div>
+          ) : wide ? (
             <div className="auto-view-cols">
               {input}
               {middle}

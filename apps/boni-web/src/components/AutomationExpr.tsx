@@ -25,10 +25,11 @@ import {
   toFixed,
 } from "../automations/cite.ts";
 import type { RowView, Sample } from "../automations/client.ts";
-import { type ConditionField, fieldsOut, stepsBefore } from "../automations/panel.ts";
+import { type ConditionField, fieldsOutOf, stepsBefore } from "../automations/panel.ts";
 import { type Choices, choiceNames, DO, fieldNames, namedRow } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { carriesField, cellText, draggedOf } from "./AutomationRows.tsx";
+import { usePhone } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 
 /** What every value of the view needs to cite and to preview: given once by the step's view. */
@@ -61,10 +62,12 @@ export function citeNames(
 ): Pick<CiteView, "names" | "choices"> {
   const names: Record<string, Record<string, string>> = {};
   const choices: Record<string, Choices> = {};
+  const out = fieldsOutOf(draft, collection);
+  const byId = new Map(draft.steps.map((s) => [s.id, s]));
   for (const id of stepsBefore(draft, into)) {
-    const step = draft.steps.find((s) => s.id === id);
+    const step = byId.get(id);
     if (!step) continue;
-    const fields = fieldsOut(draft, id, collection);
+    const fields = out(id);
     const seen = sample?.steps[step.name];
     const row = seen?.first ?? seen?.item;
     names[step.name] = {
@@ -213,6 +216,8 @@ function ExprEditor({
   placeAt: React.MutableRefObject<number | null>;
 }) {
   const view = useContext(CiteContext) as CiteView;
+  // On the phone it is read, never typed in (AU-74).
+  const phone = usePhone();
   const ref = useRef<HTMLDivElement>(null);
   /** The expression as the editor holds it: what it last read from its text, or was painted with. */
   const held = useRef(expr);
@@ -255,10 +260,11 @@ function ExprEditor({
       key={painted.n}
       ref={ref}
       className={`input auto-input expr auto-expr${marked ? " marked" : ""}`}
-      contentEditable
+      contentEditable={!phone}
       suppressContentEditableWarning
       role="textbox"
       aria-label={label}
+      aria-readonly={phone || undefined}
       aria-invalid={marked || undefined}
       tabIndex={0}
       spellCheck={false}

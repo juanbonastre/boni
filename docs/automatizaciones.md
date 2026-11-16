@@ -821,8 +821,10 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   Un paso al que le falta algo obligatorio lleva una marca en la tarjeta desde que se marca el parámetro (AU-83). Un
   lienzo con solo su disparador no dice nada más: el «+» de su salida es lo que hay que hacer (AU-65).
   Hecho en C2: la tarjeta, su resumen, las salidas con su nombre y el lienzo con solo su disparador. Hecho en D: el
-  nombre y el resumen enteros en la vista del paso y la marca de lo obligatorio que falta. Falta: su captura de
-  referencia (G).
+  nombre y el resumen enteros en la vista del paso y la marca de lo obligatorio que falta. Hecho en G: la tarjeta
+  dice una cita sola por el nombre de su campo, como la cabecera de la vista, con lo que el borrador sabe de cada paso
+  (sin la prueba); con 200 tarjetas que citan, el lienzo abre en 350 ms y una tecla se pinta en 20 ms (A-15). Falta:
+  su captura de referencia (G).
 - **AU-64** (F14b, hecho) · Abajo a la izquierda: acercar, alejar, encajar y «Ordenar». Abajo en el centro:
   «Probar», que ensaya la automatización entera. En el editor solo se prueba (entera aquí; un paso, con «Probar
   paso»: AU-66 y AU-73); «Ejecutar», que corre la versión publicada, está en «⋯» (AU-97). Arriba a la derecha: «+».
@@ -931,12 +933,15 @@ Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecc
   app) la lista es la página de la colección de siempre, y una automatización abre su lienzo solo para ver: se mueve y
   se acerca con los dedos, y tocar un paso abre su vista en una columna con tres pestañas, «Entrada | Parámetros |
   Salida», con los parámetros sin poder cambiarlos y lo que dio la última prueba. No hay «+», ni barras de paso, ni
-  arrastrar, ni menús que cambien algo. Abierto, lo decide Juan: si en el teléfono se puede «Probar» en la F14b (un
-  flujo de hoy sí se prueba ahí); hasta que lo diga, no está, y tampoco «Probar paso» ni los botones de los estados
+  arrastrar, ni menús que cambien algo. «Probar» sí está (Juan, 2026-11-15: «Sí, también»): el de todo el borrador,
+  abajo en el lienzo, con los campos del disparador si los pide; no hay «Probar paso» ni los botones de los estados
   vacíos: en el teléfono una ENTRADA o una SALIDA sin datos dice «Sin probar» y nada más.
   Hecho en D: bajo 1100 px, las dos columnas con «Entrada | Salida» en pestañas, sin nada cortado ni que se desplace
-  de lado (a 1000 px y a 640 px; por debajo de 640 px la app es la del teléfono). Falta: el teléfono, solo para ver,
-  y sus capturas de referencia (G).
+  de lado (a 1000 px y a 640 px; por debajo de 640 px la app es la del teléfono). Hecho en G: el teléfono, para ver y
+  «Probar», probado a 360 px con los dedos (un dedo mueve el lienzo, dos lo acercan; un dedo sobre un paso mueve el
+  lienzo, no el paso); el nombre es texto, sin «Guardado» ni «⋯», y la flecha de volver es la de la app. Lo que el
+  tacto no hace, ni hace falta: arrastrar un campo de «Esquema» (el arrastre de HTML es del ratón) y el menú del
+  botón derecho. Falta: sus capturas de referencia (G).
 
 **Contra el mar de opciones** (C2 y C8: cada regla con su prueba)
 

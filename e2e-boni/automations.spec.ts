@@ -1,3 +1,4 @@
+import { under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { CATALOGUE, type ParamSpec, paramsOf } from "../packages/automations/src/catalogue.ts";
 import {
@@ -2425,7 +2426,168 @@ test.describe("the step's view", () => {
     await openStep(page, "s_01jfiltrar");
     await expect.poll(sideways).toEqual([]);
   });
-  test.fixme("AU-74 · on the phone the list is the collection's page and an automation opens its canvas only to look: it pans and zooms, a step opens in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something, no «Probar» and no «Probar paso», and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async () => {});
+  test.describe("on the phone", () => {
+    test.use({ hasTouch: true, isMobile: true });
+    test.beforeEach(async ({ page }) => {
+      await page.setViewportSize({ width: 360, height: 740 });
+    });
+    /** Fingers on the screen, as a person moves them: pressed, moved in small steps over about a third of a second. */
+    async function fingers(
+      page: Page,
+      from: { x: number; y: number }[],
+      to: { x: number; y: number }[],
+    ) {
+      const cdp = await page.context().newCDPSession(page);
+      const at = (k: number) =>
+        from.map((f, i) => ({
+          x: f.x + (((to[i] ?? f).x - f.x) * k) / 20,
+          y: f.y + (((to[i] ?? f).y - f.y) * k) / 20,
+          id: i,
+        }));
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: at(0) });
+      for (let k = 1; k <= 20; k++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: at(k) });
+        await page.waitForTimeout(16);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await cdp.detach();
+    }
+    const moved = (page: Page) =>
+      page
+        .locator(".auto-flow .react-flow__viewport")
+        .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform))
+        .then((m) => ({ x: Math.round(m.e), y: Math.round(m.f), zoom: m.a }));
+    const sideways = (page: Page) =>
+      page.evaluate(() =>
+        [document.documentElement, ...document.querySelectorAll(".auto-view, .auto-view-col")]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => (el as HTMLElement).className || el.tagName),
+      );
+    async function openOnPhone(page: Page, name: string, steps: number) {
+      await page
+        .locator(".m-tabs")
+        .getByRole("button", { name: /^Páginas/ })
+        .tap();
+      await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+      await page.getByText(name, { exact: true }).first().tap();
+      await expect(head(page).locator(".auto-name")).toHaveText(name);
+      await expect(cards(page)).toHaveCount(steps);
+      await settled(page);
+    }
+
+    test("AU-74 · on the phone the list is the collection's page and an automation opens its canvas to look at it and to test it: it pans and zooms with the fingers, a tap on a step opens it in one column with three tabs, «Entrada | Parámetros | Salida», with nothing to change; there is no «+», no step bar, no dragging, no menu that changes something and no «Probar paso»; «Probar» is there, and an ENTRADA or a SALIDA with no data says «Sin probar» with no button", async ({
+      page,
+    }) => {
+      await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
+      await openOnPhone(page, TESTED.name, 7);
+      // The header: back and the name, as text; no «Guardado» and no «⋯».
+      await expect(nameBox(page)).toHaveCount(0);
+      await expect(head(page).getByRole("status")).toHaveCount(0);
+      await expect(head(page).getByRole("button", { name: "Más" })).toHaveCount(0);
+      // The canvas: no «+», no «Ordenar»; «Probar» and «Registro» at the bottom.
+      await expect(page.locator(".auto-add-top, .auto-out-add, .auto-panel")).toHaveCount(0);
+      await expect(page.locator(".auto-zoom").getByRole("button")).toHaveCount(3);
+      await expect(page.getByRole("button", { name: "Ordenar" })).toHaveCount(0);
+      await expect(testGo(page)).toBeEnabled();
+      await expect(logLine(page)).toHaveText("Sin probar");
+      expect(await sideways(page)).toEqual([]);
+      await page.screenshot({ path: `${SHOTS}/phone-automation.png` });
+      // One finger on the canvas moves it; two apart zoom it.
+      const flow = await page.locator(".auto-flow").boundingBox();
+      if (!flow) throw new Error("no canvas");
+      const empty = { x: flow.x + 40, y: flow.y + 60 };
+      const before = await moved(page);
+      await fingers(page, [empty], [{ x: empty.x + 90, y: empty.y + 60 }]);
+      await settled(page);
+      const panned = await moved(page);
+      expect(Math.abs(panned.x - before.x - 90)).toBeLessThan(12);
+      expect(Math.abs(panned.y - before.y - 60)).toBeLessThan(12);
+      const mid = { x: flow.x + flow.width / 2, y: flow.y + flow.height / 2 };
+      await fingers(
+        page,
+        [
+          { x: mid.x - 30, y: mid.y },
+          { x: mid.x + 30, y: mid.y },
+        ],
+        [
+          { x: mid.x - 90, y: mid.y },
+          { x: mid.x + 90, y: mid.y },
+        ],
+      );
+      await settled(page);
+      expect((await moved(page)).zoom).toBeGreaterThan(panned.zoom * 1.5);
+      await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).tap();
+      await settled(page);
+      // A finger on a card moves the canvas, never the card; a long press opens no menu.
+      const si = await middle(card(page, "s_01jsi"));
+      const place = await at(page, "s_01jsi");
+      await fingers(page, [si], [{ x: si.x + 60, y: si.y + 40 }]);
+      await settled(page);
+      expect(await at(page, "s_01jsi")).toEqual(place);
+      await card(page, "s_01jsi").dispatchEvent("contextmenu");
+      await page.locator(".react-flow__pane").dispatchEvent("contextmenu");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(page.locator(".auto-panel")).toHaveCount(0);
+      // A tap on a step opens it: no step bar, one column, three tabs, «Parámetros» first.
+      await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).tap();
+      await settled(page);
+      await card(page, "s_01jsi").tap();
+      await expect(view(page)).toHaveAttribute("data-step", "s_01jsi");
+      await expect(bar(page)).toHaveCount(0);
+      await expect(view(page)).toHaveClass(/\bphone\b/);
+      const tabs = view(page).getByRole("tab");
+      await expect(tabs).toHaveText(["Entrada", "Parámetros", "Salida"]);
+      await expect(view(page).getByRole("tab", { name: "Parámetros" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(view(page).locator(".auto-view-cols > .auto-view-col")).toHaveCount(1);
+      // Its name is text, the parameters are read and nothing in them can be changed; no «Probar paso».
+      await expect(nameIn(page)).toHaveCount(0);
+      await expect(view(page).locator(".auto-view-head h2")).toHaveText("Si");
+      await expect(param(page, "where")).toBeVisible();
+      const controls = view(page).locator(
+        "[role=tabpanel] :is(input, select, textarea, button):not([role=tab])",
+      );
+      expect(await controls.count()).toBeGreaterThan(0);
+      for (const c of await controls.all()) await expect(c).toBeDisabled();
+      await expect(view(page).locator("[contenteditable=true]")).toHaveCount(0);
+      await expect(view(page).getByRole("button", { name: "Probar paso" })).toHaveCount(0);
+      expect(await sideways(page)).toEqual([]);
+      await page.screenshot({ path: `${SHOTS}/phone-automation-params.png` });
+      // Not tested: ENTRADA and SALIDA say «Sin probar», and nothing else.
+      for (const side of ["Entrada", "Salida"]) {
+        await view(page).getByRole("tab", { name: side }).tap();
+        const empty = view(page).locator(".auto-view-empty");
+        await expect(empty).toHaveText("Sin probar");
+        await expect(empty.getByRole("button")).toHaveCount(0);
+        expect(await sideways(page)).toEqual([]);
+      }
+      await view(page).getByRole("button", { name: "Cerrar" }).tap();
+      await expect(view(page)).toHaveCount(0);
+      // «Probar»: the trigger's field asked with the last value, then the last test.
+      await testGo(page).tap();
+      const box = testBar(page).getByRole("dialog");
+      await expect(box.getByRole("spinbutton", { name: "Mínimo" })).toHaveValue("300");
+      await box.getByRole("button", { name: "Probar" }).tap();
+      await expect(logLine(page)).toHaveText(
+        "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+      );
+      // Tested: a step shows what it got and what it gave.
+      await card(page, "s_01jsi").tap();
+      await view(page).getByRole("tab", { name: "Entrada" }).tap();
+      await expect(entrada(page).locator(".auto-in-from")).toHaveText(
+        "De «Buscar filas en Libros» · 128 filas",
+      );
+      await view(page).getByRole("tab", { name: "Salida" }).tap();
+      await expect(salida(page).locator(".auto-out-count")).toHaveText("3 filas");
+      await expect(salida(page)).toContainText("Libro 126");
+      expect(await sideways(page)).toEqual([]);
+      await page.screenshot({ path: `${SHOTS}/phone-automation-step.png` });
+      // Nothing of it was changed: no draft and no boxes sent.
+      expect((await asked(page)).filter((a) => a.startsWith("PUT"))).toEqual([]);
+    });
+  });
   test("AU-20 · a field dropped on a text goes in at the caret and one dropped on a number replaces it; after a test the expression says what it gives and with which row («= 5 · con la fila 1 de 128»); typing in it asks the server for nothing", async ({
     page,
   }) => {
@@ -2710,6 +2872,105 @@ test.describe("the step's view", () => {
     expect(opening).toBeLessThan(400);
     expect(worstKey).toBeLessThan(120);
     expect(mean).toBeLessThan(45);
+  });
+
+  test("AU-21, A-15 · with 200 steps whose counts cite a field, each card says it by the field's name, as the view's header does; the canvas opens and each key typed in a step is drawn at once", async ({
+    page,
+  }, info) => {
+    const many = Array.from({ length: 200 }, (_, i) =>
+      i === 0
+        ? step("s_inicio", "Disparado por el usuario", "manual")
+        : i === 1
+          ? step("s_01jbuscar", "Buscar filas en Libros", "collection", {
+              action: "find",
+              collection: "libros",
+            })
+          : step(`s_01jpaso${String(i).padStart(4, "0")}`, `Limitar ${i + 1}`, "limit", {
+              count: i === 2 ? 5 : { expr: "{{ $json.paginas }}" },
+            }),
+    );
+    const long = {
+      id: "a_01jx8x0t2v4x6z8b0d2f4h6k8p",
+      name: "Doscientas citas",
+      updated: 1761995000000,
+      steps: many,
+      arrows: many.slice(1).map((s, i) => arrow(many[i]?.id as string, s.id)),
+      places: many.map((s, i) => ({ step: s.id, x: (i % 20) * 300, y: Math.floor(i / 20) * 200 })),
+    };
+    await openApp(page, "/?still", { automations: [long], agent: BEFORE() });
+    const rows = await list(page);
+    // From the click on its row to the frame with its 200 cards, measured in the page.
+    await page.evaluate(() => {
+      const w = window as unknown as { __open: { click: number; shown: number } };
+      w.__open = { click: 0, shown: 0 };
+      document.addEventListener(
+        "click",
+        () => {
+          w.__open.click = performance.now();
+        },
+        { capture: true, once: true },
+      );
+      const seen = new MutationObserver(() => {
+        if (document.querySelectorAll(".auto-card").length < 200) return;
+        seen.disconnect();
+        requestAnimationFrame(() => {
+          w.__open.shown = performance.now();
+        });
+      });
+      seen.observe(document.body, { childList: true, subtree: true });
+    });
+    await rows.getByText("Doscientas citas", { exact: true }).click();
+    await expect(cards(page)).toHaveCount(200);
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as { __open: { shown: number } }).__open.shown),
+      )
+      .toBeGreaterThan(0);
+    const opening = await page.evaluate(() => {
+      const o = (window as unknown as { __open: { click: number; shown: number } }).__open;
+      return o.shown - o.click;
+    });
+    // Each card citing «paginas» of «Libros» says «Páginas», the name the collection gives it; the view's header too.
+    const summary = (id: string) => card(page, id).locator(".auto-card-summary");
+    await expect(summary("s_01jpaso0003")).toHaveText("Páginas");
+    await expect(summary("s_01jpaso0199")).toHaveText("Páginas");
+    await expect(summary("s_01jpaso0002")).toHaveText("Cuántas 5");
+    await card(page, "s_01jpaso0199").dblclick();
+    await expect(view(page).locator(".auto-view-summary")).toHaveText("Páginas");
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    // Each key typed at a person's pace in the one count that is a number, from the key to its frame.
+    await card(page, "s_01jpaso0002").dblclick();
+    const count = param(page, "count").getByRole("spinbutton");
+    await count.click();
+    await press(page, "Control+a");
+    await page.evaluate(() => {
+      const w = window as unknown as { __keys: number[] };
+      w.__keys = [];
+      document.addEventListener(
+        "input",
+        () => {
+          const t0 = performance.now();
+          requestAnimationFrame(() => w.__keys.push(performance.now() - t0));
+        },
+        { capture: true },
+      );
+    });
+    await count.pressSequentially("1234567", { delay: 120 });
+    await expect(summary("s_01jpaso0002")).toHaveText("Cuántas 1234567");
+    await expect(summary("s_01jpaso0199")).toHaveText("Páginas");
+    const keys = await page.evaluate(() => (window as unknown as { __keys: number[] }).__keys);
+    const worstKey = Math.max(...keys);
+    info.annotations.push({
+      type: "A-15",
+      description: `200 cards citing a field: the canvas opened in ${opening.toFixed(0)} ms; ${keys.length} keys typed, the worst drawn in ${worstKey.toFixed(1)} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    expect(keys).toHaveLength(7);
+    // Measured here (2026-11-16, headless Chrome with no GPU, load 4 to 6 on 8 cores): opened in 347 to 360 ms, and
+    // 330 to 333 ms with the cards saying the key instead (naming 198 citations costs about 20 ms); the worst key 17 to
+    // 19 ms. The margins are for CI, as the view's test above.
+    under(opening, 1100, "clock", "opening 200 cards that cite a field");
+    under(worstKey, 120, "clock", "the worst key typed with 200 cards that cite a field");
   });
 });
 

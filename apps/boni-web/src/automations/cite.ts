@@ -19,8 +19,10 @@ import {
   resolve,
   type Scope,
 } from "@boni/automations";
+import type { T } from "../i18n.ts";
 import type { RowView, Sample } from "./client.ts";
-import { stepsBefore } from "./panel.ts";
+import { type ConditionField, fieldsOutOf, stepsBefore } from "./panel.ts";
+import { fieldNames } from "./words.ts";
 
 /** The steps `into` hangs from, by id: the start of every arrow into it. */
 const parentsOf = (draft: Automation, into: string): string[] => [
@@ -302,14 +304,57 @@ export function preview(
   }
 }
 
-/** A citation alone said by its field's name, as its chip says it: what a step's summary says (AU-21). */
+/** Field names by step name, then by key: a table (`citeNames`) or asked one step at a time (`namesOnDemand`). */
+type NamesOf =
+  | Readonly<Record<string, Readonly<Record<string, string>>>>
+  | ((step: string) => Readonly<Record<string, string>> | undefined);
+
+/**
+ * A citation alone said by its field's name, as its chip says it (`paint`): what a step's summary says (AU-21), in
+ * the view's header and on the canvas's card. Only the step it cites is looked at, never the whole path as `paint`
+ * does for its «Paso › campo»: the canvas asks it for each of its cards on every change (A-15).
+ */
 export function citedName(
   draft: Automation,
   into: string,
-  names: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  names: NamesOf,
 ): (cite: Citation) => string | undefined {
+  const namesOf = typeof names === "function" ? names : (step: string) => names[step];
   return (cite) => {
-    const [p] = paint(written(cite), draft, into, names);
-    return p?.kind === "chip" && !p.broken ? p.name : undefined;
+    const [key = "", ...rest] = cite.path;
+    let step: string | null = cite.step;
+    if (step === null) {
+      const up = parentsOf(draft, into)[0];
+      step = up === undefined ? null : (draft.steps.find((s) => s.id === up)?.name ?? null);
+    } else if (!draft.steps.some((s) => s.name === step)) return undefined;
+    const known = step === null ? undefined : namesOf(step);
+    const field = known?.[key];
+    // A field is missing only where the step's shape is known (a test, a collection): else its key is all there is.
+    if (known && Object.keys(known).length > 0 && field === undefined) return undefined;
+    return [field ?? key, ...rest].join(" › ");
+  };
+}
+
+/**
+ * The names each step's fields go by, as the draft knows them (`fieldsOut`, `fieldNames`), made for a step only when
+ * a citation asks for it and once per draft: what the canvas's cards cite by, with no test's rows (A-15).
+ */
+export function namesOnDemand(
+  t: T,
+  draft: Automation,
+  collection: (key: string) => readonly ConditionField[] | undefined,
+): (step: string) => Readonly<Record<string, string>> | undefined {
+  const out = fieldsOutOf(draft, collection);
+  const byName = new Map(draft.steps.map((s) => [s.name, s.id]));
+  const made = new Map<string, Record<string, string>>();
+  return (name) => {
+    const id = byName.get(name);
+    if (id === undefined) return undefined;
+    let names = made.get(name);
+    if (!names) {
+      names = fieldNames(t, out(id));
+      made.set(name, names);
+    }
+    return names;
   };
 }

@@ -51,6 +51,7 @@ import {
 } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { type PanelEntry, panelList, searchPanel } from "../automations/adding.ts";
+import { citedName, namesOnDemand } from "../automations/cite.ts";
 import {
   addStep,
   type Clip,
@@ -63,7 +64,14 @@ import {
   sameArrow,
   setSetting,
 } from "../automations/edit.ts";
-import { cannotTest, labelsOf, markedOf, summaryOf } from "../automations/panel.ts";
+import {
+  type ConditionField,
+  cannotTest,
+  conditionFieldsOf,
+  labelsOf,
+  markedOf,
+  summaryOf,
+} from "../automations/panel.ts";
 import { below, CARD, pastedPlaces, tidy, withPlaces } from "../automations/places.ts";
 import {
   type AddAt,
@@ -86,7 +94,7 @@ import {
 import type { T } from "../i18n.ts";
 import { toast, useStore } from "../store.ts";
 import { AutomationStepView } from "./AutomationStepView.tsx";
-import { stateMark, TestBar, useTester } from "./AutomationTest.tsx";
+import { stateMark, TestBar, usePhone, useTester } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
@@ -162,6 +170,7 @@ type ArrowEdge = Edge<ArrowData, "arrow">;
 /** A step's card (AU-63): its icon, its name and one line of summary, its inputs on the left, its outputs right. */
 const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>) {
   const acts = useActs();
+  const phone = usePhone();
   const { t } = acts;
   const { step, summary, inputs, outputs, alone, renaming, labels, missing, problem, mark, test } =
     data;
@@ -180,7 +189,11 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
       data-step={step.id}
       data-state={mark?.state}
     >
-      <NodeToolbar isVisible={alone && selected} position={Position.Top} className="auto-bar">
+      <NodeToolbar
+        isVisible={alone && selected && !phone}
+        position={Position.Top}
+        className="auto-bar"
+      >
         <button
           type="button"
           className="auto-bar-btn"
@@ -318,7 +331,7 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
               {output.count.words}
             </span>
           )}
-          {output.free && (
+          {output.free && !phone && (
             <button
               type="button"
               className="auto-out-add nodrag nopan"
@@ -374,6 +387,7 @@ function RenameBox({ step }: { step: Step }) {
 /** An arrow (AU-66): selected, «+» to put a step in it and the cross that takes it away. */
 function ArrowLine(p: EdgeProps<ArrowEdge>) {
   const acts = useActs();
+  const phone = usePhone();
   const [path, lx, ly] = getBezierPath(p);
   const arrow = p.data?.arrow;
   const count = p.data?.count;
@@ -395,7 +409,7 @@ function ArrowLine(p: EdgeProps<ArrowEdge>) {
           </div>
         </EdgeLabelRenderer>
       )}
-      {p.selected && arrow && (
+      {p.selected && arrow && !phone && (
         <EdgeLabelRenderer>
           <div
             className="auto-arrow-bar nodrag nopan"
@@ -430,6 +444,15 @@ function ArrowLine(p: EdgeProps<ArrowEdge>) {
 const NODE_TYPES: NodeTypes = { step: StepCard };
 const EDGE_TYPES: EdgeTypes = { arrow: ArrowLine };
 
+/** The fields of each collection by key, as a condition sees them: what a citation of a step reading it is named by. */
+function useCollectionFields(): (key: string) => readonly ConditionField[] | undefined {
+  const types = useStore((s) => s.dataTypes);
+  return useMemo(() => {
+    const by = new Map((types ?? []).map((d) => [d.key, conditionFieldsOf(d)]));
+    return (key: string) => by.get(key);
+  }, [types]);
+}
+
 /** The names of the collections by key, as the app has them: what a step's automatic name and its summary say. */
 function useCollectionNames(): Record<string, string> {
   const types = useStore((s) => s.dataTypes);
@@ -460,6 +483,9 @@ function Canvas({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
+  const phone = usePhone();
+  /** How «Encajar» fits it; on the phone never so small that a card cannot be read: its middle, the rest a finger away. */
+  const fit = phone ? { padding: 0.2, maxZoom: 1, minZoom: 0.5 } : { padding: 0.2, maxZoom: 1 };
   const collections = useCollectionNames();
   const names = useMemo(() => namer(t, collections), [t, collections]);
   const flow = useReactFlow();
@@ -471,6 +497,9 @@ function Canvas({
   const empty = state.draft.steps.length === 0;
 
   const shown = useMemo(() => withPlaces(state.draft, state.places), [state.draft, state.places]);
+  const fieldsOf = useCollectionFields();
+  /** The names the cards' citations go by, made per draft and only for the steps they cite. */
+  const cited = useMemo(() => namesOnDemand(t, state.draft, fieldsOf), [t, state.draft, fieldsOf]);
   /** Each card as last made, with what it was made from: the same step, place and marks give the same node. */
   const cards = useRef(new Map<string, { from: unknown[]; node: CardNode }>());
   const made = useMemo<CardNode[]>(() => {
@@ -492,7 +521,13 @@ function Canvas({
         .join(",");
       const testing =
         selected && alone ? (state.testing ? (state.testing.step ?? "") : null) : null;
+      // A citation alone is said by its field's name, which a change before the step can change too (AU-21).
+      const summary = summaryOf(
+        step,
+        summaryWords(t, collections, step, citedName(state.draft, step.id, cited)),
+      ).join(" · ");
       const from = [
+        summary,
         step,
         at.x,
         at.y,
@@ -514,7 +549,7 @@ function Canvas({
         kept.set(step.id, was);
         return was.node;
       }
-      const node = cardOf(step, at, selected, selected && alone, left, used, testing);
+      const node = cardOf(step, at, selected, selected && alone, left, used, testing, summary);
       kept.set(step.id, { from, node });
       return node;
     });
@@ -532,6 +567,7 @@ function Canvas({
     t,
     lang,
     collections,
+    cited,
     renaming,
   ]);
   /** What an output says it gave in the last test: «128 filas», dimmed at 0 or stale (AU-67, AU-92). */
@@ -548,6 +584,7 @@ function Canvas({
     left: string[],
     used: Set<string>,
     testing: string | null,
+    summary: string,
   ): CardNode {
     const ins = inputsOf(step);
     const outs = outputsOf(step);
@@ -573,7 +610,7 @@ function Canvas({
       selected,
       data: {
         step,
-        summary: summaryOf(step, summaryWords(t, collections, step)).join(" · "),
+        summary,
         inputs: ins.map((id) => ({ id, label: ins.length > 1 ? t(KEY.input(id)) : null })),
         // The only output «main» needs no name (AU-63); a rule of «Elegir rama» is said by its own.
         outputs: outs.map((id) => ({
@@ -743,6 +780,8 @@ function Canvas({
   keys.current = (e: KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
+    // On the phone nothing is changed (AU-74): a keyboard there only closes, with Esc.
+    if (phone && e.key !== "Escape") return;
     // In the step's view a change typed is one step of Deshacer (AU-68): Ctrl+Z there is the editor's, not the field's.
     const inView = !!(e.target as HTMLElement | null)?.closest?.(".auto-view");
     if (state.open && inView && mod && (k === "z" || k === "y")) {
@@ -820,7 +859,8 @@ function Canvas({
     return () => cancelAnimationFrame(frame);
   }, [count]);
 
-  const panelOpen = empty || state.adding !== null;
+  // On the phone nothing is added (AU-74): no panel, not even the empty canvas's «¿Cómo empieza?».
+  const panelOpen = !phone && (empty || state.adding !== null);
   const menuStep = menu ? state.draft.steps.find((s) => s.id === menu.step) : undefined;
   return (
     <ActsContext.Provider value={acts}>
@@ -856,6 +896,9 @@ function Canvas({
                 return ns.map((n) => by.get(n.id) ?? n);
               })
             }
+            // On the phone (AU-74) the canvas is moved and zoomed with the fingers, and a tap on a step opens it.
+            nodesDraggable={!phone}
+            nodesConnectable={!phone}
             onNodeDragStart={(_, n) => {
               if (!state.selected.includes(n.id))
                 apply((s) => ({ ...s, selected: [n.id], arrow: null }));
@@ -871,20 +914,22 @@ function Canvas({
               });
             }}
             onNodeClick={(e, n) =>
-              apply((s) => ({
-                ...s,
-                arrow: null,
-                selected:
-                  e.shiftKey || e.ctrlKey || e.metaKey
-                    ? s.selected.includes(n.id)
-                      ? s.selected.filter((x) => x !== n.id)
-                      : [...s.selected, n.id]
-                    : [n.id],
-              }))
+              phone
+                ? apply((s) => ({ ...s, arrow: null, selected: [n.id], open: n.id }))
+                : apply((s) => ({
+                    ...s,
+                    arrow: null,
+                    selected:
+                      e.shiftKey || e.ctrlKey || e.metaKey
+                        ? s.selected.includes(n.id)
+                          ? s.selected.filter((x) => x !== n.id)
+                          : [...s.selected, n.id]
+                        : [n.id],
+                  }))
             }
             onNodeDoubleClick={(_, n) => apply((s) => ({ ...s, selected: [n.id], open: n.id }))}
             onEdgeClick={(_, e) => {
-              const arrow = e.data?.arrow;
+              const arrow = phone ? undefined : e.data?.arrow;
               if (arrow) apply((s) => ({ ...s, selected: [], arrow }));
             }}
             onPaneClick={() => {
@@ -893,11 +938,13 @@ function Canvas({
             }}
             onNodeContextMenu={(e, n) => {
               e.preventDefault();
+              if (phone) return;
               apply((s) => ({ ...s, selected: [n.id], arrow: null }));
               setMenu({ step: n.id, x: e.clientX, y: e.clientY });
             }}
             onPaneContextMenu={(e) => {
               e.preventDefault();
+              if (phone) return;
               const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
               add({ from: "canvas", x: Math.round(p.x), y: Math.round(p.y) });
             }}
@@ -926,7 +973,7 @@ function Canvas({
             multiSelectionKeyCode={null}
             elementsSelectable
             fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+            fitViewOptions={fit}
             panOnScroll
             zoomOnScroll={false}
             zoomOnPinch
@@ -960,24 +1007,26 @@ function Canvas({
               className="icon-btn"
               aria-label={t("auto.fit")}
               title={t("auto.fit")}
-              onClick={() => void flow.fitView({ padding: 0.2, maxZoom: 1, duration: 200 })}
+              onClick={() => void flow.fitView({ ...fit, duration: 200 })}
             >
               <Maximize size={16} strokeWidth={1.8} />
             </button>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t(DO.tidy)}
-              title={t(DO.tidy)}
-              data-boni-action="automations.arrange"
-              disabled={empty}
-              onClick={tidyUp}
-            >
-              <LayoutGrid size={16} strokeWidth={1.8} />
-            </button>
+            {!phone && (
+              <button
+                type="button"
+                className="icon-btn"
+                aria-label={t(DO.tidy)}
+                title={t(DO.tidy)}
+                data-boni-action="automations.arrange"
+                disabled={empty}
+                onClick={tidyUp}
+              >
+                <LayoutGrid size={16} strokeWidth={1.8} />
+              </button>
+            )}
           </div>
           {!empty && <TestBar state={state} apply={apply} />}
-          {!empty && (
+          {!empty && !phone && (
             <button
               type="button"
               className="icon-btn auto-add-top"

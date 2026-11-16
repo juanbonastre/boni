@@ -10838,6 +10838,27 @@ body.dragging-image * {
   }
 }
 
+/* An automation on the phone (AU-74): its name and its canvas, which fills what is left above the tab bar. */
+.m-flows:has(.auto-page) {
+  padding: 0 8px 8px;
+}
+.m-flows .auto-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+.m-flows .auto-page .doc {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-top: 0;
+}
+.m-flows .auto-page .auto-canvas {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 320px;
+}
 /* «Flujos» on the phone (docs/sistema.md §4.4): to look at the map and run a flow; nothing is made or changed here. */
 .m-flows .content.page-doc {
   padding: 8px 12px 24px;
@@ -12552,6 +12573,18 @@ tr[data-boni-pointed] > td {
   border: 1px solid var(--line);
   border-radius: 10px;
 }
+/* On the phone (AU-74) «Probar» and «Registro» take the bottom's whole width, the zoom just above them on the left. */
+@media (max-width: 639px) {
+  .auto-test-bar {
+    left: 10px;
+    right: 10px;
+    transform: none;
+    max-width: none;
+  }
+  .auto-zoom {
+    bottom: 78px;
+  }
+}
 .auto-test-go {
   display: inline-flex;
   align-items: center;
@@ -12886,7 +12919,33 @@ button.auto-log-line {
   box-sizing: border-box;
   resize: vertical;
 }
-/* The phone's width: one column, the whole screen (the phone's own view, with three tabs, is G's: AU-74). */
+/* The phone's view (AU-74): one column with «Entrada | Parámetros | Salida» in tabs, the parameters read, never
+   changed; the name is text. */
+.auto-name.look,
+.auto-view-name.look {
+  margin-top: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.auto-view-look {
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-width: 0;
+  display: contents;
+}
+.auto-view.phone .auto-view-cols {
+  grid-template-columns: minmax(0, 1fr);
+}
+.auto-view.phone .auto-view-col {
+  overflow: auto;
+  border-bottom: none;
+}
+.auto-view.phone .auto-expr[aria-readonly="true"] {
+  color: var(--muted);
+}
+/* The phone's width: one column, the whole screen. */
 @media (max-width: 639px) {
   .auto-view {
     inset: 0;
