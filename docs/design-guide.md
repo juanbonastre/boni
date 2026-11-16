@@ -1264,7 +1264,8 @@ contraseña ni un código aquí» under a question.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
   sight. «{ }» closes every value's row, in one column: beside its control, with the same right edge, size and
-  look whatever the value is, and a row of «Campo · Valor» ends with the same trash icon as a condition's. Pressed it is in `--accent` and the value is an expression; it keeps what was written as the
+  look whatever the value is, and a row of «Campo · Valor» ends with the same trash icon as a condition's; a condition's value has a line of its
+  own with its trash beside it, and the trash stays on the value's first line when an expression wraps. Pressed it is in `--accent` and the value is an expression; it keeps what was written as the
   expression's text, and back to «Fijo» leaves the control empty (both undo with Ctrl+Z). An expression is one line
   of text, not monospace, where each citation is a **chip**: a pill in `--accent-soft` with the step's icon (12 px)
   and the field's name («Páginas», «Suma de Páginas»; «Buscar filas en Libros › Título» when another step of the
