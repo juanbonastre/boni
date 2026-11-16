@@ -100,6 +100,9 @@ async function login(w: Page, device: string) {
   await w.keyboard.press("Escape");
 }
 
+/** A read of the desktop's store held in its main process until the test lets it go. */
+type Held = { asked?: boolean; answered?: boolean; go?: () => void };
+
 /**
  * The desktop app as it runs on Juan's computer, with a profile of its own (never his); `profile` names another
  * one, another computer of the account.
@@ -397,7 +400,46 @@ test("AU-62 AU-05 · the draft made in the desktop app is on the server: after a
   const other = await launch("-sobremesa");
   try {
     const o = await other.firstWindow();
+    // A section opened while the app connects stays: the start page does not take the window from it. The read of
+    // the last page open, the one the start page waits for after the pages came, is held until «Automatizaciones»
+    // is open (CI, 2026-11-16: a click that fell in it was put under the start page, at one run in about ten).
+    await o.getByRole("button", { name: "Configurar servidor" }).waitFor();
+    await other.evaluate(
+      ({ ipcMain }, store) => {
+        const g = globalThis as unknown as Held;
+        const fs = process.getBuiltinModule("node:fs");
+        const path = process.getBuiltinModule("node:path");
+        const go = new Promise<void>((r) => {
+          g.go = r;
+        });
+        ipcMain.removeHandler("store:read");
+        ipcMain.handle("store:read", async (_e, name: string) => {
+          if (name === "last-page.json" && !g.asked) {
+            g.asked = true;
+            await go;
+            g.answered = true;
+          }
+          try {
+            return fs.readFileSync(path.join(store, path.basename(name)), "utf8");
+          } catch {
+            return null;
+          }
+        });
+      },
+      join(dir, "data-sobremesa", "boni", "store"),
+    );
+    const held = () =>
+      other.evaluate(() => {
+        const g = globalThis as unknown as Held;
+        return { asked: !!g.asked, answered: !!g.answered };
+      });
     await login(o, "sobremesa-ejemplo");
+    await expect.poll(async () => (await held()).asked).toBe(true);
+    await openAutomations(o);
+    await other.evaluate(() => (globalThis as unknown as Held).go?.());
+    await expect.poll(async () => (await held()).answered).toBe(true);
+    await o.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+    await expect(o.getByRole("tab", { name: "Tabla" })).toBeVisible();
     await same(o);
   } finally {
     await other.close();

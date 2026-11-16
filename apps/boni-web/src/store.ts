@@ -3026,13 +3026,15 @@ async function startPages() {
   // under it, with a page's Back and «…» over the conversation (task 115).
   if (v.kind === "home" && phoneLayout() && get().tab === "boni") return;
   if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
-    await openStart();
-  else if (v.kind === "page") await openPage(v.id);
+    await openStart(v);
+  else if (v.kind === "page") await openPage(v.id, v);
 }
 
-export async function openPage(id: string) {
+export async function openPage(id: string, from?: View) {
   await flushPage();
   await flushRowBody();
+  // Asked for while `from` was open (the start, after a login): somewhere else he went meanwhile is where he stays.
+  if (from && get().view !== from) return;
   const same = get().page?.id === id;
   set({ view: { kind: "page", id }, page: same ? get().page : null });
   try {
@@ -3064,18 +3066,24 @@ export async function openPageWith(id: string, values: Record<string, string | n
   if (changed) setPageBlocks(blocks);
 }
 
-/** The start screen: the last page opened here if it still exists, else the first; none, the welcome. */
-export async function openStart() {
+/**
+ * The start screen: the last page opened here if it still exists, else the first; none, the welcome. `from`: the
+ * view it was asked over (at start, after a login). A section opened while the last page was read stays: on the
+ * desktop that read goes to the app's main process, and a click on «Automatizaciones» as the app connected was put
+ * under the start page (CI, 2026-11-16).
+ */
+export async function openStart(from?: View) {
   const pages = get().pages;
   if (!pages?.length) {
     set({ view: { kind: "home" }, page: null });
     return;
   }
   const last = await readJson<{ page: Page }>(store, FILES.lastPage);
+  if (from && get().view !== from) return;
   const id = pages.some((p) => p.id === last?.page?.id)
     ? (last?.page.id as string)
     : (pages.find((p) => !p.parent) ?? pages[0])?.id;
-  if (id) await openPage(id);
+  if (id) await openPage(id, from);
 }
 
 /** A new page (as Notion's): untitled, open at once with the caret in its name. It is on screen before the server
