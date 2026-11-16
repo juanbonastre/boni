@@ -471,12 +471,23 @@ return categorias.map((c) => ({
   En la F14c: el editor lee el código con el mismo lector que el servidor (`readCode`, `javascript.ts`), así que lo
   que marca es lo que dirá la validación. Un campo que la última prueba del paso citado no dio se subraya como aviso y
   no impide probar.
-- **AU-37** (F14c, en parte) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados.
-  En la F14c: vale entre dos llamadas (un intérprete nuevo cada vez) y entre dos filas de la misma tanda: lo que el
-  código recibe y lo que el intérprete trae no se pueden cambiar, y escribir en ellos falla diciendo que devuelva una
-  copia. La respuesta de una tanda es la de sus filas mandadas de una en una.
-  Hecho en E1: la caja. Lo decide un solo sitio, `received` en `apps/sandbox/src/world.js`. Falta (E3): que el motor
-  no guarde de una evaluación más que sus valores, su consola y su cuenta.
+- **AU-37** (F14c, en parte) · Una evaluación no deja nada a la siguiente: ni variables ni prototipos cambiados. El
+  código puede cambiar las filas que le llegan al paso (`for (const fila of $input.all()) fila.total = 1; return
+  $input.all()`), y lo que devuelve es lo que da el paso. Cada evaluación tiene su propia copia de esas filas, así que
+  un cambio no sale de ella: no llega a otra tanda, a otra evaluación, a lo que dio el paso anterior (la ENTRADA de una
+  prueba enseña lo que llegó) ni a la colección, y una pasada repetida tras una lectura empieza de las filas como
+  llegaron. Lo demás se mira y no se cambia: las filas de otros pasos (`$('…')`), lo leído de una colección y `$run`;
+  para cambiarlo se cambia una copia (`{ ...fila }`). (Juan, 2026-11-16; antes tampoco se podían cambiar las filas que
+  llegan.)
+  En la F14c: vale entre dos llamadas (un intérprete nuevo cada vez) y entre dos filas de la misma tanda. Escribir en
+  lo que no se cambia, o en lo que trae el intérprete, falla (`code.frozen`) diciendo que se cambie una copia. La
+  respuesta de una tanda es la de sus filas mandadas de una en una.
+  Hecho en E1: la caja. Lo deciden dos funciones juntas en `apps/sandbox/src/world.js`: `listOf` da a cada evaluación
+  su copia de las filas del paso, fila a fila según las toca, y `received` congela todo lo demás. Medido con 3.000
+  filas: copiar también las filas de otros pasos y lo leído hacía diez veces más lento buscar, desde cada fila, en
+  otro paso de 3.000 filas (3,2 s contra 37; una tanda de 500 pasaba de los 5 s del tope), y por eso se quedan para
+  mirar. Falta (E3): que el motor no guarde de una evaluación más que sus valores, su consola y su cuenta, y que lo
+  que dio el paso anterior y la ENTRADA de una prueba sigan siendo lo que llegó.
 - **AU-38** (F14c, en parte) · Lo que cuesta evaluar una expresión por fila se mide con 3.000 filas antes de salir
   (A-15), y un paso «por fila» manda las filas a la caja por tandas, no de una en una.
   En la F14c: las expresiones de un paso se calculan para todas sus filas antes de trabajar las filas, por tandas de

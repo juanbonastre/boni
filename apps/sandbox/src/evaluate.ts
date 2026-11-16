@@ -4,7 +4,7 @@
  * interpreter with a memory of its own, the limits, and nothing of Boni or of the machine reachable from inside. What
  * is new: expressions and «Código» over a batch of rows, what the code may name (world.js, which runs inside), the
  * console collected, a read that stops the evaluation when the request does not bring it, and a world that one row's
- * evaluation cannot change for the next (world.js's `received`, AU-37).
+ * evaluation cannot change for the next, the data copied for each evaluation (world.js's `received` and `mine`, AU-37).
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

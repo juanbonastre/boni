@@ -99,7 +99,11 @@ export const CODE_FAILURES = [
    * nor one object), "notJson" (a function, a cycle, a number that is not finite), "promise" (code cannot wait).
    */
   "code.result",
-  /** It tried to change what it was given, or something of the interpreter (AU-37). `detail.line`, `detail.column`. */
+  /**
+   * It tried to change what it may only look at: another step's rows, what it read, `$run`, or something of the
+   * interpreter or of the world Boni gives it. The rows that reach the step it may change (AU-37, Juan 2026-11-16).
+   * `detail.line`, `detail.column`.
+   */
   "code.frozen",
   /** `$col` of a collection the step is not connected to, found while running (AU-161). `detail.collection`: as written. */
   "code.read.notConnected",

@@ -41,6 +41,7 @@ import {
 } from "./eval-helpers.ts";
 
 type Kind = EvalRequest["kind"];
+type Mode = EvalRequest["mode"];
 const ask = (
   kind: Kind,
   sources: string[],
@@ -323,9 +324,9 @@ describe("nothing of outside", () => {
 });
 
 describe("one evaluation leaves nothing to the next", () => {
-  it("AU-37 · a row's evaluation cannot leave anything to the next row's of the same batch: a variable without `const`, a property on `globalThis`, on `Object.prototype`, `Array.prototype` or `Function.prototype`, on a function of `$input` or on `console`, a `Symbol.for`, a getter left on a shared row: each either throws (`frozen`) or is not there for the next row", async () => {
-    // Each attempt is a case of test/cases/evaluacion (`dejar-*.js`): it fails in the three forms, and its `look`
-    // line, run for the next row of the same batch, finds nothing left.
+  it("AU-37 · a row's evaluation cannot leave anything to the next row's of the same batch: a variable without `const`, a property on `globalThis`, on `Object.prototype`, `Array.prototype` or `Function.prototype`, on a function of `$input` or on `console`, a `Symbol.for`, a getter left on a row of the batch: each either throws (`frozen`), or stays on the evaluation's own copy of the rows, and is not there for the next row", async () => {
+    // Each attempt is a case of test/cases/evaluacion (`dejar-*.js`): it ends as its `expect` line says in the three
+    // forms, and its `look` line, run for the next row of the same batch, finds nothing left.
     const attempts = readdirSync(CASES).filter((f) => /^dejar-.*\.js$/.test(f));
     expect(attempts.length).toBe(12);
     for (const name of attempts) {
@@ -340,33 +341,164 @@ describe("one evaluation leaves nothing to the next", () => {
         { mode: "perRow" },
       );
       const [first, second] = evals(r);
-      expect(first, name).toMatchObject({ state: "failed" });
-      expect(["frozen", "threw"], name).toContain(first?.state === "failed" && first.fault);
+      if (/^\/\/ expect: done /m.test(code)) expect(first, name).toMatchObject({ state: "done" });
+      else {
+        expect(first, name).toMatchObject({ state: "failed" });
+        expect(["frozen", "threw"], name).toContain(first?.state === "failed" && first.fault);
+      }
       expect(second, name).toMatchObject({ state: "done", values: ["undefined"] });
     }
   }, 60_000);
 
-  it("AU-37 · the rows of a cited step, shared by every row of a batch, cannot be changed by one of them: writing a field, pushing to the list or deleting a key is `frozen`, with the line, and the message says to return a copy", async () => {
-    const steps = { "Buscar gastos": { rows: [{ importe: 5 }] } };
+  it("AU-37 · the code may change the rows that reach it, and what it returns is what the step gives (Juan, 2026-11-16): a field written, a row pushed, a key deleted, on `$json`, `$input.item` or `$input.all()`; each evaluation has its own copy, so the next row of the batch finds them as they arrived", async () => {
+    const look = "[$json.n, $input.all().length, $input.first()?.n, $input.last()?.n]";
+    const changes = [
+      "$json.n = 9",
+      "delete $json.n",
+      "$input.item.n = 9",
+      "$input.all().push({ n: 1 })",
+      "$input.all().length = 0",
+      "$input.all().reverse()",
+      "$input.all()[0] = { n: 7 }",
+      "$input.first().n = 9",
+      "Object.freeze($input.all())",
+    ];
+    for (const change of changes) {
+      const r = await ask(
+        "code",
+        [`const before = ${look};\nif ($json.i === 0) ${change};\nreturn [before, ${look}]`],
+        [
+          { i: 0, n: 1 },
+          { i: 1, n: 2 },
+        ],
+        { mode: "perRow" },
+      );
+      expect(
+        evals(r).every((e) => e.state === "done"),
+        change,
+      ).toBe(true);
+      const [first, second] = outs(r) as [unknown[][], unknown[][]];
+      expect(first?.[0], change).toEqual([1, 2, 1, 2]);
+      if (change !== "Object.freeze($input.all())")
+        expect(first?.[1], change).not.toEqual([1, 2, 1, 2]);
+      expect(second, change).toEqual([
+        [2, 2, 1, 2],
+        [2, 2, 1, 2],
+      ]);
+    }
+    // Within one evaluation, every way to a row is the same object: `$json` is `$input.item` and `$input.all()[i]`,
+    // and it stays the row that arrived wherever the code moves it in the list.
+    const same = await ask(
+      "code",
+      [
+        "$json.total = 1; const a = $input.all(); const was = a[$json.i]; a.reverse(); return [$input.item === $json, was === $json, $input.item.total, a.includes($json)]",
+      ],
+      [{ i: 0 }, { i: 1 }],
+      { mode: "perRow" },
+    );
+    expect(outs(same)).toEqual([
+      [true, true, 1, true],
+      [true, true, 1, true],
+    ]);
+    // A place cut off by `length` is not filled again; the list is an array to every test of one.
+    const list = await ask(
+      "code",
+      [
+        "const a = $input.all(); a.length = 1; a.length = 3; return [a[1] === undefined, 2 in a, Array.isArray(a), JSON.stringify([...a]), Object.keys($input.all()).length]",
+      ],
+      [{ n: 1 }, { n: 2 }, { n: 3 }],
+    );
+    expect(outs(list)).toEqual([[true, false, true, '[{"n":1},null,null]', 1]]);
+    // What it returns is what the step gives: the rows it changed.
+    const all = await ask(
+      "code",
+      ["for (const row of $input.all()) row.total = row.importe * 2;\nreturn $input.all()"],
+      [{ importe: 1 }, { importe: 2 }],
+    );
+    expect(outs(all)).toEqual([
+      [
+        { importe: 1, total: 2 },
+        { importe: 2, total: 4 },
+      ],
+    ]);
+    // As an expression too; a key `__proto__` of a row stays a key of the copy, and what a row holds is copied too.
+    const expr = await ask(
+      "expressions",
+      [
+        "(() => { $json.n += 1; if ($json.tags) $json.tags.push('b'); return [$json.n, Object.keys($json), $json.tags]; })()",
+      ],
+      [JSON.parse('{"n": 1, "__proto__": {"x": 1}}'), { n: 5, tags: ["a"] }, { n: 5, tags: ["a"] }],
+      { from: 0 },
+    );
+    expect(values(expr)).toEqual([
+      [[2, ["n", "__proto__"], null]],
+      [[6, ["n", "tags"], ["a", "b"]]],
+      [[6, ["n", "tags"], ["a", "b"]]],
+    ]);
+  });
+
+  it("AU-37 · what is not the step's rows is looked at and never changed: writing the rows of a cited step, what was read or `$run` is `frozen`, with the line, and the message says to change a copy; a copy is the code's own", async () => {
+    const steps = { "Buscar gastos": { rows: [{ importe: 5 }], item: [0, 0] } };
+    const read: WireRead = { collection: "Gastos", op: "find" };
+    const reads = { [readKey(read)]: [{ id: "g1", importe: 7 }] };
     for (const change of [
       "$('Buscar gastos').first().importe = 9",
+      "$('Buscar gastos').item.importe = 9",
       "$('Buscar gastos').all().push({ importe: 1 })",
       "delete $('Buscar gastos').first().importe",
+      "$col('Gastos').find()[0].importe = 9",
+      "$col('Gastos').find().pop()",
+      "$run.test = false",
     ]) {
       const r = await ask("code", [`const a = 1;\n${change};\nreturn a`], [{ i: 0 }, { i: 1 }], {
         mode: "perRow",
         steps,
+        reads,
       });
       for (const e of evals(r)) {
         expect(e, change).toMatchObject({ state: "failed", fault: "frozen", line: 2 });
-        expect(e.state === "failed" && e.message, change).toMatch(/devuelve una copia/);
+        expect(e.state === "failed" && e.message, change).toMatch(/haz una copia/);
       }
     }
-    // A copy is the way: it is the code's own.
-    const r = await ask("code", ["return { ...$('Buscar gastos').first(), importe: 9 }"], [], {
-      steps,
-    });
-    expect(outs(r)).toEqual([{ importe: 9 }]);
+    const r = await ask(
+      "code",
+      [
+        "const g = { ...$col('Gastos').find()[0], importe: 1 }; return [{ ...$('Buscar gastos').first(), importe: 9 }, g]",
+      ],
+      [],
+      { steps, reads },
+    );
+    expect(outs(r)).toEqual([[{ importe: 9 }, { id: "g1", importe: 1 }]]);
+  });
+
+  it("AU-37 · a pass repeated after a read starts from the rows as they arrived: `row.n += 1` written before the read ends as one increment, not one per pass", async () => {
+    const read: WireRead = { collection: "Gastos", op: "count" };
+    const forms: [string, string, Mode][] = [
+      [
+        "«Una vez con todas las filas»",
+        "for (const row of $input.all()) row.n += 1;\nconst c = $col('Gastos').count();\nreturn $input.all().map((row) => ({ ...row, c }))",
+        "all",
+      ],
+      [
+        "«Una vez por fila»",
+        "$json.n += 1;\nconst c = $col('Gastos').count();\nreturn { ...$json, c }",
+        "perRow",
+      ],
+    ];
+    for (const [label, code, mode] of forms) {
+      const input = [{ n: 0 }, { n: 10 }];
+      // The first pass stops at the read; the engine repeats it with the answer, from the same request's rows.
+      const halted = evals(await ask("code", [code], input, { mode }));
+      expect(
+        halted.every((e) => e.state === "needs"),
+        label,
+      ).toBe(true);
+      const again = await ask("code", [code], input, { mode, reads: { [readKey(read)]: 3 } });
+      expect(outs(again).flat(), label).toEqual([
+        { n: 1, c: 3 },
+        { n: 11, c: 3 },
+      ]);
+    }
   });
 
   it("AU-37 · two calls share nothing: what the first defined, changed or read is not in the second, and the answer of a batch is the same as the answers of its rows sent one by one", async () => {

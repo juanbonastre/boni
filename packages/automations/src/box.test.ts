@@ -117,4 +117,7 @@ describe("the limits and the cost", () => {
   it.todo(
     "AU-37 · the engine keeps nothing of an evaluation but its values, its console and its count: the same job sent twice to the fake box gives the same record, and no job holds anything the box answered before but the reads of its own step",
   );
+  it.todo(
+    "AU-37 · a «Código» that changes the rows that reach it changes only what its step gives: the earlier step's kept output, a test's ENTRADA and the collection keep the rows as they arrived (E3)",
+  );
 });

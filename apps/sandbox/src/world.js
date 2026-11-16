@@ -1,7 +1,8 @@
 // The world an automation's JavaScript runs in, inside the box's QuickJS (docs/automatizaciones.md §5.3, §5.4; loaded
 // by evaluate.ts into each new interpreter): what the code may name (`$json`, `$input`, `$`, `$col`, `$now`, `$today`,
-// `$run`, `$page`, `$date`, `console`), the request's clock and chance, the dates' help, and a world frozen whole
-// before the first row, so one row's evaluation cannot leave anything to the next (AU-37). This script's value is the
+// `$run`, `$page`, `$date`, `console`), the request's clock and chance, the dates' help, a world frozen whole before
+// the first row and the data copied for each evaluation, so one row's evaluation cannot leave anything to the next
+// (AU-37). This script's value is the
 // function evaluate.ts calls with the request and the four functions of the host; nothing of it stays on `globalThis`.
 // It is plain JavaScript because it runs inside the interpreter, never in Node.
 (function setup(text, hostLog, hostRead, hostHalt, hostPut) {
@@ -9,11 +10,14 @@
   const { kind, mode, sources, bodies, escaped, from, now, zone, names, seed, limits } = req;
   const isCode = kind === "code";
 
-  // What the code is given, and what the interpreter brings, is never changed by it (AU-37): `received` is the one
-  // place that decides it. Every row, every cited step's rows, every read, every object the world makes for the code
-  // (`$input`, `$('…')`, `$col('…')`, `$run`, the dates) and every object of the interpreter go through it, with
-  // their prototypes, accessors and what they hold; a write to them fails with `frozen`, and `COPY` is what its
-  // message adds. It skips what is already frozen: only `received` freezes here, and it freezes all it reaches.
+  // What the code may change, and so what one evaluation may leave to another, is decided here, by two functions side
+  // by side (AU-37). The rows that reach the step are the code's: `listOf` gives each evaluation its own copy of them,
+  // which it may change (Juan, 2026-11-16). Everything else is looked at and never changed: `received` freezes what
+  // the interpreter brings, what the world makes for the code (`$input`, `$('…')`, `$col('…')`, `$run`, the dates,
+  // `console`, the global object), the rows of the steps it cites and what it reads, with their prototypes,
+  // accessors and what they hold; a write to them fails with `frozen`, and `COPY` is what its message adds. It skips
+  // what is already frozen: only `received` freezes here, and it freezes all it reaches. The rows that reach the step
+  // are frozen too, so the copies are made from what arrived, but the code never sees them but through `listOf`.
   const freeze = Object.freeze;
   const isFrozen = Object.isFrozen;
   const received = (...roots) => {
@@ -35,7 +39,8 @@
   /** How a write to what `received` froze is told: the interpreter's words, and these. */
   const FROZEN =
     /is read-only|not extensible|could not delete|cannot define property|non-configurable|not configurable/;
-  const COPY = "lo que recibe el código no se cambia; devuelve una copia";
+  const COPY =
+    "solo se cambian las filas que llegan al paso; lo demás (otros pasos, lo leído, lo de JavaScript) se mira: haz una copia, como { ...fila }, y cambia esa";
   /**
    * A frozen prototype makes `row.toString = …` fail on an object of the code's own (the "override mistake"): its
    * writable properties become a getter and a setter that gives the object a property of its own, as before.
@@ -81,9 +86,121 @@
   ownOnAssign(Function.prototype, ["toString", "constructor"]);
   ownOnAssign(Array.prototype, ["constructor", "toString"]);
 
-  // Frozen with the rest, before the first row (below): nothing reads them until then.
+  // Frozen with the rest, before the first row (below): nothing reads them until then, and the input only through
+  // `listOf`.
   const input = req.input;
   const steps = req.steps;
+  /**
+   * The evaluation's own copy of the rows that reach the step: made place by place, the first time the evaluation
+   * touches a row, the same object every time after, and never seen by another evaluation. `$json` is `$input.item`
+   * and `$input.all()[i]`. The rows are JSON: a row is copied by the interpreter's own spread (a key `__proto__` stays a
+   * key), and what it holds that is an object by `mine`. A list that is never looked at whole is never copied whole:
+   * `$input.all().length` copies nothing.
+   */
+  /** The evaluation's copies, made when it first copies something: an evaluation that copies nothing pays nothing. */
+  let copies = null;
+  let lists = null;
+  /** The current row's copy, once `$json` or `$input.item` has asked for it (`$json` in a loop asks for it often). */
+  let current = null;
+  const currentRow = () => {
+    if (current === null) current = { row: listOf(input).copyOf(row) };
+    return current.row;
+  };
+  /** Per datum, once per call (the data is frozen, so it holds): the keys of what it holds that are objects. */
+  const inner = new Map();
+  const NONE = freeze([]);
+  const innerOf = (o) => {
+    let ks = inner.get(o);
+    if (ks === undefined) {
+      ks = NONE;
+      for (const k of Object.keys(o)) {
+        const v = o[k];
+        if (v === null || typeof v !== "object") continue;
+        if (ks === NONE) ks = [];
+        ks.push(k);
+      }
+      inner.set(o, ks);
+    }
+    return ks;
+  };
+  const mine = (o) => {
+    if (o === null || typeof o !== "object") return o;
+    if (Array.isArray(o)) return listOf(o).list;
+    if (copies === null) copies = new Map();
+    const known = copies.get(o);
+    if (known !== undefined) return known;
+    const out = { ...o };
+    copies.set(o, out);
+    for (const k of innerOf(o)) out[k] = mine(o[k]);
+    return out;
+  };
+  /**
+   * A list of the evaluation's own whose places are copied from `orig` when first touched: an ordinary array behind
+   * a proxy that fills a place before anything looks at it, writes it or lists it. A place written, deleted or cut
+   * off by `length` is the code's from then on, and is never filled again. `copyOf(i)` is the copy of the i-th row
+   * that arrived, wherever the code has moved it: what `$json` and `$input.item` give.
+   */
+  const listOf = (orig) => {
+    if (lists === null) lists = new Map();
+    const known = lists.get(orig);
+    if (known !== undefined) return known;
+    const n = orig.length;
+    const target = new Array(n);
+    const done = new Uint8Array(n);
+    const made = new Array(n);
+    const copyOf = (i) => {
+      let c = made[i];
+      if (c === undefined && i < n) {
+        const o = orig[i];
+        c =
+          o !== null && typeof o === "object" && !Array.isArray(o) && innerOf(o) === NONE
+            ? { ...o }
+            : mine(o);
+        made[i] = c;
+      }
+      return c;
+    };
+    const fillAt = (i) => {
+      if (!(i < n)) return;
+      done[i] = 1;
+      if (i < target.length) target[i] = copyOf(i);
+    };
+    const list = new Proxy(target, {
+      get(t, k, r) {
+        if (done[k] === 0) fillAt(+k);
+        return Reflect.get(t, k, r);
+      },
+      has(t, k) {
+        if (done[k] === 0) fillAt(+k);
+        return Reflect.has(t, k);
+      },
+      getOwnPropertyDescriptor(t, k) {
+        if (done[k] === 0) fillAt(+k);
+        return Reflect.getOwnPropertyDescriptor(t, k);
+      },
+      defineProperty(t, k, d) {
+        if (done[k] === 0) fillAt(+k);
+        const ok = Reflect.defineProperty(t, k, d);
+        if (k === "length") for (let i = t.length; i < n; i++) done[i] = 1;
+        return ok;
+      },
+      deleteProperty(t, k) {
+        if (done[k] === 0) fillAt(+k);
+        return Reflect.deleteProperty(t, k);
+      },
+      ownKeys(t) {
+        for (let i = 0; i < n; i++) if (done[i] === 0) fillAt(i);
+        return Reflect.ownKeys(t);
+      },
+      preventExtensions(t) {
+        for (let i = 0; i < n; i++) if (done[i] === 0) fillAt(i);
+        return Reflect.preventExtensions(t);
+      },
+    });
+    const out = { list, copyOf };
+    lists.set(orig, out);
+    return out;
+  };
   /** The input's row being evaluated, or -1 (a «Código» with all the rows, or between rows). */
   let row = -1;
   /** Per evaluation: whether it read the clock or chance, the reads it asked for, and its own sequence of chance. */
@@ -468,6 +585,7 @@
 
   // ------------------------------------------------------------------ what the code may name (AU-24)
   const LIST_ONLY = "no hay fila actual en «Una vez con todas las filas»: usa $input.all()";
+  /** A cited step's handles: its rows, frozen, and `item(row)` the one paired with the current row. */
   const rows = (list, item) =>
     received({
       all: () => list,
@@ -478,7 +596,18 @@
         return item(row);
       },
     });
-  const $input = rows(input, (i) => input[i]);
+  const $input = received({
+    all: () => listOf(input).list,
+    first: () => listOf(input).list[0],
+    last: () => {
+      const own = listOf(input).list;
+      return own[own.length - 1];
+    },
+    get item() {
+      if (row < 0) throw new Error(`.item: ${LIST_ONLY}`);
+      return currentRow();
+    },
+  });
   /** Every step it cites, made before the first row and frozen with the rest: unknown names throw by their name. */
   const cited = new Map();
   for (const name of Object.keys(steps)) {
@@ -613,8 +742,9 @@
   const getters = {
     $json() {
       if (row < 0) throw new Error(`$json: ${LIST_ONLY}`);
-      return input[row];
+      return currentRow();
     },
+
     $now() {
       return new BoniDate(null, clock());
     },
@@ -758,6 +888,9 @@
     readClock = false;
     readRandom = false;
     asked.clear();
+    copies = null;
+    lists = null;
+    current = null;
     state = seedFor(place);
     const values = [];
     for (let n = 0; n < made.length; n++) {
