@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
-import { ALL_DONE, TESTED, testOf } from "./automation-data.ts";
+import { ALL_DONE, TESTED, testOf, withRuns } from "./automation-data.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -40,6 +40,7 @@ const CAN = [
   { collection: "libros", action: "create", how: "saves", steps: ["s_01jcrear"] },
 ];
 
+const SHOTS = "e2e-boni/screenshots";
 const head = (page: Page) => page.locator(".auto-head");
 const published = (page: Page) => head(page).locator(".auto-published");
 const publishButton = (page: Page) =>
@@ -99,6 +100,28 @@ async function openStep(page: Page, id: string) {
 }
 const listState = (page: Page, name: string) =>
   page.locator(".db-table tbody tr", { hasText: name });
+
+/** «Revisar pendientes» published twice, with five runs (automation-data.ts). */
+const WITH_RUNS = withRuns(Date.now());
+const runItems = (page: Page) => page.locator(".auto-runs-item");
+const runBar = (page: Page) => page.locator(".auto-run-bar");
+const runCanvas = (page: Page) => page.locator(".auto-run-canvas");
+const runCard = (page: Page, id: string) =>
+  runCanvas(page).locator(`.auto-card[data-step="${id}"]`);
+/** What the fake server kept under `window[key]`, in order. */
+const recorded = (page: Page, key: string) =>
+  page.evaluate((k) => ((window as unknown as Record<string, string[]>)[k] ?? []).slice(), key);
+/** «Revisar pendientes» with its runs, its tab «Ejecuciones» open. */
+async function openRuns(page: Page, more: { manyRuns?: number; sharedDevice?: boolean } = {}) {
+  await openApp(page, "/?still", {
+    automations: [{ ...WITH_RUNS, ...(more.manyRuns ? { manyRuns: more.manyRuns } : {}) }],
+    agent: BEFORE(),
+    ...(more.sharedDevice ? { sharedDevice: true } : {}),
+  });
+  await openCanvas(page, PUBLISHED.name);
+  await head(page).getByRole("tab", { name: "Ejecuciones" }).click();
+  await expect(runItems(page).first()).toBeVisible();
+}
 
 test.describe("the header and «Publicar»", () => {
   test.beforeEach(async ({ page }) => {
@@ -361,6 +384,64 @@ test.describe("the header and «Publicar»", () => {
     await openList(page);
     await expect(listState(page, NEVER.name)).toContainText("Encendida");
   });
+  test("AU-96 · a draft changed on another device while «Publicar» was open is not published: it says so and the screen is asked again, and then it publishes", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [NEVER], agent: BEFORE() });
+    await openCanvas(page, NEVER.name);
+    await publishButton(page).click();
+    await page.evaluate((id) => {
+      (window as unknown as { __autoStale: string }).__autoStale = id;
+    }, NEVER.id);
+    await screen(page).getByRole("button", { name: "Publicar versión 1" }).click();
+    await expect(toast(page)).toContainText("El borrador cambió en otro dispositivo");
+    await expect(screen(page)).toHaveAccessibleName("Publicar «Libros nuevos»");
+    await screen(page).getByRole("button", { name: "Publicar versión 1" }).click();
+    await expect(toast(page)).toContainText("Publicada la versión 1");
+    expect(await sent(page, `POST api/agent/automations/${NEVER.id}/publish `)).toEqual([
+      { rev: 1 },
+      { rev: 2 },
+    ]);
+  });
+  test("AU-96 AU-83 · what the server finds when it publishes stops it: it says so, the screen is asked again with it marked, and «Publicar» cannot be pressed", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [NEVER], agent: BEFORE() });
+    await openCanvas(page, NEVER.name);
+    await publishButton(page).click();
+    await page.evaluate(() => {
+      (window as unknown as { __autoBlocks: unknown[] }).__autoBlocks = [
+        { code: "param.required", severity: "error", step: "s_01jcrear", param: "collection" },
+      ];
+    });
+    await screen(page).getByRole("button", { name: "Publicar versión 1" }).click();
+    await expect(toast(page)).toContainText("Falta algo antes de publicar");
+    await expect(part(page, "Antes de publicar").locator("li.bad")).toContainText(
+      "Crear una fila en Libros",
+    );
+    await expect(screen(page).getByRole("button", { name: "Publicar versión 1" })).toBeDisabled();
+    await expect(published(page)).not.toContainText("publicada");
+  });
+  test("AU-194 · a second publish with the switch off publishes the new version and leaves it off", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...PUBLISHED, published: { versions: 1, enabled: false } }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, PUBLISHED.name);
+    await expect(toggle(page)).not.toBeChecked();
+    await nameBox(page).fill("Revisar pendientes del mes");
+    await nameBox(page).press("Enter");
+    await expect(published(page)).toHaveText("· cambios sin publicar");
+    await publishButton(page).click();
+    await expect(screen(page)).toContainText("Será la versión 2.");
+    await screen(page).getByRole("button", { name: "Publicar versión 2" }).click();
+    await expect(toast(page)).toContainText("Publicada la versión 2");
+    await expect(published(page)).toHaveText("· publicada la versión 2");
+    await expect(toggle(page)).not.toBeChecked();
+    await expect(head(page).locator(".auto-switch")).toContainText("Apagada");
+  });
   test("AU-188 · from a shared device the editor lets him look and test, and «Publicar», «Ejecutar» and the switch say to do it from his own device", async ({
     page,
   }) => {
@@ -393,7 +474,7 @@ test.describe("the header and «Publicar»", () => {
 
 test.describe("the header on a phone", () => {
   test.use({ hasTouch: true, isMobile: true });
-  test("AU-95 AU-74 AU-97 · on the phone the header has neither «Publicar» nor the switch: it is looked at, tested and, published, run there", async ({
+  test("AU-95 AU-74 AU-97 AU-194 · on the phone the header has no «Publicar» and has the switch (decision 15): it is looked at, tested, turned off or on and, published, run there", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 360, height: 740 });
@@ -406,16 +487,44 @@ test.describe("the header on a phone", () => {
     await page.getByText(PUBLISHED.name, { exact: true }).first().tap();
     await expect(head(page).locator(".auto-name")).toHaveText(PUBLISHED.name);
     await expect(publishButton(page)).toHaveCount(0);
-    await expect(toggle(page)).toHaveCount(0);
     await expect(head(page).getByRole("button", { name: "Más" })).toHaveCount(0);
+    // The switch, whole and in sight: off and on again, by the action the desktop's uses.
+    await expect(head(page).locator(".auto-switch")).toContainText("Encendida");
+    await expect(toggle(page)).toHaveAttribute("data-boni-action", "automations.enable");
+    await toggle(page).tap();
+    await expect(head(page).locator(".auto-switch")).toContainText("Apagada");
+    await toggle(page).tap();
+    await expect(head(page).locator(".auto-switch")).toContainText("Encendida");
+    expect(await sent(page, `PUT api/agent/automations/${PUBLISHED.id}/enabled `)).toEqual([
+      { enabled: false },
+      { enabled: true },
+    ]);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
+    const out = await head(page).evaluate((h) => {
+      const box = h.getBoundingClientRect();
+      // What sticks out of the header, by its class: a hidden one (the spacer) has no box.
+      return [...h.children]
+        .filter((c) => c.getBoundingClientRect().width > 0)
+        .filter((c) => {
+          const r = c.getBoundingClientRect();
+          return r.left < box.left - 1 || r.right > box.right + 1;
+        })
+        .map((c) => c.className);
+    });
+    await page.screenshot({ path: `${SHOTS}/phone-automation-switch.png` });
+    expect(out).toEqual([]);
     // «Ejecutar», with its trigger's «Mínimo» asked in the box of «Probar».
     await head(page).getByRole("button", { name: "Ejecutar" }).tap();
     await screen(page).getByLabel("Mínimo").pressSequentially("250", { delay: 60 });
     await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).tap();
-    await expect(toast(page)).toContainText("Ejecutando «Revisar pendientes»");
+    // The run opens over the list, with the way back to it.
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(runBar(page).getByRole("button", { name: "Todas las ejecuciones" })).toBeVisible();
     expect(await sent(page, `POST api/agent/automations/${PUBLISHED.id}/run `)).toHaveLength(1);
   });
 });
@@ -424,7 +533,27 @@ test.describe("«Ejecutar»", () => {
   test.beforeEach(async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
   });
-  test.fixme("AU-97 · «Ejecutar» is in the automation's row of the list (P2, with `automations.run` registered)", async () => {});
+  test("AU-97 · «Ejecutar» is in the automation's row of the list, for a published one: it opens the automation and asks its fields first", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [PUBLISHED, NEVER], agent: BEFORE() });
+    await openList(page);
+    await expect(
+      listState(page, NEVER.name).getByRole("button", { name: `Ejecutar: ${NEVER.name}` }),
+    ).toHaveCount(0);
+    await listState(page, PUBLISHED.name)
+      .getByRole("button", { name: `Ejecutar: ${PUBLISHED.name}` })
+      .click();
+    await expect(nameBox(page)).toHaveValue(PUBLISHED.name);
+    await expect(screen(page)).toHaveAccessibleName("Ejecutar");
+    await screen(page).getByLabel("Mínimo").pressSequentially("120", { delay: 60 });
+    await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(await sent(page, `POST api/agent/automations/${PUBLISHED.id}/run `)).toHaveLength(1);
+  });
   test("AU-97 · «Ejecutar» is in «⋯» of the editor's header and in the notice of publishing («Publicada la versión 1 · Ejecutar»); an automation never published has neither", async ({
     page,
   }) => {
@@ -450,13 +579,40 @@ test.describe("«Ejecutar»", () => {
     await screen(page).getByLabel("Mínimo").pressSequentially("250", { delay: 60 });
     await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
     await expect(screen(page)).toHaveCount(0);
-    await expect(toast(page)).toContainText("Ejecutando «Revisar pendientes»");
     const runs = await sent(page, `POST api/agent/automations/${PUBLISHED.id}/run `);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.trigger).toBe("s_inicio");
     expect(Number((runs[0]?.fields as Record<string, unknown> | undefined)?.minimo)).toBe(250);
   });
-  test.fixme("AU-97 · run, the app goes to «Ejecuciones» and the run is seen advancing step by step (P2)", async () => {});
+  test("AU-97 · run, the app goes to «Ejecuciones» and the run is seen advancing step by step", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [PUBLISHED], agent: BEFORE() });
+    await openCanvas(page, PUBLISHED.name);
+    await more(page, "Ejecutar");
+    await screen(page).getByLabel("Mínimo").pressSequentially("250", { delay: 60 });
+    await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    // Under way: the step it is in, and the steps it has run with their rows; then how it ended, in the list too.
+    await expect(runBar(page)).toContainText("En marcha: «");
+    await expect(runCanvas(page).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    await expect(runBar(page)).toContainText("Bien", { timeout: 15_000 });
+    await expect(runItems(page).nth(0)).toContainText("Bien", { timeout: 5_000 });
+    await expect(runBar(page)).toContainText("No hizo nada");
+    // Ended, it is asked no more.
+    const asked = (await recorded(page, "__automations")).filter((x) =>
+      x.startsWith("GET a_01jx8x0t2v4x6z8b0d2f4h6k8n/runs/r_"),
+    ).length;
+    await page.waitForTimeout(3_000);
+    expect(
+      (await recorded(page, "__automations")).filter((x) =>
+        x.startsWith("GET a_01jx8x0t2v4x6z8b0d2f4h6k8n/runs/r_"),
+      ).length,
+    ).toBe(asked);
+  });
   test("AU-97 · off, «Ejecutar» says «Está apagada» with «Encender»; with unpublished changes it says it runs the published version; while one runs it says so", async ({
     page,
   }) => {
@@ -586,13 +742,267 @@ test.describe("«Permiso»", () => {
 });
 
 test.describe("«Ejecuciones»", () => {
-  test.fixme("AU-99 · the tab «Ejecuciones»: on the left the list with «Todas | Fallos | Pruebas» (when, how it ended, how long, what started it, which version; tests marked); on the right that run's canvas, read-only, with its rows on each arrow and above it what it did in one line", async () => {});
-  test.fixme("AU-99 · opening a step of a run shows what went in and what came out, asked when it is opened; a run that proposed says so with a link to the inbox; on a phone the list comes first and a run opens over it", async () => {});
-  test.fixme("AU-18 · «Deshacer lo que hizo» is there only when the run wrote; pressed, the run says it was undone and when; when a row changed afterwards it says which and undoes nothing", async () => {});
-  test.fixme("AU-100 · a run has «Reintentar», which says the version it will run when it is not that of then and offers «Deshacer y reintentar» when that run wrote, and «Abrir en el editor con estos datos», which opens the editor with the trigger's output pinned", async () => {});
-  test.fixme("AU-101 · the «Registro» of the editor, unfolded, shows the last test as a tree, one line per step with its state, its rows and its time, and inside a «Código» its reads, its «Consola» and what it would save; the tree of a run in «Ejecuciones» is the same component", async () => {});
-  test.fixme("AU-103 · a run of which only the summary is left shows its line and says its steps are no longer kept, and still has «Deshacer lo que hizo»", async () => {});
-  test.fixme("AU-190 · an interrupted run reads «Interrumpida» with the step it was in, and has «Reintentar»", async () => {});
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+  test("AU-99 · the tab «Ejecuciones»: on the left the list with «Todas | Fallos | Pruebas» (when, how it ended, how long, what started it, which version; tests marked); on the right that run's canvas, read-only, with its rows on each arrow and above it what it did in one line", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(runItems(page)).toHaveCount(5);
+    await expect(runItems(page).nth(0)).toContainText("Bien · 0,9 s");
+    await expect(runItems(page).nth(0)).toContainText("Iniciada por ti · versión 2");
+    await expect(runItems(page).nth(1)).toContainText("Prueba del borrador");
+    await expect(runItems(page).nth(2)).toContainText("Falló en «Modificar filas en Libros»");
+    await expect(runItems(page).nth(2)).toContainText("Programada · versión 1");
+    await expect(runItems(page).nth(3)).toContainText("Interrumpida en «Si»");
+    // The newest is the one shown: its line, then its canvas with each step's rows.
+    await expect(runItems(page).nth(0)).toHaveAttribute("aria-current", "true");
+    await expect(runBar(page)).toContainText(
+      "Creó 1 fila en Libros · Propuso modificar 3 filas en Libros · Propuso mandar a la papelera 125 filas de Libros · con datos de fuera",
+    );
+    await expect(
+      runCanvas(page).locator('.auto-arrow-count[data-arrow^="s_01jbuscar:"]').first(),
+    ).toContainText("128 filas");
+    await expect(runCanvas(page).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    // Looked at, never changed: no draft and no box is sent from it.
+    await runCard(page, "s_01jsi").dragTo(runCard(page, "s_01jcrear"));
+    await page.keyboard.press("Delete");
+    await expect(runCanvas(page).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    // «Fallos» and «Pruebas», each the server's own page.
+    await page.getByRole("radio", { name: "Fallos" }).click();
+    await expect(runItems(page)).toHaveCount(2);
+    await page.getByRole("radio", { name: "Pruebas" }).click();
+    await expect(runItems(page)).toHaveCount(1);
+    await page.getByRole("radio", { name: "Todas" }).click();
+    await expect(runItems(page)).toHaveCount(5);
+    expect(await recorded(page, "__autoRunPages")).toEqual(["all", "failed", "tests", "all"]);
+    const touched = (await recorded(page, "__automations")).filter((x) =>
+      /^(PUT|POST|DELETE) /.test(x),
+    );
+    expect(touched).toEqual([]);
+  });
+  test("AU-99 · A-15 · a year of hourly runs comes fifty at a time, «Ver más» asking the fifty before the last one shown", async ({
+    page,
+  }) => {
+    await openRuns(page, { manyRuns: 24 * 365 });
+    await expect(runItems(page)).toHaveCount(50);
+    await page.getByRole("button", { name: "Ver más" }).click();
+    await expect(runItems(page)).toHaveCount(100);
+    const pages = await recorded(page, "__autoRunPages");
+    expect(pages).toHaveLength(2);
+    expect(pages[1]).toMatch(/^all r_01jhora\d{6}$/);
+    // Nothing asks a run's rows but the step's view.
+    expect(await recorded(page, "__autoRunRows")).toEqual([]);
+  });
+  test("AU-99 · opening a step of a run shows what went in and what came out, asked when it is opened; a run that proposed says so in its line", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await expect(runBar(page)).toContainText("Propuso modificar 3 filas en Libros");
+    expect(await recorded(page, "__autoRunRows")).toEqual([]);
+    await runCard(page, "s_01jbuscar").dblclick();
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jbuscar");
+    await expect(salida(page)).toContainText("128 filas");
+    // A title that looks like HTML is painted as text (A-01).
+    await expect(salida(page)).toContainText("<b>Rayuela</b>");
+    await expect(salida(page).locator("b")).toHaveCount(0);
+    expect(await recorded(page, "__autoRunRows")).toContain("r_01jbien s_01jbuscar out:main 0");
+  });
+  test("AU-18 · «Deshacer lo que hizo» is there only when the run wrote; pressed, the run says it was undone and when; when a row changed afterwards it says which and undoes nothing", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    const undo = runBar(page).getByRole("button", { name: "Deshacer lo que hizo" });
+    await expect(undo).toBeVisible();
+    await undo.click();
+    await expect(toast(page)).toContainText("Deshecho lo que hizo");
+    await expect(runBar(page)).toContainText("Deshecha hoy");
+    await expect(undo).toHaveCount(0);
+    expect(await recorded(page, "__autoUndo")).toEqual(["r_01jbien"]);
+    // A test wrote nothing: nothing to undo.
+    await runItems(page).nth(1).click();
+    await expect(runBar(page)).toContainText("Prueba del borrador");
+    await expect(undo).toHaveCount(0);
+    // A test has only «Abrir en el editor con estos datos» (AU-100): it is not retried.
+    await expect(runBar(page).getByRole("button", { name: "Reintentar" })).toHaveCount(0);
+    await expect(
+      runBar(page).getByRole("button", { name: "Abrir en el editor con estos datos" }),
+    ).toBeVisible();
+    // A row it changed was changed again since: it says which, and the run stays as it was.
+    await runItems(page).nth(3).click();
+    await undo.click();
+    await expect(toast(page)).toContainText("No se pudo deshacer: «Libro 2» cambió después");
+    await expect(runBar(page)).not.toContainText("Deshecha");
+  });
+  test("AU-100 · a run has «Reintentar», which says the version it will run when it is not that of then and offers «Deshacer y reintentar» when that run wrote, and «Abrir en el editor con estos datos», which opens the editor with the trigger's output pinned", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    // Version 1 failed and wrote nothing: the box says it runs version 2, with no undoing.
+    await runItems(page).nth(2).click();
+    await runBar(page).getByRole("button", { name: "Reintentar", exact: true }).click();
+    await expect(screen(page)).toHaveAccessibleName("Reintentar «Revisar pendientes»");
+    await expect(screen(page)).toContainText("Correrá la versión 2, no la 1.");
+    await expect(screen(page).getByRole("button", { name: "Deshacer y reintentar" })).toHaveCount(
+      0,
+    );
+    await screen(page).getByRole("button", { name: "Reintentar", exact: true }).click();
+    await expect(screen(page)).toHaveCount(0);
+    expect(await recorded(page, "__autoRetry")).toEqual(['{"run":"r_01jfallo"}']);
+    // The new run is shown, said a retry, and the list has it first.
+    await expect(runBar(page)).toContainText("reintento", { timeout: 10_000 });
+    await expect(runItems(page).nth(0)).toHaveAttribute("aria-current", "true");
+    // The one that wrote: «Deshacer y reintentar» first.
+    await runItems(page).filter({ hasText: "Bien · 0,9 s" }).first().click();
+    await expect(runBar(page)).toContainText("con datos de fuera");
+    await runBar(page).getByRole("button", { name: "Reintentar", exact: true }).click();
+    await expect(screen(page)).toContainText(
+      "Empieza desde el principio, con los datos de aquella.",
+    );
+    await screen(page).getByRole("button", { name: "Cancelar", exact: true }).last().click();
+    await expect(screen(page)).toHaveCount(0);
+    // «Abrir en el editor con estos datos»: the editor, its trigger open with the output of that run pinned.
+    await runBar(page).getByRole("button", { name: "Abrir en el editor con estos datos" }).click();
+    await expect(head(page).getByRole("tab", { name: "Editor" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(view(page)).toHaveAttribute("data-step", "s_inicio");
+    await expect(card(page, "s_inicio").locator(".auto-card-pin")).toHaveText("Salida fijada");
+    await expect(toast(page)).toContainText("Fijada la salida de «Disparado por el usuario»");
+    expect(await recorded(page, "__autoPins")).toEqual(["RUN s_inicio"]);
+  });
+  test("AU-100 · «Deshacer y reintentar» undoes that run and runs it again", async ({ page }) => {
+    await openRuns(page);
+    await runBar(page).getByRole("button", { name: "Reintentar", exact: true }).click();
+    await expect(screen(page)).toContainText("Creó 1 fila en Libros");
+    await screen(page).getByRole("button", { name: "Deshacer y reintentar" }).click();
+    await expect(screen(page)).toHaveCount(0);
+    expect(await recorded(page, "__autoRetry")).toEqual(['{"run":"r_01jbien","undo":true}']);
+    await expect(runBar(page)).toContainText("reintento", { timeout: 10_000 });
+    await expect(runItems(page).filter({ hasText: "reintento" })).toHaveCount(1);
+  });
+  test("AU-17 · a run stopped at a limit has «Cambiar el límite», which opens the editor's settings on that number", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await runItems(page).nth(2).click();
+    await expect(runBar(page)).toContainText(
+      "Paró: iba a escribir 1001 filas y el límite son 1000",
+    );
+    await runBar(page).getByRole("button", { name: "Cambiar el límite" }).click();
+    await expect(screen(page)).toHaveAccessibleName("Ajustes");
+    await expect(screen(page).getByLabel("Filas escritas")).toBeFocused();
+  });
+  test("AU-101 · the «Registro» of the editor, unfolded, shows the last test as a tree, one line per step with its state, its rows and its time, and what each step would save; a line opens its step; the tree of a run in «Ejecuciones» is the same component", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...testOf(ALL_DONE, { kept: FIVE_MIN }), id: NEVER.id, name: NEVER.name }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, NEVER.name);
+    await page.locator(".auto-test-bar").getByRole("button", { name: "Ver cada paso" }).click();
+    const lines = page.locator(".auto-tree-line");
+    await expect(lines).toHaveCount(TESTED.steps.length);
+    await expect(lines.nth(0)).toContainText("Disparado por el usuario");
+    await expect(lines.nth(1)).toContainText("Buscar filas en Libros");
+    await expect(lines.nth(1)).toContainText("1 → 128");
+    await expect(lines.filter({ hasText: "Modificar filas en Libros" })).toContainText(
+      "Guardaría 3 cambios",
+    );
+    await expect(lines.filter({ hasText: "Crear una fila en Libros" })).toContainText(
+      "Guardaría 1 cambio",
+    );
+    // A line opens its step.
+    await lines.nth(2).locator(".auto-tree-step").click();
+    await expect(page.locator(".auto-card.selected[data-step='s_01jsi']")).toHaveCount(1);
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jsi");
+  });
+  test("AU-101 · the tree of a run says what each step read and saved, in the order they ran, and a line opens its step", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await runBar(page).getByRole("button", { name: "Ver cada paso" }).click();
+    const lines = page.locator(".auto-tree-line");
+    await expect(lines).toHaveCount(TESTED.steps.length);
+    await expect(lines.nth(0)).toContainText("Disparado por el usuario");
+    await expect(lines.nth(1)).toContainText("Leyó 128 filas de Libros");
+    await expect(lines.filter({ hasText: "Modificar filas en Libros" })).toContainText(
+      "Propuso 3 cambios",
+    );
+    await expect(lines.filter({ hasText: "Crear una fila en Libros" })).toContainText(
+      "Guardó 1 cambio",
+    );
+    await lines.nth(1).locator(".auto-tree-step").click();
+    await expect(
+      runCanvas(page).locator(".auto-card.selected[data-step='s_01jbuscar']"),
+    ).toHaveCount(1);
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jbuscar");
+  });
+  test("AU-103 · a run of which only the summary is left shows its line and says its steps are no longer kept, and still has «Deshacer lo que hizo»", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await runItems(page).nth(4).click();
+    await expect(runBar(page)).toContainText("Creó 1 fila en Libros");
+    await expect(page.locator(".auto-run-only")).toBeVisible();
+    await expect(runCanvas(page)).toHaveCount(0);
+    await expect(runBar(page).getByRole("button", { name: "Deshacer lo que hizo" })).toBeVisible();
+  });
+  test("AU-190 · an interrupted run reads «Interrumpida» with the step it was in, and has «Reintentar»", async ({
+    page,
+  }) => {
+    await openRuns(page);
+    await runItems(page).nth(3).click();
+    await expect(runBar(page)).toContainText("Interrumpida en «Si»");
+    await expect(
+      runBar(page).getByRole("button", { name: "Reintentar", exact: true }),
+    ).toBeVisible();
+  });
+  test("AU-188 · from a shared device a run is looked at, and «Deshacer lo que hizo» says to do it from his own device", async ({
+    page,
+  }) => {
+    await openRuns(page, { sharedDevice: true });
+    await runBar(page).getByRole("button", { name: "Deshacer lo que hizo" }).click();
+    await expect(toast(page)).toContainText("dispositivo");
+    await expect(runBar(page)).not.toContainText("Deshecha");
+  });
+});
+
+test.describe("«Ejecuciones» on a phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("AU-99 AU-74 · on a phone the list comes first and a run opens over it, with «Todas las ejecuciones» back; it has no «Abrir en el editor con estos datos»", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openApp(page, "/?still", { automations: [WITH_RUNS], agent: BEFORE() });
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText(PUBLISHED.name, { exact: true }).first().tap();
+    await head(page).getByRole("tab", { name: "Ejecuciones" }).tap();
+    await expect(runItems(page)).toHaveCount(5);
+    await expect(page.locator(".auto-run-detail")).toHaveCount(0);
+    await runItems(page).nth(2).tap();
+    await expect(runItems(page)).toHaveCount(0);
+    await expect(runBar(page)).toContainText("Falló en «Modificar filas en Libros»");
+    await expect(
+      runBar(page).getByRole("button", { name: "Abrir en el editor con estos datos" }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    await runBar(page).getByRole("button", { name: "Todas las ejecuciones" }).tap();
+    await expect(runItems(page)).toHaveCount(5);
+  });
 });
 
 test.describe("«Versiones» and the deleted ones", () => {
@@ -603,7 +1013,47 @@ test.describe("«Versiones» and the deleted ones", () => {
 });
 
 test.describe("«Fijar» and «Programada»", () => {
-  test.fixme("AU-93 · «Fijar» in the header of SALIDA pins the step's tested output: its card says «Salida fijada», «Probar» does not run it, and the same button releases it; without a tested output it cannot be pressed", async () => {});
+  test("AU-93 · «Fijar» in the header of SALIDA pins the step's tested output: its card says «Salida fijada», «Probar» does not run it, and the same button releases it; without a tested output it cannot be pressed", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const failed = {
+      ...ALL_DONE,
+      s_01jmodificar: { ...ALL_DONE.s_01jmodificar, state: "failed", error: { message: "x" } },
+    };
+    await openApp(page, "/?still", {
+      automations: [{ ...testOf(failed, { kept: FIVE_MIN }), id: NEVER.id, name: NEVER.name }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, NEVER.name);
+    // A test that failed has nothing to pin: its SALIDA says why, with no «Fijar».
+    await openStep(page, "s_01jmodificar");
+    await expect(salida(page).getByRole("button", { name: "Fijar" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await openStep(page, "s_01jbuscar");
+    const pin = salida(page).getByRole("button", { name: "Fijar" });
+    await pin.click();
+    await expect(salida(page).getByRole("button", { name: "Soltar" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-pin")).toHaveText("Salida fijada");
+    await page.keyboard.press("Escape");
+    // «Probar» gives its pinned output and does not run it.
+    await page
+      .locator(".auto-test-bar")
+      .getByRole("button", { name: "Probar", exact: true })
+      .click();
+    const ask = page.getByRole("dialog", { name: "Probar" });
+    await ask.getByLabel("Mínimo").fill("300");
+    await ask.getByRole("button", { name: "Probar", exact: true }).click();
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-pin")).toHaveText("Salida fijada");
+    // Released by the same button.
+    await openStep(page, "s_01jbuscar");
+    await salida(page).getByRole("button", { name: "Soltar" }).click();
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-pin")).toHaveCount(0);
+    expect(await recorded(page, "__autoPins")).toEqual(["PUT s_01jbuscar", "DELETE s_01jbuscar"]);
+  });
   test.fixme("AU-114 · «Programada» is in «Añadir paso» among the triggers; its panel lists its rules in words («Cada día a las 08:00», «Cada lunes a las 09:00», «Cada hora»), adds and removes one, and with none the step is marked", async () => {});
   test.fixme("AU-47 · the «Mapa» shows a published automation with the collections it reads and writes and its trigger, and one never published is not in it", async () => {});
 });

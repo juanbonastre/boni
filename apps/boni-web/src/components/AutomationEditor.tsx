@@ -21,6 +21,7 @@ import {
   publishWord,
   refusedWords,
 } from "../automations/publishing.ts";
+import { runRefusedWords } from "../automations/runWords.ts";
 import {
   askTest,
   change,
@@ -51,6 +52,7 @@ import {
 } from "../store.ts";
 import { AutomationCanvas } from "./AutomationCanvas.tsx";
 import { PublishScreen, RunScreen, SettingsScreen } from "./AutomationPublish.tsx";
+import { RunsPane, touchError } from "./AutomationRuns.tsx";
 import {
   PhoneContext,
   type Tester,
@@ -78,15 +80,17 @@ async function readPublished(id: string): Promise<Published | null> {
   }
 }
 
-/** What a refused touch says: its own words, and a shared device's 403 in the words the app has for it. */
-function touchError(t: (k: string, v?: Record<string, string | number>) => string, e: unknown) {
-  if (e instanceof ApiError && e.code === "personal-device-only")
-    return t("mail.error.personal-device-only");
-  return errorText(t, e);
-}
-
-/** `id` null: «Nueva»'s empty canvas. */
-export function AutomationPage({ id }: { id: string | null }) {
+/**
+ * `id` null: «Nueva»'s empty canvas. `runs`: the tab «Ejecuciones» (AU-99), on one run; its `start`, new each time,
+ * runs the published version there once it is known («Ejecutar» in the list's row, AU-97).
+ */
+export function AutomationPage({
+  id,
+  runs,
+}: {
+  id: string | null;
+  runs?: { run?: string; start?: number };
+}) {
   const t = useStore((s) => s.t);
   const locale = localeOf(useStore((s) => s.settings.language) === "en" ? "en" : "es");
   const [state, setState] = useState<EditorState | null>(() =>
@@ -275,6 +279,18 @@ export function AutomationPage({ id }: { id: string | null }) {
         const id = latest.current?.id;
         return id ? client.preview(id, at).catch(() => null) : Promise.resolve(null);
       },
+      // «Fijar» (AU-93): what the server keeps of the draft's pins is what the cards say.
+      pin: (step, on) => {
+        const id = latest.current?.id;
+        if (!id) return;
+        void (on ? client.pin(id, step) : client.unpin(id, step)).then(
+          (r) => {
+            if (isRefused(r)) return toast(runRefusedWords(t, r));
+            apply((s) => ({ ...s, pins: r.pins }));
+          },
+          (e) => toast(touchError(t, e)),
+        );
+      },
     }),
     [apply, keep, t],
   );
@@ -358,7 +374,11 @@ export function AutomationPage({ id }: { id: string | null }) {
       setPublishing(null);
       setPublished({ running: r.version, enabled: r.enabled, doc: sent });
       void loadRows(SYS.flows.id);
-      toast(t("auto.pub.done", { n: r.version }), { label: t(DO.run), run: () => void startRun() });
+      toast(t("auto.pub.done", { n: r.version }), {
+        label: t(DO.run),
+        boniAction: "automations.run",
+        run: () => void startRun(),
+      });
     } catch (e) {
       toast(touchError(t, e));
     } finally {
@@ -425,8 +445,8 @@ export function AutomationPage({ id }: { id: string | null }) {
         return;
       }
       setAsking(false);
-      // P2 takes the app to «Ejecuciones», where the run is seen advancing (AU-99).
-      toast(t("auto.run.started", { name: s.draft.name }));
+      // To «Ejecuciones», where the run is seen advancing (AU-99).
+      showAutomation(s.id, { run: r.run.id });
     } catch (e) {
       toast(touchError(t, e));
     } finally {
@@ -435,6 +455,16 @@ export function AutomationPage({ id }: { id: string | null }) {
   };
   const publishedRef = useRef(published);
   publishedRef.current = published;
+  // «Ejecutar» of the list's row: once, when what runs is known.
+  const started = useRef<number | undefined>(undefined);
+  const start = runs?.start;
+  const known = !!published?.doc;
+  useEffect(() => {
+    if (!start || !known || started.current === start) return;
+    started.current = start;
+    void startRun();
+  });
+  const tab = runs && state?.id ? "runs" : "editor";
   // On the phone it is looked at and tested, never changed (AU-74); another layout mounts another app.
   const phone = phoneLayout();
   return (
@@ -452,11 +482,23 @@ export function AutomationPage({ id }: { id: string | null }) {
           onToggle={(on) => void toggle(on)}
           onRun={() => void startRun()}
           onSettings={() => apply((s) => ({ ...s, ajustes: { limit: null } }))}
+          tab={id ? tab : null}
         />
         {error ? (
           <p className="form-error">{error}</p>
         ) : !state ? (
           <div className="page-loading" role="status" aria-busy="true" />
+        ) : tab === "runs" && state.id ? (
+          <RunsPane
+            id={state.id}
+            run={runs?.run}
+            places={state.places}
+            names={(step) => state.draft.steps.find((x) => x.id === step)?.name}
+            onEditor={(f) => {
+              apply(f);
+              showAutomation(state.id);
+            }}
+          />
         ) : (
           <section className="auto-canvas" aria-label={state.draft.name}>
             <PhoneContext.Provider value={phone}>
@@ -504,8 +546,8 @@ const SAVE_WORDS = {
 
 /**
  * Back, the name, «Guardado» with what runs (AU-62, AU-95), the switch once published (AU-194), «Publicar» and «⋯»
- * with «Ejecutar» (published), «Ajustes», Duplicar and Eliminar. On the phone, back and the name alone: there it is
- * looked at and tested, never changed (AU-74).
+ * with «Ejecutar» (published), «Ajustes», Duplicar and Eliminar. On the phone, the name, the switch and «Ejecutar»:
+ * there it is looked at, tested, run and turned off or on, never edited nor published (AU-74, decision 15).
  */
 function Header({
   state,
@@ -519,6 +561,7 @@ function Header({
   onToggle,
   onRun,
   onSettings,
+  tab,
 }: {
   state: EditorState | null;
   phone: boolean;
@@ -531,6 +574,8 @@ function Header({
   onToggle: (on: boolean) => void;
   onRun: () => void;
   onSettings: () => void;
+  /** «Editor | Ejecuciones» (pantalla 8): null on «Nueva»'s empty canvas, which has no runs. */
+  tab: "editor" | "runs" | null;
 }) {
   const t = useStore((s) => s.t);
   const name = state?.draft.name ?? "";
@@ -546,7 +591,7 @@ function Header({
   const pub = state && exists ? publishWord(state.draft, published) : null;
   const isPublished = published !== null && published.running !== null;
   return (
-    <header className="auto-head">
+    <header className={phone ? "auto-head phone" : "auto-head"}>
       {/* On the phone its own bar goes back. */}
       {!phone && (
         <button
@@ -610,7 +655,26 @@ function Header({
         </span>
       )}
       <span className="spacer" />
-      {exists && !phone && isPublished && (
+      {tab && state?.id && (
+        <div className="segmented auto-tabs" role="tablist" aria-label={t("auto.tab.label")}>
+          {(["editor", "runs"] as const).map((x) => (
+            <button
+              key={x}
+              type="button"
+              role="tab"
+              aria-selected={tab === x}
+              className={tab === x ? "on" : undefined}
+              onClick={() => {
+                if (tab !== x && state.id) showAutomation(state.id, x === "runs" ? {} : undefined);
+              }}
+            >
+              {t(`auto.tab.${x}`)}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* The switch is on the phone too (decision 15): turning it off or on changes no document. */}
+      {exists && isPublished && (
         <label className="toggle-row auto-switch">
           <input
             type="checkbox"
@@ -623,9 +687,14 @@ function Header({
           <span>{published.enabled ? t("flows.enabled") : t("flows.disabled")}</span>
         </label>
       )}
-      {/* AU-74: the phone looks, tests and, once published, runs; it neither edits nor publishes. */}
+      {/* AU-74: the phone looks, tests and, once published, runs and turns it off or on; it neither edits nor publishes. */}
       {exists && phone && isPublished && (
-        <button type="button" className="btn small auto-run-phone" onClick={onRun}>
+        <button
+          type="button"
+          className="btn small auto-run-phone"
+          data-boni-action="automations.run"
+          onClick={onRun}
+        >
           {t(DO.run)}
         </button>
       )}
@@ -646,6 +715,7 @@ function Header({
               {isPublished && (
                 <MenuRow
                   label={t(DO.run)}
+                  boniAction="automations.run"
                   onClick={() => {
                     close();
                     onRun();

@@ -26,6 +26,11 @@ const AUTOMATION_PUBLISH = "apps/server/src/automations/publish.test.ts";
 const PUBLISH_TEST =
   "AU-188 · setting a «Sí» and publishing are refused from a device that is not personal; reading and testing are not";
 
+/** «Ejecutar», «Reintentar», «Deshacer lo que hizo» and «Fijar» (F14d P2), over HTTP as the app calls them. */
+const AUTOMATION_RUNS = "apps/server/src/automations/runs.test.ts";
+const RUNS_TEST =
+  "AU-97 AU-18 AU-100 AU-93 · the touches over HTTP as the app calls them: «Ejecutar», «Reintentar», «Deshacer lo que hizo» and «Fijar», refused from a shared device and done from his own";
+
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
 const REVIEW_TEST =
   "«Revisar la guía» is Boni's flow: a review is a run of its four steps, and turned off there is none (D-51)";
@@ -242,6 +247,9 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "automations.restore": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.publish": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
   "automations.enable": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
+  "automations.run": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
+  "automations.undo_run": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
+  "automations.pin": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
   "automations.accept_run": [
     {
       file: "apps/server/src/automations/proposal.test.ts",

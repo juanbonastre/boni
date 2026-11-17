@@ -32,7 +32,7 @@ import { useCollectionNames } from "./AutomationCanvas.tsx";
 import { TrialFields, triggerFields } from "./AutomationTest.tsx";
 
 /** A modal of the editor: Esc and a click outside close it. */
-function Modal({
+export function Modal({
   label,
   title,
   onClose,
@@ -376,6 +376,7 @@ export function RunScreen({
           <button
             type="button"
             className="btn primary"
+            data-boni-action="automations.run"
             disabled={busy || !from}
             onClick={() => onRun(from, filled)}
           >

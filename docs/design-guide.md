@@ -1159,13 +1159,16 @@ contraseña ni un código aquí» under a question.
   browser's hour field; with «Cada hora» only its minutes count) and «Día» (read only with «Cada semana»)), and
   choosing one makes the automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
   ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». «Probar» is
-  at the bottom of the canvas (E, below). The tabs «Editor | Ejecuciones» come with F14d P2.
+  at the bottom of the canvas (E, below). Once it exists, the header has the tabs «Editor | Ejecuciones» (the
+  app's `.segmented`, after the spacer, on the phone too); «Ejecuciones» is below.
 - **Publishing, in the editor's header** (F14d P1, `AutomationEditor.tsx`, `AutomationPublish.tsx`; AU-17, AU-95 to
   AU-97, AU-182, AU-194; the sketch's screen 10). After «Guardado», in `--muted`, what runs: «· sin publicar»,
   «· publicada la versión 4» (the draft is the document that runs) or «· cambios sin publicar» (in `--text`). Then,
   once published, the switch «Encendida» / «Apagada» (the app's `.switch`), and «Publicar», a small primary button
   with the upload icon. «⋯» gains «Ejecutar» (published only) and «Ajustes» above a separator, then Duplicar and
-  Eliminar. The phone shows none of them but «Ejecutar», a small button once published (AU-74: there it is looked at, tested and run, never edited or published). **«Publicar»** saves what is
+  Eliminar. The phone shows none of them but the switch and «Ejecutar», a small button, once published: the name has its
+  own line and they go under it, the tabs on the left and the switch and «Ejecutar» on the right (AU-74, decision 15:
+  there it is looked at, tested, run and turned off or on, never edited or published). **«Publicar»** saves what is
   owed, then opens a 600 px modal titled «Publicar «nombre»»: «Será la versión 5.» («Será la versión 1 y quedará
   encendida.» the first time); «Qué cambia respecto a la versión 4», one line per change (a step added or changed is
   a link that closes the modal and opens it); «Antes de publicar», what stops it first in `--bad`, then what is worth
@@ -1182,6 +1185,31 @@ contraseña ni un código aquí» under a question.
   says «Cambiar el límite» in «Registro», which opens «Ajustes» on that field. From a shared device «Publicar», the
   switch and «Ejecutar» say «Solo desde un dispositivo personal» and change nothing. A «Eliminar filas» with «Sí»
   says «A la papelera · sin preguntar» in each row of «Haría esto».
+- **«Ejecuciones»** (F14d P2, `AutomationRuns.tsx`, `automations/runs.ts`, `automations/runWords.ts`; AU-18, AU-93,
+  AU-97, AU-99 to AU-101, AU-103, AU-190; the sketch's screen 8). «Ejecutar» (the header, «⋯», the notice of
+  publishing, and a ▶ in the list's row of a published automation, which opens it and asks its fields) goes to this
+  tab with the run it started. On the left, 330 px, «Todas | Fallos | Pruebas» (`.segmented`) over the runs, the
+  newest first and fifty at a time with «Ver más»: each a row of three lines, when («hoy, 09:12», «ayer, 19:44»,
+  «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
+  en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra»), and who with which version, muted («Programada · versión
+  3 · reintento», «Prueba del borrador»). How long it took is said of every run that ended; «Bien» is the word of a
+  step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date
+  in full, its line («Bien · 0,9 s · Iniciada por ti · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
+  en Libros · con datos de fuera»; a collection gone is «una colección que ya no está»), why it failed in the app's
+  words, «Deshecha hoy, 10:20» once undone; then «Ver cada paso», «Deshacer lo que hizo» (only when it wrote and is
+  not undone), «Reintentar» (not for a test), «Cambiar el límite» (stopped at a limit: the editor's «Ajustes» on that
+  number) and «Abrir en el editor con estos datos» (the editor, its trigger open with that run's output pinned).
+  Under the bar the run's canvas: the editor's own over the document it ran, each step with its pill and its rows on
+  the arrows, looked at and never changed; a step opens its view, whose rows are asked when it opens. A run of which
+  only its summary is left says «De esta ejecución solo queda el resumen: sus pasos y sus filas ya no se guardan.»
+  instead. «Reintentar» runs at once when it runs the same
+  version and wrote nothing; else a 600 px modal says «Correrá la versión 5, no la 4.» or «Empieza desde el
+  principio, con los datos de aquella.», and what that run saved, with «Deshacer y reintentar» (primary when it can
+  be undone) and «Reintentar». A run under way is followed by the server's events on the desktop; elsewhere it is
+  asked again every 2.5 s only while it is under way and the window is seen. On the phone the list comes first, and a
+  run opens over it with «Todas las ejecuciones» to go back; there it has no «Abrir en el editor con estos datos» and
+  no «Cambiar el límite» (AU-74). From a shared device undoing, retrying and pinning say «Solo desde un dispositivo
+  personal.» and change nothing.
 - **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
@@ -1272,6 +1300,12 @@ contraseña ni un código aquí» under a question.
   `--good`, «Falló» in `--bad`, «Saltado» (no rows came to it) and «Parado» (the test stopped before it) in `--muted`;
   a failed card says why under its summary in `--bad`, two lines at most, whole in its tooltip. After «Probar» or
   «Probar paso» every required parameter left empty is marked, on its card too.
+  After a test «Registro» has «Ver cada paso» (the list-tree icon): a 380 px pop-up with one line per step in the
+  order it ran, its pill, its name, «128 → 3» and its seconds, and under it, muted, what it touched («Guardaría 3
+  cambios», «Consola: 4 líneas»); a line opens its step. A run's «Ver cada paso» is the same, with «Guardó»,
+  «Propuso» and what it read («Leyó 128 filas de Libros»), which a test of the editor does not give yet. In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
+  output that ended well: the card says «Salida fijada» (with «puede estar vieja» once the step changes), «Probar»
+  gives that output without running it, and the same button, now «Soltar», lets it go.
   In the step's view, ENTRADA and SALIDA have a head with what they hold and «Ver como»: «Esquema» (each field with
   the first row's value cut to a line, a search over more than ten fields, a related row or a list unfolded one
   level), «Tabla» (its own sideways scroll, every cell one line with an ellipsis, whole in its tooltip), «JSON» and,

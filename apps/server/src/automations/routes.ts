@@ -102,9 +102,8 @@ export const PUBLISH_ACTIONS: Readonly<Record<string, AutomationAction>> = {
 
 /**
  * F14d S2's touches (runs.ts): «Ejecutar» and «Reintentar», «Deshacer lo que hizo», and «Fijar» with «Abrir en el
- * editor con estos datos». Made (`withRunActions`) and not registered, as S1's: each enters the registry, `ROUTES`,
- * `ROUTE_ACTIONS`, `ROUTE_RUNS` and http.ts with its control in the app (the screens' PR), since a registered action
- * with no control fails actions.test.ts. Their reads are `automations.read`'s parts, already routed.
+ * editor con estos datos». Registered (`withRunActions`) with their routes in `ROUTES`, `ROUTE_ACTIONS` and
+ * `ROUTE_RUNS`, each with its control in «Ejecuciones» (F14d P2). Their reads are `automations.read`'s parts.
  */
 export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   "automations.run": {

@@ -97,6 +97,13 @@ export const DO = {
   publishVersion: "auto.do.publishVersion",
   run: "auto.do.run",
   changeLimit: "auto.do.changeLimit",
+  /** F14d P2, in a run of «Ejecuciones» (AU-100, AU-18) and SALIDA's head (AU-93). «Reintentar» is `retrySave`'s. */
+  undoRun: "auto.do.undoRun",
+  undoRetry: "auto.do.undoRetry",
+  openWithData: "auto.do.openWithData",
+  pin: "auto.do.pin",
+  unpin: "auto.do.unpin",
+  moreRuns: "auto.do.moreRuns",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */

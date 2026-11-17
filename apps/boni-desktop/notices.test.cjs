@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { noticeBody, noticeOf, createNotices } = require("./notices.cjs");
+const { noticeBody, noticeOf, runOf, createNotices } = require("./notices.cjs");
 
 // Boni's notices on this computer (task 62, A-17): the agent's stream, and what a notification may say.
 
@@ -26,6 +26,45 @@ test("only a «notify» event with a text is a notice", () => {
   assert.equal(noticeOf({ event: "proposals", data: '{"n":2}' }), null);
   assert.equal(noticeOf({ event: "notify", data: '{"text":""}' }), null);
   assert.equal(noticeOf({ event: "notify", data: "{no es json" }), null);
+});
+
+test("F14d P2 · a «run» event gives its ids, state, step and counts to the windows, and nothing else", () => {
+  assert.deepEqual(
+    runOf({
+      event: "run",
+      data: '{"automation":"a_1","run":"r_2","state":"running","step":"s_buscar","out":{"main":128},"rows":[1]}',
+    }),
+    { automation: "a_1", run: "r_2", state: "running", step: "s_buscar", out: { main: 128 } },
+  );
+  assert.deepEqual(
+    runOf({ event: "run", data: '{"automation":"a_1","run":"r_2","state":"done"}' }),
+    {
+      automation: "a_1",
+      run: "r_2",
+      state: "done",
+    },
+  );
+  assert.equal(runOf({ event: "notify", data: '{"text":"x"}' }), null);
+  assert.equal(runOf({ event: "run", data: '{"run":"r_2"}' }), null);
+  assert.equal(runOf({ event: "run", data: "{no es json" }), null);
+});
+
+test("F14d P2 · the stream passes each run's event on, beside the notices", async () => {
+  const runs = [];
+  const notices = createNotices({
+    fetch: async (_url, init) =>
+      streaming(
+        ['event: run\ndata: {"automation":"a_1","run":"r_2","state":"done"}\n\n'],
+        init.signal,
+      ),
+    target: () => ({ serverUrl: "https://boni.example", token: "tok" }),
+    onNotice: () => {},
+    onRun: (r) => runs.push(r),
+  });
+  notices.restart();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(runs, [{ automation: "a_1", run: "r_2", state: "done" }]);
+  notices.stop();
 });
 
 /** A response whose body sends `chunks` and then stays open until aborted. */

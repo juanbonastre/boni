@@ -203,6 +203,11 @@ export type View =
       kind: "flows";
       flow?: string;
       automation?: string | null;
+      /**
+       * F14d P2: the automation's «Ejecuciones» tab (AU-99), on one run; `start`, new each time, runs it there
+       * («Ejecutar» in the list's row, AU-97).
+       */
+      runs?: { run?: string; start?: number };
       map?: {
         center: string | null;
         pages?: boolean;
@@ -3983,8 +3988,23 @@ export const showFlows = () => set({ view: { kind: "flows" }, panel: null });
 /** One flow on a page of its own, in its editor. */
 export const showFlow = (id: string) => set({ view: { kind: "flows", flow: id }, panel: null });
 /** An automation of the new format in its editor; null: «Nueva», the empty canvas, with nothing saved (AU-61). */
-export const showAutomation = (id: string | null) =>
-  set({ view: { kind: "flows", automation: id }, panel: null });
+let runStarts = 0;
+export const showAutomation = (id: string | null, runs?: { run?: string; start?: boolean }) =>
+  set({
+    view: {
+      kind: "flows",
+      automation: id,
+      ...(runs
+        ? {
+            runs: {
+              ...(runs.run ? { run: runs.run } : {}),
+              ...(runs.start ? { start: ++runStarts } : {}),
+            },
+          }
+        : {}),
+    },
+    panel: null,
+  });
 let mapAsks = 0;
 /**
  * «Ver en el mapa» of a row: a flow's row its flow, a row of «Mis datos» what it is (Boni's own records are on no

@@ -5055,6 +5055,11 @@ body:has(.toast) .db-selinfo {
   width: 36px;
   text-align: center;
 }
+.db-table .row-tools.two {
+  min-width: 60px;
+  width: 60px;
+  white-space: nowrap;
+}
 .db-table tr .row-tools .icon-btn {
   opacity: 0;
 }
@@ -12856,6 +12861,23 @@ button.auto-log-line {
 .auto-card-state.stale {
   opacity: 0.6;
 }
+/* «Salida fijada» (AU-93): a mark at the card's bottom left, in the accent, beside how it ended. */
+.auto-card-pin {
+  position: absolute;
+  bottom: -9px;
+  left: 10px;
+  max-width: calc(100% - 90px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-line, var(--line));
+  background: var(--surface);
+  color: var(--accent);
+}
 .auto-card-why {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -13383,4 +13405,248 @@ button.auto-log-line {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* «Ejecuciones», P2 of F14d (pantalla 8, AU-99): «Editor | Ejecuciones» in the header; the runs on the left, 330 px,
+   with Todas/Fallos/Pruebas; the run chosen on the right, its bar over its canvas. On the phone the list, then the
+   run with its way back. */
+/* In the header the tabs keep the header's height: «.auto-tabs»'s margin is for a step's tabs, and here it made a
+   published automation's page 12 px taller than the window, so it scrolled. */
+.auto-head > .auto-tabs {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+/* On the phone (decision 15) the name has its own line; under it the tabs, the switch and «Ejecutar». */
+.auto-head.phone {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.auto-head.phone > .auto-name {
+  flex: 1 1 100%;
+}
+.auto-head.phone > .spacer {
+  display: none;
+}
+.auto-head.phone > .auto-switch {
+  margin-left: auto;
+}
+.auto-runs {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+  gap: 12px;
+  height: calc(100vh - 170px);
+  min-height: 360px;
+}
+.auto-runs.phone {
+  display: block;
+  height: auto;
+  min-height: 0;
+}
+.auto-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.auto-runs-filter {
+  align-self: flex-start;
+  flex: none;
+}
+.auto-runs-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auto-runs-item {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.auto-runs-item:hover {
+  background: var(--surface-2);
+}
+.auto-runs-item.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.auto-runs-when {
+  font-size: 13px;
+  font-weight: 600;
+}
+.auto-runs-how,
+.auto-runs-who {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.auto-runs-how.bad {
+  color: var(--bad);
+}
+.auto-runs-how.live {
+  color: var(--text);
+}
+.auto-runs-more {
+  align-self: center;
+  flex: none;
+}
+.auto-runs-none,
+.auto-runs-choose,
+.auto-run-only {
+  margin: 0;
+  padding: 16px;
+}
+.auto-run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.auto-run-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.auto-runs-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-basis: 100%;
+  justify-content: flex-start;
+  max-width: max-content;
+}
+.auto-run-what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-run-when {
+  font-size: 14px;
+  color: var(--text);
+}
+.auto-run-line .bad,
+.auto-run-why {
+  color: var(--bad);
+}
+.auto-run-do {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.auto-run-do .btn {
+  white-space: nowrap;
+}
+.auto-run-canvas {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 320px;
+}
+.auto-runs.phone .auto-run-detail {
+  margin-top: 0;
+}
+.auto-runs.phone .auto-run-canvas {
+  flex: none;
+  height: calc(100vh - 280px);
+}
+.modal.auto-retry,
+.auto-retry {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+.auto-retry p {
+  margin: 0;
+}
+/* «Fijar» (AU-93) in a step's SALIDA: pressed while its output is pinned. */
+.auto-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.auto-pin.on {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* The «Registro» tree (AU-101): each step in the order it ran, with what it touched under it. */
+.auto-tree-open {
+  flex: none;
+}
+.auto-tree {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+  font-size: 12px;
+}
+.auto-tree-step {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.auto-tree-step:disabled {
+  cursor: default;
+}
+.auto-tree-step:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.auto-tree-mark,
+.auto-tree-rows,
+.auto-tree-ms {
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.auto-tree-mark.failed {
+  color: var(--bad);
+}
+.auto-tree-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.auto-tree-under {
+  list-style: none;
+  margin: 0 0 2px;
+  padding: 0 6px 0 78px;
+  color: var(--muted);
 }
