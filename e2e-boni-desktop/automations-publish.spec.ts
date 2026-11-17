@@ -767,6 +767,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     if (!done) throw new Error("no run");
     // The server stops while a run is in «Buscar filas en Tareas»: no step of «Código» lasts long enough to stop it
     // there by hand, so the store is left as a stop leaves it (runs.test.ts stops the box itself).
+    const rows = (await tareas(w)) as number;
     const port = (server as Server).port;
     (server as Server).process.kill();
     await once((server as Server).process, "exit");
@@ -798,7 +799,6 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     });
     store.journal.setAutomationRunStep(run, "s_01kx6buscara5");
     store.close();
-    const rows = (await tareas(w)) as number;
     server = await startServer({ ...env, BONI_WRITE: "1", ANTHROPIC_API_KEY: KEY }, port);
     await ask(w, "GET", `api/agent/automations/${id}/runs`);
     await runsOf(w, "Releer las copias", 3, 2);
