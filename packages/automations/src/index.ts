@@ -14,4 +14,5 @@ export * from "./preview.ts";
 export * from "./rows.ts";
 export { canonical, compare, measure } from "./steps.ts";
 export * from "./validate.ts";
+export * from "./versions.ts";
 export * from "./writes.ts";

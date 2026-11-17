@@ -584,6 +584,11 @@ export interface CodeContext extends ValidationContext {
   /** The name of the collection with that key: what `$col('…')` is written with (the editor's completions). */
   collectionName?(key: string): string | undefined;
   /**
+   * The key the published version kept for a name a step's code cites (`keptNames`, AU-192): with it, a citation by
+   * a name that collection no longer has is `code.collectionRenamed`, saying today's name, and not unknown.
+   */
+  keptKey?(step: string, name: string): string | undefined;
+  /**
    * The fields the last test of the step with that name gave, by key with the name Juan sees; undefined when it has
    * not been tested. A field read that is not among them is a warning (AU-36), and the editor completes with them.
    */
@@ -606,17 +611,29 @@ const quoteAs = (text: string, q: string) =>
  * the same, not a comment (AU-02). `renameStep` calls it for every `{{ }}` and every «Código» of the automation.
  */
 export function renameInCode(source: string, from: string, to: string): string {
+  return renameCited(source, "$", from, to);
+}
+
+/**
+ * The source with every `$col('from')` written as `$col('to')`, and nothing else touched (AU-192): what the button of
+ * `code.collectionRenamed` does to a draft's code, by Juan's hand. `$('from')`, a text and a comment stay.
+ */
+export function renameCollectionInCode(source: string, from: string, to: string): string {
+  return renameCited(source, "$col", from, to);
+}
+
+function renameCited(source: string, callee: "$" | "$col", from: string, to: string): string {
   let parsed = parseCode(source, "expression");
   if ("error" in parsed) parsed = parseCode(source, "code");
   if ("error" in parsed) return source;
   const up = parents(parsed.root);
   const bound = bindings(up);
-  if (bound.names.has("$")) return source;
+  if (bound.names.has(callee)) return source;
   const at: N[] = [];
   for (const [n, where] of up)
     if (
       n.type === "Identifier" &&
-      n.name === "$" &&
+      n.name === callee &&
       where.parent.type === "CallExpression" &&
       where.key === "callee"
     ) {

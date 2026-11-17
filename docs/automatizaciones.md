@@ -300,7 +300,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
 - **AU-16** (F14a, hecho) · Si falla un paso: «Parar» (por defecto), «Seguir» o «Salir por error», que le añade
   una salida «error» con las filas que fallaron y el motivo. Reintentar hasta 5 veces con espera. Lo dice el paso en
   «Ajustes».
-- **AU-17** (F14d, pendiente) · Los límites de una ejecución (pasos, llamadas a modelos, filas escritas, tiempo)
+- **AU-17** (F14d, en parte) · Los límites de una ejecución (pasos, llamadas a modelos, filas escritas, tiempo)
   están en los ajustes de la automatización con valores prudentes; el código tiene su techo (P12, P13). Parar por un
   límite dice cuál fue y lleva a ese ajuste.
   En la F14d: son cuatro números con nombre (`AUTOMATION_LIMITS`, `packages/automations`; `RUN_LIMITS` ya es el
@@ -308,6 +308,15 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   razonados, no medidos; el constructor los mide con el volumen de Juan y los corrige aquí. Los de tiempo y filas
   escritas los aceptó Juan el 2026-11-16 (decisión 12 del §10): si la medida pide otro número, el constructor lo
   dice en su PR como duda para él y no lo cambia.
+  Hecho en E2: `AUTOMATION_LIMITS` y `limitsOf` (`format.ts`) con la tabla de arriba; `limit.over` en la validación
+  (también deja la ejecución sin empezar); el motor para con `run.limit` (`LimitPassed`, sin reintentos ni «Si falla»)
+  por tiempo y por pasos antes de empezar cada paso, y por filas escritas antes de preguntar a la política: un
+  «Colección» cuenta sus filas de entrada antes de la primera, «Las que cumplan…» las que encontró, un «Código» las
+  que pidió, y la puerta cuenta además cada cambio. Medido con 3.000 filas en el motor de pruebas, dentro de su
+  tiempo; los números de la decisión 12 no piden otro. Las palabras de la parada y de `limit.over`, en las dos
+  lenguas (`words.ts`). Falta: las llamadas a modelos no tienen nada que contar hasta la F15; con «Las que
+  cumplan…» y varias filas de entrada, lo que guardaron las anteriores se queda; el botón «Cambiar el límite» y el
+  número en «⋯ → Ajustes» (pantalla); `runs.test.ts` con el almacén de 12.000 registros (S1).
 
   | Límite | Por defecto | Techo | Se ve en «Ajustes» cuando |
   |---|---|---|---|
@@ -867,7 +876,7 @@ interface Connection {
   Hecho en E2: `connectionActions` no da nada a ningún otro tipo, una conexión en él es `connection.notAllowed`, y un
   «Código» sin conexiones valida y no lee ninguna colección.
   Hecho en W1: la conexión de un «Código» da permiso de guardar (AU-176). Hecho en W2: guardar.
-- **AU-47** (F14d, pendiente) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
+- **AU-47** (F14d, en parte) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
   En la F14d: lo da `abilities` (`versions.ts`, AU-96) sobre la versión publicada, la misma función que escribe «Lo
   que podrá hacer»: por cada colección, qué pasos la leen, crean, modifican o eliminan, y con qué se inicia. Una
@@ -876,6 +885,9 @@ interface Connection {
   el mapa de hoy (`FlowMap.tsx` y su cálculo), que sigue enseñando igual los flujos de antes.
   Lo sostienen `versions.test.ts` (todo cambio que un paso puede hacer, `stepChanges`, está en `abilities`) y
   `publish.test.ts` (el mapa lee la publicada y no el borrador).
+  Hecho en E2: `abilities` nombra todo cambio de `stepChanges` y toda lectura de una conexión o de un «Colección»,
+  también de un paso al que no llega ningún disparador. Falta: el mapa que la lee sobre la publicada (S1 y su
+  pantalla).
 
 **Los permisos de guardar de un «Código»** (Juan, 2026-11-16). Son los de esta tabla, no otros: los mismos permisos,
 las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
@@ -1295,7 +1307,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Lo sostiene `publish.test.ts`: con un borrador que escribiría una cosa y una versión publicada que escribe otra,
   cada ruta de `automations/routes.ts` que ejecuta escribe solo lo de la publicada; sin publicar, ninguna ejecuta; el
   borrador que cambió no se publica.
-- **AU-96** (F14d, pendiente) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
+- **AU-96** (F14d, en parte) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
   que llega un disparador no se publica.
@@ -1313,6 +1325,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   enciende (AU-194). Los textos de un paso (su nombre, el de una colección) se pintan como texto.
   Lo sostienen `versions.test.ts` (las tres funciones, caso por caso), `publish.test.ts` (con un problema en un paso
   alcanzable no publica; en uno al que no llega nada, sí) y `automations-publish.spec.ts` (la pantalla).
+  Hecho en E2: las tres funciones (`versions.ts`). `diffAutomations` no ve el orden de los pasos ni de las flechas, ni
+  el número de versión, y un límite escrito con su valor por defecto no es un cambio; `publishChecks` impide
+  publicar con un error de toda la automatización o de un paso alcanzable (`blocking`), y el motor deja de correr
+  solo por eso, así que lo que se publica corre (un paso suelto con un error no para la ejecución; las pruebas del
+  borrador siguen con `canRun`); lo que conviene mirar sale con su paso. Falta: `publish.test.ts` en el servidor y
+  la pantalla 10 con sus palabras (S1, S2).
 - **AU-97** (F14d, pendiente) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
@@ -1413,7 +1431,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Extiende `setAutomationDeleted` y la ruta `restore`, que ya existen.
   Lo sostienen `publish.test.ts` (eliminada no corre a su hora ni a mano; recuperada vuelve apagada, con sus
   versiones y sus ejecuciones) y `automations-publish.spec.ts` («Eliminadas» y «Recuperar»).
-- **AU-192** (F14d, pendiente) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
+- **AU-192** (F14d, en parte) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
   conexión guardan la clave de la colección; un «Código» la cita por su nombre (`$col('Gastos')`). Cada versión
   guarda, al publicarse, el nombre con que su código cita cada colección conectada y la clave que era. Al
   ejecutar, el nombre se resuelve primero por ahí, así que la versión publicada sigue leyendo y guardando en la
@@ -1423,6 +1441,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   botón que la reescribe: el código de Juan lo cambia su mano, no Boni por su cuenta.
   Lo sostienen `versions.test.ts` (lo que una versión guarda de sus nombres) y `runs.test.ts` (tras el cambio de
   nombre, la publicada guarda en la misma colección; sin la conexión, no).
+  Hecho en E2: `keptNames` (por paso, el nombre y la clave de cada colección conectada que su código cita),
+  `namedFor` (resuelve un nombre por lo guardado mientras la clave siga conectada a ese paso, y si no, por el de
+  hoy), `code.collectionRenamed` en la validación con el nombre de hoy (`keptKey` en `CodeContext`) y
+  `renameCollectionInCode`, que reescribe solo `$col('…')`. Falta: guardarlo con la versión al publicar, que el
+  servidor le pase `namedFor` al motor por paso (hoy `collectionNamed` es uno para toda la ejecución), el botón y
+  `runs.test.ts` (S1).
 - **AU-194** (F14d, pendiente) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
   lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
   ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió
@@ -1446,7 +1470,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   «Consola», con «Al ejecutarse, preguntaría antes de guardar» cuando preguntaría y «y N filas más». Probado con
   3.000 filas en el servidor y en la app de escritorio. Falta: lo guardado en el registro de una ejecución de verdad,
   que llega cuando un «Código» corre publicado (F14d).
-- **AU-182** (F14d, pendiente) · Lo que se acepta sin haberlo escrito Juan dice lo que puede cambiar. «Lo que podrá
+- **AU-182** (F14d, en parte) · Lo que se acepta sin haberlo escrito Juan dice lo que puede cambiar. «Lo que podrá
   hacer» de «Publicar» (AU-96) nombra cada colección que puede cambiar cada «Código», con la acción, según el análisis
   y sus conexiones, y si eliminará sin preguntar (AU-189); y lo mismo, antes de aceptarla, una automatización que
   propone el asistente (AU-140, F16), «Pedir a Boni» o «Escribir con IA» (AU-141, AU-39: F19) o un paquete (AU-145,
@@ -1463,6 +1487,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   palabras para crear, modificar y eliminar: «con datos de fuera». Son dos marcas distintas: «sin preguntar»
   sigue siendo solo de eliminar (AU-189: crear y modificar con «Sí» no la llevan) y «con datos de fuera» es de las
   tres. Un ejemplo de cómo se lee:
+  Hecho en E2: `abilities` con una línea por colección y acción, `how` («saves», «asks», «noAsk» solo al eliminar
+  con «Sí») y `outside` («con datos de fuera») solo en una escritura con «Sí» cuyo camino de filas o de control, o
+  lo que cita, lee una colección que el servidor dice que guarda algo de fuera (`AbilitiesContext.outside`); el
+  permiso se lee con `stepChanges`, que pasa por `permissionOf`. Probado contra el motor: con cada celda de cada
+  acción de un «Código», y con cada «Permiso» de cada acción de un «Colección», lo que guarda nunca se nombra como
+  «pregunta». Falta: la consulta del servidor que da `outside` (medida con 3.000 filas), `publish.test.ts`,
+  `runs.test.ts` y la pantalla (S1, S2).
 
   | Lo que podrá hacer |
   |---|

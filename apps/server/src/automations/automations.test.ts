@@ -18,6 +18,7 @@ import {
   ToolRegistry,
 } from "@boni/agent";
 import {
+  AUTOMATION_LIMITS,
   type Automation,
   bornParams,
   type ChangeWith,
@@ -1373,7 +1374,10 @@ const tested = async (id: string, request: Parameters<typeof testAutomation>[2])
 describe("«Probar» and «Probar paso»", () => {
   it("AU-90 · «Probar» reads and computes for real on the store and writes nothing: the operation log is as long after it as before, nothing is proposed or notified and no run is left in the journal", async () => {
     bulk(3000);
-    const { id, step } = made();
+    // The run's «rows written» at its ceiling: «Marcar» would write 3,000, and this is about writing none (AU-17).
+    const d = reviewing();
+    d.doc.settings = { limits: { rowsWritten: AUTOMATION_LIMITS.rowsWritten.ceiling } };
+    const { id, step } = made(d);
     const log = opLog();
     const values = store.list(GASTO).map((e) => JSON.stringify(e.entity.values));
     const start = cpu();

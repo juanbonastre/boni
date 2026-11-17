@@ -29,7 +29,15 @@ import {
 import { connectionProblems } from "./connections.ts";
 import type { CollectionShape } from "./effects.ts";
 import { type Citation, codeParts, parseExpression, printCitation } from "./expression.ts";
-import { type Automation, isExpr, MAX_RETRIES, type ParamValue, type Step } from "./format.ts";
+import {
+  AUTOMATION_LIMITS,
+  type Automation,
+  isExpr,
+  MAX_RETRIES,
+  type ParamValue,
+  RUN_LIMIT_KEYS,
+  type Step,
+} from "./format.ts";
 import { byCodeUnit, downstream, findCycle } from "./graph.ts";
 import {
   type CodeContext,
@@ -74,6 +82,8 @@ export const PROBLEMS = [
   "expr.notBefore", // cites a step that does not always run before this one. detail: name
   "expr.cannotPair", // `.item` across a step that remakes the rows (AU-13). detail: name, by (the step between), first and all (the citations it proposes instead)
   "expr.noCurrentRow", // `$json` or `.item` in a parameter of a step that works with all the rows
+  // The automation's settings
+  "limit.over", // a run limit above its ceiling (AU-17): never cut down. param: «limits.<key>»; detail: limit, max, got
   // The collections
   "collection.unknown", // detail: collection
   "field.unknown", // a field its collection does not have. detail: field
@@ -145,6 +155,12 @@ export function validate(
     if (isTrigger(s)) for (const id of [s.id, ...(down.get(s.id) ?? [])]) reached.add(id);
 
   if (!steps.some(isTrigger)) add("trigger.none");
+  for (const limit of RUN_LIMIT_KEYS) {
+    const got = automation.settings?.limits?.[limit];
+    const max = AUTOMATION_LIMITS[limit].ceiling;
+    if (got !== undefined && got > max)
+      add("limit.over", { param: `limits.${limit}`, detail: { limit, max, got } });
+  }
 
   const done = new Set<string>();
   for (const step of steps) {
@@ -690,7 +706,12 @@ export function codeProblems(
     if (piece.as === "code") {
       for (const c of reading.collections) {
         const key = context.collectionNamed(c.name);
-        if (key === undefined) add("code.unknownCollection", c.at[0], { name: c.name });
+        // A name the published version kept for another collection, which is now called otherwise (AU-192).
+        const kept = context.keptKey?.(step.id, c.name);
+        const now = kept !== undefined && kept !== key ? context.collectionName?.(kept) : undefined;
+        if (kept !== undefined && now !== undefined && now !== c.name)
+          add("code.collectionRenamed", c.at[0], { name: c.name, now, collection: kept });
+        else if (key === undefined) add("code.unknownCollection", c.at[0], { name: c.name });
         else if (!connected.has(key)) add("code.notConnected", c.at[0], { collection: key });
       }
       // What it asks to save and its connection does not give (AU-176), from this same reading.
