@@ -23,6 +23,9 @@ import type { T } from "../i18n.ts";
 
 const CELLS: readonly WriteCell[] = [false, "ask", "yes"];
 const cellValue = (c: WriteCell) => (c === false ? "no" : c);
+/** «No», «Preguntar», «Sí»: the last two are the words of «Colección»'s «Permiso», by its keys (AU-85, AU-187). */
+const modeWord = (t: T, c: WriteCell) =>
+  c === false ? t("auto.conn.mode.no") : t(`auto.choice.collection.permission.${c}`);
 
 export function ConnectionsTable({
   t,
@@ -91,7 +94,7 @@ export function ConnectionsTable({
                       {r.name}
                     </th>
                     <td className="auto-conn-cell" data-action="read">
-                      {[t("auto.conn.mode.yes"), ...r.limits].join(" · ")}
+                      {[modeWord(t, "yes"), ...r.limits].join(" · ")}
                     </td>
                     {r.cells.map((c) => {
                       const label = `${columnWord(t, c.action)} · ${r.name}`;
@@ -117,7 +120,7 @@ export function ConnectionsTable({
                           >
                             {CELLS.map((x) => (
                               <option key={cellValue(x)} value={cellValue(x)}>
-                                {t(`auto.conn.mode.${cellValue(x)}`)}
+                                {modeWord(t, x)}
                               </option>
                             ))}
                           </select>

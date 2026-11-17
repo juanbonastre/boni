@@ -12,7 +12,7 @@
 import type { Label } from "@boni/entities";
 import { matchesFilters } from "@boni/views";
 import { type Fields, jsonBytes } from "./box.ts";
-import { actionOf } from "./catalogue.ts";
+import { actionOf, PERMISSION, PERMISSION_BORN } from "./catalogue.ts";
 import {
   CODE_LIMITS,
   CODE_PARAMS,
@@ -36,7 +36,6 @@ import type {
 } from "./effects.ts";
 import type { Automation, Step } from "./format.ts";
 import { type CodeContext, type CodeReading, readCode, type Span } from "./javascript.ts";
-import { notBuilt } from "./pending.ts";
 import type { Cell } from "./rows.ts";
 import type { Problem } from "./validate.ts";
 
@@ -298,9 +297,20 @@ const COLLECTION_WRITES: Record<string, readonly WriteAction[]> = {
 };
 
 /**
- * What a step can change, whatever its type, from one place: a «Colección» step's write action (from the catalogue,
- * AU-19: creating and modifying `yes`, as the rule of the background says of what is its own, decision 5; removing
- * `ask`, until its «Permiso» arrives, AU-187), a «Código»'s analysis with its connection's cells (whether its
+ * The mode of a «Colección» step's «Permiso» (AU-187): `yes` only for the fixed word; a document saved without it
+ * reads the value its action is born with (`PERMISSION_BORN`); anything else (an expression, which validation
+ * refuses) asks.
+ */
+export function permissionOf(step: Step): WriteMode {
+  const action = actionOf(step);
+  const born = action ? PERMISSION_BORN[action.key as keyof typeof PERMISSION_BORN] : undefined;
+  const v = step.params[PERMISSION] ?? born;
+  return v === "yes" ? "yes" : "ask";
+}
+
+/**
+ * What a step can change, whatever its type, from one place: a «Colección» step's write action with its «Permiso»
+ * (AU-19, AU-187), a «Código»'s analysis with its connection's cells (whether its
  * connection allows it yet or not: that is a problem apart), and from F15 an «Agente»'s write permissions. Empty for
  * a step that only reads or calculates. Changing in memory the rows that reach the code (AU-37) is never in it. In
  * the order of the code's calls, or of the connections; each collection's actions in the order of `WRITE_ACTIONS`.
@@ -338,7 +348,7 @@ export function stepChanges(
   return [
     {
       collection,
-      actions: writes.map((a) => ({ action: a, mode: a === "remove" ? "ask" : "yes" })),
+      actions: writes.map((a) => ({ action: a, mode: permissionOf(step) })),
     },
   ];
 }
@@ -347,8 +357,7 @@ export function stepChanges(
  * What a published version's step says for one collection and one action (AU-186): its connection's cell, or for a
  * «Colección» step what `stepChanges` gives. What the server tells `decide` with each write of a run, read from the
  * version as saved: never from the box, a browser or a model. A `yes` is not yet a write without asking: the policy
- * still proposes one with something from outside (P4, P15), and until AU-186 to AU-188 (F14d) a «Código» asks
- * anyway (`YES_SAVES`).
+ * is the second door: it proposes what a model wrote and denies what no «Sí» opens (P2, P9, P14, P28).
  */
 export function consentOf(step: Step, collection: string, action: WriteAction): false | WriteMode {
   if (step.type === CODE_TYPE) {
@@ -364,14 +373,74 @@ export function consentOf(step: Step, collection: string, action: WriteAction): 
 /** No collection by name: a «Colección» step names its collection by key. */
 const NO_NAMES = { collectionNamed: () => undefined };
 
+/** Two plain values (a parsed document's) equal key by key, whatever the order of their keys. */
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every(
+    (k) =>
+      Object.hasOwn(b, k) &&
+      same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]),
+  );
+}
+
+/** What reaches a step: the arrows into it, as one sorted list (where its rows come from). */
+const into = (a: Automation, step: string): string[] =>
+  a.arrows
+    .filter((r) => r.to.step === step)
+    .map((r) => `${r.from.step}:${r.from.output}>${r.to.input}`)
+    .sort();
+
+/** A step with every «Sí» of saving lowered to «Preguntar»: its connections' cells and its «Permiso». */
+function lowered(step: Step): Step {
+  let out = step;
+  if (step.connections?.some((c) => WRITE_ACTIONS.some((a) => c[a] && c[a].mode === "yes")))
+    out = {
+      ...out,
+      connections: (step.connections ?? []).map((c) => {
+        const next = { ...c };
+        for (const a of WRITE_ACTIONS) {
+          const cell = c[a];
+          if (cell && cell.mode === "yes") Object.assign(next, { [a]: { ...cell, mode: "ask" } });
+        }
+        return next;
+      }),
+    };
+  const action = actionOf(step);
+  if (
+    step.type !== CODE_TYPE &&
+    action?.effect === "write" &&
+    action.key in PERMISSION_BORN &&
+    permissionOf(step) === "yes"
+  )
+    out = { ...out, params: { ...out.params, [PERMISSION]: "ask" } };
+  return out;
+}
+
 /**
  * An automation that arrives not written by the person (AU-188: the assistant's proposal, «Pedir a Boni», «Escribir
  * con IA», a package, a template, the MCP's `automations_propose`), with each `yes` of saving lowered to `ask`:
- * create, modify and remove alike, in connections and in «Eliminar filas». A `yes` that `current` (the draft it is
- * proposed over, if any) already had at the same step, collection and action stays; a new or changed one is lowered.
+ * create, modify and remove alike, in connections and in the «Permiso» of a «Colección» step (also one it would be
+ * born with, AU-187). A step `current` (the draft it is proposed over) already had keeps its «Sí» only when it
+ * arrives exactly as it was there, with the same arrows into it; a new step, or one whose code, parameters,
+ * connections or incoming rows changed, is lowered whole (decision 13 of §10: a «Sí» given to one code is not
+ * given to another). Nothing else changes, and a document with no «Sí» comes back equal.
  */
 export function lowerYes(proposed: Automation, current?: Automation): Automation {
-  return notBuilt(`lowerYes(${proposed.id}, ${current?.version ?? "new"})`);
+  const steps = proposed.steps.map((step) => {
+    const was = current?.steps.find((s) => s.id === step.id);
+    const kept =
+      current !== undefined &&
+      was !== undefined &&
+      same(was, step) &&
+      same(into(current, step.id), into(proposed, step.id));
+    return kept ? step : lowered(step);
+  });
+  return steps.every((s, i) => s === proposed.steps[i]) ? proposed : { ...proposed, steps };
 }
 
 // ---------------------------------------------------------------- saving
@@ -391,13 +460,6 @@ export function insideConnection(
   const where = connection.read === false ? [] : (connection.read.where ?? []);
   return !where.length || matchesFilters(row, typeOf, where, today, "fail");
 }
-
-/**
- * Whether a connection's «Sí» saves without asking. Not until AU-186 to AU-188 land (F14d: what does not ask, «Sí»
- * by the person's hand only, `lowerYes`): until then a «Sí» asks as «Preguntar» does, so nothing a model wrote can
- * save on its own (W2's brief, 2026-11-16).
- */
-export const YES_SAVES: boolean = false;
 
 /**
  * The gate as saving a step's requests needs it (AU-174): the collections' fields, the saved row with no other
@@ -610,7 +672,8 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
 
   // The policy is asked for every one before any is written; a no to one is the whole step's.
   const decided = await gate.decideAll(changes);
-  const asks = decided !== "allow" || !YES_SAVES || cells.includes("ask");
+  // The two doors (AU-186): the cell first, then the policy. A «Sí» never turns the policy's answer.
+  const asks = decided !== "allow" || cells.includes("ask");
   if (input.test) {
     const tested = await gate.writeAll(changes);
     tested.forEach((t, i) => {
@@ -621,7 +684,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
   }
   if (asks) {
     const byPolicy = decided === "allow" ? [] : decided;
-    const asked = changes.map(({ change }): Asked => {
+    const asked = changes.map(({ change, values }): Asked => {
       const policy = byPolicy.find((a) => a.change === change);
       return (
         policy ?? {
@@ -629,6 +692,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
           kind: change.kind === "trash" ? "confirm" : "propose",
           rule: CONNECTION_ASKS,
           change,
+          values,
         }
       );
     });

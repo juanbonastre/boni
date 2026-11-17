@@ -1320,7 +1320,8 @@ contraseña ni un código aquí» under a question.
   filtro) y Autores. No puede crear, modificar ni eliminar nada.»). On the canvas, under the card, one chip per
   connection hanging from a dotted line: the collection's name and its words in `--muted` («Lee y modifica · pregunta
   antes»; a removal with «Sí» says «sin preguntar»): the chip says what the cell allows, «Haría esto» what the engine
-  would do now, so until F14d, while a «Sí» still asks, «Haría esto» says it would ask. A step that changes data, «Colección» or «Código», has its mark
+  would do (it asks when the policy asks, whatever the cell says). A step that changes data, «Colección» or «Código»,
+  has its mark
   first among its labels in its own colour («Modifica Gastos», «Cambia Gastos y Notas»). In SALIDA, «Haría esto»
   above «Consola», a `<details>` open after a test: one line per collection and action («Modificaría 3000 filas en
   Gastos»), «Al ejecutarse, preguntaría antes de guardar» when it would ask, then the first 100 rows as «Haría esto»
