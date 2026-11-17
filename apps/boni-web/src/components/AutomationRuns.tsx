@@ -142,6 +142,11 @@ export function RunsPane({
     pages: 0,
   });
   const asked = useRef(0);
+  /** Which list this is: a new automation or filter starts another, and an older page asked for the last is dropped. */
+  const listed = useRef(0);
+  // Its words, read when an answer fails: a new `t` is no other list, so it must not put the list back to its first page.
+  const words = useRef(t);
+  words.current = t;
 
   const first = useCallback(async () => {
     const mine = ++asked.current;
@@ -159,12 +164,13 @@ export function RunsPane({
       setNext(shown.current.next);
       setError(null);
     } catch (e) {
-      if (mine === asked.current) setError(touchError(t, e));
+      if (mine === asked.current) setError(touchError(words.current, e));
     }
-  }, [id, filter, t]);
+  }, [id, filter]);
 
   // Another filter is another list, from its first page.
   useEffect(() => {
+    listed.current += 1;
     shown.current = { list: [], next: null, pages: 0 };
     setList(null);
     void first();
@@ -176,9 +182,11 @@ export function RunsPane({
   const older = async () => {
     const before = shown.current.next;
     if (!before) return;
+    const mine = listed.current;
     setMore(true);
     try {
       const page = await client.runs(id, { filter, before });
+      if (mine !== listed.current) return;
       const ids = new Set(shown.current.list.map((r) => r.id));
       const kept = [...shown.current.list, ...page.runs.filter((r) => !ids.has(r.id))];
       shown.current = { list: kept, next: page.next, pages: shown.current.pages + 1 };
