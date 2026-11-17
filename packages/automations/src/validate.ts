@@ -7,7 +7,7 @@
  * It needs no run and no data: only the automation, the catalogue and the shape of the collections it names.
  */
 import { FILTER_OPS } from "@boni/views";
-import { AGENT_PARAMS, AGENT_ROUNDS } from "./agent.ts";
+import { AGENT_PARAMS, AGENT_ROUNDS, AGENT_TOOLS, codeToolsOf } from "./agent.ts";
 import { fieldsOf } from "./ai.ts";
 import {
   actionOf,
@@ -213,7 +213,7 @@ export function validate(
       continue;
     }
     new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
-    if (step.type === AGENT_TYPE) agentParams(step, add);
+    if (step.type === AGENT_TYPE) agentParams(step, add, code !== undefined);
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
     );
@@ -258,11 +258,29 @@ export function validate(
 type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
 
 /**
- * What an «Agente» takes beyond its controls (AU-53, AU-58): «Rondas máximas» a whole number from 1 to
- * `AGENT_ROUNDS.max`, and «Campos» what AU-53 says (each key once, a known type, options for an «options» field).
+ * What an «Agente» takes beyond its controls (AU-51, AU-53, AU-58): «Rondas máximas» a whole number from 1 to
+ * `AGENT_ROUNDS.max`, «Campos» what AU-53 says (each key once, a known type, options for an «options» field), the code
+ * of «Las hace este código» a text and never an expression, and «Herramientas de código» what `codeToolsOf` takes.
+ * With no box (no `CodeContext`), its code is `expr.code`, as any JavaScript is.
  */
-function agentParams(step: Step, add: Add): void {
+function agentParams(step: Step, add: Add, withBox: boolean): void {
   const at = { step: step.id };
+  const code = step.params[AGENT_PARAMS.code];
+  if (isExpr(code)) add("param.shape", { ...at, param: AGENT_PARAMS.code });
+  else if (code !== undefined && typeof code !== "string")
+    add("param.value", { ...at, param: AGENT_PARAMS.code });
+  else if (step.params[AGENT_PARAMS.reads] === "code") {
+    if (typeof code !== "string" || !code.trim())
+      add("param.required", { ...at, param: AGENT_PARAMS.code });
+    else if (!withBox) add("expr.code", { ...at, param: AGENT_PARAMS.code });
+  }
+  const given = step.params[AGENT_PARAMS.tools];
+  const tools = codeToolsOf(given);
+  // More than `AGENT_TOOLS.max` is the list's own problem (its `max`).
+  if (!tools) {
+    if (!(Array.isArray(given) && given.length > AGENT_TOOLS.max))
+      add("param.value", { ...at, param: AGENT_PARAMS.tools });
+  } else if (!withBox && tools.length) add("expr.code", { ...at, param: AGENT_PARAMS.tools });
   const rounds = step.params[AGENT_PARAMS.maxRounds];
   if (
     typeof rounds === "number" &&
@@ -630,6 +648,11 @@ interface Piece {
   text: string;
   at: number;
   open?: number;
+  /**
+   * An «Agente»'s own code (AU-51, AU-58): «Las hace este código», over all of a unit's rows, or a code tool, over
+   * one row that holds its inputs. Both only read (`agent.reads.write`).
+   */
+  agent?: "reads" | "tool";
 }
 
 function piecesOf(step: Step): Piece[] {
@@ -655,6 +678,28 @@ function piecesOf(step: Step): Piece[] {
       for (const [k, x] of Object.entries(v)) walk(x, `${path}.${k}`);
   };
   for (const [k, v] of Object.entries(step.params)) walk(v, k);
+  if (step.type === AGENT_TYPE) {
+    const code = step.params[AGENT_PARAMS.code];
+    if (typeof code === "string" && step.params[AGENT_PARAMS.reads] === "code")
+      out.push({
+        source: code,
+        as: "code",
+        param: AGENT_PARAMS.code,
+        text: code,
+        at: 0,
+        agent: "reads",
+      });
+    // The same tools `agentSources` gives, each with its place in the list.
+    for (const [i, t] of (codeToolsOf(step.params[AGENT_PARAMS.tools]) ?? []).entries())
+      out.push({
+        source: t.code,
+        as: "code",
+        param: `${AGENT_PARAMS.tools}.${i}.code`,
+        text: t.code,
+        at: 0,
+        agent: "tool",
+      });
+  }
   return out;
 }
 
@@ -712,8 +757,10 @@ export function codeProblems(
         withoutPlace(p.detail),
         p.severity,
       );
-    if (reading.input?.current && !perRow) add("expr.noCurrentRow", reading.input.at[0]);
-    if (reading.input && reading.input.fields !== "all") {
+    // A code tool's `$json` is its inputs: one row, not the step's input.
+    const rowHere = piece.agent ? piece.agent === "tool" : perRow;
+    if (reading.input?.current && !rowHere) add("expr.noCurrentRow", reading.input.at[0]);
+    if (reading.input && reading.input.fields !== "all" && piece.agent !== "tool") {
       const given = inputFields(step, automation, context);
       if (given)
         for (const field of reading.input.fields)
@@ -731,7 +778,7 @@ export function codeProblems(
         byId,
         byName,
         down,
-        perRow,
+        piece.agent ? false : perRow,
       );
       if (wrong) {
         add(wrong.code, s.at[0], wrong.detail);
@@ -753,6 +800,12 @@ export function codeProblems(
           add("code.collectionRenamed", c.at[0], { name: c.name, now, collection: kept });
         else if (key === undefined) add("code.unknownCollection", c.at[0], { name: c.name });
         else if (!connected.has(key)) add("code.notConnected", c.at[0], { collection: key });
+      }
+      // An «Agente»'s code only reads (AU-51, AU-58): every call that asks to save is a problem, wherever it sits.
+      if (piece.agent) {
+        for (const w of reading.writes)
+          add("agent.reads.write", w.at, { name: w.name, action: w.action });
+        continue;
       }
       // What it asks to save and its connection does not give (AU-176), from this same reading.
       for (const p of notAllowed(step, writesOf(reading), (name) =>

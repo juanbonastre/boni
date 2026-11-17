@@ -3,9 +3,10 @@
 // automation will be able to do, and the names a version keeps. Invented collections with generated keys; where a
 // test says what the engine would accept, it runs the engine over the fakes of run.test-util.ts.
 import { describe, expect, it } from "vitest";
+import { AGENT_PARAMS } from "./agent.ts";
 import { cite, collection, ids, sketch } from "./automation.test-util.ts";
 import type { Box, BoxJob, Evaluated } from "./box.ts";
-import { CODE_TYPE } from "./code.ts";
+import { AGENT_TYPE, CODE_TYPE } from "./code.ts";
 import { type Connection, newConnection } from "./connections.ts";
 import type { CollectionShape } from "./effects.ts";
 import { run } from "./engine.ts";
@@ -118,6 +119,17 @@ describe("the difference between two versions (F14d)", () => {
     ]);
     // A limit written out at its default is the same limit.
     expect(diffAutomations(a, { ...a, settings: { limits: { ms: 60_000 } } }).limits).toEqual([]);
+    // A fixed value of modify (decision 18 of §10) changes the connection, as one of create does.
+    const fixedA = withCode("return []", [
+      { ...connect(alfa), update: { ...YES, fixed: { [fieldOf(alfa)]: "uno" } } },
+    ]).a;
+    const fixedB = structuredClone(fixedA);
+    const upd = (fixedB.steps[1] as Step).connections?.[0]?.update;
+    if (upd) upd.fixed = { [fieldOf(alfa)]: "dos" };
+    expect(diffAutomations(fixedA, fixedB).changed).toEqual([
+      { step: (fixedA.steps[1] as Step).id, params: [], connections: [alfa.key], settings: [] },
+    ]);
+    expect(diffAutomations(fixedA, structuredClone(fixedA)).changed).toEqual([]);
   });
 
   it("AU-98 · the same difference serves two published versions: comparing the 2 with the 4 marks what «Versiones» paints as added, removed and changed, and a version compared with itself has none", () => {
@@ -551,6 +563,38 @@ describe("the names a version keeps (F14d)", () => {
     expect(named("Beta")).toBe(beta.key);
     // It never widens: with the connection gone, the kept key is not used.
     expect(namedFor({ ...step, connections: [] }, kept, now)("Alfa")).toBe(gamma.key);
+  });
+
+  it("AU-192 · AU-51 · AU-58 · an «Agente»'s own code and its code tools keep their names as a «Código» does, and a step its code cites is in its path (AU-182)", () => {
+    const tools = [{ name: "contar", inputs: [], code: "return $col('Beta').count()" }];
+    const s = sketch(41)
+      .step("Inicio", "manual", { fields: [] })
+      .step("Leer", "collection", { collection: gamma.key, action: "find" })
+      .step("Analista", AGENT_TYPE, {
+        instructions: "Resume",
+        [AGENT_PARAMS.reads]: "code",
+        [AGENT_PARAMS.code]: "return [$('Leer').first().json, $col('Alfa').count()]",
+        [AGENT_PARAMS.tools]: tools as never,
+      })
+      .arrow("Inicio", "Leer")
+      .arrow("Inicio", "Analista");
+    const a = s.build();
+    const step = a.steps.find((x) => x.name === "Analista") as Step;
+    step.connections = [connect(alfa, { create: YES }), connect(beta)];
+    // The names of its code and of its tool's, only for its connections.
+    expect(keptNames(a, collectionNamed)).toEqual({
+      [step.id]: { Alfa: alfa.key, Beta: beta.key },
+    });
+    // No arrow comes from «Leer», but its code cites it: «Gamma» holding outside values reaches its write.
+    const flag = (code: string) => {
+      const b = structuredClone(a);
+      (b.steps.find((x) => x.name === "Analista") as Step).params[AGENT_PARAMS.code] = code;
+      return abilities(b, { collectionNamed, outside: new Set([gamma.key]) }).find(
+        (l) => l.action === "create",
+      )?.outside;
+    };
+    expect(flag("return [$('Leer').first().json]")).toBe(true);
+    expect(flag("return [$col('Alfa').count()]")).toBeUndefined();
   });
 
   it("AU-192 · in the draft, a code that cites a collection by a name it no longer has is a problem that says the name of today, and the fix rewrites that citation and nothing else", () => {

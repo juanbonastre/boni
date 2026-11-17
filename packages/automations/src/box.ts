@@ -180,6 +180,11 @@ export interface EvaluateInput {
    * default.
    */
   offset?: number;
+  /**
+   * The step's reader, when its reads are shared with more than this evaluation (an «Agente»'s code and its code
+   * tools, F15 E3): one count of reads and bytes, one cache, against the same limits. A new one by default.
+   */
+  reader?: Reader;
 }
 
 /**
@@ -275,7 +280,7 @@ export async function evaluate(
   const labels: Label[] = new Array(count);
   const lines: ConsoleLine[][] = Array.from({ length: count }, () => []);
   const asked: Set<string>[] = Array.from({ length: count }, () => new Set());
-  const reader = new Reader(input, gate);
+  const reader = input.reader ?? new Reader(input, gate);
 
   const whole = all || wholeInput;
   const offset = input.offset ?? 0;

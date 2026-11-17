@@ -9,7 +9,14 @@
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
 
-import { AGENT_ANSWERS, AGENT_MODES, AGENT_PARAMS, AGENT_READS, AGENT_ROUNDS } from "./agent.ts";
+import {
+  AGENT_ANSWERS,
+  AGENT_MODES,
+  AGENT_PARAMS,
+  AGENT_READS,
+  AGENT_ROUNDS,
+  AGENT_TOOLS,
+} from "./agent.ts";
 import {
   EXTRACT_FIELDS_MAX,
   EXTRACT_TYPES,
@@ -1066,6 +1073,8 @@ const AGENT_STEP: StepTypeSpec = {
           shape: true,
           default: "ai",
         },
+        // No `when`: changing «Lecturas» keeps the code (AU-51). It is required, and read, only with «code».
+        { key: A.code, control: "value", of: "text", place: "shown" },
         {
           key: A.answer,
           control: "choice",
@@ -1111,6 +1120,17 @@ const AGENT_STEP: StepTypeSpec = {
           place: "option",
           shape: true,
           default: AGENT_ROUNDS.born,
+        },
+        {
+          key: A.tools,
+          control: "list",
+          place: "option",
+          max: AGENT_TOOLS.max,
+          columns: [
+            { key: "name", control: "value", of: "text", place: "shown", required: true },
+            { key: "inputs", control: "value", of: "any", place: "shown" },
+            { key: "code", control: "value", of: "text", place: "shown", required: true },
+          ],
         },
       ],
     },

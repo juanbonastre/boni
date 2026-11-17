@@ -504,7 +504,7 @@ export interface WriteInput {
   today: string;
   /** «Probar» or «Probar paso»: nothing is saved (AU-181). */
   test: boolean;
-  /** The label of what the automation itself writes: of create's fixed values, which Juan set (AU-48). */
+  /** The label of what the automation itself writes: of the fixed values of create and modify, which Juan set (AU-48). */
   own?: Label;
   /**
    * Rows this step has already asked to write with an action in a collection in this run, saved, tested or proposed:
@@ -512,7 +512,7 @@ export interface WriteInput {
    */
   before?: (collection: string, action: WriteAction) => number;
   /**
-   * An «Agente»'s create's fixed expressions (AU-52), resolved by the engine for the unit that asked each request, by
+   * An «Agente»'s fixed expressions of create and modify (AU-52), resolved by the engine for the unit that asked each request, by
    * the request's place: what a fixed value that is not a plain one gives. Absent, such a value is not written.
    */
   fixed?: readonly (Readonly<Record<string, Labeled<Cell>>> | undefined)[];
@@ -591,7 +591,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
 
   const changes: ChangeWith[] = [];
   const records: WriteRecord[] = [];
-  /** For each record, the fields its request set (and create's fixed ones): what AU-171 leaves without «Leer». */
+  /** For each record, the fields its request set (and the fixed ones): what AU-171 leaves without «Leer». */
   const fieldsSet: string[][] = [];
   const cells: WriteMode[] = [];
   for (const [i, r] of input.requests.entries()) {
@@ -655,11 +655,13 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
         throw request("fields");
       fields = given;
       const keys = Object.keys(fields);
-      if (action === "update" && !keys.length) throw request("empty");
       const seen = connection.read === false ? undefined : connection.read.fields;
-      // «Solo estos campos» of the action (AU-48), and create's fixed fields, which are not the step's to choose.
+      // «Solo estos campos» of the action (AU-48), and its fixed fields, which are not the step's to choose. A modify
+      // with fixed values may name no field of its own: it chooses the rows, and they end with Juan's values.
       const chosen = "fields" in cell ? cell.fields : undefined;
       const pinned = "fixed" in cell ? cell.fixed : undefined;
+      if (action === "update" && !keys.length && !Object.keys(pinned ?? {}).length)
+        throw request("empty");
       for (const field of keys) {
         if (!types.has(field)) throw request("field", { field });
         if (seen && !seen.includes(field))
@@ -688,11 +690,12 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
         configurable: true,
       });
 
-    // Create's fixed values (AU-48): Juan's, with the automation's own label, in the row as it would be.
-    const fixed = action === "create" && "fixed" in cell ? cell.fixed : undefined;
+    // The fixed values of create and modify (AU-48, decision 18 of §10): Juan's, with the automation's own label, in
+    // the row as it would be. This code writes them; a request that names one was refused above (`notAllowed`).
+    const fixed = action !== "remove" && "fixed" in cell ? cell.fixed : undefined;
     if (fixed && Object.keys(fixed).length) {
       const own = input.own;
-      if (!own) throw new Error("a create with fixed values needs the automation's label");
+      if (!own) throw new Error(`a ${action} with fixed values needs the automation's label`);
       fields = { ...fields };
       for (const [field, v] of Object.entries(fixed)) {
         // An expression is an «Agente»'s (AU-52), which the engine resolved for the unit; any other is not written.

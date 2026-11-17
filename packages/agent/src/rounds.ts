@@ -58,6 +58,15 @@ export const READ_TOOLS = ["find", "get", "count", "sum"] as const;
 export const WRITE_TOOLS = ["create", "update", "trash"] as const;
 export type AgentTool = (typeof READ_TOOLS)[number] | (typeof WRITE_TOOLS)[number];
 
+/**
+ * A «Herramienta de código» (AU-58) as the model knows it: its name and its inputs, each a name and a type. Its code
+ * stays with the engine, which runs it in the box when a plan calls it by name.
+ */
+export interface CodeTool {
+  name: string;
+  inputs: { name: string; type: string }[];
+}
+
 /** What a tool gives back: rows read, one value, what a write will do («Creará 1 fila en …»), or a refusal. */
 export type ToolReply =
   | { rows: Labelled[]; of?: number }
@@ -79,6 +88,8 @@ export interface AgentCall {
   connections: Json;
   answer: { kind: "text" } | { kind: "fields"; fields: AnswerField[] };
   reads: boolean;
+  /** «Herramientas de código» (AU-58): tools of the plan by name, besides the reads and writes. */
+  codeTools?: CodeTool[];
   maxRounds: number;
   today: string;
   zone: string;
@@ -90,7 +101,7 @@ export interface AgentCall {
   called(model: string | undefined, ms: number): void;
   now(): number;
   /** A call of the plan, for the engine to narrow, decide and make, or to gather (writes). Throwing fails the unit. */
-  tool(name: AgentTool, args: Readonly<Record<string, Labelled>>): Promise<ToolReply>;
+  tool(name: AgentTool | string, args: Readonly<Record<string, Labelled>>): Promise<ToolReply>;
 }
 
 /** What the model receives in one call (AU-197): nothing else, and a test breaks if anything else enters. */
@@ -106,6 +117,8 @@ export interface AgentRequest {
   seen: Seen[];
   answer: Json;
   tools: string[];
+  /** The «Herramientas de código», when the step has any: each one's name and inputs, never its code. */
+  codeTools?: Json;
   today: string;
   zone: string;
   language: string;
@@ -143,24 +156,31 @@ export const answerKeys = (answer: AgentCall["answer"]): string[] =>
   answer.kind === "text" ? ["texto"] : answer.fields.map((f) => f.key);
 
 /** The catalogue a round's plan is validated with: only these tools, with these arguments. */
-export function roundCatalog(call: Pick<AgentCall, "reads" | "answer">): PlanCatalog {
+export function roundCatalog(call: Pick<AgentCall, "answer" | "codeTools">): PlanCatalog {
   const tools: Record<string, { names: string[]; required: string[]; objects?: string[] }> = {
     create: { names: ["collection", "fields"], required: ["collection", "fields"] },
     update: { names: ["collection", "id", "fields"], required: ["collection", "id", "fields"] },
     trash: { names: ["collection", "id"], required: ["collection", "id"] },
     [ANSWER]: { names: answerKeys(call.answer), required: [] },
   };
-  if (call.reads)
-    Object.assign(tools, {
-      find: { names: ["collection", "query"], required: ["collection"], objects: ["query"] },
-      get: { names: ["collection", "id"], required: ["collection", "id"] },
-      count: { names: ["collection", "query"], required: ["collection"], objects: ["query"] },
-      sum: {
-        names: ["collection", "field", "query"],
-        required: ["collection", "field"],
-        objects: ["query"],
-      },
-    });
+  // The reads stay valid when the round may not read («Las hace este código»): the request does not offer them, and
+  // one asked anyway is refused and told (`read-off`, AU-51), not taken for a plan that is not one.
+  Object.assign(tools, {
+    find: { names: ["collection", "query"], required: ["collection"], objects: ["query"] },
+    get: { names: ["collection", "id"], required: ["collection", "id"] },
+    count: { names: ["collection", "query"], required: ["collection"], objects: ["query"] },
+    sum: {
+      names: ["collection", "field", "query"],
+      required: ["collection", "field"],
+      objects: ["query"],
+    },
+  });
+  // A code tool never takes a built-in's name: validation refuses one (packages/automations).
+  for (const t of call.codeTools ?? [])
+    if (!Object.hasOwn(tools, t.name)) {
+      const names = t.inputs.map((i) => i.name);
+      tools[t.name] = { names, required: names };
+    }
   return { args: (tool) => (Object.hasOwn(tools, tool) ? (tools[tool] ?? null) : null) };
 }
 
@@ -299,7 +319,20 @@ class Rounds {
         c.answer.kind === "text"
           ? { kind: "text", key: "texto" }
           : ({ kind: "fields", fields: c.answer.fields } as unknown as Json),
-      tools: [...(c.reads ? READ_TOOLS : []), ...WRITE_TOOLS, ANSWER],
+      tools: [
+        ...(c.reads ? READ_TOOLS : []),
+        ...WRITE_TOOLS,
+        ...(c.codeTools ?? []).map((t) => t.name),
+        ANSWER,
+      ],
+      ...(c.codeTools?.length
+        ? {
+            codeTools: c.codeTools.map((t) => ({
+              name: t.name,
+              inputs: t.inputs.map((i) => ({ name: i.name, type: i.type })),
+            })),
+          }
+        : {}),
       today: c.today,
       zone: c.zone,
       language: c.language,
@@ -376,7 +409,7 @@ class Rounds {
       return leaf(null, SAID);
     }
     const reply = await this.call.tool(
-      s.tool as AgentTool,
+      s.tool,
       Object.fromEntries(Object.entries(args).map(([k, v]) => [k, labelledOf(v)])),
     );
     if ("refused" in reply) return leaf({ refused: reply.refused }, SAID);

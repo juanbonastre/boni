@@ -6,6 +6,7 @@
  * that decides whether it publishes. None of them runs anything or asks for data: what the server knows (which
  * collections hold outside values today, which steps were tested) comes in as arguments.
  */
+import { agentSources } from "./agent.ts";
 import { actionOf, isTrigger } from "./catalogue.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { permissions } from "./connections.ts";
@@ -430,6 +431,9 @@ function citedSteps(step: Step): Set<string> {
     }
     walk(v);
   }
+  if (step.type === AGENT_TYPE)
+    for (const source of agentSources(step))
+      for (const s of readCode(source, "code").steps) out.add(s.name);
   return out;
 }
 
@@ -439,7 +443,8 @@ function citedSteps(step: Step): Set<string> {
 export type KeptNames = Record<string, Record<string, string>>;
 
 /**
- * What a version keeps of the names its code cites (AU-192), taken when it is published: for each «Código», each
+ * What a version keeps of the names its code cites (AU-192), taken when it is published: for each «Código» (and each
+ * «Agente»'s own code, AU-51, AU-58), each
  * `$col('…')` name with the key it has now, only for a collection that step is connected to. At a run the name is
  * looked up there first, so a renamed collection is still the same one; it never widens, since the key must still be
  * one of the step's connections.
@@ -451,10 +456,16 @@ export function keptNames(
   const out: KeptNames = {};
   for (const step of [...automation.steps].sort((a, b) => byCodeUnit(a.id, b.id))) {
     const source = step.params[CODE_PARAMS.source];
-    if (step.type !== CODE_TYPE || typeof source !== "string") continue;
+    const sources =
+      step.type === CODE_TYPE && typeof source === "string"
+        ? [source]
+        : step.type === AGENT_TYPE
+          ? agentSources(step)
+          : [];
+    if (!sources.length) continue;
     const connected = new Set((step.connections ?? []).map((c) => c.collection));
     const names: Record<string, string> = {};
-    for (const c of readCode(source, "code").collections) {
+    for (const c of sources.flatMap((x) => readCode(x, "code").collections)) {
       const key = collectionNamed(c.name);
       if (key !== undefined && connected.has(key)) names[c.name] = key;
     }
