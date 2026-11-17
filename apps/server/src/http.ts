@@ -531,6 +531,20 @@ export function makeApp(opts: ServerOptions): App {
           return automation("automations.read", { id, part: "versions" });
         case "GET /api/agent/automations/:id/versions/:n":
           return automation("automations.read", { id, part: "version", version: params.n ?? "" });
+        // «Publicar» the draft the screen showed (rev) or, «Volver a esta», an old version again (version); and the
+        // switch «Encendida» (AU-194). Both from a personal device only (decision 13).
+        case "POST /api/agent/automations/:id/publish": {
+          const b = await bodyOf(req);
+          return automation("automations.publish", {
+            id,
+            ...(b.rev !== undefined ? { rev: b.rev } : {}),
+            ...(b.version !== undefined ? { version: b.version } : {}),
+          });
+        }
+        case "PUT /api/agent/automations/:id/enabled": {
+          const b = await bodyOf(req);
+          return automation("automations.enable", { id, enabled: b.enabled });
+        }
         default:
           return send(res, 404, { error: "not-found" });
       }

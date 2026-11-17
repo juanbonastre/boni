@@ -14,6 +14,7 @@ import {
   isTrigger,
   outputsOf,
   type Step,
+  stepChanges,
 } from "@boni/automations";
 import { Play } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
@@ -27,6 +28,7 @@ import {
   stepsBefore,
   writesRows,
 } from "../automations/panel.ts";
+import { stoppedByLimit } from "../automations/publishing.ts";
 import { type EditorState, failedAt, logLine } from "../automations/state.ts";
 import {
   agoWords,
@@ -192,6 +194,8 @@ export function TestBar({ state, apply }: { state: EditorState; apply: Apply }) 
         ? line.failedAt
         : null;
   const words = logWords(t, lang, line, nameOf, now);
+  const phone = usePhone();
+  const limit = line.kind === "tested" && !line.ok ? stoppedByLimit(state) : null;
   const fieldsBox = (trigger: string, close: () => void) => (
     <div className="auto-trial-box">
       <TrialFields
@@ -279,6 +283,16 @@ export function TestBar({ state, apply }: { state: EditorState; apply: Apply }) 
           </span>
         )}
       </div>
+      {limit && !phone && (
+        <button
+          type="button"
+          className="btn small auto-log-limit"
+          data-boni-action="automations.edit"
+          onClick={() => apply((s) => ({ ...s, ajustes: { limit } }))}
+        >
+          {t(DO.changeLimit)}
+        </button>
+      )}
     </div>
   );
 }
@@ -392,6 +406,12 @@ function SideTabs({
     </div>
   );
 }
+
+/** A step whose removal a run would not ask (its «Permiso» «Sí», AU-187), read as the card's mark reads it. */
+const removesNoAsk = (step: Step) =>
+  stepChanges(step, { collectionNamed: () => undefined }).some((c) =>
+    c.actions.some((a) => a.action === "remove" && a.mode === "yes"),
+  );
 
 /**
  * SALIDA after a test (AU-72, AU-84, AU-92): a tab per output with its count, «puede estar vieja» with «Probar paso»
@@ -507,6 +527,7 @@ export function StepOutput({
           show={shown}
           names={names}
           choices={choices}
+          noAsk={removesNoAsk(step)}
         />
       )}
       <p className="auto-out-foot muted small">

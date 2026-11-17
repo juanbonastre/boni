@@ -92,6 +92,11 @@ export const DO = {
   connect: "auto.do.connect",
   allow: "auto.do.allow",
   disconnect: "auto.do.disconnect",
+  /** F14d P1: «Publicar», «Ejecutar» and the button of a run stopped by a limit (AU-95, AU-97, AU-17). */
+  publish: "auto.do.publish",
+  publishVersion: "auto.do.publishVersion",
+  run: "auto.do.run",
+  changeLimit: "auto.do.changeLimit",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */

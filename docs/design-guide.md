@@ -1156,9 +1156,30 @@ contraseña ni un código aquí» under a question.
   of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its panel «Añadir un paso» asks «¿Cómo
   empieza?» with a row per trigger of the catalogue («Disparado por el usuario» in F14b), and choosing one makes the
   automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
-  ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». The places of
-  the header that publishing brings («Editor | Ejecuciones», the switch, «Publicar», the rest of «⋯») come with F14d;
-  «Probar» is at the bottom of the canvas (E, below).
+  ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». «Probar» is
+  at the bottom of the canvas (E, below). The tabs «Editor | Ejecuciones» come with F14d P2.
+- **Publishing, in the editor's header** (F14d P1, `AutomationEditor.tsx`, `AutomationPublish.tsx`; AU-17, AU-95 to
+  AU-97, AU-182, AU-194; the sketch's screen 10). After «Guardado», in `--muted`, what runs: «· sin publicar»,
+  «· publicada la versión 4» (the draft is the document that runs) or «· cambios sin publicar» (in `--text`). Then,
+  once published, the switch «Encendida» / «Apagada» (the app's `.switch`), and «Publicar», a small primary button
+  with the upload icon. «⋯» gains «Ejecutar» (published only) and «Ajustes» above a separator, then Duplicar and
+  Eliminar. The phone shows none of them but «Ejecutar», a small button once published (AU-74: there it is looked at, tested and run, never edited or published). **«Publicar»** saves what is
+  owed, then opens a 600 px modal titled «Publicar «nombre»»: «Será la versión 5.» («Será la versión 1 y quedará
+  encendida.» the first time); «Qué cambia respecto a la versión 4», one line per change (a step added or changed is
+  a link that closes the modal and opens it); «Antes de publicar», what stops it first in `--bad`, then what is worth
+  a look, each with its step as a link («Todo listo» with nothing); «Lo que podrá hacer», one line per collection and
+  action («Crea filas en Tareas · las guarda · con datos de fuera»; «Nada» with no step that reads or writes). Opening
+  it marks the empty required parameters on the cards, as a test that could not start. The button says «Publicar
+  versión 5», or «Nada que publicar» disabled when the draft is the version that runs; something that stops it
+  disables it too. Published, the notice says «Publicada la versión 5» with «Ejecutar». **«Ejecutar»** runs the
+  published version: with «Campos que pide», a modal with the same fields as «Probar» and «Ejecutar»; with changes
+  not published, the modal says «Corre la versión 4, sin los cambios sin publicar» first; off, the notice says «Está apagada» with
+  «Encender»; one in progress, «Ya se está ejecutando». **«Ajustes»** is a modal of the automation's limits: «Tiempo»
+  (seconds) always, «Filas escritas» when a step writes, each a number with «Por defecto 1000 · máximo 20.000» under
+  it; over its ceiling it says «Como mucho 20.000» in `--bad` and keeps the last value. A test that stopped at a limit
+  says «Cambiar el límite» in «Registro», which opens «Ajustes» on that field. From a shared device «Publicar», the
+  switch and «Ejecutar» say «Solo desde un dispositivo personal» and change nothing. A «Eliminar filas» with «Sí»
+  says «A la papelera · sin preguntar» in each row of «Haría esto».
 - **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the

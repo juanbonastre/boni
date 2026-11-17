@@ -16,7 +16,7 @@ import {
 } from "@boni/agent";
 import { type Label, label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
-import { withAutomationActions } from "./automations/actions.ts";
+import { withAutomationActions, withPublishActions } from "./automations/actions.ts";
 import { NO_MCP_YET } from "./automations/routes.ts";
 import { withCalendarActions } from "./calendarActions.ts";
 import { calendarDefs } from "./calendarStore.ts";
@@ -42,14 +42,16 @@ import { withTurnActions } from "./turnActions.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  const all = withAutomationActions(
-    withConnectorActions(
-      withCalendarActions(
-        withInboxActions(
-          withFlowActions(
-            withFileActions(
-              withTurnActions(
-                withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+  const all = withPublishActions(
+    withAutomationActions(
+      withConnectorActions(
+        withCalendarActions(
+          withInboxActions(
+            withFlowActions(
+              withFileActions(
+                withTurnActions(
+                  withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+                ),
               ),
             ),
           ),
@@ -111,6 +113,8 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "DELETE /api/agent/automations/:id": ["automations.delete"],
   "POST /api/agent/automations/:id/restore": ["automations.restore"],
   "POST /api/agent/automations/:id/test": ["automations.test"],
+  "POST /api/agent/automations/:id/publish": ["automations.publish"],
+  "PUT /api/agent/automations/:id/enabled": ["automations.enable"],
   // A page's chat (pageChat.ts, D-61) is a flow: made for its page and changed in its block's panel.
   "POST /api/agent/chats": ["flows.save"],
   "PUT /api/agent/chats/:id": ["flows.save"],
@@ -224,6 +228,8 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "DELETE /api/agent/automations/:id": "automations.delete",
   "POST /api/agent/automations/:id/restore": "automations.restore",
   "POST /api/agent/automations/:id/test": "automations.test",
+  "POST /api/agent/automations/:id/publish": "automations.publish",
+  "PUT /api/agent/automations/:id/enabled": "automations.enable",
 };
 
 /**
@@ -557,6 +563,8 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "automations.duplicate": { why: NO_MCP_YET },
   "automations.delete": { why: NO_MCP_YET },
   "automations.restore": { why: NO_MCP_YET },
+  "automations.publish": { why: NO_MCP_YET },
+  "automations.enable": { why: NO_MCP_YET },
   "schema.set_view": "collection_view",
   "schema.set_tree": "notes_in_tree",
   "schema.set_roles": "set_roles",

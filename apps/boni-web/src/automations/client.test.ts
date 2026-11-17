@@ -86,3 +86,34 @@ describe("the line under an expression asked of the server", () => {
     expect(PREVIEW_QUERY_CHARS).toBeLessThan(16 * 1024);
   });
 });
+
+describe("«Publicar», the versions, the switch and «Ejecutar» asked of the server", () => {
+  it("AU-95 · AU-96 · AU-194 · AU-97 · each path the editor asks goes through both apps' allowed paths", async () => {
+    const asked: string[] = [];
+    const client = automationsClient({
+      automations: async (method: string, path: string) => {
+        asked.push(`${method} api/agent/automations/${path}`);
+        if (path.endsWith("/versions/1")) return { automation: {} };
+        return {};
+      },
+    } as never);
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6k9p";
+    await client.publishView(id);
+    await client.publishView(id, 2);
+    await client.publish(id, { rev: 4 });
+    await client.versions(id);
+    await client.version(id, 1);
+    await client.setEnabled(id, false);
+    await client.run(id, { trigger: "s_01jinicio", fields: {} });
+    expect(asked).toEqual([
+      `GET api/agent/automations/${id}/publish`,
+      `GET api/agent/automations/${id}/publish?version=2`,
+      `POST api/agent/automations/${id}/publish`,
+      `GET api/agent/automations/${id}/versions`,
+      `GET api/agent/automations/${id}/versions/1`,
+      `PUT api/agent/automations/${id}/enabled`,
+      `POST api/agent/automations/${id}/run`,
+    ]);
+    for (const p of asked) expect(allowed(p.split(" ")[1] as string), p).toBe(true);
+  });
+});

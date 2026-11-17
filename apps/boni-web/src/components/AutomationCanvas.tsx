@@ -486,7 +486,7 @@ function useCollectionFields(): (key: string) => readonly ConditionField[] | und
 }
 
 /** The names of the collections by key, as the app has them: what a step's automatic name and its summary say. */
-function useCollectionNames(): Record<string, string> {
+export function useCollectionNames(): Record<string, string> {
   const types = useStore((s) => s.dataTypes);
   return useMemo(() => Object.fromEntries((types ?? []).map((d) => [d.key, d.name])), [types]);
 }

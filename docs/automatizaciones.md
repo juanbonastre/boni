@@ -317,8 +317,12 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   lenguas (`words.ts`). «Las que cumplan…» con varias filas de entrada para a medias, como dice arriba, y así lo
   sostiene `limits.test.ts` («AU-17 · «Las que cumplan…» with several rows arriving…»). Falta: las llamadas a modelos
   no tienen nada que contar hasta la F15; deshacer lo que guardó una ejecución que paró a medias de un paso (AU-18,
-  S2); el botón «Cambiar el límite» y el número en «⋯ → Ajustes» (pantalla); `runs.test.ts` con el almacén de 12.000
-  registros (S2).
+  S2); `runs.test.ts` con el almacén de 12.000 registros (S2).
+  Hecho en P1: «⋯ → Ajustes» enseña «Tiempo» y, si un paso escribe, «Filas escritas» (`shownLimits`), cada uno con
+  «Por defecto … · máximo …»; por encima de su techo el campo dice «Como mucho …» y no lo guarda, y volver al valor
+  por defecto lo quita del borrador (`withLimit`). Una prueba que paró por un límite dice en «Registro» «Cambiar el
+  límite», que abre «Ajustes» en ese campo (`stoppedByLimit`). Lo sostienen `publishing.test.ts` y
+  `automations-publish.spec.ts`.
 
   | Límite | Por defecto | Techo | Se ve en «Ajustes» cuando |
   |---|---|---|---|
@@ -1325,9 +1329,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `versionsOf`, `versionOf`, `setEnabled` y `runPublished`, la única función que ejecuta de verdad:
   recibe el id y lee del almacén la versión que corre, y `runDeps` con una ejecución niega una automatización sin
   versión publicada. La versión guarda su documento con `version` igual a su número, y la huella se calcula con
-  `version` a 0 para comparar un borrador con ella. Falta: la ruta que ejecuta y la que publica, que llegan con sus
-  botones (P1, porque toda acción que toca necesita su control en la app), «Guardado» con «publicada la versión 4»
-  (P1) y guardar la ejecución (AU-97, S2).
+  `version` a 0 para comparar un borrador con ella.
+  Hecho en P1: la ruta que publica (`POST …/:id/publish`, acción `automations.publish`, tailnet) con su botón en la
+  cabecera, y «Guardado» seguido de «· sin publicar», «· publicada la versión 4» o «· cambios sin publicar»
+  (`publishWord`, con `diffAutomations` contra el documento de la versión que corre, `GET …/versions/:n`). Falta: la
+  ruta que ejecuta y guardar la ejecución (AU-97, S2).
 - **AU-96** (F14d, en parte) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
@@ -1354,8 +1360,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S1: el servidor contesta las tres para el borrador o, con `version`, para una versión vieja
   (`GET …/:id/publish`, por la acción `automations.read`), y `publish` repite `publishChecks` con las colecciones de
   hoy y los nombres guardados de la versión que corre (`keptKey`), así que niega publicar con un problema alcanzable
-  mande lo que mande la app (`blocked`, con los problemas). Falta: la pantalla 10 con sus palabras (P1).
-- **AU-97** (F14d, pendiente) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
+  mande lo que mande la app (`blocked`, con los problemas).
+  Hecho en P1: la pantalla 10 (`AutomationPublish.tsx`): «Será la versión N» (la primera, «y quedará encendida»), «Qué
+  cambia respecto a la versión N» (`diffLines`), «Antes de publicar» (`checkLines`: lo que lo impide primero, cada
+  paso un enlace que lo abre) y «Lo que podrá hacer» (`abilityLine`), y el botón «Publicar versión N» o «Nada que
+  publicar», apagado con algo que lo impide. Abrirla marca los parámetros obligatorios vacíos (`publishAsked`,
+  AU-83). Falta: abrirla con una versión vieja para «Volver a esta» (AU-98, P3).
+- **AU-97** (F14d, en parte) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
   En la F14d: con «Campos que pide», sale el mismo cuadro que en «Probar» (AU-64, AU-94). La ruta contesta enseguida
@@ -1368,6 +1379,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ejecución iniciada así está en AU-195.
   Lo sostienen `runs.test.ts` (corre la publicada; una a la vez; apagada no corre) y `automations-publish.spec.ts`
   (los tres sitios de «Ejecutar»).
+  Hecho en P1, sobre el servidor simulado con la forma de la ruta de S2: «Ejecutar» en «⋯» de la cabecera, en el
+  aviso de publicar y, en el teléfono, en un botón de la cabecera (AU-74); con «Campos que pide», el cuadro de «Probar»; con cambios sin publicar, «Corre la versión N, sin
+  los cambios sin publicar»; apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
+  `automations.run` y su ruta con `data-boni-action` en los controles (cuando S2 esté en main), «Ejecutar» en la fila
+  de la lista, llevar a «Ejecuciones» y verla avanzar (P2).
 - **AU-98** (F14d, en parte) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
   En la F14d: está en «⋯ → Versiones». La lista dice de cada una su número, cuándo, de quién («Tú»; «De Boni» desde
@@ -1480,7 +1496,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `renameCollectionInCode`, que reescribe solo `$col('…')`.
   Hecho en S1: cada versión guarda sus `keptNames` al publicarse (la columna `names`), y publicar y «Publicar» le
   pasan a la validación el `keptKey` de la versión que corre. Falta: que el servidor le pase `namedFor` al motor por
-  paso (hoy `collectionNamed` es uno para toda la ejecución) y `runs.test.ts` (S2), y el botón (P1).
+  paso (hoy `collectionNamed` es uno para toda la ejecución) y `runs.test.ts` (S2), y el botón (P3).
 - **AU-194** (F14d, en parte) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
   lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
   ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió
@@ -1490,7 +1506,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   corre) y `automations-publish.spec.ts` (el interruptor y la columna «Estado»).
   Hecho en S1: `publishAutomation` enciende en la misma transacción solo si no había ninguna publicada,
   `setEnabled` (solo desde un dispositivo personal y solo con una publicada) no corre nada, y `runPublished` apagada
-  contesta `off`. Falta: la ruta del interruptor, con su control (P1), y la columna «Estado» (P1).
+  contesta `off`.
+  Hecho en P1: la ruta del interruptor (`PUT …/:id/enabled`, acción `automations.enable`, tailnet) con su control en
+  la cabecera, «Encendida» o «Apagada», que solo sale publicada y no en el teléfono, y la columna «Estado» de la
+  lista con las tres palabras (`flowsCollection.ts`).
 - **AU-181** (F14c, en parte) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
   pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
   aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
@@ -1533,8 +1552,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S1: `holdsOutside` del almacén (una consulta por colección, `EXISTS` sobre las etiquetas de sus filas por
   el índice `entities_type`, sin leer ninguna entera; no hay índice por integridad) y `outsideOf`, que la pregunta una
   vez por colección leída al abrir «Publicar», medida con 3.000 filas; con ella, una escritura con «Sí» a la que llegan
-  sus filas dice «con datos de fuera». Falta: `runs.test.ts` (S2) y la pantalla
-  (P1).
+  sus filas dice «con datos de fuera». Falta: `runs.test.ts` (S2).
+  Hecho en P1: «Lo que podrá hacer» en la pantalla 10, una línea por colección y acción con su nombre, como la
+  tabla de abajo (`abilityLine`; `publishing.test.ts` y `automations-publish.spec.ts`).
 
   | Lo que podrá hacer |
   |---|
@@ -1610,6 +1630,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   editor no lleva el «Sí» de la anterior (un «Sí» para crear no es uno para eliminar): nace con el de la nueva. Falta: la
   lista de quien escribe un borrador, cada caso de la tabla sobre el servidor y el dispositivo personal
   (`publish.test.ts`, S1).
+  Hecho en P1: desde un dispositivo compartido, «Publicar», el interruptor y «Ejecutar» dicen que eso se hace desde un
+  dispositivo personal (la respuesta `personal-device-only` del servidor, con sus palabras) y no cambian nada
+  (`automations-publish.spec.ts`).
   Lo sostienen `consent.test.ts` (`packages/automations`; `lowerYes`: baja crear, modificar y eliminar, en las
   conexiones y en «Permiso»; el que ya era suyo se queda si su paso llega igual; uno cambiado de colección o de
   acción, o de un paso cambiado, baja) y `publish.test.ts` del servidor (la lista de quien escribe un borrador; un
@@ -1741,8 +1764,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en E1: el parámetro en las tres y en «Crear o modificar», que también guarda (nace con «Sí», como crear y
   modificar), con las palabras de las celdas; con qué valor nace cada una; `stepChanges` lo lee en todas; `lowerYes`
   lo baja. Después de E1 (tarea 128): el valor con el que nace va escrito en el paso que añade su mano, y un paso
-  sin él pregunta. Falta: la marca de la tarjeta y su prueba en la pantalla (`automations-publish.spec.ts`,
-  pantallas).
+  sin él pregunta.
+  Hecho en P1: la marca de la tarjeta («Elimina en Gastos · sin preguntar»), y «Haría esto» que dice «A la papelera ·
+  sin preguntar» en cada fila de un «Eliminar filas» con «Sí», con su prueba en `automations-publish.spec.ts`.
   Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro en las tres acciones, con qué valor nace, que
   un paso sin él pregunta, y lo que `stepChanges` da con cada uno), `edit.test.ts` (`apps/boni-web`: el paso que
   añade su mano lleva su «Permiso» escrito; cambiar la acción no lleva el «Sí» de la otra) y

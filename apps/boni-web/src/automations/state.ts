@@ -7,7 +7,14 @@
  * What changes the draft comes from edit.ts (the graph) and panel.ts (a step's rows); every such change goes
  * through `change`, which is what makes it undoable and owed to the server (AU-62, AU-68).
  */
-import { type Arrow, type Automation, type Cell, FORMAT, type Problem } from "@boni/automations";
+import {
+  type Arrow,
+  type Automation,
+  type Cell,
+  FORMAT,
+  type Problem,
+  type RunLimit,
+} from "@boni/automations";
 import type { Opened, Place, StepTest, TestAnswer, TestRequest } from "./client.ts";
 import { type Places, placeFor, withPlaces } from "./places.ts";
 
@@ -85,6 +92,11 @@ export interface EditorState extends Snapshot {
    * while it stays the same are one step of Deshacer, not one per key (AU-68).
    */
   typing: string | null;
+  /**
+   * «⋯ → Ajustes» is open (AU-17), on `limit` when «Cambiar el límite» of a run stopped by one opened it; null when
+   * closed.
+   */
+  ajustes: { limit: RunLimit | null } | null;
 }
 
 const fresh = {
@@ -104,6 +116,7 @@ const fresh = {
   left: [],
   dropped: null,
   typing: null,
+  ajustes: null,
 } satisfies Partial<EditorState>;
 
 /** An empty canvas for «Nueva» (AU-61): nothing saved, the name already worded. */
@@ -348,6 +361,14 @@ export function tested(
     tested: request ? { ...state.tested, [request.trigger]: request.fields } : state.tested,
     asked: true,
   };
+}
+
+/**
+ * «Publicar» was opened (AU-96, AU-83): what stops it is shown on its steps, as after a test, and every required
+ * parameter left empty is marked from now on. `blocks`: the server's, from the same `publishChecks`.
+ */
+export function publishAsked(state: EditorState, blocks: readonly Problem[]): EditorState {
+  return { ...state, asked: true, problems: [...blocks] };
 }
 
 /** A test that did not arrive (offline, the server down): nothing changes but that it is no longer running. */

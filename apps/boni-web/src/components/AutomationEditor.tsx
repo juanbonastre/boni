@@ -5,13 +5,22 @@
  * (automations/state.ts says what is owed; automations/client.ts asks the server). «Nueva» opens it with nothing
  * saved: the automation is made by its first step, which the empty canvas asks for («¿Cómo empieza?»). The canvas
  * (AutomationCanvas.tsx, C2) changes the state; the boxes that moved go to the server after the draft, by their own
- * route (AU-05). «Probar» and the step's view come later (docs/automatizaciones.md §8).
+ * route (AU-05). «Probar» and the step's view come later (docs/automatizaciones.md §8). P1 of F14d adds what the
+ * header says of the version that runs, the switch «Encendida», «Publicar» with its screen, «⋯ → Ejecutar» and
+ * «⋯ → Ajustes» (AU-95, AU-96, AU-97, AU-194, AU-17; AutomationPublish.tsx).
  */
+import { type Automation, type Cell, isTrigger } from "@boni/automations";
 import { SYS } from "@boni/views";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { automationsClient } from "../automations/client.ts";
+import { automationsClient, isRefused, type PublishView } from "../automations/client.ts";
 import { triggerFor } from "../automations/panel.ts";
+import {
+  PUBLISH_WORDS,
+  type Published,
+  publishWord,
+  refusedWords,
+} from "../automations/publishing.ts";
 import {
   askTest,
   change,
@@ -21,12 +30,13 @@ import {
   openedEditor,
   owedPlaces,
   placesKept,
+  publishAsked,
   saved,
   saveFailed,
   tested,
   testLost,
 } from "../automations/state.ts";
-import { DO } from "../automations/words.ts";
+import { DO, localeOf, said } from "../automations/words.ts";
 import { ApiError } from "../core/api.ts";
 import { DRAFT_PAUSE_MS, draftRetryMs } from "../core/flowEdit.ts";
 import { phoneLayout } from "../host.ts";
@@ -40,20 +50,58 @@ import {
   useStore,
 } from "../store.ts";
 import { AutomationCanvas } from "./AutomationCanvas.tsx";
-import { PhoneContext, type Tester, TesterContext, trialOf } from "./AutomationTest.tsx";
-import { MenuRow, PopButton } from "./Popover.tsx";
+import { PublishScreen, RunScreen, SettingsScreen } from "./AutomationPublish.tsx";
+import {
+  PhoneContext,
+  type Tester,
+  TesterContext,
+  trialOf,
+  triggerFields,
+} from "./AutomationTest.tsx";
+import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
 /** What each editor left on its way to the server, by automation: opening it again waits for it. */
 const pending = new Map<string, Promise<void>>();
 
+/**
+ * What runs (AU-95): the switch and the version's number and, to compare the draft with, its document. Unknown when
+ * it cannot be read (offline, a server before F14d): the header then says nothing of it.
+ */
+async function readPublished(id: string): Promise<Published | null> {
+  try {
+    const v = await client.versions(id);
+    if (v.running === null) return { running: null, enabled: v.enabled, doc: null };
+    return { running: v.running, enabled: v.enabled, doc: await client.version(id, v.running) };
+  } catch {
+    return null;
+  }
+}
+
+/** What a refused touch says: its own words, and a shared device's 403 in the words the app has for it. */
+function touchError(t: (k: string, v?: Record<string, string | number>) => string, e: unknown) {
+  if (e instanceof ApiError && e.code === "personal-device-only")
+    return t("mail.error.personal-device-only");
+  return errorText(t, e);
+}
+
 /** `id` null: «Nueva»'s empty canvas. */
 export function AutomationPage({ id }: { id: string | null }) {
   const t = useStore((s) => s.t);
+  const locale = localeOf(useStore((s) => s.settings.language) === "en" ? "en" : "es");
   const [state, setState] = useState<EditorState | null>(() =>
     id === null ? emptyEditor(t("auto.newName")) : null,
   );
   const [error, setError] = useState<string | null>(null);
+  /** The version that runs and the switch (AU-95, AU-194): asked when it opens, and kept after each publish. */
+  const [published, setPublished] = useState<Published | null>(null);
+  /** «Publicar» open: what the server showed and the draft it was asked for. */
+  const [publishing, setPublishing] = useState<{ view: PublishView; draft: Automation } | null>(
+    null,
+  );
+  const [running, setRunning] = useState(false);
+  /** «Ejecutar»'s box open (AU-97). */
+  const [asking, setAsking] = useState(false);
   const latest = useRef(state);
   /** Every change goes through here: the ref first, so what is sent is always the latest. */
   const apply = useCallback((f: (s: EditorState) => EditorState) => {
@@ -148,6 +196,8 @@ export function AutomationPage({ id }: { id: string | null }) {
           if (gone || !o) return;
           latest.current = openedEditor(o);
           setState(latest.current);
+          setPublished(null);
+          void readPublished(o.id).then((p) => !gone && setPublished(p));
         },
         (e) =>
           !gone &&
@@ -267,6 +317,124 @@ export function AutomationPage({ id }: { id: string | null }) {
           .catch((e) => toast(errorText(t, e))),
     });
   };
+  /**
+   * «Publicar» (AU-96): what is owed goes first, since the server publishes the draft it has; then the screen with
+   * what the server says of it, and every required parameter left empty is marked (AU-83).
+   */
+  const openPublish = async () => {
+    const s = latest.current;
+    if (!s?.id) return;
+    await keep();
+    const cur = latest.current;
+    if (!cur?.id || cur.owed.draft) {
+      toast(t("auto.save.failed"));
+      return;
+    }
+    try {
+      const view = await client.publishView(cur.id);
+      apply((x) => publishAsked(x, view.blocks));
+      setPublishing({ view, draft: cur.draft });
+    } catch (e) {
+      toast(touchError(t, e));
+    }
+  };
+  /** «Publicar versión N»: the draft the screen showed, by its `rev`; then its notice with «Ejecutar» (AU-97). */
+  const publish = async () => {
+    const s = latest.current;
+    if (!s?.id || !publishing) return;
+    const { view, draft: sent } = publishing;
+    setRunning(true);
+    try {
+      const r = await client.publish(s.id, { rev: view.rev });
+      if (isRefused(r)) {
+        toast(refusedWords(t, r.refused));
+        // Another device changed the draft, or the server found what stops it: the screen is asked again.
+        if (r.refused === "stale" || r.refused === "blocked") {
+          setPublishing(null);
+          void openPublish();
+        }
+        return;
+      }
+      setPublishing(null);
+      setPublished({ running: r.version, enabled: r.enabled, doc: sent });
+      void loadRows(SYS.flows.id);
+      toast(t("auto.pub.done", { n: r.version }), { label: t(DO.run), run: () => void startRun() });
+    } catch (e) {
+      toast(touchError(t, e));
+    } finally {
+      setRunning(false);
+    }
+  };
+  /** The switch (AU-194): on or off, nothing runs on turning it on. */
+  const toggle = async (on: boolean) => {
+    const s = latest.current;
+    if (!s?.id || !published) return;
+    try {
+      const r = await client.setEnabled(s.id, on);
+      if (isRefused(r)) return toast(refusedWords(t, r.refused));
+      setPublished((p) => (p ? { ...p, enabled: r.enabled } : p));
+      void loadRows(SYS.flows.id);
+    } catch (e) {
+      toast(touchError(t, e));
+    }
+  };
+  /** The version's document and whether «Ejecutar» runs at once: one trigger asking no field, no unpublished change. */
+  const atOnce = (doc: Automation): string | null => {
+    const triggers = doc.steps.filter(isTrigger);
+    const only = triggers.length === 1 ? triggers[0] : undefined;
+    const draft = latest.current?.draft;
+    const changes = !!draft && publishWord(draft, published) === "changes";
+    return only && !changes && !triggerFields(doc, only.id).length ? only.id : null;
+  };
+  /**
+   * «Ejecutar» (AU-97): the published version, never the draft. Off, it says so with «Encender»; with fields, several
+   * triggers or unpublished changes, its box asks first.
+   */
+  const startRun = async () => {
+    const p = publishedRef.current;
+    // Until the version's document arrives (a moment after opening) its trigger is not known.
+    if (!p || p.running === null || !p.doc) return;
+    if (!p.enabled) {
+      toast(t("auto.run.off"), {
+        label: t(DO.turnOn),
+        boniAction: "automations.enable",
+        run: () => void toggle(true),
+      });
+      return;
+    }
+    const trigger = atOnce(p.doc);
+    if (trigger) return run(trigger, {});
+    setAsking(true);
+  };
+  const run = async (trigger: string, fields: Record<string, Cell>) => {
+    const s = latest.current;
+    if (!s?.id) return;
+    setRunning(true);
+    try {
+      const r = await client.run(s.id, { trigger, fields });
+      if (isRefused(r)) {
+        if (r.refused === "off")
+          toast(t("auto.run.off"), {
+            label: t(DO.turnOn),
+            boniAction: "automations.enable",
+            run: () => void toggle(true),
+          });
+        else if (r.refused === "invalid" && r.problems?.length)
+          toast(said(t, "problem", r.problems[0] as never, locale));
+        else toast(refusedWords(t, r.refused));
+        return;
+      }
+      setAsking(false);
+      // P2 takes the app to «Ejecuciones», where the run is seen advancing (AU-99).
+      toast(t("auto.run.started", { name: s.draft.name }));
+    } catch (e) {
+      toast(touchError(t, e));
+    } finally {
+      setRunning(false);
+    }
+  };
+  const publishedRef = useRef(published);
+  publishedRef.current = published;
   // On the phone it is looked at and tested, never changed (AU-74); another layout mounts another app.
   const phone = phoneLayout();
   return (
@@ -275,10 +443,15 @@ export function AutomationPage({ id }: { id: string | null }) {
         <Header
           state={state}
           phone={phone}
+          published={published}
           onName={(name) => apply((s) => change(s, { draft: { ...s.draft, name } }))}
           onRetry={() => void keep()}
           onDuplicate={() => void duplicate()}
           onRemove={() => void remove()}
+          onPublish={() => void openPublish()}
+          onToggle={(on) => void toggle(on)}
+          onRun={() => void startRun()}
+          onSettings={() => apply((s) => ({ ...s, ajustes: { limit: null } }))}
         />
         {error ? (
           <p className="form-error">{error}</p>
@@ -293,6 +466,31 @@ export function AutomationPage({ id }: { id: string | null }) {
             </PhoneContext.Provider>
           </section>
         )}
+        {state && publishing && (
+          <PublishScreen
+            view={publishing.view}
+            draft={state.draft}
+            was={published?.doc ?? null}
+            busy={running}
+            onClose={() => setPublishing(null)}
+            onPublish={() => void publish()}
+            onStep={(step) => {
+              setPublishing(null);
+              apply((s) => ({ ...s, selected: [step], arrow: null, open: step }));
+            }}
+          />
+        )}
+        {state?.ajustes && !phone && <SettingsScreen state={state} apply={apply} />}
+        {state && asking && published?.doc && published.running !== null && (
+          <RunScreen
+            doc={published.doc}
+            version={published.running}
+            changes={publishWord(state.draft, published) === "changes"}
+            busy={running}
+            onClose={() => setAsking(false)}
+            onRun={(trigger, fields) => void run(trigger, fields)}
+          />
+        )}
       </div>
     </div>
   );
@@ -304,21 +502,35 @@ const SAVE_WORDS = {
   failed: "auto.save.failed",
 } as const;
 
-/** Back, the name, «Guardado» and «⋯»: nothing else of its own (AU-62). On the phone, back and the name alone. */
+/**
+ * Back, the name, «Guardado» with what runs (AU-62, AU-95), the switch once published (AU-194), «Publicar» and «⋯»
+ * with «Ejecutar» (published), «Ajustes», Duplicar and Eliminar. On the phone, back and the name alone: there it is
+ * looked at and tested, never changed (AU-74).
+ */
 function Header({
   state,
   phone,
+  published,
   onName,
   onRetry,
   onDuplicate,
   onRemove,
+  onPublish,
+  onToggle,
+  onRun,
+  onSettings,
 }: {
   state: EditorState | null;
   phone: boolean;
+  published: Published | null;
   onName: (name: string) => void;
   onRetry: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  onPublish: () => void;
+  onToggle: (on: boolean) => void;
+  onRun: () => void;
+  onSettings: () => void;
 }) {
   const t = useStore((s) => s.t);
   const name = state?.draft.name ?? "";
@@ -331,6 +543,8 @@ function Header({
   const save = state?.save ?? "saved";
   const exists = !!state?.id;
   const words = t(SAVE_WORDS[save]);
+  const pub = state && exists ? publishWord(state.draft, published) : null;
+  const isPublished = published !== null && published.running !== null;
   return (
     <header className="auto-head">
       {/* On the phone its own bar goes back. */}
@@ -390,11 +604,63 @@ function Header({
           )}
         </span>
       )}
+      {pub && !phone && (
+        <span className={`auto-published ${pub}`}>
+          {`· ${t(PUBLISH_WORDS[pub], { n: published?.running ?? 0 })}`}
+        </span>
+      )}
       <span className="spacer" />
+      {exists && !phone && isPublished && (
+        <label className="toggle-row auto-switch">
+          <input
+            type="checkbox"
+            className="switch"
+            data-boni-action="automations.enable"
+            checked={published.enabled}
+            aria-label={published.enabled ? t("flows.enabled") : t("flows.disabled")}
+            onChange={(e) => onToggle(e.target.checked)}
+          />
+          <span>{published.enabled ? t("flows.enabled") : t("flows.disabled")}</span>
+        </label>
+      )}
+      {/* AU-74: the phone looks, tests and, once published, runs; it neither edits nor publishes. */}
+      {exists && phone && isPublished && (
+        <button type="button" className="btn small auto-run-phone" onClick={onRun}>
+          {t(DO.run)}
+        </button>
+      )}
+      {exists && !phone && (
+        <button
+          type="button"
+          className="btn primary small auto-publish"
+          data-boni-action="automations.publish"
+          onClick={onPublish}
+        >
+          {t(DO.publish)}
+        </button>
+      )}
       {exists && !phone && (
         <PopButton label={<MoreHorizontal size={16} strokeWidth={1.8} />} title={t("auto.more")}>
           {(close) => (
             <>
+              {isPublished && (
+                <MenuRow
+                  label={t(DO.run)}
+                  onClick={() => {
+                    close();
+                    onRun();
+                  }}
+                />
+              )}
+              <MenuRow
+                label={t("auto.view.settings")}
+                boniAction="automations.edit"
+                onClick={() => {
+                  close();
+                  onSettings();
+                }}
+              />
+              <MenuSep />
               <MenuRow
                 label={t(DO.duplicate)}
                 boniAction="automations.duplicate"

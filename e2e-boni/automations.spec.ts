@@ -706,7 +706,7 @@ test.describe("the list", () => {
 });
 
 test.describe("the editor", () => {
-  test("AU-62 · the header has back, the name (edited in place), «Guardado» and «⋯» with Duplicar and Eliminar, and nothing else of its own; there is no bar under it and no button to save", async ({
+  test("AU-62 · the header has back, the name (edited in place), «Guardado», «Publicar» (F14d) and «⋯» with «Ajustes», Duplicar and Eliminar, and nothing else of its own; there is no bar under it and no button to save", async ({
     page,
   }) => {
     await openApp(page, "/?still", { automations: AUTOMATIONS, agent: BEFORE() });
@@ -714,8 +714,11 @@ test.describe("the editor", () => {
     await rows.getByText("Revisar gastos", { exact: true }).click();
     await expect(nameBox(page)).toHaveValue("Revisar gastos");
     await expect(saved(page)).toHaveText("Guardado");
-    // Back, the name, «Guardado» and «⋯»: two buttons and the name, nothing else.
-    await expect(head(page).getByRole("button")).toHaveCount(2);
+    // Back, the name, «Guardado», «Publicar» and «⋯»: three buttons and the name, nothing else. Never published, no
+    // switch (AU-194).
+    await expect(head(page).getByRole("button")).toHaveCount(3);
+    await expect(head(page).getByRole("button", { name: "Publicar", exact: true })).toBeVisible();
+    await expect(head(page).getByRole("checkbox")).toHaveCount(0);
     await expect(
       head(page).getByRole("button", { name: "Volver a Automatizaciones" }),
     ).toBeVisible();
@@ -726,7 +729,11 @@ test.describe("the editor", () => {
     await expect(page.locator(".auto-page .doc > *").nth(1)).toHaveClass(/auto-canvas/);
     await expect(page.getByRole("button", { name: /^Guardar/ })).toHaveCount(0);
     await head(page).getByRole("button", { name: "Más" }).click();
-    await expect(page.locator(".pop-box .menu-item")).toHaveText(["Duplicar", "Eliminar"]);
+    await expect(page.locator(".pop-box .menu-item")).toHaveText([
+      "Ajustes",
+      "Duplicar",
+      "Eliminar",
+    ]);
     await page.screenshot({ path: `${SHOTS}/automation-header.png` });
   });
   test("AU-62 · a change is saved after a short pause and on leaving the editor: «Guardando…», then «Guardado»; with the server failing, «Sin guardar · Reintentar», and it is saved when the server is back; opened again, the draft is as it was left", async ({
