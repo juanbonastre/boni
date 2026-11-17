@@ -8,11 +8,20 @@
  * F14a: «Disparado por el usuario» and the steps of Datos, Transformar and Lógica. Nothing here is text for a person:
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
+import {
+  EXTRACT_FIELDS_MAX,
+  EXTRACT_TYPES,
+  isReaderType,
+  READER_PARAMS,
+  type ReaderType,
+} from "./ai.ts";
 import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
 export type Category = (typeof CATEGORIES)[number];
+/** The AI steps' group (F15). Not in `CATEGORIES` yet: the editor's panel offers them from P2 on. */
+export const AI_CATEGORY = "ai";
 
 /**
  * The controls every step is made of (AU-80). Seven of the nine: F14c adds the code editor and the connections'
@@ -61,7 +70,7 @@ export type ParamSpec = ParamBase &
     | { control: "choice"; options: readonly string[] | FieldsOf }
     | { control: "toggle" }
     /** Rows that Juan adds, each with these columns; `min` rows at least. */
-    | { control: "list"; columns: readonly ParamSpec[]; min?: number }
+    | { control: "list"; columns: readonly ParamSpec[]; min?: number; max?: number }
     /** The views' filter (AU-81) over those fields; `min` conditions at least (AU-121). */
     | { control: "conditions"; over: FieldsOf; min?: number }
     /** The fields of a row: only the ones Juan adds, each with the control of its type (AU-121). */
@@ -98,7 +107,7 @@ export interface ActionSpec {
 
 export interface StepTypeSpec {
   type: string;
-  category: Category;
+  category: Category | typeof AI_CATEGORY;
   /** Its inputs: none for a trigger, `MAIN` for the rest, two with names for «Combinar» (AU-124). */
   inputs: readonly string[];
   /** Parameters every action shares, painted first («Colección»: the collection, AU-120). */
@@ -858,9 +867,101 @@ const CODE_PER_ROW: ActionSpec = {
   pairs: true,
 };
 
-/** A type the engine can run by its key: the catalogue's, or «Código» (the editor's panel adds it, adding.ts). */
+/**
+ * The four reader steps (AU-57, F15 E2): «Extraer datos», «Clasificar», «Resumir» and «Escribir texto». Like «Código»,
+ * reachable by their types but not in `CATALOGUE` until the editor offers them (P2), and validation refuses them
+ * (`step.unknownType`) unless its context says a model can be called (`ValidationContext.ai`). Each works row by row
+ * and keeps its rows paired; none has an effect on the saved data and none takes a connection (AU-46). What each
+ * does is in ai.ts: the engine reads all the rows first, in batches, through `RunDeps.ai`.
+ */
+const P = READER_PARAMS;
+const TEXT: ParamSpec = {
+  key: P.text,
+  control: "value",
+  of: "text",
+  place: "shown",
+  required: true,
+};
+/** «Modelo» (AU-199): the id of a choice of «Modelos» for the use «Lector», or absent for «El de la cuenta». */
+const MODEL: ParamSpec = {
+  key: P.model,
+  control: "value",
+  of: "text",
+  place: "shown",
+  shape: true,
+};
+const reader = (type: ReaderType, params: readonly ParamSpec[]): StepTypeSpec => ({
+  type,
+  category: AI_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "perRow",
+      pairs: true,
+      outputs: [MAIN],
+      params,
+    },
+  ],
+});
+const READER_STEPS: Readonly<Record<ReaderType, StepTypeSpec>> = {
+  extract: reader("extract", [
+    TEXT,
+    {
+      key: P.fields,
+      control: "list",
+      place: "shown",
+      required: true,
+      shape: true,
+      min: 1,
+      max: EXTRACT_FIELDS_MAX,
+      columns: [
+        { key: "key", control: "value", of: "text", place: "shown", required: true },
+        { key: "type", control: "choice", options: EXTRACT_TYPES, place: "shown", required: true },
+        { key: "line", control: "value", of: "text", place: "shown" },
+        { key: "options", control: "value", of: "any", place: "shown" },
+      ],
+    },
+    MODEL,
+  ]),
+  classify: reader("classify", [
+    TEXT,
+    // Fixed, or an expression that gives the list: the reader answers one of them or nothing.
+    { key: P.options, control: "value", of: "any", place: "shown", required: true },
+    MODEL,
+  ]),
+  summarize: reader("summarize", [
+    TEXT,
+    MODEL,
+    {
+      key: P.length,
+      control: "choice",
+      options: ["short", "medium", "long"],
+      place: "option",
+      shape: true,
+      default: "short",
+    },
+  ]),
+  write: reader("write", [
+    { key: P.instructions, control: "value", of: "text", place: "shown", required: true },
+    // «Texto (puede faltar)»: instructions alone write a text from nothing (AU-57).
+    { key: P.text, control: "value", of: "text", place: "shown" },
+    MODEL,
+  ]),
+};
+/** The spec of a reader step's type, or undefined. */
+export const readerStep = (type: string): StepTypeSpec | undefined =>
+  isReaderType(type) ? READER_STEPS[type] : undefined;
+
+/**
+ * A type the engine can run by its key: the catalogue's, «Código» (the editor's panel adds it, adding.ts), or a reader
+ * (F15: validation lets them in only with `ValidationContext.ai`).
+ */
 export const specOf = (type: string): StepTypeSpec | undefined =>
-  type === CODE_TYPE ? CODE_STEP : stepType(type);
+  type === CODE_TYPE ? CODE_STEP : (stepType(type) ?? readerStep(type));
 
 /**
  * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when

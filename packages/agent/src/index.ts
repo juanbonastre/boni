@@ -145,7 +145,18 @@ export {
   type ModelRequest,
   ScriptedProvider,
 } from "./providers.ts";
-export { checkReaderOutput, READER_SCHEMAS } from "./readers.ts";
+export {
+  checkExtract,
+  checkReader,
+  checkReaderOutput,
+  classifySchema,
+  EXTRACT_KINDS,
+  EXTRACT_LIMITS,
+  type ExtractField,
+  extractSchema,
+  labelEachSchema,
+  READER_SCHEMAS,
+} from "./readers.ts";
 export {
   checkReadMessage,
   GUIDE_LIMITS,

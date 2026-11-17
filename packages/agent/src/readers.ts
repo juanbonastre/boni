@@ -151,22 +151,32 @@ function oneOf(options: readonly string[]): { enum?: readonly string[] } {
   return options.length ? { enum: options } : {};
 }
 
-/** classify's schema: the choice, one of the options. */
-export function classifySchema(options: readonly string[]): object {
+/**
+ * One option, or with `orNone` (the automation steps' «Clasificar», AU-57: «una de las opciones, o vacío») also null:
+ * the readers of mail always choose one.
+ */
+function choiceOf(options: readonly string[], orNone: boolean): object {
+  return orNone
+    ? { anyOf: [{ type: "string", ...oneOf(options) }, { type: "null" }] }
+    : { type: "string", ...oneOf(options) };
+}
+
+/** classify's schema: the choice, one of the options (or null, with `orNone`). */
+export function classifySchema(options: readonly string[], orNone = false): object {
   return {
     type: "object",
-    properties: { choice: { type: "string", ...oneOf(options) } },
+    properties: { choice: choiceOf(options, orNone) },
     required: ["choice"],
     additionalProperties: false,
   };
 }
 
-/** label_each's schema: one choice per text, each one of the options. */
-export function labelEachSchema(options: readonly string[]): object {
+/** label_each's schema: one choice per text, each one of the options (or null, with `orNone`). */
+export function labelEachSchema(options: readonly string[], orNone = false): object {
   return {
     type: "object",
     properties: {
-      choices: { type: "array", maxItems: 50, items: { type: "string", ...oneOf(options) } },
+      choices: { type: "array", maxItems: 50, items: choiceOf(options, orNone) },
     },
     required: ["choices"],
     additionalProperties: false,
@@ -217,7 +227,11 @@ export function checkReader(
   out: unknown,
   options: readonly string[] = [],
   count = 0,
+  /** «Clasificar» of an automation (AU-57): null, «nothing fits», is an answer too. */
+  orNone = false,
 ): Checked {
+  const chosen = (c: unknown) =>
+    (orNone && c === null) || (typeof c === "string" && options.includes(c));
   if (!isObj(out)) return { fault: "not-an-object" };
   const keys = Object.keys(out);
   const fault = (f: string): Checked => ({ fault: f });
@@ -253,8 +267,7 @@ export function checkReader(
       if (keys.join() !== "choices" || !Array.isArray(out.choices)) return fault("keys");
       const choices = out.choices;
       if (choices.length !== count) return fault("count");
-      if (!choices.every((c) => typeof c === "string" && options.includes(c)))
-        return fault("choice");
+      if (!choices.every(chosen)) return fault("choice");
       return {
         ok: {
           choices,
@@ -286,9 +299,7 @@ export function checkReader(
     }
     case "classify":
       if (keys.join() !== "choice") return fault("keys");
-      return typeof out.choice === "string" && options.includes(out.choice)
-        ? { ok: out }
-        : fault("choice");
+      return chosen(out.choice) ? { ok: out } : fault("choice");
     case "summarize":
     case "answer_about":
     case "rewrite": {
@@ -399,3 +410,74 @@ export function readerFailure(fault: string | null): ReaderFailure {
 /** Told a reader asked again with its input shortened (AU-59): the code's words, never the refused answer's. */
 export const SHORTENED_FIX =
   "Your previous answer was refused by the code's checks (`refused` names the rule it broke). The content between the markers is now shorter (a list keeps its first half; a long text its first half, ending with […]). Answer only with the schema; keep every text short (a summary or an answer in at most 2000 characters, a line in at most 200).";
+
+// ---------------------------------------------------------------- «Extraer datos» (automations, AU-53, AU-57)
+
+/** The types a field of «Extraer datos» may have (AU-53): `fill`'s choice and check, and text, number and date. */
+export const EXTRACT_KINDS = ["text", "number", "date", "boolean", "options"] as const;
+export interface ExtractField {
+  key: string;
+  type: (typeof EXTRACT_KINDS)[number];
+  /** What the field is for, as the user wrote it: the reader gets it next to the field. */
+  line: string;
+  /** An «options» field's options. */
+  options?: readonly string[];
+}
+/** At most 12 fields (AU-53), as `fill` (`FILL_LIMITS.fields`); a text field at most 4,000 characters. */
+export const EXTRACT_LIMITS = { fields: 12, text: 4000 } as const;
+
+const extractType = (f: ExtractField): object => {
+  const typed =
+    f.type === "text"
+      ? text(EXTRACT_LIMITS.text)
+      : f.type === "number"
+        ? { type: "number" }
+        : f.type === "date"
+          ? { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }
+          : f.type === "boolean"
+            ? { type: "boolean" }
+            : { type: "string", ...oneOf(f.options ?? []) };
+  return { anyOf: [typed, { type: "null" }], description: f.line.slice(0, 200) };
+};
+
+/**
+ * «Extraer datos»'s schema for one call: one property per field, each of its type or null (the text does not say
+ * it), all of them and nothing else. The fields of the automation step, which `fill`'s (choice and check) cannot hold.
+ */
+export function extractSchema(fields: readonly ExtractField[]): object {
+  return {
+    type: "object",
+    properties: Object.fromEntries(fields.map((f) => [f.key, extractType(f)])),
+    required: fields.map((f) => f.key),
+    additionalProperties: false,
+  };
+}
+
+/** «Extraer datos»'s answer checked again: every field, of its type or null, plain text; or the rule it broke. */
+export function checkExtract(out: unknown, fields: readonly ExtractField[]): Checked {
+  if (!isObj(out)) return { fault: "not-an-object" };
+  if (
+    Object.keys(out).sort().join() !==
+    fields
+      .map((f) => f.key)
+      .sort()
+      .join()
+  )
+    return { fault: "keys" };
+  for (const f of fields) {
+    const v = out[f.key];
+    if (v === null) continue;
+    const ok =
+      f.type === "text"
+        ? okText(v, EXTRACT_LIMITS.text)
+        : f.type === "number"
+          ? typeof v === "number" && Number.isFinite(v)
+          : f.type === "date"
+            ? typeof v === "string" && DAY.test(v) && !Number.isNaN(Date.parse(v))
+            : f.type === "boolean"
+              ? typeof v === "boolean"
+              : typeof v === "string" && (f.options ?? []).includes(v);
+    if (!ok) return { fault: `field-${f.type}` };
+  }
+  return { ok: out };
+}
