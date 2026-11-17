@@ -99,7 +99,8 @@ async function writeAll(
   changes: Change[],
   values: Labelled,
 ): Promise<StepOutput> {
-  // The run's «rows written» first, for all of them (AU-17): «Las que cumplan…» fails before it writes any.
+  // The run's «rows written» first, for all of them (AU-17): «Las que cumplan…» fails before it writes any of what
+  // it found for this unit; an earlier unit may already have saved, and a later one finds what it saved.
   ctx.reserve?.(changes.length);
   const out: RowOut[] = [];
   for (const c of changes) out.push(...written(await ctx.gate.write(c, values)));
