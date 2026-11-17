@@ -19,8 +19,10 @@ import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useMemo } from "react";
 import type { StepTest } from "../automations/client.ts";
 import { consoleOf, modeOf, sourceOf, sourceProblems } from "../automations/code.ts";
+import { wouldLines } from "../automations/connections.ts";
 import { DO, KEY, type SaidNames, said } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
+import { WouldTable } from "./AutomationRows.tsx";
 import type { CodeMark } from "./CodeEditor.tsx";
 
 const CodeEditor = lazy(() => import("./CodeEditor.tsx"));
@@ -206,6 +208,68 @@ export function CodeConsole({
             </li>
           )}
         </ol>
+      )}
+    </details>
+  );
+}
+
+/**
+ * «Haría esto» of a «Código» (AU-181, AU-189): a strip above «Consola», folded, with how many rows of which collection
+ * each action would change («Modificaría 12 filas en Gastos») and the first rows with their before and after. Nothing
+ * of it was saved. Absent when its last test asked to save nothing. Values are the code's: painted as plain text.
+ */
+export function CodeWould({
+  t,
+  test,
+  locale,
+  nameOf,
+  fieldNames,
+}: {
+  t: T;
+  test: StepTest | undefined;
+  locale: string;
+  nameOf: (collection: string) => string;
+  /** A collection's field names by key, for the table's heads. */
+  fieldNames: (collection: string) => Readonly<Record<string, string>>;
+}) {
+  const would = test?.would;
+  if (!would || would.counts.length === 0) return null;
+  const lines = wouldLines(t, would, locale, nameOf);
+  const total = would.counts.reduce((n, c) => n + c.n, 0);
+  const more = total - would.records.length;
+  const byCollection = [...new Set(would.records.map((r) => r.collection))];
+  return (
+    <details className="auto-would-code" data-rows={total}>
+      <summary>
+        <ChevronRight size={14} aria-hidden="true" className="auto-console-fold" />
+        {t("auto.would.code")}
+        <span className="auto-would-lines">
+          {lines.map((l) => (
+            <span key={l} className="auto-would-line">
+              {l}
+            </span>
+          ))}
+        </span>
+      </summary>
+      {would.asks && <p className="muted small">{t("auto.would.code.asks")}</p>}
+      {byCollection.map((c) => (
+        <WouldTable
+          key={c}
+          t={t}
+          names={fieldNames(c)}
+          rows={would.records
+            .filter((r) => r.collection === c)
+            .map((r) => ({
+              json: r.after ?? r.before ?? {},
+              before: r.action === "create" ? null : (r.before ?? null),
+              would: r.action === "remove" ? "trash" : r.action,
+            }))}
+        />
+      ))}
+      {more > 0 && (
+        <p className="auto-console-more">
+          {t("auto.would.code.more", { n: more.toLocaleString(locale) })}
+        </p>
       )}
     </details>
   );

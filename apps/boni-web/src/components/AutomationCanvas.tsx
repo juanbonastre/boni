@@ -52,6 +52,7 @@ import {
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { type PanelEntry, panelList, searchPanel } from "../automations/adding.ts";
 import { citedName, namesOnDemand } from "../automations/cite.ts";
+import { changeMark, chipWords } from "../automations/connections.ts";
 import {
   addStep,
   type Clip,
@@ -151,7 +152,8 @@ interface CardData extends Record<string, unknown> {
   /** Its name is being edited on the card. */
   renaming: boolean;
   /** Its settings and options not at their default, in one line (AU-79): those that fit, and the rest. */
-  labels: { shown: string[]; rest: string[] };
+  /** `change`: the first one is what the step can change (AU-180), not a label. */
+  labels: { shown: string[]; rest: string[]; change: boolean };
   /** What required is missing once it is marked (AU-83), «Falta: …»; null with nothing marked. */
   missing: string | null;
   /** The problems a test found in it (AU-64), in words; null with none. */
@@ -160,6 +162,8 @@ interface CardData extends Record<string, unknown> {
   mark: ReturnType<typeof stateMark>;
   /** Its bar's «Probar paso» (AU-73): why it cannot be pressed, and whether this step is being tested. */
   test: { blocked: boolean; testing: boolean };
+  /** Its connections, each a chip hanging under it by a dotted line (AU-40, AU-178): the collection and its words. */
+  chips: { collection: string; name: string; words: string }[];
 }
 type CardNode = Node<CardData, "step">;
 interface ArrowData extends Record<string, unknown> {
@@ -174,8 +178,20 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
   const acts = useActs();
   const phone = usePhone();
   const { t } = acts;
-  const { step, summary, inputs, outputs, alone, renaming, labels, missing, problem, mark, test } =
-    data;
+  const {
+    step,
+    summary,
+    inputs,
+    outputs,
+    alone,
+    renaming,
+    labels,
+    missing,
+    problem,
+    mark,
+    test,
+    chips,
+  } = data;
   const Icon = iconOf(step.type);
   const off = step.settings?.off === true;
   const said = labels.shown.length > 0;
@@ -290,8 +306,12 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
         )}
         {said && (
           <span className="auto-card-labels">
-            {labels.shown.map((l) => (
-              <span key={l} className="auto-label">
+            {labels.shown.map((l, i) => (
+              <span
+                key={l}
+                className={`auto-label${i === 0 && labels.change ? " change" : ""}`}
+                data-change={i === 0 && labels.change ? "" : undefined}
+              >
                 {l}
               </span>
             ))}
@@ -317,6 +337,16 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
         <span className={`auto-card-state ${mark.state}${mark.stale ? " stale" : ""}`}>
           {mark.word}
         </span>
+      )}
+      {chips.length > 0 && (
+        <ul className="auto-card-conns" aria-label={t("auto.conn.title")}>
+          {chips.map((c) => (
+            <li key={c.collection} className="auto-conn-chip" data-collection={c.collection}>
+              <span className="auto-conn-chip-name">{c.name}</span>
+              <span className="auto-conn-chip-words">{c.words}</span>
+            </li>
+          ))}
+        </ul>
       )}
       {outputs.map((output, i) => (
         <Handle
@@ -492,6 +522,13 @@ function Canvas({
   const names = useMemo(() => namer(t, collections), [t, collections]);
   const locale = localeOf(lang);
   const sayNames = { collection: (key: string) => collections[key] };
+  // A collection by its name, as the server's `collectionNamed` reads one: a name two collections share names none.
+  const named = useMemo(() => {
+    const m = new Map<string, string | null>();
+    for (const [key, name] of Object.entries(collections)) m.set(name, m.has(name) ? null : key);
+    return { collectionNamed: (name: string) => m.get(name) ?? undefined };
+  }, [collections]);
+  const nameOfCollection = (key: string) => collections[key] ?? key;
   const flow = useReactFlow();
   const wrap = useRef<HTMLDivElement>(null);
   /** Where the pointer was last on the canvas, in its units: where Ctrl+V pastes. */
@@ -597,7 +634,12 @@ function Canvas({
       for (const r of step.params.rules as { id?: unknown; name?: unknown }[])
         if (typeof r?.id === "string")
           ruleNames.set(r.id, typeof r.name === "string" && r.name ? r.name : r.id);
-    const words = labelsOf(step).map((l) => labelWord(t, step, l));
+    // What it can change goes first in the line of its labels (AU-180), from `stepChanges`, as «Publicar» reads it.
+    const changes = changeMark(t, step, named, nameOfCollection);
+    const words = [
+      ...(changes ? [changes] : []),
+      ...labelsOf(step).map((l) => labelWord(t, step, l)),
+    ];
     const shownLabels: string[] = [];
     let room = LABEL_BUDGET;
     for (const w of words) {
@@ -625,7 +667,7 @@ function Canvas({
         })),
         alone,
         renaming: renaming === step.id,
-        labels: { shown: shownLabels, rest: words.slice(shownLabels.length) },
+        labels: { shown: shownLabels, rest: words.slice(shownLabels.length), change: !!changes },
         missing: marked.length
           ? t("auto.view.missing", {
               names: marked.map((p) => t(KEY.param(step.type, p.key))).join(", "),
@@ -639,6 +681,11 @@ function Canvas({
           blocked: !tester || cannotTest(step, state.testing !== null) !== null,
           testing: testing === step.id,
         },
+        chips: (step.connections ?? []).map((c) => ({
+          collection: c.collection,
+          name: nameOfCollection(c.collection),
+          words: chipWords(t, c, locale),
+        })),
       },
     };
   }

@@ -59,7 +59,7 @@ export function draggedOf(e: React.DragEvent): DraggedField | null {
 }
 
 /** The fields of the rows, in the order they first appear. */
-function columnsOf(rows: readonly RowView[]): string[] {
+function columnsOf(rows: readonly Pick<RowView, "json" | "before">[]): string[] {
   const seen = new Set<string>();
   for (const r of rows) {
     for (const k of Object.keys(r.json)) seen.add(k);
@@ -331,7 +331,7 @@ export function WouldTable({
   names,
 }: {
   t: T;
-  rows: readonly RowView[];
+  rows: readonly Pick<RowView, "json" | "before" | "would">[];
   names: Readonly<Record<string, string>>;
 }) {
   const cols = columnsOf(rows);
