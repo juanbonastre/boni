@@ -15,6 +15,7 @@ import {
   outputsOf,
   type ParamSpec,
   paramsOf,
+  readerStep,
   resultName,
   stepType,
   TIME_OF_DAY,
@@ -117,6 +118,11 @@ export interface Problem {
 /** What validation may ask about the data: the shape of a collection by its key, or undefined when there is none. */
 export interface ValidationContext {
   collection(key: string): CollectionShape | undefined;
+  /**
+   * A model can be called (`RunDeps.ai`, F15): the four reader steps (AU-57) are step types. Without it they are
+   * `step.unknownType`, as «Código» is without a box.
+   */
+  ai?: boolean;
 }
 
 /**
@@ -137,6 +143,8 @@ export function validate(
 ): (Problem | CodeProblem)[] {
   const problems: (Problem | CodeProblem)[] = [];
   const code = isCodeContext(context) ? context : undefined;
+  /** A type it knows besides «Código»: the catalogue's, and the readers' when a model can be called. */
+  const typed = (s: Step) => !!stepType(s.type) || (!!context.ai && !!readerStep(s.type));
   const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
     problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
 
@@ -179,7 +187,7 @@ export function validate(
     else if ((byName.get(step.name)?.length ?? 0) > 1)
       add("step.duplicateName", { ...at, detail: { name: step.name } });
     const isCode = code !== undefined && step.type === CODE_TYPE;
-    if (!isCode && !stepType(step.type)) {
+    if (!isCode && !typed(step)) {
       add("step.unknownType", { ...at, detail: { type: step.type } });
       problems.push(...connectionProblems(step, context));
       continue;
@@ -228,10 +236,10 @@ export function validate(
     }
     const at = { arrow: i, step: from.id };
     // A step of a type the catalogue lacks has no known outputs or inputs: its own problem says so, once.
-    if (stepType(from.type) && !outputsOf(from).includes(arrow.from.output))
+    if (typed(from) && !outputsOf(from).includes(arrow.from.output))
       add("arrow.unknownOutput", { ...at, detail: { output: arrow.from.output } });
     if (isTrigger(to)) add("arrow.intoTrigger", at);
-    else if (stepType(to.type) && !inputsOf(to).includes(arrow.to.input))
+    else if (typed(to) && !inputsOf(to).includes(arrow.to.input))
       add("arrow.unknownInput", { ...at, detail: { input: arrow.to.input } });
     const key = JSON.stringify([arrow.from.step, arrow.from.output, arrow.to.step, arrow.to.input]);
     if (seen.has(key)) add("arrow.duplicate", at);
@@ -452,7 +460,8 @@ class StepCheck {
       this.problem("param.value", path);
       return;
     }
-    if (v.length < (p.min ?? 0)) this.problem("param.value", path);
+    if (v.length < (p.min ?? 0) || v.length > (p.max ?? Number.POSITIVE_INFINITY))
+      this.problem("param.value", path);
     // A hidden fixed column is the row's id (a rule's output, a field's key): one per row.
     const ids = p.columns.filter((c) => c.place === "hidden" && c.shape).map((c) => c.key);
     const seen = new Map<string, Set<string>>(ids.map((k) => [k, new Set()]));
