@@ -1358,8 +1358,8 @@ describe("a run over the real store (S1-c)", () => {
     });
     expect(new Set(want.values())).toEqual(new Set(["external", "user"]));
     expect(await gate.decideAll(changes)).toBe("allow");
-    // Each value from outside is let through by its «Sí» (P28): saved with its label, not proposed (AU-170); only a
-    // model's or the ambient's would be.
+    // Each value from outside is let through by its «Sí» (P28): saved with its label, not proposed (AU-170); only an
+    // ambient turn's would be (a model's saves with the «Sí» too since F15, AU-204).
     expect(decided).toHaveLength(3000);
     expect(ruled("write")).toEqual(new Set(["allow P28"]));
 
