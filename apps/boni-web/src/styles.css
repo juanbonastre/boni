@@ -13410,8 +13410,11 @@ button.auto-log-line {
 /* «Ejecuciones», P2 of F14d (pantalla 8, AU-99): «Editor | Ejecuciones» in the header; the runs on the left, 330 px,
    with Todas/Fallos/Pruebas; the run chosen on the right, its bar over its canvas. On the phone the list, then the
    run with its way back. */
+/* In the header the tabs keep the header's height: «.auto-tabs»'s margin is for a step's tabs, and here it made a
+   published automation's page 12 px taller than the window, so it scrolled. */
 .auto-head > .auto-tabs {
   flex-shrink: 0;
+  margin-bottom: 0;
 }
 /* On the phone (decision 15) the name has its own line; under it the tabs, the switch and «Ejecutar». */
 .auto-head.phone {

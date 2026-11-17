@@ -252,6 +252,10 @@ test("AU-74 · the step's view under 1100 px: «Entrada | Parámetros | Salida»
   await shot(page, "automatizaciones-estrecho");
 });
 
+/** How far the automation's page can scroll: none when it fits the window. */
+const overflow = (page: Page) =>
+  page.locator(".auto-page").evaluate((e) => e.scrollHeight - e.clientHeight);
+
 /** «Revisar pendientes» published, with its runs counted back from the fixed hour, its tab «Ejecuciones» open. */
 async function openRuns(page: Page, width: number, height: number) {
   await page.setViewportSize({ width, height });
@@ -275,9 +279,13 @@ test("AU-99 · «Ejecuciones»: the list with its filters, a run's line and its 
     .click();
   await page.locator(".db-table").getByText("Revisar pendientes", { exact: true }).click();
   await page.locator(".auto-card").first().waitFor();
+  // The tabs keep the header's height, so the editor and «Ejecuciones» fit the window and nothing scrolls the
+  // page under the capture (it did by 12 px, now and then, with the tabs' own margin).
+  await expect.poll(() => overflow(page)).toBe(0);
   await page.locator(".auto-head").getByRole("tab", { name: "Ejecuciones" }).click();
   await expect(page.locator(".auto-runs-item")).toHaveCount(5);
   await page.locator(".auto-run-canvas .auto-card").first().waitFor();
+  await expect.poll(() => overflow(page)).toBe(0);
   await still(page);
   await shot(page, "automatizaciones-ejecuciones");
 });
