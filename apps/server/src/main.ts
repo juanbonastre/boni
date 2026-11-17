@@ -3,6 +3,7 @@ import { AnthropicProvider, JevProvider, OpenAIProvider } from "@boni/agent";
 import { startCheckpoints } from "@boni/store";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
+import { AutomationScheduler } from "./automations/scheduler.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { FlowScheduler } from "./flowScheduler.ts";
@@ -201,6 +202,16 @@ const flowScheduler = new FlowScheduler({
   log: (line) => console.log(line),
 });
 if (agent.on) flowScheduler.start();
+// Each account's «Programada» automations (docs/automatizaciones.md AU-114): no model runs them, so they go on whether
+// or not the agent is on; only an account whose store is open has any (automations/scheduler.ts).
+const automationScheduler = new AutomationScheduler({
+  accounts: () => listUsers(db).map((u) => u.id),
+  hasStore: (account) => agent.hasData && agent.hasStore(account),
+  store: (account) => agent.store(account),
+  zone: () => tz,
+  log: (line) => console.log(line),
+});
+automationScheduler.start();
 // A run of an automation cut by the last stop is «Interrumpida» (decision 12): opening each account's store marks
 // its runs that were queued or running, and none is continued by itself (automations/runs.ts).
 if (agent.hasData) for (const u of listUsers(db)) agent.store(u.id);
@@ -257,6 +268,7 @@ const stop = () => {
   app.close();
   void mails.close();
   void flowScheduler.close();
+  void automationScheduler.close();
   agent.close();
   server.close();
   publicServer?.close();

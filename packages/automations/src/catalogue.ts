@@ -12,6 +12,20 @@ import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
+
+/** A «Programada»'s rule (AU-114): how often, and for `week`, which day (keys; each app names them). */
+export const SCHEDULE_EVERY = ["hour", "day", "week"] as const;
+export const SCHEDULE_DAYS = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
+/** An hour of the day as a «Programada» keeps it. */
+export const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 export type Category = (typeof CATEGORIES)[number];
 
 /**
@@ -55,8 +69,9 @@ interface ParamBase {
 }
 
 export type ParamSpec = ParamBase &
+  /** `time`: an hour of the day, "HH:MM" (a «Programada»'s rule, AU-114). */
   (
-    | { control: "value"; of: "text" | "number" | "date" | "any" }
+    | { control: "value"; of: "text" | "number" | "date" | "time" | "any" }
     /** One of `options` (keys), or one field. */
     | { control: "choice"; options: readonly string[] | FieldsOf }
     | { control: "toggle" }
@@ -277,6 +292,72 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
                 required: true,
                 shape: true,
                 default: "text",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    // «Programada» (AU-114, F14d): one or more rules, each «Cada hora» (its minute), «Cada día a las» or «Cada
+    // semana el día a las», in the account's zone. It gives one row, `date`: the hour that was due (epoch ms), not the
+    // hour it ran at, so two runs of the same hour compute the same. The server's scheduler starts it (its `run`
+    // reads the rules from a column written at publishing); «Probar» gives now (AU-115).
+    type: "schedule",
+    category: "trigger",
+    inputs: [],
+    params: [],
+    actions: [
+      {
+        key: RUN,
+        effect: "none",
+        destroys: false,
+        mode: "all",
+        pairs: false,
+        outputs: [MAIN],
+        params: [
+          {
+            key: "rules",
+            control: "list",
+            place: "shown",
+            shape: true,
+            min: 1,
+            columns: [
+              {
+                key: "key",
+                control: "value",
+                of: "text",
+                place: "hidden",
+                required: true,
+                shape: true,
+              },
+              {
+                key: "every",
+                control: "choice",
+                options: SCHEDULE_EVERY,
+                place: "shown",
+                required: true,
+                shape: true,
+                default: "day",
+              },
+              {
+                key: "at",
+                control: "value",
+                of: "time",
+                place: "shown",
+                required: true,
+                shape: true,
+                default: "08:00",
+              },
+              // Read only with `week`: Monday when not given.
+              {
+                key: "day",
+                control: "choice",
+                options: SCHEDULE_DAYS,
+                place: "shown",
+                shape: true,
               },
             ],
           },

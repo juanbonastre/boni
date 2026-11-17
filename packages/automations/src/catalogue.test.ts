@@ -633,11 +633,12 @@ function paramLists(): ParamList[] {
 }
 
 describe("the catalogue as data", () => {
-  it("has the trigger and the steps of Datos, Transformar and Lógica of F14a, each once", () => {
+  it("has the triggers («Programada» since F14d) and the steps of Datos, Transformar and Lógica of F14a, each once", () => {
     const types = CATALOGUE.map((t) => t.type);
     expect(new Set(types).size).toBe(types.length);
     expect(types).toEqual([
       "manual",
+      "schedule",
       "collection",
       "edit",
       "filter",

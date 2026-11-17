@@ -18,7 +18,7 @@
  * touched, and the old version keeps its «Sí», which «Publicar» shows before (decision 13).
  */
 
-import type { Trust } from "@boni/agent";
+import { codeLabel, type Trust } from "@boni/agent";
 import {
   type Ability,
   type Automation,
@@ -38,12 +38,14 @@ import {
   publishChecks,
   type RunDeps,
   run as runAutomation,
+  type StartedBy,
   stepPrints,
 } from "@boni/automations";
 import type { AutomationVersionInfo, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, storeCollections } from "./collections.ts";
+import { scheduleColumn } from "./scheduler.ts";
 import {
   automationLabel,
   BAD,
@@ -230,6 +232,8 @@ export function publish(
       names: JSON.stringify(keptNames(a, collectionNamed(store))),
     },
     n,
+    // Its «Programada» hours, read by the scheduler without the document; they count from now (AU-114).
+    scheduleColumn(a),
   );
   return { version: done.n, enabled: done.enabled };
 }
@@ -278,7 +282,7 @@ export function setEnabled(
   if (!row || row.deleted) return NOT_FOUND;
   if (typeof enabled !== "boolean") return BAD;
   if (row.published === null) return { refused: "unpublished" };
-  store.journal.setAutomationEnabled(id, enabled);
+  store.journal.setAutomationEnabled(id, enabled, hand.now);
   return { enabled };
 }
 
@@ -304,6 +308,7 @@ export async function runPublished(
   run: string,
   box: Box = sandboxBox(),
   watch: Pick<RunDeps, "onStep"> = {},
+  startedBy: StartedBy = "user",
 ): Promise<Execution | Refusal | ServiceError> {
   const row = store.journal.automation(id);
   if (!row || row.deleted) return NOT_FOUND;
@@ -324,8 +329,13 @@ export async function runPublished(
       {
         automation: version.automation,
         trigger: request.trigger,
-        fields: { json: request.fields, label: handLabel(hand.device) },
+        // Typed by his hand, or the hour a «Programada» was due: the code's, not his device's.
+        fields: {
+          json: request.fields,
+          label: startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
+        },
         test: false,
+        startedBy,
       },
       { ...runDeps(store, id, hand, box, run), ...watch },
     );

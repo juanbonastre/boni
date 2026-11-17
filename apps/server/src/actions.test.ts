@@ -90,9 +90,11 @@ describe("one list of actions (D-41, F10)", () => {
     expect([...controlled].filter((a) => a && !names.has(a))).toEqual([]);
     const lacking = registry
       .all()
-      .filter((t) => !flowOnly(t) && !controlled.has(t.name))
+      // An action only an acceptance calls (P28, `acceptsRun`) has the Bandeja's «Aceptar» for control: inbox.accept.
+      .filter((t) => !flowOnly(t) && !t.acceptsRun && !controlled.has(t.name))
       .map((t) => t.name);
     expect(lacking).toEqual([]);
+    expect(controlled.has("inbox.accept")).toBe(true);
     // Each «Buscar» action has its words, in Spanish and in English.
     const words = readFileSync(join(WEB, "i18n.ts"), "utf8");
     for (const m of find.matchAll(/\{ name: "([a-z_.]+)", run:/g))

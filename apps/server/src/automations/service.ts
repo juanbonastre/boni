@@ -557,10 +557,17 @@ export async function testAutomation(
     (request.step !== undefined && typeof request.step !== "string")
   )
     return BAD;
+  // A «Programada» tried by hand runs as at its hour (AU-195): `$run.startedBy` is `schedule`, and its hour, unless
+  // the screen gave one, is now.
+  const scheduled = a.steps.find((s) => s.id === request.trigger)?.type === "schedule";
+  const fields: Record<string, Cell> =
+    scheduled && request.fields.date === undefined
+      ? { ...request.fields, date: hand.now }
+      : request.fields;
   const keptRows = keptTests(store, id);
   const tested = {
     ...testedFields(store, a, keptRows),
-    [request.trigger]: asDeclared(a, request.trigger, request.fields),
+    [request.trigger]: asDeclared(a, request.trigger, fields),
   };
   const prints = stepPrints(a, tested, sha256);
 
@@ -597,7 +604,8 @@ export async function testAutomation(
       {
         automation: a,
         trigger: request.trigger,
-        fields: { json: request.fields, label: typedLabel(hand) },
+        fields: { json: fields, label: typedLabel(hand) },
+        startedBy: scheduled ? "schedule" : "user",
         prints,
         ...(request.step !== undefined ? { step: request.step, kept } : {}),
         ...(pins.pins.size ? { pinned: pins.records } : {}),

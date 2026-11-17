@@ -3,6 +3,7 @@ import { chainExisting } from "./audit.ts";
 import { AUTOMATION_RUNS_MIGRATION } from "./automationRuns.ts";
 import {
   AUTOMATIONS_MIGRATION,
+  automationsScheduleMigration,
   automationsTriggerMigration,
   automationsVersionsMigration,
 } from "./automations.ts";
@@ -388,6 +389,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   automationsVersionsMigration,
   // 28: an automation's runs, each step's record and rows, and what is pinned on its draft (F14d S2, AU-99, AU-93).
   AUTOMATION_RUNS_MIGRATION,
+  // 29: a «Programada»'s hours in a column, where they count from, and each scheduled run's hour (F14d S3, AU-114).
+  automationsScheduleMigration,
 ];
 
 export function migrate(db: DatabaseSync): void {
