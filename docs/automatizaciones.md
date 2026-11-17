@@ -863,6 +863,11 @@ interface Connection {
 - **AU-42** (F15, pendiente) · «Preguntar» es una propuesta: en una conversación, una tarjeta para aceptar o no; en
   segundo plano, espera en la Bandeja. La ejecución no se queda esperando: termina, y en «Ejecuciones» dice «1
   propuesta sin responder». «Sí» escribe con Deshacer.
+  En la F15: lo que un paso de IA quiere escribir con «Preguntar» entra en la propuesta de la ejecución, la de AU-193
+  (una por ejecución, con los cambios de todos sus pasos, aceptada desde un dispositivo personal, con Deshacer): un
+  paso de IA no trae otra clase de propuesta. De cada cambio dice qué paso lo pide y, si lo eligió una IA, «lo decidió
+  la IA» (AU-200). La tarjeta dentro de una conversación llega con el disparador de chat (F16); en la F15 la propuesta
+  espera en la Bandeja y en su ejecución. La prueba: `apps/server/src/automations/ai.test.ts`.
 - **AU-43** (F14c, hecho) · Leer puede llevar «Solo estas filas» (el filtro de las vistas), «Solo estos campos»
   y un límite. El filtro se suma a todo lo que el paso busque: puede estrechar, nunca ensanchar.
   En la F14c: el filtro vale para `find`, `get`, `count` y `sum`. Con «Solo estos campos» la fila llega con esos
@@ -883,6 +888,27 @@ interface Connection {
 - **AU-48** (F15, pendiente) · Cada acción de escribir lleva los suyos: modificar y eliminar, «Solo estas filas»;
   crear y modificar, «Solo estos campos». Por ejemplo, modificar solo la «Categoría» de los gastos que no la tienen.
   Crear puede llevar valores fijos que la IA no elige.
+  En la F15: se guardan en la conexión, en cada acción, donde el formato ya los tiene: `update.where` y
+  `update.fields`, `remove.where`, `create.fields` y `create.fixed`. Estrechan además de los de leer (AU-177): una fila
+  tiene que cumplir el filtro de leer y el de la acción. Valen igual en «Código» y en «Agente», y los comprueba el
+  motor con la conexión guardada (`insideConnection`), y para un paso de IA también la política (AU-205). En la
+  pantalla van en la fila abierta de la conexión (AU-43), bajo cada acción que no está en «No», con los dos controles
+  de leer («Solo estas filas», «Solo estos campos»); la celda lo dice como la de leer: «Preguntar · con filtro»,
+  «Sí · 2 campos». Los valores fijos de crear y de modificar se ponen con el control de AU-52. La prueba:
+  `packages/automations/src/action-limits.test.ts`.
+- **AU-196** (F15, pendiente) · «Como mucho N filas». Cada acción de escribir de una conexión puede llevar un tope
+  de filas por ejecución (`limit`, como el de leer, de 1 a 5.000). Cuenta las filas que el paso pide crear,
+  modificar o mandar a la papelera con esa acción, se guarden o se propongan, por paso y ejecución, sumando sus
+  unidades de trabajo, y se comprueba antes de guardar. En un «Código», la petición que lo pasa falla como
+  cualquiera que no se puede guardar (AU-174) y lo dice con los dos números, «Quiso eliminar 240 filas en Tareas ·
+  como mucho 20». En un «Agente», la llamada que lo pasaría se niega y se le dice al modelo, sin hacer fallar el
+  paso (AU-198, AU-205): puede pedir menos. El tope de la ejecución (AU-17) sigue encima. En un «Agente», una acción
+  de escribir nace con «Como mucho 20» en el momento en que su mano saca esa celda de «No», y se ve en la celda
+  («Preguntar · hasta 20»): es el límite de Juan a lo que una IA decide. En un «Código» nace sin tope: lo que
+  escribe su código lo ha escrito él. El «Permiso» de un paso «Colección» no lleva estos límites: ya tiene su
+  condición, y encima el tope de la ejecución. Se
+  quita o se cambia en la fila abierta, junto a los otros dos límites de la acción (AU-48). La prueba:
+  `packages/automations/src/action-limits.test.ts`.
 - **AU-44** (F14c, hecho) · Una frase calculada resume todas las conexiones de un paso, debajo de su tabla:
   «Puede leer Gastos (solo los de este año) y Categorías, y proponer filas nuevas en Notas. No puede modificar ni
   eliminar nada.» En la F14c dice lo que lee y lo que el código puede guardar (AU-178). Al
@@ -897,6 +923,12 @@ interface Connection {
   AU-186; hasta el 2026-11-16 se proponía aunque dijera «Sí»). Eliminar pregunta
   salvo en lo que dice AU-186, que es la política y no la conexión (hasta el 2026-11-16: «eliminar se pregunta
   siempre»).
+  En la F15: lo cumple la política, no solo el motor (AU-205): la llamada de un paso de IA a una colección que no
+  tiene conectada, a una acción en «No» o fuera de sus límites se niega en `decide`, con la conexión que el servidor
+  lee de la versión guardada y pone en la llamada. Una colección privada (AU-166) no sale entre las que se pueden conectar a un paso de IA. Un destino no es
+  un parámetro que una IA rellene: «Avisar» y «Responder» no tienen destinatario (AU-201, AU-202). Lo que guarda una
+  IA con «Sí» lo dice AU-204, que de momento retiene, más estrecho que la decisión 11, lo que un «Agente» modifica o
+  elimina cuando le llegó algo de fuera. La prueba: `packages/agent/test/automation-ai.test.ts`.
 - **AU-46** (F14c, hecho) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
@@ -972,38 +1004,192 @@ las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
 
 Es el ejemplo de Juan: un disparador y, después, una IA conectada a unas colecciones.
 
+**Lo que la F15 extiende** (T-05). Por dentro casi nada es nuevo; lo nuevo son las rondas, los límites por acción y
+que un paso espere a Juan.
+
+| Lo que ya hay | Dónde | Lo que la F15 hace con ello |
+|---|---|---|
+| El agente: el plan, su validación, la política y la vista del planificador | `packages/agent` (`agent.ts`, `plan.ts`, `policy.ts`, `view.ts`) | Las rondas del «Agente» lo llaman (AU-56, AU-198): no hay otro bucle ni otro lenguaje |
+| Los lectores y sus formas cerradas | `packages/agent/src/readers.ts` | Los cuatro pasos lectores (AU-57) |
+| Los usos de «Modelos», sus evaluaciones y `plannerChoices` | `apps/server/src/models.ts` | `modelChoices(cuenta, uso)` (AU-199) |
+| Las conexiones: la tabla, las fichas, la frase, `narrow`, `insideConnection` | §5.5, `packages/automations/src/connections.ts` y `writes.ts`, `AutomationConnections.tsx` | La misma tabla en el «Agente», con los límites de cada acción (AU-48, AU-196) |
+| «Código»: la caja, `$col` y el análisis | §5.4 | «Las hace este código» (AU-51) y «Herramientas de código» (AU-58) |
+| La propuesta de una ejecución y la Bandeja | AU-193, AU-170 | El «Preguntar» de un permiso (AU-42); el paso «Preguntar» espera allí (AU-203) |
+| Las tarjetas de pregunta | `docs/conversacion.md` §3.4 | La tarjeta del paso «Preguntar» (AU-125) |
+| Los límites de la ejecución | AU-17, `AUTOMATION_LIMITS` | Las llamadas a modelos se cuentan (AU-206) |
+| Las decisiones y la autonomía ganada | `docs/fiabilidad.md`, `packages/agent/src/decisions.ts` | Lo que Boni aprende de sus respuestas (§5.15) |
+
 - **AU-50** (F15, pendiente) · «Agente» enseña seis cosas: **Instrucciones** (texto, con expresiones), **Modelo**
-  (uno de los papeles de «Modelos», con su valor por defecto), **Conexiones** (§5.5), **Lecturas**, **Respuesta** y
-  **Se ejecuta** (AU-55).
+  («El de la cuenta» o un modelo evaluado para su uso: AU-199), **Conexiones** (§5.5), **Lecturas**, **Respuesta** y
+  **Se ejecuta** (AU-55). El tipo de paso fija el uso de «Modelos» que gasta: un «Agente», el uso «Agente». En un
+  paso no hay claves, ni temperatura, ni tokens (Juan, 2026-11-15; hasta entonces «Modelo» era «uno de los papeles de
+  «Modelos»»).
+  En la F15: sin «Instrucciones» el paso tiene un problema («Escribe qué tiene que hacer») y no se publica. Las seis
+  son sus parámetros (AU-75: como mucho siete); lo demás va detrás de «Añadir opción» (AU-58). La prueba:
+  `e2e-boni/automations-ai.spec.ts`.
 - **AU-51** (F15, pendiente) · «Lecturas» tiene dos modos. «Las decide la IA» (por defecto): busca en sus conexiones
   lo que necesite. «Las hace este código»: un editor como el de «Código» que lee, cruza colecciones y devuelve lo
   que la IA recibe; entonces la IA no busca por su cuenta.
+  En la F15: con «Las decide la IA», el plan del modelo pide `find`, `get`, `count` y `sum` a sus conexiones, y cada
+  lectura la estrecha `narrow` como a las de un «Código» (AU-43). Con «Las hace este código», el código es el de un
+  «Código» (la caja, `$col`, el análisis de AU-183 y sus topes) y solo lee: una llamada de escribir en él es un
+  problema (`agent.reads.write`). Corre una vez por unidad de trabajo, antes de la primera ronda, y lo que devuelve es
+  lo que el modelo recibe como filas, por la vista del planificador; el esquema que recibe el modelo no tiene
+  entonces lecturas, y un plan que pida una se le niega (AU-198). Cambiar de modo no borra el código. La frase del
+  paso (AU-44) dice quién lee: «Lee lo que decida la IA en Gastos y Categorías» o «Lee lo que hace su código en…». La
+  prueba: `packages/automations/src/agent.test.ts`.
 - **AU-52** (F15, pendiente) · En cada permiso de escribir, los campos se rellenan con el control de «los campos de
   una fila» (AU-80), que aquí, y solo aquí, tiene un tercer estado: cada campo es «Fijo», «Expresión» o «Lo decide la
   IA», con una línea que le dice para qué es. Las opciones salen del propio campo: una IA no puede inventar una
   opción que el campo no tiene.
+  En la F15: el control va en la fila abierta de la conexión, bajo «Crear» y bajo «Modificar», y de él salen los
+  límites de AU-48: `fields` son los campos en «Lo decide la IA», y `fixed`, los «Fijo» y las «Expresión», que pone el
+  código al guardar y la IA no elige. Un campo sin marcar no se escribe. La línea de cada campo va al modelo dentro
+  del esquema (AU-197). Un campo de opciones solo admite una de sus opciones, y una relación, una fila que el paso
+  haya leído en esa ejecución: lo que no cumple se niega y se le dice al modelo (AU-198). Es el «que lo defina el
+  modelo» de cada parámetro de n8n (§3), con el campo de la colección como forma. La prueba:
+  `packages/automations/src/action-limits.test.ts`.
 - **AU-53** (F15, pendiente) · «Respuesta» es «Texto» o «Campos» (una lista de campos con su tipo). Sale como una
   fila que los pasos siguientes citan como cualquier otra.
+  En la F15: «Texto» da una fila con el campo `texto`; «Campos», hasta 12 campos, cada uno con su nombre, su tipo
+  (texto, número, fecha, sí o no, opciones) y una línea. La respuesta del modelo se comprueba contra esa forma como la
+  salida de un lector: si no vale, se pide otra vez dentro de la ronda (cuenta como llamada) y, si vuelve a no valer,
+  el paso falla (`agent.reply`). Con «Una vez por fila» sale una fila por cada fila de entrada. La «Respuesta» lleva la
+  etiqueta `model`; si cita por su asa un valor que el modelo no leyó (un texto de fuera), el código lo pone y la
+  respuesta lleva también su etiqueta. La prueba: `packages/automations/src/agent.test.ts`.
 - **AU-54** (F15, pendiente) · La salida enseña «Lo que hizo» encima de la «Respuesta», y el registro lo mismo: en
-  orden y con su coste («2 rondas · 2 llamadas al modelo»). «Buscó 41 filas en Gastos», con el filtro que usó y el
-  límite de la conexión; «Propuso 1 fila nueva en Notas: espera tu permiso». En una prueba dice «Propondría…» y
-  enseña la fila: no propone nada.
+  orden, con su coste y con el modelo que respondió («2 rondas · 3 llamadas al modelo · el nombre del modelo ·
+  3,6 s»; Juan, 2026-11-15). «Buscó 41 filas en Gastos», con el filtro que usó y el límite de la conexión; «Propuso 1
+  fila nueva en Notas: espera tu permiso». En una prueba dice «Propondría…» y enseña la fila: no propone nada.
+  En la F15: cada línea la escribe el código con lo que ejecutó del plan, nunca el modelo (A-01), en texto plano:
+  «Buscó», «Contó», «Sumó», «Creó», «Modificó», «Eliminó», «Propuso», «Quiso… · su conexión no lo deja» (AU-198) y «No
+  leyó… · viene de fuera» (AU-197). El nombre del modelo es el que respondió, como lo enseña «Modelos»: si «El de la
+  cuenta» cambia, cada ejecución dice el suyo. Los cuatro lectores (AU-57) dicen lo mismo en una línea («1 llamada al
+  modelo · el nombre del modelo · 0,8 s»). Se guarda en el registro del paso, acotado: 50 líneas por unidad de
+  trabajo y «y 12 más». En una prueba el modelo se llama de verdad y nada se guarda ni se propone (AU-199). La
+  prueba: `packages/automations/src/agent.test.ts` y `e2e-boni/automations-ai.spec.ts`.
 - **AU-55** (F15, pendiente) · «Se ejecuta» tiene dos modos, a la vista como en «Código» (AU-30): «Una vez con todas
   las filas» (por defecto) y «Una vez por fila». Es un parámetro suyo y no un ajuste: «Ajustes» es igual en todos los
   pasos (AU-78). Junto a él se ve lo que cuesta: cuántas filas llegaron en la última prueba y el tope de llamadas a
   modelos de la automatización.
+  En la F15: con «Una vez con todas las filas» hay una unidad de trabajo, y las filas de entrada llegan al modelo por
+  la vista, acotada (AU-198); con «Una vez por fila», cada fila es una unidad con sus propias rondas. La línea del
+  coste: «Llegaron 41 filas en la última prueba · hasta 20 llamadas a modelos por ejecución»; se pone en rojo cuando
+  con esas filas el tope no alcanza («Una vez por fila» con 41 filas y 20 llamadas), sin impedir publicar: lo que
+  para es el tope, al ejecutar (AU-206). La prueba: `packages/automations/src/agent.test.ts`.
 - **AU-56** (F15, pendiente) · Por dentro es el agente de Boni, no un bucle de herramientas: el modelo escribe un
   plan, el código lo interpreta con la política, y lo que las etiquetas dejan ver a un modelo que planifica (los
   datos propios; nunca lo de fuera ni lo privado) vuelve para la ronda siguiente, hasta «Pasos máximos». Hoy el
   chat de una página hace una sola ronda por mensaje; las rondas son lo nuevo.
+  En la F15: las rondas viven en `packages/agent`, sobre lo que ya valida y decide un plan, y el motor las llama por
+  un puerto (§7): `packages/automations` no importa ningún proveedor de modelos (A-02). El origen de cada llamada es
+  `automation`, con el paso y su conexión leídos de la versión guardada (AU-204, AU-205). «Pasos máximos» pasa a
+  llamarse «Rondas máximas» (AU-58). Cómo es una ronda, qué vuelve y cuándo se guarda lo dice AU-198. La prueba:
+  `packages/agent/test/automation-ai.test.ts`.
 - **AU-57** (F15, pendiente) · Los otros pasos de IA hacen una cosa cada uno, con los lectores que ya existen:
   «Extraer datos», «Clasificar», «Resumir» y «Escribir texto». El texto de fuera pasa por ellos, no por el agente.
+  Los cuatro gastan el uso «Lector» de «Modelos», y su «Modelo» se elige como el del «Agente» (AU-199; Juan,
+  2026-11-15).
+  En la F15: lo que enseña cada uno, sin conexiones (AU-46) y sin nada más:
+
+  | Paso | Enseña | Sale | Lector de hoy |
+  |---|---|---|---|
+  | «Extraer datos» | Texto, Campos (la lista de AU-53), Modelo | La fila de entrada con esos campos | `fill` |
+  | «Clasificar» | Texto, Opciones (fijas, o una expresión que da la lista), Modelo | La fila con `clase`: una de las opciones, o vacío | `classify`, `label_each` |
+  | «Resumir» | Texto, Modelo | La fila con `resumen` | `summarize`, `summarize_each` |
+  | «Escribir texto» | Instrucciones, Texto (puede faltar), Modelo | La fila con `texto` | `rewrite` |
+
+  Cada uno es un lector de `READERS` con su forma cerrada de `READER_SCHEMAS`; si a alguno le falta la forma, se
+  añade allí y no en el motor. Reciben solo su «Texto» y, como opciones, lo que Juan puso: nunca datos propios junto
+  a un texto de fuera (`docs/nucleo.md` §7.4). Con varias filas, los que leen una lista en una llamada (`label_each`,
+  `summarize_each`) reciben hasta 50 filas por llamada (`READER_BATCH`, razonado y no medido) y los demás hacen una
+  llamada por fila; un texto de más de 4.000 caracteres se recorta y la salida lo dice («Recortó 3 textos»). La
+  salida lleva la etiqueta de la entrada: lo que sale de un texto de fuera sigue siendo de fuera. Una salida que no
+  vale se reintenta una vez (AU-59). «Añadir opción» de «Resumir» tiene «Largo» (corto, medio, largo). La prueba:
+  `packages/automations/src/ai-steps.test.ts`.
 - **AU-58** (F15, pendiente) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
+  En la F15: «Rondas máximas» (nace en 5, hasta 10) es el nombre de «Pasos máximos»: un paso es ya una caja del
+  lienzo, y una ronda es lo que «Lo que hizo» cuenta. «Herramientas de código»: hasta 8, cada una con su nombre, sus
+  entradas (nombre y tipo) y su código, que corre en la caja con las conexiones del paso y solo lee, como el de «Las
+  hace este código» (AU-51): el análisis de AU-183 dice qué colecciones usa, y lo que devuelve entra por la vista del
+  planificador con sus etiquetas. Son la parte del ejemplo de Juan («javascript sobre cómo hacer esas peticiones,
+  referencias cruzadas a distintas colecciones») cuando además quiere que la IA decida cuándo. «Memoria» solo existe
+  con el disparador de chat (F16): en la F15 no sale. Si la fase se alarga, las herramientas son lo que pasa a la
+  cola. La prueba: `packages/automations/src/agent.test.ts`.
 - **AU-59** (Antes, hecho) · Tarea 124, en el motor de hoy (`docs/nucleo.md` §7.4). Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
   a fallar, el paso falla diciendo qué lector y por qué; no para la automatización con un código (hoy:
   `R2-reader-output-invalid`, el fallo del resumen de la mañana). Se arregla ya en el motor de hoy (decisión 7 del
   §10) y el motor nuevo lo hereda con los pasos de IA (F15).
+- **AU-197** (F15, pendiente) · Lo que recibe el modelo de un «Agente» es una lista cerrada, y una prueba se rompe
+  si entra otra cosa (como A-12 con el contexto del chat): sus «Instrucciones»; el esquema de sus conexiones (de cada
+  colección conectada, su nombre, su descripción y sus campos, y solo las acciones que no están en «No», con sus
+  límites y la línea de cada campo de AU-52; con «Las hace este código», ninguna lectura); las filas de entrada de su
+  unidad de trabajo y lo que devolvieron las rondas anteriores, por la vista del planificador (`toPlannerView`: lo
+  propio se ve; lo de fuera y lo privado son asas); la forma de la «Respuesta»; y el día, la zona y el idioma. Una
+  colección conectada con «Leer» en «No» sale con su nombre y dicho que no puede leerla, para que la respuesta pueda
+  decirlo (el criterio del §8). No recibe claves, ni lo que Boni sabe de Juan, ni sus instrucciones para asistentes, ni otras colecciones, ni otras
+  automatizaciones, ni ningún chat: un «Agente» sabe lo que dicen sus «Instrucciones» y lo que lee por sus
+  conexiones. Una expresión de «Instrucciones» se resuelve antes de llamar, y un valor que su etiqueta no deja ver a
+  un modelo que planifica entra como su asa y no como su texto: el agente puede dárselo a un lector o guardarlo en un
+  campo, no leerlo, y «Lo que hizo» lo dice («No leyó «Asunto» · viene de fuera»). La prueba:
+  `packages/automations/src/agent.test.ts`.
+- **AU-198** (F15, pendiente) · Las rondas tienen fin y una sola forma. En cada ronda el modelo escribe un plan, en
+  el lenguaje de planes de hoy sin preguntar (`ask`), sin memoria y sin nada que salga fuera. El código lo valida
+  (`validatePlan`, `checkPlan`), pasa cada llamada por la política y lo ejecuta. Un plan sin respuesta abre otra ronda
+  con lo que devolvió; un plan con respuesta termina el paso. Agotar «Rondas máximas» (AU-58) sin respuesta hace
+  fallar el paso (`agent.rounds`) sin guardar nada. Lo que el constructor no tiene que preguntar:
+  - Lo que vuelve a la ronda siguiente está acotado: 200 filas y 20.000 caracteres por ronda (`AGENT_VIEW`, razonado
+    y no medido), diciendo al modelo y a Juan lo que faltó («Vio 200 de 3.000 filas»). `count` y `sum` no tienen ese
+    tope: un agente que necesita un total lo pide así, y las instrucciones del sistema se lo dicen.
+  - Lo que el modelo pide en su plan y no puede (una colección sin conectar, una acción en «No», una fila fuera de
+    «Solo estas filas», un campo que no es suyo, una opción que el campo no tiene, más filas que «Como mucho») no hace
+    fallar el paso: esa llamada se niega (AU-205), se le dice al modelo en la ronda siguiente, con el mismo mensaje
+    para una fila que no existe y para una que no puede tocar (AU-177), y queda en «Lo que hizo» («Quiso leer Gastos
+    · su conexión no lo deja»). Así, sin «Leer» en una colección, la respuesta dice que no puede (el criterio del
+    §8). Toda otra negación hace fallar la unidad de trabajo, por el «Si falla» del paso: la de una regla que no es
+    de su conexión (P2, P14, P9), con el código y la regla y sin detalle (AU-161); la de una colección que se hizo
+    privada después de publicar, diciendo cuál (AU-166); y la de una llamada que no hizo el modelo sino código («Las
+    hace este código», una herramienta de código), como en un «Código» (AU-161).
+  - Las escrituras de una unidad de trabajo se juntan y se deciden al final, cuando hay respuesta, y son parte del
+    cambio del paso como las de un «Código» (AU-174), todo o nada: si todas llevan «Sí» y la política las deja, se
+    guardan en una transacción; si una sola pregunta (su celda dice «Preguntar», o la política la propone: AU-204),
+    el cambio entero espera en la propuesta de la ejecución y no se guarda nada de él hasta que Juan la acepta
+    («todo junto», AU-42, AU-193). Una ronda posterior no lee lo que una anterior pidió escribir; al modelo se le
+    devuelve la cuenta («Creará 1 fila en Notas»). Un paso que falla no deja nada a medias.
+  - Un plan que no vale (no es un plan, o pasa de los 40 pasos de P12) se pide otra vez dentro de la misma ronda, una
+    vez, y cuenta como llamada (AU-206); si vuelve a no valer, el paso falla (`agent.plan`).
+  La prueba: `packages/automations/src/agent.test.ts` y `packages/agent/test/automation-ai.test.ts`, con un modelo de
+  guion: ninguna llamada real.
+- **AU-199** (F15, pendiente) · «Modelo» es una lista corta y cerrada: «El de la cuenta» (por defecto: el modelo
+  que «Modelos» tiene puesto para el uso del paso) y, debajo, cada modelo evaluado hace poco para ese uso y con su
+  clave puesta («hace poco» es lo que `evaluated` de `models.ts` ya exige, sin otro plazo). Es la puerta de
+  `plannerChoices` hecha para cualquier uso, `modelChoices(cuenta, uso)`: el uso «Agente» (`planner`) para un
+  «Agente» y «Lector» (`reader`) para los cuatro lectores (AU-57); el chat sigue leyendo la del uso «Agente».
+  Ni el código ni este diseño nombran modelos: la lista sale de las evaluaciones de la cuenta. El paso guarda el id
+  de la elección, o nada («El de la cuenta»): nunca una clave, una ruta ni un ajuste del modelo (Juan, 2026-11-15).
+  Al publicar, un paso cuyo modelo ya no está en la lista es un problema («Elige otro modelo en «Clasificar»») y no
+  se publica. Una versión publicada sigue con su modelo mientras su clave exista, aunque su evaluación envejezca;
+  sin clave o sin modelo, el paso falla diciéndolo y sigue su «Si falla». El presupuesto del mes de «Modelos» para
+  los pasos de IA de toda ejecución, la inicie quien la inicie, con el mensaje de siempre; no hay tope de dinero por
+  automatización. «Probar» llama al modelo de verdad, gasta de ese presupuesto y no guarda ni propone nada (AU-54).
+  La prueba: `apps/server/src/automations/ai.test.ts`.
+- **AU-200** (F15, pendiente) · Lo que decide una IA se dice con esas palabras donde Juan da el permiso y donde lo
+  ve usado: «decide la IA». En «Lo que podrá hacer» (AU-182) un «Agente» da una línea por colección y acción que su
+  conexión no tiene en «No» (no hay análisis que diga menos: puede todo lo que su conexión deja), con las marcas de
+  siempre y la nueva: «Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20». Cuando al paso puede
+  llegarle algo de fuera (por su camino, como en AU-182, o porque una colección que su conexión deja leer guarda
+  valores de fuera: `holdsOutside`), la línea dice lo que AU-204 hace entonces: mientras dure su retención, «Elimina
+  filas en Tareas · decide la IA · como mucho 20 · pregunta si llega algo de fuera»; si Juan confirma la decisión 11
+  para el «Agente», «… · sin preguntar · decide la IA · como mucho 20 · con datos de fuera», como en un «Código».
+  Sus lecturas dicen quién las elige: «Lee lo que decida la IA en Gastos y Categorías». La frase bajo la tabla del
+  paso (AU-44) lo dice igual de lo que escribe: «Puede leer Gastos (solo los de este año) y Categorías, y proponer
+  filas nuevas en Notas (como mucho 20), lo que decida la IA. No puede modificar ni eliminar nada.» La misma marca va en la ficha
+  de su conexión (AU-178), en cada cambio suyo dentro de la propuesta de una ejecución (AU-42) y en la línea de la
+  ejecución que guardó algo así sin preguntar. Son palabras, no un aviso ni una ayuda (AU-179): el riesgo se lee en
+  la misma línea donde se acepta. `abilities` gana ese dato (`byAgent`) y nada más: lo siguen leyendo el mapa
+  (AU-47) y las aceptaciones de la F16 y la F19. La prueba: `packages/automations/src/agent.test.ts` y
+  `e2e-boni/automations-ai.spec.ts`.
 
 ### 5.7 La pantalla
 
@@ -1798,6 +1984,53 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   con todas. Solo hace falta para cruzar; para juntar ramas, no (AU-11).
 - **AU-125** (F15, pendiente) · «Preguntar» pregunta a Juan (opciones o texto). En segundo plano espera con un
   «Límite de espera» a la vista; nunca espera para siempre.
+  En la F15: enseña tres cosas. **Pregunta** (texto, con expresiones). **Respuesta**: «Sí o no», «Una opción»,
+  «Varias opciones» o «Texto», con las opciones fijas o de una expresión que da la lista; son los controles que la
+  Bandeja ya tiene (`FLOW_ASKS`), y número, fecha y «una fila de…» llegan con la conversación (F16). **Límite de
+  espera** (nace en 1 día, hasta 30). Tiene dos salidas: la principal, con la fila de entrada y `respuesta`, y «sin
+  respuesta», para cuando el límite pasa; sin nada conectado a ella, la ejecución acaba ahí y lo dice. Pregunta una
+  vez con todas las filas; «Una vez por fila» está detrás de «Añadir opción» y admite hasta 20 preguntas por
+  ejecución: con más, el paso falla antes de hacer ninguna («Son 41 preguntas · como mucho 20»). La tarjeta la pinta
+  el código, en texto plano: qué automatización pregunta, la pregunta, sus controles y hasta cuándo espera, con la
+  marca de lo que viene de fuera. La respuesta lleva la etiqueta de su mano cuando la escribe él, y la de la opción
+  cuando elige una. Es lo que quedaba abierto de «las preguntas por paso y la Bandeja como paso» y de «contestar
+  preguntas» de una función (tareas 83 y 93 de la cola). Cómo espera lo dice AU-203. La prueba:
+  `packages/automations/src/people.test.ts` y `e2e-boni/automations-ai.spec.ts`.
+- **AU-201** (F15, pendiente) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, a la
+  app y al móvil, por el `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a
+  quién (P2, P14). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
+  los junta («y 12 más»). El texto se pinta plano, recortado a 300 caracteres, y tocarlo abre su ejecución. En una
+  prueba dice «Avisaría…» y no manda nada. No es el aviso de AU-102 (el de un fallo, que manda Boni): este lo pone
+  Juan en su grafo. La prueba: `packages/automations/src/people.test.ts`.
+- **AU-202** (F15, pendiente) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
+  respuesta de la ejecución, que se ve donde se inició: en la F15, en el panel de «Ejecutar» y de «Probar» y en la
+  línea de la ejecución (sus primeros 200 caracteres); con el disparador de chat será el mensaje (F16), y en una
+  página, lo que enseña su bloque (F17). Una ejecución tiene una respuesta: la del último «Responder» que corrió. Se
+  pinta plana y conserva la etiqueta de lo que cita. En una ejecución que empezó sola se queda en la ejecución: no
+  es un aviso. La prueba: `packages/automations/src/people.test.ts`.
+- **AU-203** (F15, pendiente) · Una ejecución que pregunta espera sin estorbar y nunca para siempre. Al llegar a un
+  «Preguntar», el motor termina lo que no depende de la respuesta y la ejecución queda «Esperando» («Esperando tu
+  respuesta · hasta mañana a las 9:40»), con su tarjeta en la Bandeja. Mientras espera:
+  - Suelta su turno: las ejecuciones siguientes de esa automatización corren, y como mucho 20 esperan a la vez por
+    automatización (la siguiente falla en ese paso: «Ya hay 20 preguntas sin responder»).
+  - Guarda lo que necesita para seguir: las salidas de sus pasos hechos, con sus etiquetas, hasta 2 MB (razonado y
+    no medido); si no cabe, el paso falla sin preguntar y lo dice. Van en el almacén del usuario, con las tablas de
+    la ejecución (D-02), y se podan con ella.
+  - Aguanta un reinicio del servidor: no es una ejecución interrumpida (AU-190), sigue esperando, y el planificador
+    de horas mira los límites de espera vencidos.
+  - El límite de tiempo de la ejecución (AU-17) cuenta lo que corre, no lo que espera; las filas escritas y las
+    llamadas a modelos se cuentan juntas, antes y después.
+  Contestar es un toque en un dispositivo personal, como aceptar una propuesta (AU-193). La ejecución sigue desde
+  ese paso, en su turno y con la versión con la que empezó, aunque haya otra publicada, y lo dice su línea. Sus
+  pasos son los de esa versión; lo que guarda después de la espera se decide al guardar, con el «Sí» más bajo entre
+  el de esa versión y el de la publicada en ese momento (una celda que Juan bajó o quitó desde entonces pregunta) y
+  con la pausa de AU-210: esperar nunca conserva un permiso que él ya retiró. La propuesta de la ejecución (AU-193)
+  se junta cuando la ejecución termina, también después de una espera: mientras espera una respuesta su línea dice
+  «Esperando tu respuesta», y «1 propuesta sin responder» solo cuando ya terminó. Pasado el
+  límite sale por «sin respuesta» y la tarjeta queda «Ya no vale». Apagar o eliminar la automatización, o deshacer
+  la ejecución, cancela la espera («Cancelada»). En «Probar» la pregunta sale en el panel de la prueba y se contesta
+  allí: no va a la Bandeja. La prueba: `packages/automations/src/people.test.ts` y
+  `apps/server/src/automations/ai.test.ts`.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -1916,6 +2149,71 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
 | C10 | Rehacer sin forzar | Formato y motor nuevos (§5.1, §5.2, §7); migración (§5.13) |
 | C11 | Estudiar n8n | §3: lo que se toma, lo que se mejora y lo que no; lo que queda fuera va después, en una fase propia (decisión 9 del §10) |
 
+### 5.15 Lo que Boni aprende de sus respuestas
+
+Decisión 10 del §10: una automatización hace lo que es para y nunca se cambia a sí misma; lo que Boni aprende de
+lo que Juan contesta lo junta Boni, fuera, y lo que cambie se propone a la vista. No es un sistema nuevo (T-05):
+
+| Lo que ya hay | Lo que se extiende |
+|---|---|
+| Las decisiones por ámbito y sus cuentas (`docs/fiabilidad.md`; `earned` y `backOff` en `packages/agent/src/decisions.ts`) | Un ámbito más: la celda (automatización, paso, colección y acción), sea de una conexión o el «Permiso» de un «Colección» |
+| «Solo» en un ámbito: se propone a las 20 decisiones con el 95 % y Boni lo apaga cuando falla | La sugerencia de AU-209 y la pausa de AU-210. El «Solo» de una automatización es la celda en «Sí», y esa solo la pone su mano (decisión 13) |
+| Las sugerencias (`docs/preferencias.md`, clase 5), como mucho una al día, y el interruptor «Aprender» | Son las mismas (AU-212) |
+| «Revisar la guía»: un revisor con un modelo | AU-211, que no es de esta fase |
+
+**Cómo se ve la seudoaceptación.** Boni no acepta por su cuenta la propuesta de una ejecución, tampoco con pruebas:
+lo único que guarda sin preguntar es el «Sí» de una versión publicada, y ese lo pone su mano (decisión 13, AU-188).
+Lo que AU-186 dejó abierto se cierra así. La seudoaceptación de `docs/fiabilidad.md` es, en una automatización, lo
+que se ve: en la conexión, la cuenta bajo la celda; en la Bandeja, la misma cuenta en la tarjeta de la propuesta; y,
+cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
+
+- **AU-207** (F15, pendiente) · Las señales las junta el código, sin ningún modelo, y solo de actos de su mano en un
+  dispositivo personal. Por cada celda y cada ejecución hay una decisión, no una por fila: la propuesta aceptada
+  (acierto) o rechazada (fallo); y, de lo que se guardó (aceptado, o con «Sí»), deshacer la ejecución, o que su mano
+  cambie esos mismos campos o mande a la papelera una de sus filas en los 7 días siguientes (fallo: «corregida»). Lo
+  guardado con «Sí» que nadie toca en 7 días es un acierto. Vale lo último: una propuesta aceptada y luego deshecha
+  o corregida cuenta una vez, como fallo. «Su mano» es una operación del registro hecha a mano desde un dispositivo
+  personal: no cuenta lo que cambia otra ejecución, un asistente ni una importación. Se guardan donde las decisiones de `docs/fiabilidad.md`,
+  con la celda como ámbito y la huella del paso (AU-43): cambiar sus instrucciones, su código o sus conexiones
+  empieza otra cuenta, porque lo aceptado era de otro paso. Aceptar, rechazar y deshacer cuentan en el momento; lo que
+  cambió su mano se mira una vez al día en el registro de operaciones, por las operaciones de cada ejecución (AU-18),
+  nunca en cada petición, y se mide con un año de ejecuciones (A-15). Se podan con sus ejecuciones. La prueba:
+  `apps/server/src/automations/learning.test.ts`.
+- **AU-208** (F15, pendiente) · La cuenta está a la vista y la pinta el código. Bajo la celda, en la tabla de
+  conexiones (donde «lo usa», AU-179) y junto al «Permiso» de un «Colección»: «18 de 20 aceptadas» con «Preguntar»,
+  «12 de 12 sin deshacer» con «Sí»; nada hasta que hay 5 decisiones. En la tarjeta de la propuesta de una ejecución,
+  una línea por paso: «Has aceptado 18 de las últimas 20 de «Analista» en Notas». Es un número, no una ayuda. La
+  prueba: `e2e-boni/automations-ai.spec.ts`.
+- **AU-209** (F15, pendiente) · Con 20 decisiones y el 95 % aceptadas en una celda con «Preguntar», Boni lo sugiere
+  una vez, con la forma de una sugerencia de siempre: «Has aceptado 20 de 20 propuestas de «Analista» en Notas.
+  ¿Quieres que guarde sin preguntar?» [Abrir] [No]. «Abrir» lleva a esa celda en el editor: ponerla en «Sí» es un
+  toque suyo y publicar otro (decisión 13). Boni nunca pone un «Sí», ni en el borrador. Un «No» no se repite mientras
+  el paso no cambie. No hay sugerencia para «Eliminar»: eso lo decide él sin que Boni lo empuje. Las celdas con su
+  cuenta salen también en Ajustes › Decisiones, con las demás. Ese «No» y la pausa de AU-210 se guardan en el almacén
+  del usuario, con las decisiones (D-02), con su registro y su Deshacer. La prueba:
+  `apps/server/src/automations/learning.test.ts`.
+- **AU-210** (F15, pendiente) · Cuando un «Sí» falla, Boni vuelve a preguntar. Con tres fallos seguidos, o uno de
+  cada cinco en las últimas 20 decisiones (la regla de `docs/fiabilidad.md`), esa celda queda en pausa: las
+  ejecuciones la tratan como «Preguntar». La versión publicada no cambia (decisión 10): la pausa se guarda aparte, el
+  servidor la lee junto al «Sí» (AU-188) y solo puede bajar, nunca subir (como `lowerYes`). La celda dice «Sí · en
+  pausa», y un aviso en la app lo cuenta una vez: «Boni vuelve a preguntar en «Analista» · Notas: deshiciste 3
+  seguidas» [Quitar pausa]. Quitarla es un toque suyo en un dispositivo personal; publicar una versión con ese paso
+  cambiado también la quita. La decisión 10 no nombra esta pausa: extiende a la celda lo que `docs/fiabilidad.md` ya
+  hace cuando «Solo» falla, y que Boni baje un «Sí» que puso su mano es una duda para Juan en el PR de este diseño
+  (se recomienda que sí); si dice que no, AU-210 queda en el aviso, sin pausa. La prueba: `apps/server/src/automations/learning.test.ts`.
+- **AU-211** (sin fase) · Lo que necesita un modelo para aprender: un revisor que mira lo que Juan corrigió y propone
+  un cambio en las «Instrucciones» de un «Agente», un ejemplo, o filas en una colección que el paso lee. Lo propone
+  como un cambio del borrador que Juan ve con su antes y su después, acepta (con `lowerYes`) y publica: nunca cambia
+  lo publicado. Es una de las automatizaciones de Boni, que se abren, se limitan y se apagan, como «Revisar la guía»,
+  y llega con ellas (F16) si Juan no dice otra cosa. La F15 le deja hecho lo que no necesita un modelo: las señales
+  (AU-207) y dónde se ven (AU-208).
+- **AU-212** (F15, pendiente) · Los límites de aprender. El interruptor «Aprender» lo para todo: ni sugerencias ni
+  pausas nuevas (las señales se siguen guardando, que son de Juan). Como mucho una sugerencia al día que no nazca de
+  un chat, contando las de `docs/preferencias.md`. Nada de fuera mueve una cuenta: solo cuentan actos de su mano en
+  un dispositivo personal, y aceptar algo con texto de fuera cuenta el acto, no el texto (P9). Ningún modelo ve una
+  cuenta ni la cambia, y ninguna cuenta entra en lo que recibe un «Agente» (AU-197). Aprender nunca cambia una
+  versión publicada ni pone un «Sí». La prueba: `apps/server/src/automations/learning.test.ts`.
+
 ## 6. Seguridad: qué aguanta y qué cambia
 
 Juan no tiene por qué leer el código que acepta, y un modelo puede proponérselo. Así que la seguridad no puede
@@ -1993,6 +2291,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   de una no existen en estas fases y `decide` los niega, AU-167). Lo de fuera se propone (P4) y eliminar se
   pregunta (P5) salvo en lo que dice AU-186, que es una fila de la política (P28, decisión 11 del §10) y no un
   permiso de la celda.
+  En la F15: la política cambia en dos sitios y en ninguno más. La tercera fila de P28 pasa a ser la tabla de AU-204
+  (lo que guarda un paso de IA), y entra una fila nueva, P29 (AU-205: un paso de IA fuera de su conexión se niega).
+  Ninguna abre P2, P14 ni P9, ni lo que en estas fases no existe (enviar, pagar, lo irreversible). `docs/nucleo.md`
+  §7.5 las lleva como diseñadas hasta que el PR que las construya cambie su tabla. La prueba, una por fila:
+  `packages/agent/test/automation-ai.test.ts`.
 - **AU-186** (F14d, en parte) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
   preguntar si cumple dos cosas. Viene de un paso «Código», «Colección» o «Agente» de una versión publicada
   (AU-95). Y lleva el «Sí» de la mano de Juan para esa colección y esa acción (AU-188). Vale también para lo que
@@ -2050,6 +2353,15 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   también; con «Preguntar», se propone).
 - **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
+  En la F15: «privado» es lo que dice el acceso de la IA a la colección (`ai_access`, `docs/nucleo.md` §7.3):
+  `hidden` (para un modelo no existe) y `opaque` (sus valores llevan `noModel`: ni un modelo que planifica ni un lector
+  los reciben). Donde se puede saber: una colección así no sale entre las que se pueden conectar a un «Agente»
+  (AU-45), y al publicar, una que lo es desde entonces es un problema («Gastos es privada: quítala de «Analista»»).
+  Siempre al ejecutar: la lectura de un paso de IA a una colección así se niega en `decide` (AU-205); un valor con
+  `noModel` que llega a un «Agente» por sus filas de entrada entra como asa (AU-197); y uno que llega al «Texto» de un
+  lector hace fallar esa fila (`ai.private`) por el «Si falla» del paso, diciendo el campo y, si su etiqueta la
+  lleva, la colección, nunca el valor. Lo que no se sabe al publicar es lo que llega por las filas de otros pasos.
+  La prueba: `packages/automations/src/ai-steps.test.ts` y `apps/server/src/automations/ai.test.ts`.
 - **AU-167** (F14d, en parte) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
@@ -2180,6 +2492,87 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   las filas y los campos que su conexión le deja leer. Sin permiso de leer, devuelve lo que escribió y nada más, en
   una prueba también. Hasta la F15 solo escriben los pasos de «Colección» que pone Juan, que no llevan límites de
   conexión.
+  En la F15: al modelo de un «Agente» una escritura le devuelve su cuenta («Creará 1 fila en Notas», AU-198), nunca
+  la fila. En «Lo que hizo» y en el registro, cada fila escrita sale recortada con los límites de leer de esa
+  conexión (`asRead`): con «Solo estos campos», esos campos y su id; con «Leer» en «No», los campos que el paso puso y
+  su id, y nada más de la fila que modificó. En una prueba («Crearía…», «Propondría…») sale igual de recortada. La
+  prueba: `packages/automations/src/action-limits.test.ts`.
+- **AU-204** (F15, pendiente) · Lo que guarda un paso de IA. Cambia la tercera fila de P28 (AU-167), que hasta
+  aquí proponía todo valor escrito por un modelo. Desde la F15:
+
+  | Lo que escribe un paso de una versión publicada | Qué pasa |
+  |---|---|
+  | Un «Código» o un «Colección», con el «Sí» de la versión, un valor que escribió un modelo (la salida de un lector, la «Respuesta» de un «Agente») | Se guarda con el Deshacer de la ejecución y queda guardado como escrito por un modelo (`model`, AU-170), con la etiqueta de fuera si la traía |
+  | Un «Agente», con el «Sí» de su conexión para esa colección y esa acción, en una unidad de trabajo a la que no llegó nada de fuera | Se guarda igual: qué filas y qué valores los eligió la IA, y lo dicen la ejecución y «Lo que podrá hacer» (AU-200). Juan, 2026-11-16: «es responsabilidad del usuario limitarlo si no quiere arriesgar» |
+  | Lo mismo, cuando a esa unidad le llegó algo de fuera (en sus filas, en su camino o en lo que leyó): crear | Se guarda, con su etiqueta (decisión 11) |
+  | Lo mismo: modificar o mandar a la papelera | **Se propone, de momento.** La decisión 11 dice que «Sí» guarda también lo de fuera, y su coste nombró este caso con «Eliminar». Este diseño lo retiene, más estrecho que la decisión, hasta que Juan lo confirme viendo lo que un correo puede y no puede (abajo, «La pregunta que queda»). No es una decisión de este diseño: es una constante con su prueba (`AGENT_OUTSIDE_WRITES`), y su respuesta la cambia en una línea |
+  | Cualquiera de ellos sin ese «Sí» | A la propuesta de la ejecución (AU-42, AU-193) |
+  | Un valor de un turno ambiental (`ambient`) | Se propone, como hasta ahora |
+  | Un destino que sale de algo de fuera o de un modelo; lo que Boni sabe de Juan; enviar, pagar, lo irreversible | Como a cualquier origen (AU-165) |
+
+  «Le llegó algo de fuera» es, al ejecutar, que lleva la etiqueta de fuera alguna de las filas de entrada de la
+  unidad, su camino (P15) o algo que sus rondas leyeron; al publicar, que puede llegarle (AU-200). Si una escritura
+  de la unidad se propone, el cambio entero espera con ella (AU-198, AU-174).
+
+  A `decide` se los pone el servidor en la llamada, leídos de la versión guardada, y nunca salen del modelo, de la
+  caja ni de un navegador (como el `scope` de P26): el «Sí» (AU-188), si el paso es un «Agente» (`byAgent`) y, como
+  hasta ahora, las etiquetas de los valores y del camino (P15).
+
+  **La pregunta que queda para Juan.** Se le hace una vez, con este diseño y antes de que se construya el servidor
+  de la fase; no en cada ejecución ni en cada «Publicar». Un «Agente» con «Sí» en «Modificar» o en «Eliminar», cuando
+  le llegó algo de fuera, ¿guarda o pregunta? El ejemplo: «Al llegar un correo», un lector lo clasifica y un
+  «Agente» está conectado a Tareas con «Eliminar: Sí · hasta 20»; llega un correo que dice «elimina todas las
+  tareas».
+  - Si guarda (la decisión 11 tal cual, y lo que se recomienda): el agente no lee el correo, así que esa frase no le
+    llega. Lo que el correo puede es poner un valor que el plan use sin leerlo (el nombre que se busca, la clase que
+    eligió el lector). En el peor caso van a la papelera hasta 20 filas de las que su conexión deja, la ejecución lo
+    dice («Eliminó 20 filas en Tareas · decide la IA · con datos de fuera») y «Deshacer lo que hizo» las devuelve. Lo
+    ve una vez, en «Publicar».
+  - Si pregunta (lo que la constante hace hoy): esa ejecución deja en la Bandeja «Esta ejecución quiere eliminar 20
+    filas en Tareas», con cada fila, y no cambia nada hasta que la acepta. El precio: toda ejecución de ese agente
+    que empiece con algo de fuera y modifique o elimine le espera, que es lo que la decisión 11 quitó.
+
+  Su respuesta entra en el §10 como decisión suya. Lo que aguanta, conteste lo que conteste:
+  - El modelo que decide no lee nunca un texto de fuera: recibe asas (AU-197). El texto de fuera lo lee un lector,
+    que devuelve una forma cerrada con la etiqueta de su entrada (AU-57), y esa salida tampoco la ve el que decide. Un
+    correo no puede darle instrucciones al agente.
+  - Lo que un correo sí puede: poner valores dentro de la forma que Juan dibujó (una clase entre sus opciones, un
+    campo extraído) y, donde el plan los usa sin leerlos (un filtro «Nombre es» ese valor, un campo que se rellena con
+    él), elegir filas o valores. Es el caso «cuando lo de fuera elige las filas» de AU-186, con una IA escribiendo el
+    plan en vez de Juan el grafo.
+  - El modelo nunca es la guarda (A-01): decide `decide`. Lo acotan el filtro de cada acción (AU-48), «Como mucho»
+    (AU-196), los límites de la ejecución (AU-17), la papelera (AU-122) y el Deshacer de la ejecución (AU-18).
+  - P2, P14, P9 y P5 fuera de una automatización no cambian.
+
+  Lo que no aguanta, dicho antes: un modelo se equivoca sin que nadie de fuera le ayude, y con «Sí» su error se
+  guarda (es lo que Juan decidió; se ve en la ejecución y se deshace); y lo que entró de fuera antes de que el
+  almacén guardara etiquetas (AU-170) se lee como propio, así que el que decide lo lee. La prueba:
+  `packages/agent/test/automation-ai.test.ts` (una por fila) y `apps/server/src/automations/ai.test.ts` (las mismas
+  sobre el almacén de verdad).
+- **AU-205** (F15, pendiente) · La conexión de un paso de IA la comprueba también la política: P29, una fila nueva
+  de `docs/nucleo.md` §7.5. Una llamada de un «Agente» (de su plan, del código de «Las hace este código» o de una
+  herramienta de código) se niega en `decide` si la colección no está conectada a ese paso, si la acción está en
+  «No», si cae fuera de «Solo estas filas» o de «Solo estos campos» o si pasa de «Como mucho»; y la de cualquier
+  paso de IA, si la colección es privada para un modelo (AU-166). La conexión, y lo que ese paso lleva escrito en la
+  ejecución con cada acción (guardado o pendiente: lo que «Como mucho» cuenta), los pone el servidor en la llamada,
+  leídos de la versión guardada y de la ejecución, como hoy pone el `scope` del chat de una página (P26: se niega la
+  acción o la colección que su paso no da); nunca salen del modelo, de la caja ni de un navegador. P29 extiende esa
+  regla con los límites de cada acción (T-05). Qué hace el motor con cada negación lo dice AU-198: la del plan de
+  un modelo se le dice al modelo; la del código y la de lo privado hacen fallar la unidad. El motor sigue
+  comprobando lo mismo (`narrow`, `insideConnection`): son dos puertas, y la del motor no basta porque aquí quien
+  pide es un modelo (A-01). Para un «Código» sin IA nada cambia: su conexión la sigue comprobando el motor (AU-176).
+  Con esto la F15 trae la primera regla de la política que niega una lectura de una automatización (AU-161): el PR
+  del servidor trae la prueba de la tarea 144 sobre el servidor real, con el código de «Las hace este código», que
+  lee por la misma puerta que un «Código» (la política niega la lectura, la unidad sigue el «Si falla» del paso y no
+  se dice qué no pudo leer), y cierra esa tarea diciendo que para un «Código» sin IA sigue sin haber regla que niegue.
+  La prueba: `packages/agent/test/automation-ai.test.ts` y `apps/server/src/automations/ai.test.ts`.
+- **AU-206** (F15, pendiente) · Las llamadas a modelos de una ejecución se cuentan antes de hacerlas. El motor
+  cuenta cada ronda de un «Agente», cada llamada de un lector y cada reintento (AU-59, AU-53, AU-198) contra el
+  límite de la ejecución (AU-17: 20, hasta 40), y la que lo pasaría no se hace: la ejecución para con `run.limit`,
+  el nombre del límite y los dos números, en una prueba también. Lo que el paso en curso tenía pendiente de guardar
+  se tira (AU-174); lo que guardaron los pasos anteriores queda, con el Deshacer de la ejecución. P12 sigue topando el plan de cada ronda (40
+  pasos). El límite se ve en «Ajustes» cuando algún paso llama a un modelo, y junto a «Se ejecuta» (AU-55). El
+  presupuesto del mes es aparte y sigue (AU-199). La prueba: `packages/automations/src/agent.test.ts`.
 - **AU-183** (F14c, hecho) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
   el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que
   puede cambiar y cómo (crear, modificar, eliminar), esté donde esté la llamada: en un `if`, en un bucle, en una
@@ -2311,6 +2704,25 @@ Lo que cambia, regla por regla:
   intérprete de listas para lo guardado. `FlowMap.tsx` se adapta: el mapa se queda.
 - **Las apps**: las rutas nuevas entran en `Net.kt` de Android y en `paths.cjs` del escritorio. Las de la F14b
   están bajo `/api/agent/automations`, que los dos ya dejan pasar: no cambian.
+- **En la F15** (los nombres son propuestas; el constructor los cambia si el código pide otros y lo dice en su PR):
+  - `packages/automations`: los tipos de paso nuevos en el catálogo («Agente», los cuatro lectores, «Preguntar»,
+    «Avisar», «Responder»); el `limit` de cada acción de escribir y los límites de AU-48 en `insideConnection`; las
+    llamadas a modelos contadas en el motor; la ejecución que espera y sigue; `byAgent` en `abilities`. El motor
+    llama a los modelos por un puerto que recibe (`RunDeps.ai`: planificar una ronda, llamar a un lector), así que
+    este paquete sigue sin importar ningún proveedor (A-02) y sus pruebas corren con un modelo de guion.
+  - `packages/agent`: las rondas (`rounds.ts`), sobre `validatePlan`, `checkPlan`, `toPlannerView` y los lectores;
+    en `decide`, la tabla de AU-204 en `byAutomation` y P29 (AU-205), con la conexión puesta en la llamada por el
+    servidor, leída de la versión guardada, como hoy va el `scope` del chat (P26).
+  - `apps/server`: `modelChoices(cuenta, uso)` en `models.ts`, de la que `plannerChoices` pasa a ser un caso;
+    `automations/ai.ts` (el puerto de verdad: proveedores, presupuesto, la conexión y el «Sí» leídos de la versión
+    guardada); las ejecuciones que esperan (su estado, lo que guardan, el límite de espera en el planificador de
+    horas) y sus tarjetas, sobre `proposals`; `automations/learning.ts` (las señales, la cuenta, la sugerencia y la
+    pausa), sobre las decisiones que ya guarda `docs/fiabilidad.md`; y la prueba de la tarea 144 (AU-161, AU-205),
+    que se cierra con ese PR.
+  - `apps/boni-web/src/automations/`: la vista del «Agente» (la tabla de conexiones de siempre, con sus límites por
+    acción), «Modelo», «Lo que hizo», las vistas de los otros pasos, «Esperando» en «Ejecuciones» y la cuenta bajo la
+    celda; en la Bandeja, la tarjeta de «Preguntar». Las rutas siguen bajo `/api/agent/automations`: `Net.kt` y
+    `paths.cjs` no cambian, salvo que contestar una pregunta pida una ruta de la Bandeja que no exista.
 
 ## 8. Fases
 
@@ -2333,7 +2745,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en main |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en main |
 | **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189). Desde su diseño (tarea 128): quién inicia una ejecución y con qué origen (AU-195), la propuesta de una ejecución (AU-193), el interruptor (AU-194), una eliminada se recupera (AU-191), una interrumpida no se repite sola (AU-190) y cambiar el nombre de una colección no rompe lo publicado (AU-192). Desde la decisión 11 (2026-11-16): quién la inicia no cambia lo que guarda, y con «Sí» guarda también lo que viene de fuera, con su etiqueta (AU-186, AU-167, AU-195, AU-170) | en curso |
-| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10) | pendiente |
+| **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10). Desde su diseño (tarea 129): lo que guarda un paso de IA es la tabla de AU-204, y un «Agente» con «Sí» en modificar o eliminar al que llega algo de fuera propone hasta que Juan conteste; la conexión de un paso de IA la comprueba también la política (AU-205), con la prueba de la tarea 144; las llamadas a modelos se cuentan (AU-206); un «Preguntar» espera en la Bandeja sin parar las ejecuciones siguientes (AU-203); y lo que Boni aprende es el §5.15: cuenta, sugiere y vuelve a preguntar, y nunca pone un «Sí» | en curso |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |
 | **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar | pendiente |
@@ -2586,6 +2998,13 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Una ejecución para en su límite antes de guardar (AU-17, decisión 12) | 3.000 filas con el límite de 1.000: ninguna operación en el registro | F14d |
 | Modificar y eliminar piden una condición (AU-121) | Sin condición, la validación la rechaza | F14a |
 | Una conexión solo restringe (AU-45, AU-165) | Un «Sí» no abre un destino de fuera ni lo que Boni sabe de Juan; privada no se conecta a IA | F15 |
+| Lo que guarda un paso de IA lo deciden su celda y la política, nunca el modelo (AU-204) | Una prueba por fila de su tabla: con «Sí» guarda; un «Agente» al que llegó algo de fuera propone modificar y eliminar mientras la constante lo diga; sin «Sí» propone | F15 |
+| Un paso de IA fuera de su conexión se niega en la política (AU-205, P29) | Una llamada a una colección sin conectar, a una acción en «No», fuera de sus filas o sus campos, sobre «Como mucho» o a una colección privada: `decide` la niega con la conexión guardada | F15 |
+| Un paso no lleva claves ni ajustes de un modelo, y su modelo pasó la evaluación de su uso (AU-50, AU-199) | El catálogo no admite esos parámetros; un modelo sin evaluar o sin clave no se puede elegir ni publicar | F15 |
+| Lo que recibe el modelo de un «Agente» es una lista cerrada (AU-197) | Una fuente nueva en lo que se le manda rompe la prueba; un valor de fuera entra como asa | F15 |
+| Las llamadas a modelos se cuentan antes de hacerlas (AU-206) | Con el límite en 3, la cuarta no llega al modelo y la ejecución para con `run.limit` | F15 |
+| Una ejecución que pregunta no para a las siguientes ni espera para siempre (AU-203) | Con una esperando, la siguiente corre; pasado el límite sale por «sin respuesta»; un reinicio no la pierde | F15 |
+| Aprender nunca cambia una versión publicada ni pone un «Sí» (AU-209, AU-210, AU-212; decisión 10) | Con 20 de 20 aceptadas, la versión y el borrador siguen igual; una pausa solo baja | F15 |
 | Al conectar, solo leer (AU-41) | Una conexión nueva no tiene ningún permiso de escribir | F14c |
 | Segundo plano: quién escribe solo (decisión 5; cambia P7) | Una fila por caso de la regla | F14d, F15 |
 | La misma versión publicada recibe las mismas decisiones la inicie Juan o su disparador (AU-195, decisión 11; A-36) | Para cada acto, cada etiqueta y cada celda, `decide` contesta lo mismo a mano y sola; con «Preguntar», las dos proponen | F14d |
