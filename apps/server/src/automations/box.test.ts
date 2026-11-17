@@ -54,6 +54,7 @@ import {
   type TestAnswer,
   testAutomation,
   testRows,
+  WOULD_ROWS,
 } from "./service.ts";
 
 // ---------------------------------------------------------------- the limits and the request
@@ -1177,6 +1178,32 @@ const notes = () =>
   new Map(store.list(PEDIDO).map((e) => [e.entity.id, e.entity.values.f_nota ?? null]));
 
 describe("a run over the real store (S1-c)", () => {
+  it("AU-181 · «Probar paso» of a «Código» that asks to modify 3,000 rows saves none and leaves no operation in the log: its kept test says how many it would change in which collection, whether a run would ask, and the first rows with their note before and after", async () => {
+    orders(3000);
+    const before = notes();
+    const a = chain([
+      ["Inicio", "manual"],
+      code(NOTE_ALL, "all", [reads("pedido", { update: { mode: "ask" } })]),
+    ]);
+    const log = store.version();
+    const t = await tested(a.id, { trigger: a.step("Inicio"), fields: {}, step: a.step("Código") });
+    expect(t.state, JSON.stringify(t.problems)).toBe("done");
+    expect(store.version()).toBe(log);
+    expect(notes()).toEqual(before);
+    const view = t.tests[a.step("Código")];
+    expect(view?.wouldWrite).toBe(3000);
+    expect(view?.would?.asks).toBe(true);
+    expect(view?.would?.counts).toEqual([{ collection: "pedido", action: "update", n: 3000 }]);
+    expect(view?.would?.records).toHaveLength(WOULD_ROWS);
+    const [first] = view?.would?.records ?? [];
+    expect(first).toMatchObject({ collection: "pedido", action: "update" });
+    expect(String(first?.after?.f_nota ?? first?.after?.nota)).toMatch(/^revisado \d+$/);
+    // Opened again, the editor reads the same.
+    const opened = automationView(store, a.id);
+    if ("error" in opened) throw new Error(opened.error);
+    expect(opened.tests[a.step("Código")]?.would).toEqual(view?.would);
+  }, 60_000);
+
   it("AU-175 · in a run for real a «Código» saves nothing in F14c: with «Sí» to modify, its change of 3,000 rows waits for Juan as one proposal (`YES_SAVES`); one that asks for more than an evaluation or a step may fails with `code.limit`; none leaves an operation in the log", async () => {
     orders(3000);
     const before = notes();

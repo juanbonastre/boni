@@ -51,8 +51,11 @@ import {
   type StepError,
   type StepRecord,
   type StepState,
+  type StepWrites,
   staleSteps,
   stepPrints,
+  type WriteAction,
+  type WriteRecord,
 } from "@boni/automations";
 import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
@@ -92,6 +95,35 @@ export interface StepTestView {
   stale: boolean;
   /** «Consola» (AU-33): what its JavaScript wrote, the code's own text, for the app to paint as plain text. */
   console?: KeptRecord["console"];
+  /** «Haría esto» of a «Código» (AU-181): what its requests would save, of which nothing was saved. */
+  would?: CodeWould;
+}
+
+/**
+ * What a «Código»'s requests would save in a test (AU-181): how many rows of each collection each action would
+ * change, whether a run would ask first (all of the step together, AU-174), and the first `WOULD_ROWS` rows with
+ * their before and after. Values are the code's: the app paints them as plain text (A-01).
+ */
+export interface CodeWould {
+  asks: boolean;
+  /** In the order first asked: one per collection and action. */
+  counts: { collection: string; action: WriteAction; n: number }[];
+  records: WriteRecord[];
+}
+
+/** Rows of «Haría esto» a kept test holds: the counts say the rest (a test of 3,000 rows keeps no 3,000 rows twice). */
+export const WOULD_ROWS = 100;
+
+/** A test's writes as the step's kept test holds them; undefined when it asked for nothing. */
+export function codeWould(writes: StepWrites | undefined): CodeWould | undefined {
+  if (!writes || writes.kind !== "tested" || writes.records.length === 0) return undefined;
+  const counts: CodeWould["counts"] = [];
+  for (const r of writes.records) {
+    const c = counts.find((x) => x.collection === r.collection && x.action === r.action);
+    if (c) c.n++;
+    else counts.push({ collection: r.collection, action: r.action, n: 1 });
+  }
+  return { asks: writes.asks, counts, records: writes.records.slice(0, WOULD_ROWS) };
 }
 
 /** What the editor opens with. */
@@ -249,6 +281,7 @@ function views(
       wouldWrite: k.wouldWrite,
       ...(k.error ? { error: k.error } : {}),
       ...(k.console ? { console: k.console } : {}),
+      ...(k.would ? { would: k.would } : {}),
       stale: prints[step] !== undefined && prints[step] !== t.print,
     };
   }
@@ -528,12 +561,15 @@ export async function testAutomation(
           return JSON.stringify({ ...r, would, before } satisfies KeptRow);
         });
       }
-      const { out, ...rest } = record;
+      const { out, writes: asked, ...rest } = record;
+      const would = codeWould(asked);
+      if (would) wouldWrite += asked?.records.length ?? 0;
       const clock = keep(execution, step, prints[step] ?? "")?.clock;
       const keptRecord: KeptRecord = {
         ...rest,
         out: Object.fromEntries(Object.entries(out).map(([k, v]) => [k, v.length])),
         wouldWrite,
+        ...(would ? { would } : {}),
         trigger: request.trigger,
         ...(clock ? { clock } : {}),
       };
@@ -570,7 +606,7 @@ function keptOf(
 
 /** A kept test as the engine's record, its rows read back: what «Probar paso» reuses. */
 function recordOf(store: UserStore, id: string, k: KeptRecord, step: string): StepRecord {
-  const { out, wouldWrite: _w, trigger: _t, clock: _c, ...rest } = k;
+  const { out, wouldWrite: _w, trigger: _t, clock: _c, would: _wd, ...rest } = k;
   const rows: Record<string, Row[]> = {};
   for (const [output, n] of Object.entries(out))
     rows[output] = store.journal
@@ -794,9 +830,11 @@ function cutTo<P extends { count: number }>(parts: readonly P[], n: number): P[]
 }
 
 /** What is kept of a step's record: everything but its rows (store's `AutomationTestRow.record`). */
-export type KeptRecord = Omit<StepRecord, "out"> & {
+export type KeptRecord = Omit<StepRecord, "out" | "writes"> & {
   out: Record<string, number>;
   wouldWrite: number;
+  /** A «Código»'s requests in that test (AU-181), cut to `WOULD_ROWS` rows. */
+  would?: CodeWould;
   /** The trigger that test started in: what tells which arrows brought its input (`arrowsInto`). */
   trigger: string;
   /**

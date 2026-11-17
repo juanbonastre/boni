@@ -1309,6 +1309,23 @@ contraseña ni un código aquí» under a question.
   «fila 3» at its right in `--muted`, a warning in `--warn` and an error in `--bad`, and «y 340 líneas más» when the
   box cut them. A failure says its line and message under the output and marks that line in the editor. On the
   phone, the editor is read only (AU-74).
+- **A «Código»'s connections** (F14c P3, `AutomationConnections.tsx`, `automations/connections.ts`; AU-40 to AU-44,
+  AU-176 to AU-181, AU-189): in its view, «Conexiones», a table with one row per collection (its name as the row's
+  head), «Leer» always «Sí» with its limits («Sí · con filtro», «Sí · 4 campos · hasta 200 filas»), and «Crear»,
+  «Modificar», «Eliminar» each a small select «No / Preguntar / Sí», with «lo usa» or «sin usar» under it in 12 px
+  `--muted`; «Desconectar» (ghost, small) at the row's end. A cell the code uses and does not allow is `--bad`, with a
+  notice under the table «Permite modificar en «Gastos»» and «Permitir» (small button), which sets «Preguntar», never
+  «Sí». Under it, one `<details>` per connection, «Límites de «Gastos»»: the views' filter editor, the fields as
+  checkboxes, and a number «Límite de filas» (empty: no limit). Last, the sentence in `--muted` («Puede leer Libros (con
+  filtro) y Autores. No puede crear, modificar ni eliminar nada.»). On the canvas, under the card, one chip per
+  connection hanging from a dotted line: the collection's name and its words in `--muted` («Lee y modifica · pregunta
+  antes»; a removal with «Sí» says «sin preguntar»): the chip says what the cell allows, «Haría esto» what the engine
+  would do now, so until F14d, while a «Sí» still asks, «Haría esto» says it would ask. A step that changes data, «Colección» or «Código», has its mark
+  first among its labels in its own colour («Modifica Gastos», «Cambia Gastos y Notas»). In SALIDA, «Haría esto»
+  above «Consola», a `<details>` open after a test: one line per collection and action («Modificaría 3000 filas en
+  Gastos»), «Al ejecutarse, preguntaría antes de guardar» when it would ask, then the first 100 rows as «Haría esto»
+  shows them and «y 2900 filas más». On the phone the selects are disabled and there is no «Permitir» or
+  «Desconectar» (AU-74).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an
