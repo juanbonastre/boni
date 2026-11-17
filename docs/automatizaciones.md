@@ -390,6 +390,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en S4: una ejecución de la que solo queda el resumen se deshace igual (`runs.test.ts`), porque deshacer lee
   el registro de operaciones; lo que no tiene es «Fijar» sus datos (`pinFromRun` contesta `pruned`). Falta: el
   tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y el servidor no atiende mientras (tarea 137).
+  Hecho en P2: «Deshacer lo que hizo» en la barra de una ejecución de «Ejecuciones», solo si escribió y no está
+  deshecha; con `changed`, «No se pudo deshacer: «…» cambió después», y deshecha, «Deshecha hoy, 10:20» sin botón.
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
   En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
@@ -1407,7 +1409,8 @@ que un paso espere a Juan.
   Hecho en D: «Probar paso» arriba a la derecha y «Falta: Colección» a su lado. Hecho en E: se pulsa, y mientras
   prueba dice «Probando…» al lado y no se puede pulsar (AU-91).
 - **AU-74** (F14b, hecho) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
-  automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan; no se editan (como hoy).
+  automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan y se encienden o apagan (decisión 15);
+  no se editan ni se publican (como hoy).
   En la F14b: con menos de 1100 px de ancho la vista del paso tiene dos columnas, «Entrada | Salida» en pestañas a la
   izquierda y «Parámetros | Ajustes» a la derecha. En el teléfono (menos de 640 px, la disposición de teléfono de la
   app) la lista es la página de la colección de siempre, y una automatización abre su lienzo solo para ver: se mueve y
@@ -1424,6 +1427,9 @@ que un paso espere a Juan.
   botón derecho. En el teléfono el nombre de un parámetro va encima de su control, que ocupa todo el ancho. Sus
   capturas de referencia: «automatizaciones-estrecho», «automatizaciones-telefono» y
   «automatizaciones-telefono-paso».
+  Hecho en P2 de la F14d: en el teléfono, una automatización publicada lleva en su cabecera el interruptor
+  («Encendida» / «Apagada», la acción `automations.enable`) y «Ejecutar», bajo el nombre; sigue sin «Publicar» ni
+  «⋯». Probado a 360 px con los dedos: se apaga y se enciende, y nada se sale de la cabecera.
 
 **Contra el mar de opciones** (C2 y C8: cada regla con su prueba)
 
@@ -1531,7 +1537,7 @@ que un paso espere a Juan.
   servidor al guardar cada cambio del borrador.
   Hecho en E: la marca en SALIDA con «Probar paso», las cuentas atenuadas del paso y de lo que cuelga de él, y nada
   al moverlo o cambiarle el nombre.
-- **AU-93** (F14d, en parte) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
+- **AU-93** (F14d, hecho) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
   gasta modelo. Lo fijado se ve en la tarjeta («Salida fijada») y nunca vale en una ejecución de verdad. Se suelta en
   el mismo botón.
   En la F14d: lo fijado vive junto al borrador, como las pruebas y el sitio de las cajas (`automation_pins`), y
@@ -1548,6 +1554,9 @@ que un paso espere a Juan.
   cuando el paso cambió después. En «Probar» y «Probar paso» un paso fijado no corre (ni caja ni lecturas) y la
   prueba lo dice en `pinned`; una ejecución de verdad lo corre. «Duplicar» no copia lo fijado. Falta: el botón, la
   tarjeta y el recuerdo en «Publicar» (pantalla, P1).
+  Hecho en P2: «Fijar» en la cabecera de SALIDA (no en el teléfono), que fija y, pulsado, es «Soltar»; un paso que
+  falló o sin probar no lo tiene (no se puede pulsar porque no está). La tarjeta dice «Salida fijada» (y «puede estar vieja»), «Probar» la da sin
+  correrlo, y «Publicar» lo recuerda («salida fijada»: `publishView` lee los fijados, que S1 dejaba vacíos).
 - **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
   En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
@@ -1630,7 +1639,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   paso un enlace que lo abre) y «Lo que podrá hacer» (`abilityLine`), y el botón «Publicar versión N» o «Nada que
   publicar», apagado con algo que lo impide. Abrirla marca los parámetros obligatorios vacíos (`publishAsked`,
   AU-83). Falta: abrirla con una versión vieja para «Volver a esta» (AU-98, P3).
-- **AU-97** (F14d, en parte) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
+- **AU-97** (F14d, hecho) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
   En la F14d: con «Campos que pide», sale el mismo cuadro que en «Probar» (AU-64, AU-94). La ruta contesta enseguida
@@ -1654,6 +1663,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   los cambios sin publicar»; apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
   `automations.run` y su ruta (`withRunActions`, `RUN_ROUTES`) con `data-boni-action` en los controles, «Ejecutar» en la fila
   de la lista, llevar a «Ejecuciones» y verla avanzar (P2).
+  Hecho en P2: `withRunActions` y `RUN_ROUTES` registrados, con `data-boni-action` en cada control; «Ejecutar» en
+  la fila de la lista (abre la automatización y pide sus campos); al ejecutar, la app va a «Ejecuciones» con esa
+  ejecución, que avanza por el evento `run` en el escritorio y, en el navegador, preguntando cada 2,5 s solo mientras
+  está en marcha y se ve. El bloque de una página es de la F17 (AU-131).
 - **AU-98** (F14d, en parte) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
   En la F14d: está en «⋯ → Versiones». La lista dice de cada una su número, cuándo, de quién («Tú»; «De Boni» desde
@@ -1697,8 +1710,16 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S4: «Ejecuciones» y «Última ejecución» de la lista de automatizaciones salen de una tabla que el almacén
   lleva con dos disparadores de SQL al guardar y borrar cada ejecución (`automation_run_counts`, migración 30), sin
   contar filas; con 200 automatizaciones, una con un año de ejecuciones cada hora, la lista va dentro de su tiempo.
-  Las pruebas y las horas que no corrieron no cuentan. Falta: la pestaña (pantalla 8, P1).
-- **AU-100** (F14d, en parte) · En una ejecución: «Deshacer lo que hizo», «Reintentar» y «Abrir en el editor con
+  Las pruebas y las horas que no corrieron no cuentan.
+  Hecho en P2: la pestaña (`AutomationRuns.tsx`): la lista de 50 en 50 con «Ver más» y «Todas | Fallos | Pruebas»,
+  cada una con cuándo, cómo acabó, cuánto tardó (también si falló o se interrumpió), qué la inició y qué versión
+  («Bien» y no «Hecha», la palabra de los pasos del lienzo, para que un paso y una ejecución que acabaron se digan
+  igual); a la derecha la barra con su línea y
+  el lienzo de la versión que corrió, solo para ver, con sus filas en las flechas; un paso abierto pide sus filas
+  entonces. En el teléfono, la lista y, al tocar una, su detalle con «Todas las ejecuciones». Con 8.760 ejecuciones,
+  la lista pide una página y no lee pasos. Falta: «Ver en la Bandeja» tras «Propuso…» (la propuesta es de S3; su
+  enlace, de P3).
+- **AU-100** (F14d, hecho) · En una ejecución: «Deshacer lo que hizo», «Reintentar» y «Abrir en el editor con
   estos datos», que fija la salida del disparador para probar con ella.
   En la F14d: «Deshacer lo que hizo» es AU-18, y solo está si escribió algo. «Reintentar» inicia otra ejecución, de
   la mano de Juan, con los datos del disparador de aquella (sus campos, o la hora que le tocaba) y la versión
@@ -1713,13 +1734,22 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `was`; con `undo`, la deshace antes, todo o nada. Una prueba no se reintenta. `pinFromRun`
   (`POST …/:id/runs/:run/pin`) fija en el borrador la salida que dio el disparador en esa ejecución. Falta: los tres
   botones y el cuadro (P1).
-- **AU-101** (F14d, pendiente) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
+  Hecho en P2: los tres botones en la barra de una ejecución. «Reintentar» corre enseguida si es la misma versión y
+  no guardó nada; si no, un cuadro dice la versión («Correrá la versión 2, no la 1.») y lo que guardó, con «Deshacer
+  y reintentar» primero cuando se puede deshacer. «Abrir en el editor con estos datos» fija la salida del disparador
+  y abre el editor en él. Una prueba solo tiene este último; en el teléfono no está (AU-74).
+- **AU-101** (F14d, en parte) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
   línea por paso y, dentro de un paso de IA, sus lecturas y escrituras.
   En la F14d: es un solo componente para el «Registro» del editor y para una ejecución de «Ejecuciones», sobre el
   mismo registro: una línea por paso en el orden en que corrió, con su estado, las filas que entraron y salieron y
   lo que tardó. Dentro de un «Código», sus lecturas (`$col`), su «Consola» y lo que guardó, propuso o guardaría
   (AU-181); dentro de un paso de IA, desde la F15. Tocar una línea abre ese paso. Todo se pinta como texto.
   Lo sostiene `automations-publish.spec.ts`: el árbol de una prueba y el de una ejecución son el mismo.
+  Hecho en P2: «Ver cada paso» (`LogTree` en `AutomationTest.tsx`) en el «Registro» y en la barra de una ejecución:
+  una línea por paso en el orden en que corrió, con su estado, «128 → 3» y su tiempo, y debajo sus lecturas, su
+  «Consola» y lo que guardó, propuso o guardaría, como texto; tocar una línea abre su paso. Dentro de un paso de IA
+  es de la F15. Falta: las lecturas en el árbol del «Registro» del editor, porque la prueba de un paso no las da
+  (`StepTestView` no tiene `reads`; es del servidor). En una ejecución sí están.
 - **AU-102** (F14d, en parte) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
   palabras, y el aviso lleva a ella.
   En la F14d: «en segundo plano» es la que empezó sola (AU-195); una que inició su mano falla en su pantalla, sin
@@ -1760,6 +1790,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `pruned`, su línea y su aviso. Una cuya propuesta espera en la Bandeja sigue entera hasta que se contesta,
   porque aceptarla lee lo que pidió. Con un año de ejecuciones cada hora: una escritura de 200, menos de 60 ms; el
   resto al arrancar, menos de 3 s.
+  Hecho en P2, solo la pantalla: una ejecución de la que solo queda el resumen enseña su barra y «De esta ejecución
+  solo queda el resumen…» en vez del lienzo.
 - **AU-190** (F14d, hecho) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
   arrancar, toda ejecución que seguía en marcha se cierra como «Interrumpida», diciendo en qué paso estaba. Lo que
   guardaron los pasos que acabaron se queda, y se deshace desde ella (AU-18); un paso nunca queda a medias, porque
@@ -1775,6 +1807,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   programador no empieza otra con la misma (`scheduler.test.ts`).
   Hecho en S4: si empezó sola, avisa como un fallo de su racha al cerrarse, con el paso en que estaba
   (`scheduler.test.ts`).
+  Hecho en P2: en la lista y en su barra, «Interrumpida en «Si»», con lo que guardó, «Deshacer lo que hizo» y
+  «Reintentar» de la mano de Juan.
 - **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
@@ -3144,6 +3178,26 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       compartido: una prueba no guarda nada, y desde él no se escribe un borrador, no se pone un «Sí», no se
       publica y no se fija (decisión 13), así que nada de lo que deja una prueba lleva esa etiqueta a una ejecución
       de verdad. Prueba: `runs.test.ts` («AU-94 · what Juan types for «Probar» on a shared device counts as his…»).
+15. **Un dispositivo compartido mira las ejecuciones; «Ejecutar» sin campos empieza enseguida; el teléfono enciende
+    y apaga.** La construcción de la F14d (S2 y P1, tareas 128) le dejó tres dudas, cada una con su ejemplo y las
+    dos salidas. A la pregunta «¿Aceptas las seis recomendaciones: tres de la fase de la IA y tres de
+    «Publicar»?», **Juan, 2026-11-17: «Sí, las seis».** Las tres de «Publicar» (las de la IA son la decisión 16):
+    - **Desde un dispositivo compartido se leen las ejecuciones; ejecutar, reintentar, deshacer y fijar piden uno
+      personal** (AU-97, AU-100, AU-18, AU-93; como se construyó en S2). En el ordenador del salón abre «Ejecuciones»
+      y ve cada ejecución y sus pasos; «Deshacer lo que hizo» dice «Solo desde un dispositivo personal.» y no
+      cambia nada. La otra: dejar que el compartido también actúe sobre ellas, y lo que hiciera ahí no sería de
+      nadie. Prueba: `automations-publish.spec.ts` («AU-188 · from a shared device a run is looked at…»).
+    - **«Ejecutar» en una automatización que no pide campos empieza enseguida, sin cuadro que confirme** (AU-97;
+      como se construyó en P1). «Repasar las tareas», sin «Campos que pide»: pulsar «Ejecutar» la inicia y lleva a
+      «Ejecuciones». La otra: un cuadro «¿Ejecutar ahora?» cada vez, un paso más que no dice nada nuevo. Prueba: la
+      de la app de escritorio, `e2e-boni-desktop/automations-publish.spec.ts` («AU-97 AU-99 AU-101 AU-18 · in the
+      desktop app over the real server…»), que pulsa «Ejecutar» y está en «Ejecuciones».
+    - **El teléfono enciende y apaga una automatización publicada** (AU-74, AU-194; cambia lo que se construyó en
+      P1). En el móvil, «Avisar de un pedido» dice «Encendida» en su cabecera y la apaga desde ahí, por
+      `automations.enable`, como en el ordenador; el teléfono es un dispositivo personal. Sigue sin editar ni
+      publicar. La otra: sin interruptor en el teléfono, y para apagarla tendría que ir al ordenador. Prueba:
+      `automations-publish.spec.ts` («AU-95 AU-74 AU-97 AU-194 · on the phone the header has no «Publicar» and has
+      the switch…»).
 16. **Un «Agente» con «Sí» guarda también con algo de fuera; el revisor con un modelo llega con la F16; un «Sí»
     que falla vuelve a preguntar.** El diseño de la F15 (tarea 129) le dejó tres dudas. **Juan, 2026-11-17: «Sí, las
     seis»**, lo que se recomendaba en cada una. Cada una, con la otra respuesta que había y su prueba:

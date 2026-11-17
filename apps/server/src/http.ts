@@ -545,6 +545,29 @@ export function makeApp(opts: ServerOptions): App {
           const b = await bodyOf(req);
           return automation("automations.enable", { id, enabled: b.enabled });
         }
+        // «Ejecutar» (AU-97), «Reintentar» and «Deshacer y reintentar» (AU-18, AU-100), «Deshacer lo que hizo»
+        // (AU-18), «Fijar» (AU-93) and «Abrir en el editor con estos datos» (AU-100): from a personal device only
+        // (decision 13). A run answers at once with its summary and goes on in the server (runs.ts).
+        case "POST /api/agent/automations/:id/run": {
+          const b = await bodyOf(req);
+          return automation("automations.run", { id, trigger: b.trigger, fields: b.fields });
+        }
+        case "POST /api/agent/automations/:id/runs/:run/retry": {
+          const b = await bodyOf(req);
+          return automation("automations.run", {
+            id,
+            retry: params.run ?? "",
+            ...(b.undo !== undefined ? { undo: b.undo } : {}),
+          });
+        }
+        case "POST /api/agent/automations/:id/runs/:run/undo":
+          return automation("automations.undo_run", { id, run: params.run ?? "" });
+        case "PUT /api/agent/automations/:id/pins/:step":
+          return automation("automations.pin", { id, step: params.step ?? "" });
+        case "DELETE /api/agent/automations/:id/pins/:step":
+          return automation("automations.pin", { id, step: params.step ?? "", off: true });
+        case "POST /api/agent/automations/:id/runs/:run/pin":
+          return automation("automations.pin", { id, run: params.run ?? "" });
         // «Ejecuciones» (AU-99): the list, 50 at a time (?filter=all|failed|tests, ?before=<run id>), one run and a
         // page of one of its steps' rows; reads of the automation, so automations.read, told which part.
         case "GET /api/agent/automations/:id/runs": {

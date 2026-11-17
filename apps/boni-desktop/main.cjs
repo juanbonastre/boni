@@ -155,6 +155,8 @@ const notices = createNotices({
       ? { serverUrl: settings.serverUrl, token: settings.token }
       : null,
   onNotice: showNotice,
+  // An automation's run as it goes (F14d P2): to every window, which «Ejecuciones» follows.
+  onRun: (run) => broadcast({ type: "run", ...run }),
   log,
 });
 

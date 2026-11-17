@@ -231,6 +231,7 @@ function opened(automation: Automation): Opened {
     places: automation.steps.map((s, i) => ({ step: s.id, x: i * 300, y: 0 })),
     tests: {},
     tested: {},
+    pins: {},
     device: "d_portatil",
     updated: 1,
   };

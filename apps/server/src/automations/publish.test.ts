@@ -361,6 +361,19 @@ describe("what «Publicar» answers (F14d)", () => {
     expect(next.diff?.added).toEqual([a.step("Suelto")]);
     expect(next.diff?.changed.map((c) => c.step)).toEqual([a.step("Crear")]);
     expect(next.looks).toContainEqual({ code: "step.unreachable", step: a.step("Suelto") });
+    // A pinned output is worth a look too (AU-93): «Publicar» reminds that a real run does not use it.
+    store.journal.pinAutomationStep({
+      id: a.id,
+      step: a.step("Crear"),
+      print: "p",
+      at: Date.now(),
+      record: "{}",
+      rows: {},
+    });
+    expect(ok(publishView(store, a.id)).looks).toContainEqual({
+      code: "output.pinned",
+      step: a.step("Crear"),
+    });
 
     // Over HTTP, as the app reads it: the same answer, through `automations.read`.
     const { server, host, call } = await served();

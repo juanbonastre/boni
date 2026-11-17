@@ -34,6 +34,38 @@ export interface AutoTestSpec {
   would?: Record<string, unknown>;
 }
 
+/**
+ * A run the fake server keeps (F14d P2, «Ejecuciones»): S2's `RunSummary` with what its view gives. `steps`, each
+ * step's record by id (S2's `RunStep`), absent or null when only its summary is left (AU-103); `rows`, a step's rows
+ * by «in:<input>» or «out:<output>», as a test's are given. `changed`: undoing it is refused, that row's title having
+ * changed since. `advancing`: each time its view is asked one more of its steps has run, then it ends as `state`.
+ */
+export interface FakeRun {
+  id: string;
+  at: number;
+  state?: string;
+  test?: boolean;
+  version?: number | null;
+  startedBy?: string;
+  ms?: number | null;
+  step?: string | null;
+  error?: Record<string, unknown> | null;
+  line?: {
+    writes: { collection: string; name: string | null; action: string; n: number }[];
+    asked: { collection: string; name: string | null; action: string; n: number }[];
+    outside: boolean;
+  } | null;
+  retryOf?: string | null;
+  undone?: number | null;
+  trigger?: string;
+  fields?: Record<string, unknown>;
+  steps?: Record<string, Record<string, unknown>> | null;
+  rows?: Record<string, Record<string, Record<string, unknown>[]>>;
+  wrote?: boolean;
+  changed?: string;
+  advancing?: boolean;
+}
+
 export interface Options {
   /** Answer of POST actions: "ok", "invalid" or "offline". */
   action?: "ok" | "invalid" | "offline";
@@ -90,8 +122,18 @@ export interface Options {
      * With `blocks`, publishing is refused as `blocked`.
      */
     publish?: Record<string, unknown>;
-    /** What `POST …/run` answers (S2's shape): started by default; `refused`, refused with it. */
-    run?: { refused?: string; problems?: Record<string, unknown>[] };
+    /**
+     * What `POST …/run` answers (S2's shape): started by default, the run going as `gives` says (it advances a step
+     * each time its view is asked); `refused`, refused with it.
+     */
+    run?: { refused?: string; problems?: Record<string, unknown>[]; gives?: Partial<FakeRun> };
+    /**
+     * F14d P2: its runs, any order (the list gives them newest first, fifty a page). `manyRuns`: that many more,
+     * hourly before the oldest given, each ended well with one row created (a year of hourly runs, A-15). A run
+     * «Ejecutar» starts goes first, advancing.
+     */
+    runs?: FakeRun[];
+    manyRuns?: number;
   }[];
   /** A shared device (decision 13): every touch but a test is refused with 403 «personal-device-only». */
   sharedDevice?: boolean;
@@ -922,7 +964,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         versions: { n: number; at: number; doc: AutoHere["doc"] }[];
         enabled: boolean;
         publish?: Record<string, unknown>;
-        run?: { refused?: string; problems?: Record<string, unknown>[] };
+        run?: { refused?: string; problems?: Record<string, unknown>[]; gives?: Partial<FakeRun> };
+        /** F14d P2: its runs (each view asked counted, for `advancing`) and the draft's pins (AU-93). */
+        runs: (FakeRun & { seenAt?: number })[];
+        pins: Record<string, { at: number; out: Record<string, number>; stale: boolean }>;
       };
       const autoDoc = (id: string, name: string, trigger?: string | null) => ({
         format: 1,
@@ -956,6 +1001,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         enabled: false,
         publish: a.publish,
         run: a.run,
+        runs: (a.runs ?? []).map((r) => ({ ...r })),
+        pins: {},
       }));
       for (const [i, a] of autos.entries()) {
         const p = opts.automations?.[i]?.published;
@@ -967,6 +1014,25 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             doc: { ...a.doc, version: n },
           });
         a.enabled = p.enabled ?? true;
+      }
+      // A year of hourly runs (A-15): made up before the oldest given, each one row created.
+      for (const [i, a] of autos.entries()) {
+        const n = opts.automations?.[i]?.manyRuns ?? 0;
+        const oldest = Math.min(Date.now(), ...a.runs.map((r) => r.at));
+        for (let k = 1; k <= n; k++)
+          a.runs.push({
+            id: `r_01jhora${String(k).padStart(6, "0")}`,
+            at: oldest - k * 3_600_000,
+            state: "done",
+            version: a.versions.at(-1)?.n ?? 1,
+            startedBy: "schedule",
+            ms: 900,
+            line: {
+              writes: [{ collection: "c_tareas", name: "Tareas", action: "create", n: 1 }],
+              asked: [],
+              outside: false,
+            },
+          });
       }
       /** The draft against a version: what a print sees (no `version`), as the server's `isSame` does. */
       const sameDoc = (x: AutoHere["doc"], y: AutoHere["doc"]) =>
@@ -1049,9 +1115,108 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           places: a.places,
           tests: a.tests,
           tested: a.tested,
+          pins: a.pins ?? {},
           device: "d_portatil",
           updated: a.updated,
         });
+      /** The steps in the order a run reaches them: from the first trigger along the arrows, then the rest. */
+      const orderOf = (a: AutoHere) => {
+        const arrows = (a.doc.arrows ?? []) as { from: { step: string }; to: { step: string } }[];
+        const out: string[] = [];
+        const first = a.doc.steps[0]?.id;
+        const queue = first ? [first] : [];
+        while (queue.length) {
+          const s = queue.shift() as string;
+          if (out.includes(s)) continue;
+          out.push(s);
+          for (const x of arrows) if (x.from.step === s) queue.push(x.to.step);
+        }
+        return out;
+      };
+      const isEnded = (state: string) => !["queued", "running"].includes(state);
+      /**
+       * A fake run as it is now: an advancing one runs a step a second from the first time its view is asked (the
+       * browser asks again every 2.5 s while it is under way), then ends as `state`.
+       */
+      const runState = (a: AutoHere, r: AutoHere["runs"][number]) => {
+        const final = r.state ?? "done";
+        const given = r.steps === null ? null : (r.steps ?? null);
+        const made = (id: string) =>
+          given?.[id] ?? {
+            state: "done",
+            in: { main: 1 },
+            out: { main: 1 },
+            ms: 100,
+            retries: 0,
+            failed: 0,
+            asked: 0,
+          };
+        const order = orderOf(a);
+        if (!r.advancing) {
+          const steps: Record<string, Record<string, unknown>> = {};
+          if (given) for (const id of Object.keys(given)) steps[id] = made(id);
+          return { state: final, step: r.step ?? null, steps, done: isEnded(final) };
+        }
+        const k = r.seenAt === undefined ? -1 : Math.floor((Date.now() - r.seenAt) / 1_000);
+        if (k >= order.length) {
+          const steps: Record<string, Record<string, unknown>> = {};
+          for (const id of order) steps[id] = made(id);
+          return { state: final, step: r.step ?? null, steps, done: isEnded(final) };
+        }
+        const steps: Record<string, Record<string, unknown>> = {};
+        for (const id of order.slice(0, Math.max(0, k))) steps[id] = made(id);
+        const at = order[Math.max(0, k)] as string;
+        if (k >= 0) steps[at] = { ...made(at), state: "running", out: {} };
+        return { state: k < 0 ? "queued" : "running", step: k < 0 ? null : at, steps, done: false };
+      };
+      const runWrote = (r: AutoHere["runs"][number]) => r.wrote ?? !!r.line?.writes.length;
+      const runSummary = (a: AutoHere, r: AutoHere["runs"][number]) => {
+        const now = runState(a, r);
+        const ms = r.ms ?? 900;
+        return {
+          id: r.id,
+          automation: a.id,
+          version: r.test ? null : (r.version ?? a.versions.at(-1)?.n ?? null),
+          test: !!r.test,
+          state: now.state,
+          startedBy: r.startedBy ?? (r.test ? "test" : "user"),
+          device: "d_portatil",
+          at: r.at,
+          started: now.state === "queued" || now.state === "missed" ? null : r.at + 40,
+          ended: now.done ? r.at + 40 + ms : null,
+          ms: now.done ? ms : null,
+          step: now.step,
+          error: now.done ? (r.error ?? null) : null,
+          line: now.done && !r.test ? (r.line ?? { writes: [], asked: [], outside: false }) : null,
+          undone: r.undone ?? null,
+          retryOf: r.retryOf ?? null,
+          slot: null,
+        };
+      };
+      const runViewOf = (a: AutoHere, r: AutoHere["runs"][number]) => {
+        const now = runState(a, r);
+        const doc = r.test
+          ? a.doc
+          : (a.versions.find((v) => v.n === (r.version ?? a.versions.at(-1)?.n))?.doc ?? a.doc);
+        return {
+          run: runSummary(a, r),
+          automation: doc,
+          trigger: r.trigger ?? a.doc.steps[0]?.id ?? "",
+          fields: r.fields ?? {},
+          steps: now.steps,
+          undoable: !r.test && now.done && runWrote(r) && !r.undone,
+          wrote: runWrote(r),
+          published: a.versions.at(-1)?.n ?? null,
+        };
+      };
+      /** A run «Ejecutar» or «Reintentar» starts: refused while another is under way (one at a time, S2). */
+      const startRun = (a: AutoHere, r: FakeRun) => {
+        const live = a.runs.find((x) => !runState(a, x).done);
+        if (live) return { refused: "running", run: live.id };
+        const made: AutoHere["runs"][number] = { ...r, advancing: true, seenAt: undefined };
+        a.runs.push(made);
+        return made;
+      };
       const automationAnswer = (
         method: string,
         id: string | undefined,
@@ -1084,6 +1249,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             deleted: false,
             versions: [],
             enabled: false,
+            runs: [],
+            pins: {},
           };
           autos.push(a as AutoHere);
           return [200, autoView(a)];
@@ -1128,14 +1295,21 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                   }
                 : {}),
               ...a.publish,
+              ...(w.__autoBlocks ? { blocks: w.__autoBlocks } : {}),
             }),
           ];
+        // `window.__autoStale` naming it: another device saves its draft as it is published. `window.__autoBlocks`:
+        // what the server finds that stops it from then on (S1 validates again when it publishes).
         if (rest === "/publish" && method === "POST") {
           const req = (body ?? {}) as { rev?: unknown };
           record("__autoPublish", JSON.stringify(req));
           if (typeof req.rev !== "number") return bad;
+          if (w.__autoStale === a.id) {
+            w.__autoStale = null;
+            a.rev++;
+          }
           if (req.rev !== a.rev) return [200, JSON.stringify({ refused: "stale", rev: a.rev })];
-          const blocks = a.publish?.blocks as unknown[] | undefined;
+          const blocks = (w.__autoBlocks ?? a.publish?.blocks) as unknown[] | undefined;
           if (blocks?.length)
             return [200, JSON.stringify({ refused: "blocked", problems: blocks })];
           if (running && sameDoc(running.doc, a.doc)) return [200, '{"refused":"unchanged"}'];
@@ -1198,29 +1372,153 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 run: "r_01jejemplo0000",
               }),
             ];
+          const made = startRun(a, {
+            id: `r_01jejemplo${String(a.runs.length + 1).padStart(4, "0")}`,
+            at: Date.now(),
+            version: running.n,
+            trigger: req.trigger,
+            fields: req.fields as Record<string, unknown>,
+            ...a.run?.gives,
+          });
+          if ("refused" in made) return [200, JSON.stringify(made)];
+          return [200, JSON.stringify({ run: runSummary(a, made) })];
+        }
+        // «Ejecuciones» (AU-99): fifty a page, the newest first, «Fallos» and «Pruebas» as the store filters them.
+        // Every page asked: `window.__autoRunPages` («filter before»).
+        if (rest === "/runs" && method === "GET") {
+          const q = new URLSearchParams(query);
+          const filter = q.get("filter") ?? "all";
+          const before = q.get("before");
+          if (!["all", "failed", "tests"].includes(filter)) return bad;
+          record("__autoRunPages", `${filter} ${before ?? ""}`.trim());
+          const all = [...a.runs]
+            .sort((x, y) => y.at - x.at)
+            .filter((r) =>
+              filter === "tests"
+                ? !!r.test
+                : filter === "failed"
+                  ? !r.test && ["failed", "interrupted"].includes(runState(a, r).state)
+                  : true,
+            );
+          const from = before ? all.findIndex((r) => r.id === before) + 1 : 0;
+          if (before && from === 0) return bad;
+          const page = all.slice(from, from + 50);
           return [
             200,
             JSON.stringify({
-              run: {
-                id: "r_01jejemplo0001",
-                automation: a.id,
-                version: running.n,
-                test: false,
-                state: "queued",
-                startedBy: "user",
-                device: "d_portatil",
-                at: Date.now(),
-                started: null,
-                ended: null,
-                ms: null,
-                step: null,
-                error: null,
-                line: null,
-                undone: null,
-                retryOf: null,
-              },
+              runs: page.map((r) => runSummary(a, r)),
+              next: all.length > from + 50 ? (page.at(-1)?.id ?? null) : null,
             }),
           ];
+        }
+        const rm = rest ? /^\/runs\/([^/]+)(\/rows|\/retry|\/undo|\/pin)?$/.exec(rest) : null;
+        const fr = rm ? a.runs.find((r) => r.id === rm[1]) : undefined;
+        if (rm && !fr) return gone;
+        if (rm && fr) {
+          const what = rm[2];
+          // A run as its view says it: each view asked moves an advancing run one step on (AU-97).
+          if (!what && method === "GET") {
+            if (fr.advancing && fr.seenAt === undefined) {
+              fr.seenAt = Date.now();
+              // The desktop follows it by the server's `run` events (state and step, never rows): one a second.
+              const tick = setInterval(() => {
+                const now = runState(a, fr);
+                const emit = (window as unknown as { __emit?: (e: unknown) => void }).__emit;
+                emit?.({
+                  type: "run",
+                  automation: a.id,
+                  run: fr.id,
+                  state: now.state,
+                  step: now.step ?? undefined,
+                });
+                if (now.done) clearInterval(tick);
+              }, 1_000);
+            }
+            return [200, JSON.stringify(runViewOf(a, fr))];
+          }
+          if (what === "/rows" && method === "GET") {
+            const q = new URLSearchParams(query);
+            const at = `${q.get("side")}:${q.get("name") ?? ""}`;
+            const offset = Number(q.get("offset") ?? "0");
+            record("__autoRunRows", `${fr.id} ${q.get("step")} ${at} ${offset}`);
+            const all = fr.rows?.[q.get("step") ?? ""]?.[at] ?? [];
+            return [
+              200,
+              JSON.stringify({
+                rows: all.slice(offset, offset + 50).map((r) => ({ label: {}, ...r })),
+                total: all.length,
+              }),
+            ];
+          }
+          // «Reintentar» (AU-100): another run with its trigger and fields, by the version that runs now; with `undo`,
+          // that one undone first. Every body: `window.__autoRetry`.
+          if (what === "/retry" && method === "POST") {
+            const req = (body ?? {}) as { undo?: unknown };
+            record("__autoRetry", JSON.stringify({ run: fr.id, ...req }));
+            if (fr.test) return [200, '{"refused":"test"}'];
+            if (!running) return [200, '{"refused":"unpublished"}'];
+            if (req.undo === true && runViewOf(a, fr).undoable) fr.undone = Date.now();
+            const made = startRun(a, {
+              ...fr,
+              id: `r_01jreintento${String(a.runs.length + 1).padStart(4, "0")}`,
+              at: Date.now(),
+              version: running.n,
+              retryOf: fr.id,
+              startedBy: "user",
+              undone: null,
+              changed: undefined,
+              advancing: false,
+            });
+            if ("refused" in made) return [200, JSON.stringify(made)];
+            return [
+              200,
+              JSON.stringify({ run: runSummary(a, made), version: running.n, was: fr.version }),
+            ];
+          }
+          // «Deshacer lo que hizo» (AU-18): all or nothing; `changed`, a row that changed since stops it.
+          if (what === "/undo" && method === "POST") {
+            record("__autoUndo", fr.id);
+            if (fr.changed)
+              return [
+                200,
+                JSON.stringify({ refused: "changed", row: "r_01jfila", title: fr.changed }),
+              ];
+            if (!runViewOf(a, fr).undoable) return [200, '{"refused":"nothing"}'];
+            fr.undone = Date.now();
+            return [200, JSON.stringify({ run: runSummary(a, fr) })];
+          }
+          // «Abrir en el editor con estos datos» (AU-100): the trigger's output of that run, pinned on the draft.
+          if (what === "/pin" && method === "POST") {
+            const v = runViewOf(a, fr);
+            const rec = v.steps[v.trigger] as { out?: Record<string, number> } | undefined;
+            if (!rec) return [200, '{"refused":"untested"}'];
+            a.pins[v.trigger] = { at: fr.at, out: rec.out ?? {}, stale: false };
+            record("__autoPins", `RUN ${v.trigger}`);
+            return [200, JSON.stringify({ pins: a.pins, trigger: v.trigger })];
+          }
+          return bad;
+        }
+        // «Fijar» and «Soltar» (AU-93): the last test that ended well; none, refused as `untested`. Every one asked:
+        // `window.__autoPins` («PUT step»).
+        const pm = rest ? /^\/pins\/([^/]+)$/.exec(rest) : null;
+        if (pm) {
+          const step = pm[1] as string;
+          record("__autoPins", `${method} ${step}`);
+          if (method === "DELETE") {
+            delete a.pins[step];
+            return [200, JSON.stringify({ pins: a.pins })];
+          }
+          if (method !== "PUT") return bad;
+          const tst = a.tests[step] as
+            | {
+                state?: string;
+                at?: number;
+                out?: Record<string, number>;
+              }
+            | undefined;
+          if (tst?.state !== "done") return [200, '{"refused":"untested"}'];
+          a.pins[step] = { at: tst.at ?? Date.now(), out: tst.out ?? {}, stale: false };
+          return [200, JSON.stringify({ pins: a.pins })];
         }
         if (!rest && method === "DELETE") {
           a.deleted = true;
@@ -1280,6 +1578,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             reused = ids.filter((x) => before.has(x) && a.tests[x] && !a.tests[x].stale);
             ran = ids.filter((x) => x === step || (before.has(x) && !reused.includes(x)));
           }
+          // A pinned step gives its pinned output and does not run (AU-93).
+          const pinned = ran.filter((x) => a.pins[x]);
+          ran = ran.filter((x) => !a.pins[x]);
+          reused = [...reused, ...pinned];
           const at = Date.now();
           let ms = 0;
           for (const x of ran) {
@@ -1301,6 +1603,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               ms,
               ran: ran.filter((x) => a.tests[x]),
               reused,
+              pinned,
               tests: a.tests,
               ...(spec?.failedAt ? { failedAt: spec.failedAt } : {}),
             }),
@@ -2166,7 +2469,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin)?)?|\/pins\/[^/]+)?$/.exec(
             p,
           );
         if (automation)

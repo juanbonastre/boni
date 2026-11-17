@@ -15,7 +15,7 @@ import {
   type Problem,
   type RunLimit,
 } from "@boni/automations";
-import type { Opened, Place, StepTest, TestAnswer, TestRequest } from "./client.ts";
+import type { Opened, Pin, Place, StepTest, TestAnswer, TestRequest } from "./client.ts";
 import { type Places, placeFor, withPlaces } from "./places.ts";
 
 /**
@@ -97,6 +97,8 @@ export interface EditorState extends Snapshot {
    * closed.
    */
   ajustes: { limit: RunLimit | null } | null;
+  /** «Fijar» (AU-93): the outputs pinned on the draft, by step id, as the server last said them. */
+  pins: Record<string, Pin>;
 }
 
 const fresh = {
@@ -117,6 +119,7 @@ const fresh = {
   dropped: null,
   typing: null,
   ajustes: null,
+  pins: {},
 } satisfies Partial<EditorState>;
 
 /** An empty canvas for «Nueva» (AU-61): nothing saved, the name already worded. */
@@ -142,6 +145,7 @@ export function openedEditor(opened: Opened): EditorState {
     places: Object.fromEntries(opened.places.map((p) => [p.step, { x: p.x, y: p.y }])),
     tests: opened.tests,
     tested: opened.tested,
+    pins: opened.pins,
   };
 }
 
@@ -312,14 +316,19 @@ export function saved(
 ): EditorState {
   const after = sent !== undefined && sent !== state.draft;
   const tests = { ...state.tests };
+  const pins = { ...state.pins };
   for (const step of answer.stale) {
     const kept = tests[step];
     if (kept) tests[step] = { ...kept, stale: true };
+    // A pinned step that changed may be old too (AU-93, AU-92); the server says it again on the next open.
+    const pin = pins[step];
+    if (pin) pins[step] = { ...pin, stale: true };
   }
   return {
     ...state,
     rev: answer.rev,
     tests,
+    pins,
     owed: { ...state.owed, draft: after },
     save: after ? "saving" : "saved",
   };

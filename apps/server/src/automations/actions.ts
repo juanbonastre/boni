@@ -415,10 +415,8 @@ const runHand = (s: HandService) => {
 
 /**
  * «Ejecutar» and «Reintentar», «Deshacer lo que hizo», «Fijar» and «Abrir en el editor con estos datos» (F14d S2:
- * AU-97, AU-18, AU-100, AU-93; runs.ts). Juan's touch, from a personal device only (decision 13). Not in the
- * registry yet: the repo's checks want each registered action's control in the app (actions.test.ts), and those
- * controls are the screens' (P1, P2). Their PR calls this beside `withAutomationActions` and adds `RUN_ROUTES` to
- * `ROUTES`, `ROUTE_ACTIONS`, `ROUTE_RUNS` and http.ts with the controls.
+ * AU-97, AU-18, AU-100, AU-93; runs.ts). Juan's touch, from a personal device only (decision 13). Registered
+ * beside `withAutomationActions` (actions.ts), each with its control in the app: «Ejecuciones» and «Fijar» (P2).
  */
 export function withRunActions(r: ToolRegistry): ToolRegistry {
   r.register({
@@ -459,7 +457,7 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
     area: "flows",
     service: "automations",
     undo: undoOf("automations.undo_run"),
-    title: "Deshacer lo que hizo una ejecución",
+    title: "Deshacer lo que hizo una ejecución de una automatización",
     describe:
       "Undo everything one run of an automation saved, in one go, or nothing: when a row changed since, it says which",
     args: { id, run: { role: "option", required: true, describe: "the run's id" } },
@@ -478,7 +476,7 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
     area: "flows",
     service: "automations",
     undo: undoOf("automations.pin"),
-    title: "Fijar la salida de un paso",
+    title: "Fijar la salida de un paso de una automatización",
     describe:
       "Pin a step's last tested output on the draft, so tests take it instead of running the step (step); with off, release it; with run, pin the output the trigger gave in that run",
     args: {

@@ -72,6 +72,7 @@ import {
   TrialFields,
   trialOf,
   usePhone,
+  useStill,
   useTester,
 } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
@@ -738,6 +739,7 @@ export function AutomationStepView({
   const lang = useStore((s) => s.settings.language);
   const wide = useWide();
   const phone = usePhone();
+  const still = useStill();
   const [tab, setTab] = useState<"params" | "settings">("params");
   /** The phone's one column (AU-74): «Entrada | Parámetros | Salida». */
   const [pane, setPane] = useState<"input" | "params" | "output">("params");
@@ -985,7 +987,7 @@ export function AutomationStepView({
   const params = (
     <div className="auto-view-rows" role="tabpanel" aria-label={t("auto.view.params")}>
       {/* On the phone the parameters are read, never changed (AU-74): every control inside is disabled. */}
-      <fieldset className="auto-view-look" disabled={phone}>
+      <fieldset className="auto-view-look" disabled={still}>
         {dropped && (
           <div className="auto-view-notice" role="status">
             <span>{t("auto.view.dropped", { names: dropped.map(paramName).join(", ") })}</span>
@@ -1048,7 +1050,7 @@ export function AutomationStepView({
             context={codeContext}
             locale={cite.locale}
             names={cite.said ?? {}}
-            readOnly={phone}
+            readOnly={still}
             setMode={(m) => edit((d) => setParam(d, step.id, CODE_PARAMS.mode, m, names))}
             setSource={(s) =>
               edit((d) => setParam(d, step.id, CODE_PARAMS.source, s, names), `${step.id}.source`)
@@ -1063,7 +1065,7 @@ export function AutomationStepView({
             step={step}
             context={codeContext}
             locale={cite.locale}
-            readOnly={phone}
+            readOnly={still}
             fieldsOf={fieldsOf}
             filterEditor={(fields, items, set) => (
               <FilterItemsEditor
@@ -1243,7 +1245,7 @@ export function AutomationStepView({
               <Icon size={18} strokeWidth={1.7} />
             </span>
             <div className="auto-view-title">
-              {phone ? (
+              {still ? (
                 <h2 className="auto-view-name look" title={step.name}>
                   {step.name}
                 </h2>
@@ -1258,7 +1260,7 @@ export function AutomationStepView({
               {summary && <p className="auto-view-summary">{summary}</p>}
             </div>
             <div className="auto-view-test">
-              {(why || blocked) && !phone && (
+              {(why || blocked) && !still && (
                 <span className="auto-view-why">
                   {why?.why === "testing"
                     ? t("auto.view.testing")

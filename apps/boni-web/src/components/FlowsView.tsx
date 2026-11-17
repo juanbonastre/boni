@@ -149,6 +149,7 @@ export function FlowsView() {
   const flow = useStore((s) => (s.view.kind === "flows" ? (s.view.flow ?? null) : null));
   // undefined: no automation open; null: «Nueva»'s empty canvas.
   const automation = useStore((s) => (s.view.kind === "flows" ? s.view.automation : undefined));
-  if (automation !== undefined) return <AutomationPage id={automation} />;
+  const runs = useStore((s) => (s.view.kind === "flows" ? s.view.runs : undefined));
+  if (automation !== undefined) return <AutomationPage id={automation} runs={runs} />;
   return flow ? <FlowPage id={flow} /> : <FlowsCollection />;
 }

@@ -5,7 +5,8 @@
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
  * and Android's `Net.kt` already allow, each query value escaped strictly (`queryValue`). C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
  * places, E the test, its rows and the sample. P1 of F14d «Publicar», the versions and the switch, and «Ejecutar» over
- * the shapes S2 gives its route (`POST automations/:id/run`).
+ * the shapes S2 gives its route (`POST automations/:id/run`); P2 «Ejecuciones» (its list, a run, its rows), «Reintentar»,
+ * «Deshacer lo que hizo» and «Fijar» (AU-99, AU-100, AU-18, AU-93).
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
@@ -79,8 +80,17 @@ export interface Opened {
   tests: Record<string, StepTest>;
   /** By trigger id, the fields of its last test (AU-94). */
   tested: Record<string, Record<string, Cell>>;
+  /** «Fijar» (AU-93): by step id, the output pinned on the draft. */
+  pins: Record<string, Pin>;
   device: string | null;
   updated: number;
+}
+
+/** A pinned output (AU-93): when it was tested, its rows by output and whether the step changed since. */
+export interface Pin {
+  at: number;
+  out: Record<string, number>;
+  stale: boolean;
 }
 
 export interface TestRequest {
@@ -174,12 +184,84 @@ export interface Refused {
   problems?: Problem[];
   /** «Ya se está ejecutando»: the run in progress. */
   run?: string;
+  /** `changed` (AU-18): the row that changed after the run, and its title. */
+  row?: string;
+  title?: string;
 }
 
 /** `POST automations/:id/publish`: the version made and the switch, or why not. */
 export type PublishAnswer = { version: number; enabled: boolean } | Refused;
 /** `POST automations/:id/run` (AU-97, S2's route): the run as it started, or why not. */
 export type RunAnswer = { run: { id: string; state: string; version: number | null } } | Refused;
+
+/**
+ * How a run ended or where it is (AU-99, AU-190); "missed" (S3: it did not run, Boni was off at its hour) is read
+ * as it comes, a state this app may not know yet is said as a failure (`runWords`).
+ */
+export type RunState = "queued" | "running" | "done" | "failed" | "interrupted" | "missed";
+
+/** What a run saved or proposed, by collection and action (AU-99's line): counts, never rows. */
+export interface RunCount {
+  collection: string;
+  name: string | null;
+  action: "create" | "update" | "trash";
+  n: number;
+}
+
+/** A run as the list and its bar say it: the server's `RunSummary` (apps/server/src/automations/runs.ts). */
+export interface RunSummary {
+  id: string;
+  automation: string;
+  version: number | null;
+  test: boolean;
+  state: RunState;
+  startedBy: string;
+  device: string | null;
+  at: number;
+  started: number | null;
+  ended: number | null;
+  ms: number | null;
+  /** Where it is, or where it stopped. */
+  step: string | null;
+  error: (StepError & { step: string | null }) | null;
+  line: { writes: RunCount[]; asked: RunCount[]; outside: boolean } | null;
+  undone: number | null;
+  retryOf: string | null;
+  /** S3: the hour a scheduled run was due. */
+  slot: number | null;
+}
+
+/** A step's record in a run (AU-99): the engine's, with counts for its rows and its writes. */
+export interface RunStep {
+  state: StepState;
+  in: Record<string, number>;
+  out: Record<string, number>;
+  ms: number;
+  retries: number;
+  failed: number;
+  asked: number;
+  error?: StepError;
+  console?: { lines: ConsoleLine[]; dropped: number };
+  reads?: { collection: string; rows: number }[];
+  writes?: { saved: number; asked: number; would: number };
+}
+
+/** `GET automations/:id/runs/:run`: one run, the version it ran and each step it reached. */
+export interface RunView {
+  run: RunSummary;
+  /** The document it ran: its version's, or a test's draft. Null when nothing is left of it. */
+  automation: Automation | null;
+  trigger: string;
+  fields: Record<string, Cell>;
+  steps: Record<string, RunStep>;
+  /** «Deshacer lo que hizo» can be pressed: it wrote, it ended and it was not undone. */
+  undoable: boolean;
+  wrote: boolean;
+  /** The version that runs now: «Reintentar» runs it (AU-100). */
+  published: number | null;
+}
+
+export type RunsFilter = "all" | "failed" | "tests";
 
 export const isRefused = (x: unknown): x is Refused =>
   !!x && typeof x === "object" && typeof (x as Refused).refused === "string";
@@ -227,6 +309,31 @@ export interface AutomationsClient {
   setEnabled(id: string, enabled: boolean): Promise<{ enabled: boolean } | Refused>;
   /** `POST automations/:id/run` (AU-97): the published version, with the trigger and its fields. */
   run(id: string, request: { trigger: string; fields: Record<string, Cell> }): Promise<RunAnswer>;
+  /** `GET automations/:id/runs`: 50, the newest first; `next` asks the 50 before it. */
+  runs(
+    id: string,
+    q: { filter: RunsFilter; before?: string },
+  ): Promise<{ runs: RunSummary[]; next: string | null }>;
+  /** `GET automations/:id/runs/:run`. */
+  runView(id: string, run: string): Promise<RunView>;
+  /** `GET automations/:id/runs/:run/rows`: a page of one step's rows in that run. */
+  runRows(
+    id: string,
+    run: string,
+    at: { step: string; side: "in" | "out"; name: string; offset: number },
+  ): Promise<{ rows: RowView[]; total: number }>;
+  /** `POST automations/:id/runs/:run/retry` (AU-100): another run with its data; `undo` undoes that one first. */
+  retry(id: string, run: string, undo: boolean): Promise<{ run: RunSummary } | Refused>;
+  /** `POST automations/:id/runs/:run/undo` (AU-18): all it saved, or nothing. */
+  undoRun(id: string, run: string): Promise<{ run: RunSummary } | Refused>;
+  /** `PUT` and `DELETE automations/:id/pins/:step` (AU-93). */
+  pin(id: string, step: string): Promise<{ pins: Record<string, Pin> } | Refused>;
+  unpin(id: string, step: string): Promise<{ pins: Record<string, Pin> } | Refused>;
+  /** `POST automations/:id/runs/:run/pin` (AU-100): the trigger's output of that run, pinned on the draft. */
+  pinFromRun(
+    id: string,
+    run: string,
+  ): Promise<{ pins: Record<string, Pin>; trigger: string } | Refused>;
 }
 
 /**
@@ -256,10 +363,70 @@ export function openedOf(x: unknown): Opened {
     places: Array.isArray(x.places) ? (x.places as Place[]) : [],
     tests: isObj(x.tests) ? (x.tests as Record<string, StepTest>) : {},
     tested: isObj(x.tested) ? (x.tested as Record<string, Record<string, Cell>>) : {},
+    pins: pinsOf(x.pins),
     device: typeof x.device === "string" ? x.device : null,
     updated: typeof x.updated === "number" ? x.updated : 0,
   };
 }
+
+/** The pins an answer carries (AU-93). */
+export const pinsOf = (x: unknown): Record<string, Pin> =>
+  isObj(x)
+    ? (Object.fromEntries(Object.entries(x).filter(([, v]) => isObj(v))) as Record<string, Pin>)
+    : {};
+
+/** A run's summary as the wire carries it, with what a server before S3 does not say yet. */
+export function runSummaryOf(x: unknown): RunSummary {
+  const o = isObj(x) ? x : {};
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const line = isObj(o.line) ? o.line : null;
+  const counts = (v: unknown) =>
+    Array.isArray(v) ? (v.filter(isObj) as unknown as RunCount[]) : [];
+  return {
+    id: typeof o.id === "string" ? o.id : "",
+    automation: typeof o.automation === "string" ? o.automation : "",
+    version: num(o.version),
+    test: o.test === true,
+    state: (typeof o.state === "string" ? o.state : "failed") as RunState,
+    startedBy: typeof o.startedBy === "string" ? o.startedBy : "user",
+    device: typeof o.device === "string" ? o.device : null,
+    at: num(o.at) ?? 0,
+    started: num(o.started),
+    ended: num(o.ended),
+    ms: num(o.ms),
+    step: typeof o.step === "string" ? o.step : null,
+    error: isObj(o.error) ? (o.error as unknown as RunSummary["error"]) : null,
+    line: line
+      ? { writes: counts(line.writes), asked: counts(line.asked), outside: line.outside === true }
+      : null,
+    undone: num(o.undone),
+    retryOf: typeof o.retryOf === "string" ? o.retryOf : null,
+    slot: num(o.slot),
+  };
+}
+
+/** What `GET automations/:id/runs/:run` answers. */
+export function runViewOf(x: unknown): RunView {
+  const o = isObj(x) ? x : {};
+  return {
+    run: runSummaryOf(o.run),
+    automation: isObj(o.automation) ? (o.automation as unknown as Automation) : null,
+    trigger: typeof o.trigger === "string" ? o.trigger : "",
+    fields: isObj(o.fields) ? (o.fields as Record<string, Cell>) : {},
+    steps: isObj(o.steps) ? (o.steps as Record<string, RunStep>) : {},
+    undoable: o.undoable === true,
+    wrote: o.wrote === true,
+    published: typeof o.published === "number" ? o.published : null,
+  };
+}
+
+const rowsOf = (r: unknown) => {
+  const o = isObj(r) ? r : {};
+  return {
+    rows: Array.isArray(o.rows) ? (o.rows.filter(isObj) as unknown as RowView[]) : [],
+    total: typeof o.total === "number" ? o.total : 0,
+  };
+};
 
 /** What `POST automations/:id/test` answers, read as the editor needs it. */
 export function testAnswerOf(x: unknown): TestAnswer {
@@ -308,12 +475,7 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
         name: at.name,
         offset: String(at.offset),
       });
-      const r = await api.automations("GET", path(id, `/test/rows?${q}`));
-      const o = isObj(r) ? r : {};
-      return {
-        rows: Array.isArray(o.rows) ? (o.rows.filter(isObj) as unknown as RowView[]) : [],
-        total: typeof o.total === "number" ? o.total : 0,
-      };
+      return rowsOf(await api.automations("GET", path(id, `/test/rows?${q}`)));
     },
     sample: async (id, step) => {
       const r = await api.automations(
@@ -384,6 +546,57 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
           version: typeof run.version === "number" ? run.version : null,
         },
       };
+    },
+    runs: async (id, q) => {
+      const p = new URLSearchParams({
+        filter: q.filter,
+        ...(q.before ? { before: q.before } : {}),
+      });
+      const o = await api.automations("GET", path(id, `/runs?${p}`));
+      const x = isObj(o) ? o : {};
+      return {
+        runs: Array.isArray(x.runs) ? x.runs.map(runSummaryOf) : [],
+        next: typeof x.next === "string" ? x.next : null,
+      };
+    },
+    runView: async (id, run) =>
+      runViewOf(await api.automations("GET", path(id, `/runs/${encodeURIComponent(run)}`))),
+    runRows: async (id, run, at) => {
+      const q = new URLSearchParams({
+        step: at.step,
+        side: at.side,
+        name: at.name,
+        offset: String(at.offset),
+      });
+      return rowsOf(
+        await api.automations("GET", path(id, `/runs/${encodeURIComponent(run)}/rows?${q}`)),
+      );
+    },
+    retry: async (id, run, undo) => {
+      const r = await api.automations(
+        "POST",
+        path(id, `/runs/${encodeURIComponent(run)}/retry`),
+        undo ? { undo: true } : {},
+      );
+      return isRefused(r) ? r : { run: runSummaryOf(isObj(r) ? r.run : null) };
+    },
+    undoRun: async (id, run) => {
+      const r = await api.automations("POST", path(id, `/runs/${encodeURIComponent(run)}/undo`));
+      return isRefused(r) ? r : { run: runSummaryOf(isObj(r) ? r.run : null) };
+    },
+    pin: async (id, step) => {
+      const r = await api.automations("PUT", path(id, `/pins/${encodeURIComponent(step)}`));
+      return isRefused(r) ? r : { pins: pinsOf(isObj(r) ? r.pins : null) };
+    },
+    unpin: async (id, step) => {
+      const r = await api.automations("DELETE", path(id, `/pins/${encodeURIComponent(step)}`));
+      return isRefused(r) ? r : { pins: pinsOf(isObj(r) ? r.pins : null) };
+    },
+    pinFromRun: async (id, run) => {
+      const r = await api.automations("POST", path(id, `/runs/${encodeURIComponent(run)}/pin`));
+      if (isRefused(r)) return r;
+      const o = isObj(r) ? r : {};
+      return { pins: pinsOf(o.pins), trigger: typeof o.trigger === "string" ? o.trigger : "" };
     },
   };
 }
