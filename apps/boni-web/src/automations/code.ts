@@ -13,6 +13,7 @@ import {
   type CodeMode,
   type ConsoleLine,
   codeProblems,
+  type KeptNames,
   type Step,
 } from "@boni/automations";
 import type { FieldType } from "@boni/entities";
@@ -35,13 +36,16 @@ export const sourceOf = (step: Step): string => {
 /**
  * The server's context, as the app knows it: a collection by its key and by its name (unique, as the server's
  * `collectionNamed`), and the fields a step's last test gave, by key with their names (AU-36). A step not tested, or
- * whose fields are not known, gives none: nothing is marked of it.
+ * whose fields are not known, gives none: nothing is marked of it. `kept`: the names the version that runs kept
+ * (AU-192), as the server's «Publicar» reads them: a citation by a name its collection no longer has is
+ * `code.collectionRenamed`, with today's name.
  */
 export function codeContextOf(
   collections: readonly DataType[],
   draft: Automation,
   tests: Readonly<Record<string, StepTest>>,
   fieldsOut: (step: string) => readonly ConditionField[],
+  kept?: KeptNames | null,
 ): CodeContext {
   const byKey = new Map<string, DataType>();
   for (const c of collections) if (c.key) byKey.set(c.key, c);
@@ -64,6 +68,7 @@ export function codeContextOf(
       return found.length === 1 ? found[0]?.key : undefined;
     },
     collectionName: (key) => byKey.get(key)?.name,
+    ...(kept ? { keptKey: (step: string, name: string) => kept[step]?.[name] } : {}),
     testedFields: (name) => {
       const step = draft.steps.find((s) => s.name === name);
       const test = step ? tests[step.id] : undefined;
@@ -85,16 +90,24 @@ export interface SourceProblem {
 
 /**
  * What is wrong with a «Código»'s source, as validation says it (`codeProblems`, the server's own function): the ones
- * with a place are marks in the editor; the rest (too long, a limit) are said under it.
+ * with a place are marks in the editor; the rest (too long, a limit) are said under it. `notConnected`, the
+ * collections it cites and is not connected to; `renamed`, each name of before it cites a collection by, with the
+ * name of today (AU-192): what their buttons do.
  */
 export function sourceProblems(
   step: Step,
   draft: Automation,
   context: CodeContext,
-): { marks: SourceProblem[]; whole: SourceProblem[]; notConnected: string[] } {
+): {
+  marks: SourceProblem[];
+  whole: SourceProblem[];
+  notConnected: string[];
+  renamed: { name: string; now: string }[];
+} {
   const marks: SourceProblem[] = [];
   const whole: SourceProblem[] = [];
   const notConnected: string[] = [];
+  const renamed: { name: string; now: string }[] = [];
   const length = sourceOf(step).length;
   for (const p of codeProblems(step, draft, context)) {
     if (p.param !== CODE_PARAMS.source) continue;
@@ -110,8 +123,15 @@ export function sourceProblems(
     (placed ? marks : whole).push(one);
     if (p.code === "code.notConnected" && typeof detail.collection === "string")
       if (!notConnected.includes(detail.collection)) notConnected.push(detail.collection);
+    if (
+      p.code === "code.collectionRenamed" &&
+      typeof detail.name === "string" &&
+      typeof detail.now === "string" &&
+      !renamed.some((r) => r.name === detail.name)
+    )
+      renamed.push({ name: detail.name, now: detail.now });
   }
-  return { marks, whole, notConnected };
+  return { marks, whole, notConnected, renamed };
 }
 
 /**

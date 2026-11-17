@@ -1,6 +1,13 @@
 // What the editor of a «Código» step reads from the core (docs/automatizaciones.md §5.4), each test with its rule's
 // id in its name (`make check` reads them).
-import { type Automation, CODE_LIMITS, FORMAT, type Step, validate } from "@boni/automations";
+import {
+  type Automation,
+  CODE_LIMITS,
+  FORMAT,
+  renameCollectionInCode,
+  type Step,
+  validate,
+} from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { lineSpan } from "../components/AutomationCode.tsx";
 import type { DataType } from "../core/agent.ts";
@@ -146,6 +153,30 @@ describe("the editor of «Código»", () => {
     expect(codeBlocked(code(after), after, contextOf(after))).toBeNull();
     // Connected already: the draft as it was.
     expect(connectCollection(after, "s_codigo", "libros")).toBe(after);
+  });
+
+  it("AU-192 · with the names the version that runs kept, a citation by a collection's name of before is `code.collectionRenamed` with today's name, once per name; its rewrite leaves no problem; without them, it is unknown", () => {
+    const a = withCode("return [$col('Lecturas').count(), $col('Lecturas').count()];", {
+      connections: [
+        { collection: "libros", read: {}, create: false, update: false, remove: false },
+      ],
+    });
+    const kept = { s_codigo: { Lecturas: "libros" } };
+    const ctx = codeContextOf([libros, tareas], a, { s_buscar: done }, () => fields, kept);
+    const found = sourceProblems(code(a), a, ctx);
+    expect(found.renamed).toEqual([{ name: "Lecturas", now: "Libros" }]);
+    // The validation marks a name once, at its first citation; the button rewrites them all.
+    expect(found.marks.filter((m) => m.code === "code.collectionRenamed")).toHaveLength(1);
+    const source = renameCollectionInCode(String(code(a).params.source), "Lecturas", "Libros");
+    expect(source).toBe("return [$col('Libros').count(), $col('Libros').count()];");
+    const fixed = withCode(source, { connections: code(a).connections ?? [] });
+    const again = sourceProblems(code(fixed), fixed, ctx);
+    expect(again.renamed).toEqual([]);
+    expect(again.marks).toEqual([]);
+    // With no kept names (never published, a server before them), the old name is a collection that is not.
+    const none = sourceProblems(code(a), a, contextOf(a));
+    expect(none.renamed).toEqual([]);
+    expect(none.marks.map((m) => m.code)).toContain("code.unknownCollection");
   });
 
   it("AU-33 · «Consola» paints only lines of text: anything else is left out, a level it does not know is a plain line, and what was dropped is counted", () => {

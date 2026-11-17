@@ -115,9 +115,19 @@ export interface Options {
     };
     /**
      * F14d P1: published `versions` times (each version the draft as given, the last one running) and its switch.
-     * Never published, without it: «Sin publicar».
+     * Never published, without it: «Sin publicar». P3b (AU-98, AU-192): `docs`, what a version's document has
+     * instead of the draft's (its steps, arrows or name), by its number; `by`, whose it is («preset»: Boni's); `names`,
+     * the names the code of the one that runs cited, by step (`versionOf`'s `names`).
      */
-    published?: { versions: number; enabled?: boolean };
+    published?: {
+      versions: number;
+      enabled?: boolean;
+      docs?: Record<number, Record<string, unknown>>;
+      by?: Record<number, "user" | "preset">;
+      names?: Record<string, Record<string, string>>;
+    };
+    /** P3b (AU-191): deleted, so it is only in «Eliminadas». */
+    deleted?: boolean;
     /**
      * What `GET …/publish` says besides `rev`, `running`, `first` and `same` (which the fake computes): the diff, what
      * stops it, what is worth a look and «Lo que podrá hacer», as the server computes them with `@boni/automations`.
@@ -963,7 +973,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         tested: Record<string, Record<string, unknown>>;
         prints: Record<string, string>;
         /** F14d: the versions, each the document it published, and the switch. */
-        versions: { n: number; at: number; doc: AutoHere["doc"] }[];
+        versions: {
+          n: number;
+          at: number;
+          doc: AutoHere["doc"];
+          by?: string;
+          names?: Record<string, Record<string, string>>;
+        }[];
         enabled: boolean;
         publish?: Record<string, unknown>;
         run?: { refused?: string; problems?: Record<string, unknown>[]; gives?: Partial<FakeRun> };
@@ -994,7 +1010,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           : autoDoc(a.id, a.name, a.trigger),
         places: a.places ?? [],
         updated: a.updated ?? 0,
-        deleted: false,
+        deleted: a.deleted ?? false,
         spec: a.test,
         tests: {},
         tested: a.test?.tested ?? {},
@@ -1013,7 +1029,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           a.versions.push({
             n,
             at: 1_700_000_000_000 + n * 86_400_000,
-            doc: { ...a.doc, version: n },
+            doc: { ...a.doc, ...p.docs?.[n], version: n },
+            by: p.by?.[n],
+            names: n === p.versions ? p.names : undefined,
           });
         a.enabled = p.enabled ?? true;
       }
@@ -1261,7 +1279,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         const a = autos.find((x) => x.id === id);
         if (!a) return gone;
         if (rest === "/restore" && method === "POST") {
+          if (opts.sharedDevice) return [403, '{"error":"personal-device-only"}'];
+          // Recovered, it comes back off (AU-191), with its draft, versions and runs.
           a.deleted = false;
+          a.enabled = false;
           return [200, '{"ok":true}'];
         }
         if (a.deleted) return gone;
@@ -1272,14 +1293,21 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         // «Publicar» (AU-96): what the screen shows of the draft; publishing it by its `rev`, the first turning it on
         // (AU-194). Every publish asked: `window.__autoPublish`.
         const running = runningOf(a);
-        if (rest === "/publish" && method === "GET")
+        // «Volver a esta» (AU-98): with `?version=`, the screen is about that version's document.
+        const asked = new URLSearchParams(query).get("version");
+        const old = asked === null ? null : a.versions.find((v) => v.n === Number(asked));
+        if (rest === "/publish" && method === "GET") {
+          // What each screen asked about (`window.__autoPublishView`): "" for the draft, "version=N" for an old one.
+          record("__autoPublishView", query);
+          if (asked !== null && !old) return gone;
+          const subject = old?.doc ?? a.doc;
           return [
             200,
             JSON.stringify({
               rev: a.rev,
               running: running?.n ?? null,
               first: running === null,
-              same: !!running && sameDoc(running.doc, a.doc),
+              same: !!running && sameDoc(running.doc, subject),
               diff: null,
               blocks: [],
               looks: [],
@@ -1301,11 +1329,21 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               ...(w.__autoBlocks ? { blocks: w.__autoBlocks } : {}),
             }),
           ];
+        }
         // `window.__autoStale` naming it: another device saves its draft as it is published. `window.__autoBlocks`:
         // what the server finds that stops it from then on (S1 validates again when it publishes).
         if (rest === "/publish" && method === "POST") {
-          const req = (body ?? {}) as { rev?: unknown };
+          const req = (body ?? {}) as { rev?: unknown; version?: unknown };
           record("__autoPublish", JSON.stringify(req));
+          // «Volver a esta» (AU-98): that version's document again, as a new one; the draft untouched.
+          if (typeof req.version === "number") {
+            const v = a.versions.find((x) => x.n === req.version);
+            if (!v) return gone;
+            if (running && sameDoc(running.doc, v.doc)) return [200, '{"refused":"unchanged"}'];
+            const n = (running?.n ?? 0) + 1;
+            a.versions.push({ n, at: Date.now(), doc: { ...v.doc, version: n } });
+            return [200, JSON.stringify({ version: n, enabled: a.enabled })];
+          }
           if (typeof req.rev !== "number") return bad;
           if (w.__autoStale === a.id) {
             w.__autoStale = null;
@@ -1329,7 +1367,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 n: v.n,
                 at: v.at,
                 device: "d_portatil",
-                by: "user",
+                by: v.by ?? "user",
               })),
               running: running?.n ?? null,
               enabled: a.enabled,
@@ -1345,8 +1383,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               n: v.n,
               at: v.at,
               device: "d_portatil",
-              by: "user",
+              by: v.by ?? "user",
               automation: v.doc,
+              ...(v.names ? { names: v.names } : {}),
             }),
           ];
         }
@@ -1837,6 +1876,18 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           fixed: ["f_titulo", "f_estado"],
         }));
       const flowRows = () => [...autoRows(), ...oldFlowRows()];
+      const deletedAutoRows = () =>
+        autos
+          .filter((a) => a.deleted)
+          .sort((a, z) => z.updated - a.updated)
+          .map((a) => ({
+            id: `${AR}${a.id}`,
+            values: {
+              f_titulo: a.doc.name,
+              f_estado: a.versions.length ? "o_estado_apagado" : "o_estado_sin_publicar",
+            },
+            updated: a.updated,
+          }));
       const oldFlowRows = () =>
         flowsNow()
           .slice()
@@ -2462,6 +2513,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             ...(opts.titled ?? []),
           ].filter((h) => h.title.trim().toLowerCase() === want);
           return [200, JSON.stringify({ rows: hits.slice(0, 20), count: hits.length })];
+        }
+        // «Eliminadas» (AU-191): the list's own read with `deleted=1`, the deleted automations' rows.
+        if (
+          p === `api/data/types/${FL}/rows` &&
+          method === "GET" &&
+          new URLSearchParams(path.split("?")[1] ?? "").get("deleted") === "1"
+        ) {
+          const gone = deletedAutoRows();
+          return [200, JSON.stringify({ rows: gone, count: gone.length })];
         }
         const audited = p.startsWith("api/data/audit/");
         if (p.startsWith("api/data/") && !audited) return dataAnswer(method, p, body);

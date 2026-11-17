@@ -3579,6 +3579,19 @@ export class AgentApi {
     const ghosts = ghostList(b);
     return { rows, titles, ghosts, columns };
   };
+  /**
+   * «Eliminadas» (AU-191): the deleted rows of a collection that keeps them, the automations' (`?deleted=1` on the
+   * same read, apps/server/src/http.ts): each with its name and state, never a draft.
+   */
+  deletedRows = async (type: string) =>
+    rowList(
+      await this.call(
+        "GET",
+        `/${encodeURIComponent(type)}/rows?deleted=1`,
+        undefined,
+        "api/data/types",
+      ),
+    ).rows;
   createRow = async (type: string, values: Record<string, DataValue>) =>
     parseRow(
       (

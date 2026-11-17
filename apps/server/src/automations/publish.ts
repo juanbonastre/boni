@@ -253,19 +253,27 @@ export function versionsOf(
   };
 }
 
-/** One version to look at (AU-98): its document as it runs, and who and when. */
+/**
+ * One version to look at (AU-98): its document as it runs, who and when, and the names its code cited with the key
+ * each was (AU-192, `keptNames`): the editor reads the running one's to mark a citation of the draft by a name that
+ * collection no longer has (`code.collectionRenamed`) and to offer to rewrite it, as publishing would refuse it.
+ */
 export function versionOf(
   store: UserStore,
   id: string,
   n: number,
-): (AutomationVersionInfo & { automation: Automation }) | ServiceError {
+): (AutomationVersionInfo & { automation: Automation; names: KeptNames }) | ServiceError {
   const row = store.journal.automation(id);
   if (!row || row.deleted) return NOT_FOUND;
   if (!Number.isInteger(n)) return BAD;
   const v = store.journal.automationVersion(id, n);
   if (!v) return NOT_FOUND;
-  const { doc: text, names: _names, ...info } = v;
-  return { ...info, automation: parseAutomation(JSON.parse(text)) };
+  const { doc: text, names, ...info } = v;
+  return {
+    ...info,
+    automation: parseAutomation(JSON.parse(text)),
+    names: JSON.parse(names) as KeptNames,
+  };
 }
 
 /**

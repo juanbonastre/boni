@@ -72,6 +72,7 @@ import { checkFlow } from "./flows.ts";
 import {
   createFlowRow,
   deleteAutomationRow,
+  deletedAutomationRows,
   deleteFlowRow,
   restoreFlowRow,
   SYS_FLOWS,
@@ -844,6 +845,9 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "GET /api/data/types/:type/rows") {
           const type = params.type ?? "";
+          // «Eliminadas» of «Automatizaciones» (AU-191): its deleted automations, as rows of the same collection.
+          if (type === SYS_FLOWS && url.searchParams.get("deleted") === "1")
+            return send(res, 200, { rows: deletedAutomationRows(store), columns: {} });
           if (isSystemCollection(type))
             return send(res, 200, { ...listRows(store, type, sys()), columns: {} });
           const out = listRows(store, type);
