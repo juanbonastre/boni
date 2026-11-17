@@ -307,6 +307,8 @@ describe("the rules of the steps", () => {
         [ACTION]: "trash",
         target: "matching",
         where: [{ field: name, op: "is", value: "una" }],
+        // «Sí»: the step's own door lets it through to the policy (AU-187; born «Preguntar»).
+        permission: "yes",
       })
       .arrow("Inicio", "Eliminar");
     const e = await start(s.build(), s.id("Inicio"), {}, { collections: db });
@@ -341,6 +343,7 @@ describe("the rules of the steps", () => {
         kind: "confirm",
         rule: "test.confirm",
         change: { kind: "trash", row: db2.rows(items.key)[0]?.origin },
+        values: {},
       },
     ]);
     expect(e2.steps[s.id("Eliminar")]).toMatchObject({

@@ -348,7 +348,7 @@ describe("labels and the policy", () => {
           { field: mine, value: "otra" },
         ],
       },
-      Eliminar: { [ACTION]: "trash", ...target },
+      Eliminar: { [ACTION]: "trash", ...target, permission: "yes" },
       // A new row with a fixed value and one from outside: only that one has a label of its own.
       Crear: {
         [ACTION]: "create",

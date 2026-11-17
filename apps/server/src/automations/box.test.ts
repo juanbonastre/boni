@@ -14,7 +14,6 @@ import {
   type ChangeWith,
   CODE_LIMITS,
   CODE_TYPE,
-  CONNECTION_ASKS,
   CodeFault,
   type Connection,
   type Decision,
@@ -22,6 +21,7 @@ import {
   guard,
   type Labelled,
   newConnection,
+  type Policy,
   type PolicyCall,
   run as runAutomation,
 } from "@boni/automations";
@@ -44,6 +44,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { handLabel } from "../actions.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { answerOf, BOX_LIMITS, dateNames, requestOf, sandboxBox, zoneTable } from "./box.ts";
+import { AUTOMATION, runPolicy } from "./policy.ts";
 import {
   automationView,
   createAutomation,
@@ -1177,11 +1178,11 @@ const notes = () =>
   new Map(store.list(PEDIDO).map((e) => [e.entity.id, e.entity.values.f_nota ?? null]));
 
 describe("a run over the real store (S1-c)", () => {
-  it("AU-175 · in a run for real a «Código» saves nothing in F14c: with «Sí» to modify, its change of 3,000 rows waits for Juan as one proposal (`YES_SAVES`); one that asks for more than an evaluation or a step may fails with `code.limit`; none leaves an operation in the log", async () => {
+  it("AU-175 · AU-186 · in a run for real a «Código» whose cell says «Preguntar» saves nothing: its change of 3,000 rows waits for Juan as one proposal; one that asks for more than an evaluation or a step may fails with `code.limit`; none leaves an operation in the log", async () => {
     orders(3000);
     const before = notes();
-    const yes = [reads("pedido", { update: { mode: "yes" } })];
-    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", yes)]);
+    const ask = [reads("pedido", { update: { mode: "ask" } })];
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)]);
     const log = store.version();
 
     const r = runId();
@@ -1191,7 +1192,8 @@ describe("a run over the real store (S1-c)", () => {
     expect(e.steps[a.step("Código")]?.writes?.kind).toBe("asked");
     expect(e.asked).toHaveLength(3000);
     expect(new Set(e.asked.map((x) => `${x.step} ${x.kind} ${x.rule}`))).toEqual(
-      new Set([`${a.step("Código")} propose ${CONNECTION_ASKS}`]),
+      // With no «Sí» the policy proposes first (P28), before the cell would.
+      new Set([`${a.step("Código")} propose P28`]),
     );
     expect(e.asked.every((x) => x.change.kind === "update")).toBe(true);
 
@@ -1237,22 +1239,20 @@ describe("a run over the real store (S1-c)", () => {
 
   it("AU-174 · AU-185 · a step's change of 3,000 rows is written in one transaction of the user's store, every operation with the run in the log: with the 3,000th changed since it was read none is saved; read again, all are, each value keeping its label, from outside or Juan's (AU-170); and `undoRun` takes back the whole step", async () => {
     orders(3000, 10);
-    const yes = [reads("pedido", { update: { mode: "yes" } })];
-    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", yes)]);
+    const ask = [reads("pedido", { update: { mode: "ask" } })];
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)]);
     const r = runId();
     const real = runDeps(store, a.id, JUAN, box(), r);
     // The server's own policy, each of its decisions written down: which rule let each read and each write.
     const decided: { effect: string; d: Decision }[] = [];
-    const deps = {
-      ...real,
-      policy: {
-        decide(call: PolicyCall): Decision {
-          const d = real.policy.decide(call);
-          decided.push({ effect: call.effect, d });
-          return d;
-        },
+    const recorded = (policy: Policy): Policy => ({
+      decide(call: PolicyCall): Decision {
+        const d = policy.decide(call);
+        decided.push({ effect: call.effect, d });
+        return d;
       },
-    };
+    });
+    const deps = { ...real, policy: recorded(real.policy) };
     const e = await runAutomation(
       {
         automation: savedOf(a.id),
@@ -1263,22 +1263,23 @@ describe("a run over the real store (S1-c)", () => {
       deps,
     );
     expect(e.asked).toHaveLength(3000);
-    // By Juan's hand every read of the run is allowed and so is every write, from outside too, both by P25 (P1 allows a
-    // read from any other origin): no rule of the server's policy denies an automation's read in F14c (AU-161), nor
-    // proposes what his hand writes (AU-185).
+    // Every read of the run is allowed (P1: AU-161), and with «Preguntar» every write is proposed by the one origin of
+    // a run (P28: AU-167), whoever started it.
     const ruled = (effect: string) =>
       new Set(decided.filter((x) => x.effect === effect).map((x) => `${x.d.kind} ${x.d.rule}`));
     expect(decided.filter((x) => x.effect === "read").length).toBeGreaterThan(0);
-    expect(ruled("read")).toEqual(new Set(["allow P25"]));
+    expect(ruled("read")).toEqual(new Set(["allow P1"]));
     expect(decided.filter((x) => x.effect === "write")).toHaveLength(3000);
-    expect(ruled("write")).toEqual(new Set(["allow P25"]));
+    expect(ruled("write")).toEqual(new Set(["propose P28"]));
     decided.length = 0;
 
     // The change as F14d writes it once Juan accepts it, through the step's gate, each value with the label the gate
     // gets it with. This step's one evaluation read notes from outside, so all of its values are from outside
     // (AU-169); every other one is given Juan's own label here, to see that the store keeps each value's label and
     // makes none worse.
-    const gate = guard(deps.policy, deps.collections, {
+    // Once allowed: the server's policy as it is with the «Sí» it reads from the stored version (AU-188).
+    const allowing = recorded(runPolicy(AUTOMATION, deps.own, () => true));
+    const gate = guard(allowing, deps.collections, {
       automation: { id: a.id, version: 0 },
       step: a.step("Código"),
       type: CODE_TYPE,
@@ -1302,10 +1303,10 @@ describe("a run over the real store (S1-c)", () => {
     });
     expect(new Set(want.values())).toEqual(new Set(["external", "user"]));
     expect(await gate.decideAll(changes)).toBe("allow");
-    // Each value from outside is let through by P25, by his hand: saved, not proposed (P4 needs a run that starts
-    // alone, F14d, AU-167).
+    // Each value from outside is let through by its «Sí» (P28): saved with its label, not proposed (AU-170); only a
+    // model's or the ambient's would be.
     expect(decided).toHaveLength(3000);
-    expect(ruled("write")).toEqual(new Set(["allow P25"]));
+    expect(ruled("write")).toEqual(new Set(["allow P28"]));
 
     // Juan changes the last one on his phone while the change waits: the whole change is refused, nothing saved.
     const last = changes[2999]?.change as Extract<Change, { kind: "update" }>;

@@ -12,8 +12,10 @@ export type Trust = "personal" | "shared" | "ambient";
 export interface Origin {
   /** turn: Juan asked now; background: a job, no turn; miniapp: one of his mini-apps; accepted: he
    * accepted a proposal in the inbox (one tap); assistant: one of his assistants by Boni's MCP (P24); hand: Juan
-   * himself, on a control of his app (a route of the API, P25). */
-  kind: "turn" | "background" | "miniapp" | "accepted" | "assistant" | "hand";
+   * himself, on a control of his app (a route of the API, P25); automation: a step of an automation's version as it
+   * is kept, in a run for real or in its test (`dry`), whoever started it (P28, A-36: who started a run is not here,
+   * and this origin reads no `trust` nor `device`). */
+  kind: "turn" | "background" | "miniapp" | "accepted" | "assistant" | "hand" | "automation";
   trust: Trust;
   device?: string;
 }
@@ -37,6 +39,14 @@ export interface Call {
   /** Of each `type` argument, the collection it names (its id), as the agent resolved it; null: none. A `definition`
    * that names a collection (a block's), under `<arg>.collection`. */
   typeIds?: Readonly<Record<string, string | null>>;
+  /**
+   * An automation's write (origin `automation`, P28): whether the version the server keeps says «Sí» for this
+   * collection and this action, as the server read it from that version (AU-186, AU-188), never from a model, the
+   * box, a request or a browser. No other origin reads it.
+   */
+  yes?: boolean;
+  /** Accepting the proposal of an automation's run (AU-193): its removals are the confirmation P5 asks for. */
+  ofRun?: boolean;
 }
 export interface RunCounters {
   writes: number;
@@ -136,6 +146,48 @@ function byAssistant(tool: ToolDef, personal: boolean, external: boolean): Decis
   }
 }
 
+/** Every label inside a value, each field's and each item's own: what a join would hide (`external` under `model`). */
+const leaves = (v: Val): Label[] =>
+  v.t === "v"
+    ? [v.label]
+    : [v.label, ...(v.t === "list" ? v.items : Object.values(v.fields)).flatMap(leaves)];
+const byAModel = (l: Label) => l.integrity === "model" || l.integrity === "ambient";
+
+/**
+ * A step of an automation (P28, docs/automatizaciones.md AU-167, AU-186, AU-195): the same answer whoever started the
+ * run, since nothing of who did reaches here. After the destinations (P14, P2), and with memory from outside denied
+ * (P9): it reads as the background does; it creates, modifies and sends to the trash when the version kept says «Sí»
+ * for that collection and action (`yes`), with something from outside in its values (P4) or its path (P15) too,
+ * which is P28's one exception to both; without the «Sí» it proposes a create or an update and confirms a removal
+ * (P5), all of it in the run's proposal. A value a model wrote, or of an ambient turn, is proposed until F15. Nothing
+ * else is an automation's: sending, going outside and what cannot be undone are denied, and P11 does not count (the
+ * cap is the run's own limit, AU-17).
+ */
+function byAutomation(call: Call, tool: ToolDef, external: boolean): Decision {
+  switch (tool.effect) {
+    case "read":
+      return tool.sees ? deny("P23", "file-outside-turn") : allow("P1");
+    case "memory":
+      return external ? deny("P9", "external-to-memory") : deny("P28", "not-an-automation's");
+    case "write": {
+      const labels = [
+        ...Object.values(call.args).flatMap(leaves),
+        ...(call.control ? [call.control] : []),
+      ];
+      if (labels.some(byAModel)) return propose("P28");
+      if (call.yes === true) return allow("P28");
+      return tool.alwaysConfirm ? confirm("P5") : propose("P28");
+    }
+    case "egress":
+    case "send":
+      return deny("P28", "automation-egress");
+    case "write_irreversible":
+      return deny("P28", "automation-irreversible");
+    default:
+      return deny("P28", "not-an-automation's");
+  }
+}
+
 export function decide(
   call: Call,
   origin: Origin,
@@ -187,6 +239,8 @@ export function decide(
   if (origin.kind === "hand") return byHand(tool);
   if (origin.kind === "assistant")
     return byAssistant(tool, personal, externalArgs || controlExternal);
+  if (origin.kind === "automation")
+    return byAutomation(call, tool, externalArgs || controlExternal);
   const inTurn = origin.kind === "turn" || origin.kind === "accepted";
   // A confirmation is only asked on a personal device; elsewhere it becomes a proposal (P6).
   const confirmOr = (rule: string) => (personal ? confirm(rule) : propose("P6"));
@@ -253,6 +307,16 @@ export function decide(
         if (origin.kind === "background") return propose("P7");
         if (!personal) return propose("P6");
       }
+      // A removal Juan accepted in the proposal of an automation's run, on a personal device, was that confirmation
+      // (AU-193, P5): the card was painted by code from the real change. Only the trash: nothing irreversible.
+      if (
+        origin.kind === "accepted" &&
+        call.ofRun === true &&
+        personal &&
+        tool.effect === "write" &&
+        tool.alwaysConfirm
+      )
+        return allow("P5");
       if (tool.alwaysConfirm || tool.effect === "write_irreversible") return confirmOr("P5");
       // A page's chat changes the page's values without asking; anything else it writes (a block it adds) Juan sees
       // on a card first (P27, D-62).

@@ -66,6 +66,7 @@ import {
   type Gate,
   guard,
   type Policy,
+  type WriteResult,
 } from "./effects.ts";
 import {
   type Citation,
@@ -91,7 +92,9 @@ import { fieldLabel, joinAll, StopRun, TRANSFORM_AND_LOGIC } from "./steps.ts";
 import { canRun, type Problem, type ValidationContext, validate } from "./validate.ts";
 import {
   applyWrites,
+  CONNECTION_ASKS,
   grantsOf,
+  permissionOf,
   readWrites,
   type StepWrites,
   type WriteGate,
@@ -1160,12 +1163,34 @@ class Run {
       test: this.input.test,
       own: this.deps.own,
     });
+    // The first door of a «Colección» write (AU-186, AU-187): its «Permiso». «Preguntar» asks for its change in any
+    // run, a test or one started by hand too, after the policy (the second door) was asked and did not refuse it.
+    const cellAsks =
+      step.type === "collection" && action.effect === "write" && permissionOf(step) === "ask";
     return {
       shape: (c) => g.shape(c),
       find: (q, v) => g.find(q, v),
       get: (c, id) => g.get(c, id),
       aggregate: (q, v) => g.aggregate(q, v),
       async write(change, values) {
+        if (cellAsks) {
+          const byPolicy = await g.decideAll([{ change, values }]);
+          const r: WriteResult = {
+            kind: "asked",
+            asked:
+              byPolicy === "allow" || !byPolicy[0]
+                ? {
+                    step: step.id,
+                    kind: change.kind === "trash" ? "confirm" : "propose",
+                    rule: CONNECTION_ASKS,
+                    change,
+                    values,
+                  }
+                : byPolicy[0],
+          };
+          asked.push(r.asked);
+          return r;
+        }
         const r = await g.write(change, values);
         if (r.kind === "asked") asked.push(r.asked);
         return r;

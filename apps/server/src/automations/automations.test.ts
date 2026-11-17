@@ -28,7 +28,7 @@ import {
   StepFault,
   stepPrints,
 } from "@boni/automations";
-import { label, newId } from "@boni/entities";
+import { type Label, label, newId } from "@boni/entities";
 import { cpu, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
@@ -56,7 +56,7 @@ import { seed } from "../seed.test-util.ts";
 import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
-import { ACTS, actOf, argsOf, runPolicy } from "./policy.ts";
+import { ACTS, actOf, argsOf, automationPolicy, consentIn, runPolicy } from "./policy.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES, NO_MCP_YET } from "./routes.ts";
 import * as service from "./service.ts";
 import {
@@ -1098,6 +1098,204 @@ describe("the real Collections and the real Policy", () => {
       runPolicy({ kind: "turn", trust: "personal" }, own).decide(calls.trash as PolicyCall).kind,
     ).toBe("confirm");
     expect(seen.size).toBeGreaterThan(Object.keys(calls).length);
+  });
+
+  it("AU-195 · the same published version with the same input gets the same decision for every write (allow, propose, confirm, deny) started by hand and started by its trigger: for each act of `ACTS`, each label of value and of path and each cell, by a table written in the test", () => {
+    // Who starts a run is no input of the policy: the service builds it with `automationPolicy` from the stored
+    // version alone (runDeps), and so will the scheduler (S2). One answer per row, by hand or alone.
+    const own = automationLabel("a_ejemplo");
+    const juan = label("user", "personal", [{ kind: "user-edit", id: "device:d_portatil" }]);
+    const model = label("model", "public", [{ kind: "model", id: "r_ejemplo" }]);
+    const doc = (action: string, permission: "yes" | "ask"): Automation =>
+      ({
+        format: FORMAT,
+        id: "a_ejemplo",
+        version: 3,
+        name: "Ejemplo",
+        steps: [
+          {
+            id: "s_ejemplo",
+            name: "Guardar",
+            type: "collection",
+            params: { collection: "gasto", action, permission },
+          },
+        ],
+        arrows: [],
+        settings: {},
+      }) as unknown as Automation;
+    const call = (
+      act: string,
+      value: Label | null,
+      path: Label | null,
+      test: boolean,
+    ): PolicyCall => ({
+      automation: { id: "a_ejemplo", version: 3 },
+      step: "s_ejemplo",
+      type: "collection",
+      action: act,
+      effect: "write",
+      destroys: act === "trash",
+      collection: "gasto",
+      values: value ? { concepto: { value: "café", label: value, derived: true } } : {},
+      control: path,
+      ...(act === "create" ? {} : { rows: 1 }),
+      test,
+    });
+    const L = { juan, OUTSIDE, model } as const;
+    // [act, value, path, cell, answer]
+    const table: [string, keyof typeof L | null, keyof typeof L | null, "yes" | "ask", string][] = [
+      ["create", "juan", null, "yes", "allow P28"],
+      ["create", "juan", null, "ask", "propose P28"],
+      ["create", "OUTSIDE", null, "yes", "allow P28"],
+      ["create", "OUTSIDE", null, "ask", "propose P28"],
+      ["create", "model", null, "yes", "propose P28"],
+      ["create", "model", null, "ask", "propose P28"],
+      ["create", "juan", "OUTSIDE", "yes", "allow P28"],
+      ["create", "juan", "OUTSIDE", "ask", "propose P28"],
+      ["create", "juan", "model", "yes", "propose P28"],
+      ["update", "juan", null, "yes", "allow P28"],
+      ["update", "juan", null, "ask", "propose P28"],
+      ["update", "OUTSIDE", null, "yes", "allow P28"],
+      ["update", "OUTSIDE", null, "ask", "propose P28"],
+      ["update", "model", null, "yes", "propose P28"],
+      ["update", "juan", "OUTSIDE", "yes", "allow P28"],
+      ["update", "OUTSIDE", "OUTSIDE", "ask", "propose P28"],
+      ["update", "juan", "model", "yes", "propose P28"],
+      ["trash", null, null, "yes", "allow P28"],
+      ["trash", null, null, "ask", "confirm P5"],
+      ["trash", null, "OUTSIDE", "yes", "allow P28"],
+      ["trash", null, "OUTSIDE", "ask", "confirm P5"],
+      ["trash", null, "model", "yes", "propose P28"],
+      ["trash", null, "model", "ask", "propose P28"],
+    ];
+    for (const [act, value, path, cell, answer] of table) {
+      const c = call(act, value ? L[value] : null, path ? L[path] : null, false);
+      const byHand = automationPolicy(doc(act, cell), own).decide(c);
+      const alone = automationPolicy(doc(act, cell), own).decide(c);
+      const row = `${act} ${value} ${path} ${cell}`;
+      expect(`${byHand.kind} ${byHand.rule}`, row).toBe(answer);
+      expect(alone, row).toEqual(byHand);
+      // The «Sí» is read from the version kept, never from the call: another version is no «Sí» (AU-188).
+      const other = automationPolicy({ ...doc(act, cell), version: 4 }, own).decide(c);
+      if (cell === "yes" && answer === "allow P28") expect(other.kind, row).not.toBe("allow");
+    }
+  });
+
+  it("AU-186 · `consentOf` gives the published version's cell for a collection and action, and the server reads it from the version as saved: a «Sí» claimed by the box's answer or a browser is not one", () => {
+    const step = {
+      id: "s_ejemplo",
+      name: "Código",
+      type: "code",
+      params: { source: "$col('Gastos').remove('x')\nreturn []", mode: "all" },
+      connections: [
+        {
+          collection: "gasto",
+          read: {},
+          create: false,
+          update: { mode: "ask" },
+          remove: { mode: "yes" },
+        },
+      ],
+    };
+    const doc = {
+      format: FORMAT,
+      id: "a_ejemplo",
+      version: 2,
+      name: "Ejemplo",
+      steps: [step],
+      arrows: [],
+      settings: {},
+    } as unknown as Automation;
+    const call = (over: Partial<PolicyCall>): PolicyCall => ({
+      automation: { id: "a_ejemplo", version: 2 },
+      step: "s_ejemplo",
+      type: "code",
+      action: "trash",
+      effect: "write",
+      destroys: true,
+      collection: "gasto",
+      values: {},
+      control: null,
+      rows: 1,
+      test: false,
+      ...over,
+    });
+    const yes = consentIn(doc);
+    expect(yes(call({}))).toBe(true);
+    // Another action, collection, step, version or automation; a read; no document: no «Sí».
+    expect(yes(call({ action: "update", destroys: false }))).toBe(false);
+    expect(yes(call({ action: "create", destroys: false, rows: undefined }))).toBe(false);
+    expect(yes(call({ collection: "nota" }))).toBe(false);
+    expect(yes(call({ step: "s_otro" }))).toBe(false);
+    expect(yes(call({ automation: { id: "a_ejemplo", version: 3 } }))).toBe(false);
+    expect(yes(call({ automation: { id: "a_otra", version: 2 } }))).toBe(false);
+    expect(yes(call({ effect: "read", destroys: false }))).toBe(false);
+    expect(consentIn(undefined)(call({}))).toBe(false);
+    // What the box or a browser says cannot reach it: a call carries no «Sí» of its own, whatever extra it holds.
+    const claimed = { ...call({ action: "update", destroys: false }), yes: true } as PolicyCall;
+    expect(yes(claimed)).toBe(false);
+    expect(automationPolicy(doc, automationLabel("a_ejemplo")).decide(claimed).kind).toBe(
+      "propose",
+    );
+  });
+
+  it("AU-195 · each act of an automation (`ACTS`) is answered for `automation`, dry and not, and for `accepted`, by a table written in the test: no origin is left to a default", () => {
+    const own = automationLabel("a_ejemplo");
+    const juan = label("user", "personal", [{ kind: "user-edit", id: "device:d_portatil" }]);
+    const base = {
+      automation: { id: "a_ejemplo", version: 0 },
+      step: "s_ejemplo",
+      type: "collection",
+      collection: "gasto",
+      control: null,
+    };
+    const calls: Record<keyof typeof ACTS, Omit<PolicyCall, "test">> = {
+      query: { ...base, action: "find", effect: "read", destroys: false, values: {} },
+      get: {
+        ...base,
+        action: "get",
+        effect: "read",
+        destroys: false,
+        values: { id: { value: "e_ejemplo", label: own, derived: false } },
+      },
+      create: {
+        ...base,
+        action: "create",
+        effect: "write",
+        destroys: false,
+        values: { concepto: { value: "café", label: juan, derived: false } },
+      },
+      update: {
+        ...base,
+        action: "update",
+        effect: "write",
+        destroys: false,
+        rows: 1,
+        values: { concepto: { value: "revisado", label: juan, derived: false } },
+      },
+      trash: { ...base, action: "trash", effect: "write", destroys: true, rows: 1, values: {} },
+    };
+    // With no «Sí»: [act, automation in a test, automation for real, accepted on a personal device]
+    const table: [keyof typeof ACTS, string, string, string][] = [
+      ["query", "allow P1", "allow P1", "allow P1"],
+      ["get", "allow P1", "allow P1", "allow P1"],
+      ["create", "propose P28", "propose P28", "allow P1"],
+      ["update", "propose P28", "propose P28", "allow P1"],
+      ["trash", "confirm P5", "confirm P5", "confirm P5"],
+    ];
+    expect(table.map(([act]) => act).sort()).toEqual(Object.keys(ACTS).sort());
+    const accepted: Origin = { kind: "accepted", trust: "personal" };
+    for (const [act, dry, real, acc] of table) {
+      const say = (d: { kind: string; rule: string }) => `${d.kind} ${d.rule}`;
+      expect(say(automationPolicy(undefined, own).decide({ ...calls[act], test: true })), act).toBe(
+        dry,
+      );
+      expect(
+        say(automationPolicy(undefined, own).decide({ ...calls[act], test: false })),
+        act,
+      ).toBe(real);
+      expect(say(runPolicy(accepted, own).decide({ ...calls[act], test: false })), act).toBe(acc);
+    }
   });
 
   it("AU-168 · one policy per run counts over the whole run: the policy's own limit of writes stops a test that would write past it", async () => {
