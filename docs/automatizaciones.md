@@ -314,9 +314,11 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   «Colección» cuenta sus filas de entrada antes de la primera, «Las que cumplan…» las que encontró, un «Código» las
   que pidió, y la puerta cuenta además cada cambio. Medido con 3.000 filas en el motor de pruebas, dentro de su
   tiempo; los números de la decisión 12 no piden otro. Las palabras de la parada y de `limit.over`, en las dos
-  lenguas (`words.ts`). Falta: las llamadas a modelos no tienen nada que contar hasta la F15; con «Las que
-  cumplan…» y varias filas de entrada, lo que guardaron las anteriores se queda; el botón «Cambiar el límite» y el
-  número en «⋯ → Ajustes» (pantalla); `runs.test.ts` con el almacén de 12.000 registros (S1).
+  lenguas (`words.ts`). «Las que cumplan…» con varias filas de entrada para a medias, como dice arriba, y así lo
+  sostiene `limits.test.ts` («AU-17 · «Las que cumplan…» with several rows arriving…»). Falta: las llamadas a modelos
+  no tienen nada que contar hasta la F15; deshacer lo que guardó una ejecución que paró a medias de un paso (AU-18,
+  S2); el botón «Cambiar el límite» y el número en «⋯ → Ajustes» (pantalla); `runs.test.ts` con el almacén de 12.000
+  registros (S2).
 
   | Límite | Por defecto | Techo | Se ve en «Ajustes» cuando |
   |---|---|---|---|
@@ -333,7 +335,13 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Los cuatro se cumplen siempre, se vean o no. Los comprueba el motor, que es código puro: el tiempo y los pasos,
   antes de empezar cada paso (el reloj es el de la ejecución, inyectado); las filas escritas, antes de preguntar a
   la política por el cambio de un paso, contando también las que se propondrían. Así «Las que cumplan…» (AU-121)
-  sin tope lee como mucho lo que da una lectura (5.000, AU-175) y, si se pasa, falla antes de guardar ninguna. Un
+  sin tope lee como mucho lo que da una lectura (5.000, AU-175) y, si se pasa, falla antes de guardar ninguna de las
+  que encontró para esa fila de entrada. Con varias filas de entrada busca y guarda una tras otra, y una posterior
+  encuentra lo que guardó la anterior (la primera pasa de «0» a «1» las 600 filas en «0»; la segunda, de «1» a «2»,
+  encuentra esas 600: escribe 1.200, y contar antes de guardar habría dado 600), así que no se cuentan todas antes
+  de la primera sin cambiar lo que hace el paso. Si el límite se pasa en una fila posterior, lo que guardaron las
+  anteriores («Sí») se queda, cada fila con su operación en el registro, y lo que propusieron («Preguntar») queda en
+  la ejecución; esa fila no guarda ni propone ninguna. Lo guardado se deshace con la ejecución entera (AU-18, S2). Un
   paso en marcha no se corta (la caja ya corta el suyo a los 5 s, AU-35), así que una ejecución puede pasarse del
   tiempo en lo que tarde un paso. Parar por un límite para la ejecución entera, diga lo que diga «Si falla» en el
   paso (AU-16): el motivo es `run.limit` con el nombre del límite y los dos números, en una prueba también. Lo que
