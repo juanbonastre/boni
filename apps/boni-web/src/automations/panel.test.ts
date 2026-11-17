@@ -493,9 +493,9 @@ describe("what the output says in place of rows", () => {
     expect(general).toEqual({ kind: "failed", failure: { code: "other" } });
     expect(failed(undefined)).toEqual({ kind: "failed", failure: { code: "other" } });
     // A parameter the step has not: the reason, with nothing to go to.
-    expect(failed({ message: "x", failure: { code: "limit", param: "nada" } })).toEqual({
+    expect(failed({ message: "x", failure: { code: "run.limit", param: "nada" } })).toEqual({
       kind: "failed",
-      failure: { code: "limit", param: "nada" },
+      failure: { code: "run.limit", param: "nada" },
     });
     // Every code is worded in both languages, the general one too.
     for (const lang of ["es", "en"] as const) {

@@ -213,6 +213,11 @@ export const CODE_PROBLEMS = [
   "code.unknownGlobal",
   /** `$col` of a name no collection has. `detail.name`. */
   "code.unknownCollection",
+  /**
+   * `$col` of a name the published version kept for a collection that is now called otherwise (AU-192). `detail.name`
+   * (as written), `detail.now` (today's name), `detail.collection` (its key): the button rewrites the citation.
+   */
+  "code.collectionRenamed",
   /** `$col` of a collection the step has no connection to (AU-31). `detail.collection` (its key): the button connects it. */
   "code.notConnected",
   /** `$col` in an expression: only «Código» reads collections (AU-46). */

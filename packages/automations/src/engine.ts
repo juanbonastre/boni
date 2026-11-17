@@ -80,8 +80,11 @@ import { type StepFailure, StepFault } from "./failures.ts";
 import {
   type Automation,
   isExpr,
+  limitsOf,
   OUT,
   type ParamValue,
+  type RunLimit,
+  type RunLimits,
   SETTINGS_DEFAULTS,
   type Step,
 } from "./format.ts";
@@ -89,7 +92,8 @@ import { arrowsInto, executionOrder } from "./graph.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
 import { fieldLabel, joinAll, StopRun, TRANSFORM_AND_LOGIC } from "./steps.ts";
-import { canRun, type Problem, type ValidationContext, validate } from "./validate.ts";
+import { type Problem, type ValidationContext, validate } from "./validate.ts";
+import { blocking } from "./versions.ts";
 import {
   applyWrites,
   CONNECTION_ASKS,
@@ -102,6 +106,24 @@ import {
 } from "./writes.ts";
 
 export { StopRun } from "./steps.ts";
+
+/**
+ * A limit of the run stopped it (AU-17): what the engine throws before a step starts or before a change is asked or
+ * written. It is a `StopRun`, so no retry and no «Si falla» apply; its failure is `run.limit`, with the limit's key,
+ * its number and the number the run reached or was about to reach.
+ */
+export class LimitPassed extends StopRun {
+  readonly limit: RunLimit;
+  readonly max: number;
+  readonly got: number;
+  constructor(limit: RunLimit, max: number, got: number) {
+    super(`the run's limit ${limit} is ${max}, and it reached ${got}`);
+    this.name = "LimitPassed";
+    this.limit = limit;
+    this.max = max;
+    this.got = got;
+  }
+}
 
 /** A step's state in a run (AU-15). `waiting` is for the steps that wait for Juan or for a time (F18). */
 export const STEP_STATES = [
@@ -239,13 +261,16 @@ export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
 
 /**
  * Runs an automation from a trigger to the end. It validates first and rejects with `CannotRun`, before any effect, when
- * `validate` gives an error, the trigger is not a trigger step of the automation, or the trigger's row has a field it
- * does not ask for or one of another type; after that it never throws: what goes wrong is in the `Execution`. The
- * limits of a run (AU-17) and saving it (AU-15 in tables) are F14d's.
+ * `validate` gives an error that would stop a publish (`blocking`: on the automation or on a step a trigger reaches), the trigger is not a trigger step of the automation, or the trigger's row has a field it
+ * does not ask for or one of another type; after that it never throws: what goes wrong is in the `Execution`. It holds
+ * to the automation's limits (`limitsOf`, AU-17), in a test as in a real run: time and steps before each step starts,
+ * rows written before a change is asked of the policy. Saving the run (AU-15 in tables) is the server's.
  */
 export async function run(input: RunInput, deps: RunDeps): Promise<Execution> {
   const problems = validate(input.automation, validationOf(deps) as ValidationContext);
-  if (!canRun(problems)) throw new CannotRun("the automation has errors", problems);
+  // What stops a publish stops a run, and nothing else (AU-96): an error on a step no trigger reaches does neither.
+  if (blocking(input.automation, problems).length)
+    throw new CannotRun("the automation has errors", problems);
   const trigger = input.automation.steps.find((s) => s.id === input.trigger);
   if (!trigger || !isTrigger(trigger))
     throw new CannotRun(`${input.trigger} is not a trigger of the automation`);
@@ -389,6 +414,8 @@ function stepErrorOf(e: unknown, step: Step): StepError {
 
 function failureOf(e: unknown, step: Step): StepFailure {
   if (e instanceof StepFault) return e.failure;
+  if (e instanceof LimitPassed)
+    return { code: "run.limit", detail: { limit: e.limit, max: e.max, got: e.got } };
   if (e instanceof StopRun) return { code: "stopped", detail: { message: e.message } };
   if (e instanceof Denied) return { code: e.waits ? "policy.waits" : "policy.denied" };
   if (e instanceof CiteError) {
@@ -508,6 +535,10 @@ class Run {
   seed = 0;
   /** Whether any step's JavaScript went to the box: only then is the seed part of what the run was. */
   boxed = false;
+  /** What it holds to (AU-17), and how far it got: the steps started and the rows written, tested or proposed. */
+  readonly limits: RunLimits;
+  ran = 0;
+  written = 0;
 
   constructor(input: RunInput, deps: RunDeps, first: Row, plan?: Plan) {
     this.input = input;
@@ -516,6 +547,18 @@ class Run {
     this.plan = plan;
     this.byId = new Map(input.automation.steps.map((s) => [s.id, s]));
     this.byName = new Map(input.automation.steps.map((s) => [s.name, s]));
+    this.limits = limitsOf(input.automation);
+  }
+
+  /** Throws `LimitPassed` when `got` is over `limit` (AU-17). */
+  hold(limit: RunLimit, got: number): void {
+    const max = this.limits[limit];
+    if (got > max) throw new LimitPassed(limit, max, got);
+  }
+
+  /** Before `n` more rows are asked of the policy: they and the ones already written must fit (AU-17). */
+  reserve(n: number): void {
+    if (n > 0) this.hold("rowsWritten", this.written + n);
   }
 
   async go(): Promise<Execution> {
@@ -607,6 +650,28 @@ class Run {
       return;
     }
     const all = inputsOf(step).flatMap((n) => inputs[n] ?? []);
+    const action = actionOf(step);
+
+    // The run's limits, before the step starts (AU-17): its time by its own clock and the steps it started; and, for
+    // a «Colección» that writes, the rows it would write, one per unit at most, before any is asked of the policy.
+    // «Las que cumplan…» writes what it finds, known only once found: `StepContext.reserve` checks it then.
+    try {
+      const elapsed = clock.now() - this.started;
+      if (elapsed >= this.limits.ms) throw new LimitPassed("ms", this.limits.ms, elapsed);
+      this.hold("steps", this.ran + 1);
+      this.ran++;
+      if (
+        !settings.off &&
+        step.type === "collection" &&
+        action?.effect === "write" &&
+        step.params.target !== "matching"
+      )
+        this.reserve(all.length || 1);
+    } catch (e) {
+      record.error = stepErrorOf(e, step);
+      finish("failed");
+      return record.error;
+    }
 
     // «Apagado»: the rows pass as they are, by the first way out.
     if (settings.off) {
@@ -625,7 +690,6 @@ class Run {
       return;
     }
 
-    const action = actionOf(step);
     const executor = action
       ? step.type === CODE_TYPE
         ? CODE_EXECUTORS[action.mode]
@@ -788,7 +852,13 @@ class Run {
     // What its «Código» asked to save, decided for the whole step at once, when the step has not stopped (AU-174).
     if (!stop && evaluated && js?.kind === "code") {
       const asked = worked.flatMap((i) => evaluated.writes(i));
-      if (asked.length) {
+      try {
+        // All of them or none (AU-174): they must fit in the run's «rows written» before any is asked (AU-17).
+        this.reserve(asked.length);
+      } catch (e) {
+        stop = stepErrorOf(e, step);
+      }
+      if (asked.length && !stop) {
         const whole = action?.mode === "all";
         const units = whole ? all : worked.map((i) => all[i] as Row);
         const path = this.path(
@@ -812,6 +882,7 @@ class Run {
           }
         }
         if (saved) {
+          this.written += asked.length;
           record.writes = saved;
           if (saved.kind === "asked") {
             record.asked += saved.asked.length;
@@ -1145,6 +1216,7 @@ class Run {
       now: clock.now(),
       value: (p) => resolve(p, scope),
       scope,
+      reserve: (n) => this.reserve(n),
     };
   }
 
@@ -1167,12 +1239,16 @@ class Run {
     // run, a test or one started by hand too, after the policy (the second door) was asked and did not refuse it.
     const cellAsks =
       step.type === "collection" && action.effect === "write" && permissionOf(step) === "ask";
+    const run = this;
     return {
       shape: (c) => g.shape(c),
       find: (q, v) => g.find(q, v),
       get: (c, id) => g.get(c, id),
       aggregate: (q, v) => g.aggregate(q, v),
       async write(change, values) {
+        // Every change counts against «rows written», saved, tested or proposed, before the policy is asked (AU-17).
+        run.reserve(1);
+        run.written++;
         if (cellAsks) {
           const byPolicy = await g.decideAll([{ change, values }]);
           const r: WriteResult = {
@@ -1270,6 +1346,11 @@ export interface StepContext {
   scope: Scope;
   /** A «Código» only (F14c): the rows its evaluation `at` gave, evaluated before the units (AU-38); throws its failure. */
   code?(at: number): readonly RowOut[];
+  /**
+   * Before an executor writes the changes it has for one row, all at once: throws `LimitPassed` when they would pass
+   * the run's «rows written» (AU-17), so none of them is asked or written. The gate counts each change anyway.
+   */
+  reserve?(rows: number): void;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */

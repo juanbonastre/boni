@@ -7,6 +7,7 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  AUTOMATION_LIMITS,
   type Automation,
   type Box,
   type BoxJob,
@@ -23,6 +24,7 @@ import {
   newConnection,
   type Policy,
   type PolicyCall,
+  type RunLimits,
   run as runAutomation,
 } from "@boni/automations";
 import { monthNames, tzOffsetMs, weekdayNames } from "@boni/calendar";
@@ -389,8 +391,11 @@ type StepSpec = [
   more?: { connections?: Connection[]; settings?: Record<string, unknown> },
 ];
 
-/** A draft from steps by name, each after the one before it, the way the canvas would send it. */
-function chain(steps: readonly StepSpec[]) {
+/**
+ * A draft from steps by name, each after the one before it, the way the canvas would send it; with `limits`, the run's
+ * own (AU-17) where a test writes more than their defaults.
+ */
+function chain(steps: readonly StepSpec[], limits?: Partial<RunLimits>) {
   const ids = new Map(steps.map(([name]) => [name, stepId()]));
   const id = (name: string) => ids.get(name) as string;
   const doc: Automation = {
@@ -410,12 +415,15 @@ function chain(steps: readonly StepSpec[]) {
       from: { step: id(steps[i]?.[0] as string), output: "main" },
       to: { step: id(name), input: "main" },
     })),
-    settings: {},
+    settings: limits ? { limits } : {},
   };
   const view = createAutomation(store, doc, JUAN);
   if ("error" in view) throw new Error(`service error: ${view.error}`);
   return { id: view.id, step: id };
 }
+
+/** The run's «rows written» at its ceiling, for a test of 3,000 rows that is about something else (AU-17). */
+const MANY_ROWS = { rowsWritten: AUTOMATION_LIMITS.rowsWritten.ceiling };
 
 function ok<T>(x: T | ServiceError): T {
   if (x && typeof x === "object" && "error" in x && Object.keys(x).length === 1)
@@ -1182,7 +1190,7 @@ describe("a run over the real store (S1-c)", () => {
     orders(3000);
     const before = notes();
     const ask = [reads("pedido", { update: { mode: "ask" } })];
-    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)]);
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)], MANY_ROWS);
     const log = store.version();
 
     const r = runId();
@@ -1199,23 +1207,29 @@ describe("a run over the real store (S1-c)", () => {
 
     // Over the limit of one evaluation, and over the step's with one request per row of 3,000 rows twice.
     const creates = [reads("pedido", { create: { mode: "yes" } })];
-    const many = chain([
-      ["Inicio", "manual"],
-      code(
-        `for (let i = 0; i < ${CODE_LIMITS.writes + 1}; i++) $col('Pedido').create({ importe: i });\nreturn []`,
-        "all",
-        creates,
-      ),
-    ]);
-    const perRow = chain([
-      ["Inicio", "manual"],
-      find(),
-      code(
-        "$col('Pedido').create({ importe: 1 });\n$col('Pedido').create({ importe: 2 });\nreturn [$json]",
-        "perRow",
-        creates,
-      ),
-    ]);
+    const many = chain(
+      [
+        ["Inicio", "manual"],
+        code(
+          `for (let i = 0; i < ${CODE_LIMITS.writes + 1}; i++) $col('Pedido').create({ importe: i });\nreturn []`,
+          "all",
+          creates,
+        ),
+      ],
+      MANY_ROWS,
+    );
+    const perRow = chain(
+      [
+        ["Inicio", "manual"],
+        find(),
+        code(
+          "$col('Pedido').create({ importe: 1 });\n$col('Pedido').create({ importe: 2 });\nreturn [$json]",
+          "perRow",
+          creates,
+        ),
+      ],
+      MANY_ROWS,
+    );
     const over = await ranFor(many.id, many.step("Inicio"), runId());
     const overStep = await ranFor(perRow.id, perRow.step("Inicio"), runId());
     expect(over.state).toBe("failed");
@@ -1240,7 +1254,7 @@ describe("a run over the real store (S1-c)", () => {
   it("AU-174 · AU-185 · a step's change of 3,000 rows is written in one transaction of the user's store, every operation with the run in the log: with the 3,000th changed since it was read none is saved; read again, all are, each value keeping its label, from outside or Juan's (AU-170); and `undoRun` takes back the whole step", async () => {
     orders(3000, 10);
     const ask = [reads("pedido", { update: { mode: "ask" } })];
-    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)]);
+    const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)], MANY_ROWS);
     const r = runId();
     const real = runDeps(store, a.id, JUAN, box(), r);
     // The server's own policy, each of its decisions written down: which rule let each read and each write.

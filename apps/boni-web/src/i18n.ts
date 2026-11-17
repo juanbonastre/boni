@@ -851,6 +851,14 @@ const es = {
   "auto.measure.max": "Máximo de {field}",
   "auto.measure.list": "Lista de {field}",
   "auto.problem.trigger.none": "Falta un disparador",
+  "auto.problem.limit.over": "Un límite de la ejecución está por encima de su techo",
+  "auto.problem.limit.over.ms": "El tiempo de una ejecución es {got}, y como mucho puede ser {max}",
+  "auto.problem.limit.over.rowsWritten":
+    "Las filas escritas en una ejecución son {got}, y como mucho pueden ser {max}",
+  "auto.problem.limit.over.modelCalls":
+    "Las llamadas a un modelo en una ejecución son {got}, y como mucho pueden ser {max}",
+  "auto.problem.limit.over.steps":
+    "Los pasos de una ejecución son {got}, y como mucho pueden ser {max}",
   "auto.problem.step.duplicateId": "Dos pasos tienen el mismo id",
   "auto.problem.step.emptyName": "El paso no tiene nombre",
   "auto.problem.step.duplicateName": "Otro paso se llama «{name}»",
@@ -893,7 +901,12 @@ const es = {
   "auto.failure.row.matchUnwritten": "El campo «{field}» para buscar no está entre los que escribe",
   "auto.failure.value.type": "Un valor no es del tipo que hace falta",
   "auto.failure.stopped": "Parado: {message}",
-  "auto.failure.limit": "Se pasó un límite de la ejecución",
+  "auto.failure.run.limit": "Paró en un límite de la ejecución",
+  "auto.failure.run.limit.ms": "Paró: llevaba {got} y el límite son {max}",
+  "auto.failure.run.limit.rowsWritten": "Paró: iba a escribir {got} filas y el límite son {max}",
+  "auto.failure.run.limit.modelCalls":
+    "Paró: iba a hacer {got} llamadas a un modelo y el límite son {max}",
+  "auto.failure.run.limit.steps": "Paró: iba a dar {got} pasos y el límite son {max}",
   "auto.failure.other": "Este paso falló",
   "auto.preview.untested": "Sin probar: prueba antes {steps}",
   "auto.preview.noRows": "La entrada no tiene filas con las que calcularlo",
@@ -926,6 +939,7 @@ const es = {
     "El nombre de la colección va escrito entre comillas: $col('Nombre')",
   "auto.problem.code.unknownGlobal": "{name} no existe aquí",
   "auto.problem.code.unknownCollection": "Ninguna colección se llama «{name}»",
+  "auto.problem.code.collectionRenamed": "$col('{name}'): ahora se llama «{now}»",
   "auto.problem.code.notConnected": "Este paso no está conectado a «{collection}»",
   "auto.problem.code.readInExpression": "Una expresión no lee colecciones: $col es de «Código»",
   "auto.problem.code.cannotWait.await": "El código da su resultado en seguida: aquí no hay await",
@@ -3910,6 +3924,13 @@ const en: Record<Key, string> = {
   "auto.measure.max": "Maximum of {field}",
   "auto.measure.list": "List of {field}",
   "auto.problem.trigger.none": "It needs a trigger",
+  "auto.problem.limit.over": "A limit of the run is above its ceiling",
+  "auto.problem.limit.over.ms": "The time of a run is {got}, and it can be {max} at most",
+  "auto.problem.limit.over.rowsWritten":
+    "The rows written in a run are {got}, and they can be {max} at most",
+  "auto.problem.limit.over.modelCalls":
+    "The calls to a model in a run are {got}, and they can be {max} at most",
+  "auto.problem.limit.over.steps": "The steps of a run are {got}, and they can be {max} at most",
   "auto.problem.step.duplicateId": "Two steps have the same id",
   "auto.problem.step.emptyName": "The step has no name",
   "auto.problem.step.duplicateName": "Another step is called «{name}»",
@@ -3953,7 +3974,14 @@ const en: Record<Key, string> = {
     "The field «{field}» to match by is not among the ones it writes",
   "auto.failure.value.type": "A value is not of the type needed",
   "auto.failure.stopped": "Stopped: {message}",
-  "auto.failure.limit": "A limit of the run was passed",
+  "auto.failure.run.limit": "It stopped at a limit of the run",
+  "auto.failure.run.limit.ms": "It stopped: it had run {got} and the limit is {max}",
+  "auto.failure.run.limit.rowsWritten":
+    "It stopped: it was going to write {got} rows and the limit is {max}",
+  "auto.failure.run.limit.modelCalls":
+    "It stopped: it was going to make {got} calls to a model and the limit is {max}",
+  "auto.failure.run.limit.steps":
+    "It stopped: it was going to take {got} steps and the limit is {max}",
   "auto.failure.other": "This step failed",
   "auto.preview.untested": "Not tested: test {steps} first",
   "auto.preview.noRows": "Its input has no rows to work it out with",
@@ -3986,6 +4014,7 @@ const en: Record<Key, string> = {
     "The collection's name goes written in quotes: $col('Name')",
   "auto.problem.code.unknownGlobal": "{name} does not exist here",
   "auto.problem.code.unknownCollection": "No collection is called «{name}»",
+  "auto.problem.code.collectionRenamed": "$col('{name}'): it is now called «{now}»",
   "auto.problem.code.notConnected": "This step is not connected to «{collection}»",
   "auto.problem.code.readInExpression": "An expression reads no collection: $col is for «Code»",
   "auto.problem.code.cannotWait.await": "Code gives its result at once: there is no await here",

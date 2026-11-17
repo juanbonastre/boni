@@ -22,6 +22,7 @@ import {
   type ParamValue,
   PROBLEMS,
   parseExpression,
+  RUN_LIMIT_KEYS,
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
@@ -414,8 +415,10 @@ export const REASONS: Readonly<
     "code.cannotWait": { by: "what", of: ["await", "import", "async", "generator"] },
     "connection.limits": { by: "why", of: ["field", "where", "limit"] },
     "code.colUse": { by: "why", of: ["kept", "computed", "unknown"] },
+    "limit.over": { by: "limit", of: RUN_LIMIT_KEYS },
   },
   failure: {
+    "run.limit": { by: "limit", of: RUN_LIMIT_KEYS },
     "code.result": { by: "why", of: ["nothing", "notRows", "notJson", "promise"] },
     "code.read.query": {
       by: "why",
@@ -453,6 +456,11 @@ function saidKeys(): string[] {
       if (w) keys.push(`${key(code)}.${w}`);
     }
   }
+  // The codes of the run said by reason (AU-17): their reasons are the run's limits.
+  for (const kind of ["problem", "failure"] as const)
+    for (const [code, r] of Object.entries(REASONS[kind]))
+      for (const reason of r.of)
+        keys.push(`${(kind === "problem" ? KEY.problem : KEY.failure)(code)}.${reason}`);
   for (const l of HARD_LIMITS) keys.push(KEY.limit(l));
   for (const a of WRITE_ACTIONS) keys.push(KEY.writeAction(a));
   return keys;
@@ -527,7 +535,8 @@ export function said(
     vars.field = names.field?.(collection, d.field) ?? d.field;
   if (typeof d.action === "string") vars.action = t(KEY.writeAction(d.action));
   if (typeof d.limit === "string") {
-    vars.limit = t(KEY.limit(d.limit));
+    // A code said by its limit names it in its own words; the box's limits are named in a common sentence.
+    if (reason?.by !== "limit") vars.limit = t(KEY.limit(d.limit));
     for (const n of ["max", "got"] as const)
       if (typeof d[n] === "number") vars[n] = amountOf(d.limit, d[n] as number, locale);
   }

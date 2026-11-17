@@ -34,8 +34,11 @@ export const STEP_FAILURES = [
   "value.type",
   /** «Parar con error» stopped it: `detail.message` is what Juan wrote there, plain text. */
   "stopped",
-  /** One of the run's limits was passed. `detail.limit`: the limit's key. */
-  "limit",
+  /**
+   * One of the run's limits stopped it (AU-17), whatever «Si falla» says. `detail.limit`: its key in
+   * `AUTOMATION_LIMITS`; `detail.max`, the limit; `detail.got`, what the run reached or was about to reach.
+   */
+  "run.limit",
   "other",
 ] as const;
 export type StepFailureCode = (typeof STEP_FAILURES)[number];

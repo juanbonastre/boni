@@ -10,6 +10,7 @@ import {
   CODE_PROBLEMS,
   FORMAT,
   HARD_LIMITS,
+  RUN_LIMIT_KEYS,
   type Step,
 } from "@boni/automations";
 import { cpu, under } from "@boni/pace";
@@ -335,6 +336,64 @@ describe("what JavaScript's problems and failures say", () => {
     for (const kind of ["problem", "failure"] as const)
       for (const [code, r] of Object.entries(REASONS[kind]))
         for (const reason of r.of) expect(keys).toContain(`auto.${kind}.${code}.${reason}`);
+  });
+  it("AU-17 · a run stopped at its limit, and a limit set above its ceiling, say which limit in its own words and both numbers, in both languages", () => {
+    const stop = (lang: typeof es, locale: string, limit: string, max: number, got: number) =>
+      said(lang, "failure", { code: "run.limit", detail: { limit, max, got } }, locale);
+    expect(stop(es, "es-ES", "rowsWritten", 1000, 3000)).toBe(
+      "Paró: iba a escribir 3000 filas y el límite son 1000",
+    );
+    expect(stop(en, "en-GB", "rowsWritten", 1000, 3000)).toBe(
+      "It stopped: it was going to write 3,000 rows and the limit is 1,000",
+    );
+    expect(stop(es, "es-ES", "ms", 60_000, 61_500)).toBe(
+      "Paró: llevaba 61,5 s y el límite son 60 s",
+    );
+    expect(stop(es, "es-ES", "steps", 200, 201)).toBe(
+      "Paró: iba a dar 201 pasos y el límite son 200",
+    );
+    expect(
+      said(
+        es,
+        "problem",
+        { code: "limit.over", detail: { limit: "rowsWritten", max: 20_000, got: 25_000 } },
+        "es-ES",
+      ),
+    ).toBe("Las filas escritas en una ejecución son 25.000, y como mucho pueden ser 20.000");
+    expect(
+      said(
+        en,
+        "problem",
+        { code: "limit.over", detail: { limit: "ms", max: 600_000, got: 900_000 } },
+        "en-GB",
+      ),
+    ).toBe("The time of a run is 900 s, and it can be 600 s at most");
+    // Every limit of the run has its sentence, in both languages.
+    for (const lang of [es, en])
+      for (const limit of RUN_LIMIT_KEYS) {
+        expect(
+          said(lang, "failure", { code: "run.limit", detail: { limit, max: 1, got: 2 } }, "es-ES"),
+        ).not.toMatch(/auto\./);
+        expect(
+          said(lang, "problem", { code: "limit.over", detail: { limit, max: 1, got: 2 } }, "es-ES"),
+        ).not.toMatch(/auto\./);
+      }
+  });
+  it("AU-192 · a code that cites a collection by the name it had says the name of today", () => {
+    expect(
+      said(
+        es,
+        "problem",
+        {
+          code: "code.collectionRenamed",
+          detail: { name: "Alfa", now: "Delta", collection: "t_1" },
+        },
+        "es-ES",
+        {
+          collection: () => "Delta",
+        },
+      ),
+    ).toBe("$col('Alfa'): ahora se llama «Delta»");
   });
   it("AU-35 · a limit says which and by how much, with its unit; time, operations and memory say the limit alone", () => {
     expect(

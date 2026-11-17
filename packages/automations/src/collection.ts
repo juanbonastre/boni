@@ -14,8 +14,8 @@ import type { Cell, Row, RowOrigin } from "./rows.ts";
 import { filterOf, raw, setField } from "./steps.ts";
 
 /**
- * How many rows «Las que cumplan…» may touch: all of them. The limits of a run (AU-17, F14d) will cap what a run
- * writes; until then this only keeps the query a number.
+ * How many rows «Las que cumplan…» may find: all of them (a read gives at most its own limit, AU-175). What it then
+ * writes is held to the run's «rows written» before any is written (`StepContext.reserve`, AU-17).
  */
 export const ALL_ROWS = Number.MAX_SAFE_INTEGER;
 
@@ -99,6 +99,8 @@ async function writeAll(
   changes: Change[],
   values: Labelled,
 ): Promise<StepOutput> {
+  // The run's «rows written» first, for all of them (AU-17): «Las que cumplan…» fails before it writes any.
+  ctx.reserve?.(changes.length);
   const out: RowOut[] = [];
   for (const c of changes) out.push(...written(await ctx.gate.write(c, values)));
   return one(out);

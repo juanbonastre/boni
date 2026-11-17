@@ -27,7 +27,7 @@ import {
 import { type GateUnit, guard, type StoredRow } from "./effects.ts";
 import { run, type StepRecord } from "./engine.ts";
 import { STEP_FAILURES } from "./failures.ts";
-import type { Step, StepSettings } from "./format.ts";
+import { AUTOMATION_LIMITS, type RunLimits, type Step, type StepSettings } from "./format.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
 import type { Cell } from "./rows.ts";
 import {
@@ -225,9 +225,12 @@ async function saving(
     policy?: FakePolicy;
     mode?: "all" | "perRow";
     onError?: StepSettings["onError"];
+    /** The run's limits (AU-17), when a test needs more than their defaults. */
+    limits?: Partial<RunLimits>;
   } = {},
 ) {
-  const { a, s, step } = withCode(source, connections, more);
+  const { a: drawn, s, step } = withCode(source, connections, more);
+  const a = more.limits ? { ...drawn, settings: { limits: more.limits } } : drawn;
   const st = more.store ?? db();
   const box = writingBox(answer);
   const p = more.policy ?? policy();
@@ -686,11 +689,47 @@ describe("all or nothing", () => {
       "$col('Gastos').create({ a: 1 })\nreturn []",
       [toExpenses({ create: YES })],
       () => done({ n: 1 }, many(WRITE_LIMITS.stepWrites / 2 + 1)),
-      { store: st, mode: "perRow" },
+      // The run's «rows written» at its ceiling, so the step's own limit is the one it meets (AU-17 is limits.test.ts).
+      { store: st, mode: "perRow", limits: { rowsWritten: AUTOMATION_LIMITS.rowsWritten.ceiling } },
     );
     expect(whyOf(rec)).toMatchObject({ code: "code.limit", detail: { limit: "stepWrites" } });
     expect(e.asked).toEqual([]);
     expect(st.applied).toEqual([]);
+  });
+});
+
+describe("the run's «rows written» (AU-17)", () => {
+  it("AU-17 · a «Código» whose change would pass the run's «rows written» fails the run before the policy is asked: nothing saved and nothing proposed, with «Sí» as with «Preguntar»; at the limit it saves them all", async () => {
+    const creates = (k: number) => Array.from({ length: k }, (_, i) => create({ [amount]: i }));
+    const source = "$col('Gastos').create({ a: 1 })\nreturn []";
+    for (const cell of [YES, ASK]) {
+      const st = db(1);
+      const { e, p } = await saving(
+        source,
+        [toExpenses({ create: cell })],
+        () => done({ n: 1 }, creates(1_001)),
+        { store: st },
+      );
+      expect(e.error?.failure, cell.mode).toEqual({
+        code: "run.limit",
+        detail: { limit: "rowsWritten", max: 1_000, got: 1_001 },
+      });
+      expect(writeCalls(p), cell.mode).toEqual([]);
+      expect(e.asked, cell.mode).toEqual([]);
+      expect(st.applied, cell.mode).toEqual([]);
+    }
+    // One row of «Gastos» arrives, so the step runs.
+    const st = db(1);
+    const { e } = await saving(
+      source,
+      [toExpenses({ create: YES })],
+      () => done({ n: 1 }, creates(1_000)),
+      {
+        store: st,
+      },
+    );
+    expect(e.state).toBe("done");
+    expect(st.applied).toHaveLength(1_000);
   });
 });
 

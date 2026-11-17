@@ -146,15 +146,46 @@ export const SETTINGS_DEFAULTS = {
   off: false,
 } as const satisfies Required<StepSettings>;
 
-/** A run's limits (AU-17, F14d: their careful defaults and the code's ceiling arrive with that phase). */
+/** A run's limits (AU-17): how many steps start, model calls, rows written (saved, tested or proposed) and ms. */
 export interface RunLimits {
   steps: number;
   modelCalls: number;
   rowsWritten: number;
   ms: number;
 }
+export type RunLimit = keyof RunLimits;
 export interface AutomationSettings {
+  /** Only the ones Juan changed: the rest are their defaults (`limitsOf`). */
   limits?: Partial<RunLimits>;
+}
+
+/**
+ * The four limits of a run (AU-17, decision 12 of §10): each one's default, and its ceiling, which is written here
+ * and no setting reaches. A document that asks for more than a ceiling does not validate (`limit.over`): it is never
+ * cut down. Time and rows written are the ones Juan accepted on 2026-11-16; model calls are P12's own number, and
+ * steps are reasoned, not measured. Not `RUN_LIMITS`: that is P12's, in `packages/agent`.
+ */
+export const AUTOMATION_LIMITS = {
+  ms: { default: 60_000, ceiling: 600_000 },
+  rowsWritten: { default: 1_000, ceiling: 20_000 },
+  modelCalls: { default: 20, ceiling: 40 },
+  steps: { default: 200, ceiling: 1_000 },
+} as const satisfies Record<RunLimit, { default: number; ceiling: number }>;
+
+/** The limits, in a fixed order: what «Ajustes» lists and what validation and the engine go through. */
+export const RUN_LIMIT_KEYS = [
+  "ms",
+  "rowsWritten",
+  "modelCalls",
+  "steps",
+] as const satisfies readonly RunLimit[];
+
+/** The limits a run of this automation holds to: what it set, and every other one's default. All four, always. */
+export function limitsOf(automation: Pick<Automation, "settings">): RunLimits {
+  const set = automation.settings?.limits ?? {};
+  const out = {} as RunLimits;
+  for (const k of RUN_LIMIT_KEYS) out[k] = set[k] ?? AUTOMATION_LIMITS[k].default;
+  return out;
 }
 
 // ---------------------------------------------------------------- reading and changing
@@ -322,7 +353,7 @@ function parseArrow(v: unknown, path: string): Arrow {
   };
 }
 
-const LIMITS = ["steps", "modelCalls", "rowsWritten", "ms"] as const;
+const LIMITS = RUN_LIMIT_KEYS;
 
 function parseSettings(v: unknown, path: string): AutomationSettings {
   const s = record(v, path);
