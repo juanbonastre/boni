@@ -265,11 +265,12 @@ describe("a spare worker (task 138, A-08)", () => {
       });
       const given = b.of("given");
       expect(given).toHaveLength(1);
-      // Every spare said what it was handed, before it was given anything.
+      // Every spare says what it was handed, before it is given anything. The one started to replace the spare
+      // given the call may not have said it yet when the answer comes, so each is waited for (it flaked on CI).
       for (const spare of b.of("spare"))
-        expect((b.said.get(spare) ?? []).filter((m) => (m as { told?: unknown }).told)).toEqual([
-          { told: ["module"], module: true },
-        ]);
+        await expect
+          .poll(() => (b.said.get(spare) ?? []).filter((m) => (m as { told?: unknown }).told))
+          .toEqual([{ told: ["module"], module: true }]);
       expect(b.said.get(given[0]!)?.[0]).toEqual({ told: ["module"], module: true });
     } finally {
       await b.box.close();
