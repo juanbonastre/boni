@@ -29,6 +29,7 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import type { RunsService } from "./automations/proposal.ts";
 import { interruptRuns, onRunEvent } from "./automations/runs.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
@@ -399,6 +400,9 @@ export class AgentHost {
         : null;
     }
     if (name === "files") return filesService(store);
+    // Accepting a run's proposal (AU-193): it saves with that run's id, in the account's zone.
+    if (name === "automation-runs")
+      return { store, zone: this.tz, device: run.device ?? null } satisfies RunsService;
     if (name === "turns") {
       // A turn of this run's own conversation only, in Juan's own turn (the policy asked him on a card, P21).
       const conversation = run.conversation;

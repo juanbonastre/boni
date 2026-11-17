@@ -345,6 +345,8 @@ export function decide(
   if (!tool) return deny("P0", "unregistered-tool");
   const entries = Object.entries(call.args);
   for (const [name] of entries) if (!tool.args[name]) return deny("P0", "unclassified-argument");
+  // What saves a run's proposal is Juan's acceptance of it and nothing else (AU-193): no turn, flow or run calls it.
+  if (tool.acceptsRun && origin.kind !== "accepted") return deny("P28", "only-accepted");
   // A page's chat (P26): only the actions its step gives, only its own page, only the collections the page shows.
   // Whatever the rest says, nothing outside them runs.
   if (call.scope) {

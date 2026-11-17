@@ -383,9 +383,12 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en S2: `undoAutomationRun` (`runs.ts`; la ruta `POST …/:id/runs/:run/undo` y la acción
   `automations.undo_run`) es el `undoRun` del almacén, todo o nada, y la ejecución guarda cuándo se deshizo; con una
   fila cambiada después lo niega con `changed` y dice cuál. Se deshacen enteras también una que paró a medias por su
-  límite y una interrumpida (AU-190). Es el principio A-40. Falta: lo aceptado de una propuesta (AU-193, S3), una de
-  la que solo queda el resumen (AU-103) y el tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y
-  el servidor no atiende mientras (tarea 137).
+  límite y una interrumpida (AU-190). Es el principio A-40.
+  Hecho en S3: lo que Juan acepta de la propuesta de una ejecución se guarda con la misma ejecución en el registro
+  (`acceptRun`, `apps/server/src/automations/proposal.ts`), así que «Deshacer lo que hizo» lo deshace con lo demás
+  (`proposal.test.ts`); el «Deshacer» de la Bandeja no lo deshace aparte («cannot-undo»). Falta: una de la que solo
+  queda el resumen (AU-103, S4) y el tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y el
+  servidor no atiende mientras (tarea 137).
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
   En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
@@ -1722,7 +1725,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S2: `interruptRuns` (`runs.ts`) al abrir por primera vez el almacén de una cuenta (`agent.ts`), y
   `main.ts` abre al arrancar el de cada cuenta: toda ejecución «queued» o «running» queda «interrupted», con el paso
   en que estaba y su hora de fin; no se repite, y lo que guardaron sus pasos se queda y se deshace desde ella.
-  Falta: que su hora cuente como corrida (el programador, S3) y su aviso (S4).
+  Hecho en S3: su hora cuenta como corrida, porque la ejecución interrumpida guarda la hora que le tocaba y el
+  programador no empieza otra con la misma (`scheduler.test.ts`). Falta: su aviso (S4).
 - **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
@@ -1935,7 +1939,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   que el mapa las enlaza y un ciclo no se puede publicar.
 - **AU-113** (F18, pendiente) · «Cuando cambia una colección» lleva los topes de la tarea 88: tres eslabones por
   cadena, una automatización no se repite en su cadena, unas pocas ejecuciones por minuto.
-- **AU-114** (F14d, pendiente) · «Programada» tiene una o más reglas. Si el servidor estaba apagado a su hora, corre
+- **AU-114** (F14d, en parte) · «Programada» tiene una o más reglas. Si el servidor estaba apagado a su hora, corre
   una vez al volver (lo que queda de D-44).
   En la F14d: una regla es «Cada hora», «Cada día a las 08:00» o «Cada lunes a las 09:00», la forma que ya tienen
   los flujos de antes (`Schedule`), y el disparador lleva una lista de ellas, al menos una. Las horas son de la zona
@@ -1954,6 +1958,15 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Lo sostiene `scheduler.test.ts`, con un reloj de la prueba: corre a su hora y una vez; apagado tres horas con
   «Cada hora», corre una; fuera de margen, no corre y lo deja dicho; nada anterior a publicar o a encender; el
   cambio de hora; y una vuelta con 200 automatizaciones programadas dentro de su tiempo (A-15).
+  Hecho en S3: «Programada» en el catálogo, con sus reglas comprobadas al publicar (una al menos, cada una con
+  hora y día que existen); `scheduleColumn` escribe sus horas al publicar y `AutomationScheduler`
+  (`apps/server/src/automations/scheduler.ts`, una vuelta por minuto, con `lastSlot` y `graceOf` de
+  `flowScheduler.ts`) empieza la ejecución en la cola de la cuenta con `startedBy` `"schedule"`. La hora es única
+  por automatización en el almacén (migración 29), así que dos vueltas o un reinicio no la repiten; fuera de margen
+  queda «No corrió» (`missed`), sin «Reintentar» ni «Deshacer». A la escala de Juan: una vuelta sin nada que correr
+  sobre 200 automatizaciones, menos de 50 ms; una página de «Ejecuciones» sobre un año de ejecuciones por hora,
+  menos de 30 ms; la vuelta rara en que tocan las 200, en torno a 1,3 s (cada una lee y comprueba su versión).
+  Falta: el aviso de «No corrió» (AU-102, S4).
 - **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
 - **AU-116** (F17, pendiente) · El panel de un disparador lista quién la inicia hoy: qué botones de qué páginas y
   qué automatizaciones. Se calcula, no se declara (A-16).
@@ -2385,9 +2398,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   que tiene guardado (`consentIn` y `automationPolicy`, `apps/server/src/automations/policy.ts`), nunca de la
   llamada, de la caja ni de un navegador. `YES_SAVES` ya no existe: un paso pregunta si su celda dice «Preguntar» o
   si la política preguntaría, crear y modificar con «Sí» no añaden nada a «Haría esto», y «Probar» dice lo que hará
-  la ejecución, la inicie quien la inicie (AU-195). Falta: leer el «Sí» de la versión publicada y no del borrador
-  guardado, que es lo que corre de verdad hasta que haya versiones (S1); `proposal.test.ts` sobre el servidor, con
-  la propuesta de una ejecución (S3); y las palabras «sin preguntar» en la app (AU-189, pantallas).
+  la ejecución, la inicie quien la inicie (AU-195). El «Sí» se lee de la versión publicada desde S1.
+  Hecho en S3: `proposal.test.ts` sobre el servidor, a mano y a su hora: una eliminación con «Sí» de un «Colección»
+  o de un «Código» va a la papelera sin propuesta y se deshace con la ejecución, también cuando lo de fuera elige
+  las filas; con «Preguntar», se propone, y aceptarla vale como la confirmación de P5. Falta: las palabras «sin
+  preguntar» en la app (AU-189, pantallas).
   El coste de la decisión, como se le dijo a Juan, en dos casos. Los ve una vez, en «Publicar» (AU-182), y no en
   cada ejecución.
 
@@ -2446,14 +2461,16 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   sobre el servidor real, una ejecución con algo de fuera lo guarda con su etiqueta si la celda dice «Sí» y lo
   propone si dice «Preguntar», empiece como empiece.
   Hecho en E1: el origen `automation` y la fila P28 en `decide` (`byAutomation`), una prueba por fila, con P11 fuera
-  para este origen, y cada acto de `ACTS` contestado para él por una tabla escrita en la prueba. Falta: las mismas
-  filas con una ejecución programada sobre el almacén de verdad (`proposal.test.ts`, S3) y el aviso por ejecución
-  (`scheduler.test.ts`, S3 y S4).
+  para este origen, y cada acto de `ACTS` contestado para él por una tabla escrita en la prueba.
+  Hecho en S3: las mismas filas con una ejecución programada sobre el almacén de verdad (`proposal.test.ts`): lo
+  propio y lo de fuera con «Sí» se guardan, con su etiqueta; con «Preguntar», una propuesta; ningún paso puede
+  nombrar una colección del sistema. La tercera fila es de AU-204 (F15). Falta: el aviso por ejecución
+  (`scheduler.test.ts`, S4).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla),
   `automations.test.ts` (servidor: cada acto de `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
   almacén de verdad, y que ningún paso puede nombrar una colección del sistema) y `scheduler.test.ts` (el aviso por
   ejecución, sin valores).
-- **AU-195** (F14d, en parte) · La misma versión publicada, con la misma entrada, recibe la misma decisión para
+- **AU-195** (F14d, hecho) · La misma versión publicada, con la misma entrada, recibe la misma decisión para
   cada escritura (permitir, proponer, confirmar o negar) la inicie Juan o su disparador (decisión 11 del §10,
   2026-11-16). Quién inicia una ejecución no llega a `decide`: llega a `$run`, a «Ejecuciones» y a los avisos.
 
@@ -2485,8 +2502,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   destino.
   Hecho en E1: un solo origen para toda ejecución de verdad, y la tabla del principio sobre el servidor (cada acto,
   cada etiqueta de valor y de camino y cada celda: lo mismo a mano y sola, y otra versión no da el «Sí» de esta).
-  Falta: el mismo paso a mano y a su hora sobre el almacén (`proposal.test.ts`, S3) y `$run.startedBy` con un «Si»
-  sobre él (`scheduler.test.ts`, S3).
+  Hecho en S3: el mismo paso a mano y a su hora sobre el almacén (`proposal.test.ts`: lo mismo guardado, propuesto
+  o, en «Probar», nada; y «Haría esto» de una «Programada» igual que el de su ejecución) y `$run.startedBy`, con
+  `"schedule"` en la que empieza a su hora, en sus reintentos y en «Probar», y un «Si» sobre él que lleva a una
+  rama a mano y a la otra a su hora (`scheduler.test.ts`).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: que quién la inició no es una entrada de
   `decide`), `automations.test.ts` (servidor: el principio, con la tabla entera para cada manera de empezar), `proposal.test.ts` (servidor: el mismo paso y el mismo valor de fuera, a mano y a su hora;
   con «Sí» las dos lo guardan con su etiqueta, con «Preguntar» las dos lo proponen, y «Probar» no escribe) y
@@ -2514,9 +2533,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Juan (P9). Por eso llega en el mismo PR que P28 (AU-195), y ese PR prueba los dos caminos, el que guarda y el
   que propone.
   Hecho en E1: `Asked` lleva los valores con la etiqueta de cada uno, y lo que una ejecución guarda con «Sí» queda
-  en el almacén con la suya (`box.test.ts`, 3.000 filas, de fuera y propias). Falta: que la propuesta los guarde así
-  y aceptar los escriba con ella (AU-193, S3); que otra ejecución y el asistente lean otra vez lo guardado como de
-  fuera y lo traten así, sobre el servidor (`proposal.test.ts`, S3); y lo fijado (AU-93).
+  en el almacén con la suya (`box.test.ts`, 3.000 filas, de fuera y propias).
+  Hecho en S3: la propuesta guarda cada valor con su etiqueta y aceptar lo escribe con ella; otra ejecución que lee
+  lo guardado con «Sí» o aceptado lo recibe de fuera, lo guarda de fuera con «Sí» y lo propone marcado con
+  «Preguntar» (`proposal.test.ts`). Falta: lo fijado (AU-93).
   Lo sostienen `consent.test.ts` (`packages/automations`: lo que se pregunta lleva la etiqueta de cada valor),
   `box.test.ts` (servidor: lo guardado con «Sí» conserva su etiqueta en el almacén) y
   `proposal.test.ts` (servidor: un valor de fuera guardado con «Sí», o propuesto y aceptado, y leído otra vez por
@@ -2538,7 +2558,14 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   la Bandeja: extiende `proposals` y `acceptProposal`, con una acción más en la lista (A-26).
   Hecho en E1: la frase nueva de P5 en `decide` (`Call.ofRun`): una eliminación aceptada dentro de la propuesta de
   una ejecución, desde un dispositivo personal, no se confirma otra vez; en otra propuesta, desde uno compartido o
-  algo irreversible, como antes (`automation-origin.test.ts`). Falta: la propuesta, su tarjeta y aceptarla (S3).
+  algo irreversible, como antes (`automation-origin.test.ts`).
+  Hecho en S3: `proposeRun` deja una propuesta por ejecución, con los pasos que esperan y
+  lo que la tarjeta pinta (`RunProposalView`: automatización, versión, cuentas por colección y acción, cada fila con
+  su antes y su después y la marca de fuera), y la acción `automations.accept_run` (`acceptsRun`), que solo llama
+  aceptarla desde la Bandeja y pasa por `decide` con el origen aceptado (P28 y P5). Desde un dispositivo compartido
+  no se acepta; una fila cambiada la deja «stale» sin guardar nada; rechazar no escribe; deshacer la ejecución deja
+  sin valer la que esperaba (`proposal.test.ts`). Falta: su tarjeta en la Bandeja y el texto con HTML leído letra
+  por letra (`automations-publish.spec.ts`, pantallas P3).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: un borrado aceptado en la propuesta de una
   ejecución no se confirma otra vez, y el de cualquier otra propuesta sí) y `proposal.test.ts` (servidor): una
   propuesta por ejecución con dos pasos que esperan; aceptar guarda
@@ -2674,7 +2701,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Hecho en W1: `{{ $col(…) }}` es `code.readInExpression`, para leer y para guardar, y el análisis no le da ninguna
   petición. Hecho en W2: una petición en la respuesta de una evaluación de expresiones hace fallar el paso
   (`code.write.unseen`) sin guardar nada.
-- **AU-185** (F14c, en parte) · Lo que guarda un código es un cambio de su paso, como el de un «Colección»: lleva
+- **AU-185** (F14c, hecho) · Lo que guarda un código es un cambio de su paso, como el de un «Colección»: lleva
   la ejecución, la versión y el paso, y la etiqueta de lo que la evaluación recibió (AU-169), así que lo que viene
   de fuera queda en el almacén como de fuera (AU-170); se propone si su celda dice «Preguntar» y se guarda si dice
   «Sí» (decisión 11 del §10, 2026-11-16; hasta entonces lo de fuera se proponía siempre, P4). Lo que evita que una escritura de una
@@ -2689,6 +2716,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Desde la decisión 11 (2026-11-16): esa propuesta de P4 ya no es lo que falta. En su lugar, la F14d prueba sobre
   el servidor real que con «Sí» se guarda con su etiqueta y con «Preguntar» se propone, empiece como empiece
   (AU-167, AU-195).
+  Hecho en S3 de la F14d: sobre el servidor, con una ejecución a mano y otra a su hora, lo de fuera de un código se
+  guarda con su etiqueta con «Sí» y se propone con «Preguntar» (`proposal.test.ts`). Lo de AU-113 es de AU-113 (F18).
 
 Lo que cambia, regla por regla:
 

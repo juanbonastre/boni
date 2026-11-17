@@ -1950,6 +1950,8 @@ export class Agent {
         flow: !!st.flowRun,
         dry: !!st.dry,
         ...(rows !== undefined ? { rows } : {}),
+        // Accepting an automation's run proposal (AU-193): its removals were confirmed on the card.
+        ...(tool?.acceptsRun ? { ofRun: true } : {}),
         ...(st.chat && tool ? { scope: st.chat.scope, typeIds: this.typeIdsOf(tool, args) } : {}),
       },
       st.origin,
@@ -3875,6 +3877,8 @@ export class Agent {
     const p = journal.proposal(id);
     if (!p || (p.status !== "accepted" && p.status !== "rejected")) return "no-such-proposal";
     if (p.status === "accepted") {
+      // What accepting a run's proposal saved carries that run's id: its «Deshacer lo que hizo» takes it back (AU-18).
+      if (this.o.registry.get(p.tool)?.acceptsRun) return "cannot-undo";
       const r = run ? journal.run(run) : null;
       if (!r || r.origin !== "accepted") return "cannot-undo";
       if (this.o.store.runUndoable(run as string))

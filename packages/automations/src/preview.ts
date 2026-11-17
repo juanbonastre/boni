@@ -70,6 +70,8 @@ export async function preview(input: PreviewInput, box: Box): Promise<Preview> {
   // What it needs kept: every step before it, by arrows or by citation, and what those hang from in turn.
   const order = orderTo(automation, step.id);
   const needed = before(automation, step, byName);
+  // `$run.startedBy` in a test is its trigger's kind (AU-195), so a «Si» over it shows the branch it will take.
+  const startedBy = byId.get(order?.[0] ?? "")?.type === "schedule" ? "schedule" : "user";
   const place = new Map((order ?? []).map((id, i) => [id, i]));
   const missing = [...needed]
     .filter((id) => {
@@ -186,7 +188,7 @@ export async function preview(input: PreviewInput, box: Box): Promise<Preview> {
           locale: input.locale,
           today: "",
           seed: seedOf(input.seed, step.id),
-          run: { test: true, startedBy: "user" },
+          run: { test: true, startedBy },
           offset: whole || !perRow ? 0 : n,
         },
         box,

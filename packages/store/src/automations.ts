@@ -7,7 +7,8 @@ import type { DatabaseSync } from "node:sqlite";
  * `AutomationsJournal`, and `automationsJournal` is its part of `openJournal`.
  *
  * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`; entry 26 adds `automation_drafts.trigger`; entry
- * 27, F14d, adds the versions, `automations.published` and `automations.enabled`: `automationsVersionsMigration`):
+ * 27, F14d, adds the versions, `automations.published` and `automations.enabled`: `automationsVersionsMigration`;
+ * entry 29, F14d S3, adds a «Programada»'s hours: `automationsScheduleMigration`):
  *
  *   CREATE TABLE automations (
  *     id TEXT PRIMARY KEY, by TEXT NOT NULL, created INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
@@ -151,9 +152,16 @@ export interface AutomationsJournal {
   publishAutomation(
     v: Omit<AutomationVersionRow, "n">,
     expect: number,
+    /** The version's «Programada» hours (`ScheduledAutomation.schedule`), or null; its hours count from `v.at`. */
+    schedule?: string | null,
   ): { n: number; enabled: boolean };
-  /** The switch (AU-194). */
-  setAutomationEnabled(id: string, enabled: boolean): void;
+  /** The switch (AU-194). Turned on at `at`, no hour at or before it runs (AU-114). */
+  setAutomationEnabled(id: string, enabled: boolean, at?: number): void;
+  /**
+   * The published, enabled automations with a «Programada» (AU-114), each with its latest due hour and whether a run
+   * of it is under way: one query, by the columns and the runs' indexes, reading no document.
+   */
+  scheduledAutomations(): ScheduledAutomation[];
   /**
    * Whether some live row of the collection (a type id) holds a value from outside today (AU-182, AU-170: a label
    * below `imported`, as the policy reads it): one query over the collection's labels that reads no row whole.
@@ -241,6 +249,42 @@ export function automationsVersionsMigration(db: DatabaseSync): void {
     db.exec("ALTER TABLE automations ADD COLUMN published INTEGER");
   if (!cols.some((c) => c.name === "enabled"))
     db.exec("ALTER TABLE automations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
+}
+
+/**
+ * Migration 29 (F14d S3, AU-114): a «Programada»'s hours, read by the scheduler's tick from a column and not from the
+ * documents. `automations.schedule`: the published version's schedule triggers and their rules (JSON, written at
+ * publishing; null with none); `automations.since`: no hour at or before it runs (publishing a version, turning the
+ * switch on); `automation_runs.slot`: the hour a scheduled run was due, unique per automation;
+ * `automation_runs.proposal`: the inbox's proposal of what the run asked (AU-193). It may run again on a
+ * database that has it (as 25).
+ */
+export function automationsScheduleMigration(db: DatabaseSync): void {
+  const has = (table: string, col: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+      (c) => c.name === col,
+    );
+  if (!has("automations", "schedule")) db.exec("ALTER TABLE automations ADD COLUMN schedule TEXT");
+  if (!has("automations", "since")) db.exec("ALTER TABLE automations ADD COLUMN since INTEGER");
+  if (!has("automation_runs", "slot"))
+    db.exec("ALTER TABLE automation_runs ADD COLUMN slot INTEGER");
+  if (!has("automation_runs", "proposal"))
+    db.exec("ALTER TABLE automation_runs ADD COLUMN proposal TEXT");
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS automation_runs_slot ON automation_runs (automation, slot)
+     WHERE slot IS NOT NULL`);
+}
+
+/** A published, enabled automation with a «Programada», as the scheduler's tick reads it (AU-114). */
+export interface ScheduledAutomation {
+  id: string;
+  /** JSON: `[{ step, rules: [{ every, at?, day? }] }]`, the published version's (`automationsScheduleMigration`). */
+  schedule: string;
+  /** No hour at or before it runs. */
+  since: number;
+  /** The latest hour a run of it was due (also a «No corrió»), or null. */
+  last: number | null;
+  /** A run of it is queued or running. */
+  busy: boolean;
 }
 
 /** The label integrities below `imported` (`@boni/entities`' order): a value from outside, a model's or ambient. */
@@ -353,7 +397,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
         | undefined;
       return r ? { ...info(r), doc: r.doc as string, names: r.names as string } : null;
     },
-    publishAutomation: (v, expect) =>
+    publishAutomation: (v, expect, schedule = null) =>
       atomic(() => {
         const last = db
           .prepare("SELECT coalesce(max(n), 0) AS n FROM automation_versions WHERE id = ?")
@@ -365,15 +409,40 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
         ).run(v.id, n, v.doc, v.hash, v.at, v.device, v.by, v.names);
         const r = db
           .prepare(
-            `UPDATE automations SET enabled = CASE WHEN published IS NULL THEN 1 ELSE enabled END, published = ?
+            `UPDATE automations SET enabled = CASE WHEN published IS NULL THEN 1 ELSE enabled END, published = ?,
+               schedule = ?, since = ?
              WHERE id = ? RETURNING enabled`,
           )
-          .get(n, v.id) as { enabled: number } | undefined;
+          .get(n, schedule, v.at, v.id) as { enabled: number } | undefined;
         if (!r) throw new Error(`no automation ${v.id}`);
         return { n, enabled: Number(r.enabled) === 1 };
       }),
-    setAutomationEnabled: (id, enabled) =>
-      void db.prepare("UPDATE automations SET enabled = ? WHERE id = ?").run(enabled ? 1 : 0, id),
+    setAutomationEnabled: (id, enabled, at) =>
+      void db
+        .prepare(
+          `UPDATE automations SET since = CASE WHEN enabled = 0 AND ? = 1 AND ? IS NOT NULL THEN ? ELSE since END,
+             enabled = ? WHERE id = ?`,
+        )
+        .run(enabled ? 1 : 0, at ?? null, at ?? null, enabled ? 1 : 0, id),
+    scheduledAutomations: () =>
+      (
+        db
+          .prepare(
+            `SELECT a.id, a.schedule, a.since,
+               (SELECT max(r.slot) FROM automation_runs r WHERE r.automation = a.id AND r.slot IS NOT NULL) AS last,
+               EXISTS (SELECT 1 FROM automation_runs o WHERE o.automation = a.id
+                 AND o.state IN ('queued', 'running')) AS busy
+             FROM automations a
+             WHERE a.schedule IS NOT NULL AND a.enabled = 1 AND a.deleted = 0 AND a.published IS NOT NULL`,
+          )
+          .all() as Record<string, unknown>[]
+      ).map((r) => ({
+        id: r.id as string,
+        schedule: r.schedule as string,
+        since: Number(r.since ?? 0),
+        last: r.last === null || r.last === undefined ? null : Number(r.last),
+        busy: Number(r.busy) === 1,
+      })),
     holdsOutside: (type) =>
       Number((db.prepare(HOLDS_OUTSIDE_SQL).get(type) as { found: number }).found) === 1,
     automationDraft: (id) => {
