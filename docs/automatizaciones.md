@@ -424,7 +424,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   las citas sencillas, y escribir `{{` en un valor fijo lo pasa a expresión con el cursor donde estaba (la prueba de
   AU-22 en `e2e-boni/automations-code.spec.ts`). Con la caja del servidor (S1-b) el motor los manda a la caja al
   probar y al ejecutar: lo comprueba la prueba de AU-27 en la app de escritorio.
-- **AU-23** (F14c, en parte) · Debajo de una expresión se ve lo que vale con la fila actual («= 5 · con la fila 3
+- **AU-23** (F14c, hecho) · Debajo de una expresión se ve lo que vale con la fila actual («= 5 · con la fila 3
   de 128»), y se pasa de fila. Si no se puede calcular dice qué hacer: «Prueba los pasos anteriores».
   En la F14c: el valor lo calcula el servidor en la caja (AU-27) con las filas que guardó la prueba y con su hora y su
   semilla. Se pide cuando Juan deja de escribir, y la respuesta de un texto anterior nunca pisa la de uno posterior.
@@ -443,9 +443,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   texto. Cada valor de la petición va escapado del todo (`queryValue`), así que cabe en los caminos que dejan
   pasar `Net.kt` y `paths.cjs` sin cambiarlos (`client.test.ts`). Con 3.000 filas, el servidor calcula cada línea
   mientras se escribe en menos de 600 ms (`box.test.ts`, A-15). Lo comprueban las pruebas de AU-23 en
-  `e2e-boni/automations-code.spec.ts` y, en la app de escritorio sobre la caja real, la de AU-27. Falta: en el
-  móvil, que se vea sin poder escribir (AU-74, con la vista del paso en el móvil).
-- **AU-24** (F14c, en parte) · Lo que se puede citar, igual en expresiones y en «Código»: `$json` (la fila actual),
+  `e2e-boni/automations-code.spec.ts` y, en la app de escritorio sobre la caja real, la de AU-27.
+  Hecho al cerrar la F14c: en el teléfono la línea dice el valor con la fila de la prueba y la expresión no se puede
+  escribir (la prueba «AU-23 · AU-74 · on the phone…» de `e2e-boni/automations-code.spec.ts`).
+- **AU-24** (F14c, hecho) · Lo que se puede citar, igual en expresiones y en «Código»: `$json` (la fila actual),
   `$input` (`.all()`, `.first()`, `.last()`, `.item`), `$('Nombre de un paso')`, `$now` y `$today`, `$run` (si es
   prueba, quién la inició), `$page` (los valores de la página que la inició: F17) y las ayudas de fechas, texto y
   listas.
@@ -460,10 +461,9 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en E2: `readCode` lee los mismos nombres en los dos sitios, y la validación da `code.unknownGlobal`,
   `expr.noCurrentRow`, `expr.notBefore`, `expr.cannotPair`, `code.readInExpression` y `code.cannotWait`.
   Hecho en P1: cada uno de esos problemas tiene sus palabras en los dos idiomas (`words.ts`, `words.test.ts`), y se
-  ven en la tarjeta del paso en el lienzo, y los de la vista previa debajo de la expresión. Falta: marcarlos en su
-  sitio del editor y en la vista del paso (AU-36, P2).
+  ven en la tarjeta del paso en el lienzo, y los de la vista previa debajo de la expresión.
   Hecho en P2: en un «Código», cada problema con sitio se marca en él en su editor, y los demás se dicen debajo
-  (AU-36).
+  (AU-36; las pruebas de AU-36 en `code.test.ts` y en `e2e-boni/automations-code.spec.ts`).
 - **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
@@ -481,8 +481,8 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en P2: en la vista de un «Código», cada campo de su ENTRADA lleva su clave al lado del nombre («Importe ·
   importe»); el autocompletado del editor es `completions` (tras `$json.`, `$input.first().` y
   `$('Paso').first().`, probado en E2) y escribe la clave enseñando el nombre; en la app lo prueba
-  `$input.first().` (`e2e-boni/automations-code.spec.ts`). Falta: arrastrar un campo a JavaScript escribe su clave,
-  y ningún otro sitio enseña una (la prueba pendiente de AU-25; a la cola).
+  `$input.first().` (`e2e-boni/automations-code.spec.ts`). Falta, en la tarea 139 de la cola: arrastrar un campo a
+  JavaScript escribe su clave, y ningún otro sitio enseña una.
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, hecho) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
@@ -574,7 +574,7 @@ return categorias.map((c) => ({
   «Conectar», que le añade la conexión que lee sin filtros y no guarda nada (nunca con permiso de guardar: eso es
   AU-176); mientras está, «Probar paso» no se puede pulsar y dice por qué. En la app de escritorio, sobre la caja real
   y 3.000 filas, con el código del §5.4. La fila de la conexión en su tabla es AU-41 (P3).
-- **AU-32** (F14c, en parte) · El código no escribe por sí mismo (lo de A-09 se queda: pide, y Boni comprueba y
+- **AU-32** (F14c, hecho) · El código no escribe por sí mismo (lo de A-09 se queda: pide, y Boni comprueba y
   aplica). Devuelve filas y las escriben los pasos «Colección» que le siguen, que pasan por la política; o pide
   guardar por una conexión que lo permite, y lo guarda el motor (AU-172 a AU-176, Juan, 2026-11-16).
   En la F14c: `$col(…)` tiene `find`, `get`, `count` y `sum` y, para pedir guardar, `create`, `update` y `remove`
@@ -584,8 +584,10 @@ return categorias.map((c) => ({
   Hecho en E1: `$col(…)` de la caja tiene solo `find`, `get`, `count` y `sum`, y una expresión no tiene `$col`.
   Hecho en E3: el motor no le pide a la puerta ninguna escritura por lo que responda la caja, y las filas de «Código»
   no tienen origen: un paso «Colección» con «Las filas que llegan» detrás falla con `row.notSaved`.
-  Comprobado en P1: la vista previa no escribe (en una expresión no hay `$col`, AU-184). Falta: pedir guardar por una
-  conexión, que lo guarda el motor (AU-175, F14d), y la conexión que lo permite en la app (AU-176, P3).
+  Comprobado en P1: la vista previa no escribe (en una expresión no hay `$col`, AU-184).
+  Hecho en la F14d (E1): lo que pide un «Código» por una conexión con «Sí» lo guarda el motor, y con «Preguntar»
+  espera (las pruebas de AU-186 en `consent.test.ts` y `writes.test.ts`). Hecho en P3: la conexión que lo permite,
+  en la app (AU-176).
 - **AU-33** (F14c, hecho) · `console.log` se ve en la «Consola» del paso, una franja plegable debajo de su
   salida, con la línea que lo escribió. Un error señala su línea en el editor y dice el mensaje tal cual.
   En la F14c: la consola se guarda con la prueba del paso: hasta 200 líneas de 2.000 caracteres. Las que sobran se
@@ -782,7 +784,7 @@ return [];
   mide su prueba: unos 3 s para guardar las 3.000 y otros tantos para deshacerlas, todo del `update` del almacén, que
   tarda más cuantos más registros tiene (una tarea aparte). Las rutas de una ejecución de verdad y «Deshacer lo que
   hizo» son de la F14d (AU-95, AU-18, AU-100).
-- **AU-175** (F14c, en parte) · Lo que se puede pedir tiene topes, cada uno un número con nombre
+- **AU-175** (F14c, hecho) · Lo que se puede pedir tiene topes, cada uno un número con nombre
   (`WRITE_LIMITS`, `writes.ts`): peticiones por evaluación (5.000) y por paso (5.000), el tamaño de una (64 KB) y el
   de todas las de un paso (4 MB). Pasarse hace fallar el paso, dice cuál y por cuánto, y no guarda nada: nunca se
   recorta, porque guardar la mitad de un cambio sería guardar otro.
@@ -797,7 +799,10 @@ return [];
   Hecho en S1-c: en una ejecución de verdad sobre el almacén y la caja reales, con «Preguntar» no se guarda nada: el
   cambio de 3.000 filas espera como una sola propuesta (con «Sí» se guarda desde la F14d, AU-186), y pasarse de las peticiones de una evaluación
   (5.001) o de las de un paso (dos por fila de 3.000) falla con `code.limit`, sin propuesta y sin una operación en el
-  registro. Falta (F14d): los topes de la ejecución, con AU-17.
+  registro.
+  Hecho en la F14d (E2): lo que pide un «Código» cuenta en las filas escritas de la ejecución (AU-17) antes de
+  preguntar a la política, con «Sí» como con «Preguntar» (la prueba «AU-17 · a «Código» whose change…» de
+  `writes.test.ts`).
 
 - **AU-39** (F19, pendiente) · «Escribir con IA»: Juan dice lo que quiere y Boni propone el código viendo los nombres
   de los campos, nunca sus valores. Se acepta o no.
@@ -1905,8 +1910,9 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   «Si falla» del paso, sin reintento y sin el motivo de la política; la cuenta de cada lectura queda en `StepRecord.reads`.
   Hecho en S1: sobre el servidor real, una caja que pide una colección que el paso no tiene conectada no lee nada
   (`code.read.notConnected`): la conexión es la de la automatización guardada en el almacén, no la de la petición.
-  Falta (la fase que traiga la primera regla de la política que niegue una lectura de una automatización, según la
-  tarea 127): esa negación sobre el servidor real. En la F14c no hay ninguna: sobre el servidor real cada lectura de
+  Falta (tarea 144 de la cola): esa negación sobre el servidor real, cuando exista la primera regla de la política
+  que niegue una lectura de una automatización; el diseño de cada fase desde la F15 dice si la trae, y el PR que la
+  traiga trae la prueba. En la F14c no hay ninguna: sobre el servidor real cada lectura de
   una ejecución se deja, y lo comprueba la prueba de AU-174. Su camino por el «Si falla» ya lo prueba E3 con una
   política que niega.
 - **AU-162** (F14a, hecho) · Una cita sencilla (un campo de la fila actual o de un paso anterior: `$json.importe`,
@@ -2280,7 +2286,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | Antes | El resumen de la mañana que falla: el lector reintenta con la entrada acortada (AU-59, en el motor de hoy) | El resumen llega tres mañanas seguidas | en main |
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en main |
-| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en curso |
+| **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en main |
 | **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189). Desde su diseño (tarea 128): quién inicia una ejecución y con qué origen (AU-195), la propuesta de una ejecución (AU-193), el interruptor (AU-194), una eliminada se recupera (AU-191), una interrumpida no se repite sola (AU-190) y cambiar el nombre de una colección no rompe lo publicado (AU-192). Desde la decisión 11 (2026-11-16): quién la inicia no cambia lo que guarda, y con «Sí» guarda también lo que viene de fuera, con su etiqueta (AU-186, AU-167, AU-195, AU-170) | en curso |
 | **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10) | pendiente |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior» | pendiente |

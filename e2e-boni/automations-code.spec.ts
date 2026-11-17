@@ -658,6 +658,37 @@ test.describe("«Código» on the phone", () => {
     await expect.poll(() => sourceIn(page)).toBe(source);
     expect(await drafts(page, "a_01jx8x0t2v4x6z8b0d2f4h6c09")).toEqual([]);
   });
+  test("AU-23 · AU-74 · on the phone the line under an expression that is JavaScript says its value with the test's row, and the expression cannot be typed in", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openApp(page, "/?still", {
+      automations: [testOf(ALL_DONE, { kept: FIVE_MIN }, CODED)],
+      agent: BEFORE(),
+    });
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText(CODED.name, { exact: true }).first().tap();
+    await expect(page.locator(".auto-card")).toHaveCount(7);
+    await page.locator(".auto-zoom").getByRole("button", { name: "Encajar" }).tap();
+    await card(page, "s_01jmodificar").tap();
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jmodificar");
+    await expect(view(page)).toHaveClass(/\bphone\b/);
+    const fields = param(page, "fields");
+    await expect(fields.locator(".auto-preview").first()).toHaveText(
+      "= LIBRO 126 · con la fila 1 de 3",
+    );
+    const editor = fields.getByRole("textbox", { name: "Valor" }).first();
+    await expect(editor).toHaveAttribute("contenteditable", "false");
+    await expect(view(page).locator("[contenteditable=true]")).toHaveCount(0);
+    await editor.tap();
+    await page.keyboard.type("x");
+    expect(await exprOf(editor)).toBe("{{ $json.titulo.toUpperCase() }}");
+    expect(await drafts(page, CODED.id)).toEqual([]);
+  });
 });
 
 /** A «Código» that reads «Libros» and marks the open tasks done: it asks to modify «Tareas» (AU-172). */
