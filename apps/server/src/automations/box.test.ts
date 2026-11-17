@@ -1425,11 +1425,10 @@ describe("a run over the real store (S1-c)", () => {
 
     timing("S1-c · a step's change of 3,000 rows, written", took);
     timing("S1-c · the run's 3,000 operations, undone", undoTook);
-    // About a millisecond a row, all of it the store's own `update` (3,000 in one batch cost the same without the
-    // engine): each write deletes its row from the search index by a column the index does not key, so it reads the
-    // whole index, and a write costs more the more records the store has (7 s for these 3,000 among 12,000). The
-    // bound is what that costs today; making the store's write not grow with it is a task of its own.
-    under(took, 10_000, "clock", "a step's change of 3,000 rows in one transaction");
-    under(undoTook, 10_000, "clock", "undoing a run of 3,000 operations");
+    // Since task 137 a write finds its row's entry in the search index by its rowid instead of reading the whole
+    // index: measured on the laptop with the queue held, 1.8 s to write and 1.6 s to undo (2.9 s and 3.4 s before,
+    // and 7.4 s and 7.6 s for these 3,000 among 12,000). The bounds are about twice that.
+    under(took, 4000, "clock", "a step's change of 3,000 rows in one transaction");
+    under(undoTook, 4000, "clock", "undoing a run of 3,000 operations");
   }, 120_000);
 });
