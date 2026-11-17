@@ -79,24 +79,27 @@ describe("what a step of a published version writes (P28, F14d)", () => {
       expect(ruled(write(TRASH, null, { control: fields }))).toBe("confirm P5");
     }
   });
-  it("AU-167 · from the origin `automation`, a value a model wrote or one of an ambient turn (`model`, `ambient`) is proposed, with or without the «Sí»: nothing a model wrote is saved alone in this phase", () => {
-    for (const low of [model, ambient])
-      for (const yes of [true, false]) {
-        for (const t of [CREATE, UPDATE]) {
-          expect(ruled(write(t, low, { yes })), `${t.name} ${low.integrity} ${yes}`).toBe(
-            "propose P28",
-          );
-          expect(ruled(write(t, user, { yes, control: low })), `${t.name} control`).toBe(
-            "propose P28",
-          );
-        }
-        expect(ruled(write(TRASH, null, { yes, control: low }))).toBe("propose P28");
+  it("AU-167 · from the origin `automation`, a value of an ambient turn is proposed with or without the «Sí», and a value a model wrote follows the «Sí» as any other since F15 (AU-204)", () => {
+    for (const yes of [true, false]) {
+      for (const t of [CREATE, UPDATE]) {
+        expect(ruled(write(t, ambient, { yes })), `${t.name} ambient ${yes}`).toBe("propose P28");
+        expect(ruled(write(t, user, { yes, control: ambient })), `${t.name} control`).toBe(
+          "propose P28",
+        );
+        expect(ruled(write(t, model, { yes })), `${t.name} model ${yes}`).toBe(
+          yes ? "allow P28" : "propose P28",
+        );
       }
-    // Hidden under a value from outside in the joined label (external is lower than model), it is still seen.
+      expect(ruled(write(TRASH, null, { yes, control: ambient }))).toBe("propose P28");
+      expect(ruled(write(TRASH, null, { yes, control: model }))).toBe(
+        yes ? "allow P28" : "confirm P5",
+      );
+    }
+    // Hidden under a value from outside in the joined label (external is lower than ambient), it is still seen.
     const mixed = write(CREATE, null, { yes: true });
     mixed.args = {
       ...mixed.args,
-      values: rec({ a: leaf("x", ext, true), b: leaf("y", model, true) }, ext, true),
+      values: rec({ a: leaf("x", ext, true), b: leaf("y", ambient, true) }, ext, true),
     };
     expect(ruled(mixed)).toBe("propose P28");
   });

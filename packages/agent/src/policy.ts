@@ -1,4 +1,5 @@
 import { atLeast, join, type Label } from "@boni/entities";
+import { type FilterItem, matchesFilters } from "@boni/views";
 import { CHAT_UNASKED, type ChatScope } from "./chat.ts";
 import { DESTINATION_ROLES, type ToolDef } from "./tools.ts";
 import { deepLabel, type Val } from "./values.ts";
@@ -47,6 +48,65 @@ export interface Call {
   yes?: boolean;
   /** Accepting the proposal of an automation's run (AU-193): its removals are the confirmation P5 asks for. */
   ofRun?: boolean;
+  /**
+   * An automation's write or read made by an «Agente» step (origin `automation`, AU-204): what the call does was
+   * chosen by a model. The server reads it from the stored published version (the step's type), never from a model,
+   * the box, a request or a browser. With it, a call that carries no `reach` is denied (P29): an «Agente» never acts
+   * outside a connection the server checked.
+   */
+  byAgent?: boolean;
+  /**
+   * P29 (AU-205): the connection of an automation's AI step with the collection this call touches, and what that step
+   * has written with this action so far in the run, as the server read them from the stored version and the run (as
+   * P26's `scope`). Nothing outside it runs, before any origin's rule (after P0, P26, P14 and P2).
+   */
+  reach?: StepReach;
+}
+
+/** The limits of one action of a connection (AU-43, AU-48, AU-196): an absent one does not limit. */
+export interface ReachLimits {
+  /** «Solo estas filas»: the views' filter. */
+  where?: readonly FilterItem[];
+  /** «Solo estos campos»: the field keys it reads, or that it creates or modifies. */
+  fields?: readonly string[];
+  /** Create: the keys of the fields it gets fixed values for (AU-48), which the AI does not choose. */
+  fixed?: readonly string[];
+  /** «Como mucho N filas»: rows a step may write with this action in one run (AU-196). For a read, not used here. */
+  limit?: number;
+}
+export type ReachAction = "read" | "create" | "update" | "remove";
+
+/**
+ * What P29 reads of an AI step's call (AU-205). The server builds it from the stored published version (the step's
+ * connection), the run (`written`), the store (`row`, `types`, `private`) and the run's day; nothing in it comes from
+ * the model, the box, a request or a browser.
+ */
+export interface StepReach {
+  /** The collection the call touches (its key), as the server resolved it. */
+  collection: string;
+  /**
+   * What the call does to it, as the server knows the act (`actOf`). P29 refuses a read put on a write, and a trash
+   * on a tool that is not one (or the other way round); create and modify it cannot tell apart, so the server puts it.
+   */
+  action: ReachAction;
+  /** No model may read that collection (hidden or opaque, AU-166): any AI step is denied, whatever its connection. */
+  private: boolean;
+  /** The step's connection with that collection, as stored: each action `false` («No») or its limits. Null: none. */
+  cells: null | Readonly<Record<ReachAction, false | ReachLimits>>;
+  /**
+   * The row a write touches: for modify and remove the row as saved, null when there is none (said as one the filter
+   * leaves out: a model may not learn whether a row outside its filter exists); for create, the row as it would be.
+   * Absent for a read, which the engine narrows instead (`narrow`: it never widens).
+   */
+  row?: Readonly<Record<string, unknown>> | null;
+  /** For a read: the fields it filters, sorts or sums by. A write's fields are read from its `values`. */
+  fields?: readonly string[];
+  /** The collection's field types by key, for the filter. */
+  types: Readonly<Record<string, string>>;
+  /** The civil day of the run in the person's zone: «hoy» of a filter. */
+  today: string;
+  /** Rows this step has asked to write with this action in this run so far, saved, tested or pending (AU-196). */
+  written: number;
 }
 export interface RunCounters {
   writes: number;
@@ -151,7 +211,90 @@ const leaves = (v: Val): Label[] =>
   v.t === "v"
     ? [v.label]
     : [v.label, ...(v.t === "list" ? v.items : Object.values(v.fields)).flatMap(leaves)];
-const byAModel = (l: Label) => l.integrity === "model" || l.integrity === "ambient";
+const ambientTurn = (l: Label) => l.integrity === "ambient";
+
+/** Why P29 denies (AU-205): every reason but `private-collection` is told to the model that asked (AU-198). */
+export const P29_REASONS = [
+  "no-reach",
+  "not-the-action",
+  "private-collection",
+  "not-connected",
+  "action-off",
+  "outside-rows",
+  "outside-fields",
+  "over-limit",
+] as const;
+export type P29Reason = (typeof P29_REASONS)[number];
+
+/**
+ * Whether a decision is P29's no to a call outside the step's connection, which the engine tells the model that asked
+ * so it can ask for less (AU-196, AU-198, AU-205). A no of any other rule (P2, P14, P9, P0…), and P29's no to a
+ * collection no model may read, fail the unit instead: the first without saying what, the second saying which.
+ */
+export function outsideReach(d: Decision): boolean {
+  return d.kind === "deny" && d.rule === "P29" && d.reason !== "private-collection";
+}
+
+/** The keys of the fields a write's `values` carries: what it creates or modifies. */
+const writtenFields = (call: Call): string[] => {
+  const v = call.args.values;
+  return v && v.t === "rec" ? Object.keys(v.fields) : [];
+};
+
+/**
+ * P29 (AU-205, docs/nucleo.md §7.5): an automation's AI step does only what its connection gives, as the server read
+ * it. The collection must be connected and no model's private; the action not in «No»; a row it modifies or removes,
+ * or creates, inside «Solo estas filas» of reading and of the action (a row that is not there is said the same way);
+ * the fields it names inside «Solo estos campos» (with create's fixed fields, which the engine writes); and the rows
+ * it has asked to write with that action, this call's with them, within «Como mucho». Null: it may go on to the other
+ * rules, which still decide (a connection only narrows, AU-45).
+ */
+function byReach(call: Call, tool: ToolDef): Decision | null {
+  const r = call.reach;
+  // An «Agente»'s act on a collection with no connection the server read is refused; a send, a fetch or a memory
+  // has no connection and is left to its own rule (P2, P9, P28), which denies it.
+  const onCollection = tool.effect === "read" || tool.effect === "write";
+  if (!r) return call.byAgent && onCollection ? deny("P29", "no-reach") : null;
+  // The act the server put must be the tool's: a read for a read, a trash (P5's mark) for a trash. Create and modify
+  // are the same kind of tool here, so which of the two it is stays the server's to put right (`actOf`).
+  if ((r.action === "read") !== (tool.effect === "read")) return deny("P29", "not-the-action");
+  if (r.action !== "read" && (r.action === "remove") !== Boolean(tool.alwaysConfirm))
+    return deny("P29", "not-the-action");
+  if (r.private) return deny("P29", "private-collection");
+  if (!r.cells) return deny("P29", "not-connected");
+  const cell = r.cells[r.action];
+  if (!cell) return deny("P29", "action-off");
+  const read = r.cells.read || null;
+  if (r.action !== "read") {
+    const where = [
+      ...(read ? (read.where ?? []) : []),
+      ...(r.action !== "create" ? (cell.where ?? []) : []),
+    ];
+    const typeOf = (f: string) => r.types[f];
+    const row = r.row;
+    if (
+      row === null ||
+      row === undefined ||
+      (where.length > 0 && !matchesFilters({ ...row }, typeOf, where, r.today, "fail"))
+    )
+      return deny("P29", "outside-rows");
+  }
+  const named = r.action === "read" ? (r.fields ?? []) : writtenFields(call);
+  // A field it may not see it may not name; a fixed field of create is Juan's, written by the engine, not chosen.
+  const seen = (field: string) => !read?.fields || read.fields.includes(field);
+  const allowed = (field: string) => {
+    if (field === "id") return true;
+    if (r.action === "read") return seen(field);
+    if (cell.fixed?.includes(field)) return true;
+    return (!cell.fields || cell.fields.includes(field)) && seen(field);
+  };
+  if (r.action !== "remove" && !named.every(allowed)) return deny("P29", "outside-fields");
+  if (r.action !== "read" && cell.limit !== undefined) {
+    const rows = Math.max(1, call.rows ?? 1);
+    if (r.written + rows > cell.limit) return deny("P29", "over-limit");
+  }
+  return null;
+}
 
 /**
  * A step of an automation (P28, docs/automatizaciones.md AU-167, AU-186, AU-195): the same answer whoever started the
@@ -159,9 +302,10 @@ const byAModel = (l: Label) => l.integrity === "model" || l.integrity === "ambie
  * (P9): it reads as the background does; it creates, modifies and sends to the trash when the version kept says «Sí»
  * for that collection and action (`yes`), with something from outside in its values (P4) or its path (P15) too,
  * which is P28's one exception to both; without the «Sí» it proposes a create or an update and confirms a removal
- * (P5), all of it in the run's proposal. A value a model wrote, or of an ambient turn, is proposed until F15. Nothing
+ * (P5), all of it in the run's proposal. A value a model wrote (a reader's output, an «Agente»'s answer) and what an
+ * «Agente» chose follow the same «Sí» (AU-204, decisions 11 and 16); a value of an ambient turn is proposed. Nothing
  * else is an automation's: sending, going outside and what cannot be undone are denied, and P11 does not count (the
- * cap is the run's own limit, AU-17).
+ * cap is the run's own limit, AU-17). An AI step's call has passed P29 before (`byReach`).
  */
 function byAutomation(call: Call, tool: ToolDef, external: boolean): Decision {
   switch (tool.effect) {
@@ -174,7 +318,10 @@ function byAutomation(call: Call, tool: ToolDef, external: boolean): Decision {
         ...Object.values(call.args).flatMap(leaves),
         ...(call.control ? [call.control] : []),
       ];
-      if (labels.some(byAModel)) return propose("P28");
+      // AU-204: what a model wrote, and what an «Agente» chose, saves with the version's «Sí» like any value, with
+      // something from outside too (decision 11, confirmed for the «Agente» by decision 16); an ambient turn's value
+      // is still proposed.
+      if (labels.some(ambientTurn)) return propose("P28");
       if (call.yes === true) return allow("P28");
       return tool.alwaysConfirm ? confirm("P5") : propose("P28");
     }
@@ -236,6 +383,10 @@ export function decide(
     if (v.t !== "v" || v.derived) return deny("P14", "derived-destination");
     if (low(v.label)) return deny("P2", "untrusted-destination");
   }
+  // An automation's AI step (P29): only what its connection gives, before any origin's rule. Its no is told to the
+  // model; P14's and P2's, before it, fail the unit without saying what (AU-174).
+  const reached = byReach(call, tool);
+  if (reached) return reached;
 
   const personal = origin.trust === "personal";
   if (origin.kind === "hand") return byHand(tool);

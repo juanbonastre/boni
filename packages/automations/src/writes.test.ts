@@ -895,10 +895,8 @@ describe("the connection's permission", () => {
       () => done([], [update(first, { [amount]: 2 }), create({ [amount]: 1 })]),
       { store: st },
     );
-    expect(rec.writes?.records.map((r) => r.after)).toEqual([
-      { [amount]: 2, [note]: "cerrado" },
-      { [amount]: 1 },
-    ]);
+    // What it gives back is cut by the read's fields: the note it may not see stays out (AU-171, F15).
+    expect(rec.writes?.records.map((r) => r.after)).toEqual([{ [amount]: 2 }, { [amount]: 1 }]);
     // A field the collection does not have is not one: the request is wrong, whatever the connection.
     const unknown = await saving(source, [connection], () => done([], [create({ otro: 1 })]), {
       store: st,
