@@ -53,13 +53,23 @@ export interface Connection {
         fields?: string[];
         fixed?: Record<string, ParamValue>;
         limit?: number;
+        /** An «Agente»'s line for each field the AI decides (AU-52): what the field is for, in its schema. */
+        lines?: Record<string, string>;
       };
-  update: false | { mode: "ask" | "yes"; where?: FilterItem[]; fields?: string[]; limit?: number };
+  update:
+    | false
+    | {
+        mode: "ask" | "yes";
+        where?: FilterItem[];
+        fields?: string[];
+        limit?: number;
+        lines?: Record<string, string>;
+      };
   /** Always to the trash (AU-122); a `yes` removes without asking only as AU-186 says. */
   remove: false | { mode: "ask" | "yes"; where?: FilterItem[]; limit?: number };
 }
 
-/** A fixed value as the format holds it that is a plain value, not an expression (those are AU-52's, E3). */
+/** A fixed value as the format holds it that is a plain value, not an expression (an «Agente»'s may be one, AU-52). */
 export function literalCell(v: ParamValue): v is Cell {
   if (isExpr(v)) return false;
   if (Array.isArray(v)) return v.every(literalCell);
@@ -124,12 +134,11 @@ export type NarrowedAsk = ReadAsk & {
 };
 
 /**
- * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46, AU-176): «Código»,
- * the four; every other type of F14c, none (a connection on it does not validate). F15 gives the «Agente» the same
- * (E3 opens it: until the step type is in the catalogue, an «Agente» takes no connection).
+ * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46, AU-176): «Código»
+ * and «Agente» (F15 E3), the four; every other type, none (a connection on it does not validate).
  */
 export function connectionActions(type: string): readonly ConnectionAction[] {
-  return type === CODE_TYPE ? ALL : NONE;
+  return type === CODE_TYPE || type === AGENT_TYPE ? ALL : NONE;
 }
 
 /**
@@ -310,6 +319,7 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
       ...(detail ? { detail } : {}),
     });
   const actions = connectionActions(step.type);
+  const agent = step.type === AGENT_TYPE;
   if (actions.length === 0) {
     add("connection.notAllowed");
     return out;
@@ -350,19 +360,27 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
       if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= ACTION_ROWS_MAX))
         limits("limit", { action, got: n });
     };
+    // A field's line is of a field the AI decides (AU-52): only an «Agente» has them.
+    const linesOk = (cell: { fields?: readonly string[]; lines?: Record<string, string> }) => {
+      for (const [field, line] of Object.entries(cell.lines ?? {}))
+        if (!agent || !cell.fields?.includes(field) || typeof line !== "string")
+          limits("field", { field });
+    };
     if (c.create !== false) {
       fieldsKnown(c.create.fields);
-      // A fixed value is of a field the collection has; one also left to the step would be two answers (AU-48).
-      // Until AU-52 (E3) a fixed value is a plain one: an expression in it is not one yet.
+      // A fixed value is of a field the collection has; one also left to the step would be two answers (AU-48). An
+      // «Agente»'s may be an expression (AU-52), which the code resolves for each unit; a «Código»'s is a plain one.
       for (const [field, v] of Object.entries(c.create.fixed ?? {}))
-        if (!keys.has(field) || c.create.fields?.includes(field) || !literalCell(v))
+        if (!keys.has(field) || c.create.fields?.includes(field) || (!agent && !literalCell(v)))
           limits("field", { field });
       rowsOk("create", c.create.limit);
+      linesOk(c.create);
     }
     if (c.update !== false) {
       whereOk(c.update.where);
       fieldsKnown(c.update.fields);
       rowsOk("update", c.update.limit);
+      linesOk(c.update);
     }
     if (c.remove !== false) {
       whereOk(c.remove.where);
@@ -390,6 +408,11 @@ const filterOf = (v: unknown, path: string): FilterItem[] => {
 const rowsOf = (v: unknown, path: string): number => {
   if (typeof v !== "number") throw new FormatError(`${path}`, "a number");
   return v;
+};
+const linesOf = (v: unknown, path: string): Record<string, string> => {
+  if (!isObj(v) || !Object.values(v).every((x) => typeof x === "string"))
+    throw new FormatError(`${path}`, "a line of text by field key");
+  return { ...(v as Record<string, string>) };
 };
 const modeOf = (v: unknown, path: string, modes: readonly string[]) => {
   if (typeof v !== "string" || !modes.includes(v))
@@ -428,7 +451,7 @@ export function parseConnection(
   const create = v.create ?? false;
   if (create !== false) {
     if (!isObj(create)) throw new FormatError(`${path}.create`, "false or its permission");
-    closedKeys(create, ["mode", "fields", "fixed", "limit"], `${path}.create`);
+    closedKeys(create, ["mode", "fields", "fixed", "limit", "lines"], `${path}.create`);
     const c: Exclude<Connection["create"], false> = {
       mode: modeOf(create.mode, `${path}.create.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
@@ -440,18 +463,20 @@ export function parseConnection(
       );
     }
     if (create.limit !== undefined) c.limit = rowsOf(create.limit, `${path}.create.limit`);
+    if (create.lines !== undefined) c.lines = linesOf(create.lines, `${path}.create.lines`);
     out.create = c;
   }
   const update = v.update ?? false;
   if (update !== false) {
     if (!isObj(update)) throw new FormatError(`${path}.update`, "false or its permission");
-    closedKeys(update, ["mode", "where", "fields", "limit"], `${path}.update`);
+    closedKeys(update, ["mode", "where", "fields", "limit", "lines"], `${path}.update`);
     const u: Exclude<Connection["update"], false> = {
       mode: modeOf(update.mode, `${path}.update.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (update.where !== undefined) u.where = filterOf(update.where, `${path}.update.where`);
     if (update.fields !== undefined) u.fields = stringList(update.fields, `${path}.update.fields`);
     if (update.limit !== undefined) u.limit = rowsOf(update.limit, `${path}.update.limit`);
+    if (update.lines !== undefined) u.lines = linesOf(update.lines, `${path}.update.lines`);
     out.update = u;
   }
   const remove = v.remove ?? false;

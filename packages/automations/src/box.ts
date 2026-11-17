@@ -498,18 +498,37 @@ export function jsonBytes(v: unknown): number {
 
 const READ_OPS: readonly string[] = ["find", "get", "count", "sum"];
 
-/** What one read gave the rows that asked for it: its value, why it is not one, or the policy's no. */
-type Made = { value: Cell; label?: Label } | { failure: CodeFailure } | { denied: Denied };
+/** The labels of one row a read gave: the row's, and those of the fields it gives that have their own. */
+export interface RowLabels {
+  label: Label;
+  fields?: Record<string, { label: Label }>;
+}
 
-/** The reads of one step in one run: each made once, counted against the step's limits. */
-class Reader {
-  readonly input: EvaluateInput;
+/**
+ * What one read gave the rows that asked for it: its value, why it is not one, or the policy's no. `each`: for a
+ * `find` or a `get` that found a row, the labels of each row given, in order (an «Agente» shows each row by its own,
+ * F15 E3); the box gets the whole read's `label` only.
+ */
+export type Made =
+  | { value: Cell; label?: Label; each?: RowLabels[] }
+  | { failure: CodeFailure }
+  | { denied: Denied };
+
+/** What a reader of a step needs: its connections, its collections by name, and its day. */
+export type ReaderInput = Pick<EvaluateInput, "connections" | "collectionNamed" | "today">;
+
+/**
+ * The reads of one step in one run: each made once, counted against the step's limits. A «Código»'s evaluation
+ * reads through it, and so does an «Agente»'s rounds (F15 E3): the same `narrow`, the same gate, the same limits.
+ */
+export class Reader {
+  readonly input: ReaderInput;
   readonly gate: Gate;
   readonly records: ReadRecord[] = [];
   readonly made = new Map<string, Made>();
   bytes = 0;
 
-  constructor(input: EvaluateInput, gate: Gate) {
+  constructor(input: ReaderInput, gate: Gate) {
     this.input = input;
     this.gate = gate;
   }
@@ -528,7 +547,11 @@ class Reader {
       const narrowed = narrow(ask, this.input.connections);
       const r = await this.make(narrowed, asked, label);
       record = { collection: ask.collection, op: ask.op, rows: r.rows, bytes: r.bytes, ms: 0 };
-      made = { value: r.value, ...(r.label ? { label: r.label } : {}) };
+      made = {
+        value: r.value,
+        ...(r.label ? { label: r.label } : {}),
+        ...(r.each ? { each: r.each } : {}),
+      };
     } catch (e) {
       // The policy's no fails the rows that asked, never the step: «Si falla» decides (Juan, 2026-11-16).
       if (e instanceof Denied) made = { denied: e };
@@ -610,7 +633,7 @@ class Reader {
     ask: NarrowedAsk,
     asked: CodeRead,
     label: Label,
-  ): Promise<{ value: Cell; label?: Label; rows: number; bytes: number }> {
+  ): Promise<{ value: Cell; label?: Label; each?: RowLabels[]; rows: number; bytes: number }> {
     const values: Labelled = {};
     const judged = (value: Cell) => ({ value, label, derived: true });
     (asked.where ?? []).forEach((item, i) => {
@@ -637,6 +660,7 @@ class Reader {
       const value: Cell[] = [];
       let bytes = 2;
       const labels: Label[] = [];
+      const each: RowLabels[] = [];
       for (const r of rows) {
         const one = asRead(r.origin.id, r.json, ask) as Fields;
         bytes += jsonBytes(one) + 1;
@@ -644,10 +668,12 @@ class Reader {
           throw limitFault("readBytes", CODE_LIMITS.readBytes, bytes);
         value.push(one);
         labels.push(...rowLabels(r, ask.fields));
+        each.push(labelsOf(r, ask.fields));
       }
       return {
         value,
         ...(labels.length ? { label: joinAllOf(labels) } : {}),
+        each,
         rows: rows.length,
         bytes,
       };
@@ -670,7 +696,13 @@ class Reader {
       const bytes = jsonBytes(one);
       if (bytes > CODE_LIMITS.readBytes)
         throw limitFault("readBytes", CODE_LIMITS.readBytes, bytes);
-      return { value: one, label: joinAllOf(rowLabels(row, ask.fields)), rows: 1, bytes };
+      return {
+        value: one,
+        label: joinAllOf(rowLabels(row, ask.fields)),
+        each: [labelsOf(row, ask.fields)],
+        rows: 1,
+        bytes,
+      };
     }
     const [result] = await this.gate.aggregate(
       {
@@ -697,6 +729,14 @@ function rowLabels(row: StoredRow, fields: readonly string[] | undefined): Label
   for (const [k, f] of Object.entries(row.fields ?? {}))
     if (!fields || fields.includes(k)) out.push(f.label);
   return out;
+}
+
+/** A row's labels as a read gives it: its own, and those of the fields given that have their own. */
+function labelsOf(row: StoredRow, fields: readonly string[] | undefined): RowLabels {
+  const own = Object.entries(row.fields ?? {}).filter(([k]) => !fields || fields.includes(k));
+  return own.length
+    ? { label: row.label, fields: Object.fromEntries(own.map(([k, f]) => [k, { label: f.label }])) }
+    : { label: row.label };
 }
 
 function joinAllOf(labels: readonly Label[]): Label {

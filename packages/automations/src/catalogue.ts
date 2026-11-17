@@ -8,6 +8,8 @@
  * F14a: «Disparado por el usuario» and the steps of Datos, Transformar and Lógica. Nothing here is text for a person:
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
+
+import { AGENT_ANSWERS, AGENT_MODES, AGENT_PARAMS, AGENT_READS, AGENT_ROUNDS } from "./agent.ts";
 import {
   EXTRACT_FIELDS_MAX,
   EXTRACT_TYPES,
@@ -15,7 +17,7 @@ import {
   READER_PARAMS,
   type ReaderType,
 } from "./ai.ts";
-import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
+import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
@@ -1033,6 +1035,93 @@ const READER_STEPS: Readonly<Record<ReaderType, StepTypeSpec>> = {
     MODEL,
   ]),
 };
+/**
+ * «Agente» (AU-50, F15 E3): reachable by its type like the readers, and like them only with `ValidationContext.ai`.
+ * One input, one output; its six shown parameters are AU-50's (its connections are the step's, not a parameter),
+ * «Rondas máximas» behind «Añadir opción» (AU-58). Its effect is `none`: what it reads and writes goes through its
+ * connections, as a «Código»'s does. «Se ejecuta» picks its action's mode (`actionOf`).
+ */
+const A = AGENT_PARAMS;
+const AGENT_STEP: StepTypeSpec = {
+  type: AGENT_TYPE,
+  category: AI_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "all",
+      pairs: false,
+      outputs: [MAIN],
+      params: [
+        { key: A.instructions, control: "value", of: "text", place: "shown", required: true },
+        { ...MODEL, key: A.model },
+        {
+          key: A.reads,
+          control: "choice",
+          options: AGENT_READS,
+          place: "shown",
+          shape: true,
+          default: "ai",
+        },
+        {
+          key: A.answer,
+          control: "choice",
+          options: AGENT_ANSWERS,
+          place: "shown",
+          shape: true,
+          default: "text",
+        },
+        {
+          key: A.fields,
+          control: "list",
+          place: "shown",
+          required: true,
+          shape: true,
+          min: 1,
+          max: EXTRACT_FIELDS_MAX,
+          when: { param: A.answer, in: ["fields"] },
+          columns: [
+            { key: "key", control: "value", of: "text", place: "shown", required: true },
+            {
+              key: "type",
+              control: "choice",
+              options: EXTRACT_TYPES,
+              place: "shown",
+              required: true,
+            },
+            { key: "line", control: "value", of: "text", place: "shown" },
+            { key: "options", control: "value", of: "any", place: "shown" },
+          ],
+        },
+        {
+          key: A.mode,
+          control: "choice",
+          options: AGENT_MODES,
+          place: "shown",
+          shape: true,
+          default: "all",
+        },
+        {
+          key: A.maxRounds,
+          control: "value",
+          of: "number",
+          place: "option",
+          shape: true,
+          default: AGENT_ROUNDS.born,
+        },
+      ],
+    },
+  ],
+};
+const AGENT_PER_ROW: ActionSpec = {
+  ...(AGENT_STEP.actions[0] as ActionSpec),
+  mode: "perRow",
+  pairs: true,
+};
+
 /** The spec of a reader step's type, or undefined. */
 export const readerStep = (type: string): StepTypeSpec | undefined =>
   isReaderType(type) ? READER_STEPS[type] : undefined;
@@ -1042,7 +1131,11 @@ export const readerStep = (type: string): StepTypeSpec | undefined =>
  * (F15: validation lets them in only with `ValidationContext.ai`).
  */
 export const specOf = (type: string): StepTypeSpec | undefined =>
-  type === CODE_TYPE ? CODE_STEP : (stepType(type) ?? readerStep(type));
+  type === CODE_TYPE
+    ? CODE_STEP
+    : type === AGENT_TYPE
+      ? AGENT_STEP
+      : (stepType(type) ?? readerStep(type));
 
 /**
  * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when
@@ -1050,6 +1143,7 @@ export const specOf = (type: string): StepTypeSpec | undefined =>
  */
 export function actionOf(step: Step): ActionSpec | undefined {
   if (step.type === CODE_TYPE && step.params[CODE_PARAMS.mode] === "perRow") return CODE_PER_ROW;
+  if (step.type === AGENT_TYPE && step.params[AGENT_PARAMS.mode] === "perRow") return AGENT_PER_ROW;
   const spec = specOf(step.type);
   if (!spec) return undefined;
   if (spec.actions.length === 1) return spec.actions[0];

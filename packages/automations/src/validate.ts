@@ -7,6 +7,8 @@
  * It needs no run and no data: only the automation, the catalogue and the shape of the collections it names.
  */
 import { FILTER_OPS } from "@boni/views";
+import { AGENT_PARAMS, AGENT_ROUNDS } from "./agent.ts";
+import { fieldsOf } from "./ai.ts";
 import {
   actionOf,
   inputsOf,
@@ -21,6 +23,7 @@ import {
   TIME_OF_DAY,
 } from "./catalogue.ts";
 import {
+  AGENT_TYPE,
   CODE_LIMITS,
   CODE_MODES,
   CODE_PARAMS,
@@ -49,6 +52,7 @@ import {
   readCode,
   type Span,
 } from "./javascript.ts";
+import type { Cell } from "./rows.ts";
 import { notAllowed, writesOf } from "./writes.ts";
 
 /**
@@ -144,7 +148,8 @@ export function validate(
   const problems: (Problem | CodeProblem)[] = [];
   const code = isCodeContext(context) ? context : undefined;
   /** A type it knows besides «Código»: the catalogue's, and the readers' when a model can be called. */
-  const typed = (s: Step) => !!stepType(s.type) || (!!context.ai && !!readerStep(s.type));
+  const typed = (s: Step) =>
+    !!stepType(s.type) || (!!context.ai && (!!readerStep(s.type) || s.type === AGENT_TYPE));
   const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
     problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
 
@@ -208,6 +213,7 @@ export function validate(
       continue;
     }
     new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
+    if (step.type === AGENT_TYPE) agentParams(step, add);
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
     );
@@ -250,6 +256,28 @@ export function validate(
 }
 
 type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
+
+/**
+ * What an «Agente» takes beyond its controls (AU-53, AU-58): «Rondas máximas» a whole number from 1 to
+ * `AGENT_ROUNDS.max`, and «Campos» what AU-53 says (each key once, a known type, options for an «options» field).
+ */
+function agentParams(step: Step, add: Add): void {
+  const at = { step: step.id };
+  const rounds = step.params[AGENT_PARAMS.maxRounds];
+  if (
+    typeof rounds === "number" &&
+    !(Number.isInteger(rounds) && rounds >= 1 && rounds <= AGENT_ROUNDS.max)
+  )
+    add("param.value", { ...at, param: AGENT_PARAMS.maxRounds });
+  const fields = step.params[AGENT_PARAMS.fields];
+  if (
+    step.params[AGENT_PARAMS.answer] === "fields" &&
+    Array.isArray(fields) &&
+    fields.length &&
+    !fieldsOf(fields as Cell)
+  )
+    add("param.value", { ...at, param: AGENT_PARAMS.fields });
+}
 
 /**
  * The parameters of a «Código» (AU-26, AU-30): «Se ejecuta», one of `CODE_MODES` and absent for the first, and the
