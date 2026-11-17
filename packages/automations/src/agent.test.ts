@@ -97,7 +97,7 @@ describe("the «Agente» step (F15)", () => {
     const step = e.steps[id];
     expect(e.state).toBe("done");
     expect(step?.out.main).toHaveLength(1);
-    expect(step?.out.main[0]?.json.texto).toBe("Propongo una tarea");
+    expect(step?.out.main?.[0]?.json.texto).toBe("Propongo una tarea");
     expect(step?.writes?.kind).toBe("asked");
     expect(e.asked).toHaveLength(1);
     expect(st.rows(tasks.key)).toHaveLength(10);
@@ -134,7 +134,7 @@ describe("the «Agente» step (F15)", () => {
     const off = analyst({}, [conn({ read: false, create: { ...ASK, fields: [title, state] } })]);
     const f = await go(off.automation, { collections: db(10), ai: blind.port });
     expect(f.state).toBe("done");
-    expect(f.steps[off.id]?.out.main[0]?.json.texto).toBe("No puedo leer las tareas");
+    expect(f.steps[off.id]?.out.main?.[0]?.json.texto).toBe("No puedo leer las tareas");
     expect(f.steps[off.id]?.agent?.units[0]?.lines).toEqual([
       { op: "refused", tool: "find", collection: tasks.key, why: "read-off" },
     ]);
@@ -170,7 +170,7 @@ describe("the «Agente» step (F15)", () => {
     const shaped = analyst({ answer: "fields", fields: fields as never }, [conn()]);
     const e = await go(shaped.automation, { collections: db(10), ai: good.port });
     expect(e.state).toBe("done");
-    expect(e.steps[shaped.id]?.out.main.map((r) => r.json)).toEqual([
+    expect(e.steps[shaped.id]?.out.main?.map((r) => r.json)).toEqual([
       { resumen: "Diez tareas", total: 10 },
     ]);
     expect(good.asked[0]?.answer).toMatchObject({ kind: "fields" });
@@ -193,7 +193,7 @@ describe("the «Agente» step (F15)", () => {
     const { automation, id } = analyst({}, [conn()]);
     const e = await go(automation, { collections: db(5, OUTSIDE), ai: ai.port });
     expect(e.state).toBe("done");
-    const out = e.steps[id]?.out.main[0];
+    const out = e.steps[id]?.out.main?.[0];
     expect(out?.json.texto).toBe("tarea de ejemplo 0");
     expect(out?.fields?.texto?.derived).toBe(true);
     expect(out?.fields?.texto?.label.integrity).toBe("external");
@@ -201,7 +201,7 @@ describe("the «Agente» step (F15)", () => {
     // A literal answer is the model's own.
     const own = scripted(() => plan(answer("s1")));
     const g = await go(automation, { collections: db(5), ai: own.port });
-    const label = g.steps[id]?.out.main[0]?.fields?.texto?.label;
+    const label = g.steps[id]?.out.main?.[0]?.fields?.texto?.label;
     expect(label?.integrity).toBe("model");
   });
 
@@ -382,6 +382,11 @@ describe("the «Agente» step (F15)", () => {
     expect(e.error).toMatchObject({ step: id, ai: { code: "agent.rounds" } });
     expect(st.applied).toEqual([]);
     expect(e.steps[id]?.writes).toBeUndefined();
+    // «Lo que hizo» says nothing of it was saved: each create it asked is `failed`, none stays `planned`.
+    const states = (e.steps[id]?.agent?.units[0]?.lines ?? []).map((l) =>
+      "state" in l ? l.state : l.op,
+    );
+    expect(states).toEqual(["failed", "failed", "failed"]);
   });
 
   it("AU-198 · a round returns at most 200 rows and 20,000 characters to the next, saying what was left out, with 3,000 rows in the collection", async () => {

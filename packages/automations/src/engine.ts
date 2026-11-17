@@ -995,6 +995,8 @@ class Run {
           agent?.writes.set(index, pending);
           return true;
         } catch (e) {
+          // A unit that failed saves nothing of what it asked to write: its lines say so (AU-54).
+          for (const g of pending) g.line.state = "failed";
           // «Parar con error» ends the run there, with no retry and no «Si falla» (AU-16).
           if (e instanceof StopRun) {
             stop = stepErrorOf(e, step);
@@ -1625,10 +1627,10 @@ class Run {
   /** Create's fixed values of an «Agente»'s connection that are expressions, resolved for a unit (AU-52). */
   fixedOf(step: Step, collection: string, scope: Scope): Record<string, Labeled<Cell>> | undefined {
     const cell = step.connections?.find((c) => c.collection === collection)?.create;
-    if (!cell?.fixed) return undefined;
+    const fixed = cell ? cell.fixed : undefined;
+    if (!fixed) return undefined;
     const out: Record<string, Labeled<Cell>> = {};
-    for (const [field, v] of Object.entries(cell.fixed))
-      if (isExpr(v)) out[field] = resolve(v, scope);
+    for (const [field, v] of Object.entries(fixed)) if (isExpr(v)) out[field] = resolve(v, scope);
     return Object.keys(out).length ? out : undefined;
   }
 
