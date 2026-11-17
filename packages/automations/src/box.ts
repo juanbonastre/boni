@@ -61,7 +61,7 @@ export interface BoxJob {
   locale: string;
   /** The step's seed in this run (`seedOf`); each row's chance is drawn from it and the row's place. */
   seed: number;
-  run: { test: boolean; startedBy: "user" };
+  run: { test: boolean; startedBy: "user" | "schedule" };
   /**
    * What the step has read so far in this run, by the key the box gave each read. A value is whatever the server
    * read: rows (their fields), one row or null, a number.

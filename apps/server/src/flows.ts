@@ -484,10 +484,14 @@ export function flowCatalog(
   return {
     // Juan's touch (accepting a card of the Bandeja) is only his, from his turn (P21): no flow step decides for him.
     // Nor does a flow try one (`flows.test` would never end), nor ask what only his turn asks (`TURN_ONLY`), nor move
-    // his screen (P22: only the turn on screen does).
+    // his screen (P22: only the turn on screen does), nor accept a run's proposal (`acceptsRun`: only his acceptance
+    // in the Bandeja calls it, P28).
     tools: registry
       .all()
-      .filter((t) => t.effect !== "touch" && t.effect !== "screen" && !TURN_ONLY.has(t.name))
+      .filter(
+        (t) =>
+          t.effect !== "touch" && t.effect !== "screen" && !TURN_ONLY.has(t.name) && !t.acceptsRun,
+      )
       .map((t) => ({
         name: t.name,
         title: t.title,

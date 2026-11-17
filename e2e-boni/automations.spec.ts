@@ -1629,10 +1629,14 @@ test.describe("adding a step", () => {
     await openApp(page, "/?still", { agent: BEFORE() });
     await list(page);
     await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
-    // On an empty canvas: «¿Cómo empieza?» and the triggers, at the right, the search on top.
+    // On an empty canvas: «¿Cómo empieza?» and the triggers («Programada» since F14d S3), at the right, the search on
+    // top.
     const p = panel(page);
     await expect(p.locator("h2")).toHaveText("¿Cómo empieza?");
-    await expect(p.locator(".auto-start-row")).toHaveText(["Disparado por el usuario"]);
+    await expect(p.locator(".auto-start-row")).toHaveText([
+      "Disparado por el usuario",
+      "Programada",
+    ]);
     await expect(
       p.locator("> *").first().getByRole("textbox", { name: "Buscar un paso" }),
     ).toBeVisible();
@@ -1669,7 +1673,10 @@ test.describe("adding a step", () => {
     await expect(p.locator("> *").last()).toHaveText("Añadir otro disparador");
     await page.screenshot({ path: `${SHOTS}/automation-add.png` });
     await p.getByRole("button", { name: "Añadir otro disparador" }).click();
-    await expect(p.locator(".auto-start-row")).toHaveText(["Disparado por el usuario"]);
+    await expect(p.locator(".auto-start-row")).toHaveText([
+      "Disparado por el usuario",
+      "Programada",
+    ]);
   });
   test("AU-69 · the search looks in every category at once by a step's name and its actions', and with nothing found says «Nada con «…»»; under 1100 px the panel goes over the canvas", async ({
     page,

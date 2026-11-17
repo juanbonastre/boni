@@ -113,7 +113,12 @@ interface ControlProps {
 type Painter = (p: ControlProps) => ReactNode;
 
 /** A value's input by what it holds: what the browser offers for it. */
-const INPUT_OF: Readonly<Record<string, string>> = { text: "text", number: "number", date: "date" };
+const INPUT_OF: Readonly<Record<string, string>> = {
+  text: "text",
+  number: "number",
+  date: "date",
+  time: "time",
+};
 /** A field's value by the views' type of the field: a number, a box to tick, a date, an option, a row, or text. */
 const NUMERIC = new Set(["number", "money", "duration"]);
 const DATES = new Set(["date", "datetime"]);
@@ -148,7 +153,7 @@ function ValueControl(p: ControlProps) {
   );
 }
 
-/** The fixed value's own input: text, a number or a date, as the browser offers each. */
+/** The fixed value's own input: text, a number, a date or an hour («Programada»), as the browser offers each. */
 function FixedValue({
   param,
   value,

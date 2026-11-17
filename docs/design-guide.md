@@ -1154,8 +1154,10 @@ contraseña ni un código aquí» under a question.
   does (D-55); a refusal (a shared device, an automation gone) waits for the next change. Each change goes out 0.8 s
   after the last one and at once on leaving the editor or hiding the window, one request at a time. On the empty canvas
   of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its panel «Añadir un paso» asks «¿Cómo
-  empieza?» with a row per trigger of the catalogue («Disparado por el usuario» in F14b), and choosing one makes the
-  automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
+  empieza?» with a row per trigger of the catalogue («Disparado por el usuario» in F14b; «Programada» from F14d S3,
+  whose panel is a list «Cuándo» of rules, each «Repetir» (Cada hora, Cada día, Cada semana), «A las» (the
+  browser's hour field; with «Cada hora» only its minutes count) and «Día» (read only with «Cada semana»)), and
+  choosing one makes the automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
   ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». «Probar» is
   at the bottom of the canvas (E, below). Once it exists, the header has the tabs «Editor | Ejecuciones» (the
   app's `.segmented`, after the spacer, on the phone too); «Ejecuciones» is below.
