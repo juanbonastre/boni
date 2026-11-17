@@ -2,7 +2,7 @@
 // map of AU-47; phase F14d): a version is a row that never changes, only the published one runs, and a draft never
 // does. The rule's id is kept in each test's name (`make check` reads them, T-10). A store per test, with collections
 // whose keys and names are shaped like the user's (seed.test-util.ts), and no model call. The map's two (AU-47) are
-// S4's and stay pending.
+// S4's (the map's node of an automation, flowMap.ts).
 import { randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import type { Server } from "node:http";
@@ -21,7 +21,12 @@ import {
 } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { cpu, under } from "@boni/pace";
-import { HOLDS_OUTSIDE_SQL, openUserStore, type UserStore } from "@boni/store";
+import {
+  AUTOMATION_RUNS_IN_SQL,
+  HOLDS_OUTSIDE_SQL,
+  openUserStore,
+  type UserStore,
+} from "@boni/store";
 import { SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { ACTIONS, runAction } from "../actions.ts";
@@ -29,6 +34,7 @@ import { AgentHost } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
+import { flowMap, type MapView } from "../flowMap.ts";
 import { flowsCollection } from "../flowsCollection.ts";
 import { makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
@@ -801,12 +807,110 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
 });
 
 describe("the map (F14d)", () => {
-  it.todo(
-    "AU-47 · a published automation enters the map with what its published version reads and writes and with its trigger; its draft never does, and a change of the draft moves nothing in the map until it is published",
-  );
-  it.todo(
-    "AU-47 · the map counts an automation's runs by the index, never reading them, and a test does not count",
-  );
+  const CLIENTE = typeId("cliente");
+  const mapOf = (now = NOW): MapView =>
+    flowMap(store, { now, days: 7, tz: "Europe/Madrid", mailType: null, mailAccount: null });
+  const nodeOf = (m: MapView, id: string) => m.nodes.find((x) => x.id === `auto:${id}`);
+  const edgesOf = (m: MapView, id: string) =>
+    m.edges
+      .filter((e) => e.from === `auto:${id}` || e.to === `auto:${id}`)
+      .map((e) => `${e.from} ${e.kind} ${e.to}`)
+      .sort();
+
+  it("AU-47 · a published automation enters the map with what its published version reads and writes and with its trigger; its draft never does, and a change of the draft moves nothing in the map until it is published", async () => {
+    const a = made(writes("una"));
+    // A draft is not in the map.
+    expect(nodeOf(mapOf(), a.id)).toBeUndefined();
+    expect(edgesOf(mapOf(), a.id)).toEqual([]);
+    published(a.id);
+    const one = mapOf();
+    expect(nodeOf(one, a.id)).toMatchObject({
+      kind: "automation",
+      name: "Revisar pedidos",
+      version: 1,
+      on: true,
+      runs: 0,
+      trigger: [{ step: a.step("Inicio"), type: "manual" }],
+    });
+    expect(edgesOf(one, a.id)).toEqual([`auto:${a.id} writes col:${PEDIDO}`]);
+    // A draft that reads the clients and writes them instead: the map stays as the version that runs says.
+    a.edit([
+      ["Inicio", "manual", { fields: [] }],
+      ["Buscar", "collection", { collection: "cliente", action: "find" }],
+      [
+        "Crear",
+        "collection",
+        { collection: "cliente", action: "create", fields: [{ field: "nombre", value: "otra" }] },
+      ],
+    ]);
+    expect(nodeOf(mapOf(), a.id)).toEqual(nodeOf(one, a.id));
+    expect(edgesOf(mapOf(), a.id)).toEqual(edgesOf(one, a.id));
+    // Published, the map moves.
+    published(a.id);
+    const two = mapOf();
+    expect(nodeOf(two, a.id)).toMatchObject({ version: 2 });
+    expect(edgesOf(two, a.id)).toEqual(
+      [`col:${CLIENTE} reads auto:${a.id}`, `auto:${a.id} writes col:${CLIENTE}`].sort(),
+    );
+    // Turned off, it stays in the map, off.
+    ok(setEnabled(store, a.id, false, JUAN));
+    expect(nodeOf(mapOf(), a.id)).toMatchObject({ on: false });
+  });
+
+  it("AU-47 · the map counts an automation's runs by the index, never reading them, and a test does not count", async () => {
+    const a = made(writes("una"));
+    published(a.id);
+    const HOUR = 3_600_000;
+    const kept = (id: string, at: number, o: { test?: boolean } = {}) => {
+      store.journal.createAutomationRun({
+        id,
+        automation: a.id,
+        version: o.test ? null : 1,
+        test: !!o.test,
+        state: "running",
+        trigger: a.step("Inicio"),
+        fields: "{}",
+        startedBy: "user",
+        device: "d_portatil",
+        retryOf: null,
+        at,
+        started: at,
+        doc: o.test ? "{}" : null,
+      });
+      store.journal.endAutomationRun(id, {
+        state: "done",
+        ended: at + 40,
+        ms: 40,
+        step: null,
+        error: null,
+        line: JSON.stringify({ writes: [], asked: [], outside: false }),
+      });
+    };
+    // Three in the week, one before it, two tests in it and an hour that did not run.
+    for (const h of [1, 2, 30]) kept(runId(), NOW - h * HOUR);
+    kept(runId(), NOW - 8 * 24 * HOUR);
+    kept(runId(), NOW - HOUR, { test: true });
+    kept(runId(), NOW - 2 * HOUR, { test: true });
+    store.journal.missAutomationRun({
+      id: runId(),
+      automation: a.id,
+      version: 1,
+      trigger: a.step("Inicio"),
+      fields: "{}",
+      slot: NOW - 3 * HOUR,
+      at: NOW - 3 * HOUR,
+    });
+    expect(nodeOf(mapOf(), a.id)?.runs).toBe(3);
+    // The statement the store runs is answered by its covering index: no run is read.
+    const sql = openDbOf();
+    const plan = sql.prepare(`EXPLAIN QUERY PLAN ${AUTOMATION_RUNS_IN_SQL}`).all(a.id, 0, NOW) as {
+      detail: string;
+    }[];
+    sql.close();
+    expect(plan.map((p) => p.detail).join(" | ")).toMatch(
+      /USING COVERING INDEX automation_runs_count/,
+    );
+  });
 });
 
 // ---------------------------------------------------------------- the server over HTTP

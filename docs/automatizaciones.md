@@ -386,9 +386,10 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   límite y una interrumpida (AU-190). Es el principio A-40.
   Hecho en S3: lo que Juan acepta de la propuesta de una ejecución se guarda con la misma ejecución en el registro
   (`acceptRun`, `apps/server/src/automations/proposal.ts`), así que «Deshacer lo que hizo» lo deshace con lo demás
-  (`proposal.test.ts`); el «Deshacer» de la Bandeja no lo deshace aparte («cannot-undo»). Falta: una de la que solo
-  queda el resumen (AU-103, S4) y el tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y el
-  servidor no atiende mientras (tarea 137).
+  (`proposal.test.ts`); el «Deshacer» de la Bandeja no lo deshace aparte («cannot-undo»).
+  Hecho en S4: una ejecución de la que solo queda el resumen se deshace igual (`runs.test.ts`), porque deshacer lee
+  el registro de operaciones; lo que no tiene es «Fijar» sus datos (`pinFromRun` contesta `pruned`). Falta: el
+  tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y el servidor no atiende mientras (tarea 137).
   Hecho en P2: «Deshacer lo que hizo» en la barra de una ejecución de «Ejecuciones», solo si escribió y no está
   deshecha; con `changed`, «No se pudo deshacer: «…» cambió después», y deshecha, «Deshecha hoy, 10:20» sin botón.
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
@@ -980,8 +981,14 @@ interface Connection {
   Lo sostienen `versions.test.ts` (todo cambio que un paso puede hacer, `stepChanges`, está en `abilities`) y
   `publish.test.ts` (el mapa lee la publicada y no el borrador).
   Hecho en E2: `abilities` nombra todo cambio de `stepChanges` y toda lectura de una conexión o de un «Colección»,
-  también de un paso al que no llega ningún disparador. Falta: el mapa que la lee sobre la publicada (S1 y su
-  pantalla).
+  también de un paso al que no llega ningún disparador.
+  Hecho en S4: el cálculo del mapa (`flowMap.ts`) da un nodo `automation` por cada automatización publicada, con el
+  nombre de la versión que corre, su número (`version`), sus disparadores (`trigger`), si está encendida y sus
+  ejecuciones del periodo; y una flecha «lee» o «escribe» por cada colección de `abilities` sobre esa versión, con
+  sus pasos. Las ejecuciones se cuentan con una consulta que contesta el índice `automation_runs_count` sin leer
+  ninguna (`AUTOMATION_RUNS_IN_SQL`); las pruebas y las horas que no corrieron no cuentan. Con 200 automatizaciones,
+  una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`).
+  Falta: que `FlowMap.tsx` pinte el nodo nuevo (P3).
 
 **Los permisos de guardar de un «Código»** (Juan, 2026-11-16). Son los de esta tabla, no otros: los mismos permisos,
 las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
@@ -1103,6 +1110,9 @@ que un paso espere a Juan.
   modelo · el nombre del modelo · 0,8 s»). Se guarda en el registro del paso, acotado: 50 líneas por unidad de
   trabajo y «y 12 más». En una prueba el modelo se llama de verdad y nada se guarda ni se propone (AU-199). La
   prueba: `packages/automations/src/agent.test.ts` y `e2e-boni/automations-ai.spec.ts`.
+  Hecho en E2, para los lectores: el registro del paso guarda `ai` (las llamadas, los modelos que respondieron, el
+  tiempo y los textos recortados), también cuando la ejecución para a medias por «Llamadas a modelos». Falta: la
+  línea en la app (P2) y todo lo del «Agente» (E3).
 - **AU-55** (F15, pendiente) · «Se ejecuta» tiene dos modos, a la vista como en «Código» (AU-30): «Una vez con todas
   las filas» (por defecto) y «Una vez por fila». Es un parámetro suyo y no un ajuste: «Ajustes» es igual en todos los
   pasos (AU-78). Junto a él se ve lo que cuesta: cuántas filas llegaron en la última prueba y el tope de llamadas a
@@ -1121,7 +1131,7 @@ que un paso espere a Juan.
   `automation`, con el paso y su conexión leídos de la versión guardada (AU-204, AU-205). «Pasos máximos» pasa a
   llamarse «Rondas máximas» (AU-58). Cómo es una ronda, qué vuelve y cuándo se guarda lo dice AU-198. La prueba:
   `packages/agent/test/automation-ai.test.ts`.
-- **AU-57** (F15, pendiente) · Los otros pasos de IA hacen una cosa cada uno, con los lectores que ya existen:
+- **AU-57** (F15, en parte) · Los otros pasos de IA hacen una cosa cada uno, con los lectores que ya existen:
   «Extraer datos», «Clasificar», «Resumir» y «Escribir texto». El texto de fuera pasa por ellos, no por el agente.
   Los cuatro gastan el uso «Lector» de «Modelos», y su «Modelo» se elige como el del «Agente» (AU-199; Juan,
   2026-11-15).
@@ -1137,11 +1147,30 @@ que un paso espere a Juan.
   Cada uno es un lector de `READERS` con su forma cerrada de `READER_SCHEMAS`; si a alguno le falta la forma, se
   añade allí y no en el motor. Reciben solo su «Texto» y, como opciones, lo que Juan puso: nunca datos propios junto
   a un texto de fuera (`docs/nucleo.md` §7.4). Con varias filas, los que leen una lista en una llamada (`label_each`,
-  `summarize_each`) reciben hasta 50 filas por llamada (`READER_BATCH`, razonado y no medido) y los demás hacen una
-  llamada por fila; un texto de más de 4.000 caracteres se recorta y la salida lo dice («Recortó 3 textos»). La
+  `summarize_each`) reciben hasta 50 filas por llamada (`READER_BATCH`, el `maxItems` de sus formas; medido en E2: lo
+  que cuesta son las llamadas, no el motor) y los demás hacen una llamada por fila; un texto de más de 4.000 caracteres se recorta y la salida lo dice («Recortó 3 textos»). La
   salida lleva la etiqueta de la entrada: lo que sale de un texto de fuera sigue siendo de fuera. Una salida que no
   vale se reintenta una vez (AU-59). «Añadir opción» de «Resumir» tiene «Largo» (corto, medio, largo). La prueba:
   `packages/automations/src/ai-steps.test.ts`.
+  Hecho en E2: los cuatro en el motor (`ai.ts`), junto al catálogo como «Código» (`specOf`, categoría `ai`), y
+  la validación los deja entrar solo con un puerto para llamar a un modelo (`RunDeps.ai`, `ValidationContext.ai`).
+  Antes de las unidades el motor lee todas las filas: resuelve el «Texto» de cada una, recorta lo que pasa de 4.000
+  caracteres, manda por lotes de 50 a `label_each` y a `summarize_each` (agrupando las filas que llevan las mismas
+  opciones) y una por llamada a los demás; cada llamada se cuenta antes (AU-206), y una respuesta que no vale se
+  comprueba otra vez en el motor contra la forma del paso y se pide una vez más. La llamada lleva solo `use`
+  («reader»), `model` (el del paso o null para «El de la cuenta»), el lector, los textos y lo que Juan puso. La salida
+  es la fila de entrada con `clase`, `resumen`, `texto` o los campos de «Extraer datos», cada uno con la etiqueta de
+  lo enviado y la del modelo, derivado; el registro del paso guarda `ai`: llamadas, los modelos que respondieron, el
+  tiempo y los textos recortados. «Resumir» corto va por lotes (`summarize_each`); medio y largo, uno por llamada
+  (`summarize`). Un texto vacío da el campo vacío sin llamar. Los fallos son claves aparte (`AI_FAILURES`:
+  `ai.private`, `ai.reply`, `ai.refused`, `ai.unavailable`, `ai.params`). Medido con un lector simulado (2026-11-17,
+  cinco veces): una ejecución de 2.000 filas (la búsqueda, 40 lotes y 2.000 unidades) tarda de 65 a 77 ms, y repartir
+  3.000 filas en 60 llamadas, de 35 a 57 ms. Con 50 por llamada y el techo de 40 llamadas, una ejecución lee como
+  mucho 2.000 filas con un lector de lista (1.000 con las 20 de serie). Falta: el puerto de verdad con sus
+  proveedores, «Modelos» y el presupuesto (S1); la lista cerrada de «Modelo» y su comprobación al publicar (AU-199);
+  el tiempo de un modelo de verdad por lote, que solo mide una evaluación a mano; «Extraer datos» comprueba sus campos en el
+  motor, y sus formas cerradas para el proveedor ya están en `packages/agent` (`extractSchema`, `checkExtract`, y
+  «nada encaja» con `orNone` en `classify` y `label_each`): usarlas en el puerto es de S1; y los pasos en el editor, con sus palabras y «Recortó 3 textos» (P2).
 - **AU-58** (F15, pendiente) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
   En la F15: «Rondas máximas» (nace en 5, hasta 10) es el nombre de «Pasos máximos»: un paso es ya una caja del
@@ -1677,7 +1706,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   línea) y `GET …/:id/runs/:run/rows`. La línea sale del registro (`lineOf`: lo guardado por colección y acción, lo
   propuesto, lo que guardaría, dónde falló o que no hizo nada); sus palabras son de la pantalla. Un «Probar» entero
   se guarda como ejecución de prueba. Con un año de ejecuciones cada hora, la lista y una ejecución contestan dentro
-  de su tiempo. Falta: la pestaña (pantalla 8, P1) y las cuentas de la lista de automatizaciones (AU-61, P1).
+  de su tiempo.
+  Hecho en S4: «Ejecuciones» y «Última ejecución» de la lista de automatizaciones salen de una tabla que el almacén
+  lleva con dos disparadores de SQL al guardar y borrar cada ejecución (`automation_run_counts`, migración 30), sin
+  contar filas; con 200 automatizaciones, una con un año de ejecuciones cada hora, la lista va dentro de su tiempo.
+  Las pruebas y las horas que no corrieron no cuentan.
   Hecho en P2: la pestaña (`AutomationRuns.tsx`): la lista de 50 en 50 con «Ver más» y «Todas | Fallos | Pruebas»,
   cada una con cuándo, cómo acabó, cuánto tardó (también si falló o se interrumpió), qué la inició y qué versión
   («Bien» y no «Hecha», la palabra de los pasos del lienzo, para que un paso y una ejecución que acabaron se digan
@@ -1717,7 +1750,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   «Consola» y lo que guardó, propuso o guardaría, como texto; tocar una línea abre su paso. Dentro de un paso de IA
   es de la F15. Falta: las lecturas en el árbol del «Registro» del editor, porque la prueba de un paso no las da
   (`StepTestView` no tiene `reads`; es del servidor). En una ejecución sí están.
-- **AU-102** (F14d, pendiente) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
+- **AU-102** (F14d, en parte) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
   palabras, y el aviso lleva a ella.
   En la F14d: «en segundo plano» es la que empezó sola (AU-195); una que inició su mano falla en su pantalla, sin
   aviso. El aviso («Tarea de la mañana falló en «Crear una fila»: falta «Título»») lo escribe el código con el
@@ -1733,7 +1766,14 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Lo sostienen `scheduler.test.ts` (tres fallos seguidos, un aviso; tras una que acaba bien, el siguiente fallo
   avisa; un código que lanza un texto con HTML no lo deja en el aviso) y `runs.test.ts` (el registro y el aviso de
   `code.write.outside`, iguales con la fila y sin ella).
-- **AU-103** (F14d, pendiente) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
+  Hecho en S4: `notices.ts` escribe el aviso al acabar la ejecución y lo guarda con ella (`notice`, migración 30),
+  así que su línea lo dice aunque la app mire tarde; la racha la marca la ejecución anterior de la automatización
+  que acabó bien o falló sola (`streakMark` del almacén). El motivo es una frase sin parámetros por código de las
+  listas cerradas (`NOTICE_REASONS`: «el código falló»), más corta que el ejemplo de arriba para que nada de una
+  fila pase al aviso. Un fallo va por `AgentHost.notify` con la ejecución que lo dio (`about`): a la app (el
+  evento `notify`, que la app de escritorio enseña como aviso del sistema) y al móvil (`pushNotice`, solo el texto).
+  Un reintento no avisa (`retryOf`). Falta: que tocar el aviso abra la ejecución, en la app y en el móvil (P3).
+- **AU-103** (F14d, hecho) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
   las anteriores, solo el resumen (A-29).
   En la F14d: la «o» de la regla se lee como lo que antes acabe, para que lo guardado entero tenga tope por
   automatización: una ejecución está entera mientras es de las últimas 100 de su automatización y tiene menos de 30
@@ -1744,9 +1784,15 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (AU-61) se cuentan por el índice.
   Lo sostiene `runs.test.ts`: un año de ejecuciones cada hora de una automatización deja 100 enteras, y la lista,
   las cuentas y el recorte van dentro de su tiempo (A-15, `@boni/pace`).
+  Hecho en S4: `keep.ts` y `pruneAutomationRuns` del almacén (migración 30). Se recorta esa automatización al acabar
+  cada ejecución y cada prueba, en una escritura de 200 ejecuciones como mucho, y todas al abrir el almacén de una
+  cuenta, en escrituras así con el servidor libre entre ellas (tarea 137). De una recortada queda su fila con
+  `pruned`, su línea y su aviso. Una cuya propuesta espera en la Bandeja sigue entera hasta que se contesta,
+  porque aceptarla lee lo que pidió. Con un año de ejecuciones cada hora: una escritura de 200, menos de 60 ms; el
+  resto al arrancar, menos de 3 s.
   Hecho en P2, solo la pantalla: una ejecución de la que solo queda el resumen enseña su barra y «De esta ejecución
-  solo queda el resumen…» en vez del lienzo. Falta el recorte en el servidor (S4).
-- **AU-190** (F14d, en parte) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
+  solo queda el resumen…» en vez del lienzo.
+- **AU-190** (F14d, hecho) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
   arrancar, toda ejecución que seguía en marcha se cierra como «Interrumpida», diciendo en qué paso estaba. Lo que
   guardaron los pasos que acabaron se queda, y se deshace desde ella (AU-18); un paso nunca queda a medias, porque
   su cambio es una transacción (AU-174). Su hora cuenta como corrida (AU-114). Avisa como un fallo si empezó sola
@@ -1758,7 +1804,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `main.ts` abre al arrancar el de cada cuenta: toda ejecución «queued» o «running» queda «interrupted», con el paso
   en que estaba y su hora de fin; no se repite, y lo que guardaron sus pasos se queda y se deshace desde ella.
   Hecho en S3: su hora cuenta como corrida, porque la ejecución interrumpida guarda la hora que le tocaba y el
-  programador no empieza otra con la misma (`scheduler.test.ts`). Falta: su aviso (S4).
+  programador no empieza otra con la misma (`scheduler.test.ts`).
+  Hecho en S4: si empezó sola, avisa como un fallo de su racha al cerrarse, con el paso en que estaba
+  (`scheduler.test.ts`).
   Hecho en P2: en la lista y en su barra, «Interrumpida en «Si»», con lo que guardó, «Deshacer lo que hizo» y
   «Reintentar» de la mano de Juan.
 - **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
@@ -2000,7 +2048,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   queda «No corrió» (`missed`), sin «Reintentar» ni «Deshacer». A la escala de Juan: una vuelta sin nada que correr
   sobre 200 automatizaciones, menos de 50 ms; una página de «Ejecuciones» sobre un año de ejecuciones por hora,
   menos de 30 ms; la vuelta rara en que tocan las 200, en torno a 1,3 s (cada una lee y comprueba su versión).
-  Falta: el aviso de «No corrió» (AU-102, S4).
+  Hecho en S4: «No corrió» avisa como un fallo de su racha (`scheduler.test.ts`). Falta: la línea «No corrió»
+  en «Ejecuciones» (P3).
 - **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
 - **AU-116** (F17, pendiente) · El panel de un disparador lista quién la inicia hoy: qué botones de qué páginas y
   qué automatizaciones. Se calcula, no se declara (A-16).
@@ -2456,7 +2505,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   lee de lo guardado, nunca de la respuesta de la caja ni de un navegador) y `proposal.test.ts` (servidor: una eliminación con
   «Sí» de una versión publicada va a la papelera sin propuesta y se deshace con la ejecución, con algo de fuera
   también; con «Preguntar», se propone).
-- **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
+- **AU-166** (F15, en parte) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
   En la F15: «privado» es lo que dice el acceso de la IA a la colección (`ai_access`, `docs/nucleo.md` §7.3):
   `hidden` (para un modelo no existe) y `opaque` (sus valores llevan `noModel`: ni un modelo que planifica ni un lector
@@ -2467,6 +2516,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   lector hace fallar esa fila (`ai.private`) por el «Si falla» del paso, diciendo el campo y, si su etiqueta la
   lleva, la colección, nunca el valor. Lo que no se sabe al publicar es lo que llega por las filas de otros pasos.
   La prueba: `packages/automations/src/ai-steps.test.ts` y `apps/server/src/automations/ai.test.ts`.
+  Hecho en E2: en el lector. Un valor con `noModel` en el «Texto» o en otro parámetro de un lector (todos se resuelven
+  por el mismo camino; la prueba lo hace con el «Texto») hace fallar su fila antes de cualquier llamada (`ai.private`), por el «Si falla» del paso, con el parámetro, el campo y, si la fila
+  dice de qué colección se leyó, la colección; nunca el valor. Las otras filas del paso se leen. Falta: el «Agente»
+  (AU-197, E3), la lectura negada en `decide` desde el servidor y su prueba (S1), y la comprobación al publicar (P1).
 - **AU-167** (F14d, en parte) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
@@ -2498,8 +2551,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   para este origen, y cada acto de `ACTS` contestado para él por una tabla escrita en la prueba.
   Hecho en S3: las mismas filas con una ejecución programada sobre el almacén de verdad (`proposal.test.ts`): lo
   propio y lo de fuera con «Sí» se guardan, con su etiqueta; con «Preguntar», una propuesta; ningún paso puede
-  nombrar una colección del sistema. La tercera fila es de AU-204 (F15). Falta: el aviso por ejecución
-  (`scheduler.test.ts`, S4).
+  nombrar una colección del sistema. La tercera fila es de AU-204 (F15).
+  Hecho en S4: el aviso por ejecución (`notices.ts`), con las cuentas y los nombres de su línea, se guarda con la
+  ejecución y va en su último evento (`RunEvent.notice`); no va al móvil ni como aviso del sistema
+  (`scheduler.test.ts`). Falta: pintarlo en la app con su «Deshacer» (P3).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla),
   `automations.test.ts` (servidor: cada acto de `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
   almacén de verdad, y que ningún paso puede nombrar una colección del sistema) y `scheduler.test.ts` (el aviso por
@@ -2704,7 +2759,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   presupuesto del mes es aparte y sigue (AU-199). La prueba: `packages/automations/src/agent.test.ts`.
   Hecho en E1: `countModelCall` (`engine.ts`) y `StepContext.modelCall`, la cuenta de la ejecución: se llama antes de
   cada llamada, y la que pasaría el límite lanza `LimitPassed` (`run.limit`, con `modelCalls` y los dos números) sin
-  hacerse. Falta: que el lector (E2) y el «Agente» (E3) la llamen antes de cada llamada, reintentos incluidos, y el
+  hacerse. Hecho en E2: los cuatro lectores la llaman antes de cada llamada, la repetida también, y una ejecución
+  llega a `run.limit` por ella (`ai-steps.test.ts`). Falta: que el «Agente» (E3) la llame antes de cada ronda, y el
   límite en «Ajustes» cuando un paso llama a un modelo (P1).
 - **AU-183** (F14c, hecho) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
   el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que

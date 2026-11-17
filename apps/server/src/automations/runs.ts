@@ -12,6 +12,9 @@
  *   `interruptRuns`, called when the server opens the account's store.
  * - **Told as it goes**: an event `run` per start, per step that ends (its counts, never its rows) and per end, on
  *   the account's stream of events (agent.ts, `onRunEvent`).
+ * - **What it tells and what stays** (S4): as it ends, what it tells is kept with it and goes with its last event
+ *   (notices.ts: a failure once per streak, what it saved once per run, only for one that started alone; AU-102,
+ *   AU-167), and its automation's runs no longer whole are let go (keep.ts, AU-103).
  * - **Undone whole** (AU-18): every operation it saved carries its id, and «Deshacer lo que hizo» is the store's
  *   `undoRun`, all or nothing in one transaction: a row changed since undoes none and says which.
  * - **Retried by hand** (AU-100): the same trigger and fields, the version published now; «Deshacer y reintentar»
@@ -46,6 +49,8 @@ import {
   type UserStore,
 } from "@boni/store";
 import { sandboxBox } from "./box.ts";
+import { pruneRuns } from "./keep.ts";
+import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
 import { proposeRun } from "./proposal.ts";
 import { isRefusal, type Refusal, type RunRequest, runPublished } from "./publish.ts";
 import {
@@ -112,6 +117,10 @@ export interface RunSummary {
   line: RunLine | null;
   undone: number | null;
   retryOf: string | null;
+  /** What it told when it ended (AU-102, AU-167; notices.ts): only a run that started alone tells. */
+  notice: RunNotice | null;
+  /** When its steps and rows were let go (AU-103, keep.ts): its line stays, and «Deshacer lo que hizo» still works. */
+  pruned: number | null;
 }
 
 /** The event a run sends as it goes, on the account's stream (agent.ts): never its rows. */
@@ -121,6 +130,8 @@ export interface RunEvent {
   state: AutomationRunState;
   step?: string;
   out?: Record<string, number>;
+  /** What it told as it ended (AU-102, AU-167). */
+  notice?: AutomationNotice;
 }
 
 /** Who starts a run: Juan's hand, with his device's trust and his zone. */
@@ -133,7 +144,9 @@ export type RunRefusal =
   | { refused: "test" }
   | { refused: "nothing" }
   | { refused: "changed"; row: string; title: string }
-  | { refused: "untested" };
+  | { refused: "untested" }
+  /** Its steps and rows were let go (AU-103): only its line is left. */
+  | { refused: "pruned" };
 
 /** The runs of one store: their lane and their events. */
 interface Lane {
@@ -160,6 +173,13 @@ export function onRunEvent(store: UserStore, listener: (e: RunEvent) => void): (
 }
 const told = (store: UserStore, e: RunEvent) => laneOf(store).events.emit("run", e);
 
+/** A run ended: what it tells is kept with it and goes with its last event, and what is no longer whole is let go. */
+function hasEnded(store: UserStore, id: string, run: string, state: AutomationRunState): void {
+  const notice = keepNotice(store, run);
+  pruneRuns(store, id);
+  told(store, { automation: id, run, state, ...(notice ? { notice } : {}) });
+}
+
 /** Resolves when the store's lane has no run queued or running: for tests and for closing a store. */
 export function settled(store: UserStore): Promise<unknown> {
   return laneOf(store).tail;
@@ -185,6 +205,8 @@ export function summaryOf(r: AutomationRunRow): RunSummary {
     line: r.line ? (JSON.parse(r.line) as RunLine) : null,
     undone: r.undone,
     retryOf: r.retryOf,
+    notice: r.notice ? (JSON.parse(r.notice) as RunNotice) : null,
+    pruned: r.pruned,
   };
 }
 
@@ -324,7 +346,7 @@ export function missRun(
     slot,
     at: now,
   });
-  if (kept) told(store, { automation: id, run, state: "missed" });
+  if (kept) hasEnded(store, id, run, "missed");
   return kept;
 }
 
@@ -453,7 +475,7 @@ async function execute(
         }),
         line: JSON.stringify(lineOf(store, run, [])),
       });
-      told(store, { automation: id, run, state: "failed" });
+      hasEnded(store, id, run, "failed");
     }
     return;
   }
@@ -469,7 +491,7 @@ async function execute(
     error: result.error ? JSON.stringify(result.error) : null,
     line: JSON.stringify(lineOf(store, run, result.asked)),
   });
-  told(store, { automation: id, run, state });
+  hasEnded(store, id, run, state);
 }
 
 /**
@@ -477,7 +499,13 @@ async function execute(
  * it was in; nothing is run again. What its finished steps saved stays, and is undone from it (AU-18).
  */
 export function interruptRuns(store: UserStore, now = Date.now()): string[] {
-  return store.journal.interruptAutomationRuns(now);
+  const ids = store.journal.interruptAutomationRuns(now);
+  // One that started alone counts as a failure of its streak (AU-102): it tells as one.
+  for (const run of ids) {
+    const notice = keepNotice(store, run);
+    if (notice) told(store, { automation: notice.automation, run, state: "interrupted", notice });
+  }
+  return ids;
 }
 
 /** A run of this automation, or not found. */
@@ -782,6 +810,7 @@ export function pinFromRun(
   if (hand.trust !== "personal") return { refused: "not-personal" };
   const r = runOf(store, id, run);
   if (!r) return NOT_FOUND;
+  if (r.pruned !== null) return { refused: "pruned" };
   const o = open(store, id);
   if (!o) return NOT_FOUND;
   const output = triggerOutput(o.automation, r.trigger);

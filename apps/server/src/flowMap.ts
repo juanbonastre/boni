@@ -12,9 +12,11 @@
  * node and arrow carries its numbers of the last days; the app words Boni's own nodes and the arrows (i18n), a
  * collection, a flow and a page by their own names.
  */
+import { abilities, isTrigger, parseAutomation } from "@boni/automations";
 import type { RunRow, UserStore } from "@boni/store";
 import { controlsOf, controlsOfBlock, type PageBlock } from "@boni/views";
 import { AUTO_AREA } from "./autoAccept.ts";
+import { collectionNamed } from "./automations/collections.ts";
 import { userTypes } from "./data.ts";
 import {
   FETCH_FLOW,
@@ -34,6 +36,8 @@ export type MapKind =
   | "connector"
   | "collection"
   | "flow"
+  /** An automation of the new format, as its published version is (docs/automatizaciones.md AU-47). */
+  | "automation"
   | "boni"
   | "actor"
   | "page"
@@ -92,7 +96,8 @@ export interface MapNode {
   rows?: number;
   parent?: string | null;
   /** A flow: what starts it, whether it is on, whose version runs, Boni's own; its plan and its steps as the editor
-   * names them, with how each ran in the period. */
+   * names them, with how each ran in the period. An automation: its published version's trigger steps
+   * (`{ step, type }[]`) and whether it is on. */
   trigger?: unknown;
   on?: boolean;
   by?: string;
@@ -105,6 +110,8 @@ export interface MapNode {
   notices?: number;
   /** A block: the page it is on (that page's node id); its `code` is its kind («number», «control»…). */
   page?: string;
+  /** An automation: the number of its published version (what the map reads; never the draft). */
+  version?: number;
 }
 
 export interface MapEdge {
@@ -527,6 +534,48 @@ function makeMap(
         per: perOf(id, goes),
       });
       if (outside) for (const t of goes) outsideInto.add(t);
+    }
+  }
+
+  // The automations of the new format (AU-47): each published one as its published version says, never its draft,
+  // which does not move the map until it is published; what it reads and writes by `abilities` (the function that
+  // writes «Lo que podrá hacer»), and its real runs of the period counted by the index, tests and missed hours left out.
+  const named = collectionNamed(store);
+  for (const a of j.automations()) {
+    if (a.published === null) continue;
+    const v = j.automationVersion(a.id, a.published);
+    if (!v) continue;
+    let doc: ReturnType<typeof parseAutomation>;
+    try {
+      doc = parseAutomation(JSON.parse(v.doc));
+    } catch {
+      continue;
+    }
+    const id = `auto:${a.id}`;
+    node({
+      id,
+      kind: "automation",
+      // The published version's name: a name changed in the draft waits for «Publicar» too.
+      name: doc.name,
+      code: null,
+      runs: j.automationRunsIn(a.id, from, to),
+      on: a.enabled,
+      version: a.published,
+      // What starts it, as its published version says: each trigger step, by id and kind.
+      trigger: doc.steps.filter(isTrigger).map((s) => ({ step: s.id, type: s.type })),
+    });
+    for (const l of abilities(doc, { collectionNamed: named })) {
+      const t = byKey.get(l.collection);
+      if (!t) continue;
+      const read = l.action === "read";
+      edge({
+        from: read ? colId(t) : id,
+        to: read ? id : colId(t),
+        kind: read ? "reads" : "writes",
+        n: null,
+        steps: l.steps,
+        outside: !!l.outside,
+      });
     }
   }
 
