@@ -5,13 +5,15 @@
 // The engine runs it with a scripted model behind the port it receives (`agent.test-util.ts`: the real rounds of
 // packages/agent, no model called and no provider imported, A-02), a store per test and data shaped like the user's:
 // generated keys and ids, a text, an option, a number and a relation, 3,000 rows where a bound is checked (A-15).
-// «Las hace este código» (AU-51) and code tools (AU-58) come in E3's second PR.
+// Its own code («Las hace este código», AU-51, and code tools, AU-58) runs in a scripted box (`codeBox`): what the
+// engine sends it and does with its answer is this file's; the box's own contract is box.test.ts's.
 import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import {
   analyst,
   answer,
   call,
+  codeBox,
   go,
   lit,
   MODEL,
@@ -27,7 +29,8 @@ import { type Connection, newConnection } from "./connections.ts";
 import type { CollectionShape } from "./effects.ts";
 import { countModelCall, LimitPassed, StopRun } from "./engine.ts";
 import { AUTOMATION_LIMITS, type Automation, limitsOf } from "./format.ts";
-import { OUTSIDE, store } from "./run.test-util.ts";
+import type { Cell } from "./rows.ts";
+import { OUTSIDE, policy, store } from "./run.test-util.ts";
 import { validate } from "./validate.ts";
 import { abilities } from "./versions.ts";
 
@@ -78,6 +81,24 @@ const CREATE = (id: string, t: unknown = lit("tarea propuesta"), of = tasks.key)
 const FIND = (id: string, query: unknown = { limit: 3 }) =>
   call(id, "find", { collection: lit(tasks.key), query: lit(query) });
 const allSteps = (a: Automation) => a.steps;
+
+/** The collections by the name their code writes. */
+const named = (n: string) => (n === "tareas de ejemplo" ? tasks.key : undefined);
+/** «Las hace este código»: the open tasks, three at most. Only the scripted box answers it; validation reads it. */
+const READS =
+  "return $col('tareas de ejemplo').find({ where: [{ field: 'x', op: 'is', value: 'abierta' }], limit: 3 })";
+/** The same, with a call that asks to save, in a branch never taken. */
+const WRITES = `if (false) $col('tareas de ejemplo').create({ x: 1 })\n${READS}`;
+/** Its unit's rows as they are. */
+const EACH = "return $input.all().map((r) => r.json)";
+/** A code tool: how many tasks are in a state, its input (`$json`). */
+const COUNT =
+  "return { cuantas: $col('tareas de ejemplo').count({ where: [{ field: 'x', op: 'is', value: $json.estado }] }) }";
+const BROKEN = "throw new Error('no')";
+const TOOLS = [
+  { name: "contar", inputs: [{ name: "estado", type: "text" }], code: COUNT },
+  { name: "rota", inputs: [], code: BROKEN },
+];
 
 describe("the «Agente» step (F15)", () => {
   it("«Analista»: with a scripted model it reads, proposes a row and, without «Leer», answers that it cannot", async () => {
@@ -155,9 +176,110 @@ describe("the «Agente» step (F15)", () => {
     expect(seen.every((r) => r[state] === "abierta")).toBe(true);
     expect(e.steps[id]?.reads).toMatchObject([{ collection: tasks.key, op: "find", rows: 4 }]);
   });
-  it.todo(
-    "AU-51 · «Las hace este código»: the code runs once per unit before the first round, only reads (a write call in it is `agent.reads.write`), and the model's schema has no read",
-  );
+  it("AU-51 · «Las hace este código»: the code runs once per unit before the first round, through the step's reader; what it gives is the model's rows, and the model's schema has no read", async () => {
+    const open = [{ field: state, op: "is", value: "abierta" }];
+    const box = codeBox({
+      [READS]: (job) =>
+        "abiertas" in job.reads
+          ? { value: job.reads.abiertas as Cell }
+          : {
+              needs: {
+                key: "abiertas",
+                read: {
+                  collection: "tareas de ejemplo",
+                  op: "find",
+                  where: open as never,
+                  limit: 3,
+                },
+              },
+            },
+    });
+    // A read asked for anyway is not offered: it is refused and told (`read-off`), and then it answers.
+    const ai = scripted((_, n) => (n === 1 ? plan(FIND("s1")) : plan(answer("s1"))));
+    const { automation, id } = analyst({ reads: "code", code: READS }, [conn()]);
+    const e = await go(automation, {
+      collections: db(10),
+      ai: ai.port,
+      box,
+      collectionNamed: named,
+    });
+    expect(e.state).toBe("done");
+    expect(box.jobs.map((j) => [j.kind, j.mode])).toEqual([
+      ["code", "all"],
+      ["code", "all"],
+    ]);
+    const rows = ai.asked[0]?.rows as Record<string, unknown>[];
+    expect(rows.map((r) => r[title])).toEqual([
+      "tarea de ejemplo 1",
+      "tarea de ejemplo 3",
+      "tarea de ejemplo 5",
+    ]);
+    expect(ai.asked[0]?.tools).toEqual(["create", "update", "trash", "answer"]);
+    expect(ai.asked[1]?.again).toBeUndefined();
+    expect(ai.asked[1]?.rounds).toEqual([{ s1: { refused: "read-off" } }]);
+    expect(e.steps[id]?.agent?.units[0]?.lines).toEqual([
+      { op: "code", rows: 3 },
+      { op: "refused", tool: "find", collection: tasks.key, why: "read-off" },
+    ]);
+    expect(e.steps[id]?.reads).toMatchObject([{ collection: tasks.key, op: "find", rows: 3 }]);
+
+    // «Una vez por fila»: once per unit, with that unit's row.
+    const each = codeBox({ [EACH]: (job) => ({ value: job.input as Cell }) });
+    const per = analyst({ reads: "code", code: EACH, mode: "perRow" }, [conn()], tasks.key);
+    const f = await go(per.automation, {
+      collections: db(2),
+      ai: scripted(() => plan(answer("s1"))).port,
+      box: each,
+      collectionNamed: named,
+    });
+    expect(f.state).toBe("done");
+    expect(each.jobs.map((j) => j.input.map((r) => r[title]))).toEqual([
+      ["tarea de ejemplo 0"],
+      ["tarea de ejemplo 1"],
+    ]);
+
+    // A failure of the code fails the unit, with the parameter it is in; no model is called.
+    const failing = codeBox({
+      [READS]: () => ({ fails: { code: "code.threw", detail: { message: "no" } } }),
+    });
+    const quiet = scripted(() => plan(answer("s1")));
+    const g = await go(automation, {
+      collections: db(2),
+      ai: quiet.port,
+      box: failing,
+      collectionNamed: named,
+    });
+    expect(g.state, JSON.stringify(g.error)).toBe("failed");
+    console.log(JSON.stringify(g.error));
+    expect(g.error).toMatchObject({
+      step: id,
+      failure: { param: "code" },
+      why: { code: "code.threw" },
+    });
+    expect(quiet.asked).toEqual([]);
+  });
+
+  it("AU-51 · the code of «Las hace este código» only reads: a call that asks to save, wherever it sits, is `agent.reads.write`; without a box it is `expr.code`", () => {
+    const context = { ...knowing(tasks, groups), ai: true, collectionNamed: named };
+    const of = (code: string, reads = "code") =>
+      validate(analyst({ reads, code }, [conn()]).automation, context).map((p) => [
+        p.code,
+        p.param,
+      ]);
+    expect(of(READS)).toEqual([]);
+    expect(of(WRITES)).toEqual([["agent.reads.write", "code"]]);
+    // With «Las decide la IA» the code is kept and not read (changing the mode does not delete it).
+    expect(of(WRITES, "ai")).toEqual([]);
+    const { automation } = analyst({ reads: "code", code: READS }, [conn()]);
+    expect(
+      validate(automation, { ...knowing(tasks, groups), ai: true }).map((p) => [p.code, p.param]),
+    ).toEqual([["expr.code", "code"]]);
+    expect(
+      validate(analyst({ reads: "code", code: { expr: "{{ 1 }}" } }, [conn()]).automation, context)
+        .map((p) => [p.code, p.param])
+        .slice(0, 1),
+    ).toEqual([["param.shape", "code"]]);
+  });
 
   it("AU-53 · «Texto» gives one row with `texto`, «Campos» a row of that shape; an answer outside the shape is asked again once and then fails the step (`agent.reply`)", async () => {
     const fields = [
@@ -294,9 +416,94 @@ describe("the «Agente» step (F15)", () => {
       "step.unknownType",
     ]);
   });
-  it.todo(
-    "AU-58 · a code tool runs in the box with the step's connections and only reads; what it returns goes through the planner's view",
-  );
+  it("AU-58 · a code tool runs in the box with the step's connections and only reads; the model calls it by its name with its inputs, and what it returns goes back with its labels", async () => {
+    const box = codeBox({
+      [COUNT]: (job, row) => {
+        const key = `n:${String(row?.estado)}`;
+        return key in job.reads
+          ? { value: { cuantas: job.reads[key] as Cell } }
+          : {
+              needs: {
+                key,
+                read: {
+                  collection: "tareas de ejemplo",
+                  op: "count",
+                  where: [{ field: state, op: "is", value: row?.estado }] as never,
+                },
+              },
+            };
+      },
+      [BROKEN]: () => ({ fails: { code: "code.threw", detail: { message: "no" } } }),
+    });
+    const ai = scripted((r, n) =>
+      n === 1
+        ? plan(
+            call("s1", "contar", { estado: lit("abierta") }),
+            call("s2", "contar", { estado: lit(3) }),
+            call("s3", "rota", {}),
+          )
+        : plan(answer("s1", lit(JSON.stringify(r.rounds[0])))),
+    );
+    const { automation, id } = analyst({ tools: TOOLS as never }, [conn()]);
+    const e = await go(automation, {
+      collections: db(10),
+      ai: ai.port,
+      box,
+      collectionNamed: named,
+    });
+    expect(e.state).toBe("done");
+    expect(ai.asked[0]?.tools).toEqual([
+      "find",
+      "get",
+      "count",
+      "sum",
+      "create",
+      "update",
+      "trash",
+      "contar",
+      "rota",
+      "answer",
+    ]);
+    expect(ai.asked[0]?.codeTools).toEqual([
+      { name: "contar", inputs: [{ name: "estado", type: "text" }] },
+      { name: "rota", inputs: [] },
+    ]);
+    // Its value, an input of another type refused, and a failure told as one.
+    expect(ai.asked[1]?.rounds).toEqual([
+      { s1: { cuantas: 5 }, s2: { refused: "bad-request" }, s3: { refused: "code-failed" } },
+    ]);
+    expect(box.jobs[0]).toMatchObject({
+      kind: "code",
+      mode: "perRow",
+      input: [{ estado: "abierta" }],
+    });
+    expect(e.steps[id]?.agent?.units[0]?.lines).toEqual([
+      { op: "tool", name: "contar", rows: 1 },
+      { op: "refused", tool: "contar", why: "bad-request" },
+      { op: "refused", tool: "rota", why: "code-failed" },
+    ]);
+    expect(e.steps[id]?.reads).toMatchObject([{ collection: tasks.key, op: "count" }]);
+  });
+
+  it("AU-58 · code tools: at most 8, each a name of its own and its inputs typed; their code only reads", () => {
+    const context = { ...knowing(tasks, groups), ai: true, collectionNamed: named };
+    const of = (tools: unknown) =>
+      validate(analyst({ tools: tools as never }, [conn()]).automation, context).map((p) => [
+        p.code,
+        p.param,
+      ]);
+    expect(of(TOOLS)).toEqual([]);
+    expect(of([{ ...TOOLS[0], code: WRITES }])).toEqual([["agent.reads.write", "tools.0.code"]]);
+    expect(of([{ ...TOOLS[0], name: "find" }])).toEqual([["param.value", "tools"]]);
+    expect(of([{ ...TOOLS[0], inputs: [{ name: "x", type: "color" }] }])).toEqual([
+      ["param.value", "tools"],
+    ]);
+    expect(of(Array.from({ length: 9 }, (_, i) => ({ ...TOOLS[0], name: `t${i}` })))).toEqual([
+      ["param.value", "tools"],
+    ]);
+    // Two tools of one name.
+    expect(of([TOOLS[0], { ...TOOLS[1], name: "contar" }])).toEqual([["param.value", "tools"]]);
+  });
 
   it("AU-197 · what the model receives is a closed list: a new source in the request breaks this test", async () => {
     const ai = scripted(() => plan(answer("s1")));
@@ -344,6 +551,39 @@ describe("the «Agente» step (F15)", () => {
     expect(r?.tools.sort()).toEqual(
       ["answer", "count", "create", "find", "get", "sum", "trash", "update"].sort(),
     );
+    // With «Las hace este código» and a code tool: `codeTools` joins the list, the reads leave the tools, and no code
+    // is ever in it, the step's or a tool's.
+    const coded = scripted(() => plan(answer("s1")));
+    const c2 = analyst({ reads: "code", code: EACH, tools: [TOOLS[0]] as never }, [conn()]);
+    const f = await go(c2.automation, {
+      collections: db(2),
+      ai: coded.port,
+      box: codeBox({ [EACH]: () => ({ value: [{ n: 1 }] }) }),
+      collectionNamed: named,
+    });
+    expect(f.state).toBe("done");
+    const q = coded.asked[0];
+    expect(Object.keys(q ?? {}).sort()).toEqual([...Object.keys(r ?? {}), "codeTools"].sort());
+    expect(q?.tools).toEqual(["create", "update", "trash", "contar", "answer"]);
+    expect(q?.codeTools).toEqual([{ name: "contar", inputs: [{ name: "estado", type: "text" }] }]);
+    const sent = JSON.stringify(q);
+    for (const code of [EACH, COUNT, "$col", "$input"]) expect(sent).not.toContain(code);
+  });
+
+  it("AU-51 · going back to «Las decide la IA» keeps the code saved and runs none of it: the round reads", async () => {
+    const box = codeBox({});
+    const ai = scripted(() => plan(answer("s1")));
+    const { automation } = analyst({ reads: "ai", code: READS }, [conn()]);
+    const e = await go(automation, {
+      collections: db(2),
+      ai: ai.port,
+      box,
+      collectionNamed: named,
+    });
+    expect(e.state).toBe("done");
+    expect(box.jobs).toEqual([]);
+    expect(ai.asked[0]?.tools).toEqual(expect.arrayContaining(["find", "get", "count", "sum"]));
+    expect(automation.steps.find((x) => x.type === "agent")?.params.code).toBe(READS);
   });
 
   it("AU-197 · a value from outside in «Instrucciones» or in the input rows reaches the model as a handle, never as its text", async () => {
@@ -467,6 +707,288 @@ describe("the «Agente» step (F15)", () => {
         (l) => l.op !== "hidden" && "state" in l && l.state,
       ),
     ).toEqual(["asked", "asked"]);
+  });
+
+  it("AU-198 · a unit «Reintentar» tries again is a second unit in «Lo que hizo», with its own rounds", async () => {
+    const bad = { version: 1, steps: [{ id: "s1", op: "nope" }] };
+    // Twice a plan that is not one: `agent.plan`; then, tried again, it answers.
+    const ai = scripted((_, n) => (n <= 2 ? bad : plan(answer("s1"))));
+    const { automation, id } = analyst({}, [conn()], undefined, {
+      retry: { times: 1, waitMs: 0 },
+    });
+    const e = await go(automation, { collections: db(2), ai: ai.port });
+    expect(e.state).toBe("done");
+    expect(e.steps[id]?.retries).toBe(1);
+    expect(e.steps[id]?.agent?.units.map((u) => u.rounds)).toEqual([1, 1]);
+    expect(e.steps[id]?.ai?.calls).toBe(3);
+  });
+
+  it("AU-53 · AU-198 · after an answer that does not fit, the plan asked again in the round gathers its writes on top of the first's, which the model saw as planned", async () => {
+    const ai = scripted((_, n) =>
+      n === 1
+        ? plan(CREATE("s1"), call("s2", "answer", { total: lit("no es un número") }))
+        : plan(CREATE("s1", lit("otra tarea")), call("s2", "answer", { total: lit(2) })),
+    );
+    const { automation, id } = analyst(
+      { answer: "fields", fields: [{ key: "total", type: "number" }] as never },
+      [conn({ create: { ...YES, fields: [title, state] } })],
+    );
+    const st = db(1);
+    const e = await go(automation, { collections: st, ai: ai.port });
+    expect(e.state).toBe("done");
+    expect(ai.asked[1]?.again).toMatchObject({ fault: "reply" });
+    expect(ai.asked[1]?.rounds).toMatchObject([{ s1: { planned: expect.any(String) } }]);
+    expect(st.rows(tasks.key).map((r) => r.json[title])).toEqual([
+      "tarea de ejemplo 0",
+      "tarea propuesta",
+      "otra tarea",
+    ]);
+    expect(e.steps[id]?.agent?.units[0]?.lines).toEqual([
+      { op: "create", collection: tasks.key, state: "applied" },
+      { op: "create", collection: tasks.key, state: "applied" },
+    ]);
+  });
+
+  it("AU-52 · each field the AI decides goes to the model with its line, empty when it has none", async () => {
+    const ai = scripted(() => plan(answer("s1")));
+    const lines = { [title]: "el título, corto" };
+    const { automation } = analyst({}, [
+      conn({ create: { ...YES, fields: [title, state], lines } }),
+    ]);
+    await go(automation, { collections: db(1), ai: ai.port });
+    expect(ai.asked[0]?.connections).toMatchObject([
+      {
+        create: {
+          fields: [
+            { key: title, line: "el título, corto" },
+            { key: state, line: "" },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("AU-55 · 250 input rows reach the model through the planner's view (200 rows, 20,000 characters), saying what was left out", async () => {
+    const ai = scripted(() => plan(answer("s1")));
+    const { automation } = analyst({}, [conn()], tasks.key);
+    const e = await go(automation, { collections: db(250), ai: ai.port });
+    expect(e.state).toBe("done");
+    // At most 200 rows and 20,000 characters: here the characters cut first.
+    const rows = ai.asked[0]?.rows as unknown[];
+    expect(rows.length).toBeLessThanOrEqual(200);
+    expect(JSON.stringify(rows).length).toBeLessThanOrEqual(20_000 + 2);
+    expect(ai.asked[0]?.seen).toEqual([{ at: "$rows", saw: rows.length, of: 250 }]);
+
+    // Small rows: the 200 rows cut first, the characters far below theirs.
+    const small = codeBox({
+      [EACH]: () => ({ value: Array.from({ length: 250 }, (_, n) => ({ n })) }),
+    });
+    const few = scripted(() => plan(answer("s1")));
+    const f = await go(analyst({ reads: "code", code: EACH }, [conn()]).automation, {
+      collections: db(1),
+      ai: few.port,
+      box: small,
+      collectionNamed: named,
+    });
+    expect(f.state).toBe("done");
+    expect(few.asked[0]?.rows).toHaveLength(200);
+    expect(JSON.stringify(few.asked[0]?.rows).length).toBeLessThan(20_000);
+    expect(few.asked[0]?.seen).toEqual([{ at: "$rows", saw: 200, of: 250 }]);
+  });
+
+  it("AU-51 · `count` and `sum` give their value over every row the connection reads, never cut by the view", async () => {
+    const ai = scripted((r, n) =>
+      n === 1
+        ? plan(
+            call("s1", "count", { collection: lit(tasks.key), query: lit({}) }),
+            call("s2", "sum", { collection: lit(tasks.key), field: lit(amount), query: lit({}) }),
+          )
+        : plan(answer("s1", lit(JSON.stringify(r.rounds[0])))),
+    );
+    const { automation } = analyst({}, [conn()]);
+    const e = await go(automation, { collections: db(3000), ai: ai.port });
+    expect(e.state).toBe("done");
+    expect(ai.asked[1]?.rounds).toEqual([{ s1: 3000, s2: (2999 * 3000) / 2 }]);
+    expect(ai.asked[1]?.seen).toEqual([]);
+  });
+
+  it("AU-198 · `bad-query`, `too-many`, `over-limit` and `outside-rows` are told to the model; a row that is not there and one the connection leaves out are told the same (AU-177)", async () => {
+    // Only the open ones are read, so only they may be modified; one row created at most.
+    const open = [{ field: state, op: "is", value: "abierta" }];
+    const c = conn({
+      read: { where: open as never },
+      create: { ...YES, limit: 1, fields: [title, state] },
+      update: { ...YES, fields: [title] },
+    });
+    const st = db(4);
+    const [closed, opened] = st.rows(tasks.key).map((r) => r.origin?.id as string);
+    const UPDATE = (sid: string, rid: string) =>
+      call(sid, "update", {
+        collection: lit(tasks.key),
+        id: lit(rid),
+        fields: obj(lit(title), lit("cambiada")),
+      });
+    const ai = scripted((r, n) =>
+      n === 1
+        ? plan(
+            FIND("s1", { foo: 1 }),
+            CREATE("s2"),
+            CREATE("s3"),
+            UPDATE("s4", closed as string),
+            UPDATE("s5", "fila-que-no-existe"),
+            UPDATE("s6", opened as string),
+          )
+        : plan(answer("s1", lit(JSON.stringify(r.rounds[0])))),
+    );
+    const { automation, id } = analyst({}, [c]);
+    const e = await go(automation, { collections: st, ai: ai.port });
+    expect(e.state).toBe("done");
+    expect(ai.asked[1]?.rounds).toMatchObject([
+      {
+        s1: { refused: "bad-query" },
+        s2: { planned: expect.any(String) },
+        s3: { refused: "over-limit" },
+        s4: { refused: "outside-rows" },
+        s5: { refused: "outside-rows" },
+        s6: { planned: expect.any(String) },
+      },
+    ]);
+    expect(e.steps[id]?.writes?.kind).toBe("applied");
+
+    // A read over the read limit of one read (`readBytes`): `too-many`.
+    const long = store(
+      [tasks, groups],
+      {
+        [tasks.key]: Array.from({ length: 3000 }, (_, i) => ({
+          [title]: `${"x".repeat(1000)}${i}`,
+        })),
+        [groups.key]: [],
+      },
+      ids(174),
+    );
+    const many = scripted((r, n) =>
+      n === 1 ? plan(FIND("s1", {})) : plan(answer("s1", lit(JSON.stringify(r.rounds[0])))),
+    );
+    const f = await go(analyst({}, [conn()]).automation, { collections: long, ai: many.port });
+    expect(f.state).toBe("done");
+    expect(many.asked[1]?.rounds).toEqual([{ s1: { refused: "too-many" } }]);
+  });
+
+  it("AU-205 · the policy's P29 on a read is told to the model; a collection made private fails the unit with `ai.private`", async () => {
+    const deny = (reason: string) =>
+      policy((call) =>
+        call.effect === "read"
+          ? { kind: "deny", rule: "P29", reason }
+          : { kind: "allow", rule: "test.allow" },
+      );
+    const ai = scripted((r, n) =>
+      n === 1 ? plan(FIND("s1")) : plan(answer("s1", lit(JSON.stringify(r.rounds[0])))),
+    );
+    const { automation, id } = analyst({}, [conn()]);
+    const e = await go(automation, { collections: db(3), ai: ai.port, policy: deny("read-off") });
+    expect(e.state).toBe("done");
+    expect(ai.asked[1]?.rounds).toEqual([{ s1: { refused: "read-off" } }]);
+    expect(e.steps[id]?.agent?.units[0]?.lines).toEqual([
+      { op: "refused", tool: "find", collection: tasks.key, why: "read-off" },
+    ]);
+
+    const hidden = scripted(() => plan(FIND("s1")));
+    const f = await go(automation, {
+      collections: db(3),
+      ai: hidden.port,
+      policy: deny("private-collection"),
+    });
+    expect(f.state).toBe("failed");
+    expect(f.error).toMatchObject({
+      step: id,
+      ai: { code: "ai.private", detail: { collection: tasks.key } },
+    });
+  });
+
+  it("AU-198 · AU-161 · a no to a call made by code fails the unit, as in a «Código»: «Las hace este código» and a code tool, P29 included; a write the code asks for fails it (`code.write.unseen`)", async () => {
+    const deny = (reason: string) =>
+      policy((call) =>
+        call.effect === "read"
+          ? { kind: "deny", rule: "P29", reason }
+          : { kind: "allow", rule: "test.allow" },
+      );
+    const reads = (job: Parameters<Parameters<typeof codeBox>[0][string]>[0]) =>
+      "r" in job.reads
+        ? { value: job.reads.r as Cell }
+        : {
+            needs: {
+              key: "r",
+              read: { collection: "tareas de ejemplo", op: "find" as const, limit: 3 },
+            },
+          };
+    // «Las hace este código»: the model is never asked; P29 is the rule and its code, never told as a refusal.
+    for (const [reason, code] of [
+      ["read-off", "policy.denied"],
+      ["private-collection", "ai.private"],
+    ] as const) {
+      const ai = scripted(() => plan(answer("s1")));
+      const { automation, id } = analyst({ reads: "code", code: READS }, [conn()]);
+      const e = await go(automation, {
+        collections: db(3),
+        ai: ai.port,
+        box: codeBox({ [READS]: reads }),
+        collectionNamed: named,
+        policy: deny(reason),
+      });
+      expect(e.state, reason).toBe("failed");
+      expect(e.error?.step).toBe(id);
+      expect(JSON.stringify(e.error), reason).toContain(code);
+      expect(ai.asked, reason).toHaveLength(0);
+    }
+
+    // A code tool: the model called it, but its read is code's, and P29 fails the unit as well.
+    const tool = { name: "leer", inputs: [], code: COUNT };
+    const asked = scripted(() => plan(call("s1", "leer", {})));
+    const t = analyst({ tools: [tool] as never }, [conn()]);
+    const f = await go(t.automation, {
+      collections: db(3),
+      ai: asked.port,
+      box: codeBox({ [COUNT]: reads }),
+      collectionNamed: named,
+      policy: deny("read-off"),
+    });
+    expect(f.state).toBe("failed");
+    expect(JSON.stringify(f.error)).toContain("policy.denied");
+    expect(asked.asked).toHaveLength(1);
+
+    // A write the code asks for, though validation refuses one (`agent.reads.write`): the run's guard fails it.
+    const writes = codeBox({
+      [READS]: () => ({
+        value: [],
+        writes: [{ collection: "tareas de ejemplo", action: "create" }],
+      }),
+    });
+    const w = analyst({ reads: "code", code: READS }, [
+      conn({ create: { ...YES, fields: [title] } }),
+    ]);
+    const st = db(3);
+    const g = await go(w.automation, {
+      collections: st,
+      ai: scripted(() => plan(answer("s1"))).port,
+      box: writes,
+      collectionNamed: named,
+    });
+    expect(g.state).toBe("failed");
+    expect(g.error?.why).toMatchObject({
+      code: "code.write.unseen",
+      detail: { where: "agent" },
+    });
+    expect(st.rows(tasks.key)).toHaveLength(3);
+  });
+
+  it("AU-200 · an «Agente» whose connection reads a collection with values from outside saves «con datos de fuera» with «Sí», and not with «Preguntar»", () => {
+    const of = (create: typeof YES | typeof ASK) =>
+      abilities(analyst({}, [conn({ create: { ...create, fields: [title] } })]).automation, {
+        collectionNamed: (n) => n,
+        outside: new Set([tasks.key]),
+      }).find((a) => a.action === "create");
+    expect(of(YES)).toMatchObject({ how: "saves", outside: true, byAgent: true });
+    expect(of(ASK)).not.toHaveProperty("outside");
   });
 
   it("AU-200 · `abilities` gives one line per collection and action an «Agente»'s connection allows, each marked as decided by the AI", () => {

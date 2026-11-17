@@ -256,6 +256,11 @@ export const CODE_PROBLEMS = [
    * `detail.action`: the button sets that cell to «Preguntar».
    */
   "code.write.notAllowed",
+  /**
+   * A call that asks to save in an «Agente»'s own code: «Las hace este código» and its code tools only read (AU-51,
+   * AU-58). `detail.name` (the collection, as written), `detail.action`.
+   */
+  "agent.reads.write",
 ] as const;
 export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
 

@@ -5,9 +5,12 @@ import type { AgentRequest, Planner } from "../../agent/src/rounds.ts";
 import { runRounds } from "../../agent/src/rounds.ts";
 import type { AiPort } from "./ai.ts";
 import { sketch } from "./automation.test-util.ts";
+import type { Box, BoxJob, CodeRead, Evaluated, Fields } from "./box.ts";
+import type { CodeFailure } from "./code.ts";
 import type { Connection } from "./connections.ts";
 import { type Execution, type RunDeps, run } from "./engine.ts";
 import { ACTION, type Automation, type ParamValue, type Step } from "./format.ts";
+import type { Cell } from "./rows.ts";
 import { deps, OWN } from "./run.test-util.ts";
 
 export const MODEL = "modelo-de-ejemplo";
@@ -90,3 +93,51 @@ export const go = (
     },
     deps(over),
   );
+
+/**
+ * What a scripted box gives for one evaluation: a value (with the writes it asked for, which an «Agente»'s code may
+ * not), a read it needs first (by the box's key), or its failure.
+ */
+export type BoxOut =
+  | { value: Cell; writes?: { collection: string; action: string; fields?: Cell }[] }
+  | { needs: { key: string; read: CodeRead } }
+  | { fails: CodeFailure };
+
+/**
+ * A box for an «Agente»'s own code (AU-51, AU-58): `table` answers each source from the job (its reads so far) and the
+ * evaluation's row, undefined with «Una vez con todas las filas». Every job is kept as it was sent. No JavaScript
+ * runs: the box's contract is box.test.ts's.
+ */
+export function codeBox(
+  table: Record<string, (job: BoxJob, row: Fields | undefined) => BoxOut>,
+): Box & { jobs: BoxJob[] } {
+  const jobs: BoxJob[] = [];
+  return {
+    jobs,
+    async run(job) {
+      jobs.push(structuredClone(job));
+      const all = job.kind === "code" && job.mode === "all";
+      const evaluations: Evaluated[] = [];
+      for (let j = 0; j < (all ? 1 : job.input.length); j++) {
+        const [source] = job.sources;
+        const answer = source === undefined ? undefined : table[source];
+        if (!answer) throw new Error(`the box has no answer for ${source}`);
+        const o = answer(job, all ? undefined : job.input[j]);
+        evaluations.push(
+          "needs" in o
+            ? { state: "needs", ...o.needs }
+            : "fails" in o
+              ? { state: "failed", failure: o.fails, source: 0 }
+              : {
+                  state: "done",
+                  values: [o.value],
+                  clock: false,
+                  random: false,
+                  ...(o.writes ? { writes: o.writes as never } : {}),
+                },
+        );
+      }
+      return { evaluations, console: [], dropped: 0, ms: 1 };
+    },
+  };
+}

@@ -1158,6 +1158,8 @@ const es = {
   "auto.problem.code.colUse.unknown":
     "$col('{name}') no tiene «{method}»: tiene find, get, count, sum, create, update y remove",
   "auto.problem.code.write.notAllowed": "La conexión con «{collection}» no deja {action}",
+  "auto.problem.agent.reads.write":
+    "El código de un «Agente» solo lee: no puede guardar en «{name}»",
   "auto.failure.code.threw": "El código falló: {message}",
   "auto.failure.code.threw.line": "El código falló en la línea {line}: {message}",
   "auto.failure.code.limit": "Se pasó del tope de {limit}: {max}",
@@ -4426,6 +4428,7 @@ const en: Record<Key, string> = {
   "auto.problem.code.colUse.unknown":
     "$col('{name}') has no «{method}»: it has find, get, count, sum, create, update and remove",
   "auto.problem.code.write.notAllowed": "The connection to «{collection}» does not let it {action}",
+  "auto.problem.agent.reads.write": "An agent's code only reads: it cannot save to «{name}»",
   "auto.failure.code.threw": "The code failed: {message}",
   "auto.failure.code.threw.line": "The code failed on line {line}: {message}",
   "auto.failure.code.limit": "It passed the limit of {limit}: {max}",

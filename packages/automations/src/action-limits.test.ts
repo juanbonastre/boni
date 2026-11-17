@@ -30,7 +30,15 @@ import { type GateUnit, guard } from "./effects.ts";
 import { run, type StepRecord } from "./engine.ts";
 import type { Step } from "./format.ts";
 import type { Cell } from "./rows.ts";
-import { deps, type FakePolicy, type FakeStore, OWN, policy, store } from "./run.test-util.ts";
+import {
+  deps,
+  type FakePolicy,
+  type FakeStore,
+  OUTSIDE,
+  OWN,
+  policy,
+  store,
+} from "./run.test-util.ts";
 import {
   applyWrites,
   grantsOf,
@@ -291,6 +299,135 @@ describe("the limits of a write action (F15)", () => {
     expect(problems(creating, { ...agent, type: CODE_TYPE } as Step)).toEqual([
       ["connection.limits", "field"],
     ]);
+  });
+
+  it("AU-48 · decision 18 · a modified row ends with the action's fixed values, with the automation's label: the step chooses the rows, not those fields; a modify may name none of its own; validation and the format as create's", async () => {
+    const st = db(2);
+    const [first, second] = idsOf(st) as [string, string];
+    const c = conn({
+      read: {},
+      update: { ...YES, fields: [note], fixed: { [state]: "revisada" } },
+    });
+    const p = policy();
+    const out = await applyWrites(
+      input([update(first, { [note]: "cambiada" })], [c]),
+      writer(st, p),
+    );
+    expect(out.kind).toBe("applied");
+    expect(st.applied[0]).toMatchObject({
+      kind: "update",
+      fields: { [note]: "cambiada", [state]: "revisada" },
+    });
+    // The fixed value is Juan's: the automation's label, not what the code computed from.
+    const values = p.calls.find((x) => x.effect === "write")?.values ?? {};
+    expect(values[state]?.label).toBe(AUTO);
+    expect(values[note]?.label).toBe(OWN);
+    // With fixed values a modify may name no field of its own; without them that is still not a request.
+    expect((await applyWrites(input([update(second, {})], [c]), writer(st))).kind).toBe("applied");
+    expect(st.applied[1]).toMatchObject({ kind: "update", fields: { [state]: "revisada" } });
+    const bare = conn({ read: {}, update: { ...YES, fields: [note] } });
+    expect(await why(applyWrites(input([update(first, {})], [bare]), untouched))).toMatchObject({
+      code: "code.write.request",
+      detail: { why: "empty" },
+    });
+    // A fixed field the step names, or one outside «Solo estos campos»: refused, nothing judged.
+    for (const fields of [{ [state]: "cerrada" }, { [note]: "x", [amount]: 1 }])
+      expect(await why(applyWrites(input([update(first, fields)], [c]), untouched))).toMatchObject({
+        code: "code.write.notAllowed",
+        detail: { action: "update", why: "field" },
+      });
+    // Validation: as create's, a fixed value of a field the collection lacks, of one also left to the step, or an
+    // expression in a «Código» is a problem of the connection.
+    const step = { id: "s_ejemplo", type: CODE_TYPE, connections: [] } as unknown as Step;
+    const problems = (connection: Connection) =>
+      connectionProblems({ ...step, connections: [connection] }, knowing(tasks)).map((x) => [
+        x.code,
+        x.detail?.why,
+      ]);
+    expect(problems(c)).toEqual([]);
+    for (const fixed of [{ f_noesta: 1 }, { [note]: "x" }, { [state]: { expr: "{{ 1 }}" } }])
+      expect(
+        problems(conn({ update: { ...YES, fields: [note], fixed } as Connection["update"] })),
+      ).toEqual([["connection.limits", "field"]]);
+    // The format keeps it, closed as before.
+    expect(parseConnection(JSON.parse(JSON.stringify(c)), "c", (v) => v as Cell)).toEqual(c);
+    expect(() =>
+      parseConnection(
+        { collection: tasks.key, update: { mode: "yes", fixed: 1 } },
+        "c",
+        (v) => v as Cell,
+      ),
+    ).toThrow(/update\.fixed/);
+  });
+
+  it("AU-52 · decision 18 · an «Agente» modifies the rows it chooses and each ends with the fixed value, an expression of its row resolved by the code with that value's label; a fixed field the model names is refused and told; in a test nothing is saved", async () => {
+    // Row by row over two of his tasks; the first one's state came from outside. The AI decides the amount; the
+    // note is fixed to the row's state by an expression: Juan's choice, written by code whatever the model asks.
+    const modifying = conn({
+      read: {},
+      update: {
+        mode: "yes",
+        limit: 20,
+        fields: [amount],
+        fixed: { [note]: { expr: `{{ $json.${state} }}` } },
+      } as Connection["update"],
+    });
+    const seeded = () => {
+      const st = store([tasks], {}, ids(134));
+      for (const [i, row] of ROWS(2).entries())
+        st.rows(tasks.key).push({
+          json: row,
+          label: OWN,
+          ...(i === 0 ? { fields: { [state]: { label: OUTSIDE, derived: false } } } : {}),
+          origin: { collection: tasks.key, id: `o_fila${i}`, version: 1 },
+        });
+      return st;
+    };
+    const modeller = () =>
+      scripted((_, n) =>
+        plan(
+          call("s1", "update", {
+            collection: lit(tasks.key),
+            id: lit(n === 1 ? "o_fila0" : "o_fila1"),
+            fields: n === 1 ? obj(lit(amount), lit(7)) : obj(lit(note), lit("la del modelo")),
+          }),
+          answer("s2"),
+        ),
+      );
+    const { automation, id } = analyst({ mode: "perRow" }, [modifying], tasks.key);
+    let ai = modeller();
+    for (const test of [false, true]) {
+      ai = modeller();
+      const st = seeded();
+      const p = policy();
+      const e = await run(
+        {
+          automation,
+          trigger: automation.steps[0]?.id as string,
+          fields: { json: {}, label: OWN },
+          test,
+        },
+        deps({ collections: st, ai: ai.port, policy: p }),
+      );
+      expect(e.state).toBe("done");
+      // The second unit named the fixed field: refused, told to the model, nothing of it written. The first one's
+      // state from outside went to the model as a handle, and «Lo que hizo» says so (`hidden`, AU-197).
+      expect(
+        e.steps[id]?.agent?.units.map((u) => u.lines.map((l) => ("why" in l ? l.why : l.op))),
+      ).toEqual([["hidden", "update"], ["outside-fields"]]);
+      const line = e.steps[id]?.agent?.units[0]?.lines.find((l) => l.op === "update");
+      expect(line && "state" in line ? line.state : null).toBe(test ? "tested" : "applied");
+      // The first row gets its amount and, in the note, its own state, with the label it came with (AU-170).
+      const values = p.calls.find((x) => x.effect === "write")?.values ?? {};
+      expect(values[note]).toMatchObject({ value: "cerrada", label: OUTSIDE });
+      expect(values[amount]?.value).toBe(7);
+      const saved = st.applied.map((a) => ("fields" in a ? a.fields : null));
+      expect(saved).toEqual(test ? [] : [{ [amount]: 7, [note]: "cerrada" }]);
+    }
+    // The schema names the fixed field and never its value or expression.
+    const asked = JSON.stringify(ai.asked[0]?.connections);
+    expect(ai.asked[0]?.connections).toMatchObject([{ update: { fixed: [note] } }]);
+    expect(asked).not.toContain("$json");
   });
 
   it("AU-52 · an option the field does not have, or a related row the step did not read in this run, is refused", async () => {

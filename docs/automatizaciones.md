@@ -898,9 +898,10 @@ interface Connection {
   relación llega como el id de la fila relacionada.
 - **AU-48** (F15, en parte) · Cada acción de escribir lleva los suyos: modificar y eliminar, «Solo estas filas»;
   crear y modificar, «Solo estos campos». Por ejemplo, modificar solo la «Categoría» de los gastos que no la tienen.
-  Crear puede llevar valores fijos que la IA no elige.
+  Crear puede llevar valores fijos que la IA no elige, y modificar también (decisión 18 del §10).
   En la F15: se guardan en la conexión, en cada acción, donde el formato ya los tiene: `update.where` y
-  `update.fields`, `remove.where`, `create.fields` y `create.fixed`. Estrechan además de los de leer (AU-177): una fila
+  `update.fields`, `remove.where`, `create.fields` y `create.fixed`; y `update.fixed`, con la misma forma que el de
+  crear (decisión 18). Estrechan además de los de leer (AU-177): una fila
   tiene que cumplir el filtro de leer y el de la acción. Valen igual en «Código» y en «Agente», y los comprueba el
   motor con la conexión guardada (`insideConnection`), y para un paso de IA también la política (AU-205). En la
   pantalla van en la fila abierta de la conexión (AU-43), bajo cada acción que no está en «No», con los dos controles
@@ -917,6 +918,18 @@ interface Connection {
   un «Agente» verá como filas que puede modificar o eliminar (E3). Falta: la fila abierta en la pantalla (P1), el
   control de AU-52 (P2; las expresiones de `fixed` las resuelve el motor desde E3) y que el servidor ponga la conexión en la llamada de un paso
   de IA para que P29 la compruebe también (S1).
+  Hecho en el segundo PR de E3 (decisión 18): `update.fixed`, con la misma forma, la misma validación (un campo que
+  la colección no tiene, uno que también está en `fields` y, fuera de un «Agente», uno que no es un valor escrito) y
+  el mismo trato que `create.fixed`: cada fila que el paso modifica acaba con esos valores, los pone el código al
+  guardar con la etiqueta de la automatización o la de su expresión, y una petición que nombra uno se niega
+  (`code.write.notAllowed`, `field`; al modelo, `outside-fields`). Con fijos, una petición de modificar puede no
+  nombrar ningún campo suyo: solo pone los fijos. Un campo es de «Solo estos campos» o fijo, nunca las dos cosas. Lo
+  que cuenta `create.fixed` cuenta igual `update.fixed`, cada uno con su prueba: cambiarlo al publicar baja el «Sí»
+  del paso (AU-188, `consent.test.ts`), es un cambio de su conexión en «Versiones» (AU-96, `versions.test.ts`), y
+  «Lo que hizo» y «Probar» lo dicen igual sin guardar nada (`action-limits.test.ts`). El motor lo lee del paso como
+  está guardado (`fixedOf` de `engine.ts`), nunca de una petición, del modelo ni de la caja. Falta: el control bajo
+  «Modificar» (P2), que la frase del paso diga los fijos (AU-44, P2: hoy no los dice ni para crear) y que el servidor
+  lleve los de modificar en la celda de P29 (S1).
 - **AU-196** (F15, en parte) · «Como mucho N filas». Cada acción de escribir de una conexión puede llevar un tope
   de filas por ejecución (`limit`, como el de leer, de 1 a 5.000). Cuenta las filas que el paso pide crear,
   modificar o mandar a la papelera con esa acción, se guarden o se propongan, por paso y ejecución, sumando sus
@@ -1086,8 +1099,17 @@ que un paso espere a Juan.
   prueba: `packages/automations/src/agent.test.ts`.
   Hecho en E3: con «Las decide la IA» el plan pide `find`, `get`, `count` y `sum`, y cada lectura pasa por el mismo
   `Reader` que un «Código» (`box.ts`): `narrow` con la conexión guardada, la puerta de la política y los topes del
-  paso; lo leído queda en `StepRecord.reads`. Falta: «Las hace este código» (el segundo PR de E3) y la frase del paso
-  (P2).
+  paso; lo leído queda en `StepRecord.reads`. Hecho en el segundo PR de E3: con «Las hace este código» (`reads`
+  `code`, el parámetro `code`) el código corre en la caja una vez por unidad de trabajo, antes de la primera ronda, con
+  las conexiones del paso y por el mismo `Reader` que leerán sus herramientas; lo que devuelve (una lista da una fila
+  por elemento) son las filas que el modelo recibe, por la vista, y «Lo que hizo» lo cuenta (`code`). A la ronda no
+  se le ofrecen lecturas (`tools` va sin ellas), y una que el plan pida igual se le niega y se le dice (`read-off`): el
+  plan vale y la ronda sigue. Que el código escriba es un problema al validar (`agent.reads.write`) y, si llegara a
+  pedirlo, falla al ejecutar (`code.write.unseen`); si el código falla, falla la unidad con su código (`CodeFault`), y
+  si la política le niega una lectura, también, la de P29 incluida, como en un «Código» (`policy.denied`, o
+  `ai.private` si la colección se hizo privada). Cambiar a
+  «Las decide la IA» guarda el código, y la versión cuenta los pasos que cita. Falta: la frase del paso y el editor
+  del código (P2), y que renombrar un paso cambie su nombre dentro de este código, como en un «Código» (P2).
 - **AU-52** (F15, en parte) · En cada permiso de escribir, los campos se rellenan con el control de «los campos de
   una fila» (AU-80), que aquí, y solo aquí, tiene un tercer estado: cada campo es «Fijo», «Expresión» o «Lo decide la
   IA», con una línea que le dice para qué es. Las opciones salen del propio campo: una IA no puede inventar una
@@ -1103,8 +1125,11 @@ que un paso espere a Juan.
   «Agente», resueltas con la fila de su unidad de trabajo y con su etiqueta; la línea de cada campo (`lines`, solo de
   los de `fields`) va al modelo en el esquema. Una opción que el campo no tiene (`bad-option`) y una relación con una
   fila que el paso no leyó en esa ejecución (`not-read`) se niegan y se le dicen al modelo. Falta: las opciones de
-  cada campo desde el servidor (`FieldShape.options`, S1: sin ellas no se comprueban), los fijos bajo «Modificar»,
-  que el formato aún no tiene (AU-48 los da solo a crear), y el control en la fila abierta (P2).
+  cada campo desde el servidor (`FieldShape.options`, S1: sin ellas no se comprueban) y el control en la fila abierta,
+  bajo «Crear» y bajo «Modificar» (P2). Hecho en el segundo PR de E3 (decisión 18): los fijos bajo «Modificar»
+  (`update.fixed`), con sus expresiones resueltas por unidad de trabajo como las de crear: un fijo que una expresión
+  toma de un valor de fuera lleva la etiqueta de fuera (AU-170), el modelo recibe solo sus nombres en el esquema
+  (`update.fixed`), nunca su valor, y si pide uno se le niega como a crear (`outside-fields`).
 - **AU-53** (F15, en parte) · «Respuesta» es «Texto» o «Campos» (una lista de campos con su tipo). Sale como una
   fila que los pasos siguientes citan como cualquier otra.
   En la F15: «Texto» da una fila con el campo `texto`; «Campos», hasta 12 campos, cada uno con su nombre, su tipo
@@ -1210,8 +1235,16 @@ que un paso espere a Juan.
   referencias cruzadas a distintas colecciones») cuando además quiere que la IA decida cuándo. «Memoria» solo existe
   con el disparador de chat (F16): en la F15 no sale. Si la fase se alarga, las herramientas son lo que pasa a la
   cola. La prueba: `packages/automations/src/agent.test.ts`.
-  Hecho en E3: «Rondas máximas» (`maxRounds`: nace en 5, de 1 a 10; otro valor es `param.value`). Falta:
-  «Herramientas de código» (el segundo PR de E3) y «Añadir opción» en el editor (P2).
+  Hecho en E3: «Rondas máximas» (`maxRounds`: nace en 5, de 1 a 10; otro valor es `param.value`). Hecho en el
+  segundo PR de E3: «Herramientas de código» (`tools`: hasta 8, cada una con `name`, `inputs` y `code`) van al modelo
+  en `tools` y en el catálogo de cada ronda con sus entradas obligatorias, en los dos modos de «Lecturas»; una llamada
+  sin sus entradas es un plan que no vale (`agent.plan`) y una con otras, `bad-request`. Cada una corre en la caja con
+  sus entradas como `$json` y las conexiones del paso, por el mismo `Reader`; lo que devuelve vuelve al modelo
+  (`rows` o `value`) y su línea queda en «Lo que hizo» (`tool`). Si falla, se le dice al modelo (`code-failed`) y la
+  ronda sigue; si la política le niega una lectura, la de P29 incluida, falla la unidad, porque esa lectura la pidió
+  código y no el modelo (AU-198, como en un «Código»). Un nombre repetido o tomado (`find`, `answer`…), un tipo que no existe o una escritura son
+  problemas al validar. Falta: «Añadir opción» y el editor de cada herramienta (P2), y el nombre de un paso
+  renombrado dentro de su código (P2).
 - **AU-59** (Antes, hecho) · Tarea 124, en el motor de hoy (`docs/nucleo.md` §7.4). Un lector cuya salida no vale se reintenta una vez acortando la entrada y, si vuelve
   a fallar, el paso falla diciendo qué lector y por qué; no para la automatización con un código (hoy:
   `R2-reader-output-invalid`, el fallo del resumen de la mañana). Se arregla ya en el motor de hoy (decisión 7 del
@@ -1235,8 +1268,10 @@ que un paso espere a Juan.
   tipo (con sus opciones y su destino), `read: false` o los límites de leer, y solo las acciones que no están en «No»,
   cada una con sus límites y la línea de cada campo. Cada cita de «Instrucciones» se resuelve aparte, con su
   etiqueta, y lo que un planificador no puede ver va como asa; «Lo que hizo» lo dice (`hidden`, con el campo y si
-  venía de las instrucciones o de las filas). Falta: el nombre y la descripción de cada colección, que da el servidor
-  (S1), y el esquema sin lecturas de «Las hace este código» (el segundo PR).
+  venía de las instrucciones o de las filas). Hecho en el segundo PR de E3: la lista cerrada lleva además
+  `codeTools` (el nombre y las entradas de cada herramienta de código, nunca su código) solo cuando hay alguna, y con
+  «Las hace este código» el esquema va sin lecturas (`reads: false`) y las filas son lo que devolvió el código.
+  Falta: el nombre y la descripción de cada colección, que da el servidor (S1).
 - **AU-198** (F15, en parte) · Las rondas tienen fin y una sola forma. En cada ronda el modelo escribe un plan, en
   el lenguaje de planes de hoy sin preguntar (`ask`), sin memoria y sin nada que salga fuera. El código lo valida
   (`validatePlan`, `checkPlan`), pasa cada llamada por la política y lo ejecuta. Un plan sin respuesta abre otra ronda
@@ -1268,11 +1303,17 @@ que un paso espere a Juan.
   Hecho en E3: cada llamada del plan pasa por las herramientas del paso (`AgentTools`, `agent.ts`). Lo que su conexión
   o la colección no dejan se niega con una clave que el modelo lee en la ronda siguiente y que queda en «Lo que hizo»
   (`read-off`, `not-connected`, `action-off`, `outside-rows`, `outside-fields`, `over-limit`, `bad-option`,
-  `not-read`, `bad-query`, `bad-request`, `too-many`); el «no» de P29 igual, salvo una colección privada
-  (`ai.private`); cualquier otra regla hace fallar la unidad. Cada escritura se comprueba al pedirla, con las
+  `not-read`, `bad-query`, `bad-request`, `too-many`, y `code-failed` de una herramienta de código; cada una tiene su
+  prueba, y la de una fila que no existe y la de una que no puede tocar dicen lo mismo); el «no» de P29 a una llamada
+  del plan igual, salvo una colección privada (`ai.private`); cualquier otra regla hace fallar la unidad, y también
+  cualquier «no» a una lectura que pidió código («Las hace este código», una herramienta de código), P29 incluida,
+  como en un «Código». Cada escritura se comprueba al pedirla, con las
   anteriores del paso, contra la conexión y la colección y sin guardar nada; al final todas las de las unidades que
   terminaron se deciden juntas por el mismo `applyWrites` de un «Código» (`Run.save`): guardadas en una transacción o
-  esperando todas. Falta: que el servidor ponga `reach` y `byAgent` en la llamada desde la versión guardada (S1).
+  esperando todas. Probado en el segundo PR de E3: un reintento de «Ajustes» es otra unidad en el registro, con sus
+  rondas y sus llamadas; y tras una respuesta que no vale, las escrituras del segundo plan se suman a las del primero,
+  que el modelo ya recibió como pedidas («Creará…»), y se deciden todas juntas. Falta: que el servidor ponga `reach` y
+  `byAgent` en la llamada desde la versión guardada (S1).
 - **AU-199** (F15, pendiente) · «Modelo» es una lista corta y cerrada: «El de la cuenta» (por defecto: el modelo
   que «Modelos» tiene puesto para el uso del paso) y, debajo, cada modelo evaluado hace poco para ese uso y con su
   clave puesta («hace poco» es lo que `evaluated` de `models.ts` ya exige, sin otro plazo). Es la puerta de
@@ -1302,7 +1343,8 @@ que un paso espere a Juan.
   (AU-47) y las aceptaciones de la F16 y la F19. La prueba: `packages/automations/src/agent.test.ts` y
   `e2e-boni/automations-ai.spec.ts`.
   Hecho en E3: `abilities` da una línea por colección y acción que la conexión de un «Agente» no tiene en «No»,
-  marcada `byAgent` («decide la IA»), y «con datos de fuera» como en un «Código». Falta: las palabras y «como mucho
+  marcada `byAgent` («decide la IA»), y «con datos de fuera» como en un «Código» (con «Sí» la línea lo lleva; con
+  «Preguntar» no, porque propone). Falta: las palabras y «como mucho
   20» en «Lo que podrá hacer» (P2, que lee el tope de la conexión).
 
 ### 5.7 La pantalla
@@ -2801,7 +2843,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   que hace fallar la unidad (lo privado, diciendo qué colección; cualquier otra regla, sin decir qué). El motor da a la política la fila y
   la cuenta con cada cambio (`PolicyCall.row`, `written`). Medido: 3.000 decisiones con 3.000 filas como las suyas,
   de 23 a 30 ms. Falta: que el servidor ponga `reach` en la llamada desde la versión guardada y la prueba de la
-  tarea 144 (S1). Desde E3 el «Agente» le dice al modelo lo que se le negó.
+  tarea 144 (S1). Desde E3 el «Agente» le dice al modelo lo que se le negó, con su prueba en el motor (el «no» de P29
+  a una lectura del plan, dicho al modelo; una colección que se hizo privada, `ai.private`); y desde su segundo PR,
+  que el «no» a una lectura del código de «Las hace este código» o de una herramienta de código hace fallar la
+  unidad, también el de P29.
 - **AU-206** (F15, en parte) · Las llamadas a modelos de una ejecución se cuentan antes de hacerlas. El motor
   cuenta cada ronda de un «Agente», cada llamada de un lector y cada reintento (AU-59, AU-53, AU-198) contra el
   límite de la ejecución (AU-17: 20, hasta 40), y la que lo pasaría no se hace: la ejecución para con `run.limit`,
@@ -3271,6 +3316,29 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       de guardar, la celda dice «Sí · en pausa», y un aviso lo cuenta una vez con «Quitar pausa». La versión
       publicada no cambia y la pausa solo baja. La otra: solo el aviso, y las ejecuciones seguirían guardando hasta
       que él bajara la celda. Prueba: `learning.test.ts` (AU-210, S3 de la F15).
+
+18. **Un «Agente» que modifica filas puede llevar valores fijos, como al crear.** El segundo PR de E3 de la F15
+    (tarea 129) preguntó: «Cuando un paso «Agente» modifica filas, ¿quieres poder fijar tú el valor de un campo?».
+    **Juan, 2026-11-17: «Sí, fijarlo».** La otra respuesta era «No, como está»: modificar solo con los campos que
+    decide la IA, y los fijos solo al crear. Por ejemplo, un «Agente» conectado a Tareas con «Modificar: Sí · Solo
+    estos campos: Importe · Fijo: Estado = revisada»: elige qué tareas toca y qué importe les pone, y cada una que
+    modifica acaba con «revisada», lo pida o no el modelo. Con «No, como está», el modelo tendría que poner él el
+    estado, y podría no hacerlo o poner otro. Lo que queda:
+    - El formato lleva `update.fixed`, con la forma, la validación y las expresiones de `create.fixed` (AU-48,
+      AU-52). Lo pone el código al guardar; nunca porque el modelo obedeció. Un campo fijo no está en «Solo estos
+      campos», y una petición que lo nombra se niega como fuera de sus campos (`outside-fields`); una petición de
+      modificar puede no nombrar ninguno suyo y solo poner los fijos. Prueba: `action-limits.test.ts` («AU-48 ·
+      decision 18 · a modified row ends with the action's fixed values…» y «AU-52 · decision 18 · an «Agente»
+      modifies the rows it chooses…»).
+    - El servidor y el motor lo leen del paso de la versión publicada, nunca de una petición, de un borrador, de la
+      caja ni del modelo; un fijo que su expresión toma de fuera lleva la etiqueta de fuera (AU-170). Prueba: la de
+      AU-52 de arriba, con la fila de la unidad etiquetada de fuera.
+    - Donde cuenta `create.fixed` cuenta igual `update.fixed`: cambiarlo al publicar baja el «Sí» del paso (AU-188,
+      decisión 13 punto 2; `consent.test.ts`, «AU-188 · decision 18 · a fixed value of modify…»), es un cambio de su
+      conexión en «Versiones» (AU-96, `versions.test.ts`), y «Lo que hizo» y «Probar» lo dicen igual sin guardar
+      nada en una prueba (la de AU-52 de arriba).
+    - En la pantalla, el control de AU-52 va también bajo «Modificar» en la fila abierta de la conexión (P2). La frase
+      del paso (AU-44) no dice hoy los fijos ni al crear: decirlos es de P2.
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
