@@ -315,8 +315,8 @@ const sourceIn = (page: Page) =>
 const testStep = (page: Page) =>
   view(page).locator(".auto-view-test").getByRole("button", { name: "Probar paso" });
 /** «Calcular con código» opened, with its «Código» open. */
-async function openCode(page: Page, automation: unknown) {
-  await openApp(page, "/?still", { automations: [automation as never], agent: BEFORE() });
+async function openCode(page: Page, automation: unknown, more: { agenda?: boolean } = {}) {
+  await openApp(page, "/?still", { automations: [automation as never], agent: BEFORE(), ...more });
   await openCanvas(page, "Calcular con código", 4);
   await openStep(page, "s_01jcodigo");
   await expect(editorOf(page)).toBeVisible();
@@ -660,10 +660,237 @@ test.describe("«Código» on the phone", () => {
   });
 });
 
+/** A «Código» that reads «Libros» and marks the open tasks done: it asks to modify «Tareas» (AU-172). */
+const SAVES = [
+  "const libros = $col('Libros').find();",
+  "for (const t of $col('Tareas').find({ hecha: false })) $col('Tareas').update(t.id, { hecha: true });",
+  "return [{ n: libros.length }];",
+].join("\n");
+const LIBROS_FILTERED = {
+  collection: "libros",
+  read: { where: [{ field: "paginas", op: "gt", value: 100 }] },
+  create: false,
+  update: false,
+  remove: false,
+};
+const TAREAS = (more: Record<string, unknown> = {}) => ({
+  collection: "tareas",
+  read: {},
+  create: false,
+  update: { mode: "ask" },
+  remove: false,
+  ...more,
+});
+/** «Tareas» is one of the agenda's collections of the mocked server. */
+const AGENDA = { agenda: true };
+const table = (page: Page) => param(page, "connections");
+const rowOf = (page: Page, key: string) => table(page).locator(`tr[data-collection="${key}"]`);
+const cellOf = (page: Page, key: string, action: string) =>
+  rowOf(page, key).locator(`.auto-conn-cell[data-action="${action}"]`);
+const lastConnections = async (page: Page, id: string) =>
+  (await drafts(page, id)).at(-1)?.steps.find((s) => s.id === "s_01jcodigo")?.connections ?? null;
+
 test.describe("connections", () => {
-  test.fixme("AU-40 · a connection hangs under its step on the canvas by a dotted line: one chip per collection with its permissions in words («Lee», «Lee · con filtro»), and it follows the step when Boni places the boxes", async () => {});
-  test.fixme("AU-41 · in the view of a «Código» step the connections are a table, one row per collection and the one column «Leer», «No» or «Sí»; connecting a collection reads it and nothing more, and a row opens to set its limits, after which its cell says «Sí · con filtro»", async () => {});
-  test.fixme("AU-43 · a connection's row opens «Solo estas filas» (the views' filter, with the collection's fields), «Solo estos campos» and a limit; each is saved with the draft and seen again when the step is opened", async () => {});
-  test.fixme("AU-44 · under the table a sentence says all the step reads («Puede leer Libros (con filtro) y Autores. No puede crear, modificar ni eliminar nada.») and changes as the table does", async () => {});
-  test.fixme("AU-46 · only «Código» shows connections: no other step of the catalogue has the table or a chip under it", async () => {});
+  test("AU-40 · AU-178 · AU-180 · a connection hangs under its step on the canvas: one chip per collection with what it can save in words («Lee · con filtro», «Lee y modifica · pregunta antes»), inside the step's box so it follows it; the card's labels start with what the step changes («Modifica Tareas»), and a step that only reads says nothing", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c20", SAVES, [LIBROS_FILTERED, TAREAS()]);
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE(), agenda: true });
+    await openCanvas(page, "Calcular con código", 4);
+    const chips = card(page, "s_01jcodigo").locator(".auto-card-conns .auto-conn-chip");
+    await expect(chips).toHaveCount(2);
+    await expect(chips.nth(0)).toHaveAttribute("data-collection", "libros");
+    await expect(chips.nth(0)).toHaveText("LibrosLee · con filtro");
+    await expect(chips.nth(1)).toHaveText("TareasLee y modifica · pregunta antes");
+    // Under the card, by its dotted line.
+    const box = await card(page, "s_01jcodigo").boundingBox();
+    const chip = await chips.nth(0).boundingBox();
+    expect(chip && box && chip.y > box.y + box.height).toBe(true);
+    const change = card(page, "s_01jcodigo").locator(".auto-label").first();
+    await expect(change).toHaveText("Modifica Tareas");
+    await expect(change).toHaveClass(/\bchange\b/);
+    // «Buscar filas en Libros» only reads: no chip, no mark.
+    await expect(card(page, "s_01jbuscar").locator(".auto-card-conns")).toHaveCount(0);
+    await expect(card(page, "s_01jbuscar").locator(".auto-label.change")).toHaveCount(0);
+  });
+  test("AU-180 · a «Colección» step that writes has the same mark as a «Código»: «Modificar filas» in «Libros» reads «Modifica Libros»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [TESTED as never], agent: BEFORE() });
+    await openCanvas(page, TESTED.name, 7);
+    await expect(card(page, "s_01jmodificar").locator(".auto-label.change")).toHaveText(
+      "Modifica Libros",
+    );
+  });
+  test("AU-41 · AU-179 · AU-44 · in the view of a «Código» the connections are a table, one row per collection: «Leer» always «Sí» with its limits («Sí · con filtro») and «Crear», «Modificar» and «Eliminar» each «No», «Preguntar» or «Sí» with whether the code uses it; the sentence under it says what the step can do and changes with the table", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c21", SAVES, [LIBROS_FILTERED, TAREAS()]);
+    await openCode(page, a, AGENDA);
+    await expect(table(page).locator("tbody tr")).toHaveCount(2);
+    await expect(rowOf(page, "libros").locator("th")).toHaveText("Libros");
+    await expect(cellOf(page, "libros", "read")).toHaveText("Sí · con filtro");
+    await expect(cellOf(page, "tareas", "read")).toHaveText("Sí");
+    await expect(cellOf(page, "tareas", "update")).toHaveAttribute("data-cell", "ask");
+    await expect(cellOf(page, "tareas", "update").locator(".auto-conn-use")).toHaveText("lo usa");
+    await expect(cellOf(page, "tareas", "create")).toHaveAttribute("data-cell", "no");
+    await expect(cellOf(page, "tareas", "create").locator(".auto-conn-use")).toHaveCount(0);
+    const sentence = table(page).locator(".auto-conn-sentence");
+    await expect(sentence).toHaveText(
+      "Puede leer Libros (con filtro), y leer y modificar Tareas. No puede crear ni eliminar nada.",
+    );
+    // «Eliminar» of «Libros» to «Preguntar»: unused, saved with the draft, and the sentence follows.
+    await page.getByRole("combobox", { name: "Eliminar · Libros" }).selectOption("ask");
+    await expect(cellOf(page, "libros", "remove").locator(".auto-conn-use")).toHaveText("sin usar");
+    await expect(sentence).toHaveText(
+      "Puede leer y eliminar Libros (con filtro), y leer y modificar Tareas. No puede crear nada.",
+    );
+    await expect
+      .poll(async () => (await lastConnections(page, a.id))?.[0])
+      .toMatchObject({ collection: "libros", remove: { mode: "ask" } });
+  });
+  test("AU-43 · a connection's row opens «Solo estas filas» (the views' filter, with the collection's fields), «Solo estos campos» and a limit; each is saved with the draft and seen again when the step is opened", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c22", SAVES, [LIBROS_FILTERED, TAREAS()]);
+    await openCode(page, a, AGENDA);
+    const limits = table(page).locator('.auto-conn-limits[data-collection="tareas"]');
+    await limits.locator("summary").click();
+    await expect(limits.locator('[data-limit="where"]')).toBeVisible();
+    await expect(limits.locator(".auto-conn-field")).toHaveText([
+      "Título",
+      "Día",
+      "Inicio",
+      "Fin",
+      "Hecha",
+    ]);
+    await limits.getByRole("checkbox", { name: "Inicio" }).uncheck();
+    await limits.getByRole("spinbutton", { name: "Límite de filas" }).fill("200");
+    await expect
+      .poll(async () => (await lastConnections(page, a.id))?.[1]?.read)
+      .toEqual({ fields: ["titulo", "dia", "fin", "hecha"], limit: 200 });
+    await expect(cellOf(page, "tareas", "read")).toHaveText("Sí · 4 campos · hasta 200 filas");
+    // Opened again, it is as it was left.
+    await view(page).getByRole("button", { name: "Cerrar", exact: true }).click();
+    await expect(view(page)).toHaveCount(0);
+    await openStep(page, "s_01jcodigo");
+    await expect(cellOf(page, "tareas", "read")).toHaveText("Sí · 4 campos · hasta 200 filas");
+    const again = table(page).locator('.auto-conn-limits[data-collection="tareas"]');
+    await again.locator("summary").click();
+    await expect(again.getByRole("spinbutton", { name: "Límite de filas" })).toHaveValue("200");
+    await expect(again.getByRole("checkbox", { name: "Inicio" })).not.toBeChecked();
+  });
+  test("AU-176 · what the code asks to save and its connection does not allow is red in its cell, with «Permite modificar en «Tareas»»; «Permitir» sets «Preguntar», never «Sí», saves it and the problem goes", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c23", SAVES, [
+      LIBROS_FILTERED,
+      TAREAS({ update: false }),
+    ]);
+    await openCode(page, a, AGENDA);
+    const cell = cellOf(page, "tareas", "update");
+    await expect(cell).toHaveClass(/\bmissing\b/);
+    await expect(cell.locator(".auto-conn-use")).toHaveText("lo usa");
+    const notice = table(page).locator(".auto-conn-allow");
+    await expect(notice).toHaveText(/Permite modificar en «Tareas»/);
+    await notice.getByRole("button", { name: "Permitir" }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(cell).toHaveAttribute("data-cell", "ask");
+    await expect(cell).not.toHaveClass(/\bmissing\b/);
+    await expect
+      .poll(async () => (await lastConnections(page, a.id))?.[1]?.update)
+      .toEqual({ mode: "ask" });
+  });
+  test("AU-189 · a removal with «Sí» reads «sin preguntar» in its chip and in the card's mark; «Desconectar» takes the row out", async ({
+    page,
+  }) => {
+    const source =
+      "for (const t of $col('Tareas').find()) $col('Tareas').remove(t.id);\nreturn [];";
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c24", source, [
+      TAREAS({ update: false, remove: { mode: "yes" } }),
+    ]);
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE(), agenda: true });
+    await openCanvas(page, "Calcular con código", 4);
+    await expect(card(page, "s_01jcodigo").locator(".auto-conn-chip")).toHaveText(
+      "TareasLee y elimina · sin preguntar",
+    );
+    await expect(card(page, "s_01jcodigo").locator(".auto-label.change")).toHaveText(
+      "Elimina en Tareas · sin preguntar",
+    );
+    await openStep(page, "s_01jcodigo");
+    await rowOf(page, "tareas").getByRole("button", { name: "Desconectar" }).click();
+    await expect(table(page).locator(".auto-conn-none")).toBeVisible();
+    await expect.poll(() => lastConnections(page, a.id)).toBeNull();
+  });
+  test("AU-181 · after «Probar paso», «Haría esto» of a «Código» says what its requests would save, by collection and action, whether a run would ask, the first rows before and after, and how many more", async ({
+    page,
+  }) => {
+    const before = (i: number) => ({ titulo: `Tarea ${i}`, hecha: false });
+    const would = {
+      asks: true,
+      counts: [{ collection: "tareas", action: "update", n: 3000 }],
+      records: [1, 2].map((i) => ({
+        collection: "tareas",
+        action: "update",
+        id: `r_01jtarea${i}`,
+        before: before(i),
+        after: { ...before(i), hecha: true },
+      })),
+    };
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c25", SAVES, [LIBROS_FILTERED, TAREAS()]);
+    await openCode(
+      page,
+      testOf(CODE_DONE({ would, wouldWrite: 3000 }), { kept: FIVE_MIN }, a),
+      AGENDA,
+    );
+    const strip = view(page).getByRole("region", { name: "Salida" }).locator(".auto-would-code");
+    await expect(strip).toHaveAttribute("data-rows", "3000");
+    await expect(strip.locator(".auto-would-line")).toHaveText([
+      "Modificaría 3000 filas en Tareas",
+    ]);
+    await strip.locator("summary").click();
+    await expect(strip).toContainText("Al ejecutarse, preguntaría antes de guardar");
+    const rows = strip.locator("tbody tr");
+    await expect(rows).toHaveCount(2);
+    await expect(rows.first()).toHaveAttribute("data-would", "update");
+    await expect(rows.first().locator("td.changed")).toHaveCount(1);
+    await expect(strip.locator(".auto-console-more")).toHaveText("y 2998 filas más");
+  });
+  test("AU-46 · only «Código» shows connections: no other step of the catalogue has the table or a chip under it", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c26", SAVES, [LIBROS_FILTERED, TAREAS()]);
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE(), agenda: true });
+    await openCanvas(page, "Calcular con código", 4);
+    await expect(page.locator(".auto-card-conns")).toHaveCount(1);
+    await openStep(page, "s_01jbuscar");
+    await expect(view(page).locator(".auto-param-connections")).toHaveCount(0);
+  });
+});
+
+test.describe("connections on the phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("AU-74 · on the phone the connections are there to read: the cells cannot be changed, and there is no «Permitir» nor «Desconectar»", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c27", SAVES, [TAREAS({ update: false })]);
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE(), agenda: true });
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText("Calcular con código", { exact: true }).first().tap();
+    await card(page, "s_01jcodigo").tap();
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jcodigo");
+    await expect(table(page).locator("tbody tr")).toHaveCount(1);
+    for (const c of await table(page).getByRole("combobox").all()) await expect(c).toBeDisabled();
+    await expect(table(page).locator(".auto-conn-allow")).toHaveText(
+      /Permite modificar en «Tareas»/,
+    );
+    await expect(view(page).getByRole("button", { name: "Permitir" })).toHaveCount(0);
+    await expect(view(page).getByRole("button", { name: "Desconectar" })).toHaveCount(0);
+    expect(await drafts(page, a.id)).toEqual([]);
+  });
 });

@@ -15,17 +15,22 @@ import {
   type Arrow,
   type Automation,
   actionOf,
+  allowing,
+  type Connection,
   inputsOf,
   isTrigger,
   newConnection,
   outputsOf,
   type ParamSpec,
   type ParamValue,
+  type ReadLimits,
   renameStep,
   SETTINGS_DEFAULTS,
   type Step,
   type StepSettings,
   specOf,
+  type WriteAction,
+  type WriteMode,
   wouldCycle,
 } from "@boni/automations";
 import { isEmpty, rowsOf } from "./panel.ts";
@@ -226,6 +231,93 @@ export function connectCollection(draft: Automation, step: string, collection: s
     connections: [...(before.connections ?? []), newConnection(collection)],
   };
   return { ...draft, steps: draft.steps.map((s) => (s.id === step ? after : s)) };
+}
+
+/** One connection of a step changed by `change`; the draft as it was if the step or the connection is not there. */
+function withConnection(
+  draft: Automation,
+  step: string,
+  collection: string,
+  change: (c: Connection) => Connection | null,
+): Automation {
+  const before = draft.steps.find((s) => s.id === step);
+  const connections = before?.connections ?? [];
+  const at = connections.findIndex((c) => c.collection === collection);
+  if (!before || at < 0) return draft;
+  const was = connections[at] as Connection;
+  const next = change(was);
+  if (next === was) return draft;
+  const list =
+    next === null
+      ? connections.filter((_, i) => i !== at)
+      : connections.map((c, i) => (i === at ? next : c));
+  const after: Step = { ...before, connections: list };
+  if (list.length === 0) delete after.connections;
+  return { ...draft, steps: draft.steps.map((s) => (s.id === step ? after : s)) };
+}
+
+/**
+ * A write cell of a connection's row (AU-41, AU-176): «No», «Preguntar» or «Sí», each on its own. Only the person's
+ * hand sets a «Sí» (AU-188): this is the table's, never a fix's.
+ */
+export function setCell(
+  draft: Automation,
+  step: string,
+  collection: string,
+  action: WriteAction,
+  cell: false | WriteMode,
+): Automation {
+  return withConnection(draft, step, collection, (c) => ({
+    ...c,
+    [action]: cell === false ? false : { ...(c[action] || {}), mode: cell },
+  }));
+}
+
+/** The fix of `code.write.notAllowed` (AU-176): that cell at «Preguntar», never «Sí» (`allowing`, the core's). */
+export function allowAction(
+  draft: Automation,
+  step: string,
+  collection: string,
+  action: WriteAction,
+): Automation {
+  return withConnection(draft, step, collection, (c) => allowing(c, action));
+}
+
+/** «Desconectar»: the connection is gone, and the code that cites the collection says so again (AU-31). */
+export function disconnectCollection(
+  draft: Automation,
+  step: string,
+  collection: string,
+): Automation {
+  return withConnection(draft, step, collection, () => null);
+}
+
+/**
+ * A connection's read limits (AU-43): «Solo estas filas», «Solo estos campos» and a limit. An empty filter, all the
+ * fields or no limit is no limit, and is not saved.
+ */
+export function setReadLimits(
+  draft: Automation,
+  step: string,
+  collection: string,
+  limits: { [K in keyof ReadLimits]?: ReadLimits[K] | undefined },
+): Automation {
+  return withConnection(draft, step, collection, (c) => {
+    const read = { ...(c.read || {}) };
+    if ("where" in limits) {
+      if (limits.where && limits.where.length > 0) read.where = limits.where;
+      else delete read.where;
+    }
+    if ("fields" in limits) {
+      if (limits.fields) read.fields = limits.fields;
+      else delete read.fields;
+    }
+    if ("limit" in limits) {
+      if (limits.limit !== undefined) read.limit = limits.limit;
+      else delete read.limit;
+    }
+    return { ...c, read };
+  });
 }
 
 /** A parameter's value. An option that is not in `step.params` is added by setting it (AU-76). */

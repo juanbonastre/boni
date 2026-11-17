@@ -884,9 +884,6 @@ describe("the connection's permission", () => {
       "remove:ask",
     ]);
   });
-  it.todo(
-    "AU-178 · the chip and the sentence of a connection say what it can save: «Solo lee», «Lee y modifica», «Lee, crea y modifica», «· pregunta antes», from `permissions` and the words of `i18n.ts`",
-  );
   it("AU-179 · `connectionUses` says of each write action allowed whether the code uses it, and lists one used and not allowed: «Sí · lo usa», «Preguntar · sin usar», and the problem for the third; one allowed and unused is not a problem", () => {
     const source = [
       "$col('Gastos').create({ importe: 1 })",
@@ -967,9 +964,6 @@ describe("what the person sees", () => {
     const inMemory = withCode("const all = $input.all(); all[0].json.x = 1; return all", []);
     expect(stepChanges(inMemory.step, ctx)).toEqual([]);
   });
-  it.todo(
-    "AU-180 · the card's mark says what the step changes («Modifica Gastos», «Crea y modifica Gastos», «Cambia Gastos y Notas»), the same mark for a «Colección» step and a «Código», and none for one that only reads",
-  );
   it("AU-181 · «Probar» and «Probar paso» check every request as a run would and save none: «Haría esto» lists them with each row before and after, says whether a run would ask, and a request that would fail fails the test the same way", async () => {
     const st = db(3);
     const [first, second] = idsOf(st);
@@ -1268,9 +1262,6 @@ describe("removing without asking (Juan, 2026-11-16)", () => {
   );
   it.todo(
     "AU-188 · a «Sí» the draft already had from the person's hand stays when a proposal is made over it; a «Sí» the proposal adds or changes is lowered, and the fix of a missing permission sets «Preguntar»",
-  );
-  it.todo(
-    "AU-189 · a removal that will not ask reads «sin preguntar» in the connection's chip, the card's mark and «Haría esto», from `permissions` and `stepChanges`; creating and modifying with «Sí» add nothing",
   );
   it.todo(
     "AU-189 · «Lo que podrá hacer» names each removal that will not ask, apart from those that ask (F14d)",
