@@ -43,6 +43,13 @@ export interface PolicyCall {
   rows?: number;
   /** A test of the automation or of one step: judged the same, and nothing is written. */
   test: boolean;
+  /**
+   * A write of a step's change (`decideAll`): the row it touches, as saved (modify, remove) or as it would be
+   * (create), and the rows the step had asked with that action in that collection in this run before this one. What
+   * the server puts in P29's `reach` for an AI step (AU-205), with the connection it reads from the stored version.
+   */
+  row?: Readonly<Record<string, Cell>>;
+  written?: number;
 }
 
 /**
@@ -127,6 +134,9 @@ export interface Collections {
 export interface ChangeWith {
   change: Change;
   values: Labelled;
+  /** The row as saved or as it would be, and the step's count before it (`PolicyCall.row`, `written`). */
+  row?: Readonly<Record<string, Cell>>;
+  written?: number;
 }
 
 // ---------------------------------------------------------------- the gate
@@ -219,7 +229,12 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
     collection: string,
     values: Labelled,
     rows?: number,
-    as?: { action: string; destroys: boolean },
+    as?: {
+      action: string;
+      destroys: boolean;
+      row?: Readonly<Record<string, Cell>>;
+      written?: number;
+    },
   ): Decision =>
     policy.decide({
       automation: unit.automation,
@@ -234,6 +249,8 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       control: unit.control,
       ...(rows === undefined ? {} : { rows }),
       test: unit.test,
+      ...(as?.row === undefined ? {} : { row: as.row }),
+      ...(as?.written === undefined ? {} : { written: as.written }),
     });
   /** A read goes on only with `allow`: it cannot wait for Juan, so `confirm` and `propose` are a no as well. */
   const read = (collection: string, values: Labelled, rows?: number): void => {
@@ -279,10 +296,12 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
     },
     async decideAll(changes) {
       const asked: Asked[] = [];
-      for (const { change, values } of changes) {
+      for (const { change, values, row, written } of changes) {
         const d = ask("write", collectionOfChange(change), values, rowsOf(change), {
           action: change.kind,
           destroys: change.kind === "trash",
+          ...(row === undefined ? {} : { row }),
+          ...(written === undefined ? {} : { written }),
         });
         if (d.kind === "deny") throw new Denied(d.rule, d.reason);
         if (d.kind !== "allow")

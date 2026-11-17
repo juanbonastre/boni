@@ -125,6 +125,17 @@ export class LimitPassed extends StopRun {
   }
 }
 
+/**
+ * One more call to a model in a run (AU-206): an «Agente»'s round, a reader's call, a retry of either. Counted before
+ * it is made: the one that would pass the run's `modelCalls` throws `LimitPassed` (its failure is `run.limit`) and is
+ * not made. Gives the count with it.
+ */
+export function countModelCall(limits: Pick<RunLimits, "modelCalls">, made: number): number {
+  const got = made + 1;
+  if (got > limits.modelCalls) throw new LimitPassed("modelCalls", limits.modelCalls, got);
+  return got;
+}
+
 /** A step's state in a run (AU-15). `waiting` is for the steps that wait for Juan or for a time (F18). */
 export const STEP_STATES = [
   "queued",
@@ -550,6 +561,10 @@ class Run {
   readonly limits: RunLimits;
   ran = 0;
   written = 0;
+  /** Calls to a model made so far (AU-206). */
+  models = 0;
+  /** Rows each step asked to write with each action in each collection, saved, tested or proposed (AU-196). */
+  readonly actionRows = new Map<string, number>();
 
   constructor(input: RunInput, deps: RunDeps, first: Row, plan?: Plan) {
     this.input = input;
@@ -570,6 +585,11 @@ class Run {
   /** Before `n` more rows are asked of the policy: they and the ones already written must fit (AU-17). */
   reserve(n: number): void {
     if (n > 0) this.hold("rowsWritten", this.written + n);
+  }
+
+  /** Before a call to a model (AU-206): `countModelCall` on the run's count. */
+  modelCall(): void {
+    this.models = countModelCall(this.limits, this.models);
   }
 
   async go(): Promise<Execution> {
@@ -958,7 +978,11 @@ class Run {
       decideAll: (changes) => gate.decideAll(changes),
       writeAll: (changes) => gate.writeAll(changes),
     };
-    return applyWrites(
+    // «Como mucho» (AU-196) counts by step and run, every unit together: what this step asked before, kept only once
+    // a change of it was saved, tested or proposed (one that failed saved nothing).
+    const tally = (collection: string, action: string) =>
+      `${step.id}\u0000${collection}\u0000${action}`;
+    const out = await applyWrites(
       {
         step: step.id,
         requests: asked.map((a) => a.request),
@@ -968,9 +992,18 @@ class Run {
         collectionNamed,
         today: dates.day(this.started, clock.zone),
         test: this.input.test,
+        own: this.deps.own,
+        before: (collection, action) => this.actionRows.get(tally(collection, action)) ?? 0,
       },
       writer,
     );
+    for (const { request } of asked) {
+      const key = collectionNamed(request.collection);
+      if (key === undefined) continue;
+      const k = tally(key, request.action);
+      this.actionRows.set(k, (this.actionRows.get(k) ?? 0) + 1);
+    }
+    return out;
   }
 
   /**
@@ -1239,6 +1272,7 @@ class Run {
       value: (p) => resolve(p, scope),
       scope,
       reserve: (n) => this.reserve(n),
+      modelCall: () => this.modelCall(),
     };
   }
 
@@ -1373,6 +1407,12 @@ export interface StepContext {
    * the run's «rows written» (AU-17), so none of them is asked or written. The gate counts each change anyway.
    */
   reserve?(rows: number): void;
+  /**
+   * Before each call to a model (AU-206: an «Agente»'s round, a reader's call, a retry): throws `LimitPassed` when it
+   * would pass the run's `modelCalls`, so the call is not made and the run stops with `run.limit`. The AI steps (E2,
+   * E3) call it; no step of F14 calls a model.
+   */
+  modelCall?(): void;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */

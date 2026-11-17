@@ -126,7 +126,18 @@ export {
   UNDO_TURN,
   validatePlan,
 } from "./plan.ts";
-export { type Decision, decide, type Origin, type Trust } from "./policy.ts";
+export {
+  type Decision,
+  decide,
+  type Origin,
+  outsideReach,
+  P29_REASONS,
+  type P29Reason,
+  type ReachAction,
+  type ReachLimits,
+  type StepReach,
+  type Trust,
+} from "./policy.ts";
 export {
   adversary,
   fakePlanner,

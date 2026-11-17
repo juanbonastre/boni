@@ -12,6 +12,11 @@ import type { Problem } from "./validate.ts";
 
 /** The step type's key. Its category is «Transformar». */
 export const CODE_TYPE = "code";
+/**
+ * The «Agente»'s step type key (F15, AU-50). Its step is E3's; what its connections are born with (AU-196) and what
+ * the policy is told of it (AU-204, `byAgent`) are read from this key in the stored version.
+ */
+export const AGENT_TYPE = "agent";
 /** Its two parameters, both `shape`: neither may be an expression (AU-26). */
 export const CODE_PARAMS = { mode: "mode", source: "source" } as const;
 /** «Se ejecuta» (AU-30): «Una vez con todas las filas», the default, or «Una vez por fila». */
