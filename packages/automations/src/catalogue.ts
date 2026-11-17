@@ -9,7 +9,7 @@
  * a type, an action, a parameter and an option are keys, and each app names them in its `i18n.ts` (I-02).
  */
 import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
-import { ACTION, MAIN, OUT, type Step } from "./format.ts";
+import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -170,7 +170,8 @@ const TARGET_WHERE: ParamSpec = {
  * The «Permiso» each write action of a «Colección» step is born with when the person's hand adds the step in the
  * editor (AU-187, decision 13 of §10): «Sí» on «Crear una fila», «Modificar filas» and «Crear o modificar», which is
  * the one «Sí» that is not a tap on the cell; «Preguntar» on «Eliminar filas». A step that arrives any other way gets
- * «Preguntar» on all of them (`lowerYes`, AU-188). A document saved without the parameter reads this value.
+ * «Preguntar» on all of them (`lowerYes`, AU-188). The editor writes it into the step (`bornParams`): a step saved
+ * without the parameter, wherever it came from, reads «Preguntar», so no «Sí» is ever a missing value.
  */
 export const PERMISSION_BORN: Readonly<
   Record<"create" | "update" | "upsert" | "trash", "yes" | "ask">
@@ -184,8 +185,20 @@ const permission = (action: keyof typeof PERMISSION_BORN): ParamSpec => ({
   place: "shown",
   required: true,
   shape: true,
-  default: PERMISSION_BORN[action],
+  // What a step without it reads: never a «Sí» (AU-188). The value a step is born with is `bornParams`'s.
+  default: "ask",
 });
+
+/**
+ * The parameters the code writes into a step when the person's hand adds it in the editor, or gives it another
+ * action there (AU-187, AU-188, decision 13 of §10): the «Permiso» of a «Colección» write action as
+ * `PERMISSION_BORN` says. Nothing for any other step: every other parameter is its default until the person sets it
+ * (AU-87).
+ */
+export function bornParams(type: string, action: string | undefined): Record<string, ParamValue> {
+  if (type !== "collection" || action === undefined || !(action in PERMISSION_BORN)) return {};
+  return { [PERMISSION]: PERMISSION_BORN[action as keyof typeof PERMISSION_BORN] };
+}
 
 const transform = (
   type: string,

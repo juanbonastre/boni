@@ -297,15 +297,12 @@ const COLLECTION_WRITES: Record<string, readonly WriteAction[]> = {
 };
 
 /**
- * The mode of a «Colección» step's «Permiso» (AU-187): `yes` only for the fixed word; a document saved without it
- * reads the value its action is born with (`PERMISSION_BORN`); anything else (an expression, which validation
- * refuses) asks.
+ * The mode of a «Colección» step's «Permiso» (AU-187): `yes` only for the fixed word written in the step; a step
+ * saved without it asks, wherever it came from (a «Sí» is never a missing value, AU-188), and so does anything else
+ * (an expression, which validation refuses).
  */
 export function permissionOf(step: Step): WriteMode {
-  const action = actionOf(step);
-  const born = action ? PERMISSION_BORN[action.key as keyof typeof PERMISSION_BORN] : undefined;
-  const v = step.params[PERMISSION] ?? born;
-  return v === "yes" ? "yes" : "ask";
+  return step.params[PERMISSION] === "yes" ? "yes" : "ask";
 }
 
 /**
@@ -395,7 +392,7 @@ const into = (a: Automation, step: string): string[] =>
     .map((r) => `${r.from.step}:${r.from.output}>${r.to.input}`)
     .sort();
 
-/** A step with every «Sí» of saving lowered to «Preguntar»: its connections' cells and its «Permiso». */
+/** A step with every «Sí» of saving lowered to «Preguntar»: its connections' cells, and its «Permiso» written as «Preguntar» (also where it was missing). */
 function lowered(step: Step): Step {
   let out = step;
   if (step.connections?.some((c) => WRITE_ACTIONS.some((a) => c[a] && c[a].mode === "yes")))
@@ -415,7 +412,7 @@ function lowered(step: Step): Step {
     step.type !== CODE_TYPE &&
     action?.effect === "write" &&
     action.key in PERMISSION_BORN &&
-    permissionOf(step) === "yes"
+    step.params[PERMISSION] !== "ask"
   )
     out = { ...out, params: { ...out.params, [PERMISSION]: "ask" } };
   return out;

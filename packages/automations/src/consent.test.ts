@@ -5,7 +5,7 @@
 // rows are packages/agent's automation-origin.test.ts.
 import { describe, expect, it } from "vitest";
 import { collection, ids, sketch } from "./automation.test-util.ts";
-import { actionOf, CATALOGUE, PERMISSION, PERMISSION_BORN } from "./catalogue.ts";
+import { actionOf, bornParams, CATALOGUE, PERMISSION, PERMISSION_BORN } from "./catalogue.ts";
 import { CODE_TYPE } from "./code.ts";
 import { type Connection, newConnection } from "./connections.ts";
 import { type Decision, Denied, guard, type PolicyCall } from "./effects.ts";
@@ -241,7 +241,7 @@ describe("the two doors of a write (F14d)", () => {
 });
 
 describe("«Permiso» of a «Colección» step (F14d)", () => {
-  it("AU-187 · «Crear una fila», «Modificar filas» and «Eliminar filas» each have a parameter «Permiso», «Preguntar» or «Sí», in view and with the words of a connection's cells; a document saved without it reads the value the action is born with", () => {
+  it("AU-187 · «Crear una fila», «Modificar filas» and «Eliminar filas» each have a parameter «Permiso», «Preguntar» or «Sí», in view and with the words of a connection's cells; a step saved without it reads «Preguntar», whatever its action and wherever it came from: a «Sí» is never a missing value", () => {
     const col = CATALOGUE.find((t) => t.type === "collection");
     const writes = (col?.actions ?? []).filter((a) => a.effect === "write");
     expect(writes.map((a) => a.key).sort()).toEqual(Object.keys(PERMISSION_BORN).sort());
@@ -253,12 +253,23 @@ describe("«Permiso» of a «Colección» step (F14d)", () => {
         place: "shown",
         shape: true,
       });
-      expect(spec?.default, a.key).toBe(PERMISSION_BORN[a.key as keyof typeof PERMISSION_BORN]);
+      expect(spec?.default, a.key).toBe("ask");
     }
     // The words: «Preguntar» and «Sí», as a connection's cells say them (apps/boni-web's i18n, AU-86 words.test).
-    for (const [action, born] of Object.entries(PERMISSION_BORN)) {
-      const step = colStep(action).build().steps[1] as Step;
-      expect(permissionOf(step), action).toBe(born);
+    // A step stored without the parameter (one kept before it existed, a converted old flow, an import that left it
+    // out) asks on every action, create and update too.
+    for (const action of Object.keys(PERMISSION_BORN)) {
+      const bare: Step = {
+        id: "s_ejemplo1",
+        name: action,
+        type: "collection",
+        params: { collection: items.key, [ACTION]: action },
+      };
+      expect(permissionOf(bare), action).toBe("ask");
+      expect(
+        stepChanges(bare, { collectionNamed: named })[0]?.actions.map((x) => x.mode),
+        action,
+      ).not.toContain("yes");
     }
   });
   it("AU-187 · `stepChanges` gives each write of a «Colección» step with the mode of its «Permiso», so its card and «Haría esto» say «sin preguntar» of a removal exactly as for a «Código» with «Sí»", () => {
@@ -273,8 +284,13 @@ describe("«Permiso» of a «Colección» step (F14d)", () => {
       expect(consentOf(upsert, items.key, "update")).toBe(permission);
     }
   });
-  it("AU-187 · the value each action is born with is one constant of the catalogue: a step added by the user's hand has «Preguntar» on remove and the catalogue's value on create and update; one that arrives any other way has «Preguntar» on the three", () => {
+  it("AU-187 · the value each action is born with is one constant of the catalogue, written into the step by the code when the user's hand adds it (`bornParams`): «Preguntar» on remove and «Sí» on create and update; one that arrives any other way has «Preguntar» on the three, written", () => {
     expect(PERMISSION_BORN).toEqual({ create: "yes", update: "yes", upsert: "yes", trash: "ask" });
+    for (const [action, born] of Object.entries(PERMISSION_BORN))
+      expect(bornParams("collection", action), action).toEqual({ [PERMISSION]: born });
+    // Nothing for a reading action or another type: every other parameter is its default (AU-87).
+    expect(bornParams("collection", "find")).toEqual({});
+    expect(bornParams(CODE_TYPE, undefined)).toEqual({});
     const s = sketch(320).step("Inicio", "manual");
     for (const action of ["create", "update", "trash"])
       s.step(action, "collection", { collection: items.key, [ACTION]: action });
@@ -282,6 +298,14 @@ describe("«Permiso» of a «Colección» step (F14d)", () => {
     expect(byHand.steps.slice(1).map(permissionOf)).toEqual(["yes", "yes", "ask"]);
     // Arriving any other way (a proposal, a package, the MCP): through `lowerYes`, «Preguntar» on all three.
     expect(lowerYes(byHand).steps.slice(1).map(permissionOf)).toEqual(["ask", "ask", "ask"]);
+    // A step that arrives without the parameter gets «Preguntar» written, not left to be read.
+    const bare = structuredClone(byHand);
+    for (const st of bare.steps.slice(1)) delete st.params[PERMISSION];
+    expect(
+      lowerYes(bare)
+        .steps.slice(1)
+        .map((st) => st.params[PERMISSION]),
+    ).toEqual(["ask", "ask", "ask"]);
   });
 });
 
