@@ -5,6 +5,9 @@
 import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import { cite, collection, ids, sketch } from "./automation.test-util.ts";
+import type { Box } from "./box.ts";
+import { CODE_TYPE } from "./code.ts";
+import { newConnection } from "./connections.ts";
 import type { CollectionShape } from "./effects.ts";
 import { CannotRun, type Execution, LimitPassed, run } from "./engine.ts";
 import {
@@ -145,6 +148,64 @@ describe("the limits of a run (F14d)", () => {
       expect(e.asked).toHaveLength(600);
       expect(errorOf(e)?.detail).toEqual({ limit: "rowsWritten", max: 1_000, got: 1_200 });
       expect(st.applied).toEqual([]);
+    }
+    // A «Código» after a step that saved 600: its requests only pass it together with those, at 401 and not at 400.
+    for (const [asks, passes] of [
+      [400, false],
+      [401, true],
+    ] as const) {
+      const { a, s } = writing(600, [{ name: "Uno" }], limit);
+      a.steps.push({
+        id: "s_codigo",
+        name: "Código",
+        type: CODE_TYPE,
+        params: { mode: "all", source: "$col('Cosas').create({ a: 1 })\nreturn []" },
+        connections: [{ ...newConnection(things.key), create: { mode: "yes" } }],
+      });
+      a.arrows.push({
+        from: { step: s.id("Uno"), output: "main" },
+        to: { step: "s_codigo", input: "main" },
+      });
+      const requests = Array.from({ length: asks }, (_, i) => ({
+        collection: "Cosas",
+        action: "create" as const,
+        fields: { [n]: i },
+      }));
+      const box: Box = {
+        run: async () => ({
+          evaluations: [
+            { state: "done", values: [[]], clock: false, random: false, writes: requests },
+          ],
+          console: [],
+          dropped: 0,
+          ms: 1,
+        }),
+      };
+      const st = db();
+      const p = policy();
+      const e = await start(
+        a,
+        s.id("Inicio"),
+        {},
+        {
+          collections: st,
+          policy: p,
+          box,
+          collectionNamed: (x) => (x === "Cosas" ? things.key : undefined),
+        },
+      );
+      if (passes) {
+        expect(errorOf(e), String(asks)).toEqual({
+          code: "run.limit",
+          detail: { limit: "rowsWritten", max: 1_000, got: 1_001 },
+        });
+        expect(e.error?.step).toBe("s_codigo");
+        expect(st.applied).toHaveLength(600);
+        expect(writesAsked(p)).toHaveLength(600);
+      } else {
+        expect(e.state, JSON.stringify(e.error)).toBe("done");
+        expect(st.applied).toHaveLength(1_000);
+      }
     }
     // «Las que cumplan…» finds first and writes nothing when what it found would pass it.
     {
