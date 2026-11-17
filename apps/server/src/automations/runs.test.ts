@@ -502,6 +502,8 @@ describe("the record of a run (F14d)", () => {
     });
     expect(notes()).not.toContain("pedida");
     expect(ok(runView(store, asks.id, asked.id)).undoable).toBe(false);
+    // «Deshacer lo que hizo» is there only when it saved something.
+    expect(undoAutomationRun(store, asks.id, asked.id, JUAN)).toEqual({ refused: "nothing" });
 
     const reads = made([
       START,
@@ -839,6 +841,21 @@ describe("retrying and opening in the editor (F14d)", () => {
     expect(JSON.stringify(rows.rows)).toContain("de la ejecución");
     expect(JSON.stringify(rows.rows)).not.toContain("otra");
     expect(pinFromRun(store, a.id, r.id, SHARED)).toEqual({ refused: "not-personal" });
+    // The trigger changed after it was pinned: «puede estar vieja» (AU-92).
+    a.edit([
+      [
+        "Inicio",
+        "manual",
+        {
+          fields: [
+            { key: "nota", name: "Nota", type: "text" },
+            { key: "otra", name: "Otra", type: "text" },
+          ],
+        },
+      ],
+      CREATE(),
+    ]);
+    expect(ok(automationView(store, a.id)).pins[a.step("Inicio")]?.stale).toBe(true);
   });
 });
 

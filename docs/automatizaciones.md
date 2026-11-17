@@ -325,8 +325,9 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Falta, en la tarea 137: con el límite subido, guardar «en una transacción dentro de su tiempo». Hoy la puerta
   guarda cada cambio en su propia transacción (`apply` por fila; `applyAll` existe y el motor no la llama), y cada
   fila borra su entrada del índice de búsqueda recorriéndolo entero. Medido a mano (`BONI_MEASURE`): 3.000 filas
-  guardadas en 65 s y deshechas en 6,7 s, y el servidor no contesta a nada durante todo ese tiempo, porque la
-  escritura es síncrona; 12.000 filas, MEDIDA12. Hasta entonces esas dos pruebas son `it.todo` con la tarea.
+  se guardan en 14 a 65 s según la vuelta y se deshacen en 7 a 9 s; 12.000, en 232 s y 27 s. Durante todo ese
+  tiempo el servidor no contesta a nada, porque la escritura es síncrona. Hasta entonces esas dos pruebas son
+  `it.todo` con la tarea.
 
   | Límite | Por defecto | Techo | Se ve en «Ajustes» cuando |
   |---|---|---|---|
@@ -1493,6 +1494,8 @@ que un paso espere a Juan.
   disparador sin campos empieza sin preguntar. Los campos de la última prueba son la fila que dio el disparador en
   ella: no se guardan aparte.
   Hecho en E: todo lo de la F14b.
+  Desde S2 de la F14d (decisión 14, Juan, 2026-11-17): lo que escribe para «Probar» lleva su etiqueta también en
+  un dispositivo compartido.
 
 **Publicar, ejecutar y lo que corre solo (F14d): lo que extiende** (T-05). Nada de esto se inventa: es lo que los
 flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que sigue como está hasta la F16.
@@ -2970,6 +2973,23 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
     - **«Duplicar», «Volver a esta» y «Recuperar» conservan un «Sí»** (AU-188): devuelven un documento cuyo «Sí»
       puso él, y los dos primeros pasan por «Publicar». La otra: bajar a «Preguntar» en la copia y en lo recuperado,
       y él los pondría otra vez. Prueba: `publish.test.ts` («AU-188 · the ways a «Sí» stays…»), en S1.
+14. **Una parada a medias se queda como está, y lo que escribe para «Probar» en un dispositivo compartido es suyo.**
+    La construcción de la F14d (tarea 128, S2) le dejó dos dudas. **Juan, 2026-11-17: «respecto a las dudas: 1. La
+    que recomiendes 2. "Que cuente como tuyo"».** Cada una, con la otra respuesta que había y su prueba:
+    - **Una ejecución que para por su límite a medias de un paso deja lo que guardaron las filas de entrada
+      anteriores, y «Deshacer lo que hizo» lo quita entero** (AU-17, AU-18). «Las que cumplan…» con dos filas de
+      entrada: la primera pasa 600 filas de «0» a «1»; la segunda iba a escribir 600 más y el total, 1.200, pasa el
+      límite de 1.000, así que para sin guardar las suyas. Las 600 de la primera se quedan, cada una con su operación
+      en el registro, y la ejecución dice «Paró» con «Deshacer lo que hizo». La otra: contar todas antes de guardar
+      ninguna, que cambia lo que hace el paso, porque la segunda fila encuentra lo que guardó la primera. Prueba:
+      `runs.test.ts` («AU-17 AU-18 · «Las que cumplan…» with several rows, stopped by the limit partway…»).
+    - **Lo que escribe para «Probar» en un dispositivo compartido lleva su etiqueta, como en uno personal** (AU-94).
+      En el ordenador del salón prueba «Avisar de un pedido» con «nota: desde el salón»: la fila del disparador dice
+      que es suya, como en su portátil, y la prueba dice lo mismo en los dos. La otra: etiquetarla como del
+      dispositivo compartido (`ambient`), y la misma prueba diría otra cosa allí. Nada más se abre a un dispositivo
+      compartido: una prueba no guarda nada, y desde él no se escribe un borrador, no se pone un «Sí», no se
+      publica y no se fija (decisión 13), así que nada de lo que deja una prueba lleva esa etiqueta a una ejecución
+      de verdad. Prueba: `runs.test.ts` («AU-94 · what Juan types for «Probar» on a shared device counts as his…»).
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
