@@ -36,6 +36,7 @@ import {
   type Problem,
   parseAutomation,
   publishChecks,
+  type RunDeps,
   run as runAutomation,
   stepPrints,
 } from "@boni/automations";
@@ -292,8 +293,8 @@ export interface RunRequest {
  * The one function that runs an automation for real (AU-95): its published version, read from the store, on. It
  * takes no document: whatever else a request carries never reaches the engine as the automation to run. Deleted,
  * never published or off, nothing starts (AU-191, AU-194). `run`: the run's id, which every operation it saves
- * carries in the log; the execution names the version it ran (`automation.version`). Saving the run itself, its
- * route and its schedule are S2's (AU-97, AU-99).
+ * carries in the log; the execution names the version it ran (`automation.version`). `watch.onStep` is told as each
+ * step starts and ends, which is how runs.ts keeps the run as it goes (AU-99); it reaches nothing the run decides.
  */
 export async function runPublished(
   store: UserStore,
@@ -302,6 +303,7 @@ export async function runPublished(
   hand: Hand & { trust: Trust; zone: string },
   run: string,
   box: Box = sandboxBox(),
+  watch: Pick<RunDeps, "onStep"> = {},
 ): Promise<Execution | Refusal | ServiceError> {
   const row = store.journal.automation(id);
   if (!row || row.deleted) return NOT_FOUND;
@@ -325,7 +327,7 @@ export async function runPublished(
         fields: { json: request.fields, label: handLabel(hand.device) },
         test: false,
       },
-      runDeps(store, id, hand, box, run),
+      { ...runDeps(store, id, hand, box, run), ...watch },
     );
   } catch (e) {
     if (e instanceof CannotRun) return { refused: "invalid", problems: [...(e.problems ?? [])] };

@@ -239,21 +239,30 @@ export interface TestInput extends Omit<RunInput, "test"> {
   kept?: Readonly<Record<string, Kept>>;
   /** The prints of the automation as it is now (`stepPrints`). */
   prints: Readonly<Record<string, Print>>;
+  /**
+   * «Fijar» (AU-93): by step id, the output pinned on the draft. A pinned step the test decides does not run (no box,
+   * no read, no model): its pinned rows are its output, each with the label it had, whatever its print says now (the
+   * screen says «puede estar vieja» from the prints). It counts as reused, so «Probar paso» may reuse what hangs from
+   * it. A real run never has one: `run` takes no pins.
+   */
+  pinned?: Readonly<Record<string, StepRecord>>;
 }
 
 export interface TestExecution extends Execution {
   /**
    * The steps decided in this test and not reused, in order (one skipped or stopped included). With `step`, it is
-   * always among them: «Probar paso» runs it again.
+   * always among them, unless it is pinned (AU-93): «Probar paso» runs it again.
    */
   ran: string[];
   /**
    * The steps before `step` that did not run: their kept record was `done`, their print is the one they have now,
    * and every step they hang from or cite was reused too, so their rows (with their lineage: `.item` still finds its
    * own across them) were taken as they were. A step before `step` with no kept record, a stale one, one that did
-   * not end `done`, or one after a step that runs again, runs.
+   * not end `done`, or one after a step that runs again, runs. The pinned steps the test decided are here too.
    */
   reused: string[];
+  /** Of `reused`, the steps that gave their pinned output (AU-93), in order. */
+  pinned: string[];
 }
 
 /**
@@ -288,11 +297,15 @@ export async function runTest(input: TestInput, deps: RunDeps): Promise<TestExec
   checkTriggerRow(start, input.fields);
 
   const reuse = new Map<string, StepRecord>();
+  for (const id of order) {
+    const pin = input.pinned?.[id];
+    if (pin) reuse.set(id, pin);
+  }
   if (step !== undefined) {
     const byId = new Map(automation.steps.map((s) => [s.id, s]));
     const idOf = new Map(automation.steps.map((s) => [s.name, s.id]));
     for (const id of order) {
-      if (id === step) continue;
+      if (id === step || reuse.has(id)) continue;
       const k = input.kept?.[id];
       if (k?.record.state !== "done" || k.print !== input.prints[id]) continue;
       const s = byId.get(id) as Step;
@@ -303,12 +316,13 @@ export async function runTest(input: TestInput, deps: RunDeps): Promise<TestExec
       if (hangs.every((other) => reuse.has(other))) reuse.set(id, k.record);
     }
   }
-  const { step: _step, kept: _kept, prints: _prints, ...rest } = input;
+  const { step: _step, kept: _kept, prints: _prints, pinned: _pinned, ...rest } = input;
   const execution = await runPlanned({ ...rest, test: true }, deps, start, { order, reuse });
   return {
     ...execution,
     ran: order.filter((id) => !reuse.has(id)),
     reused: order.filter((id) => reuse.has(id)),
+    pinned: order.filter((id) => input.pinned?.[id] !== undefined),
   };
 }
 

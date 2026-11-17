@@ -36,6 +36,7 @@ import {
   type Kept,
   type KeptNames,
   keep,
+  namedFor,
   OUT,
   outputsOf,
   type ParamValue,
@@ -65,6 +66,7 @@ import { sandboxBox } from "./box.ts";
 import { collectionNamed, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { automationPolicy } from "./policy.ts";
+import { keepTestRun, type PinView, pinnedRecords, pinsView } from "./record.ts";
 
 /** The largest draft kept, in characters of its JSON: as a flow's draft. */
 export const DRAFT_MAX = 200_000;
@@ -141,6 +143,8 @@ export interface AutomationView {
    * the one row the trigger gave in its kept test (the first row of its only output).
    */
   tested: Record<string, Record<string, Cell>>;
+  /** «Fijar» (AU-93): by step id, the output pinned on the draft, which «Probar» gives instead of running the step. */
+  pins: Record<string, PinView>;
   /** The device that saved it last, and when. */
   device: string | null;
   updated: number;
@@ -202,13 +206,12 @@ export function publishedOf(
 }
 
 /**
- * The label of what Juan types for a test (AU-94): his own from a personal device; from a shared one, which may test
- * and not change (decision 13), what a shared device gives (`ambient`).
+ * The label of what Juan types for a test (AU-94): his own, from any device. Juan, 2026-11-17 (decision 14 of §10):
+ * what he types for «Probar» on a shared device «cuenta como tuyo», so a test says the same on both. A test saves
+ * nothing, and a shared device still cannot write a draft, set a «Sí», publish or pin (decision 13), so nothing a
+ * test leaves carries this label into a real run.
  */
-const typedLabel = (hand: Hand & { trust: Trust }): Label =>
-  hand.trust === "personal"
-    ? handLabel(hand.device)
-    : label("ambient", "personal", [{ kind: "user-edit", id: `device:${hand.device}` }]);
+const typedLabel = (hand: Hand & { trust: Trust }): Label => handLabel(hand.device);
 
 /** The automation, if there is one and it is not deleted, with its draft parsed. */
 export function open(store: UserStore, id: string) {
@@ -278,7 +281,7 @@ export function keptTests(
 /** The fields given for a trigger as its row will hold them: each it declares, null where none was given (AU-94),
  * so the print of the test is the one its kept row gives back. A field it does not declare stays, for the engine to
  * refuse. */
-function asDeclared(
+export function asDeclared(
   a: Automation,
   trigger: string,
   given: Record<string, Cell>,
@@ -348,6 +351,7 @@ export function automationView(store: UserStore, id: string): AutomationView | S
     places: store.journal.automationLayout(id),
     tests: views(kept, prints),
     tested,
+    pins: pinsView(store, id, o.automation, prints, tested),
     device: o.draft.device,
     updated: o.draft.updated,
   };
@@ -443,6 +447,10 @@ export interface TestAnswer {
   /** The steps that ran now and the ones taken from their kept test, in order. */
   ran: string[];
   reused: string[];
+  /** Of `reused`, the steps that gave their pinned output instead of running (AU-93). */
+  pinned: string[];
+  /** A whole «Probar» is kept as a run marked as a test (AU-99): its id. */
+  run?: string;
   /** Every step's test as it stands after this one, by step id. */
   tests: Record<string, StepTestView>;
   /** The step that stopped it, when `failed`. */
@@ -496,9 +504,18 @@ export function runDeps(
   run?: string,
 ): RunDeps & { policy: ReturnType<typeof automationPolicy> } {
   const own = automationLabel(id);
-  const doc = run ? publishedOf(store, id)?.automation : open(store, id)?.automation;
+  const version = run ? publishedOf(store, id) : null;
+  const doc = run ? version?.automation : open(store, id)?.automation;
   if (run && !doc)
     throw new Error(`automation ${id} has no published version: nothing runs for real`);
+  // A collection a step's code cites by name: in a run of a published version, first by the name that version kept
+  // for that step, while its key is still one of the step's connections (AU-192); otherwise by its name of today.
+  const today = collectionNamed(store);
+  const steps = new Map((version?.automation.steps ?? []).map((s) => [s.id, s]));
+  const named = (name: string, step?: string) => {
+    const s = step === undefined ? undefined : steps.get(step);
+    return s && version ? namedFor(s, version.names, today)(name) : today(name);
+  };
   return {
     policy: automationPolicy(doc, own),
     collections: storeCollections(store, {
@@ -517,7 +534,7 @@ export function runDeps(
     own,
     locale: "es",
     box,
-    collectionNamed: collectionNamed(store),
+    collectionNamed: named,
   };
 }
 
@@ -558,6 +575,9 @@ export async function testAutomation(
     }
   }
 
+  // «Fijar» (AU-93): a pinned step does not run; its pinned rows are its output.
+  const pins = pinnedRecords(store, id, a);
+
   const deps = runDeps(store, id, hand, box);
   const real = deps.collections;
   // The saved rows a write reads to say what it would leave (AU-168: part of the write the policy allowed).
@@ -580,6 +600,7 @@ export async function testAutomation(
         fields: { json: request.fields, label: typedLabel(hand) },
         prints,
         ...(request.step !== undefined ? { step: request.step, kept } : {}),
+        ...(pins.pins.size ? { pinned: pins.records } : {}),
       },
       { ...deps, collections },
     );
@@ -591,6 +612,7 @@ export async function testAutomation(
         ms: 0,
         ran: [],
         reused: [],
+        pinned: [],
         tests: views(keptRows, prints),
       };
     throw e;
@@ -632,12 +654,22 @@ export async function testAutomation(
       ];
     }),
   );
+  // A pinned step's kept test is its pin: what the steps after it got, so their inputs read back what came in.
+  const pinnedKept = execution.pinned.flatMap((step) => {
+    const p = pins.pins.get(step);
+    return p ? [{ step, print: p.print, at: p.at, record: p.record, rows: p.rows }] : [];
+  });
+  if (pinnedKept.length) store.journal.keepAutomationTests(id, pinnedKept);
+  const run =
+    request.step === undefined ? keepTestRun(store, id, a, execution, request, hand) : undefined;
   return {
     state: execution.state,
     problems: [],
     ms: execution.ms,
     ran: execution.ran,
     reused: execution.reused,
+    pinned: execution.pinned,
+    ...(run ? { run } : {}),
     tests: views(keptTests(store, id), prints),
     ...(execution.error ? { failedAt: execution.error.step } : {}),
   };

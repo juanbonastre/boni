@@ -545,6 +545,32 @@ export function makeApp(opts: ServerOptions): App {
           const b = await bodyOf(req);
           return automation("automations.enable", { id, enabled: b.enabled });
         }
+        // «Ejecuciones» (AU-99): the list, 50 at a time (?filter=all|failed|tests, ?before=<run id>), one run and a
+        // page of one of its steps' rows; reads of the automation, so automations.read, told which part.
+        case "GET /api/agent/automations/:id/runs": {
+          const q = url.searchParams;
+          return automation("automations.read", {
+            id,
+            part: "runs",
+            filter: q.get("filter") ?? "all",
+            ...(q.get("before") ? { before: q.get("before") } : {}),
+          });
+        }
+        case "GET /api/agent/automations/:id/runs/:run":
+          return automation("automations.read", { id, part: "run", run: params.run ?? "" });
+        case "GET /api/agent/automations/:id/runs/:run/rows": {
+          const q = url.searchParams;
+          const offset = Number(q.get("offset") ?? "0");
+          return automation("automations.read", {
+            id,
+            part: "runRows",
+            run: params.run ?? "",
+            step: q.get("step") ?? "",
+            side: q.get("side") ?? "",
+            name: q.get("name") ?? "",
+            offset: Number.isInteger(offset) ? offset : -1,
+          });
+        }
         default:
           return send(res, 404, { error: "not-found" });
       }

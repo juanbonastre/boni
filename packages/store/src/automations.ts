@@ -244,7 +244,7 @@ export function automationsVersionsMigration(db: DatabaseSync): void {
 }
 
 /** The label integrities below `imported` (`@boni/entities`' order): a value from outside, a model's or ambient. */
-const OUTSIDE_INTEGRITY = "('external', 'model', 'ambient')";
+export const OUTSIDE_INTEGRITY = "('external', 'model', 'ambient')";
 /**
  * Whether a collection holds a value from outside (AU-182): one `EXISTS` over its rows' labels, by `entities_type`,
  * reading no row whole. There is no index by integrity; its plan and its time at 3,000 rows are held in the server's

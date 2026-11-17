@@ -112,6 +112,10 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   // F14d P1: «Publicar» and the switch «Encendida» (automations.publish, automations.enable).
   "POST /api/agent/automations/:id/publish": "tailnet",
   "PUT /api/agent/automations/:id/enabled": "tailnet",
+  // F14d S2: «Ejecuciones», one run and a page of its rows (automations.read's parts; automations/runs.ts).
+  "GET /api/agent/automations/:id/runs": "tailnet",
+  "GET /api/agent/automations/:id/runs/:run": "tailnet",
+  "GET /api/agent/automations/:id/runs/:run/rows": "tailnet",
   "GET /api/agent/models": "tailnet",
   "GET /api/agent/models/catalogue": "tailnet",
   "PUT /api/agent/models/roles/:role": "tailnet",

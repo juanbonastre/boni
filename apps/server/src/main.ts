@@ -201,6 +201,9 @@ const flowScheduler = new FlowScheduler({
   log: (line) => console.log(line),
 });
 if (agent.on) flowScheduler.start();
+// A run of an automation cut by the last stop is «Interrumpida» (decision 12): opening each account's store marks
+// its runs that were queued or running, and none is continued by itself (automations/runs.ts).
+if (agent.hasData) for (const u of listUsers(db)) agent.store(u.id);
 // What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
 const stopSlowness = watchSlowness(console.warn, { sample: true });
 const checkpoints = onDisk

@@ -318,6 +318,15 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   sostiene `limits.test.ts` («AU-17 · «Las que cumplan…» with several rows arriving…»). Falta: las llamadas a modelos
   no tienen nada que contar hasta la F15; deshacer lo que guardó una ejecución que paró a medias de un paso (AU-18,
   S2); `runs.test.ts` con el almacén de 12.000 registros (S2).
+  Hecho en S2, en el servidor de verdad: con 3.000 filas que cumplen la condición en un almacén de 12.000 registros,
+  la ejecución para por defecto sin una operación en el registro; «Las que cumplan…» con dos filas de entrada para
+  a medias, lo que guardó la primera se queda y «Deshacer lo que hizo» deja el almacén como estaba (decisión 14).
+  Falta, en la tarea 137: con el límite subido, guardar «en una transacción dentro de su tiempo». Hoy la puerta
+  guarda cada cambio en su propia transacción (`apply` por fila; `applyAll` existe y el motor no la llama), y cada
+  fila borra su entrada del índice de búsqueda recorriéndolo entero. Medido a mano (`BONI_MEASURE`): 3.000 filas
+  se guardan en 14 a 65 s según la vuelta y se deshacen en 7 a 9 s; 12.000, en 232 s y 27 s. Durante todo ese
+  tiempo el servidor no contesta a nada, porque la escritura es síncrona. Hasta entonces esas dos pruebas son
+  `it.todo` con la tarea.
   Hecho en P1: «⋯ → Ajustes» enseña «Tiempo» y, si un paso escribe, «Filas escritas» (`shownLimits`), cada uno con
   «Por defecto … · máximo …»; por encima de su techo el campo dice «Como mucho …» y no lo guarda, y volver al valor
   por defecto lo quita del borrador (`withLimit`). Una prueba que paró por un límite dice en «Registro» «Cambiar el
@@ -359,7 +368,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   `runs.test.ts` (`apps/server/src/automations`: con el volumen de Juan, 3.000 filas que cumplen la condición en un
   almacén de 12.000 registros, para por defecto sin una operación en el registro; con el límite subido las guarda
   en una transacción dentro de su tiempo y «Deshacer lo que hizo» las devuelve).
-- **AU-18** (F14d, pendiente) · Todo lo que una ejecución escribe es un solo grupo en el diario: se deshace entero
+- **AU-18** (F14d, en parte) · Todo lo que una ejecución escribe es un solo grupo en el diario: se deshace entero
   desde la ejecución.
   En la F14d: el grupo ya existe. Cada operación lleva la ejecución en el registro desde la F14c (AU-174), y
   `undoRun` del almacén las deshace todas, la última primero, en una transacción. «Deshacer lo que hizo» (AU-100) es
@@ -371,6 +380,12 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   guardarlas (AU-174) y entretanto el servidor no atiende: es la tarea aparte del `update` del almacén.
   Lo sostiene `runs.test.ts`: una ejecución de tres pasos que escriben (crear, modificar y mandar a la papelera) deja
   el almacén como estaba; con una fila cambiada después, no deshace ninguna.
+  Hecho en S2: `undoAutomationRun` (`runs.ts`; la ruta `POST …/:id/runs/:run/undo` y la acción
+  `automations.undo_run`) es el `undoRun` del almacén, todo o nada, y la ejecución guarda cuándo se deshizo; con una
+  fila cambiada después lo niega con `changed` y dice cuál. Se deshacen enteras también una que paró a medias por su
+  límite y una interrumpida (AU-190). Es el principio A-40. Falta: lo aceptado de una propuesta (AU-193, S3), una de
+  la que solo queda el resumen (AU-103) y el tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y
+  el servidor no atiende mientras (tarea 137).
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de
   ahí salen su efecto para la política, el mapa y la lista de acciones (A-26, tarea 95). No hay una lista aparte.
   En la F14a: el catálogo, y lo que el motor le dice a la política de cada lectura y escritura; el mapa (AU-47) y
@@ -1460,7 +1475,7 @@ que un paso espere a Juan.
   servidor al guardar cada cambio del borrador.
   Hecho en E: la marca en SALIDA con «Probar paso», las cuentas atenuadas del paso y de lo que cuelga de él, y nada
   al moverlo o cambiarle el nombre.
-- **AU-93** (F14d, pendiente) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
+- **AU-93** (F14d, en parte) · «Fijar» guarda la salida de un paso para las pruebas: no se vuelve a ejecutar, y no
   gasta modelo. Lo fijado se ve en la tarjeta («Salida fijada») y nunca vale en una ejecución de verdad. Se suelta en
   el mismo botón.
   En la F14d: lo fijado vive junto al borrador, como las pruebas y el sitio de las cajas (`automation_pins`), y
@@ -1472,12 +1487,19 @@ que un paso espere a Juan.
   estar vieja» (AU-92). «Publicar» lo recuerda entre lo que conviene mirar (AU-96). Duplicar no copia lo fijado.
   Lo sostienen `runs.test.ts` (un paso con la salida fijada corre de verdad en una ejecución y no en una prueba; lo
   fijado conserva sus etiquetas) y `automations-publish.spec.ts` (el botón y la tarjeta).
+  Hecho en S2: `PUT` y `DELETE …/:id/pins/:step` (`pinStep`, `unpinStep`; la acción `automations.pin`) fijan la
+  última salida probada con las etiquetas de cada fila y la sueltan; la vista del borrador da `pins` con `stale`
+  cuando el paso cambió después. En «Probar» y «Probar paso» un paso fijado no corre (ni caja ni lecturas) y la
+  prueba lo dice en `pinned`; una ejecución de verdad lo corre. «Duplicar» no copia lo fijado. Falta: el botón, la
+  tarjeta y el recuerdo en «Publicar» (pantalla, P1).
 - **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
   En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
   disparador sin campos empieza sin preguntar. Los campos de la última prueba son la fila que dio el disparador en
   ella: no se guardan aparte.
   Hecho en E: todo lo de la F14b.
+  Desde S2 de la F14d (decisión 14, Juan, 2026-11-17): lo que escribe para «Probar» lleva su etiqueta también en
+  un dispositivo compartido.
 
 **Publicar, ejecutar y lo que corre solo (F14d): lo que extiende** (T-05). Nada de esto se inventa: es lo que los
 flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que sigue como está hasta la F16.
@@ -1518,8 +1540,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `version` a 0 para comparar un borrador con ella.
   Hecho en P1: la ruta que publica (`POST …/:id/publish`, acción `automations.publish`, tailnet) con su botón en la
   cabecera, y «Guardado» seguido de «· sin publicar», «· publicada la versión 4» o «· cambios sin publicar»
-  (`publishWord`, con `diffAutomations` contra el documento de la versión que corre, `GET …/versions/:n`). Falta: la
-  ruta que ejecuta y guardar la ejecución (AU-97, S2).
+  (`publishWord`, con `diffAutomations` contra el documento de la versión que corre, `GET …/versions/:n`). Falta:
+  registrar la ruta que ejecuta, que S2 dejó hecha (AU-97, P2).
 - **AU-96** (F14d, en parte) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
@@ -1565,10 +1587,16 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ejecución iniciada así está en AU-195.
   Lo sostienen `runs.test.ts` (corre la publicada; una a la vez; apagada no corre) y `automations-publish.spec.ts`
   (los tres sitios de «Ejecutar»).
+  Hecho en S2: `startRun` (`runs.ts`), por la ruta `POST …/:id/run` y la acción `automations.run`, contesta con la
+  ejecución («running», o «queued» detrás de otra de la cuenta) y la sigue en el servidor por `runPublished`; una a
+  la vez por automatización (`running` con su id), y las de una cuenta en una fila, por orden de llegada. Sin
+  publicar, apagada, eliminada o desde un dispositivo compartido, no empieza y no se guarda nada. Un «Código» corre
+  en la caja con `run: { test: false, startedBy: "user" }`; sin caja falla con `code.unavailable` y no escribe nada.
+  Los avisos pequeños son el evento `run` del SSE: estado, paso y filas por salida, nunca las filas.
   Hecho en P1, sobre el servidor simulado con la forma de la ruta de S2: «Ejecutar» en «⋯» de la cabecera, en el
   aviso de publicar y, en el teléfono, en un botón de la cabecera (AU-74); con «Campos que pide», el cuadro de «Probar»; con cambios sin publicar, «Corre la versión N, sin
   los cambios sin publicar»; apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
-  `automations.run` y su ruta con `data-boni-action` en los controles (cuando S2 esté en main), «Ejecutar» en la fila
+  `automations.run` y su ruta (`withRunActions`, `RUN_ROUTES`) con `data-boni-action` en los controles, «Ejecutar» en la fila
   de la lista, llevar a «Ejecuciones» y verla avanzar (P2).
 - **AU-98** (F14d, en parte) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
@@ -1588,7 +1616,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   esta» como `publish` con `version`: las mismas comprobaciones, una versión nueva con el documento de la vieja, el
   borrador sin tocar; volver a la que ya corre no publica nada, y a una cuya colección ya no está lo niega con el
   problema. Falta: la pantalla (ver, comparar, volver; P1).
-- **AU-99** (F14d, pendiente) · La pestaña «Ejecuciones» (pantalla 8): a la izquierda la lista, con «Todas | Fallos |
+- **AU-99** (F14d, en parte) · La pestaña «Ejecuciones» (pantalla 8): a la izquierda la lista, con «Todas | Fallos |
   Pruebas» (cuándo, cómo acabó, cuánto tardó, qué la inició, qué versión; las pruebas, marcadas); a la derecha el
   lienzo de esa ejecución, solo para ver, con sus filas en cada flecha y, encima, lo que hizo en una línea. Abrir un
   paso enseña lo que entró y lo que salió.
@@ -1603,7 +1631,14 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   columna «Ejecuciones» ni en el mapa (A-16). En el móvil, la lista y, al tocar una, su detalle.
   Lo sostienen `runs.test.ts` (lo guardado es lo que el motor devolvió; la lista con un año de ejecuciones cada hora
   dentro de su tiempo, A-15) y `automations-publish.spec.ts` (la pestaña, los tres filtros, abrir un paso).
-- **AU-100** (F14d, pendiente) · En una ejecución: «Deshacer lo que hizo», «Reintentar» y «Abrir en el editor con
+  Hecho en S2: `automation_runs`, `automation_steps` y sus filas de 50 en 50 (`automationRuns.ts` del almacén), que
+  `record.ts` escribe al acabar cada paso; `GET …/:id/runs` (de 50 en 50 por el índice, `filter` «all», «failed» o
+  «tests», y `before`), `GET …/:id/runs/:run` (la ejecución, sus pasos, el documento de la versión que corrió y su
+  línea) y `GET …/:id/runs/:run/rows`. La línea sale del registro (`lineOf`: lo guardado por colección y acción, lo
+  propuesto, lo que guardaría, dónde falló o que no hizo nada); sus palabras son de la pantalla. Un «Probar» entero
+  se guarda como ejecución de prueba. Con un año de ejecuciones cada hora, la lista y una ejecución contestan dentro
+  de su tiempo. Falta: la pestaña (pantalla 8, P1) y las cuentas de la lista de automatizaciones (AU-61, P1).
+- **AU-100** (F14d, en parte) · En una ejecución: «Deshacer lo que hizo», «Reintentar» y «Abrir en el editor con
   estos datos», que fija la salida del disparador para probar con ella.
   En la F14d: «Deshacer lo que hizo» es AU-18, y solo está si escribió algo. «Reintentar» inicia otra ejecución, de
   la mano de Juan, con los datos del disparador de aquella (sus campos, o la hora que le tocaba) y la versión
@@ -1613,6 +1648,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   dio el disparador (AU-93) y abre el editor. Una prueba solo tiene este último.
   Lo sostienen `runs.test.ts` (reintentar usa los mismos datos y la versión publicada; «Deshacer y reintentar» no
   deja nada dos veces) y `automations-publish.spec.ts` (los tres botones).
+  Hecho en S2: `retryRun` (`POST …/:id/runs/:run/retry`, y `automations.run` con `retry`) inicia otra ejecución de
+  la mano de Juan con el disparador y los campos de aquella y la versión publicada de hoy, y contesta `version` y
+  `was`; con `undo`, la deshace antes, todo o nada. Una prueba no se reintenta. `pinFromRun`
+  (`POST …/:id/runs/:run/pin`) fija en el borrador la salida que dio el disparador en esa ejecución. Falta: los tres
+  botones y el cuadro (P1).
 - **AU-101** (F14d, pendiente) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
   línea por paso y, dentro de un paso de IA, sus lecturas y escrituras.
   En la F14d: es un solo componente para el «Registro» del editor y para una ejecución de «Ejecuciones», sobre el
@@ -1647,7 +1687,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (AU-61) se cuentan por el índice.
   Lo sostiene `runs.test.ts`: un año de ejecuciones cada hora de una automatización deja 100 enteras, y la lista,
   las cuentas y el recorte van dentro de su tiempo (A-15, `@boni/pace`).
-- **AU-190** (F14d, pendiente) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
+- **AU-190** (F14d, en parte) · Una ejecución que el servidor dejó a medias al apagarse no se repite sola. Al
   arrancar, toda ejecución que seguía en marcha se cierra como «Interrumpida», diciendo en qué paso estaba. Lo que
   guardaron los pasos que acabaron se queda, y se deshace desde ella (AU-18); un paso nunca queda a medias, porque
   su cambio es una transacción (AU-174). Su hora cuenta como corrida (AU-114). Avisa como un fallo si empezó sola
@@ -1655,6 +1695,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ya habían guardado. Decidido por Juan el 2026-11-16 (decisión 12 del §10).
   Lo sostiene `runs.test.ts`: un servidor que arranca con una ejecución en marcha la cierra, no la repite y deja lo
   que guardó.
+  Hecho en S2: `interruptRuns` (`runs.ts`) al abrir por primera vez el almacén de una cuenta (`agent.ts`), y
+  `main.ts` abre al arrancar el de cada cuenta: toda ejecución «queued» o «running» queda «interrupted», con el paso
+  en que estaba y su hora de fin; no se repite, y lo que guardaron sus pasos se queda y se deshace desde ella.
+  Falta: que su hora cuente como corrida (el programador, S3) y su aviso (S4).
 - **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
@@ -1683,6 +1727,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S1: cada versión guarda sus `keptNames` al publicarse (la columna `names`), y publicar y «Publicar» le
   pasan a la validación el `keptKey` de la versión que corre. Falta: que el servidor le pase `namedFor` al motor por
   paso (hoy `collectionNamed` es uno para toda la ejecución) y `runs.test.ts` (S2), y el botón (P3).
+  Hecho en S2: una ejecución de verdad resuelve cada nombre con `namedFor` por paso, de los `names` de la versión
+  publicada (`collectionNamed(name, step)`): tras el cambio de nombre guarda en la misma colección; sin esa conexión
+  en el paso, falla; con la colección archivada, falla diciendo cuál. Falta: el botón (P3).
 - **AU-194** (F14d, en parte) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
   lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
   ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió
@@ -2949,6 +2996,23 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
     - **«Duplicar», «Volver a esta» y «Recuperar» conservan un «Sí»** (AU-188): devuelven un documento cuyo «Sí»
       puso él, y los dos primeros pasan por «Publicar». La otra: bajar a «Preguntar» en la copia y en lo recuperado,
       y él los pondría otra vez. Prueba: `publish.test.ts` («AU-188 · the ways a «Sí» stays…»), en S1.
+14. **Una parada a medias se queda como está, y lo que escribe para «Probar» en un dispositivo compartido es suyo.**
+    La construcción de la F14d (tarea 128, S2) le dejó dos dudas. **Juan, 2026-11-17: «respecto a las dudas: 1. La
+    que recomiendes 2. "Que cuente como tuyo"».** Cada una, con la otra respuesta que había y su prueba:
+    - **Una ejecución que para por su límite a medias de un paso deja lo que guardaron las filas de entrada
+      anteriores, y «Deshacer lo que hizo» lo quita entero** (AU-17, AU-18). «Las que cumplan…» con dos filas de
+      entrada: la primera pasa 600 filas de «0» a «1»; la segunda iba a escribir 600 más y el total, 1.200, pasa el
+      límite de 1.000, así que para sin guardar las suyas. Las 600 de la primera se quedan, cada una con su operación
+      en el registro, y la ejecución dice «Paró» con «Deshacer lo que hizo». La otra: contar todas antes de guardar
+      ninguna, que cambia lo que hace el paso, porque la segunda fila encuentra lo que guardó la primera. Prueba:
+      `runs.test.ts` («AU-17 AU-18 · «Las que cumplan…» with several rows, stopped by the limit partway…»).
+    - **Lo que escribe para «Probar» en un dispositivo compartido lleva su etiqueta, como en uno personal** (AU-94).
+      En el ordenador del salón prueba «Avisar de un pedido» con «nota: desde el salón»: la fila del disparador dice
+      que es suya, como en su portátil, y la prueba dice lo mismo en los dos. La otra: etiquetarla como del
+      dispositivo compartido (`ambient`), y la misma prueba diría otra cosa allí. Nada más se abre a un dispositivo
+      compartido: una prueba no guarda nada, y desde él no se escribe un borrador, no se pone un «Sí», no se
+      publica y no se fija (decisión 13), así que nada de lo que deja una prueba lleva esa etiqueta a una ejecución
+      de verdad. Prueba: `runs.test.ts` («AU-94 · what Juan types for «Probar» on a shared device counts as his…»).
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 

@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { chainExisting } from "./audit.ts";
+import { AUTOMATION_RUNS_MIGRATION } from "./automationRuns.ts";
 import {
   AUTOMATIONS_MIGRATION,
   automationsTriggerMigration,
@@ -385,6 +386,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   automationsTriggerMigration,
   // 27: an automation's versions, which one runs and its switch (F14d, AU-95, AU-194).
   automationsVersionsMigration,
+  // 28: an automation's runs, each step's record and rows, and what is pinned on its draft (F14d S2, AU-99, AU-93).
+  AUTOMATION_RUNS_MIGRATION,
 ];
 
 export function migrate(db: DatabaseSync): void {
