@@ -1509,10 +1509,10 @@ test.describe("the editor", () => {
   }) => {
     await openApp(page, "/?still", { automations: CANVAS, agent: BEFORE() });
     await openCanvas(page, "Libros por leer", 4);
-    // Opened and left alone: nothing is sent, nothing moves.
+    // Opened and left alone: nothing is sent, nothing moves. It reads the automation and its versions once (F14d).
     const opened = await placesOf(page, CHAIN_IDS);
     await page.waitForTimeout(1500);
-    expect(await asked(page)).toEqual([`GET ${CHAIN.id}`]);
+    expect(await asked(page)).toEqual([`GET ${CHAIN.id}`, `GET ${CHAIN.id}/versions`]);
     await expect.poll(() => placesOf(page, CHAIN_IDS)).toEqual(opened);
     // One step added: that step, its one arrow, and nothing else.
     await card(page, "s_01jordenar").getByRole("button", { name: "Añadir un paso" }).click();

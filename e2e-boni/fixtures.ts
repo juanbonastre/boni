@@ -1457,8 +1457,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             places: JSON.parse(JSON.stringify(a.places)),
             updated: Date.now(),
             deleted: false,
+            // A copy is a new draft: never published, off (AU-194).
+            versions: [],
+            enabled: false,
           };
-          autos.push(copy);
+          autos.push(copy as AutoHere);
           return [200, autoView(copy)];
         }
         return bad;
