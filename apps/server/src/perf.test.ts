@@ -116,9 +116,13 @@ describe("the minute's line about slowness", () => {
     const watcher = holdWatcher((why) => failures.push(why));
     expect(watcher).not.toBeNull();
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    // The hold is this file's own work, with the clock read now and then: a loop of bare `clock()` calls spends its
+    // samples inside @boni/pace's clock when V8 does not inline it, and the hold is then named after that (task 143).
     function holdTheLoop(ms = 600) {
       const end = clock() + ms;
-      while (clock() < end);
+      let x = 0;
+      while (clock() < end) for (let i = 0; i < 100_000; i++) x = (x * 31 + i) | 0;
+      return x;
     }
     // Busy at once, as the server is when it starts: the watchdog still starts (it used to end before it watched).
     holdTheLoop(300);

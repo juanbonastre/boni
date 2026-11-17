@@ -2474,16 +2474,20 @@ test.describe("the step's view", () => {
       await expect(view(page).getByRole("button", { name: "Probar paso" })).toHaveCount(0);
       expect(await sideways(page)).toEqual([]);
       // The condition's trash is on its value's line, beside «{ }» (AU-20).
-      const line = (l: ReturnType<Page["locator"]>) =>
-        l.evaluate((e) => {
-          const r = e.getBoundingClientRect();
-          return Math.round(r.top + r.height / 2);
-        });
+      // Both centres read at once and unrounded, until the layout is still: read in two calls and each rounded, two
+      // centres 3.2 px apart can read 4, and the layout may move between the calls (task 143: it read exactly 4).
       const where = param(page, "where");
-      const toggleAt = await line(where.locator(".auto-expr-toggle"));
-      expect(
-        Math.abs((await line(where.locator(".db-filter-row > .icon-btn"))) - toggleAt),
-      ).toBeLessThan(4);
+      await expect
+        .poll(() =>
+          where.evaluate((w) => {
+            const mid = (q: string) => {
+              const r = w.querySelector(q)?.getBoundingClientRect();
+              return r ? r.top + r.height / 2 : Number.NaN;
+            };
+            return Math.abs(mid(".db-filter-row > .icon-btn") - mid(".auto-expr-toggle"));
+          }),
+        )
+        .toBeLessThan(4);
       await page.screenshot({ path: `${SHOTS}/phone-automation-params.png` });
       // Not tested: ENTRADA and SALIDA say «Sin probar», and nothing else.
       for (const side of ["Entrada", "Salida"]) {

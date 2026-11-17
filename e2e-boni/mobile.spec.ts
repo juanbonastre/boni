@@ -301,16 +301,23 @@ test("formats on the phone (task 2f): the menu over selected words comes below t
   });
   const bar = page.getByRole("toolbar", { name: "Formato" });
   await expect(bar).toBeVisible();
-  const words = await line.boundingBox();
-  const box = await bar.boundingBox();
-  if (!words || !box) throw new Error("not drawn");
-  // Below the line (the phone's own bar for copying is above it), inside the screen.
-  expect(box.y).toBeGreaterThan(words.y);
-  expect(box.x).toBeGreaterThanOrEqual(0);
-  expect(box.x + box.width).toBeLessThanOrEqual(412);
+  // Below the line (the phone's own bar for copying is above it), inside the screen: where it settles, read once
+  // the menu is placed, not while it is still being drawn (task 143).
+  await expect
+    .poll(async () => {
+      const words = await line.boundingBox();
+      const box = await bar.boundingBox();
+      if (!words || !box) return "not drawn";
+      return {
+        below: box.y > words.y,
+        inside: box.x >= 0 && box.x + box.width <= 412,
+      };
+    })
+    .toEqual({ below: true, inside: true });
   const bold = bar.getByRole("button", { name: "Negrita" });
   expect((await bold.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(40);
   await page.screenshot({ path: `${SHOTS}/phone-format.png` });
+  expect(await page.evaluate(() => String(document.getSelection()))).toBe("idea");
   await bold.tap();
   await expect(line).toHaveText("Una **idea** suelta");
   await expect(line.locator(".md-strong")).toHaveText("idea");
