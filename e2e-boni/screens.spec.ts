@@ -27,11 +27,17 @@ async function open(page: Page, agent: Record<string, unknown[]> = {}) {
     "Gastos",
   );
 }
-const shot = (page: Page, name: string) =>
-  expect(page).toHaveScreenshot(`${name}.png`, {
+/**
+ * The screen once nothing is in flight: the wait line (I-15) shows when a request at the start takes over 250 ms, and
+ * stays 500 ms; caught mid-way, a capture would hold a bar two pixels high over the top of the content.
+ */
+const shot = async (page: Page, name: string) => {
+  await expect(page.locator(".wait-line")).toHaveCount(0);
+  await expect(page).toHaveScreenshot(`${name}.png`, {
     animations: "disabled",
     maxDiffPixelRatio: 0.002,
   });
+};
 
 test("the start page (Gastos)", async ({ page }) => {
   await open(page);
