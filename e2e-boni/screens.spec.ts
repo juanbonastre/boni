@@ -7,7 +7,7 @@ import {
   MAP,
   MODELS,
 } from "./agent-scenarios.ts";
-import { ALL_DONE, step, testOf } from "./automation-data.ts";
+import { ALL_DONE, step, testOf, withRuns } from "./automation-data.ts";
 import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
@@ -252,6 +252,36 @@ test("AU-74 · the step's view under 1100 px: «Entrada | Parámetros | Salida»
   await shot(page, "automatizaciones-estrecho");
 });
 
+/** «Revisar pendientes» published, with its runs counted back from the fixed hour, its tab «Ejecuciones» open. */
+async function openRuns(page: Page, width: number, height: number) {
+  await page.setViewportSize({ width, height });
+  await page.clock.install({ time: FIXED });
+  await openApp(page, "/?still", {
+    automations: [withRuns(FIXED.getTime())],
+    agent: AUTOMATION_AGENT,
+  });
+}
+
+test("AU-99 · «Ejecuciones»: the list with its filters, a run's line and its canvas (automatizaciones-ejecuciones)", async ({
+  page,
+}) => {
+  await openRuns(page, 1440, 900);
+  await expect(page.locator(".sidebar").getByRole("list", { name: "Recientes" })).toHaveText(
+    "Gastos",
+  );
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Automatizaciones", exact: true })
+    .click();
+  await page.locator(".db-table").getByText("Revisar pendientes", { exact: true }).click();
+  await page.locator(".auto-card").first().waitFor();
+  await page.locator(".auto-head").getByRole("tab", { name: "Ejecuciones" }).click();
+  await expect(page.locator(".auto-runs-item")).toHaveCount(5);
+  await page.locator(".auto-run-canvas .auto-card").first().waitFor();
+  await still(page);
+  await shot(page, "automatizaciones-ejecuciones");
+});
+
 test.describe("on the phone", () => {
   test.use({ hasTouch: true, isMobile: true });
   async function openOnPhone(page: Page) {
@@ -280,6 +310,21 @@ test.describe("on the phone", () => {
     await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("bien · 7 pasos");
     await still(page);
     await shot(page, "automatizaciones-telefono");
+  });
+  test("AU-99 · «Ejecuciones» on the phone: the list first (automatizaciones-telefono-ejecuciones)", async ({
+    page,
+  }) => {
+    await openRuns(page, 360, 740);
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.getByText("Revisar pendientes", { exact: true }).first().tap();
+    await page.locator(".auto-card").first().waitFor();
+    await page.locator(".auto-head").getByRole("tab", { name: "Ejecuciones" }).tap();
+    await expect(page.locator(".auto-runs-item")).toHaveCount(5);
+    await shot(page, "automatizaciones-telefono-ejecuciones");
   });
   test("AU-74 · a step on the phone: one column, «Parámetros» to read (automatizaciones-telefono-paso)", async ({
     page,

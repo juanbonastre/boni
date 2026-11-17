@@ -179,3 +179,104 @@ export const testOf = (
     },
   },
 });
+
+/** A step's record in a run, as S2 keeps it (`RunStep`): its counts, never its rows. */
+const rec = (over: Record<string, unknown> = {}) => ({
+  state: "done",
+  in: { main: 1 },
+  out: { main: 1 },
+  ms: 40,
+  retries: 0,
+  failed: 0,
+  asked: 0,
+  ...over,
+});
+/** Every step of «Revisar pendientes» in a run: 128 books read, 3 and 125 proposed, the summary created. */
+const RUN_STEPS = {
+  s_inicio: rec({ in: {}, out: { main: 1 }, ms: 5 }),
+  s_01jbuscar: rec({ out: { main: 128 }, reads: [{ collection: "libros", rows: 128 }], ms: 180 }),
+  s_01jsi: rec({ in: { main: 128 }, out: { yes: 3, no: 125 } }),
+  s_01jmodificar: rec({
+    in: { main: 3 },
+    out: { main: 3 },
+    writes: { saved: 0, asked: 3, would: 0 },
+  }),
+  s_01jeliminar: rec({
+    in: { main: 125 },
+    out: { main: 125 },
+    writes: { saved: 0, asked: 125, would: 0 },
+  }),
+  s_01jcombinar: rec({ in: { a: 3, b: 125 }, out: { main: 1 } }),
+  s_01jcrear: rec({ writes: { saved: 1, asked: 0, would: 0 } }),
+};
+const LIMIT = { code: "run.limit", detail: { limit: "rowsWritten", max: 1000, got: 1001 } };
+const H = 3_600_000;
+const made = (collection: string, action: string, n: number) => ({
+  collection,
+  name: "Libros",
+  action,
+  n,
+});
+/**
+ * «Revisar pendientes» published twice, with five runs: one that wrote and proposed with data from outside, a test,
+ * one of version 1 stopped at a limit, one interrupted whose row changed since, and one of which only the summary is
+ * left (AU-103); `now` is the hour they are counted back from (a capture fixes it).
+ */
+export const withRuns = (now: number) => ({
+  ...TESTED,
+  published: { versions: 2 },
+  runs: [
+    {
+      id: "r_01jbien",
+      at: now - 2 * H,
+      version: 2,
+      trigger: "s_inicio",
+      fields: { minimo: 300 },
+      steps: RUN_STEPS,
+      rows: { s_01jbuscar: { "in:main": [{ json: { minimo: 300 } }], "out:main": books(128) } },
+      line: {
+        writes: [made("libros", "create", 1)],
+        asked: [made("libros", "update", 3), made("libros", "trash", 125)],
+        outside: true,
+      },
+    },
+    { id: "r_01jprueba", at: now - 3 * H, test: true, steps: RUN_STEPS },
+    {
+      id: "r_01jfallo",
+      at: now - 26 * H,
+      version: 1,
+      startedBy: "schedule",
+      state: "failed",
+      step: "s_01jmodificar",
+      error: { step: "s_01jmodificar", failure: LIMIT },
+      steps: {
+        ...RUN_STEPS,
+        s_01jmodificar: rec({
+          state: "failed",
+          in: { main: 3 },
+          out: {},
+          error: { failure: LIMIT },
+        }),
+      },
+    },
+    {
+      id: "r_01jcortada",
+      at: now - 50 * H,
+      state: "interrupted",
+      step: "s_01jsi",
+      steps: {
+        s_inicio: RUN_STEPS.s_inicio,
+        s_01jbuscar: RUN_STEPS.s_01jbuscar,
+        s_01jsi: rec({ state: "running", in: { main: 128 }, out: {} }),
+      },
+      line: { writes: [made("libros", "update", 2)], asked: [], outside: false },
+      changed: "Libro 2",
+    },
+    {
+      id: "r_01jresumen",
+      at: now - 30 * 24 * H,
+      steps: null,
+      line: { writes: [made("libros", "create", 1)], asked: [], outside: false },
+    },
+  ],
+});
