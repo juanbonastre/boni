@@ -32,7 +32,24 @@ import { OUTSIDE_INTEGRITY, TEST_ROWS_CHUNK } from "./automations.ts";
  * `running` and closed as `interrupted` (AU-190). What the run wrote in the collections is not here: it is in the
  * operation log, each operation with the run's id (`ops.run`), and «Deshacer lo que hizo» is the store's `undoRun`
  * (AU-18). None of these tables is in the operation log: no Undo of the store touches a run's record or a pin.
+ *
+ * Migration 30 (`automationRunsKeepMigration`, F14d S4) adds what a run told (`notice`, AU-102, AU-167), when its
+ * steps and rows were let go (`pruned`, AU-103: its row stays, with its line), and the list's counts (AU-61, AU-47):
+ *
+ *   ALTER TABLE automation_runs ADD COLUMN notice TEXT;
+ *   ALTER TABLE automation_runs ADD COLUMN pruned INTEGER;
+ *   CREATE INDEX automation_runs_whole ON automation_runs (automation, at) WHERE pruned IS NULL;
+ *   CREATE INDEX automation_runs_count ON automation_runs (automation, test, at, state);
+ *   CREATE TABLE automation_run_counts (automation TEXT PRIMARY KEY, runs INTEGER NOT NULL, last INTEGER)
+ *     WITHOUT ROWID;  -- kept by two triggers on automation_runs: every real run that did not miss its hour
  */
+
+/**
+ * The map's count of an automation's runs in a period (AU-47): real ones that ran, by the covering index, never a run
+ * read (A-29). Exported so its test reads the plan of the statement the store runs.
+ */
+export const AUTOMATION_RUNS_IN_SQL = `SELECT count(*) AS n FROM automation_runs INDEXED BY automation_runs_count
+  WHERE automation = ? AND test = 0 AND at >= ? AND at < ? AND state <> 'missed'`;
 
 /** How a run ends (AU-99, AU-190): it is `queued` and `running` before. */
 export type AutomationRunState =
@@ -82,6 +99,26 @@ export interface AutomationRunRow {
   doc: string | null;
   /** When «Deshacer lo que hizo» undid it (AU-18). */
   undone: number | null;
+  /** JSON of what it told, once it ended (AU-102, AU-167): `{ kind, text }`; null when it told nothing. */
+  notice: string | null;
+  /** When its steps and rows were let go (AU-103); its row stays. Null while it is whole. */
+  pruned: number | null;
+}
+
+/** How a run counts for the streak of failures (AU-102): how it ended and the version it ran. */
+export interface AutomationRunMark {
+  state: AutomationRunState;
+  version: number | null;
+}
+
+/** What is kept whole of an automation's runs (AU-103): `keep` real ones younger than `since`, and `tests` tests. */
+export interface AutomationRunsKeep {
+  keep: number;
+  since: number;
+  tests: number;
+  now: number;
+  /** How many runs one call lets go at most: each call is one short write (task 137). */
+  batch: number;
 }
 
 /** Which runs a page of the list holds (AU-99): all, the failed (and interrupted) real ones, or the tests. */
@@ -110,7 +147,16 @@ export interface AutomationRunsJournal {
   createAutomationRun(
     r: Omit<
       AutomationRunRow,
-      "ended" | "ms" | "step" | "error" | "line" | "undone" | "slot" | "proposal"
+      | "ended"
+      | "ms"
+      | "step"
+      | "error"
+      | "line"
+      | "undone"
+      | "slot"
+      | "proposal"
+      | "notice"
+      | "pruned"
     > & {
       slot?: number | null;
     },
@@ -145,6 +191,24 @@ export interface AutomationRunsJournal {
     end: Pick<AutomationRunRow, "state" | "ended" | "ms" | "step" | "error" | "line">,
   ): void;
   automationRun(id: string): AutomationRunRow | null;
+  /** What a run told when it ended (AU-102, AU-167), as JSON. */
+  setAutomationRunNotice(id: string, notice: string): void;
+  /**
+   * The run before this one (by `at` and id) that marks the streak of failures (AU-102): a real one that ended `done`,
+   * or one that started alone (`schedule`, not a retry) and ended failed, interrupted or missed. A failure by hand or
+   * a retry's is seen on its screen and marks nothing. Null when there is none.
+   */
+  streakMark(run: string): AutomationRunMark | null;
+  /**
+   * Lets go of the steps and rows of an automation's real runs no longer kept whole (AU-103), and drops whole its
+   * tests past the last `tests`. A run queued or running, and one whose proposal waits in the inbox (accepting reads
+   * what it asked from it), stay whole. One transaction; gives how many runs it touched (less than `batch` when nothing is left).
+   */
+  pruneAutomationRuns(automation: string, k: AutomationRunsKeep): number;
+  /** The list's «Ejecuciones» and «Última ejecución» (AU-61): every real run that did not miss its hour, by a table. */
+  automationRunCounts(): Map<string, { runs: number; last: number | null }>;
+  /** How many real runs of an automation were asked in `[from, to)`, missed hours left out, by the index (AU-47). */
+  automationRunsIn(automation: string, from: number, to: number): number;
   /** The run of an automation that is queued or running, if there is one: one at a time (AU-97). */
   openAutomationRun(automation: string): AutomationRunRow | null;
   /**
@@ -215,6 +279,44 @@ export const AUTOMATION_RUNS_MIGRATION = `CREATE TABLE IF NOT EXISTS automation_
      PRIMARY KEY (id, step, output, chunk)
    ) WITHOUT ROWID;`;
 
+/**
+ * Migration 30 (see the top of this file): what a run told, when it was pruned, and the counts, filled from the runs
+ * there are. It may run again on a database that has it, as 25.
+ */
+export function automationRunsKeepMigration(db: DatabaseSync): void {
+  const has = (col: string) =>
+    (db.prepare("PRAGMA table_info(automation_runs)").all() as { name: string }[]).some(
+      (c) => c.name === col,
+    );
+  if (!has("notice")) db.exec("ALTER TABLE automation_runs ADD COLUMN notice TEXT");
+  if (!has("pruned")) db.exec("ALTER TABLE automation_runs ADD COLUMN pruned INTEGER");
+  db.exec(`CREATE INDEX IF NOT EXISTS automation_runs_whole ON automation_runs (automation, at)
+       WHERE pruned IS NULL;
+     CREATE INDEX IF NOT EXISTS automation_runs_count ON automation_runs (automation, test, at, state);
+     CREATE TABLE IF NOT EXISTS automation_run_counts (
+       automation TEXT PRIMARY KEY, runs INTEGER NOT NULL, last INTEGER
+     ) WITHOUT ROWID;
+     CREATE TRIGGER IF NOT EXISTS automation_runs_counted AFTER INSERT ON automation_runs
+       WHEN NEW.test = 0 AND NEW.state <> 'missed'
+     BEGIN
+       INSERT INTO automation_run_counts (automation, runs, last) VALUES (NEW.automation, 1, NEW.at)
+         ON CONFLICT (automation) DO UPDATE
+         SET runs = runs + 1, last = max(coalesce(automation_run_counts.last, excluded.last), excluded.last);
+     END;
+     CREATE TRIGGER IF NOT EXISTS automation_runs_uncounted AFTER DELETE ON automation_runs
+       WHEN OLD.test = 0 AND OLD.state <> 'missed'
+     BEGIN
+       UPDATE automation_run_counts SET runs = runs - 1,
+         last = (SELECT max(at) FROM automation_runs
+                 WHERE automation = OLD.automation AND test = 0 AND state <> 'missed')
+       WHERE automation = OLD.automation;
+     END;
+     DELETE FROM automation_run_counts;
+     INSERT INTO automation_run_counts (automation, runs, last)
+       SELECT automation, count(*), max(at) FROM automation_runs WHERE test = 0 AND state <> 'missed'
+       GROUP BY automation;`);
+}
+
 /** Rows by output, 50 to a chunk, each chunk one JSON list: as a kept test's (automations.ts). */
 function putChunks(
   put: ReturnType<DatabaseSync["prepare"]>,
@@ -278,6 +380,8 @@ const runOf = (r: Record<string, unknown>): AutomationRunRow => ({
   line: text(r.line),
   doc: text(r.doc),
   undone: num(r.undone),
+  notice: text(r.notice),
+  pruned: num(r.pruned),
 });
 
 /** The journal's part for runs and pins, over the user's database. */
@@ -364,6 +468,96 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
           "UPDATE automation_runs SET state = ?, ended = ?, ms = ?, step = ?, error = ?, line = ? WHERE id = ?",
         )
         .run(e.state, e.ended, e.ms, e.step, e.error, e.line, id),
+    setAutomationRunNotice: (id, notice) =>
+      void db.prepare("UPDATE automation_runs SET notice = ? WHERE id = ?").run(notice, id),
+    streakMark: (run) => {
+      const me = db
+        .prepare("SELECT automation, at, rowid AS n FROM automation_runs WHERE id = ?")
+        .get(run) as { automation: string; at: number; n: number } | undefined;
+      if (!me) return null;
+      // Before it: asked earlier, or in the same millisecond and kept before it (ids are random within one).
+      const r = db
+        .prepare(
+          `SELECT state, version FROM automation_runs
+           WHERE automation = ? AND (at < ? OR (at = ? AND rowid < ?)) AND test = 0
+             AND (state = 'done' OR (started_by = 'schedule' AND retry_of IS NULL
+                                      AND state IN ('failed', 'interrupted', 'missed')))
+           ORDER BY at DESC, id DESC LIMIT 1`,
+        )
+        .get(me.automation, me.at, me.at, me.n) as Record<string, unknown> | undefined;
+      return r ? { state: r.state as AutomationRunState, version: num(r.version) } : null;
+    },
+    pruneAutomationRuns: (automation, k) =>
+      atomic(() => {
+        // The newest `n` of a kind, by the list's index: the edge of what stays whole. An hour that did not run is
+        // not one of the last 100 runs (it ran nothing), so it takes no place among them.
+        const edge = (test: 0 | 1, n: number) =>
+          db
+            .prepare(
+              `SELECT at, id FROM automation_runs WHERE automation = ? AND test = ?
+                 ${test === 0 ? "AND state <> 'missed'" : ""}
+               ORDER BY at DESC, id DESC LIMIT 1 OFFSET ?`,
+            )
+            .get(automation, test, n - 1) as { at: number; id: string } | undefined;
+        let left = k.batch;
+        const tests = edge(1, k.tests);
+        if (tests) {
+          const old = db
+            .prepare(
+              `SELECT id FROM automation_runs WHERE automation = ? AND test = 1
+                 AND (at < ? OR (at = ? AND id < ?)) AND state NOT IN ('queued', 'running') LIMIT ?`,
+            )
+            .all(automation, tests.at, tests.at, tests.id, left) as { id: string }[];
+          const rows = db.prepare("DELETE FROM automation_run_rows WHERE run = ?");
+          const steps = db.prepare("DELETE FROM automation_run_steps WHERE run = ?");
+          const runs = db.prepare("DELETE FROM automation_runs WHERE id = ?");
+          for (const { id } of old) {
+            rows.run(id);
+            steps.run(id);
+            runs.run(id);
+          }
+          left -= old.length;
+        }
+        if (left <= 0) return k.batch;
+        const real = edge(0, k.keep);
+        // Whole real runs past the last `keep`, or older than `since`, by the index of the whole ones.
+        const old = db
+          .prepare(
+            `SELECT id FROM automation_runs INDEXED BY automation_runs_whole
+             WHERE automation = ? AND pruned IS NULL AND test = 0 AND state NOT IN ('queued', 'running')
+               AND (at < ? ${real ? "OR at < ? OR (at = ? AND id < ?)" : ""})
+               -- What it asked is read from it when its proposal is accepted (proposal.ts): it waits whole.
+               AND (automation_runs.proposal IS NULL OR NOT EXISTS (SELECT 1 FROM proposals p
+                                                    WHERE p.id = automation_runs.proposal AND p.status = 'pending'))
+             LIMIT ?`,
+          )
+          .all(
+            ...((real
+              ? [automation, k.since, real.at, real.at, real.id, left]
+              : [automation, k.since, left]) as (string | number)[]),
+          ) as { id: string }[];
+        const rows = db.prepare("DELETE FROM automation_run_rows WHERE run = ?");
+        const steps = db.prepare("DELETE FROM automation_run_steps WHERE run = ?");
+        const mark = db.prepare("UPDATE automation_runs SET pruned = ? WHERE id = ?");
+        for (const { id } of old) {
+          rows.run(id);
+          steps.run(id);
+          mark.run(k.now, id);
+        }
+        return k.batch - left + old.length;
+      }),
+    automationRunCounts: () =>
+      new Map(
+        (
+          db.prepare("SELECT automation, runs, last FROM automation_run_counts").all() as {
+            automation: string;
+            runs: number;
+            last: number | null;
+          }[]
+        ).map((r) => [r.automation, { runs: Number(r.runs), last: num(r.last) }]),
+      ),
+    automationRunsIn: (automation, from, to) =>
+      Number((db.prepare(AUTOMATION_RUNS_IN_SQL).get(automation, from, to) as { n: number }).n),
     automationRun: (id) => {
       const r = db.prepare("SELECT * FROM automation_runs WHERE id = ?").get(id) as
         | Record<string, unknown>
