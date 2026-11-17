@@ -67,6 +67,11 @@ export interface FieldShape {
   type: FieldType;
   /** For a relation: the key of the collection it points to. */
   target?: string;
+  /**
+   * For an option (`select`, `multiselect`): the options it has, when the collections say them. An «Agente» writes
+   * only one of these (AU-52); the server's collections give them (S1), and a field without them is not checked.
+   */
+  options?: readonly string[];
 }
 /** A collection as validation and the steps need it: its fields by key. Names are the app's business. */
 export interface CollectionShape {

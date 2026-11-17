@@ -9,11 +9,12 @@
  * lists stay apart from `CODE_LIMITS`, `CODE_FAILURES` and `CODE_PROBLEMS` until the PR that builds saving joins them
  * (the screen has words for each entry).
  */
-import type { Label } from "@boni/entities";
+import type { Label, Labeled } from "@boni/entities";
 import { matchesFilters } from "@boni/views";
 import { type Fields, jsonBytes } from "./box.ts";
 import { actionOf, PERMISSION, PERMISSION_BORN } from "./catalogue.ts";
 import {
+  AGENT_TYPE,
   CODE_LIMITS,
   CODE_PARAMS,
   CODE_TYPE,
@@ -338,6 +339,17 @@ export function stepChanges(
       };
     });
   }
+  // An «Agente» can do all its connection does not have in «No» (AU-200): no analysis says less.
+  if (step.type === AGENT_TYPE)
+    return (step.connections ?? [])
+      .map((c) => ({
+        collection: c.collection,
+        actions: WRITE_ACTIONS.filter((a) => c[a] !== false).map((action) => ({
+          action,
+          mode: (c[action] as { mode: WriteMode }).mode,
+        })),
+      }))
+      .filter((c) => c.actions.length);
   const action = actionOf(step);
   const collection = step.params.collection;
   const writes = action?.effect === "write" ? COLLECTION_WRITES[action.key] : undefined;
@@ -357,7 +369,7 @@ export function stepChanges(
  * is the second door: it proposes what a model wrote and denies what no «Sí» opens (P2, P9, P14, P28).
  */
 export function consentOf(step: Step, collection: string, action: WriteAction): false | WriteMode {
-  if (step.type === CODE_TYPE) {
+  if (step.type === CODE_TYPE || step.type === AGENT_TYPE) {
     const cell = (step.connections ?? []).find((c) => c.collection === collection)?.[action];
     return cell ? cell.mode : false;
   }
@@ -499,6 +511,11 @@ export interface WriteInput {
    * what «Como mucho» counts on top of these requests (AU-196). Absent: none.
    */
   before?: (collection: string, action: WriteAction) => number;
+  /**
+   * An «Agente»'s create's fixed expressions (AU-52), resolved by the engine for the unit that asked each request, by
+   * the request's place: what a fixed value that is not a plain one gives. Absent, such a value is not written.
+   */
+  fixed?: readonly (Readonly<Record<string, Labeled<Cell>>> | undefined)[];
 }
 
 /** The key «Como mucho» counts by: one collection and one action. */
@@ -678,16 +695,19 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
       if (!own) throw new Error("a create with fixed values needs the automation's label");
       fields = { ...fields };
       for (const [field, v] of Object.entries(fixed)) {
-        // An expression is AU-52's (E3); validation refuses one until then, and nothing unchecked is written.
-        if (!literalCell(v)) throw request("field", { field });
+        // An expression is an «Agente»'s (AU-52), which the engine resolved for the unit; any other is not written.
+        const got: Labeled<Cell> | undefined = literalCell(v)
+          ? { value: v, label: own, derived: false }
+          : input.fixed?.[i]?.[field];
+        if (!got) throw request("field", { field });
         Object.defineProperty(fields, field, {
-          value: v,
+          value: got.value,
           enumerable: true,
           writable: true,
           configurable: true,
         });
         Object.defineProperty(values, field, {
-          value: { value: v, label: own, derived: false },
+          value: got,
           enumerable: true,
           writable: true,
           configurable: true,

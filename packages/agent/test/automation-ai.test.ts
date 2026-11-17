@@ -16,6 +16,14 @@ import {
   type ReachLimits,
   type StepReach,
 } from "../src/policy.ts";
+import {
+  type AgentCall,
+  type AgentRequest,
+  type Labelled,
+  type Planner,
+  runRounds,
+  valOf,
+} from "../src/rounds.ts";
 import type { ToolDef } from "../src/tools.ts";
 import { leaf, rec, type Val } from "../src/values.ts";
 import { testRegistry } from "./fixture.ts";
@@ -105,6 +113,29 @@ const ruled = (c: Call, origin = AUTOMATION, counters = fresh()) => {
 };
 const WRITES = [CREATE, UPDATE, TRASH] as const;
 
+/** One unit of an «Agente» as the engine sends it (rounds.ts), reading and writing, with «Texto» as its answer. */
+function agentCall(more: Partial<AgentCall> = {}): AgentCall {
+  return {
+    use: "agent",
+    model: null,
+    instructions: [{ json: "Revisa las tareas", label: own }],
+    rows: [],
+    connections: [{ collection: "ejemplo_tareas", read: true }],
+    answer: { kind: "text" },
+    reads: true,
+    maxRounds: 5,
+    today: "2026-11-17",
+    zone: "Europe/Madrid",
+    language: "es",
+    written: model,
+    modelCall: () => {},
+    called: () => {},
+    now: () => 0,
+    tool: async () => ({ rows: [] }),
+    ...more,
+  };
+}
+
 /** Only the arguments a tool declares, with a value for each it requires. */
 function pick(t: ToolDef, args: Record<string, Val>): Record<string, Val> {
   const out: Record<string, Val> = {};
@@ -147,12 +178,149 @@ describe("the policy for an automation's AI steps (F15)", () => {
     );
   });
 
-  it.todo(
-    "AU-56 · a round is a plan validated and decided call by call with the origin `automation`; a plan that asks, remembers or goes outside is refused",
-  );
-  it.todo(
-    "AU-198 · a plan that is not valid is asked again once within the round and then fails the step",
-  );
+  it("AU-56 · a round is a plan validated and decided call by call with the origin `automation`; a plan that asks, remembers or goes outside is refused", async () => {
+    // The engine's side, as the server's port will have it: each call of a round is the tool of the policy it is
+    // (a read, a create), asked with the origin `automation`, the step's type and its connection (AU-204, AU-205).
+    const decided: string[] = [];
+    const rows = [
+      { json: { id: "e_01ejemplo0000000000000001", titulo: "Ejemplo uno" }, label: own },
+      { json: { id: "e_01ejemplo0000000000000002", titulo: "Ejemplo dos" }, label: ext },
+    ];
+    const tool: AgentCall["tool"] = async (name, args) => {
+      const t = name === "find" ? QUERY : name === "create" ? CREATE : TRASH;
+      const values = name === "create" ? valOf(args.fields as Labelled) : undefined;
+      const call: Call = {
+        tool: t,
+        args: { type: leaf("ejemplo_tareas", own), ...(values ? { values } : {}) },
+        control: null,
+        flow: true,
+        byAgent: true,
+        reach: reach(t),
+      };
+      decided.push(`${name} ${ruled(call)}`);
+      if (name === "find") return { rows };
+      return { planned: "will create 1 row in ejemplo_tareas" };
+    };
+    const asked: AgentRequest[] = [];
+    const plans: unknown[] = [
+      {
+        version: 1,
+        steps: [{ id: "s1", op: "call", tool: "find", args: { collection: "ejemplo_tareas" } }],
+      },
+      {
+        version: 1,
+        steps: [
+          {
+            id: "s1",
+            op: "call",
+            tool: "create",
+            args: {
+              collection: "ejemplo_tareas",
+              fields: { fn: "obj", args: [{ lit: "titulo" }, { ref: "$round1.s1[1].titulo" }] },
+            },
+          },
+          { id: "s2", op: "call", tool: "answer", args: { texto: { lit: "Hecho" } } },
+        ],
+      },
+    ];
+    const reply = await runRounds(agentCall({ tool }), async (r) => {
+      asked.push(r);
+      return { plan: plans.shift(), model: "ejemplo-modelo" };
+    });
+    expect(reply).toMatchObject({ rounds: 2, answer: { texto: { json: "Hecho" } } });
+    // The read is allowed; the create carries a title read from outside, so without the cell's «Sí» it is proposed.
+    expect(decided).toEqual(["find allow P1", "create propose P28"]);
+    // What came back to the second round: its own row seen, the one from outside as a handle only.
+    expect(asked[1]?.rounds).toEqual([
+      {
+        s1: [
+          { id: "e_01ejemplo0000000000000001", titulo: "Ejemplo uno" },
+          {
+            $handle: "$round1.s1[1]",
+            integrity: "external",
+            kind: "record",
+            fields: ["id", "titulo"],
+          },
+        ],
+      },
+    ]);
+
+    // A plan that asks, one that remembers, one that sends: none is a round's; each is asked again once, then fails.
+    for (const bad of [
+      { id: "s1", op: "ask", control: "text", prompt: { lit: "¿Qué?" } },
+      { id: "s1", op: "call", tool: "memory.save", args: { text: { lit: "x" } } },
+      { id: "s1", op: "call", tool: "mail.send", args: { to: { lit: "ejemplo.ana@example.com" } } },
+      { id: "s1", op: "read", reader: "summarize", input: { ref: "$rows" } },
+    ]) {
+      let calls = 0;
+      const got = await runRounds(agentCall({ tool, modelCall: () => void calls++ }), async () => ({
+        plan: { version: 1, steps: [bad] },
+        model: "ejemplo-modelo",
+      }));
+      expect(got).toMatchObject({ fault: "agent.plan", rounds: 1 });
+      expect(calls).toBe(2);
+    }
+  });
+  it("AU-198 · a plan that is not valid is asked again once within the round and then fails the step", async () => {
+    const tool: AgentCall["tool"] = async () => ({ rows: [] });
+    const answer = {
+      version: 1,
+      steps: [{ id: "s1", op: "call", tool: "answer", args: { texto: { lit: "Listo" } } }],
+    };
+    const tooMany = {
+      version: 1,
+      steps: Array.from({ length: 41 }, (_, i) => ({
+        id: `s${i + 1}`,
+        op: "call",
+        tool: "count",
+        args: { collection: "ejemplo_tareas" },
+      })),
+    };
+    // Not a plan, then a plan: two calls, one round, the answer; the second call was told why.
+    const asked: AgentRequest[] = [];
+    let calls = 0;
+    const scripted =
+      (plans: unknown[]): Planner =>
+      async (r) => {
+        asked.push(r);
+        return { plan: plans.shift(), model: "ejemplo-modelo" };
+      };
+    const ok = await runRounds(
+      agentCall({ tool, modelCall: () => void calls++ }),
+      scripted(["no", answer]),
+    );
+    expect(ok).toMatchObject({ rounds: 1, answer: { texto: { json: "Listo" } } });
+    expect(calls).toBe(2);
+    expect(asked[1]?.again).toEqual({ fault: "plan", errors: ["plan: not-a-plan"] });
+    // Over the 40 steps of P12, twice: the step fails with `agent.plan`, after two calls and nothing run.
+    calls = 0;
+    let ran = 0;
+    const bad = await runRounds(
+      agentCall({
+        tool: async () => {
+          ran++;
+          return { rows: [] };
+        },
+        modelCall: () => void calls++,
+      }),
+      scripted([tooMany, tooMany]),
+    );
+    expect(bad).toMatchObject({ fault: "agent.plan", errors: ["plan: too-many-steps"], rounds: 1 });
+    expect([calls, ran]).toEqual([2, 0]);
+    // The call that would pass «Llamadas a modelos» throws, and the rounds stop there, untouched.
+    const limit = new Error("run.limit");
+    await expect(
+      runRounds(
+        agentCall({
+          tool,
+          modelCall: () => {
+            throw limit;
+          },
+        }),
+        scripted([answer]),
+      ),
+    ).rejects.toBe(limit);
+  });
 
   it("AU-165 · the policy changes in two places only: the rows of AU-204 and P29; every other rule answers this origin as before", () => {
     // A call inside its connection is answered as the same call without one, for every origin and every tool: P29
