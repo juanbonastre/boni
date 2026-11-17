@@ -7,6 +7,7 @@ import { SYS } from "@boni/views";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCollection, DataError, flowRowOf, listRows } from "./data.ts";
 import {
+  automationTriggerWords,
   createFlowRow,
   deleteFlowRow,
   restoreFlowRow,
@@ -134,6 +135,25 @@ describe("«Flujos» as a collection", () => {
     expect(words({ schedule: { every: "hour", at: "00:15" } })).toBe("Cada hora a y 15");
     expect(words({ schedule: { every: "hour", at: "00:00" } })).toBe("Cada hora");
     expect(words({ manual: true })).toBe("Disparado por el usuario");
+  });
+
+  it("AU-61 AU-114 · «Se inicia» of a published «Programada» says its hours, from the column kept at publishing; unpublished it says «Programada»", () => {
+    expect(automationTriggerWords("schedule")).toBe("Programada");
+    const kept = JSON.stringify([
+      {
+        step: "s_programada",
+        rules: [
+          { every: "day", at: "08:00" },
+          { every: "week", at: "09:00", day: 1 },
+        ],
+      },
+    ]);
+    expect(automationTriggerWords("schedule", kept)).toBe(
+      "Cada día a las 08:00 · Cada lunes a las 09:00",
+    );
+    expect(automationTriggerWords("schedule", "no es json")).toBe("Programada");
+    expect(automationTriggerWords("manual", kept)).toBe("Disparado por el usuario");
+    expect(automationTriggerWords(null)).toBe("—");
   });
 
   it("a row's name and state change its flow; Boni's keep their name and are never deleted", () => {

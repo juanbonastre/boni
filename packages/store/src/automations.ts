@@ -126,8 +126,14 @@ export interface AutomationTestRow {
 
 export interface AutomationsJournal {
   /** The automations not deleted, the newest first, each with its draft's name, trigger, `rev` and `updated`. */
+  /**
+   * Every automation not deleted, with its draft's name and trigger, and its published version's «Programada» hours
+   * (`schedule`, as `publishAutomation` keeps them; null with none), so the list says them (AU-61, AU-114).
+   */
   automations(): (AutomationRow &
-    Pick<AutomationDraftRow, "name" | "trigger" | "rev" | "updated">)[];
+    Pick<AutomationDraftRow, "name" | "trigger" | "rev" | "updated"> & {
+      schedule: string | null;
+    })[];
   /** One automation, deleted or not, or null. */
   automation(id: string): AutomationRow | null;
   /** A new automation with its first draft (`rev` 1), in one transaction. */
@@ -341,7 +347,8 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
       (
         db
           .prepare(
-            `SELECT a.id, a.by, a.created, a.deleted, a.published, a.enabled, d.name, d.trigger, d.rev, d.updated
+            `SELECT a.id, a.by, a.created, a.deleted, a.published, a.enabled, a.schedule, d.name, d.trigger, d.rev,
+                    d.updated
              FROM automations a JOIN automation_drafts d ON d.id = a.id
              WHERE a.deleted = 0 ORDER BY a.created DESC, a.id DESC`,
           )
@@ -350,6 +357,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
         ...row(r),
         name: r.name as string,
         trigger: (r.trigger as string | null) ?? null,
+        schedule: (r.schedule as string | null) ?? null,
         rev: Number(r.rev),
         updated: Number(r.updated),
       })),

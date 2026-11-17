@@ -62,6 +62,8 @@ export interface FakeRun {
   steps?: Record<string, Record<string, unknown>> | null;
   rows?: Record<string, Record<string, Record<string, unknown>[]>>;
   wrote?: boolean;
+  /** What it told when it ended (S4): a failure of a streak, or what a run that started alone saved. */
+  notice?: { kind: "failed" | "wrote"; text: string } | null;
   changed?: string;
   advancing?: boolean;
 }
@@ -1191,6 +1193,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           undone: r.undone ?? null,
           retryOf: r.retryOf ?? null,
           slot: null,
+          notice: now.done ? (r.notice ?? null) : null,
         };
       };
       const runViewOf = (a: AutoHere, r: AutoHere["runs"][number]) => {

@@ -26,6 +26,7 @@ import {
   namedRow,
   namer,
   REASONS,
+  ruleWords,
   said,
   summaryWords,
   uniqueName,
@@ -229,6 +230,28 @@ describe("the words of «Automatizaciones»", () => {
         expr: "{{ $json.sum_importe }}",
       }),
     ).toBe("Suma de Importe");
+  });
+  it("AU-114 · a «Programada»'s rules are said as the flows of before say theirs, on its card the first and how many more", () => {
+    const es = translator("es");
+    expect(ruleWords(es, { every: "day", at: "08:00" })).toBe("Cada día a las 08:00");
+    expect(ruleWords(es, { every: "week", at: "09:00", day: "monday" })).toBe(
+      "Cada lunes a las 09:00",
+    );
+    expect(ruleWords(es, { every: "week", at: "10:30", day: "sunday" })).toBe(
+      "Cada domingo a las 10:30",
+    );
+    expect(ruleWords(es, { every: "hour", at: "00:00" })).toBe("Cada hora");
+    expect(ruleWords(es, { every: "hour", at: "00:15" })).toBe("Cada hora a y 15");
+    const step = { id: "s_p", name: "Programada", type: "schedule", params: {} } as unknown as Step;
+    const say = summaryWords(es, {}, step);
+    const rules = { key: "rules", control: "list", place: "shown", columns: [] } as never;
+    expect(say(rules, [{ every: "day", at: "08:00" }] as never)).toBe("Cada día a las 08:00");
+    expect(
+      say(rules, [
+        { every: "day", at: "08:00" },
+        { every: "week", at: "09:00", day: "monday" },
+      ] as never),
+    ).toBe("Cada día a las 08:00 y 1 más");
   });
   it("AU-21 · wherever a row's value is shown, a choice is said by its option's name, also inside a list and in the value before of «Haría esto»; naming 3,000 rows of 40 fields stays within a frame a page, and a row with no choice is the same row (A-15)", () => {
     const label = {

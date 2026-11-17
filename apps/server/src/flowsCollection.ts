@@ -69,12 +69,36 @@ const isBoni = (store: UserStore, id: string) => !renamable(store, id);
  */
 const AUTOMATION_TRIGGERS: Readonly<Record<string, string>> = {
   manual: "Disparado por el usuario",
-  // F14d S3 (AU-114); the words its hours make («Cada día a las 08:00») are the screens' (P3).
+  // F14d (AU-114): «Programada» until it is published; then its hours (`schedule`).
   schedule: "Programada",
 };
 export const NO_TRIGGER = "—";
-export const automationTriggerWords = (type: string | null): string =>
-  type === null ? NO_TRIGGER : (AUTOMATION_TRIGGERS[type] ?? type);
+/**
+ * `schedule`: the published version's «Programada» hours as the store keeps them (`scheduleColumn`, the flows' own
+ * `Schedule` shape), said as a flow's are («Cada día a las 08:00 · Cada lunes a las 09:00»).
+ */
+export function automationTriggerWords(
+  type: string | null,
+  schedule: string | null = null,
+): string {
+  if (type === null) return NO_TRIGGER;
+  if (type === "schedule" && schedule) {
+    const words = hoursWords(schedule);
+    if (words) return words;
+  }
+  return AUTOMATION_TRIGGERS[type] ?? type;
+}
+function hoursWords(schedule: string): string {
+  try {
+    const entries = JSON.parse(schedule) as { rules?: unknown[] }[];
+    return entries
+      .flatMap((e) => (Array.isArray(e?.rules) ? e.rules : []))
+      .map((rule) => triggerWords({ schedule: rule }, () => null))
+      .join(" · ");
+  } catch {
+    return "";
+  }
+}
 
 function typeOf(triggers: SelectOption[], whose: SelectOption[]): TypeDef {
   return {
@@ -131,7 +155,7 @@ export function flowsCollection(store: UserStore): { type: TypeDef; rows: Entity
       type: SYS_FLOWS,
       values: {
         [F.title]: a.name,
-        [F.trigger]: triggerOption(automationTriggerWords(a.trigger)),
+        [F.trigger]: triggerOption(automationTriggerWords(a.trigger, a.schedule)),
         // AU-194: «Sin publicar» until its first version; then the switch says it.
         [F.state]: a.published === null ? F.unpublished : a.enabled ? F.on : F.off,
         [F.runs]: runs?.runs ?? 0,

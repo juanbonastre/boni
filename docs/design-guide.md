@@ -1156,8 +1156,12 @@ contraseña ni un código aquí» under a question.
   of «Nueva» there is no «Guardado» and no «⋯» (there is nothing saved yet); its panel «Añadir un paso» asks «¿Cómo
   empieza?» with a row per trigger of the catalogue («Disparado por el usuario» in F14b; «Programada» from F14d S3,
   whose panel is a list «Cuándo» of rules, each «Repetir» (Cada hora, Cada día, Cada semana), «A las» (the
-  browser's hour field; with «Cada hora» only its minutes count) and «Día» (read only with «Cada semana»)), and
-  choosing one makes the automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
+  browser's hour field; with «Cada hora» only its minutes count) and «Día» (asked only with «Cada semana»). Each rule
+  is a row that says itself as the flows of before say theirs («Cada día a las 08:00», «Cada lunes a las 09:00»,
+  «Cada hora», «Cada hora a y 15»; F14d P3), and opens to its fields; «Borrar» is off while it is the only one, and
+  with none «Probar paso» says «Falta: Cuándo». Its card says the first rule, «Cada día a las 08:00 y 1 más» when there
+  are more, and once published the list's «Se inicia» says them all, from the hours kept at publishing), and choosing
+  one makes the automation. «Duplicar» makes «<nombre> (copia)», with the same steps and places, and opens it; «Eliminar» does not
   ask: it goes back to the list without the row, and its notice says «Nombre» eliminada with «Deshacer». «Probar» is
   at the bottom of the canvas (E, below). Once it exists, the header has the tabs «Editor | Ejecuciones» (the
   app's `.segmented`, after the spacer, on the phone too); «Ejecuciones» is below.
@@ -1192,11 +1196,14 @@ contraseña ni un código aquí» under a question.
   newest first and fifty at a time with «Ver más»: each a row of three lines, when («hoy, 09:12», «ayer, 19:44»,
   «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
   en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra»), and who with which version, muted («Programada · versión
-  3 · reintento», «Prueba del borrador»). How long it took is said of every run that ended; «Bien» is the word of a
+  3 · reintento», «Prueba del borrador»; one started by its «Programada» is «A su hora · versión 3», and an hour it
+  missed is «No corrió: Boni estaba apagado a su hora», with neither «Reintentar» nor «Deshacer»). How long it took is said of every run that ended; «Bien» is the word of a
   step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date
   in full, its line («Bien · 0,9 s · Iniciada por ti · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
   en Libros · con datos de fuera»; a collection gone is «una colección que ya no está»), why it failed in the app's
-  words, «Deshecha hoy, 10:20» once undone; then «Ver cada paso», «Deshacer lo que hizo» (only when it wrote and is
+  words, «Deshecha hoy, 10:20» once undone, and what the run told, as the server wrote it and painted as plain text
+  («Avisó: …»: a streak of failures, or a run that saved alone; decision 17: nothing pops up for what a «Programada»
+  saved, it is said here, «Deshacer lo que hizo» beside it); then «Ver cada paso», «Deshacer lo que hizo» (only when it wrote and is
   not undone), «Reintentar» (not for a test), «Cambiar el límite» (stopped at a limit: the editor's «Ajustes» on that
   number) and «Abrir en el editor con estos datos» (the editor, its trigger open with that run's output pinned).
   Under the bar the run's canvas: the editor's own over the document it ran, each step with its pill and its rows on

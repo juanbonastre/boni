@@ -161,15 +161,29 @@ describe("what «Ejecuciones» says of a run", () => {
       "Interrumpida en «Buscar facturas»",
     );
     expect(howWords(es, "es", summary({ state: "queued" }), names)).toBe("En cola, detrás de otra");
+    // An hour a «Programada» missed with the server off (AU-114).
+    expect(howWords(es, "es", summary({ state: "missed", ms: null }), names)).toBe(
+      "No corrió: Boni estaba apagado a su hora",
+    );
     // A state a newer server gives is said as a failure, never as nothing.
     expect(howWords(es, "es", summary({ state: "nueva" as never }), names)).toBe("Falló");
   });
-  it("AU-99 · AU-100 · who started it and which version ran, and a retry says so", () => {
+  it("AU-99 · AU-100 · AU-114 · who started it and which version ran, one started by its «Programada» «A su hora», and a retry says so", () => {
     expect(whoWords(es, summary({ version: 3 }))).toBe("Iniciada por ti · versión 3");
     expect(whoWords(es, summary({ version: 3, startedBy: "schedule", retryOf: "r_00" }))).toBe(
-      "Programada · versión 3 · reintento",
+      "A su hora · versión 3 · reintento",
     );
     expect(whoWords(es, summary({ test: true }))).toBe("Prueba del borrador");
+  });
+  it("AU-102 · what a run told and whether only its summary is left come from the server's answer; anything else is no notice", () => {
+    const told = { kind: "wrote", text: "«Repaso» creó 1 fila en Tareas." };
+    expect(runSummaryOf({ id: "r_1", notice: told, pruned: 5 })).toMatchObject({
+      notice: told,
+      pruned: 5,
+    });
+    expect(runSummaryOf({ id: "r_1", notice: { kind: "otro", text: "x" } }).notice).toBeNull();
+    expect(runSummaryOf({ id: "r_1", notice: "texto" }).notice).toBeNull();
+    expect(runSummaryOf({ id: "r_1" })).toMatchObject({ notice: null, pruned: null });
   });
   it("AU-99 · what it did in one line, with «con datos de fuera»; a proposal is counted and nothing more is promised", () => {
     const names = (k: string) => (k === "c_tareas" ? "Tareas" : undefined);

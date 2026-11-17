@@ -144,7 +144,13 @@ export function summaryOf(
 export function missingOf(step: Step): ParamSpec[] {
   return rowsOf(step)
     .map((r) => r.param)
-    .filter((p) => p.required && isEmpty(paramValue(step, p)));
+    .filter((p) => {
+      const v = paramValue(step, p);
+      // A list under its «min» is as empty as a required one (the server's check refuses it too): a «Programada» with
+      // no rule (AU-114).
+      const few = p.control === "list" && (Array.isArray(v) ? v.length : 0) < (p.min ?? 0);
+      return (p.required && isEmpty(v)) || few;
+    });
 }
 
 /** Nothing written: no value, an empty text, an empty list. An expression is a value, even before it is resolved. */

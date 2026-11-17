@@ -45,7 +45,6 @@ import {
   conditionFields,
   conditionFieldsOf,
   fieldsOut,
-  isEmpty,
   knownFields,
   labelsOf,
   markedOf,
@@ -57,7 +56,7 @@ import {
   summaryOf,
 } from "../automations/panel.ts";
 import { change, type EditorState, undo } from "../automations/state.ts";
-import { DO, KEY, labelWord, type Namer, summaryWords } from "../automations/words.ts";
+import { DO, entryWords, KEY, labelWord, type Namer, summaryWords } from "../automations/words.ts";
 import type { DataType as AppType, DataField } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
@@ -283,15 +282,10 @@ function ListControl({ param, value, set, path, label }: ControlProps) {
   if (param.control !== "list") return null;
   const rows = entriesOf(value);
   const columns = param.columns.filter((c) => c.place !== "hidden");
-  const say = summaryWords(v.t, {}, v.step);
-  const line = (r: Record<string, ParamValue>) =>
-    columns
-      .map((c) => {
-        const x = r[c.key];
-        return x === undefined || isEmpty(x) ? "" : say(c, x);
-      })
-      .filter(Boolean)
-      .join(" · ");
+  // A column with `when` is asked only while its row holds one of those values (a «Programada»'s day, AU-114).
+  const shown = (r: Record<string, ParamValue>) =>
+    columns.filter((c) => !c.when || c.when.in.includes(String(r[c.when.param])));
+  const line = (r: Record<string, ParamValue>) => entryWords(v.t, v.step, shown(r), r);
   const put = (i: number, key: string, x: ParamValue, typing?: string) =>
     set(
       rows.map((r, j) => (j === i ? { ...r, [key]: x } : r)),
@@ -325,7 +319,7 @@ function ListControl({ param, value, set, path, label }: ControlProps) {
           </div>
           {open === i && (
             <div className="auto-entry-body">
-              {columns.map((c) => {
+              {shown(r).map((c) => {
                 const Painted = PARAM_CONTROLS[c.control];
                 const name = v.t(KEY.param(v.step.type, c.key));
                 return (

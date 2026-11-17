@@ -448,6 +448,10 @@ function RunDetail({
             {did ? ` · ${did}` : ""}
           </span>
           {why && <span className="auto-run-why">{why}</span>}
+          {/* What it told when it ended (AU-102, AU-167): the server's words, painted as text. */}
+          {r.notice && (
+            <span className="auto-run-notice">{t("auto.run.notice", { text: r.notice.text })}</span>
+          )}
           {r.undone !== null && (
             <span className="auto-run-undone">
               {t("auto.run.undone", { when: whenWords(t, lang, zone, r.undone, now) })}
