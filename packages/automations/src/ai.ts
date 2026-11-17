@@ -5,6 +5,7 @@
 // schemas); a test gives a scripted one. Nothing here imports a provider of models (A-02), and nothing a reader answers
 // is trusted: the engine checks it again against the step's own closed shape (`answerOf`).
 import { join, type Label, label as makeLabel } from "@boni/entities";
+import type { AgentCall, AgentReply } from "./agent.ts";
 import { citationsIn, type Scope } from "./expression.ts";
 import { StepFault } from "./failures.ts";
 import type { ParamValue, Step } from "./format.ts";
@@ -74,9 +75,14 @@ export interface ReaderCall {
  */
 export type ReaderReply = { answer: unknown; model: string } | { refused: string; model?: string };
 
-/** How the engine calls a model (`RunDeps.ai`, §7): one reader call at a time. E3 adds a round of the «Agente». */
+/**
+ * How the engine calls a model (`RunDeps.ai`, §7): one reader call at a time, and one «Agente»'s unit of work, whose
+ * rounds the port runs with packages/agent's `runRounds` (each round's call through `AgentCall.modelCall`). A port
+ * without `agent` runs no «Agente»: its units fail with `ai.unavailable`.
+ */
 export interface AiPort {
   read(call: ReaderCall): Promise<ReaderReply>;
+  agent?(call: AgentCall): Promise<AgentReply>;
 }
 
 // ---------------------------------------------------------------- what goes wrong
@@ -103,6 +109,12 @@ export const AI_FAILURES = [
    * more than `EXTRACT_FIELDS_MAX`, a key twice or a type it does not know), "instructions" (empty).
    */
   "ai.params",
+  /** An «Agente»'s plan was not one twice in a round (AU-198). `detail.errors`: how many problems the last had. */
+  "agent.plan",
+  /** «Rondas máximas» (AU-58) passed with no answer: nothing of the unit is saved (AU-198). */
+  "agent.rounds",
+  /** An «Agente»'s answer did not fit «Respuesta» twice (AU-53). */
+  "agent.reply",
 ] as const;
 export type AiFailureCode = (typeof AI_FAILURES)[number];
 export interface AiFailure {
@@ -218,8 +230,8 @@ function optionsOf(v: Cell): string[] | null {
   return out.length === v.length && new Set(out).size === out.length ? out : null;
 }
 
-/** «Extraer datos»'s fields, as Juan wrote them: null when they are not what AU-53 says. */
-function fieldsOf(v: Cell): ReaderField[] | null {
+/** «Extraer datos»'s fields, and an «Agente»'s «Campos», as Juan wrote them: null when they are not what AU-53 says. */
+export function fieldsOf(v: Cell): ReaderField[] | null {
   if (!Array.isArray(v) || !v.length || v.length > EXTRACT_FIELDS_MAX) return null;
   const out: ReaderField[] = [];
   for (const f of v) {

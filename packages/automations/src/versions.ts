@@ -7,7 +7,7 @@
  * collections hold outside values today, which steps were tested) comes in as arguments.
  */
 import { actionOf, isTrigger } from "./catalogue.ts";
-import { CODE_PARAMS, CODE_TYPE } from "./code.ts";
+import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { permissions } from "./connections.ts";
 import { citationsIn, codeParts } from "./expression.ts";
 import {
@@ -266,6 +266,11 @@ export interface Ability {
   how?: AbilityHow;
   /** «con datos de fuera»: some step that does it with «Sí» can receive something from outside (decision 11). */
   outside?: true;
+  /**
+   * «decide la IA» (AU-200): an «Agente» does it, so which rows and which values are its model's choice, inside its
+   * connection. The connection's «Como mucho» is the screen's to say, read from the step.
+   */
+  byAgent?: true;
   /** The ids of the steps that do it, sorted. */
   steps: string[];
 }
@@ -294,13 +299,13 @@ const ACTION_ORDER = ["read", ...WRITE_ACTIONS] as const;
  * Every step counts, the ones no trigger reaches too: it never says less than a version can do.
  */
 export function abilities(automation: Automation, context: AbilitiesContext): Ability[] {
-  type Line = { how?: AbilityHow; outside: boolean; steps: Set<string> };
+  type Line = { how?: AbilityHow; outside: boolean; byAgent: boolean; steps: Set<string> };
   const lines = new Map<string, Line>();
   const line = (collection: string, action: Ability["action"]) => {
     const k = JSON.stringify([collection, action]);
     let l = lines.get(k);
     if (!l) {
-      l = { outside: false, steps: new Set() };
+      l = { outside: false, byAgent: false, steps: new Set() };
       lines.set(k, l);
     }
     return l;
@@ -311,8 +316,13 @@ export function abilities(automation: Automation, context: AbilitiesContext): Ab
   for (const t of touches(automation))
     if (t.effect === "read") line(t.collection, "read").steps.add(t.step);
   for (const step of automation.steps) {
+    const agent = step.type === AGENT_TYPE;
     for (const p of permissions(step.connections ?? []))
-      if (p.action === "read") line(p.collection, "read").steps.add(step.id);
+      if (p.action === "read") {
+        const l = line(p.collection, "read");
+        l.steps.add(step.id);
+        if (agent) l.byAgent = true;
+      }
     for (const change of stepChanges(step, context))
       for (const a of change.actions) {
         if (a.mode === false) continue;
@@ -322,6 +332,7 @@ export function abilities(automation: Automation, context: AbilitiesContext): Ab
         l.steps.add(step.id);
         if (l.how === undefined || rank[how] > rank[l.how]) l.how = how;
         if (a.mode === "yes" && fromOutside.has(step.id)) l.outside = true;
+        if (agent) l.byAgent = true;
       }
   }
   return [...lines]
@@ -332,6 +343,7 @@ export function abilities(automation: Automation, context: AbilitiesContext): Ab
         action,
         ...(l.how ? { how: l.how } : {}),
         ...(l.outside ? { outside: true as const } : {}),
+        ...(l.byAgent ? { byAgent: true as const } : {}),
         steps: [...l.steps].sort(byCodeUnit),
       };
     })

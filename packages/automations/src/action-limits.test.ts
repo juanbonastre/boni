@@ -3,11 +3,13 @@
 // gives back (AU-48, AU-52, AU-171, AU-196). They are checked on the stored connection in the engine
 // (`insideConnection`, `applyWrites`), for a «Código» here and for an «Agente» alike (E3 saves through the same
 // door), with a store per test, generated ids and 3,000 rows where a count is bounded (A-15). An «Agente»'s call is
-// also checked by the policy (P29, packages/agent/test/automation-ai.test.ts). AU-52 is E3's.
+// also checked by the policy (P29, packages/agent/test/automation-ai.test.ts). AU-52's run with a scripted model
+// (`agent.test-util.ts`).
 import type { Label } from "@boni/entities";
 import { label } from "@boni/entities";
 import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
+import { analyst, answer, call, lit, obj, plan, scripted } from "./agent.test-util.ts";
 import { collection, ids, knowing, sketch } from "./automation.test-util.ts";
 import type { Box, BoxJob, Evaluated } from "./box.ts";
 import { AGENT_TYPE, CODE_TYPE, CodeFault, type WriteAction } from "./code.ts";
@@ -236,12 +238,123 @@ describe("the limits of a write action (F15)", () => {
       ).toEqual([["connection.limits", "field"]]);
   });
 
-  it.todo(
-    "AU-52 · the fields control gives `fields` (those the AI decides) and `fixed` (fixed values and expressions); an unmarked field is never written",
-  );
-  it.todo(
-    "AU-52 · an option the field does not have, or a related row the step did not read in this run, is refused",
-  );
+  it("AU-52 · the fields control gives `fields` (those the AI decides) and `fixed` (fixed values and expressions); an unmarked field is never written", async () => {
+    // An «Agente» run row by row over two of his tasks: it decides the note; the state is fixed by an expression of
+    // the row it runs for; the amount is neither, so the AI cannot write it.
+    const creating = conn({
+      create: {
+        mode: "yes",
+        limit: 20,
+        fields: [note],
+        fixed: { [state]: { expr: `{{ $json.${state} }}` } },
+      } as Connection["create"],
+    });
+    const ai = scripted((_, n) => {
+      const fields =
+        n === 1
+          ? obj(lit(note), lit("nota propuesta"))
+          : obj(lit(note), lit("nota propuesta"), lit(amount), lit(7));
+      return plan(call("s1", "create", { collection: lit(tasks.key), fields }), answer("s2"));
+    });
+    const { automation, id } = analyst({ mode: "perRow" }, [creating], tasks.key);
+    const st = store([tasks], { [tasks.key]: ROWS(2) }, ids(131));
+    const e = await run(
+      {
+        automation,
+        trigger: automation.steps[0]?.id as string,
+        fields: { json: {}, label: OWN },
+        test: false,
+      },
+      deps({ collections: st, ai: ai.port }),
+    );
+    expect(e.state).toBe("done");
+    // The first row's create is saved with its state from the expression; the second named the amount and was
+    // refused, told to the model, and wrote nothing.
+    const made = st.rows(tasks.key).slice(2);
+    expect(made.map((r) => r.json)).toEqual([{ [note]: "nota propuesta", [state]: "cerrada" }]);
+    expect(
+      e.steps[id]?.agent?.units.map((u) => u.lines.map((l) => ("why" in l ? l.why : l.op))),
+    ).toEqual([["create"], ["outside-fields"]]);
+    // A fixed value that is an expression is the «Agente»'s only, and a line goes only to a field it decides.
+    const agent = { id: "s_ejemplo", type: AGENT_TYPE, connections: [] } as unknown as Step;
+    const problems = (connection: Connection, step = agent) =>
+      connectionProblems({ ...step, connections: [connection] }, knowing(tasks)).map((x) => [
+        x.code,
+        x.detail?.why,
+      ]);
+    expect(problems(creating)).toEqual([]);
+    const lined = (lines: Record<string, unknown>) =>
+      conn({ create: { mode: "yes", limit: 20, fields: [note], lines } as Connection["create"] });
+    expect(problems(lined({ [note]: "Una frase corta" }))).toEqual([]);
+    expect(problems(lined({ [amount]: "Un número" }))).toEqual([["connection.limits", "field"]]);
+    expect(problems(lined({ [note]: 3 }))).toEqual([["connection.limits", "field"]]);
+    expect(problems(creating, { ...agent, type: CODE_TYPE } as Step)).toEqual([
+      ["connection.limits", "field"],
+    ]);
+  });
+
+  it("AU-52 · an option the field does not have, or a related row the step did not read in this run, is refused", async () => {
+    const more = ids(132);
+    const groups = collection(more, ["text"]);
+    const raw = collection(more, ["text", "select", "relation"]);
+    const shaped = {
+      key: raw.key,
+      fields: raw.fields.map((f, i) =>
+        i === 1
+          ? { ...f, options: ["abierta", "cerrada"] }
+          : i === 2
+            ? { ...f, target: groups.key }
+            : f,
+      ),
+    };
+    const [text, option, group] = shaped.fields.map((f) => f.key) as [string, string, string];
+    const st = store(
+      [shaped, groups],
+      { [groups.key]: [{ [groups.fields[0]?.key as string]: "uno" }] },
+      ids(133),
+    );
+    const [known] = st.rows(groups.key).map((r) => r.origin.id) as [string];
+    const create = (id: string, ...kv: unknown[]) =>
+      call(id, "create", { collection: lit(shaped.key), fields: obj(lit(text), lit("x"), ...kv) });
+    // Round 1: an option it does not have, and a related row it has not read. Round 2: it reads the group and
+    // relates to it, with an option it has.
+    const ai = scripted((_, n) =>
+      n === 1
+        ? plan(create("s1", lit(option), lit("inventada")), create("s2", lit(group), lit(known)))
+        : n === 2
+          ? plan(call("s1", "find", { collection: lit(groups.key) }))
+          : plan(create("s1", lit(option), lit("abierta"), lit(group), lit(known)), answer("s2")),
+    );
+    const { automation, id } = analyst({}, [
+      {
+        ...newConnection(shaped.key),
+        create: { mode: "yes", limit: 20, fields: [text, option, group] },
+      },
+      newConnection(groups.key),
+    ]);
+    const e = await run(
+      {
+        automation,
+        trigger: automation.steps[0]?.id as string,
+        fields: { json: {}, label: OWN },
+        test: false,
+      },
+      deps({ collections: st, ai: ai.port }),
+    );
+    expect(e.state).toBe("done");
+    expect(ai.asked[1]?.rounds).toEqual([
+      { s1: { refused: "bad-option" }, s2: { refused: "not-read" } },
+    ]);
+    expect(st.rows(shaped.key).map((r) => r.json)).toEqual([
+      { [text]: "x", [option]: "abierta", [group]: known },
+    ]);
+    expect(e.steps[id]?.agent?.units[0]?.lines.map((l) => ("why" in l ? l.why : l.op))).toEqual([
+      "bad-option",
+      "not-read",
+      "find",
+      "create",
+    ]);
+  });
 
   it("AU-171 · what a write gives back is cut by the connection's read limits; without read permission, only the fields it set and the id, in a test too", async () => {
     for (const test of [false, true]) {
