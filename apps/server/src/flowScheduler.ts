@@ -52,7 +52,7 @@ export function lastSlot(s: Schedule, now: number, tz: string): number {
 }
 
 /** How long after its time a run missed (the server was down) still runs: half an hour for hourly, three hours else. */
-const graceOf = (s: Schedule) => (s.every === "hour" ? 30 : 180) * 60_000;
+export const graceOf = (s: Schedule) => (s.every === "hour" ? 30 : 180) * 60_000;
 
 /**
  * The time a flow is due for now, or null: its latest time has come, after the version was saved and after its last

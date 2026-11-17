@@ -35,7 +35,14 @@ import { OUTSIDE_INTEGRITY, TEST_ROWS_CHUNK } from "./automations.ts";
  */
 
 /** How a run ends (AU-99, AU-190): it is `queued` and `running` before. */
-export type AutomationRunState = "queued" | "running" | "done" | "failed" | "interrupted";
+export type AutomationRunState =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "interrupted"
+  /** «No corrió» (AU-114): a «Programada»'s hour passed its margin while the server was off; no step ran. */
+  | "missed";
 
 /** One run, real or a whole «Probar» (AU-99), without its steps and rows. */
 export interface AutomationRunRow {
@@ -48,8 +55,15 @@ export interface AutomationRunRow {
   /** The trigger it started in, and the fields it was started with (JSON): what «Reintentar» starts again with. */
   trigger: string;
   fields: string;
-  /** What started it: `user` (by hand) in S2; the schedule arrives with S3. */
+  /** What started it (AU-195): `user` (by hand) or `schedule` (a «Programada» at its hour). */
   startedBy: string;
+  /**
+   * A scheduled run's hour, the one that was due (AU-114), also of a «No corrió»; null for every other run. No two
+   * runs of one automation have the same (a unique index): an hour never runs twice.
+   */
+  slot: number | null;
+  /** The inbox's proposal of what it asked and waits for Juan (AU-193), or null when it asked nothing. */
+  proposal: string | null;
   device: string | null;
   /** The run «Reintentar» repeated. */
   retryOf: string | null;
@@ -94,8 +108,28 @@ type Rows = Readonly<Record<string, readonly string[]>>;
 export interface AutomationRunsJournal {
   /** A new run, `queued` (or `running` with `started`). */
   createAutomationRun(
-    r: Omit<AutomationRunRow, "ended" | "ms" | "step" | "error" | "line" | "undone">,
+    r: Omit<
+      AutomationRunRow,
+      "ended" | "ms" | "step" | "error" | "line" | "undone" | "slot" | "proposal"
+    > & {
+      slot?: number | null;
+    },
   ): void;
+  /**
+   * An hour of a «Programada» that did not run (AU-114): a real run kept as `missed`, ended at `at`, with no step.
+   * False when the store already has a run of that hour.
+   */
+  missAutomationRun(r: {
+    id: string;
+    automation: string;
+    version: number | null;
+    trigger: string;
+    fields: string;
+    slot: number;
+    at: number;
+  }): boolean;
+  /** The proposal made of what it asked (AU-193). */
+  setAutomationRunProposal(id: string, proposal: string): void;
   /** It starts: `running`, from `started`. */
   startAutomationRun(id: string, started: number): void;
   /** The step it is in now. */
@@ -231,6 +265,8 @@ const runOf = (r: Record<string, unknown>): AutomationRunRow => ({
   trigger: r.trigger as string,
   fields: r.fields as string,
   startedBy: r.started_by as string,
+  slot: num(r.slot),
+  proposal: text(r.proposal),
   device: text(r.device),
   retryOf: text(r.retry_of),
   at: Number(r.at),
@@ -262,7 +298,7 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
   };
   const FILTERS: Record<AutomationRunFilter, string> = {
     all: "",
-    failed: "AND test = 0 AND state IN ('failed', 'interrupted')",
+    failed: "AND test = 0 AND state IN ('failed', 'interrupted', 'missed')",
     tests: "AND test = 1",
   };
   return {
@@ -270,7 +306,7 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
       void db
         .prepare(
           `INSERT INTO automation_runs (id, automation, version, test, state, trigger, fields, started_by, device,
-             retry_of, at, started, doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             retry_of, at, started, doc, slot) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           r.id,
@@ -286,7 +322,10 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
           r.at,
           r.started,
           r.doc,
+          r.slot ?? null,
         ),
+    setAutomationRunProposal: (id, proposal) =>
+      void db.prepare("UPDATE automation_runs SET proposal = ? WHERE id = ?").run(proposal, id),
     startAutomationRun: (id, started) =>
       void db
         .prepare("UPDATE automation_runs SET state = 'running', started = ? WHERE id = ?")
@@ -309,6 +348,16 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
           s.rows,
         );
       }),
+    missAutomationRun: (r) => {
+      const done = db
+        .prepare(
+          `INSERT OR IGNORE INTO automation_runs (id, automation, version, test, state, trigger, fields, started_by,
+             device, retry_of, at, started, doc, slot, ended, ms)
+           VALUES (?, ?, ?, 0, 'missed', ?, ?, 'schedule', NULL, NULL, ?, NULL, NULL, ?, ?, 0)`,
+        )
+        .run(r.id, r.automation, r.version, r.trigger, r.fields, r.at, r.slot, r.at);
+      return Number(done.changes) > 0;
+    },
     endAutomationRun: (id, e) =>
       void db
         .prepare(

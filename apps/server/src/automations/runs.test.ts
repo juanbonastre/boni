@@ -669,8 +669,9 @@ describe("undoing a run (F14d)", () => {
     expect(ok(runView(store, a.id, r.id)).run.undone).toBeNull();
   });
 
+  // What was accepted of a run's proposal, undone with the run: proposal.test.ts (S3).
   it.todo(
-    "AU-18 · what the user accepted of a run's proposal was written with the same run and is undone with it; a run of which only the summary is left is undone the same (the proposal's acceptance is S3's, AU-193; the summary left, AU-103)",
+    "AU-18 AU-103 · a run of which only the summary is left is undone the same (the summary left is S4's, AU-103)",
   );
 
   it("AU-17 AU-18 · «Las que cumplan…» with several rows, stopped by the limit partway on the real server: what the earlier rows saved stays, undone whole leaves the store as it was; «Reintentar» runs it again from the store as it finds it", async () => {
@@ -1035,9 +1036,7 @@ describe("a run a restart left half done (F14d)", () => {
     next.close();
   });
 
-  it.todo(
-    "AU-190 · the hour of an interrupted scheduled run counts as run: the scheduler does not start it again on the next tick (the scheduler is S3's)",
-  );
+  // The hour of an interrupted scheduled run counts as run: scheduler.test.ts (S3).
 });
 
 describe("a renamed collection (F14d)", () => {

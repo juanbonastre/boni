@@ -17,6 +17,7 @@ import {
 import { type Label, label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { withAutomationActions, withPublishActions } from "./automations/actions.ts";
+import { withRunProposal } from "./automations/proposal.ts";
 import { NO_MCP_YET } from "./automations/routes.ts";
 import { withCalendarActions } from "./calendarActions.ts";
 import { calendarDefs } from "./calendarStore.ts";
@@ -42,15 +43,17 @@ import { withTurnActions } from "./turnActions.ts";
 
 /** The server's registry: the planner's, the flow editor's catalogue (D-41) and the MCP's `flows_describe`. */
 export function serverRegistry(): ToolRegistry {
-  const all = withPublishActions(
-    withAutomationActions(
-      withConnectorActions(
-        withCalendarActions(
-          withInboxActions(
-            withFlowActions(
-              withFileActions(
-                withTurnActions(
-                  withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+  const all = withRunProposal(
+    withPublishActions(
+      withAutomationActions(
+        withConnectorActions(
+          withCalendarActions(
+            withInboxActions(
+              withFlowActions(
+                withFileActions(
+                  withTurnActions(
+                    withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+                  ),
                 ),
               ),
             ),
@@ -565,6 +568,9 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "automations.restore": { why: NO_MCP_YET },
   "automations.publish": { why: NO_MCP_YET },
   "automations.enable": { why: NO_MCP_YET },
+  "automations.accept_run": {
+    why: "Juan's touch: a run's proposal is his card in the Bandeja, accepted from a personal device (AU-193)",
+  },
   "schema.set_view": "collection_view",
   "schema.set_tree": "notes_in_tree",
   "schema.set_roles": "set_roles",

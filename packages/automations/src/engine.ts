@@ -240,6 +240,9 @@ export interface Execution {
   error?: StepError & { step: string };
 }
 
+/** What `$run.startedBy` says (AU-195): by hand, or a «Programada» at its hour (F18 adds one per trigger). */
+export type StartedBy = "user" | "schedule";
+
 export interface RunInput {
   automation: Automation;
   /** The id of the trigger step this run starts in. */
@@ -252,6 +255,11 @@ export interface RunInput {
   fields: Pick<Row, "json" | "label" | "fields">;
   /** Runs everything and writes nothing (`PolicyCall.test`). */
   test: boolean;
+  /**
+   * How it started, as `$run.startedBy` gives it (AU-195): `user` (by hand) or `schedule` (a «Programada» at its
+   * hour); `user` when not given. A closed list, never a name or an id; no decision about a write reads it.
+   */
+  startedBy?: StartedBy;
   /**
    * The seed of the run's chance (AU-34): drawn once by whoever starts the run and kept with it, so repeating the run
    * with it and with the same instant gives the same. Absent: made from the run's instant.
@@ -369,10 +377,13 @@ const TRIGGER_TYPES: Record<string, (v: Cell) => boolean> = {
 /** The trigger's row (AU-110): every field it asks for, null where none was given; another field is refused. */
 function triggerRow(step: Step, given: RunInput["fields"]): Row {
   const types = new Map<string, string>();
-  for (const f of Array.isArray(step.params.fields) ? step.params.fields : []) {
-    const o = f as Record<string, ParamValue>;
-    if (typeof o.key === "string") types.set(o.key, typeof o.type === "string" ? o.type : "text");
-  }
+  // A «Programada» gives the hour that was due (AU-114); «Disparado por el usuario», the fields it asks for.
+  if (step.type === "schedule") types.set("date", "datetime");
+  else
+    for (const f of Array.isArray(step.params.fields) ? step.params.fields : []) {
+      const o = f as Record<string, ParamValue>;
+      if (typeof o.key === "string") types.set(o.key, typeof o.type === "string" ? o.type : "text");
+    }
   for (const k of Object.keys(given.json))
     if (!types.has(k)) throw new CannotRun(`the trigger does not ask for the field ${k}`);
   const json: Record<string, Cell> = {};
@@ -1142,7 +1153,7 @@ class Run {
         locale,
         today: dates.day(this.started, clock.zone),
         seed: seedOf(this.seed, step.id),
-        run: { test: this.input.test, startedBy: "user" },
+        run: { test: this.input.test, startedBy: this.input.startedBy ?? "user" },
       },
       box,
       gate,

@@ -242,6 +242,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "automations.restore": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.publish": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
   "automations.enable": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
+  "automations.accept_run": [
+    {
+      file: "apps/server/src/automations/proposal.test.ts",
+      test: "AU-193 · accepting it passes through the policy again as accepted, from a personal device only, and saves every change in one transaction with the run in the log; with one change that cannot be saved, none is",
+    },
+  ],
   "flows.save": [
     {
       file: AGENT,
@@ -383,10 +389,11 @@ describe("every step a flow may have says in one line what it does (I-27)", () =
   it("each tool of the registry and each reader has its `flow.desc` line, in Spanish and in English", () => {
     const words = readFileSync(join(ROOT, "apps/boni-web/src/i18n.ts"), "utf8");
     const steps = [
-      // Juan's touch is no flow's step (P21), nor what only a turn asks (flows.ts `TURN_ONLY`): not in «Añadir paso».
+      // Juan's touch is no flow's step (P21), nor what only a turn asks (flows.ts `TURN_ONLY`), nor accepting a run's
+      // proposal (`acceptsRun`, P28): not in «Añadir paso».
       ...serverRegistry()
         .all()
-        .filter((t) => t.effect !== "touch" && !TURN_ONLY.has(t.name))
+        .filter((t) => t.effect !== "touch" && !TURN_ONLY.has(t.name) && !t.acceptsRun)
         .map((t) => t.name),
       ...READERS,
       "op.ask",

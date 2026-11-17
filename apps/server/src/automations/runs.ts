@@ -16,8 +16,11 @@
  *   `undoRun`, all or nothing in one transaction: a row changed since undoes none and says which.
  * - **Retried by hand** (AU-100): the same trigger and fields, the version published now; «Deshacer y reintentar»
  *   undoes the run first, so nothing is written twice.
- * - **What it waits for** (`asked`): kept with the run (`ASKED_STEP`), counted in its line. The proposal made of it
- *   and its acceptance are S3's (AU-193); until then a run that asked leaves its asked changes kept and unsaved.
+ * - **What it waits for** (`asked`): kept with the run (`ASKED_STEP`), counted in its line, and made one proposal in
+ *   the inbox (proposal.ts, AU-193, S3): accepted, it is saved with the run's id, so «Deshacer lo que hizo» takes it
+ *   back too.
+ * - **At its hour** (S3, AU-114): `startScheduledRun` starts a «Programada» in the same lane, `startedBy` `schedule`
+ *   and the hour kept (`slot`), and `missRun` keeps an hour it could not run as «No corrió» (scheduler.ts).
  */
 
 import { EventEmitter } from "node:events";
@@ -30,6 +33,7 @@ import {
   type Execution,
   executionOrder,
   parseAutomation,
+  type StartedBy,
   type StepError,
   type StepRecord,
   stepPrints,
@@ -42,6 +46,7 @@ import {
   type UserStore,
 } from "@boni/store";
 import { sandboxBox } from "./box.ts";
+import { proposeRun } from "./proposal.ts";
 import { isRefusal, type Refusal, type RunRequest, runPublished } from "./publish.ts";
 import {
   ASKED_STEP,
@@ -94,6 +99,10 @@ export interface RunSummary {
   state: AutomationRunState;
   startedBy: string;
   device: string | null;
+  /** A «Programada»'s: the hour it ran for (AU-114). */
+  slot: number | null;
+  /** The proposal of what it asked, in the inbox (AU-193). */
+  proposal: string | null;
   at: number;
   started: number | null;
   ended: number | null;
@@ -165,6 +174,8 @@ export function summaryOf(r: AutomationRunRow): RunSummary {
     state: r.state,
     startedBy: r.startedBy,
     device: r.device,
+    slot: r.slot,
+    proposal: r.proposal,
     at: r.at,
     started: r.started,
     ended: r.ended,
@@ -250,11 +261,81 @@ export async function startRun(
   id: string,
   request: RunRequest,
   hand: RunHand,
-  o: { box?: Box; retryOf?: string } = {},
+  o: { box?: Box; retryOf?: string; startedBy?: StartedBy } = {},
 ): Promise<{ run: RunSummary } | RunRefusal | ServiceError> {
   const no = cannotStart(store, id, hand);
   if (no) return no;
   if (!validRequest(request)) return BAD;
+  return enqueue(store, id, request, hand, { ...o, startedBy: o.startedBy ?? "user" });
+}
+
+/** Who a scheduled run is in the store: no device and no hand; its trigger's row is the code's (the hour). */
+const scheduledHand = (zone: string): RunHand => ({
+  device: "",
+  now: Date.now(),
+  trust: "personal",
+  zone,
+});
+
+/**
+ * A «Programada» at its hour (AU-114): as «Ejecutar», in the account's lane, with `startedBy` `schedule`, the hour
+ * that was due kept with the run (an hour the store already has is refused: it never runs twice) and given by the
+ * trigger. Whatever it writes is decided as a run by hand is (AU-195). Refused: unpublished, off, or one under way.
+ */
+export async function startScheduledRun(
+  store: UserStore,
+  id: string,
+  trigger: string,
+  slot: number,
+  zone: string,
+  o: { box?: Box } = {},
+): Promise<{ run: RunSummary } | RunRefusal | ServiceError> {
+  const row = store.journal.automation(id);
+  if (!row || row.deleted) return NOT_FOUND;
+  if (row.published === null) return { refused: "unpublished" };
+  if (!row.enabled) return { refused: "off" };
+  const busy = store.journal.openAutomationRun(id);
+  if (busy) return { refused: "running", run: busy.id };
+  return enqueue(store, id, { trigger, fields: { date: slot } }, scheduledHand(zone), {
+    ...o,
+    startedBy: "schedule",
+    slot,
+  });
+}
+
+/**
+ * An hour of a «Programada» past its margin (AU-114): kept as «No corrió», with no step, so «Ejecuciones» says it and
+ * the hour is not tried again. False when the store already had that hour.
+ */
+export function missRun(
+  store: UserStore,
+  id: string,
+  trigger: string,
+  slot: number,
+  now = Date.now(),
+): boolean {
+  const run = newRunId();
+  const kept = store.journal.missAutomationRun({
+    id: run,
+    automation: id,
+    version: store.journal.automation(id)?.published ?? null,
+    trigger,
+    fields: JSON.stringify({ date: slot }),
+    slot,
+    at: now,
+  });
+  if (kept) told(store, { automation: id, run, state: "missed" });
+  return kept;
+}
+
+/** Keeps a run as asked and runs it in the account's lane (`startRun`, `startScheduledRun`). */
+async function enqueue(
+  store: UserStore,
+  id: string,
+  request: RunRequest,
+  hand: RunHand,
+  o: { box?: Box; retryOf?: string; startedBy: StartedBy; slot?: number },
+): Promise<{ run: RunSummary } | RunRefusal | ServiceError> {
   const version = store.journal.automation(id)?.published ?? null;
   const run = newRunId();
   const test = false; // the run's row; the engine is given it by `runPublished` alone (AU-95)
@@ -266,19 +347,32 @@ export async function startRun(
     state: "queued",
     trigger: request.trigger,
     fields: JSON.stringify(request.fields),
-    startedBy: "user",
-    device: hand.device,
+    startedBy: o.startedBy,
+    device: hand.device || null,
     retryOf: o.retryOf ?? null,
     at: Date.now(),
     started: null,
     doc: null,
+    ...(o.slot !== undefined ? { slot: o.slot } : {}),
   });
   const lane = laneOf(store);
   const waiting = lane.pending > 0;
   lane.pending++;
   const begun = new Promise<RunRefusal | ServiceError | null>((resolve) => {
     lane.tail = lane.tail
-      .then(() => execute(store, id, run, request, hand, o.box ?? sandboxBox(), waiting, resolve))
+      .then(() =>
+        execute(
+          store,
+          id,
+          run,
+          request,
+          hand,
+          o.startedBy,
+          o.box ?? sandboxBox(),
+          waiting,
+          resolve,
+        ),
+      )
       .catch((e) => {
         console.error(`automation run ${run}:`, e);
         resolve({ error: "bad-request" });
@@ -302,6 +396,7 @@ async function execute(
   run: string,
   request: RunRequest,
   hand: RunHand,
+  startedBy: StartedBy,
   box: Box,
   queued: boolean,
   begun: (refused: RunRefusal | ServiceError | null) => void,
@@ -331,7 +426,7 @@ async function execute(
   };
   let result: Execution | Refusal | ServiceError;
   try {
-    result = await runPublished(store, id, request, hand, run, box, { onStep });
+    result = await runPublished(store, id, request, hand, run, box, { onStep }, startedBy);
   } catch (e) {
     result = { error: "bad-request" };
     console.error(`automation run ${run}:`, e);
@@ -363,6 +458,8 @@ async function execute(
     return;
   }
   keepAsked(store, run, result.asked);
+  // What it asked is one proposal in the inbox, for Juan to accept or reject (AU-193).
+  if (result.asked.length) proposeRun(store, id, run, result.asked);
   const state = result.state;
   store.journal.endAutomationRun(run, {
     state,
@@ -414,6 +511,9 @@ function undoAll(store: UserStore, r: AutomationRunRow, hand: Hand): RunRefusal 
     throw e;
   }
   store.journal.setAutomationRunUndone(r.id, hand.now);
+  // What it still proposed goes with it: accepting it would save into a run undone (AU-193).
+  if (r.proposal && store.journal.proposal(r.proposal)?.status === "pending")
+    store.journal.setProposal(r.proposal, "stale", hand.now);
   return null;
 }
 
@@ -460,6 +560,8 @@ export async function retryRun(
   const request = { trigger: r.trigger, fields: JSON.parse(r.fields) as Record<string, Cell> };
   const started = await startRun(store, id, request, hand, {
     retryOf: r.id,
+    // It runs with that run's trigger data, so a branch over how it started goes the same way (AU-195).
+    startedBy: r.startedBy === "schedule" ? "schedule" : "user",
     ...(box ? { box } : {}),
   });
   if ("refused" in started || isError(started)) return started;
@@ -522,6 +624,8 @@ export function runView(
       undoable: boolean;
       wrote: boolean;
       published: number | null;
+      /** Its proposal's state in the inbox (AU-193): waiting, accepted, rejected or no longer valid. */
+      proposal: { id: string; status: string } | null;
     }
   | ServiceError {
   const r = runOf(store, id, run);
@@ -537,6 +641,9 @@ export function runView(
     undoable,
     wrote: !r.test && store.runOps(r.id).length > 0,
     published: store.journal.automation(id)?.published ?? null,
+    proposal: r.proposal
+      ? { id: r.proposal, status: store.journal.proposal(r.proposal)?.status ?? "stale" }
+      : null,
   };
 }
 

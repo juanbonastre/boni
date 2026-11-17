@@ -308,6 +308,11 @@ export interface ToolDef<E extends Effect = Effect> {
    * a reader of the run is shown.
    */
   sees?: boolean;
+  /**
+   * It saves what an automation's run proposed (AU-193): only Juan's acceptance of that proposal runs it (origin
+   * `accepted`, P28), and its removals are the confirmation P5 asks for (`Call.ofRun`). Any other origin is refused.
+   */
+  acceptsRun?: boolean;
   run(caps: Caps[E], args: Readonly<Record<string, Val>>, extra: Label): Val | Promise<Val>;
 }
 

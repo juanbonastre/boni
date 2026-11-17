@@ -18,6 +18,7 @@ import {
   readerStep,
   resultName,
   stepType,
+  TIME_OF_DAY,
 } from "./catalogue.ts";
 import {
   CODE_LIMITS,
@@ -416,7 +417,9 @@ class StepCheck {
             ? typeof v === "number"
             : p.of === "date"
               ? typeof v === "string" || typeof v === "number"
-              : typeof v === "string");
+              : p.of === "time"
+                ? typeof v === "string" && TIME_OF_DAY.test(v)
+                : typeof v === "string");
         if (!ok) this.problem("param.value", path);
         else this.nested(v, path);
         return;
