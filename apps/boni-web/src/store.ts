@@ -612,7 +612,11 @@ export const dismissToast = () => set({ toast: null });
 
 // ---------- start ----------
 function applySettings(settings: ClientSettings) {
-  set({ settings, t: translator(settings.language) });
+  // The same words while the language is the same: the desktop sends its settings whenever its live connection
+  // changes state, and a new `t` re-ran every screen's effects that read it (it put «Ejecuciones» back to its first
+  // fifty after «Ver más»).
+  const same = get().settings.language === settings.language;
+  set({ settings, t: same ? get().t : translator(settings.language) });
   const t = get().t;
   hostRef.desktop?.setLabels(
     Object.fromEntries(
