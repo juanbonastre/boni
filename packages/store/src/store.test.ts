@@ -1,9 +1,16 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
-import { clock } from "@boni/pace";
+import { clock, under } from "@boni/pace";
 import { afterEach, describe, expect, it } from "vitest";
 import { open, openFile, seal, sealFile, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
 import { MIGRATIONS } from "./migrations.ts";
@@ -748,6 +755,13 @@ describe("the store", () => {
       expect(() => store.search(q), q).not.toThrow();
     store.remove(a.entity.id, me);
     expect(store.search("años")).toEqual([]);
+    // Restored, it is found again; changed, by its new words only, with one entry in the index (task 137).
+    store.restore(a.entity.id, me);
+    expect(store.search("años")).toEqual([a.entity.id]);
+    store.update(a.entity.id, { f_titulo: { value: "Mil noches", label: JUAN } }, me);
+    expect(store.search("años")).toEqual([]);
+    expect(store.search("noches")).toEqual([a.entity.id]);
+    expect(store.readQuery("SELECT count(*) AS n FROM entities_fts")).toEqual([{ n: 2 }]);
   });
 
   it("says what changed since a version", () => {
@@ -1230,4 +1244,152 @@ describe("what runs when a store closes (onClose, task 123)", () => {
     expect(() => store.close()).toThrow(/not open/);
     expect(ran).toBe(false);
   });
+});
+
+describe("the search index at Juan's volume (task 137, A-15)", () => {
+  /** A collection shaped like his tasks: a title and a long note, ids made by the store. */
+  const tarea = (): TypeDef => ({
+    id: "t_tarea",
+    key: "tarea",
+    name: "Tarea",
+    fields: [
+      { id: "f_titulo", key: "titulo", name: "Título", type: "text", label: JUAN },
+      { id: "f_notas", key: "notas", name: "Notas", type: "longtext", label: JUAN },
+      { id: "f_hecha", key: "hecha", name: "Hecha", type: "checkbox", label: JUAN },
+    ],
+    titleField: "f_titulo",
+    sensitivity: "personal",
+    schemaVersion: 1,
+    label: JUAN,
+  });
+  const NOTE =
+    "Revisar el informe de la semana con el equipo y preparar la reunión del lunes. ".repeat(4);
+  function filled(n: number): { store: UserStore; dir: string; ids: string[] } {
+    const dir = mkdtempSync(join(tmpdir(), "boni-store-"));
+    dirs.push(dir);
+    const store = openUserStore(join(dir, "boni.db"));
+    stores.push(store);
+    store.applySchema({ op: "create_type", type: tarea() }, me);
+    const ids = store.batch(() =>
+      Array.from(
+        { length: n },
+        (_, i) =>
+          store.create(
+            "t_tarea",
+            {
+              f_titulo: { value: `Tarea ${i} del proyecto`, label: JUAN },
+              f_notas: { value: `${NOTE}${i}`, label: JUAN },
+            },
+            me,
+          ).entity.id,
+      ),
+    );
+    return { store, dir, ids };
+  }
+  /** With BONI_TIMINGS set to a file, each time measured is written there (as box.test.ts does). */
+  const timing = (what: string, ms: number) => {
+    if (process.env.BONI_TIMINGS)
+      appendFileSync(process.env.BONI_TIMINGS, `${what}: ${ms.toFixed(3)} ms\n`);
+  };
+  const median = (xs: number[]) =>
+    [...xs].sort((x, y) => x - y)[Math.floor(xs.length / 2)] as number;
+  /**
+   * The time per row of 1,000 changes of one step in one transaction, as a run saves them: the median of three
+   * batches, since one commit of a thousand rows may or may not pay for SQLite's checkpoint of its log.
+   */
+  function inOneBatch(store: UserStore, ids: string[], run: string): number {
+    const times = [0, 1, 2].map((k) => {
+      const start = clock();
+      store.batch(() => {
+        for (let i = 0; i < 1000; i++)
+          store.update(
+            ids[i] as string,
+            { f_notas: { value: `${run} ${k} ${i}`, label: JUAN } },
+            agent(run),
+          );
+      });
+      return (clock() - start) / 1000;
+    });
+    return median(times);
+  }
+  /** 300 saves each in its own transaction, as a person saves in the app: the median of their times. */
+  function oneByOne(store: UserStore, ids: string[]): number {
+    const times: number[] = [];
+    for (let i = 0; i < 300; i++) {
+      const start = clock();
+      store.update(ids[1000 + i] as string, { f_notas: { value: `a mano ${i}`, label: JUAN } }, me);
+      times.push(clock() - start);
+    }
+    return median(times);
+  }
+
+  it("A-15 · saving a record costs the same in a store of 3,000 records as in one of 12,000: a write finds its entry in the index by its rowid, never by reading the whole index", () => {
+    const small = filled(3000);
+    const large = filled(12_000);
+    const single = [oneByOne(small.store, small.ids), oneByOne(large.store, large.ids)] as const;
+    const batched = [
+      inOneBatch(small.store, small.ids, "r1"),
+      inOneBatch(large.store, large.ids, "r1"),
+    ] as const;
+    timing("task 137 · a record saved alone (median), 3,000 records", single[0]);
+    timing("task 137 · a record saved alone (median), 12,000 records", single[1]);
+    timing("task 137 · a row of a batch of 1,000, 3,000 records", batched[0]);
+    timing("task 137 · a row of a batch of 1,000, 12,000 records", batched[1]);
+    // Measured on the laptop with the queue held (task 137), before: alone 1.5 ms at 3,000 and 29.5 ms at 12,000,
+    // in a batch 1.2 and 4.2 ms a row, because a write read the whole index.
+    under(
+      single[1],
+      2 * single[0] + 0.2,
+      "clock",
+      "a record saved alone among 12,000 against among 3,000",
+    );
+    under(single[1], 3, "clock", "a record saved alone in a store of 12,000 records");
+    under(
+      batched[1],
+      2 * batched[0] + 0.2,
+      "clock",
+      "a row of a batch among 12,000 against among 3,000",
+    );
+    under(batched[1], 2, "clock", "a row of a batch of 1,000 in a store of 12,000 records");
+    // Still one entry per record, found by its new words.
+    expect(large.store.readQuery("SELECT count(*) AS n FROM entities_fts")).toEqual([
+      { n: 12_000 },
+    ]);
+    expect(large.store.search("r1 2 999")).toContain(large.ids[999]);
+    // Undone, the run's words leave the index and the entry stays one per record.
+    large.store.undoRun("r1", me);
+    expect(large.store.search("r1 2 999")).toEqual([]);
+    expect(large.store.readQuery("SELECT count(*) AS n FROM entities_fts")).toEqual([
+      { n: 12_000 },
+    ]);
+  }, 120_000);
+
+  it("migration 31 indexes a store of 12,000 records by rowid in one pass, keeps its search, and leaves one entry per record", () => {
+    const { store, dir, ids } = filled(12_000);
+    stores.splice(stores.indexOf(store), 1);
+    store.close();
+    // As the store was before migration 31, with an entry twice (none should be): the newest one stays.
+    const db = new DatabaseSync(join(dir, "boni.db"));
+    db.exec("DROP TABLE fts_rows; PRAGMA user_version = 30");
+    db.prepare("INSERT INTO entities_fts (entity, title, text) VALUES (?, ?, ?)").run(
+      ids[7] as string,
+      "Tarea 7 del proyecto",
+      "repetida",
+    );
+    db.close();
+    const start = clock();
+    const again = openUserStore(join(dir, "boni.db"));
+    const took = clock() - start;
+    stores.push(again);
+    timing("task 137 · migration 31 over 12,000 records", took);
+    under(took, 2000, "clock", "migration 31 over a store of 12,000 records");
+    expect(again.readQuery("SELECT count(*) AS n FROM entities_fts")).toEqual([{ n: 12_000 }]);
+    expect(again.search("repetida")).toEqual([ids[7]]);
+    expect(again.search("proyecto", { limit: 20_000 })).toHaveLength(12_000);
+    // A write after it replaces its record's entry instead of adding one.
+    again.update(ids[7] as string, { f_titulo: { value: "Otra cosa", label: JUAN } }, me);
+    expect(again.search("repetida")).toEqual([]);
+    expect(again.search("otra")).toEqual([ids[7]]);
+    expect(again.readQuery("SELECT count(*) AS n FROM entities_fts")).toEqual([{ n: 12_000 }]);
+  }, 120_000);
 });
