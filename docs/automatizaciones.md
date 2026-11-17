@@ -2055,8 +2055,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   estaba apagado a su hora». Lo sostienen `words.test.ts`, `flowsCollection.test.ts`, la prueba del navegador y la
   del escritorio sobre el servidor de verdad: publicada para el minuto siguiente, corre sola, crea su fila, se ve en
   «Ejecuciones» con la pantalla abierta y se deshace desde ahí.
-  Hecho en S4: «No corrió» avisa como un fallo de su racha (`scheduler.test.ts`). Falta: la línea «No corrió»
-  en «Ejecuciones» (P3).
+  Hecho en S4: «No corrió» avisa como un fallo de su racha (`scheduler.test.ts`). Sigue «en parte» hasta
+  la revisión de la fase (P3b), que la compara con AU-167, en la que se apoya.
 - **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.
 - **AU-116** (F17, pendiente) · El panel de un disparador lista quién la inicia hoy: qué botones de qué páginas y
   qué automatizaciones. Se calcula, no se declara (A-16).
