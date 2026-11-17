@@ -278,8 +278,16 @@ test("AU-27 AU-23 · in the desktop app over the real server and the real box, t
   });
 });
 
-/** A draft made through the app's own door, each step after the one before it; its id. */
-async function make(w: Page, name: string, steps: { id: string }[]): Promise<string> {
+/**
+ * A draft made through the app's own door, each step after the one before it; its id. `settings` holds the run's limits
+ * where a test writes more than their defaults (AU-17).
+ */
+async function make(
+  w: Page,
+  name: string,
+  steps: { id: string }[],
+  settings: Record<string, unknown> = {},
+): Promise<string> {
   const made = await ask(w, "POST", "api/agent/automations", {
     automation: {
       format: FORMAT,
@@ -291,7 +299,7 @@ async function make(w: Page, name: string, steps: { id: string }[]): Promise<str
         from: { step: steps[i]?.id, output: "main" },
         to: { step: s.id, input: "main" },
       })),
-      settings: {},
+      settings,
     },
   });
   return made.id as string;
@@ -454,7 +462,8 @@ test("AU-176 AU-180 AU-181 · the criterion of F14c for a code that saves, in th
     params: { source: DOUBLES },
     connections: [{ collection: "gasto", read: {}, create: false, update: false, remove: false }],
   };
-  const id = await make(w, name, [START, code]);
+  // «Probar paso» counts its 3,000 rows against «rows written» like a run (AU-17): raised to its ceiling here.
+  const id = await make(w, name, [START, code], { limits: { rowsWritten: 20_000 } });
   const before = await counts(w);
   await openAutomation(w, name, 2);
   const card = w.locator(`.auto-card[data-step="${code.id}"]`);
