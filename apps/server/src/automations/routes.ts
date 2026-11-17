@@ -101,6 +101,50 @@ export const PUBLISH_ACTIONS: Readonly<Record<string, AutomationAction>> = {
 };
 
 /**
+ * F14d S2's touches (runs.ts): «Ejecutar» and «Reintentar», «Deshacer lo que hizo», and «Fijar» with «Abrir en el
+ * editor con estos datos». Made (`withRunActions`) and not registered, as S1's: each enters the registry, `ROUTES`,
+ * `ROUTE_ACTIONS`, `ROUTE_RUNS` and http.ts with its control in the app (the screens' PR), since a registered action
+ * with no control fails actions.test.ts. Their reads are `automations.read`'s parts, already routed.
+ */
+export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
+  "automations.run": {
+    effect: "touch",
+    undo: "«Deshacer lo que hizo» in the run (automations.undo_run): all it saved, or nothing",
+    control:
+      "«Ejecutar» in the list's row, the header's «⋯» and the publish notice; «Reintentar» in a run",
+  },
+  "automations.undo_run": {
+    effect: "touch",
+    undo: "nothing undoes an undo of a run: run it again (AU-18, no «Rehacer»)",
+    control: "«Deshacer lo que hizo» in a run of «Ejecuciones»",
+  },
+  "automations.pin": {
+    effect: "touch",
+    undo: "the same button again: it releases the pin",
+    control: "«Fijar» in SALIDA's header, and «Abrir en el editor con estos datos» in a run",
+  },
+};
+
+/** The routes the screens' PR adds with those controls, each with its action and the function of runs.ts it runs. */
+export const RUN_ROUTES: Readonly<Record<string, { action: string; runs: string }>> = {
+  "POST /api/agent/automations/:id/run": { action: "automations.run", runs: "startRun" },
+  "POST /api/agent/automations/:id/runs/:run/retry": {
+    action: "automations.run",
+    runs: "retryRun",
+  },
+  "POST /api/agent/automations/:id/runs/:run/undo": {
+    action: "automations.undo_run",
+    runs: "undoAutomationRun",
+  },
+  "PUT /api/agent/automations/:id/pins/:step": { action: "automations.pin", runs: "pinStep" },
+  "DELETE /api/agent/automations/:id/pins/:step": { action: "automations.pin", runs: "unpinStep" },
+  "POST /api/agent/automations/:id/runs/:run/pin": {
+    action: "automations.pin",
+    runs: "pinFromRun",
+  },
+};
+
+/**
  * The routes of an automation that change something and that a shared device may still call (decision 13 of §10):
  * «Probar», which writes in no collection (AU-90). Every other one that is not a read is from a personal device.
  */
@@ -141,4 +185,8 @@ export const AUTOMATION_ROUTES: Readonly<Record<string, { action: string; runs: 
   "GET /api/agent/automations/:id/publish": { action: "automations.read", runs: "publishView" },
   "GET /api/agent/automations/:id/versions": { action: "automations.read", runs: "versionsOf" },
   "GET /api/agent/automations/:id/versions/:n": { action: "automations.read", runs: "versionOf" },
+  // F14d S2 (runs.ts): «Ejecuciones», one run, and a page of one of its steps' rows.
+  "GET /api/agent/automations/:id/runs": { action: "automations.read", runs: "runsOf" },
+  "GET /api/agent/automations/:id/runs/:run": { action: "automations.read", runs: "runView" },
+  "GET /api/agent/automations/:id/runs/:run/rows": { action: "automations.read", runs: "runRows" },
 };

@@ -44,7 +44,7 @@ import {
   versionOf,
   versionsOf,
 } from "./publish.ts";
-import { AUTOMATION_ROUTES, PUBLISH_ACTIONS, PUBLISH_ROUTES } from "./routes.ts";
+import { AUTOMATION_ROUTES, PUBLISH_ACTIONS, PUBLISH_ROUTES, RUN_ROUTES } from "./routes.ts";
 import {
   automationLabel,
   automationView,
@@ -233,7 +233,7 @@ describe("only the published version runs (F14d)", () => {
 
     // No route runs for real but through `runPublished`: none of the routes, routed or waiting for their screens,
     // names a function that does, and in the server's sources only publish.ts gives the engine a run for real.
-    const routes = { ...AUTOMATION_ROUTES, ...PUBLISH_ROUTES };
+    const routes = { ...AUTOMATION_ROUTES, ...PUBLISH_ROUTES, ...RUN_ROUTES };
     for (const [route, { runs }] of Object.entries(routes))
       expect(["runPublished", "runDeps"], route).not.toContain(runs);
     const real = [...sources()].filter(

@@ -11,6 +11,14 @@ export {
   type Storage,
   type Verification,
 } from "./audit.ts";
+export type {
+  AutomationPinRow,
+  AutomationRunFilter,
+  AutomationRunRow,
+  AutomationRunState,
+  AutomationRunsJournal,
+  AutomationRunWrites,
+} from "./automationRuns.ts";
 export {
   type AutomationDraftRow,
   type AutomationPlace,
