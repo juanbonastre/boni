@@ -10509,10 +10509,12 @@ body.dragging-image * {
   width: 196px;
 }
 .mp-card.flow,
+.mp-card.automation,
 .mp-card.boni {
   border-color: var(--accent);
 }
-.mp-card.flow.off {
+.mp-card.flow.off,
+.mp-card.automation.off {
   border-color: var(--line-strong);
   border-style: dashed;
 }
@@ -10594,6 +10596,7 @@ body.dragging-image * {
   color: var(--muted);
 }
 .mp-card.flow .mp-icon,
+.mp-card.automation .mp-icon,
 .mp-card.boni .mp-icon,
 .mp-step.read .mp-icon {
   color: var(--accent);
@@ -13649,4 +13652,63 @@ button.auto-log-line {
   margin: 0 0 2px;
   padding: 0 6px 0 78px;
   color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- what a run asked, in the inbox (AU-193, F14d P3b) */
+.run-asked {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.run-asked-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+.run-asked-what {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.run-asked-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.run-asked-field {
+  color: var(--muted);
+}
+.run-asked-field::after {
+  content: ":";
+}
+.run-asked-before {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.run-asked-arrow {
+  color: var(--muted);
+}
+.run-asked-outside {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.run-asked-all {
+  align-self: flex-start;
+}
+.auto-run-proposal .link-btn {
+  font-size: inherit;
 }

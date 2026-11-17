@@ -205,6 +205,38 @@ describe("the trash with the user's «Sí» (P5, F14d)", () => {
   });
 });
 
+describe("what saves a run's proposal (AU-193, F14d P3b)", () => {
+  /** A tool as `automations.accept_run` is registered (apps/server's proposal.ts): only an acceptance calls it. */
+  const ACCEPT_RUN: ToolDef = {
+    ...CREATE,
+    name: "ejemplo.accept_run",
+    acceptsRun: true,
+    alwaysConfirm: true,
+    args: {
+      automation: { role: "option", required: true, describe: "id" },
+      run: { role: "option", required: true, describe: "id" },
+    },
+  };
+  const call = (): Call => ({
+    tool: ACCEPT_RUN,
+    args: { automation: leaf("a_ejemplo", own), run: leaf("r_ejemplo", own) },
+    control: null,
+  });
+  it("AU-193 · no plan can call the acceptance of a run's proposal: from a turn, the background, a mini-app, an assistant, a hand or a run it is denied (P28), with any trust; only Juan's acceptance in the inbox passes", () => {
+    const planned: Origin[] = [
+      ...OTHERS,
+      AUTOMATION,
+      { kind: "hand", trust: "personal" },
+      { kind: "turn", trust: "ambient" },
+    ];
+    for (const origin of planned) {
+      const d = decide({ ...call(), yes: true }, origin, fresh());
+      expect(d, origin.kind).toEqual({ kind: "deny", rule: "P28", reason: "only-accepted" });
+    }
+    expect(ruled(call(), { kind: "accepted", trust: "personal" })).not.toBe("deny P28");
+  });
+});
+
 describe("who starts a run (A-36, F14d)", () => {
   it("AU-195 · who started the run is no input of `decide`: a real run by hand no longer asks as `hand` (P25), and with «Preguntar» both a run by hand and a run that starts alone propose", () => {
     // The one origin carries no starter: whatever trust or device it is given, the answer is the same.

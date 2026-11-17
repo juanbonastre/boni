@@ -26,7 +26,7 @@ import type {
   WriteAction,
 } from "@boni/automations";
 import type { Label } from "@boni/entities";
-import { type AgentApi, queryValue } from "../core/agent.ts";
+import { type AgentApi, type AskedRow, parseAskedRow, queryValue } from "../core/agent.ts";
 
 /** Where a step's box is on the canvas, in the canvas's own units (AU-05). */
 export interface Place {
@@ -263,7 +263,13 @@ export interface RunView {
   wrote: boolean;
   /** The version that runs now: «Reintentar» runs it (AU-100). */
   published: number | null;
+  /** The proposal it left in the inbox and where it is (AU-193): its bar says it. Null when it asked nothing. */
+  proposal: { id: string; status: ProposalStatus } | null;
 }
+
+/** Where a run's proposal is (AU-193): waiting in the inbox, accepted, rejected, or no longer valid. */
+export type ProposalStatus = "pending" | "accepted" | "rejected" | "stale";
+const PROPOSAL_STATUS: readonly string[] = ["pending", "accepted", "rejected", "stale"];
 
 export type RunsFilter = "all" | "failed" | "tests";
 
@@ -326,6 +332,8 @@ export interface AutomationsClient {
     run: string,
     at: { step: string; side: "in" | "out"; name: string; offset: number },
   ): Promise<{ rows: RowView[]; total: number }>;
+  /** `GET automations/:id/runs/:run/asked` (AU-193): «Ver todo» of what a run asked, 50 from `offset`. */
+  asked(id: string, run: string, offset: number): Promise<{ asked: AskedRow[]; total: number }>;
   /** `POST automations/:id/runs/:run/retry` (AU-100): another run with its data; `undo` undoes that one first. */
   retry(id: string, run: string, undo: boolean): Promise<{ run: RunSummary } | Refused>;
   /** `POST automations/:id/runs/:run/undo` (AU-18): all it saved, or nothing. */
@@ -429,6 +437,16 @@ export function runViewOf(x: unknown): RunView {
     undoable: o.undoable === true,
     wrote: o.wrote === true,
     published: typeof o.published === "number" ? o.published : null,
+    proposal:
+      isObj(o.proposal) && typeof o.proposal.id === "string"
+        ? {
+            id: o.proposal.id,
+            // A word a newer server may give is said as no longer valid, never as waiting.
+            status: PROPOSAL_STATUS.includes(o.proposal.status as string)
+              ? (o.proposal.status as ProposalStatus)
+              : "stale",
+          }
+        : null,
   };
 }
 
@@ -583,6 +601,19 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
       return rowsOf(
         await api.automations("GET", path(id, `/runs/${encodeURIComponent(run)}/rows?${q}`)),
       );
+    },
+    asked: async (id, run, offset) => {
+      const o = await api.automations(
+        "GET",
+        path(id, `/runs/${encodeURIComponent(run)}/asked?offset=${offset}`),
+      );
+      const x = isObj(o) ? o : {};
+      return {
+        asked: (Array.isArray(x.asked) ? x.asked : [])
+          .map(parseAskedRow)
+          .filter((a): a is AskedRow => a !== null),
+        total: typeof x.total === "number" ? x.total : 0,
+      };
     },
     retry: async (id, run, undo) => {
       const r = await api.automations(

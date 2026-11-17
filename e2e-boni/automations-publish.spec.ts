@@ -1,7 +1,16 @@
+import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
-import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
+import {
+  DONE,
+  FLOW_CATALOG,
+  FLOW_CHECK,
+  FLOW_DETAIL,
+  FLOWS,
+  MAP,
+  MODELS,
+} from "./agent-scenarios.ts";
 import { ALL_DONE, TESTED, testOf, withRuns } from "./automation-data.ts";
-import { openApp } from "./fixtures.ts";
+import { emit, openApp } from "./fixtures.ts";
 
 /**
  * Publishing in «Automatizaciones» on the screen, F14d (docs/automatizaciones.md §5.8, §5.9, §5.10, §6): the header
@@ -122,6 +131,179 @@ async function openRuns(page: Page, more: { manyRuns?: number; sharedDevice?: bo
   await head(page).getByRole("tab", { name: "Ejecuciones" }).click();
   await expect(runItems(page).first()).toBeVisible();
 }
+
+/** A value that looks like HTML, Markdown and a link: read letter by letter wherever it is painted (A-01). */
+const LOOKS_LIKE_MARKUP =
+  '<img src=x onerror="window.__pwned=1"> **negrita** [enlace](https://ejemplo.example.com/x)';
+/** What «Revisar pendientes»'s run r_01jbien asked, as the server's `AskedView`: 3 books changed, 125 to the trash. */
+const ASKED_ROWS = [
+  {
+    step: "s_01jmodificar",
+    kind: "collection",
+    action: "update",
+    collection: "libros",
+    name: "Libros",
+    row: { id: "e_01jlibro0001", title: "<b>Rayuela</b>" },
+    values: {
+      titulo: {
+        value: LOOKS_LIKE_MARKUP,
+        before: "<b>Rayuela</b>",
+        integrity: "own",
+        outside: false,
+      },
+    },
+  },
+  ...[2, 3].map((i) => ({
+    step: "s_01jmodificar",
+    kind: "collection",
+    action: "update",
+    collection: "libros",
+    name: "Libros",
+    row: { id: `e_01jlibro000${i}`, title: `Libro ${i}` },
+    values: {
+      paginas: {
+        value: 400,
+        before: 200 + i,
+        integrity: i === 2 ? "external" : "own",
+        outside: i === 2,
+      },
+    },
+  })),
+  ...Array.from({ length: 125 }, (_, k) => ({
+    step: "s_01jeliminar",
+    kind: "collection",
+    action: "trash",
+    collection: "libros",
+    name: "Libros",
+    row: { id: `e_01jlibro${String(k + 4).padStart(4, "0")}`, title: `Libro ${k + 4}` },
+    values: {},
+  })),
+];
+const RUN_PROPOSAL_ID = "p_01jrunbien";
+/** The proposal r_01jbien left in the inbox, as the server lists it (`automations.accept_run`). */
+const RUN_PROPOSAL = {
+  id: RUN_PROPOSAL_ID,
+  tool: "automations.accept_run",
+  view: {
+    tool: "automations.accept_run",
+    title: "Guardar lo que propuso una automatización",
+    rows: [],
+    run: {
+      automation: TESTED.id,
+      name: PUBLISHED.name,
+      version: 2,
+      run: "r_01jbien",
+      startedBy: "schedule",
+      count: ASKED_ROWS.length,
+      counts: [
+        { collection: "libros", name: "Libros", action: "update", n: 3 },
+        { collection: "libros", name: "Libros", action: "trash", n: 125 },
+      ],
+      first: ASKED_ROWS.slice(0, 20),
+    },
+  },
+  sources: [],
+  created: Date.now() - 2 * 60 * 60_000,
+  run: null,
+  card: null,
+};
+/** «Revisar pendientes» whose run r_01jbien waits on its proposal. */
+const ASKING = {
+  ...WITH_RUNS,
+  runs: WITH_RUNS.runs.map((r) =>
+    r.id === "r_01jbien"
+      ? {
+          ...r,
+          proposal: { id: RUN_PROPOSAL_ID, status: "pending" as const },
+          asked: ASKED_ROWS,
+        }
+      : r,
+  ),
+};
+const runCardOf = (page: Page) => page.locator(".run-proposal");
+/** The app with that proposal in the Bandeja, opened; `accept`: what accepting it answers. */
+async function openAsking(
+  page: Page,
+  more: { accept?: unknown[]; sharedDevice?: boolean; phone?: boolean } = {},
+) {
+  await openApp(page, "/?still", {
+    automations: [ASKING],
+    agent: {
+      ...BEFORE(),
+      "GET api/agent/proposals": [{ proposals: [RUN_PROPOSAL] }],
+      ...(more.accept ? { "POST api/agent/proposals/:id/accept": more.accept } : {}),
+    },
+    ...(more.sharedDevice ? { sharedDevice: true } : {}),
+  });
+  if (more.phone)
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Bandeja/ })
+      .tap();
+  else
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
+  await expect(runCardOf(page)).toBeVisible();
+}
+/** An automation on the map as the server's `flowMap.ts` gives it (AU-47). */
+const autoNode = (
+  id: string,
+  name: string,
+  more: { runs?: number; on?: boolean; version?: number } = {},
+) => ({
+  id: `auto:${id}`,
+  kind: "automation",
+  name,
+  code: null,
+  icon: "",
+  runs: more.runs ?? 0,
+  last: null,
+  calls: 0,
+  cost: 0,
+  models: [],
+  roles: [],
+  proposals: 0,
+  accepted: 0,
+  on: more.on ?? true,
+  version: more.version ?? 2,
+  trigger: [
+    { step: "s_inicio", type: "manual" },
+    { step: "s_01jcadadia", type: "schedule" },
+  ],
+});
+const AUTO_NODE = autoNode(TESTED.id, PUBLISHED.name, { runs: 4 });
+const OFF_NODE = autoNode("a_01jx8x0t2v4x6z8b0d2f4h6k9r", "Resumen de la semana", {
+  on: false,
+  version: 1,
+});
+/** The map of before with these automations on it, each reading and writing Libros. */
+const mapWith = (autos: ReturnType<typeof autoNode>[]) => ({
+  ...MAP,
+  nodes: [...MAP.nodes, ...autos],
+  edges: [
+    ...MAP.edges,
+    ...autos.flatMap((a) => [
+      {
+        from: "col:t_libro",
+        to: a.id,
+        kind: "reads",
+        n: null,
+        outside: false,
+        steps: ["s_01jbuscar"],
+      },
+      {
+        from: a.id,
+        to: "col:t_libro",
+        kind: "writes",
+        n: null,
+        outside: true,
+        steps: ["s_01jmodificar"],
+      },
+    ]),
+  ],
+});
 
 test.describe("the header and «Publicar»", () => {
   test.beforeEach(async ({ page }) => {
@@ -1118,12 +1300,267 @@ test.describe("«Fijar» and «Programada»", () => {
       "Cada día a las 08:00 y 1 más",
     );
   });
-  test.fixme("AU-47 · the «Mapa» shows a published automation with the collections it reads and writes and its trigger, and one never published is not in it", async () => {});
+  test("AU-47 · the «Mapa» shows a published automation with the collections it reads and writes and its trigger, and one never published is not in it", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, "/?still", {
+      automations: [WITH_RUNS, NEVER],
+      agent: { ...BEFORE(), "GET api/agent/map": [mapWith([AUTO_NODE, OFF_NODE])] },
+    });
+    await openList(page);
+    await page.getByRole("tab", { name: "Mapa" }).click();
+    const map = page.locator(".mp-stage");
+    const node = map.locator(".mp-card.automation", { hasText: PUBLISHED.name });
+    // Its name, what starts it and the version that runs, its runs of the period; on, with no «Apagada».
+    await expect(node.locator(".mp-line")).toHaveText([
+      "Disparado por el usuario · Programada · versión 2",
+      "4 ejecuciones",
+    ]);
+    await expect(node).not.toHaveClass(/\boff\b/);
+    // One that is off says so.
+    const off = map.locator(".mp-card.automation", { hasText: "Resumen de la semana" });
+    await expect(off).toHaveClass(/\boff\b/);
+    await expect(off.locator(".mp-tag")).toHaveText("Apagada");
+    // Its arrows: Libros «lee» into it and it «escribe» Libros, with something from outside marked.
+    await expect(map.locator(".mp-edge-label.reads", { hasText: "lee" }).first()).toBeVisible();
+    await expect(
+      map.locator(".mp-edge-label.writes", { hasText: "escribe" }).first(),
+    ).toBeVisible();
+    // Never published, it is not on the map (the server leaves it out: flowMap.ts, publish.test.ts), nor its draft.
+    await expect(map.locator(".mp-card", { hasText: NEVER.name })).toHaveCount(0);
+    // Chosen, its panel opens it.
+    await node.click();
+    await page.locator(".mp-panel").getByRole("button", { name: "Abrir", exact: true }).click();
+    await expect(nameBox(page)).toHaveValue(PUBLISHED.name);
+  });
+  test("AU-47 · A-15 · the «Mapa» with 200 automations, one with a year of hourly runs, is drawn within its time", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const many = Array.from({ length: 199 }, (_, i) =>
+      autoNode(`a_01jmuchas${String(i).padStart(4, "0")}`, `Automatización ${i + 1}`, {
+        runs: 30,
+        on: i % 3 !== 0,
+      }),
+    );
+    const year = autoNode(TESTED.id, PUBLISHED.name, { runs: 24 * 365 });
+    await openApp(page, "/?still", {
+      automations: [WITH_RUNS],
+      agent: { ...BEFORE(), "GET api/agent/map": [mapWith([year, ...many])] },
+    });
+    await openList(page);
+    const pressed = clock();
+    await page.getByRole("tab", { name: "Mapa" }).click();
+    const node = page.locator(".mp-card.automation", { hasText: PUBLISHED.name });
+    await expect(node.locator(".mp-line").nth(1)).toHaveText(/^8\.?760 ejecuciones$/);
+    const drawn = Math.round(clock() - pressed);
+    console.log(`AU-47 at volume: the map of 200 automations drawn in ${drawn} ms`);
+    // Measured here (2026-11-17, headless Chrome, load 1 to 2 per core on 8 cores): 1,7 s. The margin is for CI.
+    under(drawn, 4000, "clock", "drawing the map with 200 automations");
+  });
 });
 
 test.describe("what a run tells and asks", () => {
-  test.fixme("AU-193 · the proposal of a run in the inbox says the automation, how many rows it creates, modifies and sends to the trash in each collection and each row's before and after, marks what came from outside, and reads a value with HTML, Markdown or a link letter by letter", async () => {});
-  test.fixme("AU-193 · accepting it shows the run as having saved; when a row changed since, the card says «Ya no vale · Ejecutar otra vez»", async () => {});
-  test.fixme("AU-102 · the notice of a run that failed alone says the automation, the step and the reason in the app's words, and pressing it opens that run in «Ejecuciones»", async () => {});
-  test.fixme("AU-167 · the notice of a run that wrote alone says what it wrote in counts («… creó 1 fila en … · Deshacer»), and its «Deshacer» undoes that run", async () => {});
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+  test("AU-193 · the proposal of a run in the inbox says the automation, how many rows it creates, modifies and sends to the trash in each collection and each row's before and after, marks what came from outside, and reads a value with HTML, Markdown or a link letter by letter", async ({
+    page,
+  }) => {
+    await openAsking(page);
+    const c = runCardOf(page);
+    await expect(c.locator(".inbox-kind")).toHaveText("Lo que pregunta una automatización");
+    await expect(c.locator("h3")).toHaveText(
+      "Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros",
+    );
+    await expect(c.locator(".run-proposal-line")).toHaveText(
+      "versión 2 · A su hora · Esperando en la Bandeja",
+    );
+    // The first twenty of what it asked, each row with its before and its after, by the collection's field names.
+    const rows = c.locator(".run-asked-row");
+    await expect(rows).toHaveCount(20);
+    await expect(rows.nth(0).locator(".run-asked-what")).toHaveText("«<b>Rayuela</b>» en Libros");
+    const first = rows.nth(0).locator(".run-asked-value");
+    await expect(first.locator(".run-asked-field")).toHaveText("Título");
+    await expect(first.locator(".run-asked-before")).toHaveText("<b>Rayuela</b>");
+    // A value with HTML, Markdown and a link is read letter by letter (A-01): nothing of it is markup.
+    await expect(first.locator(".run-asked-after")).toHaveText(LOOKS_LIKE_MARKUP);
+    await expect(c.locator("b, img, a, strong, em")).toHaveCount(0);
+    expect(await page.evaluate(() => (window as { __pwned?: number }).__pwned)).toBeUndefined();
+    // What came from outside carries its mark, and only that.
+    await expect(c.locator(".run-asked-outside")).toHaveCount(1);
+    await expect(rows.nth(1).locator(".run-asked-outside")).toHaveText("de fuera");
+    await expect(rows.nth(1).locator(".run-asked-value")).toHaveText("Páginas202 → 400de fuera");
+    await expect(rows.nth(3).locator(".run-asked-what")).toHaveText(
+      "A la papelera: «Libro 4» de Libros",
+    );
+    // «Ver todo» reads the rest, fifty at a time.
+    await c.getByRole("button", { name: "Ver todo (128)" }).click();
+    await expect(rows).toHaveCount(128);
+    await expect(c.getByRole("button", { name: /^Ver todo/ })).toHaveCount(0);
+    expect(await recorded(page, "__autoAsked")).toEqual([
+      "r_01jbien 0",
+      "r_01jbien 50",
+      "r_01jbien 100",
+    ]);
+    // Its run says where its proposal is, and leads to it.
+    await c.getByRole("button", { name: "Ver la ejecución" }).click();
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
+      "Esperando en la Bandeja · Ver en la Bandeja",
+    );
+    // It opens on its own, beside the Bandeja that stayed open.
+    await runBar(page).getByRole("button", { name: "Ver en la Bandeja" }).click();
+    await expect(page.locator(".run-proposal:not(.inbox-panel .run-proposal)")).toBeVisible();
+    await page.screenshot({ path: `${SHOTS}/automation-run-proposal.png` });
+  });
+  test("AU-193 · accepting it shows the run as having saved, with no «Deshacer» in the Bandeja: it is undone with its run", async ({
+    page,
+  }) => {
+    await openAsking(page, { accept: [DONE] });
+    await runCardOf(page).getByRole("button", { name: "Aceptar", exact: true }).click();
+    await expect(runCardOf(page)).toHaveCount(0);
+    await expect(toast(page)).toContainText("Guardado lo que propuso Revisar pendientes");
+    await expect(toast(page).getByRole("button", { name: "Deshacer" })).toHaveCount(0);
+    await toast(page).getByRole("button", { name: "Ver la ejecución" }).click();
+    await expect(runItems(page).first()).toHaveAttribute("aria-current", "true");
+    await expect(runBar(page).locator(".auto-run-proposal")).toHaveText("Propuesta aceptada");
+    await expect(runBar(page)).toContainText("Propuso modificar 3 filas en Libros");
+    // What he accepted is undone with what it saved alone, from the run (AU-18).
+    await runBar(page).getByRole("button", { name: "Deshacer lo que hizo" }).click();
+    await expect(runBar(page)).toContainText("Deshecha hoy");
+    expect(await recorded(page, "__autoUndo")).toEqual(["r_01jbien"]);
+  });
+  test("AU-193 · when a row changed since, accepting saves nothing and the card says «Ya no vale · Ejecutar otra vez», which runs it again; its run says the same", async ({
+    page,
+  }) => {
+    await openAsking(page, { accept: [{ __status: 400, error: "stale" }] });
+    const c = runCardOf(page);
+    await c.getByRole("button", { name: "Aceptar", exact: true }).click();
+    await expect(c.locator(".run-proposal-line")).toHaveText(
+      "versión 2 · A su hora · Ya no vale: una fila cambió desde que lo propuso",
+    );
+    await expect(c.getByRole("button", { name: "Aceptar", exact: true })).toHaveCount(0);
+    await c.getByRole("button", { name: "Ejecutar otra vez" }).click();
+    // A run with the same data, by what the rows hold now; the card goes and the new run is shown.
+    await expect(runCardOf(page)).toHaveCount(0);
+    expect(await recorded(page, "__autoRetry")).toEqual(['{"run":"r_01jbien"}']);
+    await expect(runBar(page)).toContainText("reintento", { timeout: 10_000 });
+    // The run that asked says its proposal is no longer valid, with the same way out.
+    await runItems(page).nth(1).click();
+    await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
+      "Ya no vale · Ejecutar otra vez",
+    );
+  });
+  test("AU-193 · from a shared device the card is read and not accepted (decision 15): it says to do it from his own device, and the proposal keeps waiting", async ({
+    page,
+  }) => {
+    await openAsking(page, {
+      sharedDevice: true,
+      accept: [{ __status: 400, error: "accept-on-a-personal-device" }],
+    });
+    const c = runCardOf(page);
+    await expect(c.locator(".run-asked-row")).toHaveCount(20);
+    await c.getByRole("button", { name: "Aceptar", exact: true }).click();
+    await expect(c.locator(".decide-error")).toHaveText("Solo desde un dispositivo personal.");
+    await expect(c.locator(".run-proposal-line")).toContainText("Esperando en la Bandeja");
+    await c.getByRole("button", { name: "Ver la ejecución" }).click();
+    await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
+      "Esperando en la Bandeja · Ver en la Bandeja",
+    );
+  });
+  test("AU-102 · the notice of a run that failed alone says the automation, the step and the reason in the app's words, and pressing it opens that run in «Ejecuciones»", async ({
+    page,
+  }) => {
+    const text =
+      "«Revisar pendientes» falló en «Modificar filas en Libros»: llegó a un límite de la ejecución.";
+    await openApp(page, "/?still", {
+      automations: [
+        {
+          ...WITH_RUNS,
+          runs: WITH_RUNS.runs.map((r) =>
+            r.id === "r_01jfallo" ? { ...r, notice: { kind: "failed" as const, text } } : r,
+          ),
+        },
+      ],
+      agent: BEFORE(),
+    });
+    // The desktop's notification of it, pressed, asks the window for that run (notices.cjs `aboutOf`, main.cjs).
+    await emit(page, { type: "navigate", screen: `run:${TESTED.id}:r_01jfallo` });
+    await expect(nameBox(page)).toHaveValue(PUBLISHED.name);
+    await expect(head(page).getByRole("tab", { name: "Ejecuciones" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(runItems(page).nth(2)).toHaveAttribute("aria-current", "true");
+    await expect(runBar(page).locator(".auto-run-notice")).toHaveText(`Avisó: ${text}`);
+    await expect(runBar(page)).toContainText("Falló en «Modificar filas en Libros»");
+    // A screen that is not two ids opens nothing of it.
+    await emit(page, { type: "navigate", screen: "run:<b>x</b>:r_1" });
+    await expect(runBar(page)).toHaveCount(0);
+  });
+  test("AU-167 · decision 17: what a run that started alone saved pops up nothing; its line in «Ejecuciones» says it in counts («… creó 1 fila en Libros») with «Deshacer lo que hizo», which undoes that run", async ({
+    page,
+  }) => {
+    const text = "«Revisar pendientes» creó 1 fila en Libros.";
+    const alone = {
+      id: "r_01jsola",
+      at: Date.now() - 20 * 60_000,
+      version: 2,
+      startedBy: "schedule",
+      steps: WITH_RUNS.runs[0]?.steps,
+      line: {
+        writes: [{ collection: "libros", name: "Libros", action: "create", n: 1 }],
+        asked: [],
+        outside: false,
+      },
+      notice: { kind: "wrote" as const, text },
+    };
+    await openApp(page, "/?still", {
+      automations: [{ ...WITH_RUNS, runs: [...WITH_RUNS.runs, alone] }],
+      agent: BEFORE(),
+    });
+    // Its last event carries what it told: the app pops up nothing for it (no toast, no window).
+    await emit(page, {
+      type: "run",
+      automation: TESTED.id,
+      run: "r_01jsola",
+      state: "done",
+      notice: { kind: "wrote", text, automation: TESTED.id, run: "r_01jsola" },
+    });
+    await page.waitForTimeout(300);
+    await expect(toast(page)).toHaveCount(0);
+    await openCanvas(page, PUBLISHED.name);
+    await head(page).getByRole("tab", { name: "Ejecuciones" }).click();
+    await runItems(page).first().click();
+    await expect(runBar(page)).toContainText("A su hora");
+    await expect(runBar(page)).toContainText("Creó 1 fila en Libros");
+    await expect(runBar(page).locator(".auto-run-notice")).toHaveText(`Avisó: ${text}`);
+    const undo = runBar(page).getByRole("button", { name: "Deshacer lo que hizo" });
+    await undo.click();
+    await expect(toast(page)).toContainText("Deshecho lo que hizo");
+    await expect(runBar(page)).toContainText("Deshecha hoy");
+    expect(await recorded(page, "__autoUndo")).toEqual(["r_01jsola"]);
+  });
+});
+
+test.describe("what a run asks, on the phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("AU-193 AU-74 · on the phone the card of a run's proposal is in the Bandeja, whole within the screen's width", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openAsking(page, { phone: true });
+    const c = runCardOf(page);
+    await expect(c.locator("h3")).toContainText("Revisar pendientes quiere modificar 3 filas");
+    await expect(c.getByRole("button", { name: "Aceptar", exact: true })).toBeVisible();
+    await expect(c.locator(".run-asked-after").first()).toHaveText(LOOKS_LIKE_MARKUP);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+  });
 });

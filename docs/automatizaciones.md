@@ -984,7 +984,7 @@ interface Connection {
   Hecho en E2: `connectionActions` no da nada a ningún otro tipo, una conexión en él es `connection.notAllowed`, y un
   «Código» sin conexiones valida y no lee ninguna colección.
   Hecho en W1: la conexión de un «Código» da permiso de guardar (AU-176). Hecho en W2: guardar.
-- **AU-47** (F14d, en parte) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
+- **AU-47** (F14d, hecho) · El mapa de Boni se calcula de las conexiones y de los pasos «Colección» (A-16): sigue
   diciendo antes de ejecutar qué lee y qué escribe cada automatización.
   En la F14d: lo da `abilities` (`versions.ts`, AU-96) sobre la versión publicada, la misma función que escribe «Lo
   que podrá hacer»: por cada colección, qué pasos la leen, crean, modifican o eliminan, y con qué se inicia. Una
@@ -1001,7 +1001,10 @@ interface Connection {
   sus pasos. Las ejecuciones se cuentan con una consulta que contesta el índice `automation_runs_count` sin leer
   ninguna (`AUTOMATION_RUNS_IN_SQL`); las pruebas y las horas que no corrieron no cuentan. Con 200 automatizaciones,
   una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`).
-  Falta: que `FlowMap.tsx` pinte el nodo nuevo (P3).
+  Hecho en P3b: `FlowMap.tsx` pinta el nodo: el rayo, su nombre, «Disparado por el usuario · Programada · versión 2»
+  y sus ejecuciones del periodo; apagada, «Apagada» y en gris; sus flechas «lee» y «escribe»; elegido, «Abrir» lleva
+  a ella. Una sin publicar no está nunca (`automations-publish.spec.ts`, AU-47); con 200 automatizaciones, una con
+  un año de ejecuciones cada hora, el «Mapa» se pinta dentro de su tiempo, medido con `@boni/pace` (A-15).
 
 **Los permisos de guardar de un «Código»** (Juan, 2026-11-16). Son los de esta tabla, no otros: los mismos permisos,
 las mismas celdas y las mismas palabras que tendrá el «Agente» (T-05).
@@ -1865,7 +1868,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   listas cerradas (`NOTICE_REASONS`: «el código falló»), más corta que el ejemplo de arriba para que nada de una
   fila pase al aviso. Un fallo va por `AgentHost.notify` con la ejecución que lo dio (`about`): a la app (el
   evento `notify`, que la app de escritorio enseña como aviso del sistema) y al móvil (`pushNotice`, solo el texto).
-  Un reintento no avisa (`retryOf`). Falta: que tocar el aviso abra la ejecución, en la app y en el móvil (P3).
+  Un reintento no avisa (`retryOf`).
+  Hecho en P3b: tocar el aviso abre la ejecución en «Ejecuciones». En la app de escritorio, el aviso del sistema
+  del evento `notify` lleva su `about` y abre `run:<automatización>:<ejecución>` (`notices.cjs`, `main.cjs`,
+  `notices.test.cjs`); en la app, esa pantalla abre la automatización con esa ejecución elegida, y una que no está
+  no abre nada (`automations-publish.spec.ts`, AU-102). Lo que guardó sola no salta (decisión 17 del §10). Falta:
+  que tocarlo en el móvil abra la ejecución: el `pushNotice` del servidor lleva solo el texto; le falta llevar
+  `about`, que `NoticeRules` de Android lo lea y que `Notices.show` abra `run:<a>:<r>` con su `Launcher`.
 - **AU-103** (F14d, hecho) · Se guardan enteras las últimas 100 ejecuciones o 30 días de cada automatización; de
   las anteriores, solo el resumen (A-29).
   En la F14d: la «o» de la regla se lee como lo que antes acabe, para que lo guardado entero tenga tope por
@@ -1902,6 +1911,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`scheduler.test.ts`).
   Hecho en P2: en la lista y en su barra, «Interrumpida en «Si»», con lo que guardó, «Deshacer lo que hizo» y
   «Reintentar» de la mano de Juan.
+  Hecho en P3b: en la app de escritorio sobre el servidor real, un servidor que se para con una ejecución en
+  «Buscar filas» y vuelve a arrancar la enseña «Interrumpida en «Buscar filas en Tareas»», con «Reintentar», y no la
+  corre otra vez (`e2e-boni-desktop/automations-publish.spec.ts`, AU-190). La parada se deja en el almacén como la
+  deja un servidor que se apaga, porque ningún paso dura lo bastante para pararlo a mano; `runs.test.ts` para la
+  caja de verdad a medias.
 - **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
@@ -2220,6 +2234,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   sin él pregunta.
   Hecho en P1: la marca de la tarjeta («Elimina en Gastos · sin preguntar»), y «Haría esto» que dice «A la papelera ·
   sin preguntar» en cada fila de un «Eliminar filas» con «Sí», con su prueba en `automations-publish.spec.ts`.
+  Hecho en P3b: el «Permiso» de «Eliminar filas» sobre el servidor real, en la app de escritorio: «Sí» tira sin
+  preguntar y «Preguntar» propone (`e2e-boni-desktop/automations-publish.spec.ts`, AU-186 AU-187).
   Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro en las tres acciones, con qué valor nace, que
   un paso sin él pregunta, y lo que `stepChanges` da con cada uno), `edit.test.ts` (`apps/boni-web`: el paso que
   añade su mano lleva su «Permiso» escrito; cambiar la acción no lleva el «Sí» de la otra) y
@@ -2584,8 +2600,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   la ejecución, la inicie quien la inicie (AU-195). El «Sí» se lee de la versión publicada desde S1.
   Hecho en S3: `proposal.test.ts` sobre el servidor, a mano y a su hora: una eliminación con «Sí» de un «Colección»
   o de un «Código» va a la papelera sin propuesta y se deshace con la ejecución, también cuando lo de fuera elige
-  las filas; con «Preguntar», se propone, y aceptarla vale como la confirmación de P5. Falta: las palabras «sin
-  preguntar» en la app (AU-189, pantallas).
+  las filas; con «Preguntar», se propone, y aceptarla vale como la confirmación de P5.
+  Hecho en P3b: en la app de escritorio sobre el servidor real, un «Eliminar filas» publicado con «Sí» manda sus
+  filas a la papelera a su hora sin propuesta, y deshacer la ejecución las devuelve; con «Preguntar», la misma
+  ejecución deja una propuesta, y rechazada no se tira nada (`e2e-boni-desktop/automations-publish.spec.ts`, AU-186
+  AU-187). Falta: las palabras «sin preguntar» en la app (AU-189, pantallas).
   El coste de la decisión, como se le dijo a Juan, en dos casos. Los ve una vez, en «Publicar» (AU-182), y no en
   cada ejecución.
 
@@ -2620,7 +2639,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   por el mismo camino; la prueba lo hace con el «Texto») hace fallar su fila antes de cualquier llamada (`ai.private`), por el «Si falla» del paso, con el parámetro, el campo y, si la fila
   dice de qué colección se leyó, la colección; nunca el valor. Las otras filas del paso se leen. Desde E3, lo que
   un planificador no puede ver llega a un «Agente» como asa (AU-197). Falta: la lectura negada en `decide` desde el servidor y su prueba (S1), y la comprobación al publicar (P1).
-- **AU-167** (F14d, en parte) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
+- **AU-167** (F14d, hecho) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
   regla la sigue. `decide` conoce un origen más, `automation`: una ejecución de verdad de una versión publicada, la
@@ -2641,7 +2660,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   este origen: su tope son las filas escritas de la ejecución (AU-17), que Juan ve y cambia. Lo que se propone de
   una ejecución es una sola propuesta (AU-193). Una ejecución que empezó sola y escribió da un aviso por ejecución
   («Tarea de la mañana creó 1 fila en Tareas · Deshacer»), que escribe el código con cuentas y nombres de
-  colección, nunca con valores; sale en la app, y al móvil solo van los fallos (AU-102). La que inició su mano lo
+  colección, nunca con valores; sale en la app, en su línea de «Ejecuciones» y sin saltar (decisión 17 del §10), y al móvil solo van los fallos (AU-102). La que inició su mano lo
   dice en su pantalla. P9 no se toca: un paso solo puede nombrar colecciones que no son del sistema (`shape`,
   `collectionNamed`), así que una automatización no tiene con qué escribir lo que Boni sabe de Juan, traiga lo
   que traiga. Lo que quedaba de AU-185 (la propuesta de P4 sobre el servidor real) lo sustituye la decisión 11:
@@ -2654,7 +2673,13 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   nombrar una colección del sistema. La tercera fila es de AU-204 (F15).
   Hecho en S4: el aviso por ejecución (`notices.ts`), con las cuentas y los nombres de su línea, se guarda con la
   ejecución y va en su último evento (`RunEvent.notice`); no va al móvil ni como aviso del sistema
-  (`scheduler.test.ts`). Falta: pintarlo en la app con su «Deshacer» (P3).
+  (`scheduler.test.ts`).
+  Hecho en P3b: la app no lo saca como aviso (decisión 17 del §10, 2026-11-17): lo que guardó sola se ve en su
+  línea de «Ejecuciones», «A su hora · Creó 1 fila en Libros», con «Deshacer lo que hizo», que deshace esa
+  ejecución (`automations-publish.spec.ts`, «AU-167 · decision 17»). Sobre el servidor real en la app de escritorio,
+  a su hora: lo de fuera con «Preguntar» no guarda nada y deja una propuesta, y con «Sí» lo guarda con «con datos de
+  fuera» en su línea, igual a mano (`e2e-boni-desktop/automations-publish.spec.ts`, AU-167 AU-193 AU-170 y AU-195
+  AU-167).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla),
   `automations.test.ts` (servidor: cada acto de `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
   almacén de verdad, y que ningún paso puede nombrar una colección del sistema) y `scheduler.test.ts` (el aviso por
@@ -2725,12 +2750,16 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   en el almacén con la suya (`box.test.ts`, 3.000 filas, de fuera y propias).
   Hecho en S3: la propuesta guarda cada valor con su etiqueta y aceptar lo escribe con ella; otra ejecución que lee
   lo guardado con «Sí» o aceptado lo recibe de fuera, lo guarda de fuera con «Sí» y lo propone marcado con
-  «Preguntar» (`proposal.test.ts`). Falta: lo fijado (AU-93).
+  «Preguntar» (`proposal.test.ts`).
+  Hecho en P3b: lo mismo en la app de escritorio sobre el servidor real: aceptada en la Bandeja la propuesta de una
+  ejecución programada con un valor de fuera, otra automatización que lee esas filas y las guarda con «Sí» dice
+  «con datos de fuera» en su línea (`e2e-boni-desktop/automations-publish.spec.ts`, AU-167 AU-193 AU-170). Falta: lo
+  fijado (AU-93).
   Lo sostienen `consent.test.ts` (`packages/automations`: lo que se pregunta lleva la etiqueta de cada valor),
   `box.test.ts` (servidor: lo guardado con «Sí» conserva su etiqueta en el almacén) y
   `proposal.test.ts` (servidor: un valor de fuera guardado con «Sí», o propuesto y aceptado, y leído otra vez por
   otra ejecución sigue siendo de fuera; lo que esa escriba con él lo decide su celda, y el asistente lo propone).
-- **AU-193** (F14d, en parte) · Lo que una ejecución pregunta es una sola propuesta en la Bandeja de siempre. Junta
+- **AU-193** (F14d, hecho) · Lo que una ejecución pregunta es una sola propuesta en la Bandeja de siempre. Junta
   el cambio entero de cada paso que espera (AU-174), paso por paso, y la ejecución sigue: un paso que espera no da
   filas a los siguientes (AU-14). Espera lo que una celda «Preguntar» hace esperar y lo que escribió un modelo
   (AU-167; desde la F15, lo de un modelo solo sin el «Sí», y lo de un turno ambiental siempre: AU-204); desde la decisión 11 (§10), lo de fuera con «Sí» ya no, y es igual la inicie quien la inicie. La tarjeta la pinta el código, con texto y nunca con un resumen de un modelo:
@@ -2753,8 +2782,17 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   su antes y su después y la marca de fuera), y la acción `automations.accept_run` (`acceptsRun`), que solo llama
   aceptarla desde la Bandeja y pasa por `decide` con el origen aceptado (P28 y P5). Desde un dispositivo compartido
   no se acepta; una fila cambiada la deja «stale» sin guardar nada; rechazar no escribe; deshacer la ejecución deja
-  sin valer la que esperaba (`proposal.test.ts`). Falta: su tarjeta en la Bandeja y el texto con HTML leído letra
-  por letra (`automations-publish.spec.ts`, pantallas P3).
+  sin valer la que esperaba (`proposal.test.ts`).
+  Hecho en P3b: su tarjeta en la Bandeja (`RunProposalCard.tsx`, desde `InboxCards.tsx`), pintada por el código desde
+  `view.run` y siempre como texto: «Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125
+  filas de Libros», «versión 2 · A su hora · Esperando en la Bandeja», cada fila con su antes y su después y «de
+  fuera», y «Ver todo (128)», que lee el resto de 50 en 50 (`GET …/runs/:run/asked`, `runAsked`). Un valor con
+  HTML, Markdown o un enlace se lee letra por letra. Aceptada, el aviso dice «Guardado lo que propuso…» sin
+  «Deshacer»: lleva a la ejecución, que dice «Propuesta aceptada» y lo deshace con «Deshacer lo que hizo». Cambiada
+  una fila, «Ya no vale · Ejecutar otra vez», en la tarjeta y en su ejecución. Desde un dispositivo compartido se lee
+  y no se acepta (decisión 15). Ningún plan puede llamar `automations.accept_run`: `decide` lo niega a todo origen
+  que no es la aceptación (P28, `automation-origin.test.ts`). Lo prueban `automations-publish.spec.ts` (`e2e-boni`)
+  y, sobre el servidor real, `e2e-boni-desktop/automations-publish.spec.ts`.
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: un borrado aceptado en la propuesta de una
   ejecución no se confirma otra vez, y el de cualquier otra propuesta sí) y `proposal.test.ts` (servidor): una
   propuesta por ejecución con dos pasos que esperan; aceptar guarda
@@ -3323,6 +3361,23 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       de guardar, la celda dice «Sí · en pausa», y un aviso lo cuenta una vez con «Quitar pausa». La versión
       publicada no cambia y la pausa solo baja. La otra: solo el aviso, y las ejecuciones seguirían guardando hasta
       que él bajara la celda. Prueba: `learning.test.ts` (AU-210, S3 de la F15).
+
+17. **Lo que una «Programada» guarda sola no salta como aviso: avisar es un paso suyo.** El PR de lo que una
+    ejecución cuenta y pregunta (F14d P3, tarea 128) preguntó: «Lo que una automatización con disparador
+    «Programada» guarda sola, ¿salta también como aviso en el escritorio?». **Juan, 2026-11-17: «dependeria de si la
+    automatizacion tiene una salida que vaya por avisos en escritorio, moviles o lo que sea».** Queda como está
+    construido. Lo que guardó una ejecución se ve en su línea de «Ejecuciones», con «Deshacer lo que hizo» al lado
+    (`.auto-run-notice`), y nada salta en la pantalla ni en el móvil. Un aviso es un paso que él pone en la
+    automatización, «Avisar» (AU-201, E4 de la F15): una «Programada» que quiera avisar de lo que guardó lo dice con
+    ese paso, hacia el escritorio, el móvil o donde sea. Un fallo de una automatización que corre sola sigue avisando
+    una vez por racha (decisión 12, AU-102). Por ejemplo, «Repaso de cada mañana» crea una fila en Tareas a las
+    08:00: a las 08:00 no salta nada; en su línea de «Ejecuciones» se lee «A su hora · Creó 1 fila en Tareas», con
+    «Deshacer lo que hizo»; y si un día falla, salta una vez «Repaso de cada mañana falló en «Crear una fila»». La
+    otra respuesta: un aviso en el escritorio cada vez que una ejecución programada guarda algo, sin que la
+    automatización lo pida, y una «Cada hora» que guarda saltaría veinticuatro veces al día. Prueba:
+    `automations-publish.spec.ts` (`e2e-boni`, «AU-167 · decision 17: …»: el evento de una ejecución que guardó sola
+    no saca ningún aviso, y su línea lo dice con «Deshacer») y el criterio de la F14d en la app de escritorio
+    (`e2e-boni-desktop/automations-publish.spec.ts`, AU-95).
 
 18. **Un «Agente» que modifica filas puede llevar valores fijos, como al crear.** El segundo PR de E3 de la F15
     (tarea 129) preguntó: «Cuando un paso «Agente» modifica filas, ¿quieres poder fijar tú el valor de un campo?».

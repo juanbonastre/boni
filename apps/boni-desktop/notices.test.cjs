@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { noticeBody, noticeOf, runOf, createNotices } = require("./notices.cjs");
+const { noticeBody, noticeOf, aboutOf, runOf, createNotices } = require("./notices.cjs");
 
 // Boni's notices on this computer (task 62, A-17): the agent's stream, and what a notification may say.
 
@@ -26,6 +26,23 @@ test("only a «notify» event with a text is a notice", () => {
   assert.equal(noticeOf({ event: "proposals", data: '{"n":2}' }), null);
   assert.equal(noticeOf({ event: "notify", data: '{"text":""}' }), null);
   assert.equal(noticeOf({ event: "notify", data: "{no es json" }), null);
+});
+
+test("AU-102 · a notice about a run says which, so its notification opens it; ids that are not ids are no run", () => {
+  assert.deepEqual(
+    aboutOf({
+      event: "notify",
+      data: '{"text":"«Tarea de la mañana» falló","integrity":"own","about":{"automation":"a_01j","run":"r_01k"}}',
+    }),
+    { automation: "a_01j", run: "r_01k" },
+  );
+  assert.equal(aboutOf({ event: "notify", data: '{"text":"Sacar la basura"}' }), null);
+  assert.equal(
+    aboutOf({ event: "notify", data: '{"text":"x","about":{"automation":"a:1","run":"r_1"}}' }),
+    null,
+  );
+  assert.equal(aboutOf({ event: "run", data: '{"about":{"automation":"a_1","run":"r_1"}}' }), null);
+  assert.equal(aboutOf({ event: "notify", data: "{no es json" }), null);
 });
 
 test("F14d P2 · a «run» event gives its ids, state, step and counts to the windows, and nothing else", () => {
@@ -94,18 +111,19 @@ test("the agent's stream gives each notice once, with the session's token, from 
         [
           ': connected\n\nevent: proposals\ndata: {"n":1}\n\nevent: notify\ndata: {"text":"Resumen',
           ' de hoy","integrity":"own"}\n\n',
+          'event: notify\ndata: {"text":"Falló","integrity":"own","about":{"automation":"a_1","run":"r_2"}}\n\n',
         ],
         init.signal,
       );
     },
     target: () => ({ serverUrl: "https://boni.example", token: "tok" }),
-    onNotice: (t) => seen.push(t),
+    onNotice: (t, about) => seen.push(about ? `${t} → ${about.run}` : t),
   });
   notices.restart();
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(asked, "https://boni.example/api/agent/events");
   assert.equal(auth, "Bearer tok");
-  assert.deepEqual(seen, ["Resumen de hoy"]);
+  assert.deepEqual(seen, ["Resumen de hoy", "Falló → r_2"]);
   notices.stop();
 });
 
