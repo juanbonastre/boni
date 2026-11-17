@@ -587,10 +587,10 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P1 | Leer datos propios, borradores, escrituras reversibles pedidas por Juan en este turno | allow, registrado, con Deshacer |
 | P2 | Un argumento `destination`, `url`, `path` o `recipient` con integridad `external`, `model` o `ambient` | deny siempre |
 | P3 | `egress` o `send` con datos `personal`/`sensitive` | deny; confirm si esos datos tienen integridad `user` en este turno |
-| P4 | Escritura con algún argumento `external` (una tarea sacada de un correo) | propose (bandeja, un toque) |
-| P5 | `send`, pagar, borrar a petición del agente, `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
+| P4 | Escritura con algún argumento `external` (una tarea sacada de un correo), salvo lo que deja P28 | propose (bandeja, un toque) |
+| P5 | `send`, pagar, borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera con el «Sí» de Juan para esa colección (AU-186) o dentro de la propuesta de una ejecución que él acepta (AU-193: aceptarla es esta confirmación), `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
 | P6 | Turno ambiental (TV, voz ambiental) o dispositivo compartido | solo `read` y propose; lo sensible se confirma en el móvil |
-| P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
+| P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose, salvo lo que deja P28; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
 | P8 | `flow` (ejecutar un flujo suyo, `flows.run`); antes también `schedule` (`jobs.create`, quitado en F4b: los trabajos programados son flujos que solo se proponen, P19) | solo desde un turno de Juan, con confirm; nunca desde segundo plano, una mini-app, una propuesta aceptada ni contenido externo |
 | P9 | `memory` con algún argumento `external` | deny (el contenido externo nunca escribe en la memoria) |
 | P10 | `schema` | allow con aviso y Deshacer en un turno de Juan; propose si viene de contenido externo o de la jardinería; borrar datos de un campo, confirm |
@@ -598,7 +598,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P12 | Límites por ejecución: pasos, llamadas a modelos, bytes de salida, coste | deny al superarlos |
 | P13 | Límites por día en segundo plano: llamadas a lectores por día y por remitente, coste diario; el trabajo que decide y limita el propio código (la revisora volviendo a leer correo ya decidido para medir una guía, como mucho una vez al día) cuenta en el día y en su propio cupo (45 lecturas), nunca en el de cada remitente ni en el del correo nuevo (tarea 37) | lo que pase del límite espera al día siguiente o a que Juan lo pida; avisa una vez |
 | P14 | Un destino (`destination`, `url`, `path`, `recipient`) que es un valor derivado (4.2) | deny |
-| P15 | Un paso cuya condición o iteración depende de datos externos (etiqueta de control, 4.2) | se trata como si sus argumentos fueran externos: propose, o la regla que toque |
+| P15 | Un paso cuya condición o iteración depende de datos externos (etiqueta de control, 4.2), salvo lo que deja P28 | se trata como si sus argumentos fueran externos: propose, o la regla que toque |
 | P16 | Crear o cambiar mini-apps, atajos o trabajos con algo externo en su especificación | deny (Juan puede crearlos a mano o pedirlos en un turno) |
 | P17 | Escribir texto con integridad `model` o `external` que lleve recursos remotos (imágenes, iframes, `![](https://…)`) en un sitio que otro programa pinta (espejo del vault, notas) | se escribe neutralizado: el recurso pasa a texto plano |
 | P18 | Un efecto indirecto: código de Boni que haría algo con un valor guardado (descargar una URL de un campo, suscribirse a un calendario) | solo si ese valor tiene integridad `user` y la acción es una herramienta `egress` declarada |
@@ -611,24 +611,16 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P25 | La mano de Juan en una ruta de la API (origen `hand`: cada acción de `ROUTE_ACTIONS`, antes de que la ruta corra; A-26) | allow: es su toque, con su sesión; deny una pieza de flujo (P20) o un acto de su pantalla (P22), que no tienen ruta. Una acción que no está en la lista es P0 y la ruta responde 403 |
 | P26 | El chat de una página (una llamada con `scope`: la ejecución de un mensaje en su modo; `packages/agent/src/chat.ts`, D-61, `docs/sistema.md` §4.6 punto 6), después de P0 y antes de las demás reglas | deny una acción que su paso «Agente» no da (`not-the-chats-action`), una página que no es la suya (`not-the-chats-page`) o una colección que su página no enseña (`not-the-pages-collection`; también la colección de un bloque que añadiría, `pages.add_block`); lo que pasa sigue por las demás reglas. Sin `scope`, la regla no se aplica |
 | P27 | Lo que escribe el chat de una página (una llamada con `scope` que escribe; D-62, `docs/sistema.md` §4.6 punto 7), después de P5 | confirm todo salvo cambiar un valor de su página (`CHAT_UNASKED`, `packages/agent/src/chat.ts`): añadir un bloque pasa por su tarjeta. Sin `scope`, la regla no se aplica |
-
-**Diseñado y sin construir: lo que escribe una automatización publicada** (F14d de «Automatizaciones»,
-`docs/automatizaciones.md` §6: AU-167, AU-186, AU-195, y la decisión 11 de su §10, de Juan, 2026-11-16). Hasta que
-llegue su código, con sus pruebas en el mismo PR, vale la tabla de arriba tal cual. Entonces cambian cinco filas, y
-ninguna otra:
-
-| Regla | Caso | Decisión |
-|---|---|---|
-| P4 | Escritura con algún argumento `external` (una tarea sacada de un correo), salvo lo que deja P28 | propose (bandeja, un toque) |
-| P5 | `send`, pagar, borrar a petición del agente, salvo lo que una automatización publicada manda a la papelera con el «Sí» de Juan para esa colección (AU-186) o dentro de la propuesta de una ejecución que él acepta (AU-193: aceptarla es esta confirmación), `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
-| P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose, salvo lo que deja P28; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
-| P15 | Un paso cuya condición o iteración depende de datos externos (etiqueta de control, 4.2), salvo lo que deja P28 | se trata como si sus argumentos fueran externos: propose, o la regla que toque |
 | P28 | Lo que escribe en una colección un paso de una versión publicada de una automatización, en una ejecución de verdad (origen `automation`: la inicie la mano de Juan o empiece sola, que no llega a `decide`), después de P2, P14 y P9, que no cambian | allow, con el Deshacer de la ejecución, crear, modificar o mandar a la papelera cuando la versión publicada guardada dice «Sí» para esa colección y esa acción (lo lee el servidor, nunca la llamada de un modelo), también con un valor `external` o un camino que depende de algo de fuera, y lo guardado conserva su etiqueta; sin ese «Sí», propose crear y modificar y confirm mandar a la papelera (P5), que van en la propuesta de la ejecución; propose un valor `model` o `ambient`; deny `egress`, `send` y lo irreversible. P11 no cuenta: el tope son las filas escritas de la ejecución (AU-17) |
 
 P28 es la única excepción a P4 y a P15, y solo para ese origen: el asistente en un turno, el MCP, el segundo plano
 de antes y una mini-app siguen como en la tabla de arriba. Una ejecución que inicia la mano de Juan («Ejecutar»)
 deja de ser P25 y pasa por P28, como la que empieza sola: la misma versión con la misma entrada recibe la misma
-decisión (A-36).
+decisión (A-36). Lo construye la F14d (E1, decisión 11 de `docs/automatizaciones.md` §10, de Juan, 2026-11-16):
+`decide` (`packages/agent/src/policy.ts`, `byAutomation`) y el servidor, que lee el «Sí» del documento que guarda
+(`consentIn`, `apps/server/src/automations/policy.ts`) y nunca de la llamada. Hasta que existan las versiones
+publicadas (S1), lo que corre de verdad es el borrador guardado, y el «Sí» se lee de él. Lo sostienen
+`automation-origin.test.ts` (una prueba por fila) y las tablas de AU-195 en `apps/server/src/automations/automations.test.ts`.
 
 - **Las confirmaciones las pinta el código** con la plantilla de cada herramienta y los argumentos reales:
   destinatario, importe, texto completo. Muestran la procedencia ("este texto viene de un correo de X"). Nunca usan un

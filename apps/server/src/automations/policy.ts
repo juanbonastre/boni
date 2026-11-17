@@ -13,24 +13,28 @@
  *   written in one `values` record, the values of the conditions in one `equals`, a row's id as `id`, and the
  *   collection by its key as `type` (labelled as what Juan wrote) where that action takes one; `control` is the label of the path (AU-164); `rows`, how many rows the call writes (P11 counts each);
  * - `flow: true` (a saved automation, not a plan a model wrote) and `dry: PolicyCall.test`;
- * - the origin is who started the run. In F14b there is one: Juan's hand on «Probar» in his editor, `{ kind:
- *   "hand", trust, device }`. The origin of a run that starts alone arrives with F14d (AU-167).
+ * - the origin is `automation` (P28) for every run of a version, for real or in its test, whoever started it: who
+ *   started it never reaches `decide` (AU-195, A-36). `hand` (P25) is not used for a run any more;
+ * - with every call, `yes`: whether the document this policy was made over says «Sí» for that step, collection and
+ *   action (`consentOf`, AU-186, AU-187). The server reads that document from its store; nothing in the call (the
+ *   box's answer, a request) can claim one (AU-188). The trash keeps `alwaysConfirm`, as the list's action does: for
+ *   this origin `decide` lifts it only with that «Sí» (P5's new sentence).
  *
  * One counter per run, kept here: every write the policy lets through counts, test or not, and the policy's own limit
- * (P11) counts over the whole run. By Juan's hand `decide` answers P25 and counts nothing: his own tap is the
- * confirmation the limit would ask for.
+ * (P11) counts over the whole run of an origin it applies to (not `automation`: its cap is the run's own, AU-17).
  * A decision is passed on as it is: this module never turns a «no» into a «sí», and adds no rule.
  */
-import { decide, type Origin, type ToolDef, type Trust, type Val } from "@boni/agent";
-import type { Decision, Labelled, Policy, PolicyCall } from "@boni/automations";
+import { decide, type Origin, type ToolDef, type Val } from "@boni/agent";
+import {
+  type Automation,
+  consentOf,
+  type Decision,
+  type Labelled,
+  type Policy,
+  type PolicyCall,
+  type WriteAction,
+} from "@boni/automations";
 import { join, type Label } from "@boni/entities";
-
-export interface PolicyFor {
-  trust: Trust;
-  device: string;
-  /** The label of what Juan wrote in the automation: the collection's key a step names. */
-  own: Label;
-}
 
 /** The run's counters, as `decide` reads them. */
 export interface RunCount {
@@ -134,8 +138,42 @@ export function argsOf(call: PolicyCall, own: Label): Record<string, Val> {
   return args;
 }
 
-/** The policy of one run from `origin`: make one per run, never share it between two (its counter is the run's). */
-export function runPolicy(origin: Origin, own: Label): Policy & { count: RunCount } {
+/** The origin of every run of an automation and of its test (P28, A-36): one, whoever starts it; `trust` is not read. */
+export const AUTOMATION: Origin = { kind: "automation", trust: "personal" };
+
+const WRITES: Readonly<Record<"create" | "update" | "trash", WriteAction>> = {
+  create: "create",
+  update: "update",
+  trash: "remove",
+};
+
+/**
+ * Whether `doc`, as the server keeps it, says «Sí» for what a call writes (AU-186): its step's connection cell, or
+ * the «Permiso» of a «Colección» step (AU-187). A call of another automation or version, a step `doc` does not have,
+ * a read, or no document at all, is no «Sí».
+ */
+export function consentIn(doc: Automation | undefined): (call: PolicyCall) => boolean {
+  return (call) => {
+    if (!doc || call.effect !== "write") return false;
+    if (call.automation.id !== doc.id || call.automation.version !== doc.version) return false;
+    const step = doc.steps.find((s) => s.id === call.step);
+    if (!step) return false;
+    const act = actOf(call);
+    return act in WRITES
+      ? consentOf(step, call.collection, WRITES[act as keyof typeof WRITES]) === "yes"
+      : false;
+  };
+}
+
+/**
+ * The policy of one run from `origin`: make one per run, never share it between two (its counter is the run's).
+ * `yes`: what the server read of the «Sí» for each write (`consentIn`); none without it.
+ */
+export function runPolicy(
+  origin: Origin,
+  own: Label,
+  yes: (call: PolicyCall) => boolean = () => false,
+): Policy & { count: RunCount } {
   const count: RunCount = { writes: 0, sensitiveReads: 0 };
   return {
     count,
@@ -148,6 +186,7 @@ export function runPolicy(origin: Origin, own: Label): Policy & { count: RunCoun
           flow: true,
           dry: call.test,
           ...(call.rows !== undefined ? { rows: call.rows } : {}),
+          yes: yes(call),
         },
         origin,
         count,
@@ -159,7 +198,13 @@ export function runPolicy(origin: Origin, own: Label): Policy & { count: RunCoun
   };
 }
 
-/** The policy of one run started by Juan's hand: make one per run, never share it between two. */
-export function handPolicy(who: PolicyFor): Policy & { count: RunCount } {
-  return runPolicy({ kind: "hand", trust: who.trust, device: who.device }, who.own);
+/**
+ * The policy of one run of `doc`, or of its test (P28): the origin `automation`, the «Sí» read from `doc` as the
+ * server keeps it. Make one per run, never share it between two.
+ */
+export function automationPolicy(
+  doc: Automation | undefined,
+  own: Label,
+): Policy & { count: RunCount } {
+  return runPolicy(AUTOMATION, own, consentIn(doc));
 }

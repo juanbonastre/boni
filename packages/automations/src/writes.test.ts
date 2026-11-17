@@ -60,7 +60,6 @@ import {
   type WriteInput,
   type WriteRequest,
   writeProblems,
-  YES_SAVES,
 } from "./writes.ts";
 
 const next = ids(13);
@@ -208,6 +207,7 @@ const UPDATES = "$col('Gastos').update('x', { a: 1 })\nreturn []";
 const YES = { mode: "yes" } as const;
 const ASK = { mode: "ask" } as const;
 const ALL_YES = toExpenses({ create: YES, update: YES, remove: YES });
+const ALL_ASK = toExpenses({ create: ASK, update: ASK, remove: ASK });
 /** «Solo estas filas»: the rows of «Gastos» whose note is «abierto». */
 const onlyOpen = (cells: Partial<Pick<Connection, "create" | "update" | "remove">>) => ({
   ...toExpenses(cells),
@@ -285,7 +285,7 @@ const writeInput = (requests: WriteRequest[], more: Partial<WriteInput> = {}): W
   requests,
   labels: requests.map(() => OWN),
   grants: grantsOf(readWrites(SAVES_ALL, "code"), named),
-  connections: [ALL_YES],
+  connections: [ALL_ASK],
   collectionNamed: named,
   today: "2026-11-16",
   test: false,
@@ -386,14 +386,14 @@ describe("asking to save", () => {
     const [first, second] = idsOf(st);
     const only = await saving(
       "$col('Gastos').update('x', { a: 1 })\nreturn [{ n: $col('Notas').count() }]",
-      [ALL_YES, { ...newConnection(notes.key), create: YES }],
+      [ALL_ASK, { ...newConnection(notes.key), create: ASK }],
       () => done([], [update(first, { [amount]: 9 })]),
       { store: st },
     );
     // Only what the analysis found and the connection allows: «Notas» creates nowhere in the code.
     expect(only.box.jobs[0]?.writes).toEqual({ Gastos: ["update"] });
     const asked = [remove(second), create({ [amount]: 5 }), update(first, { [amount]: 9 })];
-    const { e, rec, box } = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), {
+    const { e, rec, box } = await saving(SAVES_ALL, [ALL_ASK], () => done([], asked), {
       store: st,
     });
     expect([...(box.jobs[0]?.writes?.Gastos ?? [])].sort()).toEqual(["create", "remove", "update"]);
@@ -413,7 +413,7 @@ describe("asking to save", () => {
       const first = at(idsOf(st), 0);
       const { e, step } = await saving(
         "$col('Gastos').update('x', { a: 1 })\nreturn [{ visto: $col('Gastos').get('x') }]",
-        [toExpenses({ update: YES })],
+        [toExpenses({ update: ASK })],
         ({ job }) =>
           "k" in job.reads
             ? done(
@@ -458,7 +458,7 @@ describe("asking to save", () => {
     const all = idsOf(st);
     const { rec } = await saving(
       SAVES_ALL,
-      [ALL_YES],
+      [ALL_ASK],
       ({ at: i, job }) =>
         "k" in job.reads
           ? done({ n: i }, [update(at(all, i), { [amount]: 10 + i }), create({ [amount]: i })])
@@ -479,7 +479,7 @@ describe("asking to save", () => {
     const [first, second] = idsOf(st);
     const { rec } = await saving(
       SAVES_ALL,
-      [ALL_YES],
+      [ALL_ASK],
       () => done([], [update(first, { [amount]: 7 }), remove(second), create({ [amount]: 1 })]),
       { store: st },
     );
@@ -568,23 +568,18 @@ describe("all or nothing", () => {
     expect(e.asked.map((a) => a.kind)).toEqual([...Array(12).fill("propose"), "confirm"]);
     expect(st.applied).toEqual([]);
   });
-  it("AU-176 · until F14d (AU-186 to AU-188) a «Sí» saves nothing without asking: a step whose every cell is «Sí» waits as one proposal, as with «Preguntar» (`YES_SAVES`)", async () => {
-    expect(YES_SAVES).toBe(false);
+  it("AU-176 · AU-186 · a step whose every cell is «Sí» and a policy that allows saves its whole change in a real run and asks nothing (no `YES_SAVES`): create, modify and remove alike", async () => {
     const st = db(3);
     const [first, second] = idsOf(st);
-    const { e, rec, step } = await saving(
+    const { e, rec } = await saving(
       SAVES_ALL,
       [ALL_YES],
       () => done([], [create({ [amount]: 1 }), update(first, { [amount]: 2 }), remove(second)]),
       { store: st },
     );
-    expect(rec.writes?.kind).toBe("asked");
-    expect(e.asked.map((a) => [a.step, a.kind, a.rule])).toEqual([
-      [step.id, "propose", CONNECTION_ASKS],
-      [step.id, "propose", CONNECTION_ASKS],
-      [step.id, "confirm", CONNECTION_ASKS],
-    ]);
-    expect(st.applied).toEqual([]);
+    expect(rec.writes?.kind).not.toBe("asked");
+    expect(e.asked).toEqual([]);
+    expect(st.applied.map((c) => c.kind)).toEqual(["create", "update", "trash"]);
   });
   it("AU-174 · a code that throws after its requests, or a step that fails for any other reason, saves nothing; under «Si falla: seguir» the requests of the failed row are dropped and the others are saved", async () => {
     // Row 1 throws (its requests never leave the box); row 2 asks and then gives what is not rows.
@@ -601,7 +596,7 @@ describe("all or nothing", () => {
     for (const onError of ["continue", "errorOutput"] as const) {
       const st = db(4);
       const all = idsOf(st);
-      const { e, rec } = await saving(UPDATES, [toExpenses({ update: YES })], answer(all), {
+      const { e, rec } = await saving(UPDATES, [toExpenses({ update: ASK })], answer(all), {
         store: st,
         mode: "perRow",
         onError,
@@ -613,7 +608,7 @@ describe("all or nothing", () => {
       expect(e.asked).toHaveLength(2);
     }
     const st = db(4);
-    const stopped = await saving(UPDATES, [toExpenses({ update: YES })], answer(idsOf(st)), {
+    const stopped = await saving(UPDATES, [toExpenses({ update: ASK })], answer(idsOf(st)), {
       store: st,
       mode: "perRow",
     });
@@ -623,7 +618,7 @@ describe("all or nothing", () => {
     // All the rows at once: what is not rows fails the step, and what it asked goes with it.
     const whole = await saving(
       UPDATES,
-      [toExpenses({ update: YES })],
+      [toExpenses({ update: ASK })],
       () => done("texto", [update(at(idsOf(st), 0), { [amount]: 1 })]),
       { store: st },
     );
@@ -786,7 +781,7 @@ describe("the connection's permission", () => {
     expect(st.calls).toEqual([]);
   });
   it("AU-177 · with «Solo estas filas» a code cannot modify or remove a row outside it (`code.write.outside`, `row`), nor create one that would not pass it with the fields it gives (`created`: the store gives no defaults); a modify may take a row out of it", async () => {
-    const connection = onlyOpen({ create: YES, update: YES, remove: YES });
+    const connection = onlyOpen({ create: ASK, update: ASK, remove: ASK });
     const st = db(4);
     const [shut, open] = idsOf(st);
     for (const [request, why] of [
@@ -843,7 +838,7 @@ describe("the connection's permission", () => {
     expect([a?.message, a?.why]).toEqual([b?.message, b?.why]);
   });
   it("AU-177 · with «Solo estos campos» a code cannot set a field outside them (`code.write.hidden`), even one it never read; creating gives the row only the fields it sets", async () => {
-    const connection = { ...toExpenses({ create: YES, update: YES }), read: { fields: [amount] } };
+    const connection = { ...toExpenses({ create: ASK, update: ASK }), read: { fields: [amount] } };
     const st = db(2);
     const first = at(idsOf(st), 0);
     const source =
@@ -983,7 +978,7 @@ describe("what the person sees", () => {
       create({ [amount]: 5, [note]: "nuevo" }),
       remove(second),
     ];
-    const t = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), { store: st, test: true });
+    const t = await saving(SAVES_ALL, [ALL_ASK], () => done([], asked), { store: st, test: true });
     expect(t.rec.writes).toMatchObject({ kind: "tested", asks: true });
     expect(t.rec.writes?.records).toEqual([
       {
@@ -1005,11 +1000,11 @@ describe("what the person sees", () => {
     expect(st.applied).toEqual([]);
     expect(st.calls.filter((c) => c.method === "applyAll")).toEqual([]);
     // Nothing asked: nothing to say.
-    const none = await saving(SAVES_ALL, [ALL_YES], () => done([]), { store: st, test: true });
+    const none = await saving(SAVES_ALL, [ALL_ASK], () => done([]), { store: st, test: true });
     expect(none.rec.writes).toBeUndefined();
     // What would fail fails the same in a test as in a run.
     const bad = (test: boolean) =>
-      saving(UPDATES, [toExpenses({ update: YES })], () => done([], [update(5, { [amount]: 1 })]), {
+      saving(UPDATES, [toExpenses({ update: ASK })], () => done([], [update(5, { [amount]: 1 })]), {
         store: st,
         test,
       });
@@ -1021,16 +1016,16 @@ describe("what the person sees", () => {
     const st = db(3);
     const [first, second] = idsOf(st);
     const asked = [update(first, { [amount]: 9 }), create({ [amount]: 5 }), remove(second)];
-    const tested = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), {
+    const tested = await saving(SAVES_ALL, [ALL_ASK], () => done([], asked), {
       store: st,
       test: true,
     });
-    const ran = await saving(SAVES_ALL, [ALL_YES], () => done([], asked), { store: st });
+    const ran = await saving(SAVES_ALL, [ALL_ASK], () => done([], asked), { store: st });
     expect(ran.rec.writes?.kind).toBe("asked");
     expect(ran.rec.writes?.records).toEqual(tested.rec.writes?.records);
     const failed = await saving(
       SAVES_ALL,
-      [ALL_YES],
+      [ALL_ASK],
       () => done([], [...asked, update(5, { [amount]: 1 })]),
       { store: st },
     );
@@ -1229,7 +1224,7 @@ describe("the analysis binds", () => {
     });
     expect(call?.values[amount]).toMatchObject({ value: 3, derived: true });
     expect(call?.values[amount]?.label.integrity).toBe(OUTSIDE.integrity);
-    expect(e.asked).toEqual([
+    expect(e.asked.map(({ values: _values, ...a }) => a)).toEqual([
       {
         step: step.id,
         kind: "propose",
@@ -1241,6 +1236,8 @@ describe("the analysis binds", () => {
         },
       },
     ]);
+    // What waits keeps where its values came from (AU-170): accepting it writes them as from outside.
+    expect(e.asked[0]?.values[amount]?.label.integrity).toBe(OUTSIDE.integrity);
   });
   it.todo(
     "AU-185 · until F18 no automation starts on a change of a row, so a code's write starts nothing; F18's loop guard (AU-113) counts it as any write of a «Colección» step",
@@ -1252,7 +1249,7 @@ describe("removing without asking (Juan, 2026-11-16)", () => {
     "AU-186 · a removal from a published version's «Código» whose connection says «Sí», with nothing from outside in what the evaluation received, goes to the trash without a proposal, carries the run, and undoing the run brings the row back",
   );
   it.todo(
-    "AU-186 · the same removal with something from outside in what the evaluation received (a value from a mail, or the path, AU-164) is proposed, and with it everything the step asks to save",
+    "AU-186 · the same removal with something from outside in what the evaluation received (a value from a mail, or the path, AU-164) goes to the trash too, keeping its label (decision 11 of §10); with a value a model wrote it is proposed, and with it everything the step asks to save (S3: proposal.test.ts)",
   );
   it.todo(
     "AU-186 · an «Agente»'s removal with «Sí» and something from outside in what it received is proposed, as any write of it (F15)",
@@ -1264,10 +1261,7 @@ describe("removing without asking (Juan, 2026-11-16)", () => {
     "AU-186 · a removal without the person's «Sí» for that collection, or from a draft, still confirms (P5); the assistant's own removals outside automations keep P5 and P24 as they are",
   );
   it.todo(
-    "AU-186 · `consentOf` gives the published version's cell for a collection and action, and the server reads it from the version as saved: a «Sí» claimed by the box's answer or a browser is not one",
-  );
-  it.todo(
-    "AU-187 · «Eliminar filas» of a «Colección» step takes «Permiso»: «Preguntar» by default, or «Sí»; with «Sí» a published run sends the rows to the trash without asking, with something from outside it proposes them",
+    "AU-187 · «Eliminar filas» of a «Colección» step with «Sí» in a published run sends the rows to the trash without asking, with something from outside too, and undoing the run brings them back (S1: published versions; the engine's two doors are consent.test.ts)",
   );
   it.todo(
     "AU-188 · an automation proposed by the assistant, by «Pedir a Boni» or «Escribir con IA», or brought by a package or a template, arrives with every «Sí» of saving lowered to «Preguntar» (`lowerYes`), for create, modify and remove alike",

@@ -163,6 +163,7 @@ describe("«Parámetros»", () => {
       "action",
       "target",
       "fields",
+      "permission",
     ]);
     const matching: Step = { ...update, params: { ...update.params, target: "matching" } };
     expect(rowsOf(matching).map((r) => r.param.key)).toEqual([
@@ -171,6 +172,7 @@ describe("«Parámetros»", () => {
       "target",
       "where",
       "fields",
+      "permission",
     ]);
     for (const step of everyStep()) {
       const shown = paramsOf(step).filter((p) => p.place === "shown");
@@ -217,7 +219,12 @@ describe("«Parámetros»", () => {
         ],
       },
     };
-    expect(rowsOf(create).map((r) => r.param.key)).toEqual(["collection", "action", "fields"]);
+    expect(rowsOf(create).map((r) => r.param.key)).toEqual([
+      "collection",
+      "action",
+      "fields",
+      "permission",
+    ]);
   });
   it("AU-81 · the fields a condition can name are the collection's in a step of «Colección» and those of the rows that arrive in any other; its operators are the views' for the field's type, and its value is fixed or an expression", () => {
     const gastos = [

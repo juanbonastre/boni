@@ -147,10 +147,15 @@ export class Denied extends Error {
 /** A write the policy did not let through as it was: it asks Juan first. Kept in `Execution.asked`. */
 export interface Asked {
   step: string;
-  /** `confirm`: it destroys (P5). `propose`: it carries something from outside (P4). */
+  /** `confirm`: it destroys (P5). `propose`: it creates or modifies and its cell or the policy asks (P28, P4). */
   kind: "confirm" | "propose";
   rule: string;
   change: Change;
+  /**
+   * The values it writes, each with its label, as the engine gives a change it saves (AU-170): what is asked from
+   * outside is asked as from outside, and accepting it writes it so.
+   */
+  values: Labelled;
 }
 
 export type WriteResult =
@@ -257,7 +262,10 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       const d = ask("write", collection, values, change.kind === "create" ? undefined : 1);
       if (d.kind === "deny") throw new Denied(d.rule, d.reason);
       if (d.kind !== "allow")
-        return { kind: "asked", asked: { step: unit.step, kind: d.kind, rule: d.rule, change } };
+        return {
+          kind: "asked",
+          asked: { step: unit.step, kind: d.kind, rule: d.rule, change, values },
+        };
       if (!unit.test) {
         const saved = await collections.apply(change, values);
         // A change carries values, not their labels: each field written comes out with its value's label, the rest
@@ -277,7 +285,8 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
           destroys: change.kind === "trash",
         });
         if (d.kind === "deny") throw new Denied(d.rule, d.reason);
-        if (d.kind !== "allow") asked.push({ step: unit.step, kind: d.kind, rule: d.rule, change });
+        if (d.kind !== "allow")
+          asked.push({ step: unit.step, kind: d.kind, rule: d.rule, change, values });
       }
       return asked.length ? asked : "allow";
     },

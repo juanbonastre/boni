@@ -60,7 +60,7 @@ import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
-import { handPolicy } from "./policy.ts";
+import { automationPolicy } from "./policy.ts";
 
 /** The largest draft kept, in characters of its JSON: as a flow's draft. */
 export const DRAFT_MAX = 200_000;
@@ -399,8 +399,10 @@ const writes = (step: Step) => actionOf(step)?.effect === "write";
  * `zone`: Juan's IANA time zone, the day «hoy» is.
  */
 /**
- * What an automation runs with on the server, by Juan's hand: the user's store behind the policy, his clock and zone,
- * the box and the collections by name. A test has no `run` and writes nothing. A run for real (F14d: only a published
+ * What an automation runs with on the server: the user's store behind the policy of the origin `automation` (P28),
+ * whoever starts the run (A-36), with the «Sí» of each write read from the document the store keeps (AU-188): until
+ * publishing lands (S1) that is the draft, as «Probar» asks it; then a real run reads its published version. His
+ * clock and zone, the box and the collections by name. A test has no `run` and writes nothing. A run for real (F14d: only a published
  * version runs, AU-95) gives its id, and every operation it saves carries it in the log, so `undoRun` takes back all
  * the run saved, each step's change whole (AU-174, AU-185). Make one per run: the policy's counter is the run's.
  */
@@ -410,10 +412,10 @@ export function runDeps(
   hand: Hand & { trust: Trust; zone: string },
   box: Box = sandboxBox(),
   run?: string,
-): RunDeps & { policy: ReturnType<typeof handPolicy> } {
+): RunDeps & { policy: ReturnType<typeof automationPolicy> } {
   const own = automationLabel(id);
   return {
-    policy: handPolicy({ trust: hand.trust, device: hand.device, own }),
+    policy: automationPolicy(open(store, id)?.automation, own),
     collections: storeCollections(store, {
       actor: "user",
       device: hand.device,

@@ -1461,9 +1461,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   dice: la línea de una ejecución que guardó algo de fuera sin preguntar acaba en «con datos de fuera» (AU-99).
   Lo sostienen `versions.test.ts` (por cada ejemplo del catálogo que guarda, todo cambio que el motor aceptaría
   está nombrado en `abilities`, y uno que la conexión no permite no está; «con datos de fuera», caso por caso),
+  Desde la decisión 13 (§10), un «Crear una fila» o un «Modificar filas» que añade su mano nace con «Sí», así que su
+  línea dice «las guarda» sin que él haya tocado la celda: «Publicar» es donde lo ve, una vez, antes de que corra.
   `publish.test.ts` (la consulta de las colecciones que guardan algo de fuera, en su tiempo), `runs.test.ts` (la
   línea de la ejecución) y `automations-publish.spec.ts` (la pantalla).
-- **AU-188** (F14d, pendiente) · Un «Sí» solo lo pone la mano de Juan. Lo que llega sin haberlo escrito él (una
+- **AU-188** (F14d, en parte) · Un «Sí» solo lo pone la mano de Juan. Lo que llega sin haberlo escrito él (una
   automatización que propone el asistente, AU-140, o `automations_propose` del MCP, AU-144; «Pedir a Boni» y «Escribir
   con IA», AU-141, AU-39; un paquete o una plantilla, AU-145, AU-146) llega con cada «Sí» de guardar bajado a
   «Preguntar»: en crear, modificar y eliminar, en las conexiones y en «Eliminar filas» (AU-187), una sola regla para
@@ -1471,7 +1473,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   «Preguntar» (AU-176). Para que un paso guarde sin preguntar, Juan pone el «Sí» en su celda y publica.
   En la F14d: lo baja una sola función (`lowerYes`, `writes.ts`) por la que pasa todo lo que llega así antes de ser
   borrador. Un «Sí» que el borrador ya tenía de su mano se queda solo si su paso llega igual. Baja el nuevo, el
-  cambiado de colección o de acción y, **propuesto en este diseño**, el de un paso que la llegada cambió (su
+  cambiado de colección o de acción y, **decidido por Juan** (decisión 13 del §10), el de un paso que la llegada cambió (su
   código, sus parámetros, su conexión o de dónde le llegan filas): un «Sí» que Juan dio a un código no vale para
   otro código. El servidor lee el «Sí» de la versión publicada que tiene guardada, nunca de la caja, de un navegador
   ni de un modelo.
@@ -1481,10 +1483,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   | Cómo llega | Qué pasa con el «Sí» | Prueba |
   |---|---|---|
   | Su mano en la celda de una conexión o en «Permiso», en el editor (`keepDraft`) | Se queda | `publish.test.ts` («AU-188 · the ways a «Sí» stays…») |
-  | Su mano añade un paso «Colección»: «Crear una fila» y «Modificar filas» nacen con «Sí» (AU-187, propuesto) | Se queda. Es el único «Sí» que no es un toque suyo en la celda: duda para Juan | `consent.test.ts` («AU-187 · the value each action is born with…») |
-  | «Duplicar» (`duplicateAutomation`) | Copia los suyos sin un toque nuevo; la copia nace sin publicar. Duda para Juan | `publish.test.ts` («AU-188 · the ways a «Sí» stays…») |
-  | «Volver a esta» (AU-98) | Vuelve un documento que él publicó: se quedan sin un toque nuevo, y «Publicar» los enseña antes. Duda para Juan | la misma |
-  | Recuperar una eliminada (AU-191), con «Recuperar» o con el «Deshacer» de su aviso | Devuelve lo que ya tuvo, sin un «Sí» más, y apagada. Duda para Juan | la misma |
+  | Su mano añade un paso «Colección»: «Crear una fila» y «Modificar filas» nacen con «Sí» (AU-187, decisión 13) | Se queda. Es el único «Sí» que no es un toque suyo en la celda, y así lo decidió Juan | `consent.test.ts` («AU-187 · the value each action is born with…») |
+  | «Duplicar» (`duplicateAutomation`) | Copia los suyos sin un toque nuevo; la copia nace sin publicar. Se quedan (decisión 13) | `publish.test.ts` («AU-188 · the ways a «Sí» stays…») |
+  | «Volver a esta» (AU-98) | Vuelve un documento que él publicó: se quedan sin un toque nuevo, y «Publicar» los enseña antes. Se quedan (decisión 13) | la misma |
+  | Recuperar una eliminada (AU-191), con «Recuperar» o con el «Deshacer» de su aviso | Devuelve lo que ya tuvo, sin un «Sí» más, y apagada. Se quedan (decisión 13) | la misma |
   | «Deshacer» (el del almacén, el de un turno, el de una ejecución) | No toca un borrador ni una versión, que no son operaciones del registro (AU-95): ni devuelve un «Sí» que él quitó ni quita uno que puso | `publish.test.ts` («AU-188 · no Undo gives a «Sí» back…») |
   | El asistente propone o cambia una (`automations.create`, `automations.edit`, A-35; F16) | Baja | `consent.test.ts` («AU-188 · `lowerYes` lowers every «Sí»…») y `publish.test.ts` («AU-188 · every function of the service that writes a draft…»); su caso propio entra con la F16 |
   | `automations_propose` del MCP (AU-144; F16) | Baja | las mismas; su caso, con la F16 |
@@ -1494,18 +1496,20 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   | El cuerpo de una petición, la respuesta de la caja, un borrador, un modelo | No cuenta: el servidor lee lo publicado | `publish.test.ts` («AU-188 · the «Sí» a run obeys…») |
   | Cambiar el nombre de una colección, o crear otra con el nombre de una eliminada (AU-192) | El «Sí» es de la colección por su clave: sigue a la misma y nunca pasa a otra | `runs.test.ts` («AU-188 AU-192 · a «Sí» belongs to its collection by key…») |
 
-  **Sin decidir por Juan** (duda del PR de la tarea 128): «Duplicar», «Volver a esta» y recuperar una eliminada
-  dejan un «Sí» sin un toque nuevo en la celda. Se propone que se queden: los tres devuelven un documento cuyo
-  «Sí» puso él; «Duplicar» y «Volver a esta» pasan por «Publicar», que lo enseña (AU-182), y la recuperada vuelve
-  apagada. La otra respuesta: en la copia y en lo recuperado bajan a «Preguntar», y él los pone otra vez.
+  **Decidido por Juan** (decisión 13 del §10, 2026-11-16): «Duplicar», «Volver a esta» y recuperar una eliminada
+  dejan un «Sí» sin un toque nuevo en la celda, y se quedan: los tres devuelven un documento cuyo «Sí» puso él;
+  «Duplicar» y «Volver a esta» pasan por «Publicar», que lo enseña (AU-182), y la recuperada vuelve apagada.
 
-  **Propuesto en este diseño**: poner un «Sí» y publicar piden un dispositivo personal, como aceptar una propuesta
-  (P21); desde uno compartido el editor deja ver y probar. Lo sostiene `publish.test.ts` («AU-188 · setting a «Sí»
+  **Decidido por Juan** (decisión 13 del §10): poner un «Sí» y publicar piden un dispositivo personal, como
+  aceptar una propuesta (P21); desde uno compartido el editor deja ver y probar. Lo sostiene `publish.test.ts` («AU-188 · setting a «Sí»
   and publishing are refused…»).
   En la F14d todavía no llega nada sin haberlo escrito él (el asistente es de la F16; los paquetes, de la F19), así
   que la fase deja la función hecha y cerrado el camino: toda función del servidor que escribe un borrador está en
   una lista, como de su mano (el editor, «Duplicar») o como venida de fuera de ella, y las segundas pasan por
   `lowerYes`. Una función nueva que escriba un borrador y no esté en la lista hace fallar la prueba.
+  Hecho en E1: `lowerYes`, con lo que baja y lo que deja, y el valor con el que nace cada acción (AU-187). Falta: la
+  lista de quien escribe un borrador, cada caso de la tabla sobre el servidor y el dispositivo personal
+  (`publish.test.ts`, S1).
   Lo sostienen `consent.test.ts` (`packages/automations`; `lowerYes`: baja crear, modificar y eliminar, en las
   conexiones y en «Permiso»; el que ya era suyo se queda si su paso llega igual; uno cambiado de colección o de
   acción, o de un paso cambiado, baja) y `publish.test.ts` del servidor (la lista de quien escribe un borrador; un
@@ -1609,7 +1613,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   elige una.
 - **AU-122** (F14a, hecho) · «Eliminar filas» manda a la papelera. Borrar del todo no existe en una
   automatización. El paso da las filas como estaban antes de ir a la papelera.
-- **AU-187** (F14d, pendiente) · Las acciones de un paso «Colección» que escriben («Crear una fila», «Modificar
+- **AU-187** (F14d, en parte) · Las acciones de un paso «Colección» que escriben («Crear una fila», «Modificar
   filas», «Eliminar filas») llevan el mismo permiso que las columnas de una conexión: un parámetro «Permiso»,
   «Preguntar» o «Sí», con las palabras de AU-41. Con «Sí», lo que el paso guarda o manda a la papelera no pregunta en
   lo que dice AU-186. Hasta el 2026-11-16 eliminar preguntaba siempre (P5), y así un paso que escribió y publicó Juan
@@ -1617,20 +1621,22 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   crear y modificar escribían solos lo propio y proponían lo de fuera, sin celda. Desde ella lo de fuera se guarda
   con un «Sí», y un paso sin celda no tendría ninguno que Juan hubiera puesto ni que `lowerYes` pudiera bajar
   (AU-188).
-  **Propuesto en este diseño y sin decidir por Juan** (duda del PR de la tarea 128): con qué valor nace. «Eliminar
-  filas» nace con «Preguntar». «Crear una fila» y «Modificar filas» nacen con «Sí» cuando el paso lo añade su mano
+  **Decidido por Juan** (decisión 13 del §10, 2026-11-16): con qué valor nace. «Eliminar filas» nace con
+  «Preguntar». «Crear una fila» y «Modificar filas» nacen con «Sí» cuando el paso lo añade su mano
   en el editor, a la vista en el paso: es lo que ya hacían (decisión 5: escriben con Deshacer), y «crea una fila
   cada mañana» no debe preguntar cada mañana. Lo que eso trae desde la decisión 11: un paso así guarda sin
   preguntar, desde su primera ejecución publicada, también lo que le llegue de fuera, sin que él haya tocado la
   celda; «Publicar» lo dice en su línea («con datos de fuera», AU-182). Llegados de otra manera nacen con
-  «Preguntar» (AU-188). La otra respuesta: nacen con «Preguntar» también de su mano, y hasta que él lo cambie cada
-  ejecución deja su propuesta. Es un valor del catálogo y una prueba: su respuesta cambia eso y nada más.
+  «Preguntar» (AU-188). Es un valor del catálogo (`PERMISSION_BORN`) y una prueba.
   En la F14d: es un parámetro más de cada una de las tres acciones en el catálogo, a la vista (cambia el resultado:
   AU-77), con las dos palabras de las celdas de una conexión, de las mismas claves de `i18n.ts`. Un documento
   guardado sin él se lee con el valor con el que nace: hasta aquí todo borrador lo escribió su mano. `stepChanges`
   deja de dar eliminar siempre como «Preguntar» y lee el parámetro en las tres, así que la tarjeta («Elimina en
   Gastos · sin preguntar»), «Haría esto» y «Lo que podrá hacer» lo dicen igual que de un «Código» (AU-189).
   `lowerYes` lo baja como una celda (AU-188).
+  Hecho en E1: el parámetro en las tres y en «Crear o modificar», que también guarda (nace con «Sí», como crear y
+  modificar), con las palabras de las celdas; con qué valor nace cada una; `stepChanges` lo lee en todas; `lowerYes`
+  lo baja. Falta: la marca de la tarjeta y su prueba en la pantalla (`automations-publish.spec.ts`, pantallas).
   Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro en las tres acciones, con qué valor nace y lo
   que `stepChanges` da con cada uno) y `automations-publish.spec.ts` (el control y la marca de la tarjeta).
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
@@ -1833,7 +1839,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   de una no existen en estas fases y `decide` los niega, AU-167). Lo de fuera se propone (P4) y eliminar se
   pregunta (P5) salvo en lo que dice AU-186, que es una fila de la política (P28, decisión 11 del §10) y no un
   permiso de la celda.
-- **AU-186** (F14d, pendiente) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
+- **AU-186** (F14d, en parte) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
   preguntar si cumple dos cosas. Viene de un paso «Código», «Colección» o «Agente» de una versión publicada
   (AU-95). Y lleva el «Sí» de la mano de Juan para esa colección y esa acción (AU-188). Vale también para lo que
   viene de fuera, en sus valores o en su camino (AU-164, AU-169), y la inicie su mano o empiece sola (decisión 11
@@ -1861,14 +1867,15 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   propuesta en cualquier ejecución; «Sí» pasa a la segunda. La segunda es la política, que es el suelo: lo que
   ningún «Sí» abre (un destino que sale de algo de fuera o de un modelo, P2 y P14; lo que Boni sabe de Juan, P9;
   enviar, pagar y lo irreversible) y P28, que deja guardar con el «Sí» que el servidor lee de lo guardado.
-  Lo que lee una celda «Sí» antes y después. Hasta el primer PR del motor de esta fase, un «Sí» pregunta como
-  «Preguntar» (`YES_SAVES` es falso) y, como nada se publica, nada corre de verdad: «Haría esto» dice de un paso
-  con «Sí» que preguntaría. Las palabras «sin preguntar» de AU-189 (F14c, en parte: la app aún no las pinta) dirán
-  lo contrario en la ficha de la conexión y en la tarjeta de un paso que elimina con «Sí». Si llegan antes que ese
-  PR, las dos frases no coinciden en ese rato, y por eso ese PR es el primero. Con él `YES_SAVES` desaparece: un
-  paso pregunta si su celda dice «Preguntar», y nada más. Desde entonces crear y modificar con «Sí» no añaden nada
-  a «Haría esto», eliminar con «Sí» dice «sin preguntar», y «Probar» dice lo que hará la ejecución, la inicie quien
-  la inicie (AU-195).
+  Hecho en E1: las dos puertas en el motor (un paso «Colección» que escribe con «Permiso» en «Preguntar», o una
+  celda «Preguntar» de su conexión, hace esperar el cambio entero del paso; «Sí» pasa a la política), P28 y la frase
+  nueva de P5 en `decide` (`byAutomation`, `packages/agent/src/policy.ts`), y el servidor, que lee el «Sí» de lo
+  que tiene guardado (`consentIn` y `automationPolicy`, `apps/server/src/automations/policy.ts`), nunca de la
+  llamada, de la caja ni de un navegador. `YES_SAVES` ya no existe: un paso pregunta si su celda dice «Preguntar» o
+  si la política preguntaría, crear y modificar con «Sí» no añaden nada a «Haría esto», y «Probar» dice lo que hará
+  la ejecución, la inicie quien la inicie (AU-195). Falta: leer el «Sí» de la versión publicada y no del borrador
+  guardado, que es lo que corre de verdad hasta que haya versiones (S1); `proposal.test.ts` sobre el servidor, con
+  la propuesta de una ejecución (S3); y las palabras «sin preguntar» en la app (AU-189, pantallas).
   El coste de la decisión, como se le dijo a Juan, en dos casos. Los ve una vez, en «Publicar» (AU-182), y no en
   cada ejecución.
 
@@ -1883,12 +1890,13 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
     un modelo, y lo que escribe un modelo se propone hasta la F15 (AU-167): la F15 abre este caso con su diseño.
   Lo sostienen `consent.test.ts` (`packages/automations`: las dos puertas, caso por caso, y que una celda nunca
   cambia un «no» de la política), `automation-origin.test.ts` (`packages/agent/test`: la fila P5 con y sin el «Sí»,
-  y que fuera de una automatización eliminar sigue confirmando) y `proposal.test.ts` (servidor: una eliminación con
+  y que fuera de una automatización eliminar sigue confirmando), `automations.test.ts` (servidor: el «Sí» se
+  lee de lo guardado, nunca de la respuesta de la caja ni de un navegador) y `proposal.test.ts` (servidor: una eliminación con
   «Sí» de una versión publicada va a la papelera sin propuesta y se deshace con la ejecución, con algo de fuera
   también; con «Preguntar», se propone).
 - **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
-- **AU-167** (F14d, pendiente) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
+- **AU-167** (F14d, en parte) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
   regla la sigue. `decide` conoce un origen más, `automation`: una ejecución de verdad de una versión publicada, la
@@ -1915,11 +1923,15 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   que traiga. Lo que quedaba de AU-185 (la propuesta de P4 sobre el servidor real) lo sustituye la decisión 11:
   sobre el servidor real, una ejecución con algo de fuera lo guarda con su etiqueta si la celda dice «Sí» y lo
   propone si dice «Preguntar», empiece como empiece.
-  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla, y cada acto de
-  `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
+  Hecho en E1: el origen `automation` y la fila P28 en `decide` (`byAutomation`), una prueba por fila, con P11 fuera
+  para este origen, y cada acto de `ACTS` contestado para él por una tabla escrita en la prueba. Falta: las mismas
+  filas con una ejecución programada sobre el almacén de verdad (`proposal.test.ts`, S3) y el aviso por ejecución
+  (`scheduler.test.ts`, S3 y S4).
+  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: una prueba por fila de la tabla),
+  `automations.test.ts` (servidor: cada acto de `ACTS` con el origen nuevo), `proposal.test.ts` (servidor: las mismas filas con una ejecución programada sobre el
   almacén de verdad, y que ningún paso puede nombrar una colección del sistema) y `scheduler.test.ts` (el aviso por
   ejecución, sin valores).
-- **AU-195** (F14d, pendiente) · La misma versión publicada, con la misma entrada, recibe la misma decisión para
+- **AU-195** (F14d, en parte) · La misma versión publicada, con la misma entrada, recibe la misma decisión para
   cada escritura (permitir, proponer, confirmar o negar) la inicie Juan o su disparador (decisión 11 del §10,
   2026-11-16). Quién inicia una ejecución no llega a `decide`: llega a `$run`, a «Ejecuciones» y a los avisos.
 
@@ -1929,8 +1941,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   | «Ejecutar», «Reintentar», o sola («Programada»; desde la F18, cada disparador) | `automation` | La celda, y después P28 (AU-186, AU-167). Con «Preguntar», todas proponen |
   | Aceptar la propuesta de una ejecución | `accepted` | AU-193 |
 
-  Hoy una ejecución que inicia su mano va con el origen `hand` (P25, `handPolicy`): el primer PR del motor lo cambia
-  en `runPolicy`. Una ejecución de verdad de una versión sin publicar no existe: «Ejecutar» corre la publicada
+  Desde E1 una ejecución que inicia su mano ya no va con el origen `hand` (P25): `runPolicy` le da `automation`,
+  como a la que empieza sola, y `handPolicy` ya no existe. Una ejecución de verdad de una versión sin publicar no existe: «Ejecutar» corre la publicada
   (AU-95) y un borrador solo se prueba, y la prueba pregunta a la política con las celdas del borrador, sin
   guardar. Así la prueba del principio es exacta: para cada acto de `ACTS`, cada etiqueta de valor y de camino y
   cada celda, `decide` contesta lo mismo sea cual sea `startedBy`.
@@ -1949,8 +1961,12 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   etiqueta (AU-170); las dos cosas llegan en el mismo PR. Sin la etiqueta, guardar y volver a leer convertiría algo
   de fuera en propio, y el asistente, en un turno, escribiría con ello sin que P4 lo viera, o lo usaría como
   destino.
-  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: el principio, con la tabla entera para cada
-  manera de empezar), `proposal.test.ts` (servidor: el mismo paso y el mismo valor de fuera, a mano y a su hora;
+  Hecho en E1: un solo origen para toda ejecución de verdad, y la tabla del principio sobre el servidor (cada acto,
+  cada etiqueta de valor y de camino y cada celda: lo mismo a mano y sola, y otra versión no da el «Sí» de esta).
+  Falta: el mismo paso a mano y a su hora sobre el almacén (`proposal.test.ts`, S3) y `$run.startedBy` con un «Si»
+  sobre él (`scheduler.test.ts`, S3).
+  Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: que quién la inició no es una entrada de
+  `decide`), `automations.test.ts` (servidor: el principio, con la tabla entera para cada manera de empezar), `proposal.test.ts` (servidor: el mismo paso y el mismo valor de fuera, a mano y a su hora;
   con «Sí» las dos lo guardan con su etiqueta, con «Preguntar» las dos lo proponen, y «Probar» no escribe) y
   `scheduler.test.ts` (`$run.startedBy` en cada manera de empezar, y un «Si» sobre él que lleva a una rama a mano
   y a la otra a su hora).
@@ -1960,7 +1976,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   prueba, una escritura permitida no escribe: da la fila como quedaría, y para eso lee la fila guardada sin otra
   pregunta a la política, porque es parte de la escritura que ya se permitió. Lo que sale de un paso que escribe
   lleva las etiquetas que daría leerlo: cada campo guardado la suya, cada campo escrito la del valor que se escribió.
-- **AU-170** (F14d, pendiente) · Lo que una automatización guarda conserva de dónde vino: un campo escrito con un
+- **AU-170** (F14d, en parte) · Lo que una automatización guarda conserva de dónde vino: un campo escrito con un
   valor de fuera queda guardado como de fuera, y cualquier lectura posterior (otra ejecución, otra automatización,
   el asistente) lo da como de fuera. Guardar y volver a leer nunca limpia una etiqueta. En la F14a el motor ya
   etiqueta lo que sale del paso que escribe; falta que el almacén lo guarde, porque el cambio que recibe lleva
@@ -1975,10 +1991,15 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   propone al escribir con ello (P4), nunca lo usa como destino (P2, P14) y nunca lo lleva a lo que Boni sabe de
   Juan (P9). Por eso llega en el mismo PR que P28 (AU-195), y ese PR prueba los dos caminos, el que guarda y el
   que propone.
-  Lo sostienen `consent.test.ts` (`packages/automations`: lo que se pregunta lleva la etiqueta de cada valor) y
+  Hecho en E1: `Asked` lleva los valores con la etiqueta de cada uno, y lo que una ejecución guarda con «Sí» queda
+  en el almacén con la suya (`box.test.ts`, 3.000 filas, de fuera y propias). Falta: que la propuesta los guarde así
+  y aceptar los escriba con ella (AU-193, S3); que otra ejecución y el asistente lean otra vez lo guardado como de
+  fuera y lo traten así, sobre el servidor (`proposal.test.ts`, S3); y lo fijado (AU-93).
+  Lo sostienen `consent.test.ts` (`packages/automations`: lo que se pregunta lleva la etiqueta de cada valor),
+  `box.test.ts` (servidor: lo guardado con «Sí» conserva su etiqueta en el almacén) y
   `proposal.test.ts` (servidor: un valor de fuera guardado con «Sí», o propuesto y aceptado, y leído otra vez por
   otra ejecución sigue siendo de fuera; lo que esa escriba con él lo decide su celda, y el asistente lo propone).
-- **AU-193** (F14d, pendiente) · Lo que una ejecución pregunta es una sola propuesta en la Bandeja de siempre. Junta
+- **AU-193** (F14d, en parte) · Lo que una ejecución pregunta es una sola propuesta en la Bandeja de siempre. Junta
   el cambio entero de cada paso que espera (AU-174), paso por paso, y la ejecución sigue: un paso que espera no da
   filas a los siguientes (AU-14). Espera lo que una celda «Preguntar» hace esperar y lo que escribió un modelo
   (AU-167); desde la decisión 11 (§10), lo de fuera con «Sí» ya no, y es igual la inicie quien la inicie. La tarjeta la pinta el código, con texto y nunca con un resumen de un modelo:
@@ -1993,6 +2014,9 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   se deshace con la ejecución (AU-18). Si una fila cambió desde que se propuso, no se guarda ninguna y la propuesta
   queda «Ya no vale · Ejecutar otra vez». Rechazar no guarda nada, y la ejecución lo dice. Nada de esto es nuevo en
   la Bandeja: extiende `proposals` y `acceptProposal`, con una acción más en la lista (A-26).
+  Hecho en E1: la frase nueva de P5 en `decide` (`Call.ofRun`): una eliminación aceptada dentro de la propuesta de
+  una ejecución, desde un dispositivo personal, no se confirma otra vez; en otra propuesta, desde uno compartido o
+  algo irreversible, como antes (`automation-origin.test.ts`). Falta: la propuesta, su tarjeta y aceptarla (S3).
   Lo sostienen `automation-origin.test.ts` (`packages/agent/test`: un borrado aceptado en la propuesta de una
   ejecución no se confirma otra vez, y el de cualquier otra propuesta sí) y `proposal.test.ts` (servidor): una
   propuesta por ejecución con dos pasos que esperan; aceptar guarda
@@ -2361,6 +2385,26 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       que él lo viera. Prueba: `limits.test.ts` (AU-17), en el PR del motor que trae los límites, y
       `runs.test.ts` con su volumen.
 
+13. **Con qué valor nace un «Sí» y cuándo se queda.** El diseño de la fase (tarea 128) dejó cuatro puntos de AU-187
+    y AU-188 como propuestas. Se le preguntó si aceptaba las cuatro recomendaciones. **Juan, 2026-11-16: «Sí, las
+    recomendadas».** Cada una, con la otra respuesta que había y el PR de la construcción que trae su prueba en
+    marcha:
+    - **Un paso «Colección» nace con «Sí» en «Crear una fila» y «Modificar filas» cuando lo añade su mano; «Eliminar
+      filas» nace con «Preguntar», y llegado de cualquier otra manera nace con «Preguntar»** (AU-187). «Crea una
+      fila cada mañana» no pregunta cada mañana, y «Publicar» lo dice en su línea («las guarda», AU-182). La otra:
+      nacer con «Preguntar» también de su mano, y cada ejecución dejaría su propuesta hasta que él lo cambiara.
+      Prueba: `consent.test.ts` («AU-187 · the value each action is born with…»), en E1.
+    - **Un «Sí» de un paso que otra cosa reescribió baja a «Preguntar»** (AU-188): su código, sus parámetros, su
+      conexión o de dónde le llegan filas. La otra: que se quedara si la colección y la acción eran las mismas, y un
+      «Sí» dado a un código valdría para otro. Prueba: `consent.test.ts` («AU-188 · a «Sí» of a step whose code…»),
+      en E1.
+    - **Poner un «Sí» y publicar, solo desde un dispositivo personal** (AU-188, como aceptar una propuesta, P21).
+      Desde uno compartido el editor deja ver y probar. La otra: desde cualquier dispositivo con su sesión. Prueba:
+      `publish.test.ts` («AU-188 · setting a «Sí» and publishing are refused…»), en S1.
+    - **«Duplicar», «Volver a esta» y «Recuperar» conservan un «Sí»** (AU-188): devuelven un documento cuyo «Sí»
+      puso él, y los dos primeros pasan por «Publicar». La otra: bajar a «Preguntar» en la copia y en lo recuperado,
+      y él los pondría otra vez. Prueba: `publish.test.ts` («AU-188 · the ways a «Sí» stays…»), en S1.
+
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
 | Principio | Su prueba | Fase |
@@ -2392,6 +2436,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Segundo plano: quién escribe solo (decisión 5; cambia P7) | Una fila por caso de la regla | F14d, F15 |
 | La misma versión publicada recibe las mismas decisiones la inicie Juan o su disparador (AU-195, decisión 11; A-36) | Para cada acto, cada etiqueta y cada celda, `decide` contesta lo mismo a mano y sola; con «Preguntar», las dos proponen | F14d |
 | Solo no pregunta lo publicado y con el «Sí» de Juan (AU-186, AU-188; cambia P5 en una automatización, 2026-11-16; desde la decisión 11, también con algo de fuera) | Una eliminación con «Sí» de un «Código», un «Colección» o un «Agente» publicados va a la papelera sin propuesta y se deshace con la ejecución, con algo de fuera también; con «Preguntar», se propone; un «Sí» que no puso su mano baja a «Preguntar»; fuera de una automatización, P5 sigue | F14d, F15 |
+| Un «Sí» nace solo de su mano y se queda solo si su paso no cambió (AU-187, AU-188, decisión 13) | Un paso «Colección» que añade su mano nace con «Sí» en crear y modificar y con «Preguntar» en eliminar; uno que llega de otra manera, o reescrito, baja a «Preguntar»; desde un dispositivo compartido no se pone ni se publica; «Duplicar», «Volver a esta» y «Recuperar» lo conservan | F14d |
 | Una automatización llama a otra solo con permiso, tres niveles, sin ciclos (AU-112; cambia D-44) | Sin permiso no se puede elegir; un ciclo no publica | F18 |
 | Un bloque tiene nombre único en su página (AU-130) | Dos bloques no pueden llamarse igual; renombrar no rompe lo enlazado | F17 |
 | Un fallo no hace una cadena (AU-118) | Una automatización iniciada por «Falla una automatización» que falla no inicia otra | F18 |

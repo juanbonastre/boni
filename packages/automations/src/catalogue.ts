@@ -166,6 +166,27 @@ const TARGET_WHERE: ParamSpec = {
   when: { param: "target", in: ["matching"] },
 };
 
+/**
+ * The «Permiso» each write action of a «Colección» step is born with when the person's hand adds the step in the
+ * editor (AU-187, decision 13 of §10): «Sí» on «Crear una fila», «Modificar filas» and «Crear o modificar», which is
+ * the one «Sí» that is not a tap on the cell; «Preguntar» on «Eliminar filas». A step that arrives any other way gets
+ * «Preguntar» on all of them (`lowerYes`, AU-188). A document saved without the parameter reads this value.
+ */
+export const PERMISSION_BORN: Readonly<
+  Record<"create" | "update" | "upsert" | "trash", "yes" | "ask">
+> = { create: "yes", update: "yes", upsert: "yes", trash: "ask" };
+/** The parameter «Permiso» (AU-187): the words of a connection's cells; fixed, never an expression (AU-26). */
+export const PERMISSION = "permission";
+const permission = (action: keyof typeof PERMISSION_BORN): ParamSpec => ({
+  key: PERMISSION,
+  control: "choice",
+  options: ["ask", "yes"],
+  place: "shown",
+  required: true,
+  shape: true,
+  default: PERMISSION_BORN[action],
+});
+
 const transform = (
   type: string,
   mode: ActionSpec["mode"],
@@ -318,12 +339,14 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
       // «Crear una fila»
       collectionAction("create", "write", [
         { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+        permission("create"),
       ]),
       // «Modificar filas»
       collectionAction("update", "write", [
         TARGET,
         TARGET_WHERE,
         { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+        permission("update"),
       ]),
       // «Crear o modificar»: the row whose `match` fields hold the same values is modified; with none, one is created.
       collectionAction("upsert", "write", [
@@ -345,9 +368,10 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
           ],
         },
         { key: "fields", control: "fields", over: COLLECTION, place: "shown", required: true },
+        permission("upsert"),
       ]),
       // «Eliminar filas»: to the trash, always (AU-122).
-      collectionAction("trash", "write", [TARGET, TARGET_WHERE], true),
+      collectionAction("trash", "write", [TARGET, TARGET_WHERE, permission("trash")], true),
       // «Contar o sumar»: one row with the result, or one per value of `groupBy`.
       collectionAction("aggregate", "read", [
         {
