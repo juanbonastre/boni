@@ -15,6 +15,7 @@ import {
   type Automation,
   FORMAT,
   limitsOf,
+  type ParamValue,
   parseAutomation,
   RUN_LIMIT_KEYS,
   type RunLimits,
@@ -353,6 +354,87 @@ describe("the limits of a run (F14d)", () => {
     expect(fault.message).toContain("rowsWritten");
     // The words, «Paró: iba a escribir 3.000 filas y el límite son 1.000 · Cambiar el límite», are boni-web's
     // (`words.test.ts`, «AU-17 · …»).
+  });
+
+  it("AU-17 · «Las que cumplan…» with several rows arriving finds and writes one unit after another, and a later unit finds what an earlier one saved: so its rows cannot be counted before the first saves, and a limit passed in a later unit leaves what the earlier units saved or proposed, to be undone from the run (AU-18)", async () => {
+    // Each row that arrives moves the rows whose number is its own to the next: «0» to «1», then «1» to «2».
+    const marking = (permission: "yes" | "ask", where: ParamValue) =>
+      sketch(19)
+        .step("Inicio", "manual")
+        .step("Lista", "edit", {
+          fields: [
+            {
+              field: "n",
+              value: [
+                { from: 0, to: 1 },
+                { from: 1, to: 2 },
+              ],
+            },
+          ],
+        })
+        .step("Partir", "split", { field: "n" })
+        .step("Mover", "collection", {
+          collection: things.key,
+          action: "update",
+          target: "matching",
+          where,
+          fields: [{ field: n, value: cite("$json.n.to") }],
+          permission,
+        })
+        .arrow("Inicio", "Lista")
+        .arrow("Lista", "Partir")
+        .arrow("Partir", "Mover");
+    const own = [{ field: n, op: "is", value: cite("$json.n.from") }];
+    expect(
+      validate(marking("yes", own).build(), {
+        collection: (key: string) => (key === things.key ? things : undefined),
+      }),
+    ).toEqual([]);
+    const rows = Array.from({ length: 600 }, () => ({ [n]: 0, [word]: "" }));
+
+    // With the limit raised, the second unit finds the 600 rows the first one saved: 1,200 rows written, where
+    // finding before the first one saves would have counted 600.
+    {
+      const s = marking("yes", own);
+      const st = db([things], rows);
+      const e = await start(
+        { ...s.build(), settings: { limits: { rowsWritten: 1_200 } } },
+        s.id("Inicio"),
+        {},
+        { collections: st },
+      );
+      expect(e.state, JSON.stringify(e.error)).toBe("done");
+      expect(st.applied).toHaveLength(1_200);
+      expect(new Set(st.rows(things.key).map((r) => r.json[n]))).toEqual(new Set([2]));
+    }
+    // With the default 1,000, the second unit passes it before it writes any: the first one's 600 stay saved.
+    {
+      const s = marking("yes", own);
+      const st = db([things], rows);
+      const p = policy();
+      const e = await start(s.build(), s.id("Inicio"), {}, { collections: st, policy: p });
+      expect(e.error).toMatchObject({
+        step: s.id("Mover"),
+        failure: { code: "run.limit", detail: { limit: "rowsWritten", max: 1_000, got: 1_200 } },
+      });
+      expect(st.applied).toHaveLength(600);
+      expect(writesAsked(p)).toHaveLength(600);
+      expect(new Set(st.rows(things.key).map((r) => r.json[n]))).toEqual(new Set([1]));
+      expect(e.asked).toEqual([]);
+    }
+    // With «Preguntar» nothing is saved, so each unit finds all 600: the first one's 600 proposals stay in the run's
+    // `asked`, and the second one proposes none.
+    {
+      const s = marking("ask", [{ field: n, op: "gt", value: -1 }]);
+      const st = db([things], rows);
+      const e = await start(s.build(), s.id("Inicio"), {}, { collections: st });
+      expect(e.error).toMatchObject({
+        step: s.id("Mover"),
+        failure: { code: "run.limit", detail: { limit: "rowsWritten", max: 1_000, got: 1_200 } },
+      });
+      expect(st.applied).toEqual([]);
+      expect(e.asked).toHaveLength(600);
+    }
   });
 
   it("AU-17 · all four limits hold whether or not the automation's settings show them: one with no step that writes still has its «rows written»", async () => {
