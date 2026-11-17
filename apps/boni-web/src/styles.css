@@ -13332,9 +13332,9 @@ button.auto-log-line {
 .auto-pub-part li.bad {
   color: var(--bad);
 }
-.auto-pub-can {
+.auto-pub-part ul.auto-pub-can {
   list-style: none;
-  padding-left: 0 !important;
+  padding-left: 0;
 }
 .auto-pub-step {
   font-weight: 600;
