@@ -116,6 +116,13 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/agent/automations/:id/runs": "tailnet",
   "GET /api/agent/automations/:id/runs/:run": "tailnet",
   "GET /api/agent/automations/:id/runs/:run/rows": "tailnet",
+  // F14d P2: «Ejecutar», «Reintentar», «Deshacer lo que hizo» and «Fijar» (automations.run, undo_run, pin; runs.ts).
+  "POST /api/agent/automations/:id/run": "tailnet",
+  "POST /api/agent/automations/:id/runs/:run/retry": "tailnet",
+  "POST /api/agent/automations/:id/runs/:run/undo": "tailnet",
+  "PUT /api/agent/automations/:id/pins/:step": "tailnet",
+  "DELETE /api/agent/automations/:id/pins/:step": "tailnet",
+  "POST /api/agent/automations/:id/runs/:run/pin": "tailnet",
   "GET /api/agent/models": "tailnet",
   "GET /api/agent/models/catalogue": "tailnet",
   "PUT /api/agent/models/roles/:role": "tailnet",

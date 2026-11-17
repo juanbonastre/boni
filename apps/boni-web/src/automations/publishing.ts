@@ -223,6 +223,8 @@ export function refusedWords(t: T, refused: string): string {
       return t("mail.error.personal-device-only");
     case "stale":
       return t("auto.pub.stale");
+    case "blocked":
+      return t("auto.pub.blocked");
     case "unchanged":
       return t("auto.pub.same");
     case "off":

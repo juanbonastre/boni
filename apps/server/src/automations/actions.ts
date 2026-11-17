@@ -415,10 +415,8 @@ const runHand = (s: HandService) => {
 
 /**
  * «Ejecutar» and «Reintentar», «Deshacer lo que hizo», «Fijar» and «Abrir en el editor con estos datos» (F14d S2:
- * AU-97, AU-18, AU-100, AU-93; runs.ts). Juan's touch, from a personal device only (decision 13). Not in the
- * registry yet: the repo's checks want each registered action's control in the app (actions.test.ts), and those
- * controls are the screens' (P1, P2). Their PR calls this beside `withAutomationActions` and adds `RUN_ROUTES` to
- * `ROUTES`, `ROUTE_ACTIONS`, `ROUTE_RUNS` and http.ts with the controls.
+ * AU-97, AU-18, AU-100, AU-93; runs.ts). Juan's touch, from a personal device only (decision 13). Registered
+ * beside `withAutomationActions` (actions.ts), each with its control in the app: «Ejecuciones» and «Fijar» (P2).
  */
 export function withRunActions(r: ToolRegistry): ToolRegistry {
   r.register({

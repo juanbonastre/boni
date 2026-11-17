@@ -111,7 +111,19 @@ export type ShellEvent =
   /** The settings changed (another window, the live connection, a login). */
   | { type: "settings"; settings: ClientSettings }
   /** How much of a file chosen on the phone has gone (Android, task 114): its key, as `chooseFiles` gave it. */
-  | { type: "upload"; key: string; sent: number };
+  | { type: "upload"; key: string; sent: number }
+  /**
+   * An automation's run as it goes (F14d P2, AU-97, AU-99): the desktop passes on the server's `run` events. Its
+   * state, the step that ended and its counts by output; never its rows, which «Ejecuciones» asks for apart.
+   */
+  | {
+      type: "run";
+      automation: string;
+      run: string;
+      state: string;
+      step?: string;
+      out?: Record<string, number>;
+    };
 
 export interface DesktopHost {
   /** This device's widget list changed (from the server): the shell opens, closes and resizes their windows. */

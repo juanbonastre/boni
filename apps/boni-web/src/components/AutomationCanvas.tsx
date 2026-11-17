@@ -97,7 +97,7 @@ import {
 import type { T } from "../i18n.ts";
 import { toast, useStore } from "../store.ts";
 import { AutomationStepView } from "./AutomationStepView.tsx";
-import { stateMark, TestBar, usePhone, useTester } from "./AutomationTest.tsx";
+import { stateMark, TestBar, useLook, usePhone, useStill, useTester } from "./AutomationTest.tsx";
 import { iconOf } from "./automationIcons.ts";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
@@ -164,6 +164,8 @@ interface CardData extends Record<string, unknown> {
   test: { blocked: boolean; testing: boolean };
   /** Its connections, each a chip hanging under it by a dotted line (AU-40, AU-178): the collection and its words. */
   chips: { collection: string; name: string; words: string }[];
+  /** «Salida fijada» (AU-93), with «puede estar vieja» once the step changed; null when nothing is pinned. */
+  pinned: string | null;
 }
 type CardNode = Node<CardData, "step">;
 interface ArrowData extends Record<string, unknown> {
@@ -176,7 +178,7 @@ type ArrowEdge = Edge<ArrowData, "arrow">;
 /** A step's card (AU-63): its icon, its name and one line of summary, its inputs on the left, its outputs right. */
 const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>) {
   const acts = useActs();
-  const phone = usePhone();
+  const phone = useStill();
   const { t } = acts;
   const {
     step,
@@ -191,6 +193,7 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
     mark,
     test,
     chips,
+    pinned,
   } = data;
   const Icon = iconOf(step.type);
   const off = step.settings?.off === true;
@@ -338,6 +341,11 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
           {mark.word}
         </span>
       )}
+      {pinned && (
+        <span className="auto-card-pin" title={pinned}>
+          {pinned}
+        </span>
+      )}
       {chips.length > 0 && (
         <ul className="auto-card-conns" aria-label={t("auto.conn.title")}>
           {chips.map((c) => (
@@ -419,7 +427,7 @@ function RenameBox({ step }: { step: Step }) {
 /** An arrow (AU-66): selected, «+» to put a step in it and the cross that takes it away. */
 function ArrowLine(p: EdgeProps<ArrowEdge>) {
   const acts = useActs();
-  const phone = usePhone();
+  const phone = useStill();
   const [path, lx, ly] = getBezierPath(p);
   const arrow = p.data?.arrow;
   const count = p.data?.count;
@@ -516,6 +524,8 @@ function Canvas({
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
   const phone = usePhone();
+  const still = useStill();
+  const look = useLook();
   /** How «Encajar» fits it; on the phone never so small that a card cannot be read: its middle, the rest a finger away. */
   const fit = phone ? { padding: 0.2, maxZoom: 1, minZoom: 0.5 } : { padding: 0.2, maxZoom: 1 };
   const collections = useCollectionNames();
@@ -584,6 +594,7 @@ function Canvas({
         state.asked,
         testing,
         lang,
+        state.pins[step.id],
       ];
       const was = cards.current.get(step.id);
       if (was && was.from.every((x, i) => x === from[i])) {
@@ -604,6 +615,7 @@ function Canvas({
     state.problems,
     state.asked,
     state.testing,
+    state.pins,
     shown,
     t,
     lang,
@@ -686,6 +698,11 @@ function Canvas({
           name: nameOfCollection(c.collection),
           words: chipWords(t, c, locale),
         })),
+        pinned: state.pins[step.id]
+          ? [t("auto.pin.card"), ...(state.pins[step.id]?.stale ? [t("auto.pin.stale")] : [])].join(
+              " · ",
+            )
+          : null,
       },
     };
   }
@@ -832,7 +849,7 @@ function Canvas({
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     // On the phone nothing is changed (AU-74): a keyboard there only closes, with Esc.
-    if (phone && e.key !== "Escape") return;
+    if (still && e.key !== "Escape") return;
     // In the step's view a change typed is one step of Deshacer (AU-68): Ctrl+Z there is the editor's, not the field's.
     const inView = !!(e.target as HTMLElement | null)?.closest?.(".auto-view");
     if (state.open && inView && mod && (k === "z" || k === "y")) {
@@ -911,7 +928,7 @@ function Canvas({
   }, [count]);
 
   // On the phone nothing is added (AU-74): no panel, not even the empty canvas's «¿Cómo empieza?».
-  const panelOpen = !phone && (empty || state.adding !== null);
+  const panelOpen = !still && (empty || state.adding !== null);
   const menuStep = menu ? state.draft.steps.find((s) => s.id === menu.step) : undefined;
   return (
     <ActsContext.Provider value={acts}>
@@ -948,8 +965,8 @@ function Canvas({
               })
             }
             // On the phone (AU-74) the canvas is moved and zoomed with the fingers, and a tap on a step opens it.
-            nodesDraggable={!phone}
-            nodesConnectable={!phone}
+            nodesDraggable={!still}
+            nodesConnectable={!still}
             onNodeDragStart={(_, n) => {
               if (!state.selected.includes(n.id))
                 apply((s) => ({ ...s, selected: [n.id], arrow: null }));
@@ -965,7 +982,7 @@ function Canvas({
               });
             }}
             onNodeClick={(e, n) =>
-              phone
+              still
                 ? apply((s) => ({ ...s, arrow: null, selected: [n.id], open: n.id }))
                 : apply((s) => ({
                     ...s,
@@ -980,7 +997,7 @@ function Canvas({
             }
             onNodeDoubleClick={(_, n) => apply((s) => ({ ...s, selected: [n.id], open: n.id }))}
             onEdgeClick={(_, e) => {
-              const arrow = phone ? undefined : e.data?.arrow;
+              const arrow = still ? undefined : e.data?.arrow;
               if (arrow) apply((s) => ({ ...s, selected: [], arrow }));
             }}
             onPaneClick={() => {
@@ -989,13 +1006,13 @@ function Canvas({
             }}
             onNodeContextMenu={(e, n) => {
               e.preventDefault();
-              if (phone) return;
+              if (still) return;
               apply((s) => ({ ...s, selected: [n.id], arrow: null }));
               setMenu({ step: n.id, x: e.clientX, y: e.clientY });
             }}
             onPaneContextMenu={(e) => {
               e.preventDefault();
-              if (phone) return;
+              if (still) return;
               const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
               add({ from: "canvas", x: Math.round(p.x), y: Math.round(p.y) });
             }}
@@ -1062,7 +1079,7 @@ function Canvas({
             >
               <Maximize size={16} strokeWidth={1.8} />
             </button>
-            {!phone && (
+            {!still && (
               <button
                 type="button"
                 className="icon-btn"
@@ -1076,8 +1093,10 @@ function Canvas({
               </button>
             )}
           </div>
-          {!empty && <TestBar state={state} apply={apply} />}
-          {!empty && !phone && (
+          {!empty && !look && (
+            <TestBar state={state} apply={apply} collectionName={nameOfCollection} />
+          )}
+          {!empty && !still && (
             <button
               type="button"
               className="icon-btn auto-add-top"

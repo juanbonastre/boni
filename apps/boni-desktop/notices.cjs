@@ -1,6 +1,8 @@
 // Boni's notices on this computer (task 62): the agent's stream (GET /api/agent/events), held by the main process while
 // Boni runs, with its window open or only in the tray; each "notify" event (the agent's notify, a flow's «Avisar»,
-// the month's budget) becomes a system notification with its text as plain text.
+// the month's budget) becomes a system notification with its text as plain text. Each "run" event (an automation's
+// run as it goes, F14d P2: its state, the step that ended and its counts, never rows) goes to the windows, so
+// «Ejecuciones» follows it without asking the server every second.
 const { parseSse, backoff } = require("./live.cjs");
 
 /** As the server cuts a notice (packages/agent's notify). */
@@ -36,12 +38,39 @@ function noticeOf(e) {
   }
 }
 
+/** The fields of a "run" event the page takes (runs.ts's `RunEvent`), or null: ids and counts, nothing else. */
+function runOf(e) {
+  if (e.event !== "run") return null;
+  try {
+    const d = JSON.parse(e.data);
+    if (
+      typeof d?.automation !== "string" ||
+      typeof d.run !== "string" ||
+      typeof d.state !== "string"
+    )
+      return null;
+    const out = {};
+    if (d.out && typeof d.out === "object")
+      for (const [k, v] of Object.entries(d.out)) if (typeof v === "number") out[k] = v;
+    return {
+      automation: d.automation,
+      run: d.run,
+      state: d.state,
+      ...(typeof d.step === "string" ? { step: d.step } : {}),
+      ...(Object.keys(out).length ? { out } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Keeps the agent's stream open while `target()` gives a server and a token; `onNotice(text)` for each notice. A session
+ * Keeps the agent's stream open while `target()` gives a server and a token; `onNotice(text)` for each notice and
+ * `onRun(run)` for each run's event. A session
  * that ended waits for the next `restart` (a new login); a server without the stream is asked again in ten minutes;
  * anything else reconnects as the live changes do (live.cjs). `fetch` is Electron's `net.fetch` (injectable in tests).
  */
-function createNotices({ fetch, target, onNotice, log = () => {} }) {
+function createNotices({ fetch, target, onNotice, onRun = () => {}, log = () => {} }) {
   let controller = null;
   let timer = null;
   let attempt = 0;
@@ -81,6 +110,8 @@ function createNotices({ fetch, target, onNotice, log = () => {} }) {
         for (const e of events) {
           const text = noticeOf(e);
           if (text) onNotice(text);
+          const run = runOf(e);
+          if (run) onRun(run);
         }
       }
       throw new Error("closed");
@@ -110,4 +141,4 @@ function createNotices({ fetch, target, onNotice, log = () => {} }) {
   };
 }
 
-module.exports = { noticeBody, noticeOf, createNotices, RETRY_MS };
+module.exports = { noticeBody, noticeOf, runOf, createNotices, RETRY_MS };

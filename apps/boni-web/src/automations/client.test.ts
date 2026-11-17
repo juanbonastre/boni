@@ -117,3 +117,38 @@ describe("«Publicar», the versions, the switch and «Ejecutar» asked of the s
     for (const p of asked) expect(allowed(p.split(" ")[1] as string), p).toBe(true);
   });
 });
+
+describe("«Ejecuciones» asked of the server", () => {
+  it("AU-99 · AU-100 · AU-18 · AU-93 · each path goes through both apps' allowed paths, a run's id escaped", async () => {
+    const asked: string[] = [];
+    const client = automationsClient({
+      automations: async (method: string, path: string) => {
+        asked.push(`${method} api/agent/automations/${path}`);
+        return {};
+      },
+    } as never);
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6k9p";
+    const run = "r_01jx8x0t2v4x6z8b0d2f4h6k9q";
+    await client.runs(id, { filter: "failed", before: run });
+    await client.runView(id, run);
+    await client.runRows(id, run, { step: "s_01jbuscar", side: "out", name: "main", offset: 50 });
+    await client.retry(id, run, true);
+    await client.undoRun(id, run);
+    await client.pin(id, "s_01jbuscar");
+    await client.unpin(id, "s_01jbuscar");
+    await client.pinFromRun(id, run);
+    const at = `api/agent/automations/${id}`;
+    expect(asked.map((a) => a.split("?")[0])).toEqual([
+      `GET ${at}/runs`,
+      `GET ${at}/runs/${run}`,
+      `GET ${at}/runs/${run}/rows`,
+      `POST ${at}/runs/${run}/retry`,
+      `POST ${at}/runs/${run}/undo`,
+      `PUT ${at}/pins/s_01jbuscar`,
+      `DELETE ${at}/pins/s_01jbuscar`,
+      `POST ${at}/runs/${run}/pin`,
+    ]);
+    for (const p of asked) expect(allowed(p.split(" ")[1] as string), p).toBe(true);
+    expect(new URLSearchParams(asked[0]?.split("?")[1]).get("filter")).toBe("failed");
+  });
+});

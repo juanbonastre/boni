@@ -16,7 +16,7 @@ import {
   type Step,
   stepChanges,
 } from "@boni/automations";
-import { Play } from "lucide-react";
+import { ListTree, Pin, Play } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { dragFrom } from "../automations/cite.ts";
 import type { ExprPreview, Sample } from "../automations/client.ts";
@@ -29,6 +29,7 @@ import {
   writesRows,
 } from "../automations/panel.ts";
 import { stoppedByLimit } from "../automations/publishing.ts";
+import { type TreeLine, treeLines } from "../automations/runs.ts";
 import { type EditorState, failedAt, logLine } from "../automations/state.ts";
 import {
   agoWords,
@@ -65,6 +66,8 @@ export interface Tester {
     row: number;
     expr: string;
   }) => Promise<ExprPreview | null>;
+  /** «Fijar» and «Soltar» (AU-93): the step's last tested output, pinned on the draft or let go. None in a run. */
+  pin?: (step: string, on: boolean) => void;
 }
 export const TesterContext = createContext<Tester | null>(null);
 export const useTester = () => useContext(TesterContext);
@@ -75,6 +78,18 @@ export const useTester = () => useContext(TesterContext);
  */
 export const PhoneContext = createContext(false);
 export const usePhone = () => useContext(PhoneContext);
+/**
+ * A run's canvas in «Ejecuciones» (AU-99): looked at on any screen, never changed nor tested; its rows are the run's,
+ * which the page's `Tester` gives (AutomationRuns.tsx).
+ */
+export const LookContext = createContext(false);
+export const useLook = () => useContext(LookContext);
+/** Nothing is changed here: the phone (AU-74), or a run's canvas (AU-99). */
+export function useStill(): boolean {
+  const phone = useContext(PhoneContext);
+  const look = useContext(LookContext);
+  return phone || look;
+}
 
 /** The time, again every half minute: what «hace 2 min» is said against. Asks nothing of the server. */
 export function useNow(): number {
@@ -168,7 +183,15 @@ export function TrialFields({
  * fields it tests at once; with fields, they are asked in a small box with those of the last test; with several
  * triggers, a menu chooses which first. While it tests it says «Probando…» and cannot be pressed.
  */
-export function TestBar({ state, apply }: { state: EditorState; apply: Apply }) {
+export function TestBar({
+  state,
+  apply,
+  collectionName,
+}: {
+  state: EditorState;
+  apply: Apply;
+  collectionName: (key: string) => string;
+}) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
@@ -283,6 +306,16 @@ export function TestBar({ state, apply }: { state: EditorState; apply: Apply }) 
           </span>
         )}
       </div>
+      {line.kind === "tested" && (
+        <TreeButton
+          lines={treeLines(state.draft, state.tests, {
+            ran: state.last ? [...state.last.ran, ...state.last.reused] : undefined,
+            pins: state.pins,
+          })}
+          collectionName={collectionName}
+          onStep={(step) => apply((s) => ({ ...s, selected: [step], arrow: null }))}
+        />
+      )}
       {limit && !phone && (
         <button
           type="button"
@@ -296,6 +329,114 @@ export function TestBar({ state, apply }: { state: EditorState; apply: Apply }) 
     </div>
   );
 }
+
+/**
+ * «Ver cada paso» (AU-101): the «Registro» unfolded, beside its line in the editor and on a run's bar. The same tree
+ * for a test and for a run.
+ */
+export function TreeButton({
+  lines,
+  collectionName,
+  onStep,
+}: {
+  lines: readonly TreeLine[];
+  collectionName: (key: string) => string;
+  onStep: (step: string) => void;
+}) {
+  const t = useStore((s) => s.t);
+  if (!lines.length) return null;
+  return (
+    <PopButton
+      label={<ListTree size={15} strokeWidth={1.8} aria-hidden />}
+      title={t("auto.tree.show")}
+      className="icon-btn auto-tree-open"
+      align="start"
+      width={380}
+    >
+      {(close) => (
+        <LogTree
+          lines={lines}
+          collectionName={collectionName}
+          onStep={(step) => {
+            close();
+            onStep(step);
+          }}
+        />
+      )}
+    </PopButton>
+  );
+}
+
+/**
+ * The «Registro» tree (AU-101): each step in the order it ran, how it ended, its rows in and out and its seconds;
+ * under it what it read, saved, proposed or would save, and its console. Counts only: the rows are in the step's
+ * view. A click on a step selects it on the canvas.
+ */
+export function LogTree({
+  lines,
+  collectionName,
+  onStep,
+}: {
+  lines: readonly TreeLine[];
+  collectionName: (key: string) => string;
+  onStep?: (step: string) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
+  const n = (x: number) => x.toLocaleString(localeOf(lang));
+  const stateWord = (s: string) =>
+    s === "running"
+      ? t("auto.run.how.running")
+      : KNOWN_STATES.has(s)
+        ? t(`auto.state.${s}`)
+        : t("auto.run.how.failed");
+  return (
+    <ol className="auto-tree" aria-label={t("auto.tree.label")}>
+      {lines.map((l) => {
+        const under = [
+          ...l.reads.map((r) =>
+            t("auto.tree.reads", {
+              rows: rowsWords(t, lang, r.rows),
+              collection: collectionName(r.collection),
+            }),
+          ),
+          ...(l.saved ? [t("auto.tree.saved", { n: n(l.saved) })] : []),
+          ...(l.asked ? [t("auto.tree.asked", { n: n(l.asked) })] : []),
+          ...(l.would ? [t("auto.tree.would", { n: n(l.would) })] : []),
+          ...(l.console ? [t("auto.tree.console", { n: n(l.console) })] : []),
+        ];
+        return (
+          <li key={l.step} className={`auto-tree-line ${l.state}`}>
+            <button
+              type="button"
+              className="auto-tree-step"
+              disabled={!onStep}
+              onClick={() => onStep?.(l.step)}
+            >
+              <span className={`auto-tree-mark ${l.state}`}>{stateWord(l.state)}</span>
+              <span className="auto-tree-name" title={l.name}>
+                {l.name}
+                {l.pinned ? ` · ${t("auto.tree.pinned")}` : ""}
+              </span>
+              <span className="auto-tree-rows">
+                {t("auto.tree.rows", { in: n(l.rowsIn), out: n(l.rowsOut) })}
+              </span>
+              <span className="auto-tree-ms">{secsWords(t, lang, l.ms)}</span>
+            </button>
+            {under.length > 0 && (
+              <ul className="auto-tree-under">
+                {under.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+const KNOWN_STATES = new Set(["done", "failed", "skipped", "stopped"]);
 
 /**
  * «Probar paso» (AU-66, AU-73): it cannot be pressed while required parameters are empty or a test runs; while this
@@ -318,7 +459,7 @@ export function TestStepButton({
   blocked?: boolean;
 }) {
   const tester = useTester();
-  const phone = usePhone();
+  const phone = useStill();
   const why = cannotTest(step, state.testing !== null);
   if (phone) return null;
   return (
@@ -438,7 +579,7 @@ export function StepOutput({
   const types = useStore((s) => s.dataTypes);
   const collectionName = (key: string) => types?.find((d) => d.key === key)?.name;
   const tester = useTester();
-  const phone = usePhone();
+  const phone = useStill();
   const now = useNow();
   const test = state.tests[step.id];
   const outs = outputsOf(step);
@@ -517,6 +658,21 @@ export function StepOutput({
           </span>
         )}
         {total > 0 && <ShowAs t={t} show={shown} set={setShow} writes={writes} />}
+        {tester?.pin && !phone && (
+          <button
+            type="button"
+            className={`btn small auto-pin${state.pins[step.id] ? " on" : ""}`}
+            data-boni-action="automations.pin"
+            aria-pressed={!!state.pins[step.id]}
+            // What is pinned is the last test that ended well (AU-93): a failed one has nothing to give.
+            disabled={!state.pins[step.id] && test.state !== "done"}
+            title={state.pins[step.id] ? t("auto.pin.card") : undefined}
+            onClick={() => tester.pin?.(step.id, !state.pins[step.id])}
+          >
+            <Pin size={13} strokeWidth={1.8} aria-hidden />
+            <span>{t(state.pins[step.id] ? DO.unpin : DO.pin)}</span>
+          </button>
+        )}
       </div>
       {total > 0 && tester && (
         <TestRows
@@ -566,7 +722,7 @@ export function StepInput({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language) === "en" ? "en" : "es";
   const tester = useTester();
-  const phone = usePhone();
+  const phone = useStill();
   const ins = inputsOf(step);
   const [at, setAt] = useState(ins[0] ?? "main");
   const input = ins.includes(at) ? at : (ins[0] ?? "main");

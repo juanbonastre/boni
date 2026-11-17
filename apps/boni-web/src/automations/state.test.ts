@@ -57,6 +57,7 @@ const opened: Opened = {
   places: [{ step: "s_inicio", x: 0, y: 0 }],
   tests: {},
   tested: {},
+  pins: {},
   device: "d_portatil",
   updated: 1,
 };

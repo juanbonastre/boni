@@ -1,4 +1,5 @@
 import {
+  automationRowTarget,
   type ControlBlock,
   type DatabaseFilter,
   type DatabaseView,
@@ -29,6 +30,7 @@ import {
   Maximize2,
   Network,
   Paperclip,
+  Play,
   Plus,
   Search,
   SlidersHorizontal,
@@ -48,6 +50,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { DO } from "../automations/words.ts";
 import {
   type DataField,
   type DataRow,
@@ -1487,7 +1490,10 @@ function TableView({
   // Boni's own tables are read only: no boxes, no menu, no tools (their rows have nothing to be done with); in
   // «Mis datos», a row is a collection or a page, opened and deleted as one.
   const pickable = !lookOnly && (!type.system || !!type.editable);
-  const total = (pickable ? SEL + TOOLS : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
+  // «Automatizaciones»: a published automation's row has «Ejecutar» beside its bin (AU-97).
+  const runnable = type.id === SYS.flows.id;
+  const tools = runnable ? TOOLS + 24 : TOOLS;
+  const total = (pickable ? SEL + tools : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
   // «Fijar» (task 76, Notion's freeze): the columns up to the pinned one stay while the rest scroll sideways.
   const pinAt = view.pin ? cols.findIndex((c) => c.key === view.pin) : -1;
   const lefts: number[] = [];
@@ -1822,7 +1828,23 @@ function TableView({
           );
         })}
         {pickable && (
-          <td className="row-tools">
+          <td className={runnable ? "row-tools two" : "row-tools"}>
+            {runnable &&
+              automationRowTarget(r.id) &&
+              r.values[SYS.flows.state] !== SYS.flows.unpublished && (
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  data-boni-action="automations.run"
+                  title={t(DO.run)}
+                  aria-label={`${t(DO.run)}: ${name}`}
+                  onClick={() =>
+                    showAutomation(automationRowTarget(r.id) as string, { start: true })
+                  }
+                >
+                  <Play size={13} strokeWidth={1.8} />
+                </button>
+              )}
             {/* A row that stays as it is (Boni's own, in «Mis datos») is not deleted either. */}
             {!r.fixed?.includes(type.titleField) && (
               <button
@@ -1853,7 +1875,7 @@ function TableView({
           {cols.map((c) => (
             <col key={c.key} data-key={c.key} style={{ width: width(c.key, c.base) }} />
           ))}
-          {pickable && <col style={{ width: TOOLS }} />}
+          {pickable && <col style={{ width: tools }} />}
         </colgroup>
         <thead>
           <tr>

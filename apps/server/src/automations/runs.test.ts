@@ -37,11 +37,12 @@ import { openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
 import { makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
+import { ROUTES } from "../routes.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { withAutomationActions, withPublishActions, withRunActions } from "./actions.ts";
 import { sandboxBox } from "./box.ts";
 import { publish } from "./publish.ts";
-import { RUN_ACTIONS } from "./routes.ts";
+import { RUN_ACTIONS, RUN_ROUTES } from "./routes.ts";
 import {
   interruptRuns,
   onRunEvent,
@@ -1297,8 +1298,12 @@ describe("the actions and their routes (F14d)", () => {
   it("AU-97 AU-18 · «Ejecutar» through its action writes with the run in the log, and «Deshacer lo que hizo» undoes it whole; the actions wait for their controls, and the reads are routed", async () => {
     const registry = withRunActions(withPublishActions(withAutomationActions(new ToolRegistry())));
     expect(Object.keys(RUN_ACTIONS).every((x) => registry.get(x))).toBe(true);
-    // Not registered for everyone yet: their controls are the screens' (routes.ts).
-    for (const x of Object.keys(RUN_ACTIONS)) expect(ACTIONS.get(x) ?? null).toBeNull();
+    // Registered for everyone with their controls (P2), each route listed and run by its action.
+    for (const x of Object.keys(RUN_ACTIONS)) expect(ACTIONS.get(x)?.name).toBe(x);
+    for (const [route, { action }] of Object.entries(RUN_ROUTES)) {
+      expect(ACTIONS.get(action)?.name, route).toBe(action);
+      expect(ROUTES[route], route).toBe("tailnet");
+    }
     const a = made([START, CREATE()]);
     a.publish();
     const mine = { store, trust: "personal" as const, device: "d_portatil", registry };
@@ -1344,6 +1349,61 @@ describe("the actions and their routes (F14d)", () => {
       expect(rows.status, JSON.stringify(rows.body)).toBe(200);
       expect(rows.body.total).toBe(1);
       expect((await call("GET", `${base}/runs/r_ninguna`)).status).toBe(404);
+    } finally {
+      server.close();
+    }
+  });
+
+  it("AU-97 AU-18 AU-100 AU-93 · the touches over HTTP as the app calls them: «Ejecutar», «Reintentar», «Deshacer lo que hizo» and «Fijar», refused from a shared device and done from his own", async () => {
+    const { server, host, call, trust } = await served();
+    try {
+      const own = host.store(1);
+      seeded(own);
+      const b = made([START, CREATE()], {}, own);
+      b.publish();
+      const base = `/api/agent/automations/${b.id}`;
+      const trigger = b.step("Inicio");
+      const mine = { status: 403, body: { error: "personal-device-only" } };
+      trust("shared");
+      expect(await call("POST", `${base}/run`, { trigger, fields: { nota: "del salón" } })).toEqual(
+        mine,
+      );
+      trust("personal");
+      const started = await call("POST", `${base}/run`, { trigger, fields: { nota: "por http" } });
+      expect(started.status, JSON.stringify(started.body)).toBe(200);
+      const first = (started.body.run as RunSummary).id;
+      await settled(own);
+      expect(notes(own)).toContain("por http");
+      // «Reintentar» with the version published now, and «Deshacer y reintentar»: the first is undone before.
+      const again = await call("POST", `${base}/runs/${first}/retry`, {});
+      expect(again.status, JSON.stringify(again.body)).toBe(200);
+      expect(again.body.version).toBe(1);
+      expect((again.body.run as RunSummary).retryOf).toBe(first);
+      await settled(own);
+      expect(notes(own).filter((x) => x === "por http")).toHaveLength(2);
+      const second = (again.body.run as RunSummary).id;
+      // Each is undone on its own (a later one that changed the same rows refuses it: «changed», above).
+      const undone = await call("POST", `${base}/runs/${second}/undo`);
+      expect(undone.status, JSON.stringify(undone.body)).toBe(200);
+      expect(undone.body.refused).toBeUndefined();
+      expect(notes(own).filter((x) => x === "por http")).toHaveLength(1);
+      expect((await call("POST", `${base}/runs/${second}/undo`)).body.refused).toBe("nothing");
+      const redo = await call("POST", `${base}/runs/${first}/retry`, { undo: true });
+      expect(redo.status, JSON.stringify(redo.body)).toBe(200);
+      await settled(own);
+      expect(notes(own).filter((x) => x === "por http")).toHaveLength(1);
+      // «Fijar» a tested step's output and release it; «Abrir en el editor con estos datos» pins the trigger's.
+      expect((await call("PUT", `${base}/pins/${trigger}`)).body.refused).toBe("untested");
+      await call("POST", `${base}/test`, { trigger, fields: { nota: "de prueba" } });
+      const pinned = await call("PUT", `${base}/pins/${trigger}`);
+      expect(Object.keys(pinned.body.pins as object)).toEqual([trigger]);
+      expect((await call("DELETE", `${base}/pins/${trigger}`)).body.pins).toEqual({});
+      const opened = await call("POST", `${base}/runs/${first}/pin`);
+      expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+      expect(opened.body.trigger).toBe(trigger);
+      trust("shared");
+      expect(await call("POST", `${base}/runs/${first}/undo`)).toEqual(mine);
+      expect(await call("DELETE", `${base}/pins/${trigger}`)).toEqual(mine);
     } finally {
       server.close();
     }

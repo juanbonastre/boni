@@ -175,7 +175,8 @@ export function publishView(
   const checks = publishChecks(a, contextOf(store, id, running?.names ?? {}), {
     kept: Object.fromEntries([...kept].map(([step, t]) => [step, t.print])),
     prints,
-    pinned: [],
+    // A pinned output is worth a look (AU-93): a real run does not use it.
+    pinned: store.journal.automationPins(id).map((p) => p.step),
   });
   const outside = outsideOf(store, a);
   return {
