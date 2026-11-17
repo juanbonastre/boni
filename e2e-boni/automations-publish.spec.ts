@@ -758,7 +758,7 @@ test.describe("«Ejecuciones»", () => {
     await expect(runItems(page).nth(0)).toContainText("Iniciada por ti · versión 2");
     await expect(runItems(page).nth(1)).toContainText("Prueba del borrador");
     await expect(runItems(page).nth(2)).toContainText("Falló en «Modificar filas en Libros»");
-    await expect(runItems(page).nth(2)).toContainText("Programada · versión 1");
+    await expect(runItems(page).nth(2)).toContainText("A su hora · versión 1");
     await expect(runItems(page).nth(3)).toContainText("Interrumpida en «Si»");
     // The newest is the one shown: its line, then its canvas with each step's rows.
     await expect(runItems(page).nth(0)).toHaveAttribute("aria-current", "true");
@@ -796,6 +796,16 @@ test.describe("«Ejecuciones»", () => {
     const pages = await recorded(page, "__autoRunPages");
     expect(pages).toHaveLength(2);
     expect(pages[1]).toMatch(/^all r_01jhora\d{6}$/);
+    // A setting saved meanwhile (here the theme; the desktop saves some on its own) is no other list: the hundred
+    // stay (once it put the list back to its first fifty, in the desktop's test at volume).
+    await page.getByRole("button", { name: "Ajustes" }).click();
+    const settings = page.locator(".modal");
+    await settings.getByRole("tab", { name: "Apariencia" }).click();
+    await settings.getByRole("button", { name: "Claro" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.keyboard.press("Escape");
+    await expect(runItems(page)).toHaveCount(100);
+    expect(await recorded(page, "__autoRunPages")).toHaveLength(2);
     // Nothing asks a run's rows but the step's view.
     expect(await recorded(page, "__autoRunRows")).toEqual([]);
   });
@@ -845,6 +855,11 @@ test.describe("«Ejecuciones»", () => {
     await openRuns(page);
     // Version 1 failed and wrote nothing: the box says it runs version 2, with no undoing.
     await runItems(page).nth(2).click();
+    // What it told, as the server wrote it, painted as text (S4).
+    await expect(runBar(page).locator(".auto-run-notice")).toHaveText(
+      "Avisó: «Revisar pendientes» falló <b>a su hora</b>",
+    );
+    await expect(runBar(page).locator(".auto-run-notice b")).toHaveCount(0);
     await runBar(page).getByRole("button", { name: "Reintentar", exact: true }).click();
     await expect(screen(page)).toHaveAccessibleName("Reintentar «Revisar pendientes»");
     await expect(screen(page)).toContainText("Correrá la versión 2, no la 1.");
@@ -1054,7 +1069,54 @@ test.describe("«Fijar» and «Programada»", () => {
     await expect(card(page, "s_01jbuscar").locator(".auto-card-pin")).toHaveCount(0);
     expect(await recorded(page, "__autoPins")).toEqual(["PUT s_01jbuscar", "DELETE s_01jbuscar"]);
   });
-  test.fixme("AU-114 · «Programada» is in «Añadir paso» among the triggers; its panel lists its rules in words («Cada día a las 08:00», «Cada lunes a las 09:00», «Cada hora»), adds and removes one, and with none the step is marked", async () => {});
+  test("AU-114 · «Programada» is in «Añadir paso» among the triggers; its panel lists its rules in words («Cada día a las 08:00», «Cada lunes a las 09:00», «Cada hora»), adds and removes one, and with none the step is marked", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, "/?still", {
+      automations: [{ ...testOf(ALL_DONE), id: NEVER.id, name: NEVER.name }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, NEVER.name);
+    await page.locator(".auto-add-top").click();
+    const add = page.locator(".auto-panel");
+    await add.getByRole("button", { name: "Añadir otro disparador" }).click();
+    await add.getByRole("button", { name: "Programada", exact: true }).click();
+    await expect(view(page)).toBeVisible();
+    const rules = view(page).getByRole("group", { name: "Cuándo" });
+    const lines = rules.locator(".auto-entry-line");
+    // With none it is missing: «Probar paso» says so, as the server's check refuses it.
+    const why = view(page).locator(".auto-view-why");
+    await expect(lines).toHaveCount(0);
+    await expect(why).toHaveText("Falta: Cuándo");
+    // One added: «Cada día a las 08:00», the catalogue's default, said in words; its day is asked only «Cada semana».
+    await rules.getByRole("button", { name: "Añadir" }).click();
+    await expect(lines).toHaveText(["Cada día a las 08:00"]);
+    await expect(rules.locator(".auto-entry-body").getByText("Día", { exact: true })).toHaveCount(
+      0,
+    );
+    await rules.getByRole("button", { name: "Añadir" }).click();
+    const second = rules.locator(".auto-entry").nth(1);
+    await second.getByRole("combobox", { name: "Repetir" }).selectOption({ label: "Cada semana" });
+    await second.getByRole("combobox", { name: "Día" }).selectOption({ label: "Lunes" });
+    await second.getByLabel("A las").fill("09:00");
+    await rules.getByRole("button", { name: "Añadir" }).click();
+    await rules
+      .locator(".auto-entry")
+      .nth(2)
+      .getByRole("combobox", { name: "Repetir" })
+      .selectOption({ label: "Cada hora" });
+    await rules.locator(".auto-entry").nth(2).getByLabel("A las").fill("00:00");
+    await expect(lines).toHaveText(["Cada día a las 08:00", "Cada lunes a las 09:00", "Cada hora"]);
+    await expect(why).toHaveCount(0);
+    // One removed; the card says the first and how many more.
+    await rules.locator(".auto-entry").nth(1).getByRole("button", { name: "Borrar" }).click();
+    await expect(lines).toHaveText(["Cada día a las 08:00", "Cada hora"]);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".auto-card.selected .auto-card-summary")).toContainText(
+      "Cada día a las 08:00 y 1 más",
+    );
+  });
   test.fixme("AU-47 · the «Mapa» shows a published automation with the collections it reads and writes and its trigger, and one never published is not in it", async () => {});
 });
 

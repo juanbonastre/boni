@@ -249,6 +249,8 @@ export const withRuns = (now: number) => ({
       state: "failed",
       step: "s_01jmodificar",
       error: { step: "s_01jmodificar", failure: LIMIT },
+      // What the server told, with a tag in it: said as text (S4).
+      notice: { kind: "failed", text: "«Revisar pendientes» falló <b>a su hora</b>" },
       steps: {
         ...RUN_STEPS,
         s_01jmodificar: rec({

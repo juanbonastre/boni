@@ -2048,6 +2048,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   queda «No corrió» (`missed`), sin «Reintentar» ni «Deshacer». A la escala de Juan: una vuelta sin nada que correr
   sobre 200 automatizaciones, menos de 50 ms; una página de «Ejecuciones» sobre un año de ejecuciones por hora,
   menos de 30 ms; la vuelta rara en que tocan las 200, en torno a 1,3 s (cada una lee y comprueba su versión).
+  Hecho en P3: su panel dice cada regla en palabras, como los flujos de antes («Cada día a las 08:00», «Cada lunes a
+  las 09:00», «Cada hora a y 15»), y pide «Día» solo con «Cada semana»; sin ninguna, falta (como la rechaza el
+  servidor). Su tarjeta dice la primera y cuántas más; «Se inicia» de la lista, publicada, las dice todas, de la
+  columna escrita al publicar. En «Ejecuciones», la suya dice «A su hora», y la que no corrió, «No corrió: Boni
+  estaba apagado a su hora». Lo sostienen `words.test.ts`, `flowsCollection.test.ts`, la prueba del navegador y la
+  del escritorio sobre el servidor de verdad: publicada para el minuto siguiente, corre sola, crea su fila, se ve en
+  «Ejecuciones» con la pantalla abierta y se deshace desde ahí.
   Hecho en S4: «No corrió» avisa como un fallo de su racha (`scheduler.test.ts`). Falta: la línea «No corrió»
   en «Ejecuciones» (P3).
 - **AU-115** (F14b, hecho) · Toda automatización se puede probar a mano, tenga el disparador que tenga.

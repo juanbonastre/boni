@@ -23,6 +23,7 @@ import {
   PROBLEMS,
   parseExpression,
   RUN_LIMIT_KEYS,
+  SCHEDULE_DAYS,
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
@@ -31,7 +32,7 @@ import {
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
 import type { RowView } from "./client.ts";
-import type { CardLabel, ConditionField } from "./panel.ts";
+import { type CardLabel, type ConditionField, isEmpty } from "./panel.ts";
 import type { LogLine } from "./state.ts";
 
 /** The key that says each thing of the catalogue. */
@@ -174,6 +175,21 @@ const conditionCount = (v: ParamValue): number =>
     : 0;
 
 /**
+ * A rule of «Programada» (AU-114) as the flows of before say theirs (`triggerText`, the same words): «Cada hora»,
+ * «Cada hora a y 15», «Cada día a las 08:00», «Cada lunes a las 09:00». The day counts only with «Cada semana».
+ */
+export function ruleWords(t: T, rule: Readonly<Record<string, ParamValue>>): string {
+  const at = typeof rule.at === "string" && /^\d\d:\d\d$/.test(rule.at) ? rule.at : "08:00";
+  if (rule.every === "hour")
+    return at.slice(3) === "00" ? t("flows.on.hour") : t("flows.on.hourAt", { m: at.slice(3) });
+  if (rule.every === "week") {
+    const i = SCHEDULE_DAYS.indexOf(rule.day as (typeof SCHEDULE_DAYS)[number]);
+    return t("flows.on.week", { day: t(`flows.day.${(Math.max(i, 0) + 1) % 7}`), at });
+  }
+  return t("flows.on.day", { at });
+}
+
+/**
  * How the card's summary says each value of `step` (AU-63, `summaryOf` of panel.ts): a choice by its word, a
  * collection by its name, a citation by its field's name (`fieldNames`; its key where the draft does not know it), any other
  * expression as written, a number with its parameter's name («Límite 10»), a text as it is, a toggle on by its
@@ -209,6 +225,12 @@ export function summaryWords(
         return n === 1 ? t("auto.summary.conditions.one") : t("auto.summary.conditions", { n });
       }
       case "list":
+        // «Programada»'s hours in words (AU-114): the first, and how many more.
+        if (step.type === "schedule" && Array.isArray(v) && v.length > 0) {
+          const first = ruleWords(t, v[0] as Record<string, ParamValue>);
+          return v.length === 1 ? first : t("auto.summary.more", { first, n: v.length - 1 });
+        }
+        return t("auto.summary.count", { name: name(p), n: Array.isArray(v) ? v.length : 1 });
       case "fields":
         return t("auto.summary.count", { name: name(p), n: Array.isArray(v) ? v.length : 1 });
       default:
@@ -219,6 +241,27 @@ export function summaryWords(
             : "";
     }
   };
+}
+
+/**
+ * A row of a list parameter in one line, the head of its entry: its columns' values joined by « · »; a «Programada»'s
+ * rule as a person says it («Cada lunes a las 09:00», AU-114).
+ */
+export function entryWords(
+  t: T,
+  step: Step,
+  columns: readonly ParamSpec[],
+  row: Readonly<Record<string, ParamValue>>,
+): string {
+  if (step.type === "schedule") return ruleWords(t, row);
+  const say = summaryWords(t, {}, step);
+  return columns
+    .map((c) => {
+      const x = row[c.key];
+      return x === undefined || isEmpty(x) ? "" : say(c, x);
+    })
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /**

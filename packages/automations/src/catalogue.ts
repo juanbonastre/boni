@@ -360,13 +360,14 @@ export const CATALOGUE: readonly StepTypeSpec[] = [
                 shape: true,
                 default: "08:00",
               },
-              // Read only with `week`: Monday when not given.
+              // Read only with `week` (and asked only then): Monday when not given.
               {
                 key: "day",
                 control: "choice",
                 options: SCHEDULE_DAYS,
                 place: "shown",
                 shape: true,
+                when: { param: "every", in: ["week"] },
               },
             ],
           },

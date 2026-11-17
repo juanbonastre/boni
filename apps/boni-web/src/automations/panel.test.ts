@@ -369,6 +369,15 @@ describe("«Parámetros»", () => {
     expect(
       missingOf({ id: "s_o", name: "Ordenar", type: "sort", params: { by: [] } }),
     ).toHaveLength(1);
+    // A list under its «min» is missing too, as the server refuses it: a «Programada» with no rule (AU-114).
+    const hours = (rules: unknown[]): Step => ({
+      id: "s_p",
+      name: "Programada",
+      type: "schedule",
+      params: { rules } as never,
+    });
+    expect(missingOf(hours([])).map((p) => p.key)).toEqual(["rules"]);
+    expect(missingOf(hours([{ key: "r_1", every: "day", at: "08:00" }]))).toEqual([]);
   });
   it("AU-73 · «Probar paso» cannot be pressed with a required parameter empty, naming each, nor while a test runs; otherwise it can", () => {
     const fresh: Step = {

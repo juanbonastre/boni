@@ -229,6 +229,10 @@ export interface RunSummary {
   retryOf: string | null;
   /** S3: the hour a scheduled run was due. */
   slot: number | null;
+  /** S4: what it told when it ended, only a run that started alone (AU-102, AU-167); its text is the server's. */
+  notice?: { kind: "failed" | "wrote"; text: string } | null;
+  /** S4: when its steps and rows were let go (AU-103); its line stays. */
+  pruned?: number | null;
 }
 
 /** A step's record in a run (AU-99): the engine's, with counts for its rows and its writes. */
@@ -402,6 +406,14 @@ export function runSummaryOf(x: unknown): RunSummary {
     undone: num(o.undone),
     retryOf: typeof o.retryOf === "string" ? o.retryOf : null,
     slot: num(o.slot),
+    // What it told (S4): its text is the server's, painted as plain text.
+    notice:
+      isObj(o.notice) &&
+      (o.notice.kind === "failed" || o.notice.kind === "wrote") &&
+      typeof o.notice.text === "string"
+        ? { kind: o.notice.kind, text: o.notice.text }
+        : null,
+    pruned: num(o.pruned),
   };
 }
 

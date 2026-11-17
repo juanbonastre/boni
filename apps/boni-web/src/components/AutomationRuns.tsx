@@ -142,6 +142,10 @@ export function RunsPane({
     pages: 0,
   });
   const asked = useRef(0);
+  // Its words, read when an answer fails: a new `t` (every saved setting makes one) is no other list, so it must not
+  // put the list back to its first page after «Ver más» (it did, now and then, in the desktop's test at volume).
+  const words = useRef(t);
+  words.current = t;
 
   const first = useCallback(async () => {
     const mine = ++asked.current;
@@ -159,9 +163,9 @@ export function RunsPane({
       setNext(shown.current.next);
       setError(null);
     } catch (e) {
-      if (mine === asked.current) setError(touchError(t, e));
+      if (mine === asked.current) setError(touchError(words.current, e));
     }
-  }, [id, filter, t]);
+  }, [id, filter]);
 
   // Another filter is another list, from its first page.
   useEffect(() => {
@@ -440,6 +444,10 @@ function RunDetail({
             {did ? ` · ${did}` : ""}
           </span>
           {why && <span className="auto-run-why">{why}</span>}
+          {/* What it told when it ended (AU-102, AU-167): the server's words, painted as text. */}
+          {r.notice && (
+            <span className="auto-run-notice">{t("auto.run.notice", { text: r.notice.text })}</span>
+          )}
           {r.undone !== null && (
             <span className="auto-run-undone">
               {t("auto.run.undone", { when: whenWords(t, lang, zone, r.undone, now) })}
