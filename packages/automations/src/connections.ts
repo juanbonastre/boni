@@ -6,8 +6,16 @@
  * AU-161, AU-174).
  */
 import { type FilterItem, filterErrors, isFilterGroup } from "@boni/views";
-import { CODE_LIMITS, CODE_TYPE, CodeFault, type CodeProblem } from "./code.ts";
-import { FormatError, type ParamValue, type Step } from "./format.ts";
+import {
+  AGENT_TYPE,
+  CODE_LIMITS,
+  CODE_TYPE,
+  CodeFault,
+  type CodeProblem,
+  type WriteAction,
+} from "./code.ts";
+import { FormatError, isExpr, type ParamValue, type Step } from "./format.ts";
+import type { Cell } from "./rows.ts";
 import type { ValidationContext } from "./validate.ts";
 
 /** «Solo estas filas», «Solo estos campos» and a limit (AU-43). An absent one does not limit. */
@@ -34,13 +42,41 @@ export interface Connection {
   read: false | ReadLimits;
   /**
    * The three write actions: `false` is «No», `ask` «Preguntar», `yes` «Sí», each on its own (AU-176). Their own
-   * limits (`where`, `fields`, `fixed`) are F15's (AU-48); in F14c a write keeps to the read's limits (AU-177).
+   * limits narrow on top of the read's (AU-177, AU-48): «Solo estas filas» (`where`) of modify and remove, «Solo
+   * estos campos» (`fields`) of create and modify, create's fixed values (`fixed`, which the step does not choose),
+   * and «Como mucho N filas» (`limit`, AU-196) of the three.
    */
-  create: false | { mode: "ask" | "yes"; fields?: string[]; fixed?: Record<string, ParamValue> };
-  update: false | { mode: "ask" | "yes"; where?: FilterItem[]; fields?: string[] };
+  create:
+    | false
+    | {
+        mode: "ask" | "yes";
+        fields?: string[];
+        fixed?: Record<string, ParamValue>;
+        limit?: number;
+      };
+  update: false | { mode: "ask" | "yes"; where?: FilterItem[]; fields?: string[]; limit?: number };
   /** Always to the trash (AU-122); a `yes` removes without asking only as AU-186 says. */
-  remove: false | { mode: "ask" | "yes"; where?: FilterItem[] };
+  remove: false | { mode: "ask" | "yes"; where?: FilterItem[]; limit?: number };
 }
+
+/** A fixed value as the format holds it that is a plain value, not an expression (those are AU-52's, E3). */
+export function literalCell(v: ParamValue): v is Cell {
+  if (isExpr(v)) return false;
+  if (Array.isArray(v)) return v.every(literalCell);
+  if (typeof v === "object" && v !== null) return Object.values(v).every(literalCell);
+  return true;
+}
+
+/** One write action's cell when it is not «No». */
+export type WriteCell = Exclude<Connection[WriteAction], false>;
+
+/**
+ * «Como mucho N filas» (AU-196): a write action's limit goes from 1 to this, as a read's does. An «Agente»'s write
+ * action is born with `AGENT_BORN_ROWS` the moment a hand takes it out of «No»: Juan's limit on what an AI decides.
+ * A «Código»'s is born without one (what its code writes, he wrote).
+ */
+export const ACTION_ROWS_MAX = CODE_LIMITS.readRows;
+export const AGENT_BORN_ROWS = 20;
 
 export const CONNECTION_ACTIONS = ["read", "create", "update", "remove"] as const;
 export type ConnectionAction = (typeof CONNECTION_ACTIONS)[number];
@@ -89,10 +125,19 @@ export type NarrowedAsk = ReadAsk & {
 
 /**
  * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46, AU-176): «Código»,
- * the four; every other type of F14c, none (a connection on it does not validate). F15 gives the «Agente» the same.
+ * the four; every other type of F14c, none (a connection on it does not validate). F15 gives the «Agente» the same
+ * (E3 opens it: until the step type is in the catalogue, an «Agente» takes no connection).
  */
 export function connectionActions(type: string): readonly ConnectionAction[] {
   return type === CODE_TYPE ? ALL : NONE;
+}
+
+/**
+ * A write action's cell as it is born when a hand takes it out of «No» (AU-196): with `mode`, and on an «Agente»
+ * with «Como mucho 20». A «Código»'s, and any other type's, with no limit.
+ */
+export function bornCell(type: string, mode: "ask" | "yes"): WriteCell {
+  return type === AGENT_TYPE ? { mode, limit: AGENT_BORN_ROWS } : { mode };
 }
 const ALL: readonly ConnectionAction[] = Object.freeze([...CONNECTION_ACTIONS]);
 const NONE: readonly ConnectionAction[] = Object.freeze([]);
@@ -109,9 +154,10 @@ export function newConnection(collection: string): Connection {
 export function allowing(
   connection: Connection,
   action: Exclude<ConnectionAction, "read">,
+  type: string = CODE_TYPE,
 ): Connection {
   if (connection[action] !== false) return connection;
-  return { ...connection, [action]: { mode: "ask" } };
+  return { ...connection, [action]: bornCell(type, "ask") };
 }
 
 /**
@@ -159,8 +205,13 @@ function fieldsAsked(ask: ReadAsk): string[] {
  * gives exactly that, and fails (`cutRead`) instead of being cut. `count` and `sum` give one number: no limit of rows
  * applies to them, the connection's filter does.
  */
-export function narrow(ask: ReadAsk, connections: readonly Connection[]): NarrowedAsk {
-  const read = connections.find((c) => c.collection === ask.collection && c.read !== false)?.read;
+export function narrow(
+  ask: ReadAsk,
+  connections: readonly Connection[],
+  action?: Exclude<WriteAction, "create">,
+): NarrowedAsk {
+  const connection = connections.find((c) => c.collection === ask.collection && c.read !== false);
+  const read = connection?.read;
   if (read === undefined || read === false)
     throw new CodeFault(`no connection reads ${ask.collection}`, {
       code: "code.read.notConnected",
@@ -184,7 +235,15 @@ export function narrow(ask: ReadAsk, connections: readonly Connection[]): Narrow
     limit: counts ? Number.MAX_SAFE_INTEGER : capped ? CODE_LIMITS.readRows + 1 : limit,
   };
   if (!counts && capped) out.failsOver = CODE_LIMITS.readRows;
-  const where = [...(read.where ?? []), ...(ask.where ?? [])];
+  // With an action (AU-48): the rows it may modify or remove, its own filter added with «y» too (what an «Agente» is
+  // shown as rows it may change, E3); an action in «No» gives none.
+  const cell = action ? connection?.[action] : undefined;
+  if (action && !cell)
+    throw new CodeFault(`the step's connection does not let it ${action} in ${ask.collection}`, {
+      code: "code.write.notAllowed",
+      detail: { collection: ask.collection, action },
+    });
+  const where = [...(read.where ?? []), ...(cell ? (cell.where ?? []) : []), ...(ask.where ?? [])];
   if (where.length > 0) out.where = where;
   else delete out.where;
   if (read.fields) out.fields = read.fields;
@@ -286,12 +345,29 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
       if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= CODE_LIMITS.readRows))
         limits("limit", { got: n });
     }
-    if (c.create !== false) fieldsKnown(c.create.fields);
+    // «Como mucho N filas» of a write action (AU-196): a whole number from 1 to `ACTION_ROWS_MAX`.
+    const rowsOk = (action: WriteAction, n: number | undefined) => {
+      if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= ACTION_ROWS_MAX))
+        limits("limit", { action, got: n });
+    };
+    if (c.create !== false) {
+      fieldsKnown(c.create.fields);
+      // A fixed value is of a field the collection has; one also left to the step would be two answers (AU-48).
+      // Until AU-52 (E3) a fixed value is a plain one: an expression in it is not one yet.
+      for (const [field, v] of Object.entries(c.create.fixed ?? {}))
+        if (!keys.has(field) || c.create.fields?.includes(field) || !literalCell(v))
+          limits("field", { field });
+      rowsOk("create", c.create.limit);
+    }
     if (c.update !== false) {
       whereOk(c.update.where);
       fieldsKnown(c.update.fields);
+      rowsOk("update", c.update.limit);
     }
-    if (c.remove !== false) whereOk(c.remove.where);
+    if (c.remove !== false) {
+      whereOk(c.remove.where);
+      rowsOk("remove", c.remove.limit);
+    }
   }
   return out;
 }
@@ -310,6 +386,10 @@ const stringList = (v: unknown, path: string): string[] => {
 const filterOf = (v: unknown, path: string): FilterItem[] => {
   if (filterErrors(v).length > 0) throw new FormatError(`${path}`, "not a filter of the views");
   return v as FilterItem[];
+};
+const rowsOf = (v: unknown, path: string): number => {
+  if (typeof v !== "number") throw new FormatError(`${path}`, "a number");
+  return v;
 };
 const modeOf = (v: unknown, path: string, modes: readonly string[]) => {
   if (typeof v !== "string" || !modes.includes(v))
@@ -348,7 +428,7 @@ export function parseConnection(
   const create = v.create ?? false;
   if (create !== false) {
     if (!isObj(create)) throw new FormatError(`${path}.create`, "false or its permission");
-    closedKeys(create, ["mode", "fields", "fixed"], `${path}.create`);
+    closedKeys(create, ["mode", "fields", "fixed", "limit"], `${path}.create`);
     const c: Exclude<Connection["create"], false> = {
       mode: modeOf(create.mode, `${path}.create.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
@@ -359,27 +439,30 @@ export function parseConnection(
         Object.entries(create.fixed).map(([k, x]) => [k, param(x, `${path}.create.fixed.${k}`)]),
       );
     }
+    if (create.limit !== undefined) c.limit = rowsOf(create.limit, `${path}.create.limit`);
     out.create = c;
   }
   const update = v.update ?? false;
   if (update !== false) {
     if (!isObj(update)) throw new FormatError(`${path}.update`, "false or its permission");
-    closedKeys(update, ["mode", "where", "fields"], `${path}.update`);
+    closedKeys(update, ["mode", "where", "fields", "limit"], `${path}.update`);
     const u: Exclude<Connection["update"], false> = {
       mode: modeOf(update.mode, `${path}.update.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (update.where !== undefined) u.where = filterOf(update.where, `${path}.update.where`);
     if (update.fields !== undefined) u.fields = stringList(update.fields, `${path}.update.fields`);
+    if (update.limit !== undefined) u.limit = rowsOf(update.limit, `${path}.update.limit`);
     out.update = u;
   }
   const remove = v.remove ?? false;
   if (remove !== false) {
     if (!isObj(remove)) throw new FormatError(`${path}.remove`, "false or its permission");
-    closedKeys(remove, ["mode", "where"], `${path}.remove`);
+    closedKeys(remove, ["mode", "where", "limit"], `${path}.remove`);
     const r: Exclude<Connection["remove"], false> = {
       mode: modeOf(remove.mode, `${path}.remove.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (remove.where !== undefined) r.where = filterOf(remove.where, `${path}.remove.where`);
+    if (remove.limit !== undefined) r.limit = rowsOf(remove.limit, `${path}.remove.limit`);
     out.remove = r;
   }
   return out;

@@ -24,7 +24,7 @@ import {
   WRITE_ACTIONS,
   type WriteAction,
 } from "./code.ts";
-import type { Connection } from "./connections.ts";
+import { asRead, type Connection, literalCell } from "./connections.ts";
 import type {
   Asked,
   Change,
@@ -445,16 +445,22 @@ export function lowerYes(proposed: Automation, current?: Automation): Automation
 /**
  * Whether a row, as it is or as it would be saved, passes the connection's «Solo estas filas» (AU-177): what modify
  * and remove ask of the saved row, and create of the new row as it would be (the store gives a field not written no
- * value: the collection has no defaults of its own). The same filter, and the same evaluation of it, as a read's
- * `get` puts on its row: a field the filter names that the collection does not have leaves the row out.
+ * value: the collection has no defaults of its own). With `action` (AU-48), the action's own filter too, with «y»:
+ * modify's and remove's (create has none). The same filter, and the same evaluation of it, as a read's `get` puts on
+ * its row: a field the filter names that the collection does not have leaves the row out.
  */
 export function insideConnection(
   row: Fields,
   connection: Connection,
   typeOf: (field: string) => string | undefined,
   today: string,
+  action?: WriteAction,
 ): boolean {
-  const where = connection.read === false ? [] : (connection.read.where ?? []);
+  const cell = action === "update" || action === "remove" ? connection[action] : false;
+  const where = [
+    ...(connection.read === false ? [] : (connection.read.where ?? [])),
+    ...(cell ? (cell.where ?? []) : []),
+  ];
   return !where.length || matchesFilters(row, typeOf, where, today, "fail");
 }
 
@@ -486,7 +492,17 @@ export interface WriteInput {
   today: string;
   /** «Probar» or «Probar paso»: nothing is saved (AU-181). */
   test: boolean;
+  /** The label of what the automation itself writes: of create's fixed values, which Juan set (AU-48). */
+  own?: Label;
+  /**
+   * Rows this step has already asked to write with an action in a collection in this run, saved, tested or proposed:
+   * what «Como mucho» counts on top of these requests (AU-196). Absent: none.
+   */
+  before?: (collection: string, action: WriteAction) => number;
 }
+
+/** The key «Como mucho» counts by: one collection and one action. */
+const tally = (collection: string, action: string) => `${collection}\u0000${action}`;
 
 /** One row a step's requests change, for «Haría esto» (AU-181) and a run's record: before and after, as AU-72 shows. */
 export interface WriteRecord {
@@ -546,8 +562,20 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
   }
   if (total > WRITE_LIMITS.stepWriteBytes) throw limit("stepWriteBytes", total);
 
+  // «Como mucho» (AU-196) counts every row asked with an action, before any is checked: the number a failure says is
+  // what the step asked, not where it was stopped.
+  const asked = new Map<string, number>();
+  for (const r of input.requests) {
+    const key = input.collectionNamed(r.collection);
+    if (key !== undefined)
+      asked.set(tally(key, r.action), (asked.get(tally(key, r.action)) ?? 0) + 1);
+  }
+  const seenOf = new Map<string, number>();
+
   const changes: ChangeWith[] = [];
   const records: WriteRecord[] = [];
+  /** For each record, the fields its request set (and create's fixed ones): what AU-171 leaves without «Leer». */
+  const fieldsSet: string[][] = [];
   const cells: WriteMode[] = [];
   for (const [i, r] of input.requests.entries()) {
     const at: Record<string, number> = r.line === undefined ? {} : { line: r.line };
@@ -581,6 +609,17 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
           ...at,
         },
       );
+    // «Como mucho N filas» (AU-196): what the step asked with this action in this run, these requests with it.
+    const before = input.before?.(key, action) ?? 0;
+    const got = before + (asked.get(tally(key, action)) ?? 0);
+    if (cell.limit !== undefined && got > cell.limit)
+      throw fail(
+        `the step asks to ${action} ${got} rows in ${key}, at most ${cell.limit}`,
+        "code.write.notAllowed",
+        { collection: key, action, why: "many", max: cell.limit, got, ...at },
+      );
+    const written = before + (seenOf.get(tally(key, action)) ?? 0);
+    seenOf.set(tally(key, action), (seenOf.get(tally(key, action)) ?? 0) + 1);
     const types = new Map(shape.fields.map((f) => [f.key, f.type]));
     const typeOf = (f: string) => types.get(f);
     const request = (why: string, more: Record<string, string> = {}) =>
@@ -601,11 +640,22 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
       const keys = Object.keys(fields);
       if (action === "update" && !keys.length) throw request("empty");
       const seen = connection.read === false ? undefined : connection.read.fields;
+      // «Solo estos campos» of the action (AU-48), and create's fixed fields, which are not the step's to choose.
+      const chosen = "fields" in cell ? cell.fields : undefined;
+      const pinned = "fixed" in cell ? cell.fixed : undefined;
       for (const field of keys) {
         if (!types.has(field)) throw request("field", { field });
         if (seen && !seen.includes(field))
           throw fail(`${field} is not seen in ${key}`, "code.write.hidden", {
             collection: key,
+            field,
+            ...at,
+          });
+        if ((chosen && !chosen.includes(field)) || (pinned && Object.hasOwn(pinned, field)))
+          throw fail(`the step may not ${action} ${field} in ${key}`, "code.write.notAllowed", {
+            collection: key,
+            action,
+            why: "field",
             field,
             ...at,
           });
@@ -621,10 +671,34 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
         configurable: true,
       });
 
-    // The row it changes: one of that collection the connection lets the step see. Not there and left out are said
-    // the same way, with the same words: code may not learn whether a row outside its filter exists.
+    // Create's fixed values (AU-48): Juan's, with the automation's own label, in the row as it would be.
+    const fixed = action === "create" && "fixed" in cell ? cell.fixed : undefined;
+    if (fixed && Object.keys(fixed).length) {
+      const own = input.own;
+      if (!own) throw new Error("a create with fixed values needs the automation's label");
+      fields = { ...fields };
+      for (const [field, v] of Object.entries(fixed)) {
+        // An expression is AU-52's (E3); validation refuses one until then, and nothing unchecked is written.
+        if (!literalCell(v)) throw request("field", { field });
+        Object.defineProperty(fields, field, {
+          value: v,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+        Object.defineProperty(values, field, {
+          value: { value: v, label: own, derived: false },
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+    }
+
+    // The row it changes: one of that collection the connection and its action let the step change. Not there and
+    // left out are said the same way, with the same words: code may not learn whether a row outside its filter exists.
     if (action === "create") {
-      if (!insideConnection(fields, connection, typeOf, input.today))
+      if (!insideConnection(fields, connection, typeOf, input.today, action))
         throw fail(
           `the row asked for in ${key} is not one the connection lets the step change`,
           "code.write.outside",
@@ -634,12 +708,17 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
             ...at,
           },
         );
-      changes.push({ change: { kind: "create", collection: key, fields }, values });
+      changes.push({
+        change: { kind: "create", collection: key, fields },
+        values,
+        row: fields,
+        written,
+      });
       records.push({ collection: key, action, after: { ...fields } });
     } else {
       if (typeof r.id !== "string" || !r.id) throw request("id");
       const saved = await gate.get(key, r.id);
-      if (!saved || !insideConnection(saved.json, connection, typeOf, input.today))
+      if (!saved || !insideConnection(saved.json, connection, typeOf, input.today, action))
         throw fail(
           `the row asked for in ${key} is not one the connection lets the step change`,
           "code.write.outside",
@@ -653,7 +732,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
         action === "update"
           ? { kind: "update", row: saved.origin, fields }
           : { kind: "trash", row: saved.origin };
-      changes.push({ change, values });
+      changes.push({ change, values, row: saved.json, written });
       records.push({
         collection: key,
         action,
@@ -663,9 +742,12 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
       });
     }
     cells.push(cell.mode);
+    fieldsSet.push(Object.keys(fields));
   }
   if (!changes.length)
     return input.test ? { kind: "tested", records, asks: false } : { kind: "applied", records };
+  // What a write gives back passes the step's read limits (AU-171), once its rows are known.
+  const cut = () => records.map((r, i) => cutRecord(r, input.connections, fieldsSet[i] ?? []));
 
   // The policy is asked for every one before any is written; a no to one is the whole step's.
   const decided = await gate.decideAll(changes);
@@ -677,7 +759,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
       const rec = records[i] as WriteRecord;
       if (t.kind === "tested" && rec.action !== "remove") rec.after = t.row.json;
     });
-    return { kind: "tested", records, asks };
+    return { kind: "tested", records: cut(), asks };
   }
   if (asks) {
     const byPolicy = decided === "allow" ? [] : decided;
@@ -693,7 +775,7 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
         }
       );
     });
-    return { kind: "asked", records, asked };
+    return { kind: "asked", records: cut(), asked };
   }
   const written = await gate.writeAll(changes);
   written.forEach((w, i) => {
@@ -702,5 +784,29 @@ export async function applyWrites(input: WriteInput, gate: WriteGate): Promise<S
     rec.id = w.row.origin.id;
     if (rec.action !== "remove") rec.after = w.row.json;
   });
-  return { kind: "applied", records };
+  return { kind: "applied", records: cut() };
+}
+
+/**
+ * A row a write gives back, as the step may read it (AU-171): with «Solo estos campos» of reading, those fields (the
+ * id is the record's own); with «Leer» in «No», only the fields the step set, before and after, and nothing else of
+ * the row. In a test the same. What a write gives back to code (nothing, AU-172) or to a model (its count, AU-198)
+ * is less still.
+ */
+export function cutRecord(
+  record: WriteRecord,
+  connections: readonly Connection[],
+  set: readonly string[],
+): WriteRecord {
+  const read = connections.find((c) => c.collection === record.collection)?.read;
+  const fields = read === false || read === undefined ? set : read.fields;
+  if (!fields) return record;
+  const keep = (row: Fields): Fields => {
+    const { id: _, ...only } = asRead("", row, { fields });
+    return only as Fields;
+  };
+  const out: WriteRecord = { ...record };
+  if (record.before) out.before = keep(record.before);
+  if (record.after) out.after = keep(record.after);
+  return out;
 }
