@@ -46,21 +46,18 @@ with the same click fixed twice, was «todo un poco liado»):
    state and the criterion of done, what Juan will see). At most one task «Ahora». What Juan asks while trying things
    goes into the queue and is prioritised, never answered with one PR per sentence.
 2. A branch from `main`; nothing is pushed to `main` directly. One PR per task, with its tests, docs and principle.
-   A phase's plan splits it into as few PRs as can each be reviewed whole; a piece is never split further only to keep
-   a PR small, because every PR pays the whole cycle (`make check`, the suites, CI, the review, the coordinator's
-   check). The conformance review (item 4) stays once per phase or task, not once per PR (Juan, 2026-11-17: «me da la
-   sensación … de que el desarrollo está siendo muy lento, con errores, y gastando mucha cuota»; phase F14d went out
-   in 13 PRs).
+   A phase's plan splits it into as few PRs as can each be reviewed whole, never more only to keep one small: every PR
+   pays the whole cycle (check, suites, CI, review, the coordinator's check); the conformance review (item 4) stays
+   once per phase or task (Juan, 2026-11-17: «me da la sensación … de que el desarrollo está siendo muy lento, con
+   errores, y gastando mucha cuota»; F14d went out in 13 PRs).
 3. `make check && git commit && git push` (a failure stops the chain), then a PR. The moment it is opened, turn on
    auto-merge (`gh pr merge --auto --squash`) and the app's Auto-fix, without asking (Juan, 2026-11-11: he does not
    want to wait on this): it merges when CI is green (with Android changes, also the APK build), and a failing CI
    wakes the session to fix it on its branch; never poll CI. While CI runs, go on with the next thing. Before saying a
    check passed, read the exit code of the command that ran it (a line in the background ends with its last
-   command's: on 2026-11-05 a failed `make check` was reported as passing). `make check` runs `pnpm lint` (Biome,
-   format included) and `pnpm typecheck` before its tests take the shared queue (T-08), so a format or type error
-   fails at once without waiting; still, format and type-check what you touched first (`pnpm format`, the package's
-   `typecheck`), so no turn of the queue is spent on them (2026-11-17: one session lost two turns of `make check` to
-   formatting).
+   command's: on 2026-11-05 a failed `make check` was reported as passing). Its lint (format included) and typecheck
+   run before its tests wait in the queue (T-08); still, run `pnpm format` and the package's `typecheck` first, so no
+   queue turn goes to them (2026-11-17: one session lost two turns of `make check` to formatting).
 4. **«En main» is not «hecha»** (Juan, 2026-11-05, task 64, measures C and D, after phases F1–F6 were called done
    with points of their design missing):
    - Before a phase or task is called finished (its PR, the design's phase table, the CHANGELOG), an agent that did
