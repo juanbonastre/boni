@@ -393,6 +393,14 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   automationsScheduleMigration,
   // 30: what a run told, when its steps were let go, and the list's counts by a table (F14d S4, AU-102, AU-103, AU-61).
   automationRunsKeepMigration,
+  // 31: where each record's entry in the search index is (task 137). `entity` is UNINDEXED in FTS5, so deleting a
+  // record's entry by it read the whole index on every write; a write now finds the entry by its rowid. One pass over
+  // the index in SQLite, nothing read into memory; an entity found twice (none should be) keeps its newest entry. It
+  // can run again over itself (a test replays migrations from 23): the map is made again from the index.
+  `CREATE TABLE IF NOT EXISTS fts_rows (entity TEXT PRIMARY KEY, rid INTEGER NOT NULL) WITHOUT ROWID;
+   DELETE FROM fts_rows;
+   INSERT INTO fts_rows (entity, rid) SELECT entity, max(rowid) FROM entities_fts GROUP BY entity;
+   DELETE FROM entities_fts WHERE rowid NOT IN (SELECT rid FROM fts_rows);`,
 ];
 
 export function migrate(db: DatabaseSync): void {

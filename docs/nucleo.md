@@ -293,7 +293,8 @@ CREATE TABLE field_prov (entity TEXT NOT NULL, field TEXT NOT NULL, label TEXT N
 CREATE TABLE ops      (seq INTEGER PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, run TEXT, device TEXT,
                        kind TEXT NOT NULL, target TEXT NOT NULL, before TEXT, after TEXT, label TEXT NOT NULL,
                        undoes INTEGER);
-CREATE VIRTUAL TABLE entities_fts USING fts5(title, text, content='');
+CREATE VIRTUAL TABLE entities_fts USING fts5(entity UNINDEXED, title, text);
+CREATE TABLE fts_rows (entity TEXT PRIMARY KEY, rid INTEGER NOT NULL) WITHOUT ROWID;  -- su entrada en el índice
 -- y además: views, pages, shortcuts, runs, run_steps, proposals, jobs, connector_state, files, vault_map
 ```
 
@@ -301,6 +302,12 @@ CREATE VIRTUAL TABLE entities_fts USING fts5(title, text, content='');
   creados por el código, nunca por el agente (`CREATE INDEX … ON entities(json_extract(vals,'$.f_x')) WHERE type = …`).
   Comprobado en este portátil: Node 24.21 trae SQLite 3.53.4 con JSON y FTS5. Con miles de entidades por tipo basta; si
   algún tipo llegara a cientos de miles, se valora una tabla física para él (abierto, sin caso real).
+- **El índice de texto se escribe por `rowid`.** FTS5 no indexa `entity` (es `UNINDEXED`), así que borrar la entrada
+  de un registro buscándola por esa columna recorría el índice entero en cada escritura: guardar costaba más cuanto
+  más registros había (1,5 ms con 3.000, 29 ms con 12.000). `fts_rows` guarda el `rowid` de la entrada de cada
+  registro, la escritura la borra y la vuelve a poner con el mismo `rowid`, y guardar cuesta lo mismo con 3.000 que
+  con 12.000 (0,34 y 0,35 ms uno suelto; tarea 137, migración 31; `store.test.ts`). No se usa el `rowid` de
+  `entities`: sin `INTEGER PRIMARY KEY`, `VACUUM` (y `VACUUM INTO`, las copias) puede renumerarlo.
 - **`node:sqlite`** (sin módulos nativos, como el servidor actual). Se usan `enableDefensive(true)` y `setAuthorizer`:
   las consultas que compila el motor de vistas se ejecutan con un autorizador que solo permite `SELECT` sobre las
   tablas permitidas. Es una defensa más, además de compilar desde una especificación cerrada.
