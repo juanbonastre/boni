@@ -1190,10 +1190,10 @@ describe("a run over the real store (S1-c)", () => {
   it("AU-181 · «Probar paso» of a «Código» that asks to modify 3,000 rows saves none and leaves no operation in the log: its kept test says how many it would change in which collection, whether a run would ask, and the first rows with their note before and after", async () => {
     orders(3000);
     const before = notes();
-    const a = chain([
-      ["Inicio", "manual"],
-      code(NOTE_ALL, "all", [reads("pedido", { update: { mode: "ask" } })]),
-    ]);
+    const a = chain(
+      [["Inicio", "manual"], code(NOTE_ALL, "all", [reads("pedido", { update: { mode: "ask" } })])],
+      MANY_ROWS,
+    );
     const log = store.version();
     const t = await tested(a.id, { trigger: a.step("Inicio"), fields: {}, step: a.step("Código") });
     expect(t.state, JSON.stringify(t.problems)).toBe("done");
