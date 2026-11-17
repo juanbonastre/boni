@@ -1299,7 +1299,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
 | Avisar | `notify`: la app y el móvil | Un aviso por ejecución que escribió sola y uno por racha de fallos (AU-167, AU-102) |
 | Recuperar una eliminada | El «Deshacer» de su aviso (`restoreFlowRow`, AU-62) | «Eliminadas», después de que el aviso se fue (AU-191) |
 
-- **AU-95** (F14d, pendiente) · «Publicar» hace del borrador la versión que corre. El borrador, que se guarda solo
+- **AU-95** (F14d, en parte) · «Publicar» hace del borrador la versión que corre. El borrador, que se guarda solo
   desde la F14b (AU-62), nunca corre de verdad (D-55): lo que escribe de verdad es siempre una versión publicada, así
   que cada escritura tiene su versión.
   En la F14d: una versión es una fila que no cambia nunca (`automation_versions`: el documento, su número, su
@@ -1315,6 +1315,14 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Lo sostiene `publish.test.ts`: con un borrador que escribiría una cosa y una versión publicada que escribe otra,
   cada ruta de `automations/routes.ts` que ejecuta escribe solo lo de la publicada; sin publicar, ninguna ejecuta; el
   borrador que cambió no se publica.
+  Hecho en S1: `automation_versions` (la migración 27, con dos disparadores de SQLite que niegan cambiar o quitar una
+  fila) y `published` y `enabled` en `automations`; `publish.ts` en el servidor con `publish`, `publishView`,
+  `versionsOf`, `versionOf`, `setEnabled` y `runPublished`, la única función que ejecuta de verdad:
+  recibe el id y lee del almacén la versión que corre, y `runDeps` con una ejecución niega una automatización sin
+  versión publicada. La versión guarda su documento con `version` igual a su número, y la huella se calcula con
+  `version` a 0 para comparar un borrador con ella. Falta: la ruta que ejecuta y la que publica, que llegan con sus
+  botones (P1, porque toda acción que toca necesita su control en la app), «Guardado» con «publicada la versión 4»
+  (P1) y guardar la ejecución (AU-97, S2).
 - **AU-96** (F14d, en parte) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
@@ -1337,8 +1345,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   el número de versión, y un límite escrito con su valor por defecto no es un cambio; `publishChecks` impide
   publicar con un error de toda la automatización o de un paso alcanzable (`blocking`), y el motor deja de correr
   solo por eso, así que lo que se publica corre (un paso suelto con un error no para la ejecución; las pruebas del
-  borrador siguen con `canRun`); lo que conviene mirar sale con su paso. Falta: `publish.test.ts` en el servidor y
-  la pantalla 10 con sus palabras (S1, S2).
+  borrador siguen con `canRun`); lo que conviene mirar sale con su paso.
+  Hecho en S1: el servidor contesta las tres para el borrador o, con `version`, para una versión vieja
+  (`GET …/:id/publish`, por la acción `automations.read`), y `publish` repite `publishChecks` con las colecciones de
+  hoy y los nombres guardados de la versión que corre (`keptKey`), así que niega publicar con un problema alcanzable
+  mande lo que mande la app (`blocked`, con los problemas). Falta: la pantalla 10 con sus palabras (P1).
 - **AU-97** (F14d, pendiente) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
@@ -1352,7 +1363,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ejecución iniciada así está en AU-195.
   Lo sostienen `runs.test.ts` (corre la publicada; una a la vez; apagada no corre) y `automations-publish.spec.ts`
   (los tres sitios de «Ejecutar»).
-- **AU-98** (F14d, pendiente) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
+- **AU-98** (F14d, en parte) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
   En la F14d: está en «⋯ → Versiones». La lista dice de cada una su número, cuándo, de quién («Tú»; «De Boni» desde
   la F16, que trae las suyas: la columna y la palabra ya están) y cuál corre. Ver una es su lienzo solo para ver,
@@ -1365,6 +1376,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   que tenía a medias. Decidido por Juan el 2026-11-16 (decisión 12 del §10).
   Lo sostienen `publish.test.ts` (volver a la 2 desde la 4 hace la 5 con el documento de la 2 y deja el borrador
   como estaba) y `automations-publish.spec.ts` (la lista, ver, comparar, volver).
+  Hecho en S1: la lista sin documentos (`GET …/:id/versions`: número, cuándo, desde qué dispositivo, de quién y la
+  huella, la más nueva primero, con cuál corre y el interruptor), una entera (`GET …/:id/versions/:n`) y «Volver a
+  esta» como `publish` con `version`: las mismas comprobaciones, una versión nueva con el documento de la vieja, el
+  borrador sin tocar; volver a la que ya corre no publica nada, y a una cuya colección ya no está lo niega con el
+  problema. Falta: la pantalla (ver, comparar, volver; P1).
 - **AU-99** (F14d, pendiente) · La pestaña «Ejecuciones» (pantalla 8): a la izquierda la lista, con «Todas | Fallos |
   Pruebas» (cuándo, cómo acabó, cuánto tardó, qué la inició, qué versión; las pruebas, marcadas); a la derecha el
   lienzo de esa ejecución, solo para ver, con sus filas en cada flecha y, encima, lo que hizo en una línea. Abrir un
@@ -1432,13 +1448,17 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ya habían guardado. Decidido por Juan el 2026-11-16 (decisión 12 del §10).
   Lo sostiene `runs.test.ts`: un servidor que arranca con una ejecución en marcha la cierra, no la repite y deja lo
   que guardó.
-- **AU-191** (F14d, pendiente) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
+- **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
   eliminada no corre nunca, la inicie quien la inicie, ni entra en el mapa. Borrarla del todo no está en la F14d.
   Extiende `setAutomationDeleted` y la ruta `restore`, que ya existen.
   Lo sostienen `publish.test.ts` (eliminada no corre a su hora ni a mano; recuperada vuelve apagada, con sus
   versiones y sus ejecuciones) y `automations-publish.spec.ts` («Eliminadas» y «Recuperar»).
+  Hecho en S1: eliminarla la apaga (`enabled = 0`) y recuperarla no la enciende; `runPublished` no la encuentra;
+  `deletedAutomations` del almacén da la lista, y «Recuperar» es la ruta `restore` que ya había.
+  Falta: «Eliminadas» en la app (P1), que sale de la colección de automatizaciones como la lista, y que no corra a
+  su hora (el programador es de S2, y empieza por `runPublished`).
 - **AU-192** (F14d, en parte) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
   conexión guardan la clave de la colección; un «Código» la cita por su nombre (`$col('Gastos')`). Cada versión
   guarda, al publicarse, el nombre con que su código cita cada colección conectada y la clave que era. Al
@@ -1452,16 +1472,20 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en E2: `keptNames` (por paso, el nombre y la clave de cada colección conectada que su código cita),
   `namedFor` (resuelve un nombre por lo guardado mientras la clave siga conectada a ese paso, y si no, por el de
   hoy), `code.collectionRenamed` en la validación con el nombre de hoy (`keptKey` en `CodeContext`) y
-  `renameCollectionInCode`, que reescribe solo `$col('…')`. Falta: guardarlo con la versión al publicar, que el
-  servidor le pase `namedFor` al motor por paso (hoy `collectionNamed` es uno para toda la ejecución), el botón y
-  `runs.test.ts` (S1).
-- **AU-194** (F14d, pendiente) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
+  `renameCollectionInCode`, que reescribe solo `$col('…')`.
+  Hecho en S1: cada versión guarda sus `keptNames` al publicarse (la columna `names`), y publicar y «Publicar» le
+  pasan a la validación el `keptKey` de la versión que corre. Falta: que el servidor le pase `namedFor` al motor por
+  paso (hoy `collectionNamed` es uno para toda la ejecución) y `runs.test.ts` (S2), y el botón (P1).
+- **AU-194** (F14d, en parte) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
   lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
   ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió
   mientras estaba apagada (AU-114). La lista dice «Encendida», «Apagada» o «Sin publicar» (AU-61). Que la primera
   publicación la encienda lo decidió Juan el 2026-11-16 (decisión 12 del §10).
   Lo sostienen `publish.test.ts` (la primera publicación enciende, la segunda no cambia el interruptor; apagada no
   corre) y `automations-publish.spec.ts` (el interruptor y la columna «Estado»).
+  Hecho en S1: `publishAutomation` enciende en la misma transacción solo si no había ninguna publicada,
+  `setEnabled` (solo desde un dispositivo personal y solo con una publicada) no corre nada, y `runPublished` apagada
+  contesta `off`. Falta: la ruta del interruptor, con su control (P1), y la columna «Estado» (P1).
 - **AU-181** (F14c, en parte) · Probar nunca guarda lo que pide un código. «Probar» y «Probar paso» lo hacen
   pasar por todo lo de una ejecución (el análisis, la conexión y sus límites, la política, como prueba: AU-168) y no
   aplican nada; SALIDA enseña «Haría esto», como en un paso «Colección» (AU-72): una fila por fila que cambiaría, con
@@ -1500,8 +1524,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   lo que cita, lee una colección que el servidor dice que guarda algo de fuera (`AbilitiesContext.outside`); el
   permiso se lee con `stepChanges`, que pasa por `permissionOf`. Probado contra el motor: con cada celda de cada
   acción de un «Código», y con cada «Permiso» de cada acción de un «Colección», lo que guarda nunca se nombra como
-  «pregunta». Falta: la consulta del servidor que da `outside` (medida con 3.000 filas), `publish.test.ts`,
-  `runs.test.ts` y la pantalla (S1, S2).
+  «pregunta».
+  Hecho en S1: `holdsOutside` del almacén (una consulta por colección, `EXISTS` sobre las etiquetas de sus filas por
+  el índice `entities_type`, sin leer ninguna entera; no hay índice por integridad) y `outsideOf`, que la pregunta una
+  vez por colección leída al abrir «Publicar», medida con 3.000 filas; con ella, una escritura con «Sí» a la que llegan
+  sus filas dice «con datos de fuera». Falta: `runs.test.ts` (S2) y la pantalla
+  (P1).
 
   | Lo que podrá hacer |
   |---|
@@ -1566,6 +1594,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   que la fase deja la función hecha y cerrado el camino: toda función del servidor que escribe un borrador está en
   una lista, como de su mano (el editor, «Duplicar») o como venida de fuera de ella, y las segundas pasan por
   `lowerYes`. Una función nueva que escriba un borrador y no esté en la lista hace fallar la prueba.
+  Hecho en S1: el servidor lee el «Sí» de una ejecución de verdad de la versión publicada (`runDeps` con su
+  ejecución), y «Probar», que no guarda, del borrador; `DRAFT_WRITERS` en `service.ts` y la prueba que la sostiene
+  contra cada función del servidor que escribe un borrador; publicar y el interruptor se niegan desde un dispositivo
+  compartido, en el servicio y en `http.ts`, que deja «Probar» y no deja guardar un borrador. Una prueba por fila de
+  la tabla de arriba que es de esta fase. Falta: los casos del asistente, del MCP y de los paquetes (F16, F19) y el
+  de `runs.test.ts` (S2).
   Hecho en E1: `lowerYes`, con lo que baja y lo que deja, y el valor con el que nace cada acción (AU-187). Después
   de E1: `lowerYes` escribe «Preguntar» también donde faltaba el «Permiso», y cambiar la acción de un paso en el
   editor no lleva el «Sí» de la anterior (un «Sí» para crear no es uno para eliminar): nace con el de la nueva. Falta: la

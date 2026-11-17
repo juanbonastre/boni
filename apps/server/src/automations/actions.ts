@@ -19,7 +19,8 @@ import {
 } from "@boni/agent";
 import type { Cell } from "@boni/automations";
 import type { UserStore } from "@boni/store";
-import { AUTOMATION_ACTIONS } from "./routes.ts";
+import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
+import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS } from "./routes.ts";
 import {
   automationView,
   createAutomation,
@@ -75,7 +76,17 @@ const id = {
 };
 /** The zone «hoy» is in when the hand brings none: the server's default (agent.ts `tz`). */
 const DEFAULT_ZONE = "Europe/Madrid";
-const undoOf = (name: string) => ({ none: AUTOMATION_ACTIONS[name]?.undo ?? "" });
+const undoOf = (name: string) => ({
+  none: (AUTOMATION_ACTIONS[name] ?? PUBLISH_ACTIONS[name])?.undo ?? "",
+});
+/** A version's number, given as text in a query or as a number in a body; absent is undefined. */
+const numberOf = (v: Val | undefined): number | undefined => {
+  const x = v ? plain(v) : undefined;
+  if (x === undefined || x === null || x === "") return undefined;
+  const n = typeof x === "string" ? Number(x) : x;
+  if (typeof n !== "number" || !Number.isInteger(n)) throw new ToolError("bad-argument");
+  return n;
+};
 
 /** The automations' actions of C1, C2 and E, added to a registry. */
 export function withAutomationActions(r: ToolRegistry): ToolRegistry {
@@ -88,10 +99,14 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed)",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version)",
     args: {
       id,
-      part: { role: "option", describe: "view (the default), rows, sample or preview" },
+      part: {
+        role: "option",
+        describe: "view (the default), rows, sample, preview, publish, versions or version",
+      },
+      version: { role: "option", describe: "publish and version: a version's number" },
       step: { role: "option", describe: "rows, sample and preview: the step's id" },
       side: { role: "option", describe: "rows: in or out" },
       name: { role: "option", describe: "rows: the input's or output's name" },
@@ -105,6 +120,14 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       const automation = idOf(a.id);
       const part = textOf(a.part) ?? "view";
       if (part === "view") return leaf(answer(automationView(s.store, automation)) as never, code);
+      if (part === "publish")
+        return leaf(answer(publishView(s.store, automation, numberOf(a.version))) as never, code);
+      if (part === "versions") return leaf(answer(versionsOf(s.store, automation)) as never, code);
+      if (part === "version") {
+        const n = numberOf(a.version);
+        if (n === undefined) throw new ToolError("bad-argument");
+        return leaf(answer(versionOf(s.store, automation, n)) as never, code);
+      }
       const step = textOf(a.step);
       if (!step) throw new ToolError("bad-argument");
       if (part === "sample")
@@ -277,6 +300,68 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     run(c, a) {
       const s = handOf(c.service);
       return leaf(answer(setDeleted(s.store, idOf(a.id), false)), code);
+    },
+  });
+  return r;
+}
+
+/**
+ * «Publicar» and «Volver a esta» (one action: with `version`, that version's document) and the switch (F14d S1:
+ * AU-95, AU-98, AU-194). Juan's touch, from a personal device only (decision 13). Not in the registry yet: the
+ * repo's checks want each registered action's control in the app (actions.test.ts), and the screen that has them is
+ * P1's (pantalla 10, «Versiones», the switch). P1 calls this beside `withAutomationActions` and adds the routes of
+ * `PUBLISH_ROUTES` to `ROUTES`, `ROUTE_RUNS` and http.ts with the controls, in one PR.
+ */
+export function withPublishActions(r: ToolRegistry): ToolRegistry {
+  r.register({
+    name: "automations.publish",
+    icon: "Upload",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.publish"),
+    title: "Publicar automatización",
+    describe:
+      "Publish an automation's draft as its next version, the one that runs (rev: the draft's rev the screen showed); with version, publish that old version's document again as a new one, leaving the draft as it is",
+    args: {
+      id,
+      rev: { role: "option", describe: "the draft's rev the screen showed" },
+      version: { role: "option", describe: "«Volver a esta»: the old version's number" },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      if (!s.trust) throw new ToolError("not-available");
+      const rev = numberOf(a.rev);
+      const version = numberOf(a.version);
+      const r = publish(
+        s.store,
+        idOf(a.id),
+        { ...(rev !== undefined ? { rev } : {}), ...(version !== undefined ? { version } : {}) },
+        { ...hand(s), trust: s.trust },
+      );
+      return leaf(answer(r) as never, code);
+    },
+  });
+  r.register({
+    name: "automations.enable",
+    icon: "Power",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.enable"),
+    title: "Encender o apagar automatización",
+    describe:
+      "Turn a published automation on or off (enabled): off, no run starts for real; turning it on runs nothing that was due",
+    args: { id, enabled: { role: "option", required: true, describe: "true on, false off" } },
+    run(c, a) {
+      const s = handOf(c.service);
+      if (!s.trust) throw new ToolError("not-available");
+      const on = a.enabled ? plain(a.enabled) : null;
+      if (typeof on !== "boolean") throw new ToolError("bad-argument");
+      return leaf(
+        answer(setEnabled(s.store, idOf(a.id), on, { ...hand(s), trust: s.trust })) as never,
+        code,
+      );
     },
   });
   return r;

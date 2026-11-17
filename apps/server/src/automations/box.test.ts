@@ -48,11 +48,13 @@ import { handLabel } from "../actions.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { answerOf, BOX_LIMITS, dateNames, requestOf, sandboxBox, zoneTable } from "./box.ts";
 import { AUTOMATION, runPolicy } from "./policy.ts";
+import { publish } from "./publish.ts";
 import {
   automationView,
   createAutomation,
   keepDraft,
   previewExpression,
+  publishedOf,
   runDeps,
   type ServiceError,
   type TestAnswer,
@@ -1170,24 +1172,28 @@ return [];`;
 /** A run's id, as whoever starts one makes it (F14d: the server, when a run is published and saved). */
 const runId = () => newId("o").replace(/^o_/, "r_");
 
-/** The automation as it is saved in the store: what a run reads, never the canvas's copy. */
+/**
+ * The automation as it is published from its saved draft: what a run for real reads, never the canvas's copy nor the
+ * draft (AU-95). Publishing is Juan's hand on his laptop.
+ */
 const savedOf = (id: string): Automation => {
   const v = automationView(store, id);
   if ("error" in v) throw new Error(`service error: ${v.error}`);
-  return v.automation;
+  const p = publish(store, id, { rev: v.rev }, JUAN);
+  if (!("version" in p)) throw new Error(`not published: ${JSON.stringify(p)}`);
+  const published = publishedOf(store, id);
+  if (!published) throw new Error("no published version");
+  return published.automation;
 };
 
-/** A run for real, by Juan's hand on his laptop, from the automation's manual trigger. */
-const ranFor = (id: string, trigger: string, run: string) =>
-  runAutomation(
-    {
-      automation: savedOf(id),
-      trigger,
-      fields: { json: {}, label: handLabel(JUAN.device) },
-      test: false,
-    },
+/** A run for real of the published version, by Juan's hand on his laptop, from the automation's manual trigger. */
+const ranFor = (id: string, trigger: string, run: string) => {
+  const automation = savedOf(id);
+  return runAutomation(
+    { automation, trigger, fields: { json: {}, label: handLabel(JUAN.device) }, test: false },
     runDeps(store, id, JUAN, box(), run),
   );
+};
 
 /** Every order's note, by id: what a change of the step would touch. */
 const notes = () =>
@@ -1290,6 +1296,7 @@ describe("a run over the real store (S1-c)", () => {
     const ask = [reads("pedido", { update: { mode: "ask" } })];
     const a = chain([["Inicio", "manual"], code(NOTE_ALL, "all", ask)], MANY_ROWS);
     const r = runId();
+    const automation = savedOf(a.id);
     const real = runDeps(store, a.id, JUAN, box(), r);
     // The server's own policy, each of its decisions written down: which rule let each read and each write.
     const decided: { effect: string; d: Decision }[] = [];
@@ -1303,7 +1310,7 @@ describe("a run over the real store (S1-c)", () => {
     const deps = { ...real, policy: recorded(real.policy) };
     const e = await runAutomation(
       {
-        automation: savedOf(a.id),
+        automation,
         trigger: a.step("Inicio"),
         fields: { json: {}, label: handLabel(JUAN.device) },
         test: false,
@@ -1328,7 +1335,7 @@ describe("a run over the real store (S1-c)", () => {
     // Once allowed: the server's policy as it is with the «Sí» it reads from the stored version (AU-188).
     const allowing = recorded(runPolicy(AUTOMATION, deps.own, () => true));
     const gate = guard(allowing, deps.collections, {
-      automation: { id: a.id, version: 0 },
+      automation: { id: a.id, version: automation.version },
       step: a.step("Código"),
       type: CODE_TYPE,
       action: "update",

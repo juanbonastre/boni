@@ -1,6 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { chainExisting } from "./audit.ts";
-import { AUTOMATIONS_MIGRATION, automationsTriggerMigration } from "./automations.ts";
+import {
+  AUTOMATIONS_MIGRATION,
+  automationsTriggerMigration,
+  automationsVersionsMigration,
+} from "./automations.ts";
 
 /**
  * The per-user database's tables (docs/nucleo.md, 5.1). Numbered migrations, as in the calendar
@@ -379,6 +383,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   AUTOMATIONS_MIGRATION,
   // 26: an automation's trigger kept beside its name at each save, for the list's «Se inicia» (AU-61).
   automationsTriggerMigration,
+  // 27: an automation's versions, which one runs and its switch (F14d, AU-95, AU-194).
+  automationsVersionsMigration,
 ];
 
 export function migrate(db: DatabaseSync): void {

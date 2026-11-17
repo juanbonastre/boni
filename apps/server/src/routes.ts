@@ -105,6 +105,10 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/agent/automations/:id/test/rows": "tailnet",
   "GET /api/agent/automations/:id/test/sample": "tailnet",
   "GET /api/agent/automations/:id/test/preview": "tailnet",
+  // F14d S1: what «Publicar» shows and «Versiones» (automations.read's parts; publish.ts).
+  "GET /api/agent/automations/:id/publish": "tailnet",
+  "GET /api/agent/automations/:id/versions": "tailnet",
+  "GET /api/agent/automations/:id/versions/:n": "tailnet",
   "GET /api/agent/models": "tailnet",
   "GET /api/agent/models/catalogue": "tailnet",
   "PUT /api/agent/models/roles/:role": "tailnet",

@@ -59,6 +59,7 @@ import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { ACTS, actOf, argsOf, automationPolicy, consentIn, runPolicy } from "./policy.ts";
+import * as publishing from "./publish.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES, NO_MCP_YET } from "./routes.ts";
 import * as service from "./service.ts";
 import {
@@ -79,14 +80,16 @@ import {
 } from "./service.ts";
 
 describe("the contract of the routes (it holds today)", () => {
-  it("every route is under the path the apps already allow, runs an action there is, and names a function of the service", () => {
+  it("every route is under the path the apps already allow, runs an action there is, and names a function of the service (or of publish.ts)", () => {
     for (const [route, { action, runs }] of Object.entries(AUTOMATION_ROUTES)) {
       // What paths.cjs and Net.kt allow under api/agent: letters, digits and - _ . / % after the prefix.
       expect(route, route).toMatch(
         /^(GET|POST|PUT|DELETE) \/api\/agent\/automations(\/[a-z:/]*)?$/,
       );
       expect(Object.keys(AUTOMATION_ACTIONS), route).toContain(action);
-      expect(typeof (service as Record<string, unknown>)[runs], route).toBe("function");
+      const fn =
+        (service as Record<string, unknown>)[runs] ?? (publishing as Record<string, unknown>)[runs];
+      expect(typeof fn, route).toBe("function");
       // A GET never runs an action that changes something.
       if (route.startsWith("GET ")) expect(AUTOMATION_ACTIONS[action]?.effect, route).toBe("read");
     }
