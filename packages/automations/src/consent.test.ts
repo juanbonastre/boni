@@ -376,6 +376,29 @@ describe("a «Sí» only from the user's hand (F14d)", () => {
       col: "ask",
     });
   });
+  it("AU-188 · decision 18 · a fixed value of modify that the arrival adds or changes lowers the step's «Sí», as one of create does; the same fixed values keep it", () => {
+    const current = arriving(
+      cells({
+        create: { ...YES, fixed: { [note]: "nueva" } },
+        update: { ...YES, fixed: { [note]: "revisada" } },
+      }),
+    );
+    expect(lowerYes(structuredClone(current), current)).toEqual(current);
+    for (const fixed of [{ [note]: "otra" }, { [note]: "revisada", [amount]: 1 }]) {
+      const changed = structuredClone(current);
+      const c = (changed.steps[1] as Step).connections?.[0];
+      if (c?.update) c.update.fixed = fixed;
+      expect(modes(lowerYes(changed, current)).code, JSON.stringify(fixed)).toEqual([
+        ["ask", "ask", false],
+      ]);
+    }
+    // Arriving with no draft, its fixed values stay as they came: only the «Sí» goes down.
+    const lowered = lowerYes(current);
+    expect((lowered.steps[1] as Step).connections?.[0]?.update).toEqual({
+      mode: "ask",
+      fixed: { [note]: "revisada" },
+    });
+  });
   it("AU-188 · `lowerYes` changes nothing else: «No» and «Preguntar» stay, reading stays, and a document with no «Sí» comes back equal", () => {
     const a = arriving(
       {

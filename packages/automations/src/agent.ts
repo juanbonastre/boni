@@ -28,9 +28,96 @@ export const AGENT_PARAMS = {
   fields: "fields",
   mode: "mode",
   maxRounds: "maxRounds",
+  /** «Las hace este código»'s source (AU-51): a «Código»'s, that only reads. */
+  code: "code",
+  /** «Herramientas de código» (AU-58), behind «Añadir opción». */
+  tools: "tools",
 } as const;
-/** «Lecturas» (AU-51): «Las decide la IA». «Las hace este código» comes in E3's second PR. */
-export const AGENT_READS = ["ai"] as const;
+/** «Lecturas» (AU-51): «Las decide la IA» or «Las hace este código». */
+export const AGENT_READS = ["ai", "code"] as const;
+/**
+ * «Herramientas de código» (AU-58): at most 8, each a name the plan calls it by (a name of JavaScript, none of the
+ * round's own tools), its inputs (a name and one of `types` each) and its code, which only reads.
+ */
+export const AGENT_TOOLS = {
+  max: 8,
+  inputs: 8,
+  types: ["text", "number", "boolean", "date", "any"],
+  name: /^[a-z][A-Za-z0-9_]{0,39}$/,
+  taken: ["find", "get", "count", "sum", "create", "update", "trash", "answer"],
+} as const;
+/** One «Herramienta de código» as the step saves it. */
+export interface AgentCodeTool {
+  name: string;
+  inputs: { name: string; type: (typeof AGENT_TOOLS.types)[number] }[];
+  code: string;
+}
+
+/** An «Agente»'s own code: «Las hace este código» when it reads with it, and each code tool's (AU-51, AU-58). */
+export function agentSources(step: Step): string[] {
+  const code = step.params[AGENT_PARAMS.code];
+  return [
+    ...(step.params[AGENT_PARAMS.reads] === "code" && typeof code === "string" ? [code] : []),
+    ...(codeToolsOf(step.params[AGENT_PARAMS.tools]) ?? []).map((t) => t.code),
+  ];
+}
+
+/** The step's «Herramientas de código» as saved, or null when they are not what AU-58 says. */
+export function codeToolsOf(v: unknown): AgentCodeTool[] | null {
+  if (v === undefined) return [];
+  if (!Array.isArray(v) || v.length > AGENT_TOOLS.max) return null;
+  const names = new Set<string>();
+  const out: AgentCodeTool[] = [];
+  for (const t of v) {
+    if (typeof t !== "object" || t === null || Array.isArray(t)) return null;
+    const { name, inputs, code } = t as Record<string, unknown>;
+    if (
+      typeof name !== "string" ||
+      !AGENT_TOOLS.name.test(name) ||
+      (AGENT_TOOLS.taken as readonly string[]).includes(name) ||
+      names.has(name) ||
+      typeof code !== "string" ||
+      !code.trim()
+    )
+      return null;
+    names.add(name);
+    const ins = inputs === undefined ? [] : inputs;
+    if (!Array.isArray(ins) || ins.length > AGENT_TOOLS.inputs) return null;
+    const seen = new Set<string>();
+    const list: AgentCodeTool["inputs"] = [];
+    for (const i of ins) {
+      const n = (i as Record<string, unknown> | null)?.name;
+      const ty = (i as Record<string, unknown> | null)?.type;
+      if (
+        typeof n !== "string" ||
+        !AGENT_TOOLS.name.test(n) ||
+        seen.has(n) ||
+        !(AGENT_TOOLS.types as readonly unknown[]).includes(ty)
+      )
+        return null;
+      seen.add(n);
+      list.push({ name: n, type: ty as AgentCodeTool["inputs"][number]["type"] });
+    }
+    out.push({ name, inputs: list, code });
+  }
+  return out;
+}
+
+/** Whether a value given to a tool's input is of its type: what the model wrote is checked, never trusted. */
+export function inputFits(type: AgentCodeTool["inputs"][number]["type"], v: Cell): boolean {
+  switch (type) {
+    case "text":
+      return typeof v === "string";
+    case "number":
+      return typeof v === "number" && Number.isFinite(v);
+    case "boolean":
+      return typeof v === "boolean";
+    case "date":
+      return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    default:
+      return v !== undefined;
+  }
+}
 /** «Respuesta» (AU-53): «Texto» or «Campos». */
 export const AGENT_ANSWERS = ["text", "fields"] as const;
 /** «Se ejecuta» (AU-55). */
@@ -78,8 +165,10 @@ export interface AgentCall {
   /** What the model may know of each connected collection (`agentSchema`). */
   connections: Cell;
   answer: { kind: "text" } | { kind: "fields"; fields: ReaderField[] };
-  /** «Las decide la IA»: the round may read. */
+  /** «Las decide la IA»: the round may read. With «Las hace este código», `rows` are what its code gave. */
   reads: boolean;
+  /** «Herramientas de código» (AU-58): their names and inputs, never their code. */
+  codeTools?: { name: string; inputs: { name: string; type: string }[] }[];
   maxRounds: number;
   today: string;
   zone: string;
@@ -91,7 +180,10 @@ export interface AgentCall {
   /** After every answer of the model: which one answered and how long it took (AU-54). */
   called(model: string | undefined, ms: number): void;
   now(): number;
-  tool(name: AgentTool, args: Readonly<Record<string, AgentValue>>): Promise<AgentToolReply>;
+  tool(
+    name: AgentTool | string,
+    args: Readonly<Record<string, AgentValue>>,
+  ): Promise<AgentToolReply>;
 }
 
 /** How the rounds ended: an answer, a fault of their own (`agent.*`), or the port's refusal. */
@@ -127,7 +219,13 @@ export type AgentLine =
       state: "planned" | "applied" | "tested" | "asked" | "failed";
     }
   /** «Quiso… · su conexión no lo deja» (AU-198): what it asked, where, and why it was refused (a key). */
-  | { op: "refused"; tool: AgentTool; collection?: string; why: string }
+  | { op: "refused"; tool: AgentTool | string; collection?: string; why: string }
+  /**
+   * «Leyó con su código»: what «Las hace este código» gave (`code`, AU-51), or one call of a «Herramienta de código»
+   * by its name (`tool`, AU-58), with how many rows it gave (one value is 1).
+   */
+  | { op: "code"; rows: number }
+  | { op: "tool"; name: string; rows: number }
   /** «No leyó «Asunto» · viene de fuera» (AU-197): a value it received as a handle. */
   | { op: "hidden"; field: string; from: "instructions" | "rows"; integrity: string };
 
@@ -229,6 +327,7 @@ export function agentSchema(
     if (c.update)
       out.update = {
         fields: lines(c.update),
+        fixed: Object.keys(c.update.fixed ?? {}),
         ...(c.update.where ? { where: c.update.where as unknown as Cell } : {}),
         ...(c.update.limit !== undefined ? { limit: c.update.limit } : {}),
       };
@@ -259,7 +358,7 @@ export function agentConnections(connections: readonly Connection[]): Connection
 export interface Gathered {
   request: WriteRequest;
   label: Label;
-  /** Create's fixed expressions, resolved for this unit (AU-52). */
+  /** The fixed expressions of the create or modify asked, resolved for this unit (AU-52). */
   fixed?: Record<string, Labeled<Cell>>;
   line: Extract<AgentLine, { op: WriteAction }>;
 }
@@ -272,8 +371,8 @@ export interface ToolsInput {
   reader: Reader;
   /** The rows the step has read in this run, by `collection\0id`: what a relation may point to (AU-52). */
   read: Set<string>;
-  /** Create's fixed expressions of a collection, resolved for this unit. */
-  fixed(collection: string): Record<string, Labeled<Cell>> | undefined;
+  /** The fixed expressions of an action of a collection (create's or modify's), resolved for this unit. */
+  fixed(collection: string, action: "create" | "update"): Record<string, Labeled<Cell>> | undefined;
   /**
    * Checks these writes, after those of the step's units that worked before this one, against the connection as
    * saved and the collection (writes.ts `applyWrites`, as a test that decides nothing): throws its `CodeFault` for
@@ -285,6 +384,18 @@ export interface ToolsInput {
   /** The label of what the model writes in this step. */
   written: Label;
   unit: AgentUnit;
+  /** The step's «Herramientas de código» (AU-58). */
+  tools: readonly AgentCodeTool[];
+  /**
+   * Runs one in the box with the step's connections, reading only, with these inputs: its rows or its value, each
+   * with the label of everything it received and read; or the key the model is told when it failed or a read was
+   * refused.
+   */
+  runTool(
+    tool: AgentCodeTool,
+    inputs: Record<string, Cell>,
+    label: Label,
+  ): Promise<{ rows: AgentValue[] } | { value: AgentValue } | { refused: string }>;
 }
 
 const WRITES: Partial<Record<AgentTool, WriteAction>> = {
@@ -292,6 +403,8 @@ const WRITES: Partial<Record<AgentTool, WriteAction>> = {
   update: "update",
   trash: "remove",
 };
+const TOOLS: readonly string[] = ["find", "get", "count", "sum", "create", "update", "trash"];
+const isTool = (t: string): t is AgentTool => TOOLS.includes(t);
 const isObj = (v: unknown): v is Record<string, Cell> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -332,11 +445,11 @@ function refusalOf(e: CodeFault, connections: readonly Connection[]): string | u
  * collection made private after publishing fails the unit saying which (AU-166, `ai.private`); any other rule fails
  * the unit with its rule and no detail (AU-161).
  */
-function deniedOf(d: Denied, collection: string): string {
+export function deniedOf(d: Denied, where: Record<string, string>): string {
   if (d.rule === "P29" && d.message === "private-collection")
-    throw new AiFault(`«${collection}» is private`, {
+    throw new AiFault(`a private collection was read (${Object.values(where).join(", ")})`, {
       code: "ai.private",
-      detail: { collection },
+      detail: where,
     });
   if (d.rule === "P29") return d.message;
   throw d;
@@ -350,7 +463,7 @@ export class AgentTools {
   }
 
   /** Refuses a call: the model is told the key, and «Lo que hizo» keeps it. */
-  refuse(tool: AgentTool, collection: string | undefined, why: string): AgentToolReply {
+  refuse(tool: AgentTool | string, collection: string | undefined, why: string): AgentToolReply {
     addLine(this.input.unit, {
       op: "refused",
       tool,
@@ -360,7 +473,13 @@ export class AgentTools {
     return { refused: why };
   }
 
-  async call(tool: AgentTool, args: Readonly<Record<string, AgentValue>>): Promise<AgentToolReply> {
+  async call(
+    tool: AgentTool | string,
+    args: Readonly<Record<string, AgentValue>>,
+  ): Promise<AgentToolReply> {
+    const code = this.input.tools.find((t) => t.name === tool);
+    if (code) return this.codeTool(code, args);
+    if (!isTool(tool)) return this.refuse(tool, undefined, "bad-request");
     const collection = args.collection?.json;
     if (typeof collection !== "string" || !collection)
       return this.refuse(tool, undefined, "bad-request");
@@ -371,13 +490,39 @@ export class AgentTools {
         ? await this.write(tool, write, collection, args, label)
         : await this.readOne(tool, collection, args, label);
     } catch (e) {
-      if (e instanceof Denied) return this.refuse(tool, collection, deniedOf(e, collection));
+      if (e instanceof Denied) return this.refuse(tool, collection, deniedOf(e, { collection }));
       if (e instanceof CodeFault) {
         const why = refusalOf(e, this.input.step.connections ?? []);
         if (why) return this.refuse(tool, collection, why);
       }
       throw e;
     }
+  }
+
+  /**
+   * A call of a «Herramienta de código» (AU-58): each input of its type, then its code in the box. What it gives goes
+   * back with its labels, through the planner's view as every read does.
+   */
+  async codeTool(
+    tool: AgentCodeTool,
+    args: Readonly<Record<string, AgentValue>>,
+  ): Promise<AgentToolReply> {
+    const inputs: Record<string, Cell> = {};
+    for (const i of tool.inputs) {
+      const v = args[i.name]?.json;
+      if (v === undefined || !inputFits(i.type, v))
+        return this.refuse(tool.name, undefined, "bad-request");
+      inputs[i.name] = v;
+    }
+    const label = join(this.input.written, ...Object.values(args).map((a) => a.label));
+    const got = await this.input.runTool(tool, inputs, label);
+    if ("refused" in got) return this.refuse(tool.name, undefined, got.refused);
+    addLine(this.input.unit, {
+      op: "tool",
+      name: tool.name,
+      rows: "rows" in got ? got.rows.length : 1,
+    });
+    return got;
   }
 
   /** A read of the plan, narrowed by the step's connection as a «Código»'s (AU-51, AU-43). */
@@ -387,6 +532,9 @@ export class AgentTools {
     args: Readonly<Record<string, AgentValue>>,
     label: Label,
   ): Promise<AgentToolReply> {
+    // «Las hace este código»: the round was not offered reads, and one asked anyway is refused (AU-51).
+    if (this.input.step.params[AGENT_PARAMS.reads] === "code")
+      return this.refuse(tool, collection, "read-off");
     const op = tool as CodeRead["op"];
     const query = args.query?.json ?? {};
     if (!isObj(query)) return this.refuse(tool, collection, "bad-query");
@@ -483,7 +631,7 @@ export class AgentTools {
         }
       }
     }
-    const fixed = action === "create" ? this.input.fixed(collection) : undefined;
+    const fixed = action === "remove" ? undefined : this.input.fixed(collection, action);
     const gathered: Gathered = {
       request,
       label,

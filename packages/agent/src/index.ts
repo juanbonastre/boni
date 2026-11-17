@@ -180,6 +180,7 @@ export {
   type AgentReply,
   type AgentRequest,
   type AnswerField,
+  type CodeTool,
   type Planner,
   roundCatalog,
   runRounds,

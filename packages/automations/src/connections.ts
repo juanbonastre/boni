@@ -43,8 +43,8 @@ export interface Connection {
   /**
    * The three write actions: `false` is «No», `ask` «Preguntar», `yes` «Sí», each on its own (AU-176). Their own
    * limits narrow on top of the read's (AU-177, AU-48): «Solo estas filas» (`where`) of modify and remove, «Solo
-   * estos campos» (`fields`) of create and modify, create's fixed values (`fixed`, which the step does not choose),
-   * and «Como mucho N filas» (`limit`, AU-196) of the three.
+   * estos campos» (`fields`) of create and modify, the fixed values of create and modify (`fixed`, which the step
+   * does not choose: Juan's, decision 18 of §10), and «Como mucho N filas» (`limit`, AU-196) of the three.
    */
   create:
     | false
@@ -62,6 +62,8 @@ export interface Connection {
         mode: "ask" | "yes";
         where?: FilterItem[];
         fields?: string[];
+        /** What each row it modifies ends with in these fields, whatever the step asked (decision 18 of §10). */
+        fixed?: Record<string, ParamValue>;
         limit?: number;
         lines?: Record<string, string>;
       };
@@ -366,19 +368,24 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
         if (!agent || !cell.fields?.includes(field) || typeof line !== "string")
           limits("field", { field });
     };
+    // A fixed value of create or modify is of a field the collection has; one also left to the step would be two
+    // answers (AU-48). An «Agente»'s may be an expression (AU-52), which the code resolves for each unit; a «Código»'s
+    // is a plain one. Modify's are create's, the same (decision 18 of §10).
+    const fixedOk = (cell: { fields?: readonly string[]; fixed?: Record<string, ParamValue> }) => {
+      for (const [field, v] of Object.entries(cell.fixed ?? {}))
+        if (!keys.has(field) || cell.fields?.includes(field) || (!agent && !literalCell(v)))
+          limits("field", { field });
+    };
     if (c.create !== false) {
       fieldsKnown(c.create.fields);
-      // A fixed value is of a field the collection has; one also left to the step would be two answers (AU-48). An
-      // «Agente»'s may be an expression (AU-52), which the code resolves for each unit; a «Código»'s is a plain one.
-      for (const [field, v] of Object.entries(c.create.fixed ?? {}))
-        if (!keys.has(field) || c.create.fields?.includes(field) || (!agent && !literalCell(v)))
-          limits("field", { field });
+      fixedOk(c.create);
       rowsOk("create", c.create.limit);
       linesOk(c.create);
     }
     if (c.update !== false) {
       whereOk(c.update.where);
       fieldsKnown(c.update.fields);
+      fixedOk(c.update);
       rowsOk("update", c.update.limit);
       linesOk(c.update);
     }
@@ -414,6 +421,14 @@ const linesOf = (v: unknown, path: string): Record<string, string> => {
     throw new FormatError(`${path}`, "a line of text by field key");
   return { ...(v as Record<string, string>) };
 };
+const fixedOf = (
+  v: unknown,
+  path: string,
+  param: (v: unknown, path: string) => ParamValue,
+): Record<string, ParamValue> => {
+  if (!isObj(v)) throw new FormatError(`${path}`, "an object");
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, param(x, `${path}.${k}`)]));
+};
 const modeOf = (v: unknown, path: string, modes: readonly string[]) => {
   if (typeof v !== "string" || !modes.includes(v))
     throw new FormatError(`${path}`, `${modes.join(" or ")}`);
@@ -422,7 +437,7 @@ const modeOf = (v: unknown, path: string, modes: readonly string[]) => {
 
 /**
  * One connection as the format holds it (§5.5), closed: a key it does not know is refused. `param` reads a value as
- * a parameter's (format.ts), for `create.fixed`.
+ * a parameter's (format.ts), for `create.fixed` and `update.fixed`.
  */
 export function parseConnection(
   v: unknown,
@@ -456,12 +471,7 @@ export function parseConnection(
       mode: modeOf(create.mode, `${path}.create.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (create.fields !== undefined) c.fields = stringList(create.fields, `${path}.create.fields`);
-    if (create.fixed !== undefined) {
-      if (!isObj(create.fixed)) throw new FormatError(`${path}.create.fixed`, "an object");
-      c.fixed = Object.fromEntries(
-        Object.entries(create.fixed).map(([k, x]) => [k, param(x, `${path}.create.fixed.${k}`)]),
-      );
-    }
+    if (create.fixed !== undefined) c.fixed = fixedOf(create.fixed, `${path}.create.fixed`, param);
     if (create.limit !== undefined) c.limit = rowsOf(create.limit, `${path}.create.limit`);
     if (create.lines !== undefined) c.lines = linesOf(create.lines, `${path}.create.lines`);
     out.create = c;
@@ -469,12 +479,13 @@ export function parseConnection(
   const update = v.update ?? false;
   if (update !== false) {
     if (!isObj(update)) throw new FormatError(`${path}.update`, "false or its permission");
-    closedKeys(update, ["mode", "where", "fields", "limit", "lines"], `${path}.update`);
+    closedKeys(update, ["mode", "where", "fields", "fixed", "limit", "lines"], `${path}.update`);
     const u: Exclude<Connection["update"], false> = {
       mode: modeOf(update.mode, `${path}.update.mode`, ["ask", "yes"]) as "ask" | "yes",
     };
     if (update.where !== undefined) u.where = filterOf(update.where, `${path}.update.where`);
     if (update.fields !== undefined) u.fields = stringList(update.fields, `${path}.update.fields`);
+    if (update.fixed !== undefined) u.fixed = fixedOf(update.fixed, `${path}.update.fixed`, param);
     if (update.limit !== undefined) u.limit = rowsOf(update.limit, `${path}.update.limit`);
     if (update.lines !== undefined) u.lines = linesOf(update.lines, `${path}.update.lines`);
     out.update = u;

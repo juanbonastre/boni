@@ -69,7 +69,7 @@ export interface ReachLimits {
   where?: readonly FilterItem[];
   /** «Solo estos campos»: the field keys it reads, or that it creates or modifies. */
   fields?: readonly string[];
-  /** Create: the keys of the fields it gets fixed values for (AU-48), which the AI does not choose. */
+  /** Create and modify: the keys of the fields it gets fixed values for (AU-48, decision 18), which the AI does not choose. */
   fixed?: readonly string[];
   /** «Como mucho N filas»: rows a step may write with this action in one run (AU-196). For a read, not used here. */
   limit?: number;
@@ -245,7 +245,7 @@ const writtenFields = (call: Call): string[] => {
  * P29 (AU-205, docs/nucleo.md §7.5): an automation's AI step does only what its connection gives, as the server read
  * it. The collection must be connected and no model's private; the action not in «No»; a row it modifies or removes,
  * or creates, inside «Solo estas filas» of reading and of the action (a row that is not there is said the same way);
- * the fields it names inside «Solo estos campos» (with create's fixed fields, which the engine writes); and the rows
+ * the fields it names inside «Solo estos campos» (with the fixed fields of create and modify, which the engine writes); and the rows
  * it has asked to write with that action, this call's with them, within «Como mucho». Null: it may go on to the other
  * rules, which still decide (a connection only narrows, AU-45).
  */
@@ -280,7 +280,7 @@ function byReach(call: Call, tool: ToolDef): Decision | null {
       return deny("P29", "outside-rows");
   }
   const named = r.action === "read" ? (r.fields ?? []) : writtenFields(call);
-  // A field it may not see it may not name; a fixed field of create is Juan's, written by the engine, not chosen.
+  // A field it may not see it may not name; a fixed field of create or modify is Juan's, written by the engine.
   const seen = (field: string) => !read?.fields || read.fields.includes(field);
   const allowed = (field: string) => {
     if (field === "id") return true;

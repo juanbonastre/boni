@@ -32,13 +32,16 @@ import {
   AGENT_PARAMS,
   AGENT_ROUNDS,
   type AgentCall,
+  type AgentCodeTool,
   type AgentRecord,
   AgentTools,
   type AgentUnit,
   type AgentValue,
   addLine,
   agentConnections,
+  deniedOf as agentDeniedOf,
   agentSchema,
+  codeToolsOf,
   type Gathered,
   hiddenLines,
 } from "./agent.ts";
@@ -1155,6 +1158,39 @@ class Run {
    * policy that judges them as reads of this step (AU-161). It rejects for what stops the whole step: no box, a cited
    * step that has not run, a limit of the step. A read the policy refuses fails only the units that asked for it.
    */
+  /**
+   * The steps a step's JavaScript cites, with their rows, and the row each input row comes from where it asks for
+   * `.item` (AU-13).
+   */
+  citedSteps(
+    sources: readonly string[],
+    kind: "code" | "expression",
+    input: readonly Row[],
+    perRow: boolean,
+  ): EvaluateInput["steps"] {
+    const cited = new Map<string, boolean>();
+    for (const source of sources)
+      for (const c of readCode(source, kind).steps)
+        cited.set(c.name, (cited.get(c.name) ?? false) || c.item);
+    const steps: EvaluateInput["steps"] = {};
+    for (const [name, item] of cited) {
+      const cite: Citation = { step: name, pick: "first", path: [] };
+      const other = this.byName.get(name);
+      if (!other) throw new CiteError("unknownStep", cite);
+      const record = this.records[other.id];
+      if (record?.state !== "done") throw new CiteError("notRun", cite);
+      const rows = outputsOf(other)
+        .filter((o) => o !== OUT.error)
+        .flatMap((o) => record.out[o] ?? []);
+      const at = new Map(rows.map((r, i) => [r, i]));
+      steps[name] = {
+        rows,
+        ...(item && perRow ? { item: input.map((r) => this.pairIn(r, other.id, at)) } : {}),
+      };
+    }
+    return steps;
+  }
+
   async prepare(
     step: Step,
     js: Javascript,
@@ -1173,27 +1209,7 @@ class Run {
     const input = code || mode === "perRow" ? all : [];
     const perRow = !code || mode === "perRow";
 
-    // The steps its code cites, with the row each input row comes from where it asks for `.item` (AU-13).
-    const cited = new Map<string, boolean>();
-    for (const source of js.sources)
-      for (const c of readCode(source, code ? "code" : "expression").steps)
-        cited.set(c.name, (cited.get(c.name) ?? false) || c.item);
-    const steps: EvaluateInput["steps"] = {};
-    for (const [name, item] of cited) {
-      const cite: Citation = { step: name, pick: "first", path: [] };
-      const other = this.byName.get(name);
-      if (!other) throw new CiteError("unknownStep", cite);
-      const record = this.records[other.id];
-      if (record?.state !== "done") throw new CiteError("notRun", cite);
-      const rows = outputsOf(other)
-        .filter((o) => o !== OUT.error)
-        .flatMap((o) => record.out[o] ?? []);
-      const at = new Map(rows.map((r, i) => [r, i]));
-      steps[name] = {
-        rows,
-        ...(item && perRow ? { item: input.map((r) => this.pairIn(r, other.id, at)) } : {}),
-      };
-    }
+    const steps = this.citedSteps(js.sources, code ? "code" : "expression", input, perRow);
 
     const action = actionOf(step);
     const gate = guard(this.deps.policy, this.deps.collections, {
@@ -1422,6 +1438,8 @@ class Run {
     const connections = step.connections ?? [];
     const named = (name: string) =>
       connections.some((c) => c.collection === name) ? name : undefined;
+    // The model names a collection by its key; its code and its code tools, by the name written in `$col('…')`.
+    const either = (name: string) => named(name) ?? this.deps.collectionNamed?.(name, step.id);
     const today = dates.day(this.started, clock.zone);
     const gate = guard(policy, collections, {
       automation: { id: this.input.automation.id, version: this.input.automation.version },
@@ -1434,7 +1452,7 @@ class Run {
       test: this.input.test,
       own: this.deps.own,
     });
-    const reader = new Reader({ connections, collectionNamed: named, today }, gate);
+    const reader = new Reader({ connections, collectionNamed: either, today }, gate);
     const how: SaveHow = {
       // Every action of every connection: an action in «No» is then refused by the connection's own check
       // (`code.write.notAllowed`, told to the model as `action-off`), not as one no analysis saw.
@@ -1514,11 +1532,14 @@ class Run {
         param: P.instructions,
         detail: { why: "instructions" },
       });
-    const rows: AgentValue[] = u.rows.map((r) => ({
-      json: r.json,
-      label: r.label,
-      ...(r.fields ? { fields: r.fields } : {}),
-    }));
+    const byCode = step.params[P.reads] === "code";
+    const codeTools = codeToolsOf(step.params[P.tools]);
+    if (!codeTools)
+      throw new AiFault("«Herramientas de código» is not a list of tools", {
+        code: "ai.params",
+        param: P.tools,
+        detail: { why: "tools" },
+      });
     let answer: AgentCall["answer"] = { kind: "text" };
     if (step.params[P.answer] === "fields") {
       const fields = fieldsOf((step.params[P.fields] ?? null) as Cell);
@@ -1540,17 +1561,30 @@ class Run {
       seen: [],
     };
     u.state.record.units.push(unit);
+    // «Las hace este código» (AU-51): its code reads before the first round, and what it gives is the model's rows.
+    let rows: AgentValue[];
+    if (byCode) {
+      rows = await this.agentCode(step, u.rows, u.state);
+      addLine(unit, { op: "code", rows: rows.length });
+    } else
+      rows = u.rows.map((r) => ({
+        json: r.json,
+        label: r.label,
+        ...(r.fields ? { fields: r.fields } : {}),
+      }));
     for (const line of hiddenLines(instructions, rows)) addLine(unit, line);
     const tools = new AgentTools({
       step,
       shape: (c) => collections.shape(c),
       reader: u.state.reader,
       read: u.state.read,
-      fixed: (collection) => this.fixedOf(step, collection, u.scope),
+      fixed: (collection, action) => this.fixedOf(step, collection, action, u.scope),
       check: (w) => u.state.check(w),
       gathered: u.pending,
       written,
       unit,
+      tools: codeTools,
+      runTool: (tool, inputs, label) => this.agentTool(step, tool, inputs, label, u.state),
     });
     const reply = await port.agent({
       use: "agent",
@@ -1559,7 +1593,10 @@ class Run {
       rows,
       connections: agentSchema(step.connections ?? [], (c) => collections.shape(c)),
       answer,
-      reads: true,
+      reads: !byCode,
+      ...(codeTools.length
+        ? { codeTools: codeTools.map((t) => ({ name: t.name, inputs: t.inputs })) }
+        : {}),
       maxRounds:
         typeof max === "number" && Number.isInteger(max)
           ? Math.min(Math.max(max, 1), AGENT_ROUNDS.max)
@@ -1599,6 +1636,129 @@ class Run {
   }
 
   /**
+   * «Las hace este código» (AU-51): the step's code over the unit's rows, once, in the box, through the step's reader
+   * (its connections, the policy and its limits). What it gives is what the model receives as rows, each with the
+   * label of everything the code received and read; a list is one row per item.
+   */
+  async agentCode(step: Step, input: readonly Row[], state: AgentState): Promise<AgentValue[]> {
+    const source = step.params[AGENT_PARAMS.code];
+    if (typeof source !== "string" || !source.trim())
+      throw new AiFault("«Las hace este código» has no code", {
+        code: "ai.params",
+        param: AGENT_PARAMS.code,
+        detail: { why: "code" },
+      });
+    const got = await this.agentBox(step, source, "all", input, state);
+    if ("failure" in got)
+      throw new CodeFault(`the step's code failed (${got.failure.code})`, {
+        ...got.failure,
+        param: AGENT_PARAMS.code,
+      });
+    if ("denied" in got) throw this.agentDenied(got.denied, { param: AGENT_PARAMS.code });
+    const values = Array.isArray(got.value) ? got.value : [got.value];
+    return values.map((json) => ({ json, label: got.label }));
+  }
+
+  /**
+   * One call of a «Herramienta de código» (AU-58): its code over one row, its inputs (`$json`), in the box through the
+   * step's reader. A failure is told to the model (`code-failed`); a no of the policy fails the unit, P29's too, as
+   * in a «Código»: the call was made by code, not by the model (AU-198, AU-161).
+   */
+  async agentTool(
+    step: Step,
+    tool: AgentCodeTool,
+    inputs: Record<string, Cell>,
+    label: Label,
+    state: AgentState,
+  ): Promise<{ rows: AgentValue[] } | { value: AgentValue } | { refused: string }> {
+    const got = await this.agentBox(
+      step,
+      tool.code,
+      "perRow",
+      [{ json: inputs, label, path: null, parent: null }],
+      state,
+    );
+    if ("failure" in got) return { refused: "code-failed" };
+    if ("denied" in got) throw this.agentDenied(got.denied, { tool: tool.name });
+    if (Array.isArray(got.value))
+      return { rows: got.value.map((json) => ({ json, label: got.label })) };
+    return { value: { json: got.value, label: got.label } };
+  }
+
+  /**
+   * An «Agente»'s own code in the box: one evaluation, through the step's reader, so the code, its tools and the
+   * model's reads count against the same limits. It reads only: a write it asks for fails it (`agent.reads.write` is
+   * the validation's, this is the run's guard).
+   */
+  async agentBox(
+    step: Step,
+    source: string,
+    mode: CodeMode,
+    input: readonly Row[],
+    state: AgentState,
+  ): Promise<{ value: Cell; label: Label } | { failure: CodeFailure } | { denied: Denied }> {
+    const { box, clock, dates, locale } = this.deps;
+    if (!box)
+      throw new CodeFault("JavaScript runs only in the box, and there is none", {
+        code: "code.unavailable",
+      });
+    this.boxed = true;
+    const run = await evaluate(
+      {
+        kind: "code",
+        sources: [source],
+        mode,
+        input,
+        steps: this.citedSteps([source], "code", input, false),
+        literal: this.deps.own,
+        connections: step.connections ?? [],
+        collectionNamed: state.reader.input.collectionNamed,
+        now: this.started,
+        zone: clock.zone,
+        locale,
+        today: dates.day(this.started, clock.zone),
+        seed: seedOf(this.seed, step.id),
+        run: { test: this.input.test, startedBy: this.input.startedBy ?? "user" },
+        reader: state.reader,
+      },
+      box,
+      state.reader.gate,
+    );
+    const e = run.evaluations[0];
+    const label = run.labels[0] ?? this.deps.own;
+    if (!e) return { value: null, label };
+    if (e.state === "failed") return { failure: e.failure };
+    if (e.state === "denied") return { denied: e.denied };
+    const w = e.writes?.[0] as WriteRequest | undefined;
+    if (w)
+      return {
+        failure: {
+          code: "code.write.unseen",
+          detail: { collection: String(w.collection), action: String(w.action), where: "agent" },
+        },
+      };
+    return { value: e.values[0] ?? null, label };
+  }
+
+  /**
+   * The policy's no to an «Agente»'s own code: a collection made private gives `ai.private` (AU-166); any other, the
+   * rule and `policy.denied` or `policy.waits`, never its reason (Juan, 2026-11-16).
+   */
+  agentDenied(d: Denied, where: Record<string, string>): Error {
+    if (d.rule === "P29")
+      try {
+        agentDeniedOf(d, where);
+      } catch (e) {
+        if (e instanceof AiFault) return e;
+      }
+    return new Denied(
+      d.rule,
+      `a read of the step's code was refused (${d.waits ? "policy.waits" : "policy.denied"})`,
+      d.waits,
+    );
+  }
+
+  /**
    * «Instrucciones» resolved for a unit (AU-197): Juan's text with the automation's label, and each citation apart with
    * its own, so a value a planner may not see goes as a handle and the rest is read. With JavaScript in it, the whole
    * text is one value, with the label of everything it used.
@@ -1624,9 +1784,17 @@ class Run {
     });
   }
 
-  /** Create's fixed values of an «Agente»'s connection that are expressions, resolved for a unit (AU-52). */
-  fixedOf(step: Step, collection: string, scope: Scope): Record<string, Labeled<Cell>> | undefined {
-    const cell = step.connections?.find((c) => c.collection === collection)?.create;
+  /**
+   * The fixed values of an «Agente»'s connection that are expressions, for create or modify (AU-52, decision 18 of
+   * §10), resolved for a unit. They are read from the step as saved: never from the model, a request or the box.
+   */
+  fixedOf(
+    step: Step,
+    collection: string,
+    action: "create" | "update",
+    scope: Scope,
+  ): Record<string, Labeled<Cell>> | undefined {
+    const cell = step.connections?.find((c) => c.collection === collection)?.[action];
     const fixed = cell ? cell.fixed : undefined;
     if (!fixed) return undefined;
     const out: Record<string, Labeled<Cell>> = {};

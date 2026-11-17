@@ -322,6 +322,39 @@ describe("the policy for an automation's AI steps (F15)", () => {
     ).rejects.toBe(limit);
   });
 
+  it("AU-58 · a code tool is in the round's catalogue by its name with its inputs, and in the request; with «Las hace este código» there is no read", async () => {
+    const got: [string, unknown][] = [];
+    const tool: AgentCall["tool"] = async (name, args) => {
+      got.push([name, args.estado?.json]);
+      return { value: { json: 5, label: own } };
+    };
+    const asked: AgentRequest[] = [];
+    const plans: unknown[] = [
+      {
+        version: 1,
+        steps: [
+          { id: "s1", op: "call", tool: "contar", args: { estado: { lit: "abierta" } } },
+          { id: "s2", op: "call", tool: "answer", args: { texto: { lit: "Hecho" } } },
+        ],
+      },
+    ];
+    const codeTools = [{ name: "contar", inputs: [{ name: "estado", type: "text" }] }];
+    const reply = await runRounds(agentCall({ tool, codeTools, reads: false }), async (r) => {
+      asked.push(r);
+      return { plan: plans.shift(), model: "ejemplo-modelo" };
+    });
+    expect(reply).toMatchObject({ rounds: 1, answer: { texto: { json: "Hecho" } } });
+    expect(got).toEqual([["contar", "abierta"]]);
+    expect(asked[0]?.tools).toEqual(["create", "update", "trash", "contar", "answer"]);
+    expect(asked[0]?.codeTools).toEqual(codeTools);
+    // A call without its input is not a plan.
+    const missing = await runRounds(agentCall({ tool, codeTools }), async () => ({
+      plan: { version: 1, steps: [{ id: "s1", op: "call", tool: "contar", args: {} }] },
+      model: "ejemplo-modelo",
+    }));
+    expect(missing).toMatchObject({ fault: "agent.plan" });
+  });
+
   it("AU-165 · the policy changes in two places only: the rows of AU-204 and P29; every other rule answers this origin as before", () => {
     // A call inside its connection is answered as the same call without one, for every origin and every tool: P29
     // only takes away. What changed from F14d for the origin `automation` is the model's value with the «Sí».
