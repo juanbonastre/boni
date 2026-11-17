@@ -29,6 +29,16 @@
  */
 import type { Label, Labeled } from "@boni/entities";
 import {
+  type AiFailure,
+  AiFault,
+  type AiPort,
+  type AiRecord,
+  isReaderType,
+  modelLabelOf,
+  type ReaderOutcome,
+  readRows,
+} from "./ai.ts";
+import {
   type Box,
   type ConsoleLine,
   type EvaluateInput,
@@ -91,7 +101,7 @@ import {
 import { arrowsInto, executionOrder } from "./graph.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
 import type { Cell, Row } from "./rows.ts";
-import { fieldLabel, joinAll, StopRun, TRANSFORM_AND_LOGIC } from "./steps.ts";
+import { copy, fieldLabel, joinAll, StopRun, setField, TRANSFORM_AND_LOGIC } from "./steps.ts";
 import { type Problem, type ValidationContext, validate } from "./validate.ts";
 import { blocking } from "./versions.ts";
 import {
@@ -165,6 +175,8 @@ export interface StepError {
    * `detail.message`, and never in `message`.
    */
   why?: CodeFailure;
+  /** F15: why an AI step failed (ai.ts, `AI_FAILURES`), while `failure.code` is `other`. Never the value at fault. */
+  ai?: AiFailure;
 }
 
 /** What is kept of a step in a run (AU-15). What an AI step cost arrives with those steps (F15). */
@@ -195,6 +207,11 @@ export interface StepRecord {
    * would ask, or what waits for Juan. Absent when it asked for nothing, or when the step failed and saved nothing.
    */
   writes?: StepWrites;
+  /**
+   * What an AI step's calls to a model cost (AU-54, F15): how many, which models answered, how long, and how many
+   * texts were cut. Absent in a step that called none.
+   */
+  ai?: AiRecord;
 }
 
 export interface Execution {
@@ -277,6 +294,11 @@ export interface RunDeps {
    * from a kept test, is told `ended` only. It must not throw: the engine does not catch it.
    */
   onStep?(step: string, record: StepRecord, phase: "started" | "ended"): void;
+  /**
+   * How a step calls a model (ai.ts, F15): the server's port, with its providers, «Modelos» and the month's budget
+   * (S1); a test's scripted reader. Without one, the AI steps do not run: validation refuses them (`step.unknownType`).
+   */
+  ai?: AiPort;
 }
 
 /**
@@ -285,8 +307,9 @@ export interface RunDeps {
  */
 export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
   const collection = (key: string) => deps.collections.shape(key);
-  if (!deps.box) return { collection };
-  return { collection, collectionNamed: (name, step) => deps.collectionNamed?.(name, step) };
+  const ai = deps.ai ? { ai: true } : {};
+  if (!deps.box) return { collection, ...ai };
+  return { collection, ...ai, collectionNamed: (name, step) => deps.collectionNamed?.(name, step) };
 }
 
 /**
@@ -442,6 +465,7 @@ function stepErrorOf(e: unknown, step: Step): StepError {
     ...(e instanceof Denied ? { rule: e.rule } : {}),
     failure: failureOf(e, step),
     ...(e instanceof CodeFault ? { why: e.why } : {}),
+    ...(e instanceof AiFault ? { ai: e.ai } : {}),
   };
 }
 
@@ -746,7 +770,9 @@ class Run {
     const executor = action
       ? step.type === CODE_TYPE
         ? CODE_EXECUTORS[action.mode]
-        : EXECUTORS[executorKey(step.type, action.key)]
+        : isReaderType(step.type)
+          ? READER_EXECUTOR
+          : EXECUTORS[executorKey(step.type, action.key)]
       : undefined;
     const tries = 1 + Math.max(0, settings.retry.times);
     let stop: StepError | undefined;
@@ -833,6 +859,39 @@ class Run {
       record.uses = { clock: evaluated.run.clock, random: evaluated.run.random };
     }
 
+    // A reader's calls to a model, for every row, before any row is worked on (AU-57): in batches, each call counted
+    // first (AU-206). What it decided for a row is that row's, on every try: a unit does not call the model again.
+    let read: ReaderOutcome[] | undefined;
+    const decided = new Set<object>();
+    if (isReaderType(step.type) && all.length) {
+      record.ai = { calls: 0, models: [], ms: 0, cut: 0 };
+      try {
+        const got = await readRows({
+          step,
+          rows: all,
+          scope: (row, i) => this.scope(row, evaluated?.at(i)),
+          resolve: (v, scope) => resolve(v, scope),
+          port: this.deps.ai,
+          modelCall: () => this.modelCall(),
+          now: () => clock.now(),
+          model: modelLabelOf(this.input.automation.id, step.id),
+          record: record.ai,
+        });
+        read = got.outcomes;
+        for (const o of read) if ("fault" in o) decided.add(o.fault);
+      } catch (e) {
+        if (e instanceof StopRun) stop = stepErrorOf(e, step);
+        else give(e, null, 0, all, this.path(step, this.scope(null), inputs));
+        if (stop) {
+          record.error = stop;
+          finish("failed");
+          return stop;
+        }
+        finish("done");
+        return;
+      }
+    }
+
     /**
      * One unit: one row, or all of them. Tries it, and on a last failure does what «Si falla» says. True when it
      * worked: what its «Código» asked to save is part of the step's change.
@@ -855,6 +914,10 @@ class Run {
           if (!action || !executor) throw new Error(`no executor for ${step.type}`);
           const ctx = this.context(step, action.key, scope, this.gate(step, path, asked));
           if (evaluated) ctx.code = evaluated.rows;
+          if (read) {
+            const outcomes = read;
+            ctx.read = (at) => outcomes[at] as ReaderOutcome;
+          }
           const out =
             executor.mode === "perRow"
               ? await executor.run(ctx, row, index)
@@ -882,7 +945,7 @@ class Run {
           }
           lastError = e;
           // What its JavaScript gave for this row is decided once for the step: trying it again gives the same.
-          if (evaluated?.decided.has(e as object)) break;
+          if (evaluated?.decided.has(e as object) || decided.has(e as object)) break;
         }
       }
       give(lastError, row, index, units, path);
@@ -1424,6 +1487,8 @@ export interface StepContext {
    * E3) call it; no step of F14 calls a model.
    */
   modelCall?(): void;
+  /** A reader step only (F15): what its calls gave for the row `at`, read before the units (AU-57). */
+  read?(at: number): ReaderOutcome;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */
@@ -1464,6 +1529,24 @@ const codeRows = (ctx: StepContext, at: number): readonly RowOut[] => {
   if (!ctx.code)
     throw new CodeFault("this «Código» was not evaluated", { code: "code.unavailable" });
   return ctx.code(at);
+};
+
+/**
+ * The four readers' executor (AU-57): it hands out what the engine read for its row, never calls a model itself.
+ * Its row out is the row that came in with the answer's fields, each with the label of what was sent and of the
+ * model that wrote it, derived (it is never a destination, P14).
+ */
+const READER_EXECUTOR: Executor = {
+  mode: "perRow",
+  run: async (ctx, row, index) => {
+    const outcome = ctx.read?.(index);
+    if (!row || !outcome) throw new AiFault("this reader was not read", { code: "ai.unavailable" });
+    if ("fault" in outcome) throw outcome.fault;
+    const out = copy(row);
+    for (const [key, value] of Object.entries(outcome.values))
+      setField(out, key, { value, label: outcome.label, derived: true });
+    return { [OUT.main]: [out] };
+  },
 };
 
 /**

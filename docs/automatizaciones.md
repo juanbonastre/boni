@@ -1108,6 +1108,9 @@ que un paso espere a Juan.
   modelo · el nombre del modelo · 0,8 s»). Se guarda en el registro del paso, acotado: 50 líneas por unidad de
   trabajo y «y 12 más». En una prueba el modelo se llama de verdad y nada se guarda ni se propone (AU-199). La
   prueba: `packages/automations/src/agent.test.ts` y `e2e-boni/automations-ai.spec.ts`.
+  Hecho en E2, para los lectores: el registro del paso guarda `ai` (las llamadas, los modelos que respondieron, el
+  tiempo y los textos recortados), también cuando la ejecución para a medias por «Llamadas a modelos». Falta: la
+  línea en la app (P2) y todo lo del «Agente» (E3).
 - **AU-55** (F15, pendiente) · «Se ejecuta» tiene dos modos, a la vista como en «Código» (AU-30): «Una vez con todas
   las filas» (por defecto) y «Una vez por fila». Es un parámetro suyo y no un ajuste: «Ajustes» es igual en todos los
   pasos (AU-78). Junto a él se ve lo que cuesta: cuántas filas llegaron en la última prueba y el tope de llamadas a
@@ -1126,7 +1129,7 @@ que un paso espere a Juan.
   `automation`, con el paso y su conexión leídos de la versión guardada (AU-204, AU-205). «Pasos máximos» pasa a
   llamarse «Rondas máximas» (AU-58). Cómo es una ronda, qué vuelve y cuándo se guarda lo dice AU-198. La prueba:
   `packages/agent/test/automation-ai.test.ts`.
-- **AU-57** (F15, pendiente) · Los otros pasos de IA hacen una cosa cada uno, con los lectores que ya existen:
+- **AU-57** (F15, en parte) · Los otros pasos de IA hacen una cosa cada uno, con los lectores que ya existen:
   «Extraer datos», «Clasificar», «Resumir» y «Escribir texto». El texto de fuera pasa por ellos, no por el agente.
   Los cuatro gastan el uso «Lector» de «Modelos», y su «Modelo» se elige como el del «Agente» (AU-199; Juan,
   2026-11-15).
@@ -1142,11 +1145,30 @@ que un paso espere a Juan.
   Cada uno es un lector de `READERS` con su forma cerrada de `READER_SCHEMAS`; si a alguno le falta la forma, se
   añade allí y no en el motor. Reciben solo su «Texto» y, como opciones, lo que Juan puso: nunca datos propios junto
   a un texto de fuera (`docs/nucleo.md` §7.4). Con varias filas, los que leen una lista en una llamada (`label_each`,
-  `summarize_each`) reciben hasta 50 filas por llamada (`READER_BATCH`, razonado y no medido) y los demás hacen una
-  llamada por fila; un texto de más de 4.000 caracteres se recorta y la salida lo dice («Recortó 3 textos»). La
+  `summarize_each`) reciben hasta 50 filas por llamada (`READER_BATCH`, el `maxItems` de sus formas; medido en E2: lo
+  que cuesta son las llamadas, no el motor) y los demás hacen una llamada por fila; un texto de más de 4.000 caracteres se recorta y la salida lo dice («Recortó 3 textos»). La
   salida lleva la etiqueta de la entrada: lo que sale de un texto de fuera sigue siendo de fuera. Una salida que no
   vale se reintenta una vez (AU-59). «Añadir opción» de «Resumir» tiene «Largo» (corto, medio, largo). La prueba:
   `packages/automations/src/ai-steps.test.ts`.
+  Hecho en E2: los cuatro en el motor (`ai.ts`), junto al catálogo como «Código» (`specOf`, categoría `ai`), y
+  la validación los deja entrar solo con un puerto para llamar a un modelo (`RunDeps.ai`, `ValidationContext.ai`).
+  Antes de las unidades el motor lee todas las filas: resuelve el «Texto» de cada una, recorta lo que pasa de 4.000
+  caracteres, manda por lotes de 50 a `label_each` y a `summarize_each` (agrupando las filas que llevan las mismas
+  opciones) y una por llamada a los demás; cada llamada se cuenta antes (AU-206), y una respuesta que no vale se
+  comprueba otra vez en el motor contra la forma del paso y se pide una vez más. La llamada lleva solo `use`
+  («reader»), `model` (el del paso o null para «El de la cuenta»), el lector, los textos y lo que Juan puso. La salida
+  es la fila de entrada con `clase`, `resumen`, `texto` o los campos de «Extraer datos», cada uno con la etiqueta de
+  lo enviado y la del modelo, derivado; el registro del paso guarda `ai`: llamadas, los modelos que respondieron, el
+  tiempo y los textos recortados. «Resumir» corto va por lotes (`summarize_each`); medio y largo, uno por llamada
+  (`summarize`). Un texto vacío da el campo vacío sin llamar. Los fallos son claves aparte (`AI_FAILURES`:
+  `ai.private`, `ai.reply`, `ai.refused`, `ai.unavailable`, `ai.params`). Medido con un lector simulado (2026-11-17,
+  cinco veces): una ejecución de 2.000 filas (la búsqueda, 40 lotes y 2.000 unidades) tarda de 65 a 77 ms, y repartir
+  3.000 filas en 60 llamadas, de 35 a 57 ms. Con 50 por llamada y el techo de 40 llamadas, una ejecución lee como
+  mucho 2.000 filas con un lector de lista (1.000 con las 20 de serie). Falta: el puerto de verdad con sus
+  proveedores, «Modelos» y el presupuesto (S1); la lista cerrada de «Modelo» y su comprobación al publicar (AU-199);
+  el tiempo de un modelo de verdad por lote, que solo mide una evaluación a mano; «Extraer datos» comprueba sus campos en el
+  motor, y sus formas cerradas para el proveedor ya están en `packages/agent` (`extractSchema`, `checkExtract`, y
+  «nada encaja» con `orNone` en `classify` y `label_each`): usarlas en el puerto es de S1; y los pasos en el editor, con sus palabras y «Recortó 3 textos» (P2).
 - **AU-58** (F15, pendiente) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
   En la F15: «Rondas máximas» (nace en 5, hasta 10) es el nombre de «Pasos máximos»: un paso es ya una caja del
@@ -2449,7 +2471,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   lee de lo guardado, nunca de la respuesta de la caja ni de un navegador) y `proposal.test.ts` (servidor: una eliminación con
   «Sí» de una versión publicada va a la papelera sin propuesta y se deshace con la ejecución, con algo de fuera
   también; con «Preguntar», se propone).
-- **AU-166** (F15, pendiente) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
+- **AU-166** (F15, en parte) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
   En la F15: «privado» es lo que dice el acceso de la IA a la colección (`ai_access`, `docs/nucleo.md` §7.3):
   `hidden` (para un modelo no existe) y `opaque` (sus valores llevan `noModel`: ni un modelo que planifica ni un lector
@@ -2460,6 +2482,10 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   lector hace fallar esa fila (`ai.private`) por el «Si falla» del paso, diciendo el campo y, si su etiqueta la
   lleva, la colección, nunca el valor. Lo que no se sabe al publicar es lo que llega por las filas de otros pasos.
   La prueba: `packages/automations/src/ai-steps.test.ts` y `apps/server/src/automations/ai.test.ts`.
+  Hecho en E2: en el lector. Un valor con `noModel` en el «Texto» o en otro parámetro de un lector (todos se resuelven
+  por el mismo camino; la prueba lo hace con el «Texto») hace fallar su fila antes de cualquier llamada (`ai.private`), por el «Si falla» del paso, con el parámetro, el campo y, si la fila
+  dice de qué colección se leyó, la colección; nunca el valor. Las otras filas del paso se leen. Falta: el «Agente»
+  (AU-197, E3), la lectura negada en `decide` desde el servidor y su prueba (S1), y la comprobación al publicar (P1).
 - **AU-167** (F14d, en parte) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
@@ -2699,7 +2725,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   presupuesto del mes es aparte y sigue (AU-199). La prueba: `packages/automations/src/agent.test.ts`.
   Hecho en E1: `countModelCall` (`engine.ts`) y `StepContext.modelCall`, la cuenta de la ejecución: se llama antes de
   cada llamada, y la que pasaría el límite lanza `LimitPassed` (`run.limit`, con `modelCalls` y los dos números) sin
-  hacerse. Falta: que el lector (E2) y el «Agente» (E3) la llamen antes de cada llamada, reintentos incluidos, y el
+  hacerse. Hecho en E2: los cuatro lectores la llaman antes de cada llamada, la repetida también, y una ejecución
+  llega a `run.limit` por ella (`ai-steps.test.ts`). Falta: que el «Agente» (E3) la llame antes de cada ronda, y el
   límite en «Ajustes» cuando un paso llama a un modelo (P1).
 - **AU-183** (F14c, hecho) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
   el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que
