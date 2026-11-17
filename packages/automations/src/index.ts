@@ -11,6 +11,7 @@ export * from "./format.ts";
 export * from "./graph.ts";
 export * from "./javascript.ts";
 export * from "./partial.ts";
+export * from "./people.ts";
 export * from "./preview.ts";
 export * from "./rows.ts";
 export { canonical, compare, measure } from "./steps.ts";
