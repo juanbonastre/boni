@@ -622,6 +622,13 @@ decisión (A-36). Lo construye la F14d (E1, decisión 11 de `docs/automatizacion
 publicadas (S1), lo que corre de verdad es el borrador guardado, y el «Sí» se lee de él. Lo sostienen
 `automation-origin.test.ts` (una prueba por fila) y las tablas de AU-195 en `apps/server/src/automations/automations.test.ts`.
 
+Diseñado en la F15 y sin construir (`docs/automatizaciones.md`, AU-204 y AU-205; la tabla de arriba cambia con el PR
+que lo construya): P28 deja de proponer todo valor escrito por un modelo y sigue la tabla de AU-204 (con el «Sí» de
+la versión se guarda; lo que elige un «Agente» al que llegó algo de fuera propone modificar y eliminar hasta que Juan
+conteste); y entra P29, que niega la llamada de un paso de IA de una automatización fuera de su conexión (la
+colección, la acción, sus filas, sus campos, su tope, o una colección privada para un modelo), como P26 con el chat
+de una página.
+
 - **Las confirmaciones las pinta el código** con la plantilla de cada herramienta y los argumentos reales:
   destinatario, importe, texto completo. Muestran la procedencia ("este texto viene de un correo de X"). Nunca usan un
   resumen del modelo.
