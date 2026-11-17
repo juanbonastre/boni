@@ -1495,7 +1495,7 @@ que un paso espere a Juan.
   prueba lo dice en `pinned`; una ejecución de verdad lo corre. «Duplicar» no copia lo fijado. Falta: el botón, la
   tarjeta y el recuerdo en «Publicar» (pantalla, P1).
   Hecho en P2: «Fijar» en la cabecera de SALIDA (no en el teléfono), que fija y, pulsado, es «Soltar»; un paso que
-  falló o sin probar no lo tiene. La tarjeta dice «Salida fijada» (y «puede estar vieja»), «Probar» la da sin
+  falló o sin probar no lo tiene (no se puede pulsar porque no está). La tarjeta dice «Salida fijada» (y «puede estar vieja»), «Probar» la da sin
   correrlo, y «Publicar» lo recuerda («salida fijada»: `publishView` lee los fijados, que S1 dejaba vacíos).
 - **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
@@ -1648,7 +1648,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   se guarda como ejecución de prueba. Con un año de ejecuciones cada hora, la lista y una ejecución contestan dentro
   de su tiempo. Falta: la pestaña (pantalla 8, P1) y las cuentas de la lista de automatizaciones (AU-61, P1).
   Hecho en P2: la pestaña (`AutomationRuns.tsx`): la lista de 50 en 50 con «Ver más» y «Todas | Fallos | Pruebas»,
-  cada una con cuándo, cómo acabó, cuánto tardó, qué la inició y qué versión; a la derecha la barra con su línea y
+  cada una con cuándo, cómo acabó, cuánto tardó (también si falló o se interrumpió), qué la inició y qué versión
+  («Bien» y no «Hecha», la palabra de los pasos del lienzo, para que un paso y una ejecución que acabaron se digan
+  igual); a la derecha la barra con su línea y
   el lienzo de la versión que corrió, solo para ver, con sus filas en las flechas; un paso abierto pide sus filas
   entonces. En el teléfono, la lista y, al tocar una, su detalle con «Todas las ejecuciones». Con 8.760 ejecuciones,
   la lista pide una página y no lee pasos. Falta: «Ver en la Bandeja» tras «Propuso…» (la propuesta es de S3; su
@@ -1672,7 +1674,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   no guardó nada; si no, un cuadro dice la versión («Correrá la versión 2, no la 1.») y lo que guardó, con «Deshacer
   y reintentar» primero cuando se puede deshacer. «Abrir en el editor con estos datos» fija la salida del disparador
   y abre el editor en él. Una prueba solo tiene este último; en el teléfono no está (AU-74).
-- **AU-101** (F14d, hecho) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
+- **AU-101** (F14d, en parte) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
   línea por paso y, dentro de un paso de IA, sus lecturas y escrituras.
   En la F14d: es un solo componente para el «Registro» del editor y para una ejecución de «Ejecuciones», sobre el
   mismo registro: una línea por paso en el orden en que corrió, con su estado, las filas que entraron y salieron y
@@ -1681,8 +1683,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Lo sostiene `automations-publish.spec.ts`: el árbol de una prueba y el de una ejecución son el mismo.
   Hecho en P2: «Ver cada paso» (`LogTree` en `AutomationTest.tsx`) en el «Registro» y en la barra de una ejecución:
   una línea por paso en el orden en que corrió, con su estado, «128 → 3» y su tiempo, y debajo sus lecturas, su
-  «Consola» y lo que guardó, propuso o guardaría, como texto; una línea selecciona su paso. Dentro de un paso de IA
-  es de la F15.
+  «Consola» y lo que guardó, propuso o guardaría, como texto; tocar una línea abre su paso. Dentro de un paso de IA
+  es de la F15. Falta: las lecturas en el árbol del «Registro» del editor, porque la prueba de un paso no las da
+  (`StepTestView` no tiene `reads`; es del servidor). En una ejecución sí están.
 - **AU-102** (F14d, pendiente) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
   palabras, y el aviso lleva a ella.
   En la F14d: «en segundo plano» es la que empezó sola (AU-195); una que inició su mano falla en su pantalla, sin

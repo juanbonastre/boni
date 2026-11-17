@@ -153,6 +153,10 @@ describe("what «Ejecuciones» says of a run", () => {
     expect(howWords(es, "es", failed, names)).toBe("Falló en «Buscar facturas»");
     const gone = summary({ state: "failed", error: { step: "s_01jborrado" } as never });
     expect(howWords(es, "es", gone, names)).toBe("Falló");
+    // How long it took is said of every run that ended, not only of a good one.
+    expect(howWords(es, "es", { ...failed, ms: 2_000 }, names)).toBe(
+      "Falló en «Buscar facturas» · 2,0 s",
+    );
     expect(howWords(es, "es", summary({ state: "interrupted", step: "s_01jbuscar" }), names)).toBe(
       "Interrumpida en «Buscar facturas»",
     );

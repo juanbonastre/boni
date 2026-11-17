@@ -313,7 +313,7 @@ export function TestBar({
             pins: state.pins,
           })}
           collectionName={collectionName}
-          onStep={(step) => apply((s) => ({ ...s, selected: [step], arrow: null }))}
+          onStep={(step) => apply((s) => ({ ...s, selected: [step], arrow: null, open: step }))}
         />
       )}
       {limit && !phone && (

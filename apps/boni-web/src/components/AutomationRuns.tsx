@@ -450,7 +450,7 @@ function RunDetail({
             <TreeButton
               lines={treeLines(doc, view.steps)}
               collectionName={collectionName}
-              onStep={(step) => apply((s) => ({ ...s, selected: [step], arrow: null }))}
+              onStep={(step) => apply((s) => ({ ...s, selected: [step], arrow: null, open: step }))}
             />
           )}
           {view.undoable && (

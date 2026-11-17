@@ -804,6 +804,11 @@ test.describe("«Ejecuciones»", () => {
     await runItems(page).nth(1).click();
     await expect(runBar(page)).toContainText("Prueba del borrador");
     await expect(undo).toHaveCount(0);
+    // A test has only «Abrir en el editor con estos datos» (AU-100): it is not retried.
+    await expect(runBar(page).getByRole("button", { name: "Reintentar" })).toHaveCount(0);
+    await expect(
+      runBar(page).getByRole("button", { name: "Abrir en el editor con estos datos" }),
+    ).toBeVisible();
     // A row it changed was changed again since: it says which, and the run stays as it was.
     await runItems(page).nth(3).click();
     await undo.click();
@@ -870,7 +875,7 @@ test.describe("«Ejecuciones»", () => {
     await expect(screen(page)).toHaveAccessibleName("Ajustes");
     await expect(screen(page).getByLabel("Filas escritas")).toBeFocused();
   });
-  test("AU-101 · the «Registro» of the editor, unfolded, shows the last test as a tree, one line per step with its state, its rows and its time, and inside a «Código» its reads, its «Consola» and what it would save; the tree of a run in «Ejecuciones» is the same component", async ({
+  test("AU-101 · the «Registro» of the editor, unfolded, shows the last test as a tree, one line per step with its state, its rows and its time, and what each step would save; a line opens its step; the tree of a run in «Ejecuciones» is the same component", async ({
     page,
   }) => {
     await openApp(page, "/?still", {
@@ -893,8 +898,9 @@ test.describe("«Ejecuciones»", () => {
     // A line opens its step.
     await lines.nth(2).locator(".auto-tree-step").click();
     await expect(page.locator(".auto-card.selected[data-step='s_01jsi']")).toHaveCount(1);
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jsi");
   });
-  test("AU-101 · the tree of a run says what each step read and saved, in the order they ran", async ({
+  test("AU-101 · the tree of a run says what each step read and saved, in the order they ran, and a line opens its step", async ({
     page,
   }) => {
     await openRuns(page);
@@ -909,6 +915,11 @@ test.describe("«Ejecuciones»", () => {
     await expect(lines.filter({ hasText: "Crear una fila en Libros" })).toContainText(
       "Guardó 1 cambio",
     );
+    await lines.nth(1).locator(".auto-tree-step").click();
+    await expect(
+      runCanvas(page).locator(".auto-card.selected[data-step='s_01jbuscar']"),
+    ).toHaveCount(1);
+    await expect(view(page)).toHaveAttribute("data-step", "s_01jbuscar");
   });
   test("AU-103 · a run of which only the summary is left shows its line and says its steps are no longer kept, and still has «Deshacer lo que hizo»", async ({
     page,

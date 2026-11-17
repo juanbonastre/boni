@@ -1186,9 +1186,10 @@ contraseña ni un código aquí» under a question.
   publishing, and a ▶ in the list's row of a published automation, which opens it and asks its fields) goes to this
   tab with the run it started. On the left, 330 px, «Todas | Fallos | Pruebas» (`.segmented`) over the runs, the
   newest first and fifty at a time with «Ver más»: each a row of three lines, when («hoy, 09:12», «ayer, 19:44»,
-  «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar»», «Interrumpida en
-  «Si»», «En marcha: «Buscar»», «En cola, detrás de otra»), and who with which version, muted («Programada · versión
-  3 · reintento», «Prueba del borrador»). On the right the run chosen (the newest when none is): a bar with the date
+  «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
+  en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra»), and who with which version, muted («Programada · versión
+  3 · reintento», «Prueba del borrador»). How long it took is said of every run that ended; «Bien» is the word of a
+  step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date
   in full, its line («Bien · 0,9 s · Iniciada por ti · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
   en Libros · con datos de fuera»; a collection gone is «una colección que ya no está»), why it failed in the app's
   words, «Deshecha hoy, 10:20» once undone; then «Ver cada paso», «Deshacer lo que hizo» (only when it wrote and is
@@ -1196,7 +1197,8 @@ contraseña ni un código aquí» under a question.
   number) and «Abrir en el editor con estos datos» (the editor, its trigger open with that run's output pinned).
   Under the bar the run's canvas: the editor's own over the document it ran, each step with its pill and its rows on
   the arrows, looked at and never changed; a step opens its view, whose rows are asked when it opens. A run of which
-  only its summary is left says «Sus pasos ya no se guardan» instead. «Reintentar» runs at once when it runs the same
+  only its summary is left says «De esta ejecución solo queda el resumen: sus pasos y sus filas ya no se guardan.»
+  instead. «Reintentar» runs at once when it runs the same
   version and wrote nothing; else a 600 px modal says «Correrá la versión 5, no la 4.» or «Empieza desde el
   principio, con los datos de aquella.», and what that run saved, with «Deshacer y reintentar» (primary when it can
   be undone) and «Reintentar». A run under way is followed by the server's events on the desktop; elsewhere it is
@@ -1295,9 +1297,9 @@ contraseña ni un código aquí» under a question.
   a failed card says why under its summary in `--bad`, two lines at most, whole in its tooltip. After «Probar» or
   «Probar paso» every required parameter left empty is marked, on its card too.
   After a test «Registro» has «Ver cada paso» (the list-tree icon): a 380 px pop-up with one line per step in the
-  order it ran, its pill, its name, «128 → 3» and its seconds, and under it, muted, what it touched («Leyó 128 filas
-  de Libros», «Guardaría 3 cambios», «Consola: 4 líneas»); a line selects its step. A run's «Ver cada paso» is the
-  same, with «Guardó» and «Propuso». In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
+  order it ran, its pill, its name, «128 → 3» and its seconds, and under it, muted, what it touched («Guardaría 3
+  cambios», «Consola: 4 líneas»); a line opens its step. A run's «Ver cada paso» is the same, with «Guardó»,
+  «Propuso» and what it read («Leyó 128 filas de Libros»), which a test of the editor does not give yet. In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
   output that ended well: the card says «Salida fijada» (with «puede estar vieja» once the step changes), «Probar»
   gives that output without running it, and the same button, now «Soltar», lets it go.
   In the step's view, ENTRADA and SALIDA have a head with what they hold and «Ver como»: «Esquema» (each field with

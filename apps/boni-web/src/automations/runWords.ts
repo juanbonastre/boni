@@ -55,8 +55,8 @@ export const ended = (r: RunSummary) => r.state !== "queued" && r.state !== "run
 export const bad = (r: RunSummary) => r.state !== "done" && ended(r);
 
 /**
- * How it ended, in a few words (the list's second line, the bar's start): «Bien · 4,1 s», «Falló en «Analista»»,
- * «Interrumpida en «Buscar»», «En marcha: «Buscar»», «En cola, detrás de otra», «No corrió: …», «Prueba · 4,0 s».
+ * How it ended, in a few words (the list's second line, the bar's start): «Bien · 4,1 s», «Falló en «Analista» · 2,0 s»,
+ * «Interrumpida en «Buscar»» (how long, when it is known), «En marcha: «Buscar»», «En cola, detrás de otra», «No corrió: …», «Prueba · 4,0 s».
  */
 export function howWords(
   t: T,
@@ -76,12 +76,12 @@ export function howWords(
     case "done":
       return `${t(r.test ? "auto.run.how.test" : "auto.run.how.done")}${secs}`;
     case "interrupted":
-      return at ? t("auto.run.how.interruptedAt", { step: at }) : t("auto.run.how.interrupted");
+      return `${at ? t("auto.run.how.interruptedAt", { step: at }) : t("auto.run.how.interrupted")}${secs}`;
     case "missed":
       return t("auto.run.how.missed");
     default:
       // "failed", and a state a newer server may give: said as a failure, never as nothing.
-      return at ? t("auto.run.how.failedAt", { step: at }) : t("auto.run.how.failed");
+      return `${at ? t("auto.run.how.failedAt", { step: at }) : t("auto.run.how.failed")}${secs}`;
   }
 }
 
