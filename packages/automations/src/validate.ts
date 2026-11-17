@@ -705,7 +705,7 @@ export function codeProblems(
     }
     if (piece.as === "code") {
       for (const c of reading.collections) {
-        const key = context.collectionNamed(c.name);
+        const key = context.collectionNamed(c.name, step.id);
         // A name the published version kept for another collection, which is now called otherwise (AU-192).
         const kept = context.keptKey?.(step.id, c.name);
         const now = kept !== undefined && kept !== key ? context.collectionName?.(kept) : undefined;
@@ -715,7 +715,9 @@ export function codeProblems(
         else if (!connected.has(key)) add("code.notConnected", c.at[0], { collection: key });
       }
       // What it asks to save and its connection does not give (AU-176), from this same reading.
-      for (const p of notAllowed(step, writesOf(reading), context.collectionNamed))
+      for (const p of notAllowed(step, writesOf(reading), (name) =>
+        context.collectionNamed(name, step.id),
+      ))
         add(p.code, spanFrom(p.detail ?? {}), withoutPlace(p.detail));
     }
   }

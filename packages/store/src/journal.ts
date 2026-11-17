@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { type AutomationRunsJournal, automationRunsJournal } from "./automationRuns.ts";
 import { type AutomationsJournal, automationsJournal } from "./automations.ts";
 
 /**
@@ -186,7 +187,7 @@ export interface ConfirmationRow {
   used: number | null;
 }
 
-export interface Journal extends AutomationsJournal {
+export interface Journal extends AutomationsJournal, AutomationRunsJournal {
   startRun(
     r: Omit<
       RunRow,
@@ -421,6 +422,7 @@ export function openJournal(db: DatabaseSync): Journal {
   });
   return {
     ...automationsJournal(db),
+    ...automationRunsJournal(db),
     addDecision: (d) =>
       void db
         .prepare(

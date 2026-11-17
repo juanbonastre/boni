@@ -579,8 +579,11 @@ export function placeIn(text: string, at: number, s: Pick<Span, "from" | "to">) 
 
 /** `ValidationContext` plus what code needs: a collection by the name Juan sees, since `$col` cites it by name. */
 export interface CodeContext extends ValidationContext {
-  /** The key of the collection with that name, as it is now. */
-  collectionNamed(name: string): string | undefined;
+  /**
+   * The key of the collection with that name, as it is now; `step`, the step whose code cites it: a run of a
+   * published version resolves it first by what that version kept for the step (`namedFor`, AU-192).
+   */
+  collectionNamed(name: string, step?: string): string | undefined;
   /** The name of the collection with that key: what `$col('…')` is written with (the editor's completions). */
   collectionName?(key: string): string | undefined;
   /**

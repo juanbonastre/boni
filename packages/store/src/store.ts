@@ -147,9 +147,12 @@ export interface StoredEntity {
 
 export class StoreError extends Error {
   code: "invalid" | "not-found" | "conflict" | "undo" | "locked" | "too-big";
-  constructor(code: StoreError["code"], message: string) {
+  /** A conflict's record: the one that changed since (an undo's, so the app can name it). */
+  target?: string;
+  constructor(code: StoreError["code"], message: string, target?: string) {
     super(message);
     this.code = code;
+    if (target !== undefined) this.target = target;
   }
 }
 
@@ -899,7 +902,7 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
     if (db.prepare("SELECT 1 FROM ops WHERE undoes = ?").get(seq))
       throw new StoreError("undo", `operation ${seq} is already undone`);
     if (laterInEffect(op))
-      throw new StoreError("conflict", `"${op.target}" changed since operation ${seq}`);
+      throw new StoreError("conflict", `"${op.target}" changed since operation ${seq}`, op.target);
     const before = op.before ? JSON.parse(op.before) : null;
     switch (op.kind) {
       case "create":

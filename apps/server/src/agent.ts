@@ -29,6 +29,7 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import { interruptRuns, onRunEvent } from "./automations/runs.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
@@ -260,6 +261,9 @@ export class AgentHost {
       });
       ensureSystemTypes(s);
       ensurePresets(s);
+      // A run of an automation still marked as running when its store is first opened was cut by a restart: it is
+      // closed as interrupted and never run again (AU-190, decision 12). No run of this process can be in it yet.
+      interruptRuns(s);
       this.stores.set(account, s);
     }
     // Boni's «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with
@@ -729,9 +733,16 @@ export async function serveAgent(
       const off = host.subscribe(who.account, (event, data) =>
         res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
       );
+      // How an automation's run goes (AU-97): its start, each step that ends with its counts, its end; never a row.
+      const offRuns = host.hasData
+        ? onRunEvent(host.store(who.account), (e) =>
+            res.write(`event: run\ndata: ${JSON.stringify(e)}\n\n`),
+          )
+        : () => {};
       const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
       req.on("close", () => {
         off();
+        offRuns();
         clearInterval(ping);
       });
       return;

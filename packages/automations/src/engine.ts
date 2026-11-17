@@ -245,8 +245,19 @@ export interface RunDeps {
    * it (`expr.code`) as before F14c. With one, validation reads the code (`CodeContext`).
    */
   box?: Box;
-  /** A collection's key by its name as Juan sees it now: what `$col('…')` cites (javascript.ts). */
-  collectionNamed?(name: string): string | undefined;
+  /**
+   * A collection's key by the name a step's code cites it with (`$col('…')`, javascript.ts): as Juan sees it now or,
+   * in a run of a published version, first by the names that version kept for that step (`namedFor`, AU-192).
+   * `step`: the step whose code cites it; absent where no step is meant.
+   */
+  collectionNamed?(name: string, step?: string): string | undefined;
+  /**
+   * Told as each step starts (`started`, its record `running`) and as it is decided (`ended`, its record as the
+   * execution will hold it): what the server keeps as the run goes, so a run in progress is read up to its last
+   * finished step and one a restart cut says where it was (AU-99, AU-190). A step the run stopped before, or took
+   * from a kept test, is told `ended` only. It must not throw: the engine does not catch it.
+   */
+  onStep?(step: string, record: StepRecord, phase: "started" | "ended"): void;
 }
 
 /**
@@ -256,7 +267,7 @@ export interface RunDeps {
 export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
   const collection = (key: string) => deps.collections.shape(key);
   if (!deps.box) return { collection };
-  return { collection, collectionNamed: (name) => deps.collectionNamed?.(name) };
+  return { collection, collectionNamed: (name, step) => deps.collectionNamed?.(name, step) };
 }
 
 /**
@@ -572,6 +583,7 @@ class Run {
       const step = this.byId.get(id) as Step;
       if (error) {
         this.records[id] = { ...blank(), state: "stopped" };
+        this.told(id, "ended");
         continue;
       }
       const kept = this.plan?.reuse.get(id);
@@ -581,6 +593,7 @@ class Run {
         const inputs = id === trigger ? [] : this.arriving(step);
         for (const rows of Object.values(kept.out))
           for (const r of rows) this.made.set(r, { step: id, inputs });
+        this.told(id, "ended");
         continue;
       }
       if (id === trigger) {
@@ -590,10 +603,12 @@ class Run {
           state: "done",
           out: { [outputsOf(step)[0] ?? OUT.main]: [this.first] },
         };
+        this.told(id, "ended");
         continue;
       }
       const failure = await this.step(step);
       if (failure) error = { ...failure, step: id };
+      this.told(id, "ended");
     }
     return {
       automation: { id: automation.id, version: automation.version },
@@ -610,6 +625,12 @@ class Run {
     };
   }
 
+  /** Tells `onStep` of a step's record as it stands. */
+  told(id: string, phase: "started" | "ended"): void {
+    const record = this.records[id];
+    if (record) this.deps.onStep?.(id, record, phase);
+  }
+
   /** Decides and runs one step, and leaves its record. Gives the error that stops the run, if it does. */
   async step(step: Step): Promise<StepError | undefined> {
     const { clock } = this.deps;
@@ -617,6 +638,7 @@ class Run {
     const settings = { ...SETTINGS_DEFAULTS, ...(step.settings ?? {}) };
     const record: StepRecord = { ...blank(), state: "running" };
     this.records[step.id] = record;
+    this.told(step.id, "started");
     const names = outputsOf(step);
     for (const o of names) record.out[o] = [];
 
@@ -917,7 +939,7 @@ class Run {
     control: Label | null,
   ): Promise<StepWrites> {
     const { collections, policy, clock, dates } = this.deps;
-    const collectionNamed = (name: string) => this.deps.collectionNamed?.(name);
+    const collectionNamed = (name: string) => this.deps.collectionNamed?.(name, step.id);
     const gate = guard(policy, collections, {
       automation: { id: this.input.automation.id, version: this.input.automation.version },
       step: step.id,
@@ -1018,7 +1040,7 @@ class Run {
         steps,
         literal: this.deps.own,
         connections: code ? (step.connections ?? []) : [],
-        collectionNamed: (name) => this.deps.collectionNamed?.(name),
+        collectionNamed: (name) => this.deps.collectionNamed?.(name, step.id),
         now: this.started,
         zone: clock.zone,
         locale,

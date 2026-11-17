@@ -20,7 +20,18 @@ import {
 import type { Cell } from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
-import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS } from "./routes.ts";
+import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
+import {
+  pinFromRun,
+  pinStep,
+  retryRun,
+  runRows,
+  runsOf,
+  runView,
+  startRun,
+  undoAutomationRun,
+  unpinStep,
+} from "./runs.ts";
 import {
   automationView,
   createAutomation,
@@ -77,7 +88,7 @@ const id = {
 /** The zone «hoy» is in when the hand brings none: the server's default (agent.ts `tz`). */
 const DEFAULT_ZONE = "Europe/Madrid";
 const undoOf = (name: string) => ({
-  none: (AUTOMATION_ACTIONS[name] ?? PUBLISH_ACTIONS[name])?.undo ?? "",
+  none: (AUTOMATION_ACTIONS[name] ?? PUBLISH_ACTIONS[name] ?? RUN_ACTIONS[name])?.undo ?? "",
 });
 /** A version's number, given as text in a query or as a number in a body; absent is undefined. */
 const numberOf = (v: Val | undefined): number | undefined => {
@@ -99,13 +110,17 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version)",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset)",
     args: {
       id,
       part: {
         role: "option",
-        describe: "view (the default), rows, sample, preview, publish, versions or version",
+        describe:
+          "view (the default), rows, sample, preview, publish, versions, version, runs, run or runRows",
       },
+      run: { role: "option", describe: "run and runRows: the run's id" },
+      filter: { role: "option", describe: "runs: all (the default), failed or tests" },
+      before: { role: "option", describe: "runs: the id of the last run of the page before" },
       version: { role: "option", describe: "publish and version: a version's number" },
       step: { role: "option", describe: "rows, sample and preview: the step's id" },
       side: { role: "option", describe: "rows: in or out" },
@@ -127,6 +142,31 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
         const n = numberOf(a.version);
         if (n === undefined) throw new ToolError("bad-argument");
         return leaf(answer(versionOf(s.store, automation, n)) as never, code);
+      }
+      if (part === "runs") {
+        const before = textOf(a.before);
+        return leaf(
+          answer(
+            runsOf(s.store, automation, {
+              filter: textOf(a.filter) ?? "all",
+              ...(before ? { before } : {}),
+            }),
+          ) as never,
+          code,
+        );
+      }
+      if (part === "run")
+        return leaf(answer(runView(s.store, automation, textOf(a.run) ?? "")) as never, code);
+      if (part === "runRows") {
+        const offset = a.offset ? plain(a.offset) : 0;
+        if (typeof offset !== "number") throw new ToolError("bad-argument");
+        const at = {
+          step: textOf(a.step) ?? "",
+          side: textOf(a.side) ?? "",
+          name: textOf(a.name) ?? "",
+          offset,
+        };
+        return leaf(answer(runRows(s.store, automation, textOf(a.run) ?? "", at)) as never, code);
       }
       const step = textOf(a.step);
       if (!step) throw new ToolError("bad-argument");
@@ -360,6 +400,106 @@ export function withPublishActions(r: ToolRegistry): ToolRegistry {
       if (typeof on !== "boolean") throw new ToolError("bad-argument");
       return leaf(
         answer(setEnabled(s.store, idOf(a.id), on, { ...hand(s), trust: s.trust })) as never,
+        code,
+      );
+    },
+  });
+  return r;
+}
+
+/** The hand of a run's touch: his device's trust, which `runAction` gives, and his zone. */
+const runHand = (s: HandService) => {
+  if (!s.trust) throw new ToolError("not-available");
+  return { ...hand(s), trust: s.trust, zone: s.zone ?? DEFAULT_ZONE };
+};
+
+/**
+ * «Ejecutar» and «Reintentar», «Deshacer lo que hizo», «Fijar» and «Abrir en el editor con estos datos» (F14d S2:
+ * AU-97, AU-18, AU-100, AU-93; runs.ts). Juan's touch, from a personal device only (decision 13). Not in the
+ * registry yet: the repo's checks want each registered action's control in the app (actions.test.ts), and those
+ * controls are the screens' (P1, P2). Their PR calls this beside `withAutomationActions` and adds `RUN_ROUTES` to
+ * `ROUTES`, `ROUTE_ACTIONS`, `ROUTE_RUNS` and http.ts with the controls.
+ */
+export function withRunActions(r: ToolRegistry): ToolRegistry {
+  r.register({
+    name: "automations.run",
+    icon: "Play",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.run"),
+    title: "Ejecutar automatización",
+    describe:
+      "Run an automation's published version for real, from a trigger with the fields Juan typed; it answers at once with the run, which goes on in the server. With retry (a run's id), run again with that run's trigger and fields and the version published now; with undo too, undo what that run saved first",
+    args: {
+      id,
+      trigger: { role: "option", describe: "the trigger's step id it starts in" },
+      fields: { role: "definition", describe: "what that trigger asks, by field key" },
+      retry: { role: "option", describe: "«Reintentar»: the id of the run to repeat" },
+      undo: { role: "option", describe: "with retry, «Deshacer y reintentar»: true" },
+    },
+    async run(c, a) {
+      const s = handOf(c.service);
+      const h = runHand(s);
+      const retry = textOf(a.retry);
+      if (retry) {
+        const undo = a.undo ? plain(a.undo) : false;
+        if (typeof undo !== "boolean") throw new ToolError("bad-argument");
+        return leaf(answer(await retryRun(s.store, idOf(a.id), retry, { undo }, h)) as never, code);
+      }
+      const fields = a.fields ? plain(a.fields) : null;
+      const request = { trigger: textOf(a.trigger) ?? "", fields: fields as Record<string, Cell> };
+      return leaf(answer(await startRun(s.store, idOf(a.id), request, h)) as never, code);
+    },
+  });
+  r.register({
+    name: "automations.undo_run",
+    icon: "Undo2",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.undo_run"),
+    title: "Deshacer lo que hizo una ejecución",
+    describe:
+      "Undo everything one run of an automation saved, in one go, or nothing: when a row changed since, it says which",
+    args: { id, run: { role: "option", required: true, describe: "the run's id" } },
+    run(c, a) {
+      const s = handOf(c.service);
+      return leaf(
+        answer(undoAutomationRun(s.store, idOf(a.id), idOf(a.run), runHand(s))) as never,
+        code,
+      );
+    },
+  });
+  r.register({
+    name: "automations.pin",
+    icon: "Pin",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.pin"),
+    title: "Fijar la salida de un paso",
+    describe:
+      "Pin a step's last tested output on the draft, so tests take it instead of running the step (step); with off, release it; with run, pin the output the trigger gave in that run",
+    args: {
+      id,
+      step: { role: "option", describe: "the step's id" },
+      off: { role: "option", describe: "true: release the pin" },
+      run: { role: "option", describe: "«Abrir en el editor con estos datos»: the run's id" },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      const h = runHand(s);
+      const automation = idOf(a.id);
+      const run = textOf(a.run);
+      if (run) return leaf(answer(pinFromRun(s.store, automation, run, h)) as never, code);
+      const step = idOf(a.step);
+      const off = a.off ? plain(a.off) : false;
+      if (typeof off !== "boolean") throw new ToolError("bad-argument");
+      return leaf(
+        answer(
+          off ? unpinStep(s.store, automation, step, h) : pinStep(s.store, automation, step, h),
+        ) as never,
         code,
       );
     },
