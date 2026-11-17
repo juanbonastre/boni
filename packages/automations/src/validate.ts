@@ -17,6 +17,7 @@ import {
   outputsOf,
   type ParamSpec,
   paramsOf,
+  peopleStep,
   readerStep,
   resultName,
   stepType,
@@ -52,6 +53,7 @@ import {
   readCode,
   type Span,
 } from "./javascript.ts";
+import { ASK_LIMITS, ASK_PARAMS, ASK_TYPE } from "./people.ts";
 import type { Cell } from "./rows.ts";
 import { notAllowed, writesOf } from "./writes.ts";
 
@@ -127,6 +129,11 @@ export interface ValidationContext {
    * `step.unknownType`, as «Código» is without a box.
    */
   ai?: boolean;
+  /**
+   * Juan can be asked and told (`RunDeps.people`, F15 E4): «Preguntar», «Avisar» and «Responder» are step types.
+   * Without it they are `step.unknownType`.
+   */
+  people?: boolean;
 }
 
 /**
@@ -149,7 +156,9 @@ export function validate(
   const code = isCodeContext(context) ? context : undefined;
   /** A type it knows besides «Código»: the catalogue's, and the readers' when a model can be called. */
   const typed = (s: Step) =>
-    !!stepType(s.type) || (!!context.ai && (!!readerStep(s.type) || s.type === AGENT_TYPE));
+    !!stepType(s.type) ||
+    (!!context.ai && (!!readerStep(s.type) || s.type === AGENT_TYPE)) ||
+    (!!context.people && !!peopleStep(s.type));
   const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
     problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
 
@@ -214,6 +223,7 @@ export function validate(
     }
     new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
     if (step.type === AGENT_TYPE) agentParams(step, add, code !== undefined);
+    if (step.type === ASK_TYPE) askParams(step, add);
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
     );
@@ -256,6 +266,37 @@ export function validate(
 }
 
 type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
+
+/**
+ * What a «Preguntar» takes beyond its controls (AU-125): «Límite de espera» a whole number of days from 1 to
+ * `ASK_LIMITS.waitDays.max`, and fixed options a list of distinct texts, at least one (an expression is checked when
+ * the run resolves it).
+ */
+function askParams(step: Step, add: Add): void {
+  const at = { step: step.id };
+  const days = step.params[ASK_PARAMS.waitDays];
+  if (
+    typeof days === "number" &&
+    !(Number.isInteger(days) && days >= 1 && days <= ASK_LIMITS.waitDays.max)
+  )
+    add("param.value", { ...at, param: ASK_PARAMS.waitDays });
+  const answer = step.params[ASK_PARAMS.answer];
+  const options = step.params[ASK_PARAMS.options];
+  if (
+    (answer === "one" || answer === "several") &&
+    options !== undefined &&
+    !isExpr(options) &&
+    !optionsOk(options)
+  )
+    add("param.value", { ...at, param: ASK_PARAMS.options });
+}
+
+/** Fixed options of a question: distinct texts that are not blank, at least one. */
+export const optionsOk = (v: unknown): v is string[] =>
+  Array.isArray(v) &&
+  v.length > 0 &&
+  v.every((o) => typeof o === "string" && o.trim() !== "") &&
+  new Set(v).size === v.length;
 
 /**
  * What an «Agente» takes beyond its controls (AU-51, AU-53, AU-58): «Rondas máximas» a whole number from 1 to

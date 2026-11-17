@@ -559,9 +559,29 @@ describe("the policy for an automation's AI steps (F15)", () => {
         yes: true,
         reach: reach(CREATE, { cells: only({ create: { fields: ["titulo"], fixed: ["nota"] } }) }),
       }),
+      // Decision 18: a field fixed under «Modificar» is within its reach, as under «Crear».
+      agent(UPDATE, user, {
+        yes: true,
+        reach: reach(UPDATE, { cells: only({ update: { fields: ["titulo"], fixed: ["nota"] } }) }),
+      }),
       agent(TRASH, null, { yes: true, rows: 2, reach: reach(TRASH, { written: 18 }) }),
     ];
     for (const c of fine) expect(ruled(c), c.tool?.name).toBe("allow P28");
+    // And a field neither the AI decides nor the step fixes is outside it, for modify as for create.
+    for (const t of [UPDATE, CREATE])
+      expect(
+        ruled(
+          agent(t, user, {
+            yes: true,
+            reach: reach(t, {
+              cells: only({
+                [t === UPDATE ? "update" : "create"]: { fields: ["titulo"], fixed: ["importe"] },
+              }),
+            }),
+          }),
+        ),
+        t.name,
+      ).toBe("deny P29 outside-fields");
     expect(
       ruled(query({ byAgent: true, reach: reach(QUERY, { fields: ["titulo", "estado"] }) })),
     ).toBe("allow P1");

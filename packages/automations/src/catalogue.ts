@@ -26,6 +26,19 @@ import {
 } from "./ai.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
+import {
+  ASK_ANSWERS,
+  ASK_LIMITS,
+  ASK_PARAMS,
+  ASK_TYPE,
+  NO_ANSWER,
+  NOTIFY_PARAMS,
+  NOTIFY_TYPE,
+  NOTIFY_WHERE,
+  PEOPLE_MODES,
+  REPLY_PARAMS,
+  REPLY_TYPE,
+} from "./people.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
 
@@ -45,6 +58,8 @@ export const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 export type Category = (typeof CATEGORIES)[number];
 /** The AI steps' group (F15). Not in `CATEGORIES` yet: the editor's panel offers them from P2 on. */
 export const AI_CATEGORY = "ai";
+/** «Personas» (F15 E4): «Preguntar», «Avisar» and «Responder». Not in `CATEGORIES` yet either: P2 offers them. */
+export const PEOPLE_CATEGORY = "people";
 
 /**
  * The controls every step is made of (AU-80). Seven of the nine: F14c adds the code editor and the connections'
@@ -131,7 +146,7 @@ export interface ActionSpec {
 
 export interface StepTypeSpec {
   type: string;
-  category: Category | typeof AI_CATEGORY;
+  category: Category | typeof AI_CATEGORY | typeof PEOPLE_CATEGORY;
   /** Its inputs: none for a trigger, `MAIN` for the rest, two with names for «Combinar» (AU-124). */
   inputs: readonly string[];
   /** Parameters every action shares, painted first («Colección»: the collection, AU-120). */
@@ -1143,20 +1158,142 @@ const AGENT_PER_ROW: ActionSpec = {
   pairs: true,
 };
 
+/** «Una vez por fila», behind «Añadir opción» (AU-125, AU-201): it gives the step its mode (`actionOf`). */
+const PEOPLE_MODE: ParamSpec = {
+  key: ASK_PARAMS.mode,
+  control: "choice",
+  options: PEOPLE_MODES,
+  place: "option",
+  shape: true,
+  default: "all",
+};
+/**
+ * «Preguntar» (AU-125, F15 E4): reachable by its type, only with `ValidationContext.people`. Its three shown
+ * parameters; the options only for «Una opción» and «Varias opciones», fixed or from an expression that gives the list.
+ * Two outputs: the row with its answer, and «sin respuesta». Its effect is `none`: it asks Juan, and the engine waits.
+ */
+const ASK_ACTION: ActionSpec = {
+  key: RUN,
+  effect: "none",
+  destroys: false,
+  mode: "all",
+  pairs: true,
+  outputs: [MAIN, NO_ANSWER],
+  params: [
+    { key: ASK_PARAMS.question, control: "value", of: "text", place: "shown", required: true },
+    {
+      key: ASK_PARAMS.answer,
+      control: "choice",
+      options: ASK_ANSWERS,
+      place: "shown",
+      shape: true,
+      default: "yesNo",
+    },
+    {
+      key: ASK_PARAMS.options,
+      control: "value",
+      of: "any",
+      place: "shown",
+      required: true,
+      when: { param: ASK_PARAMS.answer, in: ["one", "several"] },
+    },
+    {
+      key: ASK_PARAMS.waitDays,
+      control: "value",
+      of: "number",
+      place: "shown",
+      shape: true,
+      default: ASK_LIMITS.waitDays.born,
+    },
+    PEOPLE_MODE,
+  ],
+};
+const ASK_STEP: StepTypeSpec = {
+  type: ASK_TYPE,
+  category: PEOPLE_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [ASK_ACTION],
+};
+const ASK_PER_ROW: ActionSpec = { ...ASK_ACTION, mode: "perRow" };
+/**
+ * «Avisar» (AU-201): **Texto**, and behind «Añadir opción» «Una vez por fila» and «Dónde» (decision 17 of §10). No
+ * parameter names a recipient: a notice goes to Juan, on the devices «Dónde» names from a closed list fixed in the
+ * step (P2, P14). The rows pass on as they came.
+ */
+const NOTIFY_ACTION: ActionSpec = {
+  key: RUN,
+  effect: "none",
+  destroys: false,
+  mode: "all",
+  pairs: true,
+  outputs: [MAIN],
+  params: [
+    { key: NOTIFY_PARAMS.text, control: "value", of: "text", place: "shown", required: true },
+    PEOPLE_MODE,
+    {
+      key: NOTIFY_PARAMS.where,
+      control: "choice",
+      options: NOTIFY_WHERE,
+      place: "option",
+      shape: true,
+      default: "all",
+    },
+  ],
+};
+const NOTIFY_STEP: StepTypeSpec = {
+  type: NOTIFY_TYPE,
+  category: PEOPLE_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [NOTIFY_ACTION],
+};
+const NOTIFY_PER_ROW: ActionSpec = { ...NOTIFY_ACTION, mode: "perRow" };
+/** «Responder» (AU-202): **Respuesta**, once per run of the step; no recipient either. The rows pass on. */
+const REPLY_STEP: StepTypeSpec = {
+  type: REPLY_TYPE,
+  category: PEOPLE_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "all",
+      pairs: true,
+      outputs: [MAIN],
+      params: [
+        { key: REPLY_PARAMS.text, control: "value", of: "text", place: "shown", required: true },
+      ],
+    },
+  ],
+};
+/** The spec of a «Personas» step's type, or undefined. */
+export const peopleStep = (type: string): StepTypeSpec | undefined =>
+  type === ASK_TYPE
+    ? ASK_STEP
+    : type === NOTIFY_TYPE
+      ? NOTIFY_STEP
+      : type === REPLY_TYPE
+        ? REPLY_STEP
+        : undefined;
+
 /** The spec of a reader step's type, or undefined. */
 export const readerStep = (type: string): StepTypeSpec | undefined =>
   isReaderType(type) ? READER_STEPS[type] : undefined;
 
 /**
- * A type the engine can run by its key: the catalogue's, «Código» (the editor's panel adds it, adding.ts), or a reader
- * (F15: validation lets them in only with `ValidationContext.ai`).
+ * A type the engine can run by its key: the catalogue's, «Código» (the editor's panel adds it, adding.ts), a reader or
+ * the «Agente» (F15: validation lets them in only with `ValidationContext.ai`), or a «Personas» step (only with
+ * `ValidationContext.people`).
  */
 export const specOf = (type: string): StepTypeSpec | undefined =>
   type === CODE_TYPE
     ? CODE_STEP
     : type === AGENT_TYPE
       ? AGENT_STEP
-      : (stepType(type) ?? readerStep(type));
+      : (stepType(type) ?? readerStep(type) ?? peopleStep(type));
 
 /**
  * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when
@@ -1165,6 +1302,10 @@ export const specOf = (type: string): StepTypeSpec | undefined =>
 export function actionOf(step: Step): ActionSpec | undefined {
   if (step.type === CODE_TYPE && step.params[CODE_PARAMS.mode] === "perRow") return CODE_PER_ROW;
   if (step.type === AGENT_TYPE && step.params[AGENT_PARAMS.mode] === "perRow") return AGENT_PER_ROW;
+  if (step.params[ASK_PARAMS.mode] === "perRow") {
+    if (step.type === ASK_TYPE) return ASK_PER_ROW;
+    if (step.type === NOTIFY_TYPE) return NOTIFY_PER_ROW;
+  }
   const spec = specOf(step.type);
   if (!spec) return undefined;
   if (spec.actions.length === 1) return spec.actions[0];

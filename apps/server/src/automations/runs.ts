@@ -34,6 +34,7 @@ import {
   type Box,
   type Cell,
   type Execution,
+  endedState,
   executionOrder,
   parseAutomation,
   type StartedBy,
@@ -482,7 +483,7 @@ async function execute(
   keepAsked(store, run, result.asked);
   // What it asked is one proposal in the inbox, for Juan to accept or reject (AU-193).
   if (result.asked.length) proposeRun(store, id, run, result.asked);
-  const state = result.state;
+  const state = endedState(result);
   store.journal.endAutomationRun(run, {
     state,
     ended,

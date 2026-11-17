@@ -976,8 +976,10 @@ interface Connection {
   de su conexión (decisión 16 del §10). La prueba: `packages/agent/test/automation-ai.test.ts`.
   Hecho en E1: en `decide`, P29 (AU-205) niega la llamada de un paso de IA fuera de su conexión, y P2 y P14 van
   antes: un destino de fuera se niega por ellas aunque la conexión diga «Sí»; lo que se guarda con «Sí» lo deja P28,
-  no la celda. Falta: que una colección privada no salga entre las que se conectan a un paso de IA (P1) y los pasos
-  sin destinatario, «Avisar» y «Responder» (E4).
+  no la celda. Hecho en E4: «Avisar», «Responder» y «Preguntar» no tienen destinatario (ningún parámetro nombra a
+  quién; «Dónde» es una lista cerrada de sus dispositivos, nunca una expresión), y lo de fuera en su texto no cambia
+  a dónde va (`people.test.ts`). Falta: que una colección privada no salga entre las que se conectan a un paso de IA
+  (P1).
 - **AU-46** (F14c, hecho) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
@@ -2228,7 +2230,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
 - **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
   con todas. Solo hace falta para cruzar; para juntar ramas, no (AU-11).
-- **AU-125** (F15, pendiente) · «Preguntar» pregunta a Juan (opciones o texto). En segundo plano espera con un
+- **AU-125** (F15, en parte) · «Preguntar» pregunta a Juan (opciones o texto). En segundo plano espera con un
   «Límite de espera» a la vista; nunca espera para siempre.
   En la F15: enseña tres cosas. **Pregunta** (texto, con expresiones). **Respuesta**: «Sí o no», «Una opción»,
   «Varias opciones» o «Texto», con las opciones fijas o de una expresión que da la lista; son los controles que la
@@ -2242,19 +2244,43 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   cuando elige una. Es lo que quedaba abierto de «las preguntas por paso y la Bandeja como paso» y de «contestar
   preguntas» de una función (tareas 83 y 93 de la cola). Cómo espera lo dice AU-203. La prueba:
   `packages/automations/src/people.test.ts` y `e2e-boni/automations-ai.spec.ts`.
-- **AU-201** (F15, pendiente) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, a la
-  app y al móvil, por el `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a
-  quién (P2, P14). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
+  Hecho en E4: el paso `ask` en el motor (`people.ts`, `catalogue.ts`, `engine.ts`), alcanzable solo con su puerto
+  (`ValidationContext.people`, `RunDeps.people`; sin él es `step.unknownType`). Sus tres parámetros a la vista y
+  «Una vez por fila» detrás de una opción; la validación da `param.value` a un límite que no es un número entero de
+  1 a 30 y a unas opciones fijas vacías, en blanco o repetidas. Sus dos salidas, `main` con `respuesta` y
+  `noAnswer`. Pregunta una vez con todas las filas o una por fila, y con más de 20 falla antes de hacer ninguna
+  (`ask.questions`); unas opciones de una expresión que no dan una lista de textos fallan (`ask.options`). La
+  pregunta guarda su texto tal cual, plano, con la etiqueta de lo que cita, y cada opción la suya. Una respuesta que
+  no encaja con su pregunta se niega antes de seguir (`answerFits`, `CannotRun`); la escrita lleva la etiqueta de su
+  mano, la elegida la de la opción y «Sí o no» la de la automatización. Falta: la tarjeta en la Bandeja y quién da
+  la mano de la respuesta (S2), y el paso en el lienzo, sus palabras (también las que dicen que la ejecución acabó
+  sin respuesta: hoy su registro dice `ended: "noAnswer"`) y la prueba e2e (P2).
+- **AU-201** (F15, en parte) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, por el
+  `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a quién (P2, P14). Detrás
+  de «Añadir opción», **Dónde**: «En el ordenador y el móvil» (nace así), «Solo en el ordenador» o «Solo en el
+  móvil»; es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
+  que guarda sola una ejecución no avisa, y un aviso es este paso). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
   los junta («y 12 más»). El texto se pinta plano, recortado a 300 caracteres, y tocarlo abre su ejecución. En una
   prueba dice «Avisaría…» y no manda nada. No es el aviso de AU-102 (el de un fallo, que manda Boni): este lo pone
   Juan en su grafo. La prueba: `packages/automations/src/people.test.ts`.
-- **AU-202** (F15, pendiente) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
+  Hecho en E4: el paso `notify` en el motor, con `text`, `mode` y `where` y ningún otro parámetro; `where` es una
+  elección de `all`, `desktop` o `phone`, y una expresión o cualquier otro valor no pasa la validación
+  (`param.shape`, `param.value`). Manda por `PeoplePort.notify` un aviso por ejecución con las filas, que siguen; por
+  fila, 5 y uno que dice cuántos más (`more`, las palabras son de la app), cada texto recortado a 300 caracteres por
+  puntos de código. El texto es el del paso tal cual, plano, con la etiqueta de lo que cita, y lo de fuera no cambia
+  a dónde va. En una prueba no manda nada y su registro dice lo que mandaría (`notices`, `sent: false`). Falta: el
+  `notify` del servidor con «Dónde» y que tocarlo abra su ejecución (S2), y el paso en el lienzo y «Avisaría…» (P2).
+- **AU-202** (F15, en parte) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
   respuesta de la ejecución, que se ve donde se inició: en la F15, en el panel de «Ejecutar» y de «Probar» y en la
   línea de la ejecución (sus primeros 200 caracteres); con el disparador de chat será el mensaje (F16), y en una
   página, lo que enseña su bloque (F17). Una ejecución tiene una respuesta: la del último «Responder» que corrió. Se
   pinta plana y conserva la etiqueta de lo que cita. En una ejecución que empezó sola se queda en la ejecución: no
   es un aviso. La prueba: `packages/automations/src/people.test.ts`.
-- **AU-203** (F15, pendiente) · Una ejecución que pregunta espera sin estorbar y nunca para siempre. Al llegar a un
+  Hecho en E4: el paso `reply` en el motor, con `text` y nada más, una vez con todas las filas, que siguen. La
+  ejecución guarda `reply` (el paso, el texto entero y plano, la etiqueta de lo que cita): la del último que corrió,
+  también a través de una espera. Ninguno manda un aviso, tampoco en una ejecución que empezó sola. Falta: enseñarla
+  en el panel de «Ejecutar» y de «Probar» y en la línea de la ejecución (P2, con `REPLY_LINE`).
+- **AU-203** (F15, en parte) · Una ejecución que pregunta espera sin estorbar y nunca para siempre. Al llegar a un
   «Preguntar», el motor termina lo que no depende de la respuesta y la ejecución queda «Esperando» («Esperando tu
   respuesta · hasta mañana a las 9:40»), con su tarjeta en la Bandeja. Mientras espera:
   - Suelta su turno: las ejecuciones siguientes de esa automatización corren, y como mucho 20 esperan a la vez por
@@ -2277,6 +2303,20 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   la ejecución, cancela la espera («Cancelada»). En «Probar» la pregunta sale en el panel de la prueba y se contesta
   allí: no va a la Bandeja. La prueba: `packages/automations/src/people.test.ts` y
   `apps/server/src/automations/ai.test.ts`.
+  Hecho en E4, en el motor: al llegar a un «Preguntar» termina lo que no depende de la respuesta, el paso queda
+  `waiting` y los que siguen detrás de él por sus flechas, `queued` sin filas ni avisos; la ejecución acaba
+  `waiting`, con `waits` (el límite más cercano y lo que contó). Varias preguntas esperan a la vez, y un fallo para
+  lo que espera. `resume` sigue con lo guardado, leído otra vez como tras un reinicio: solo la misma versión, el
+  mismo disparador, un paso que espera y respuestas que encajan (si no, `CannotRun`); no vuelve a correr lo hecho,
+  `$('X').item` sigue emparejando, sin respuesta y dentro del límite sigue esperando, y pasado el límite sale por
+  `noAnswer` aunque llegue una respuesta. El tiempo de la ejecución suma lo que corrió antes y después, no la espera;
+  filas escritas y llamadas a modelos se cuentan juntas («Como mucho» es de cada paso, que corre a un solo lado de
+  la espera). Como mucho 20 esperando por automatización (`ask.waiting`, que una prueba no cuenta) y 2 MB de lo
+  guardado, medido cuando ya corrió todo lo que no depende de la respuesta (`ask.kept`, sin preguntar). Falta, del servidor
+  (S2): soltar el turno y seguir en el suyo, guardarlo en el almacén del usuario y podarlo, el reinicio, el
+  planificador de límites vencidos, la tarjeta y «Ya no vale», cancelar, el «Sí» más bajo al seguir (con AU-210), y
+  la propuesta junta al terminar; de la pantalla (P2), «Esperando tu respuesta» y la pregunta en el panel de la
+  prueba.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -3323,6 +3363,21 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       de guardar, la celda dice «Sí · en pausa», y un aviso lo cuenta una vez con «Quitar pausa». La versión
       publicada no cambia y la pausa solo baja. La otra: solo el aviso, y las ejecuciones seguirían guardando hasta
       que él bajara la celda. Prueba: `learning.test.ts` (AU-210, S3 de la F15).
+17. **Lo que guarda sola una ejecución no avisa; un aviso es el paso «Avisar», y dice dónde.** La tarea 129 preguntó
+    si una ejecución que empezó sola (una «Programada») y guardó algo debía avisarle. **Juan, 2026-11-17:
+    «dependeria de si la automatizacion tiene una salida que vaya por avisos en escritorio, moviles o lo que sea».**
+    Así que:
+    - Lo que guardó sola no salta en ningún sitio: se ve en su línea de «Ejecuciones» con «Deshacer», como lo
+      construyó S4 de la F14d (AU-167). La otra respuesta era «un aviso cada vez que una ejecución programada guarda,
+      sin que la automatización lo pida».
+    - Si él quiere enterarse, pone un «Avisar» en el grafo, y ese aviso lleva **Dónde** detrás de «Añadir opción»:
+      «En el ordenador y el móvil» (nace así), «Solo en el ordenador» o «Solo en el móvil» (AU-201). Son sus
+      dispositivos, nunca uno que se nombre: es una lista cerrada fija en el paso, no una expresión, así que ni algo
+      de fuera ni un modelo elige a dónde va.
+    - El aviso de un fallo de una automatización que corre sola no cambia: lo manda Boni una vez por racha (AU-102,
+      decisión 12).
+    Prueba: `people.test.ts` («AU-201 · «Avisar» has no recipient parameter…» y «AU-201 · in a test it says what it
+    would notify…»).
 
 18. **Un «Agente» que modifica filas puede llevar valores fijos, como al crear.** El segundo PR de E3 de la F15
     (tarea 129) preguntó: «Cuando un paso «Agente» modifica filas, ¿quieres poder fijar tú el valor de un campo?».
