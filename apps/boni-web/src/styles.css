@@ -13306,6 +13306,15 @@ button.auto-log-line {
 .auto-publish {
   white-space: nowrap;
 }
+/* At 900 px «Publicar» was cut to «Publica»: what follows the name keeps its width and only the name gives way. */
+.auto-head > .auto-saved,
+.auto-head > .auto-published,
+.auto-head > .auto-switch,
+.auto-head > .auto-publish,
+.auto-head > .auto-run-phone,
+.auto-head > .icon-btn {
+  flex-shrink: 0;
+}
 .modal.auto-pub {
   width: min(600px, 92vw);
 }
