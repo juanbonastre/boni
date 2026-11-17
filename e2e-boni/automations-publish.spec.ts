@@ -40,6 +40,7 @@ const CAN = [
   { collection: "libros", action: "create", how: "saves", steps: ["s_01jcrear"] },
 ];
 
+const SHOTS = "e2e-boni/screenshots";
 const head = (page: Page) => page.locator(".auto-head");
 const published = (page: Page) => head(page).locator(".auto-published");
 const publishButton = (page: Page) =>
@@ -473,7 +474,7 @@ test.describe("the header and «Publicar»", () => {
 
 test.describe("the header on a phone", () => {
   test.use({ hasTouch: true, isMobile: true });
-  test("AU-95 AU-74 AU-97 · on the phone the header has neither «Publicar» nor the switch: it is looked at, tested and, published, run there", async ({
+  test("AU-95 AU-74 AU-97 AU-194 · on the phone the header has no «Publicar» and has the switch (decision 15): it is looked at, tested, turned off or on and, published, run there", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 360, height: 740 });
@@ -486,11 +487,34 @@ test.describe("the header on a phone", () => {
     await page.getByText(PUBLISHED.name, { exact: true }).first().tap();
     await expect(head(page).locator(".auto-name")).toHaveText(PUBLISHED.name);
     await expect(publishButton(page)).toHaveCount(0);
-    await expect(toggle(page)).toHaveCount(0);
     await expect(head(page).getByRole("button", { name: "Más" })).toHaveCount(0);
+    // The switch, whole and in sight: off and on again, by the action the desktop's uses.
+    await expect(head(page).locator(".auto-switch")).toContainText("Encendida");
+    await expect(toggle(page)).toHaveAttribute("data-boni-action", "automations.enable");
+    await toggle(page).tap();
+    await expect(head(page).locator(".auto-switch")).toContainText("Apagada");
+    await toggle(page).tap();
+    await expect(head(page).locator(".auto-switch")).toContainText("Encendida");
+    expect(await sent(page, `PUT api/agent/automations/${PUBLISHED.id}/enabled `)).toEqual([
+      { enabled: false },
+      { enabled: true },
+    ]);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true);
+    const out = await head(page).evaluate((h) => {
+      const box = h.getBoundingClientRect();
+      // What sticks out of the header, by its class: a hidden one (the spacer) has no box.
+      return [...h.children]
+        .filter((c) => c.getBoundingClientRect().width > 0)
+        .filter((c) => {
+          const r = c.getBoundingClientRect();
+          return r.left < box.left - 1 || r.right > box.right + 1;
+        })
+        .map((c) => c.className);
+    });
+    await page.screenshot({ path: `${SHOTS}/phone-automation-switch.png` });
+    expect(out).toEqual([]);
     // «Ejecutar», with its trigger's «Mínimo» asked in the box of «Probar».
     await head(page).getByRole("button", { name: "Ejecutar" }).tap();
     await screen(page).getByLabel("Mínimo").pressSequentially("250", { delay: 60 });

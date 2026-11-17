@@ -68,6 +68,8 @@ export interface Tester {
   }) => Promise<ExprPreview | null>;
   /** «Fijar» and «Soltar» (AU-93): the step's last tested output, pinned on the draft or let go. None in a run. */
   pin?: (step: string, on: boolean) => void;
+  /** A run's, not a test's: what a step gave is said as run («corrió hace 2 h»), never as tested. */
+  ran?: boolean;
 }
 export const TesterContext = createContext<Tester | null>(null);
 export const useTester = () => useContext(TesterContext);
@@ -687,7 +689,7 @@ export function StepOutput({
         />
       )}
       <p className="auto-out-foot muted small">
-        {t("auto.out.tested", {
+        {t(tester?.ran ? "auto.out.ran" : "auto.out.tested", {
           ago: agoWords(t, test.at, now),
           secs: secsWords(t, lang, test.ms),
         })}

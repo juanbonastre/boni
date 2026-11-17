@@ -1353,7 +1353,8 @@ que un paso espere a Juan.
   Hecho en D: «Probar paso» arriba a la derecha y «Falta: Colección» a su lado. Hecho en E: se pulsa, y mientras
   prueba dice «Probando…» al lado y no se puede pulsar (AU-91).
 - **AU-74** (F14b, hecho) · En una ventana estrecha, Entrada y Salida pasan a ser pestañas. En el teléfono las
-  automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan; no se editan (como hoy).
+  automatizaciones se ven y, desde que se pueden publicar (F14d), se ejecutan y se encienden o apagan (decisión 15);
+  no se editan ni se publican (como hoy).
   En la F14b: con menos de 1100 px de ancho la vista del paso tiene dos columnas, «Entrada | Salida» en pestañas a la
   izquierda y «Parámetros | Ajustes» a la derecha. En el teléfono (menos de 640 px, la disposición de teléfono de la
   app) la lista es la página de la colección de siempre, y una automatización abre su lienzo solo para ver: se mueve y
@@ -1370,6 +1371,9 @@ que un paso espere a Juan.
   botón derecho. En el teléfono el nombre de un parámetro va encima de su control, que ocupa todo el ancho. Sus
   capturas de referencia: «automatizaciones-estrecho», «automatizaciones-telefono» y
   «automatizaciones-telefono-paso».
+  Hecho en P2 de la F14d: en el teléfono, una automatización publicada lleva en su cabecera el interruptor
+  («Encendida» / «Apagada», la acción `automations.enable`) y «Ejecutar», bajo el nombre; sigue sin «Publicar» ni
+  «⋯». Probado a 360 px con los dedos: se apaga y se enciende, y nada se sale de la cabecera.
 
 **Contra el mar de opciones** (C2 y C8: cada regla con su prueba)
 
@@ -3043,6 +3047,26 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       compartido: una prueba no guarda nada, y desde él no se escribe un borrador, no se pone un «Sí», no se
       publica y no se fija (decisión 13), así que nada de lo que deja una prueba lleva esa etiqueta a una ejecución
       de verdad. Prueba: `runs.test.ts` («AU-94 · what Juan types for «Probar» on a shared device counts as his…»).
+15. **Un dispositivo compartido mira las ejecuciones; «Ejecutar» sin campos empieza enseguida; el teléfono enciende
+    y apaga.** La construcción de la F14d (S2 y P1, tareas 128) le dejó tres dudas, cada una con su ejemplo y las
+    dos salidas. A la pregunta «¿Aceptas las seis recomendaciones: tres de la fase de la IA y tres de
+    «Publicar»?», **Juan, 2026-11-17: «Sí, las seis».** Las tres de «Publicar» (las de la IA son la decisión 16):
+    - **Desde un dispositivo compartido se leen las ejecuciones; ejecutar, reintentar, deshacer y fijar piden uno
+      personal** (AU-97, AU-100, AU-18, AU-93; como se construyó en S2). En el ordenador del salón abre «Ejecuciones»
+      y ve cada ejecución y sus pasos; «Deshacer lo que hizo» dice «Solo desde un dispositivo personal.» y no
+      cambia nada. La otra: dejar que el compartido también actúe sobre ellas, y lo que hiciera ahí no sería de
+      nadie. Prueba: `automations-publish.spec.ts` («AU-188 · from a shared device a run is looked at…»).
+    - **«Ejecutar» en una automatización que no pide campos empieza enseguida, sin cuadro que confirme** (AU-97;
+      como se construyó en P1). «Repasar las tareas», sin «Campos que pide»: pulsar «Ejecutar» la inicia y lleva a
+      «Ejecuciones». La otra: un cuadro «¿Ejecutar ahora?» cada vez, un paso más que no dice nada nuevo. Prueba: la
+      de la app de escritorio, `e2e-boni-desktop/automations-publish.spec.ts` («AU-97 AU-99 AU-101 AU-18 · in the
+      desktop app over the real server…»), que pulsa «Ejecutar» y está en «Ejecuciones».
+    - **El teléfono enciende y apaga una automatización publicada** (AU-74, AU-194; cambia lo que se construyó en
+      P1). En el móvil, «Avisar de un pedido» dice «Encendida» en su cabecera y la apaga desde ahí, por
+      `automations.enable`, como en el ordenador; el teléfono es un dispositivo personal. Sigue sin editar ni
+      publicar. La otra: sin interruptor en el teléfono, y para apagarla tendría que ir al ordenador. Prueba:
+      `automations-publish.spec.ts` («AU-95 AU-74 AU-97 AU-194 · on the phone the header has no «Publicar» and has
+      the switch…»).
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 

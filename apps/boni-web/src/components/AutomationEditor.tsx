@@ -546,8 +546,8 @@ const SAVE_WORDS = {
 
 /**
  * Back, the name, «Guardado» with what runs (AU-62, AU-95), the switch once published (AU-194), «Publicar» and «⋯»
- * with «Ejecutar» (published), «Ajustes», Duplicar and Eliminar. On the phone, back and the name alone: there it is
- * looked at and tested, never changed (AU-74).
+ * with «Ejecutar» (published), «Ajustes», Duplicar and Eliminar. On the phone, the name, the switch and «Ejecutar»:
+ * there it is looked at, tested, run and turned off or on, never edited nor published (AU-74, decision 15).
  */
 function Header({
   state,
@@ -591,7 +591,7 @@ function Header({
   const pub = state && exists ? publishWord(state.draft, published) : null;
   const isPublished = published !== null && published.running !== null;
   return (
-    <header className="auto-head">
+    <header className={phone ? "auto-head phone" : "auto-head"}>
       {/* On the phone its own bar goes back. */}
       {!phone && (
         <button
@@ -673,7 +673,8 @@ function Header({
           ))}
         </div>
       )}
-      {exists && !phone && isPublished && (
+      {/* The switch is on the phone too (decision 15): turning it off or on changes no document. */}
+      {exists && isPublished && (
         <label className="toggle-row auto-switch">
           <input
             type="checkbox"
@@ -686,7 +687,7 @@ function Header({
           <span>{published.enabled ? t("flows.enabled") : t("flows.disabled")}</span>
         </label>
       )}
-      {/* AU-74: the phone looks, tests and, once published, runs; it neither edits nor publishes. */}
+      {/* AU-74: the phone looks, tests and, once published, runs and turns it off or on; it neither edits nor publishes. */}
       {exists && phone && isPublished && (
         <button
           type="button"

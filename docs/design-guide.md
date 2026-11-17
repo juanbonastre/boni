@@ -1164,7 +1164,9 @@ contraseña ni un código aquí» under a question.
   «· publicada la versión 4» (the draft is the document that runs) or «· cambios sin publicar» (in `--text`). Then,
   once published, the switch «Encendida» / «Apagada» (the app's `.switch`), and «Publicar», a small primary button
   with the upload icon. «⋯» gains «Ejecutar» (published only) and «Ajustes» above a separator, then Duplicar and
-  Eliminar. The phone shows none of them but «Ejecutar», a small button once published (AU-74: there it is looked at, tested and run, never edited or published). **«Publicar»** saves what is
+  Eliminar. The phone shows none of them but the switch and «Ejecutar», a small button, once published: the name has its
+  own line and they go under it, the tabs on the left and the switch and «Ejecutar» on the right (AU-74, decision 15:
+  there it is looked at, tested, run and turned off or on, never edited or published). **«Publicar»** saves what is
   owed, then opens a 600 px modal titled «Publicar «nombre»»: «Será la versión 5.» («Será la versión 1 y quedará
   encendida.» the first time); «Qué cambia respecto a la versión 4», one line per change (a step added or changed is
   a link that closes the modal and opens it); «Antes de publicar», what stops it first in `--bad`, then what is worth

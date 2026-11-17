@@ -13413,6 +13413,20 @@ button.auto-log-line {
 .auto-head > .auto-tabs {
   flex-shrink: 0;
 }
+/* On the phone (decision 15) the name has its own line; under it the tabs, the switch and «Ejecutar». */
+.auto-head.phone {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.auto-head.phone > .auto-name {
+  flex: 1 1 100%;
+}
+.auto-head.phone > .spacer {
+  display: none;
+}
+.auto-head.phone > .auto-switch {
+  margin-left: auto;
+}
 .auto-runs {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);

@@ -355,6 +355,7 @@ function RunDetail({
       rows: (at) => (offset) => client.runRows(id, runId, { ...at, offset }),
       sample: () => Promise.resolve(null),
       preview: () => Promise.resolve(null),
+      ran: true,
     }),
     [id, runId],
   );

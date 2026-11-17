@@ -177,7 +177,7 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
         params: {
           collection: "tarea",
           action: "create",
-          fields: [{ field: "titulo", value: "Repaso de ejemplo" }],
+          fields: [{ field: "nota", value: "Repaso de ejemplo" }],
           permission: "yes",
         },
       },
@@ -205,7 +205,15 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
     await expect(w.locator(".auto-card")).toHaveCount(3);
     // Published from its screen, then run from «⋯»: with no fields it starts at once.
     await head(w).getByRole("button", { name: "Publicar", exact: true }).click();
-    await w.locator(".auto-modal").getByRole("button", { name: "Publicar versión 1" }).click();
+    const modal = w.locator(".auto-modal");
+    const publish = modal.getByRole("button", { name: "Publicar versión 1" });
+    // What stops it, said, if something does: a disabled button alone says nothing.
+    await expect(publish)
+      .toBeEnabled({ timeout: 10_000 })
+      .catch(async () => {
+        throw new Error(`«Publicar» is stopped: ${await modal.innerText()}`);
+      });
+    await publish.click();
     await expect(head(w).locator(".auto-published")).toContainText("versión 1");
     await head(w).getByRole("button", { name: "Más" }).click();
     await w.getByRole("menuitemradio", { name: "Ejecutar", exact: true }).click();
@@ -220,7 +228,7 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
     // A step opened: what came out of it, asked then.
     const read = await timed(
       () => runCard(w, "s_01kx4buscar00").dblclick(),
-      () => expect(salida(w)).toContainText("3.000 filas", { timeout: 15_000 }),
+      () => expect(salida(w)).toContainText("3000 filas", { timeout: 15_000 }),
     );
     await w.keyboard.press("Escape");
     // Undone: the row it made goes, and the run says so.
@@ -298,7 +306,7 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
     await expect(runCard(w, "s_01kx4buscar00")).toBeVisible();
     const step = await timed(
       () => runCard(w, "s_01kx4buscar00").dblclick(),
-      () => expect(salida(w)).toContainText("3.000 filas", { timeout: 15_000 }),
+      () => expect(salida(w)).toContainText("3000 filas", { timeout: 15_000 }),
     );
     console.log(
       `F14d P2 at volume (ms): step of 3,000 rows ${read}; with ${HOURLY} runs: list ${list}, «Ver más» ${more}, a run ${open}, its step ${step}`,
