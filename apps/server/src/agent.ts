@@ -29,6 +29,7 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import { pruneAllRuns } from "./automations/keep.ts";
 import type { RunsService } from "./automations/proposal.ts";
 import { interruptRuns, onRunEvent } from "./automations/runs.ts";
 import { pressButton } from "./buttons.ts";
@@ -262,9 +263,22 @@ export class AgentHost {
       });
       ensureSystemTypes(s);
       ensurePresets(s);
+      // A run that started alone and failed tells once per streak, to the app and the phone; what one saved goes to
+      // the app only, with its last event (AU-102, AU-167, decision 12; automations/notices.ts).
+      onRunEvent(s, (e) => {
+        if (e.notice?.kind === "failed")
+          this.notify(account, e.notice.text, "own", { automation: e.automation, run: e.run });
+      });
       // A run of an automation still marked as running when its store is first opened was cut by a restart: it is
       // closed as interrupted and never run again (AU-190, decision 12). No run of this process can be in it yet.
       interruptRuns(s);
+      // What is no longer kept whole of each automation's runs goes, in short writes (AU-103, automations/keep.ts).
+      const pruning = s;
+      setImmediate(() =>
+        pruneAllRuns(pruning, Date.now(), () => this.stores.get(account) === pruning).catch((e) =>
+          console.error(`runs of account ${account}:`, e),
+        ),
+      );
       this.stores.set(account, s);
     }
     // Boni's «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with
@@ -546,8 +560,14 @@ export class AgentHost {
    * those connected now («notify» on GET /api/agent/events, the desktop app's) and, by UnifiedPush, to the phone
    * with Boni closed. The recipient is the code's, never an argument (docs/nucleo.md 7.9).
    */
-  notify(account: number, text: string, integrity: string): void {
-    this.emit(account, "notify", { text, integrity });
+  notify(
+    account: number,
+    text: string,
+    integrity: string,
+    /** The run it is about, so the app opens it (AU-102); the phone gets the text. */
+    about?: { automation: string; run: string },
+  ): void {
+    this.emit(account, "notify", { text, integrity, ...(about ? { about } : {}) });
     this.pushNotice?.(account, text);
   }
 

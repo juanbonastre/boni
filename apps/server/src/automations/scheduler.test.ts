@@ -2,12 +2,20 @@
 // AU-195, AU-102, and the notice of AU-167; phase F14d): the hours of a published automation, run once each by a tick
 // a minute, and one notice per run that wrote and per streak of failures. The rule's id is kept in each test's name
 // (`make check` reads them, T-10). A real store per test with collections shaped like the user's; the clock is the
-// test's, never the machine's, and a bound of time is read from `@boni/pace` (T-11). The notices are S4's.
+// test's, never the machine's, and a bound of time is read from `@boni/pace` (T-11). The notices are S4's
+// (notices.ts): what a run that started alone tells, kept with it, and only its failures reach the phone.
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type BoxAnswer, CODE_FAILURES, STEP_FAILURES } from "@boni/automations";
 import { clock, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, describe, expect, it } from "vitest";
+import { AgentHost } from "../agent.ts";
 import { lastSlot } from "../flowScheduler.ts";
+import { NOTICE_REASONS } from "./notices.ts";
 import { setEnabled } from "./publish.ts";
+import { newRunId } from "./record.ts";
 import {
   answering,
   boxOf,
@@ -26,16 +34,22 @@ import {
   SCHEDULE,
   START,
   scheduler,
+  seeded,
   ZONE,
 } from "./run.test-util.ts";
 import {
   interruptRuns,
+  missRun,
+  onRunEvent,
+  type RunEvent,
+  type RunSummary,
   retryRun,
   runRows,
   runsOf,
   runView,
   settled,
   startScheduledRun,
+  undoAutomationRun,
 } from "./runs.ts";
 import { testAutomation } from "./service.ts";
 
@@ -449,23 +463,243 @@ describe("«Programada» (F14d)", () => {
   }, 120_000);
 });
 
+/** A box whose «Código» throws this message: what a code that fails gives (code.threw). */
+const throwing = (message: string): BoxAnswer => ({
+  evaluations: [
+    { state: "failed", failure: { code: "code.threw", detail: { message } }, source: 0 },
+  ],
+  console: [],
+  dropped: 0,
+  ms: 1,
+});
+/** An automation at its hour whose «Código» answers as `box` says, at each hour it ticks. */
+function hourly(s: UserStore) {
+  let answer: BoxAnswer = answering();
+  const { box } = boxOf(() => answer);
+  const a = made(s, [SCHEDULE(), CODE("yes", "Calcular")]);
+  ok(a.publish());
+  const t = scheduler(s, ZONE, box);
+  let hour = 10;
+  return {
+    a,
+    box,
+    answer: (next: BoxAnswer) => {
+      answer = next;
+    },
+    /** The next hour ticks, and gives its run. */
+    async next() {
+      await t.at(at(hour++, 5));
+      return runs(s, a.id)[0] as RunSummary;
+    },
+  };
+}
+const told = (s: UserStore, id: string) =>
+  runs(s, id)
+    .reverse()
+    .map((r) => r.notice?.kind ?? null);
+
 describe("a failure that started alone (F14d)", () => {
-  it.todo(
-    "AU-102 · a run that started alone and failed notifies once, with the automation's name, the step's and the reason in the app's words, and the notice opens that run; one started by hand notifies nothing",
-  );
-  it.todo(
-    "AU-102 · three failures in a row give one notice; after a run that ends well, or a new published version, the next failure notifies again",
-  );
-  it.todo(
-    "AU-102 · the notice is written by code from closed lists: a code that throws a text with HTML or a link, or a row's value, leaves nothing of it in the notice",
-  );
-  it.todo(
-    "AU-102 · an interrupted run and an hour that did not run count as failures of the streak: the one that opens it notifies, and the next ones do not",
-  );
+  it("AU-102 · a run that started alone and failed notifies once, with the automation's name, the step's and the reason in the app's words, and the notice opens that run; one started by hand notifies nothing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-avisos-"));
+    const host = new AgentHost({ dataDir: dir, providers: null });
+    try {
+      const pushed: string[] = [];
+      host.pushNotice = (_account, text) => pushed.push(text);
+      const events: { event: string; data: unknown }[] = [];
+      host.subscribe(1, (event, data) => events.push({ event, data }));
+      const s = host.store(1);
+      seeded(s);
+      const h = hourly(s);
+      h.answer(throwing("se rompió"));
+      const r = await h.next();
+      expect(r).toMatchObject({ state: "failed", startedBy: "schedule" });
+      const text = "Revisar pedidos falló en «Calcular»: el código falló.";
+      expect(r.notice).toEqual({ kind: "failed", text });
+      // To the app (the stream's «notify», with the run it opens) and to the phone, once.
+      expect(events.filter((e) => e.event === "notify")).toEqual([
+        {
+          event: "notify",
+          data: { text, integrity: "own", about: { automation: h.a.id, run: r.id } },
+        },
+      ]);
+      expect(pushed).toEqual([text]);
+      // By hand it fails on its screen: no notice, and nothing to the phone. Nor does its retry tell.
+      const byHand = await ran(s, h.a.id, h.a.step("A su hora"), { date: at(11) }, { box: h.box });
+      expect(byHand).toMatchObject({ state: "failed", startedBy: "user", notice: null });
+      const retried = ok(await retryRun(s, h.a.id, r.id, {}, JUAN, h.box));
+      await settled(s);
+      const again = ok(runView(s, h.a.id, retried.run.id)).run;
+      expect(again).toMatchObject({
+        state: "failed",
+        startedBy: "schedule",
+        retryOf: r.id,
+        notice: null,
+      });
+      expect(pushed).toHaveLength(1);
+    } finally {
+      host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("AU-102 · three failures in a row give one notice; after a run that ends well, or a new published version, the next failure notifies again", async () => {
+    const s = files.store();
+    const h = hourly(s);
+    h.answer(throwing("roto"));
+    await h.next();
+    await h.next();
+    await h.next();
+    expect(told(s, h.a.id)).toEqual(["failed", null, null]);
+    // One that ends well closes the streak (it wrote, so it tells that instead).
+    h.answer(answering([], [{ action: "create", collection: "Pedido", fields: { nota: "bien" } }]));
+    expect((await h.next()).state).toBe("done");
+    h.answer(throwing("roto"));
+    await h.next();
+    await h.next();
+    expect(told(s, h.a.id)).toEqual(["failed", null, null, "wrote", "failed", null]);
+    // A new published version opens another streak.
+    h.a.edit([SCHEDULE(), CODE("yes", "Calcular otra vez")]);
+    ok(h.a.publish());
+    const r = await h.next();
+    expect(r.version).toBe(2);
+    expect(r.notice).toEqual({
+      kind: "failed",
+      text: "Revisar pedidos falló en «Calcular otra vez»: el código falló.",
+    });
+    expect(told(s, h.a.id).filter((k) => k === "failed")).toHaveLength(3);
+  });
+
+  it("AU-102 · the notice is written by code from closed lists: a code that throws a text with HTML or a link, or a row's value, leaves nothing of it in the notice", async () => {
+    const s = files.store();
+    const h = hourly(s);
+    const thrown = '<img src=x onerror="alert(1)"> https://ejemplo.example.com Comprar pan';
+    h.answer(throwing(thrown));
+    const r = await h.next();
+    expect(r.notice?.text).toBe("Revisar pedidos falló en «Calcular»: el código falló.");
+    // What it threw stays in the run's record for its screen, as plain text; never in the notice.
+    expect(r.error?.why).toMatchObject({ code: "code.threw", detail: { message: thrown } });
+    for (const bit of ["<", ">", "http", "ejemplo", "Comprar pan", "alert"])
+      expect(r.notice?.text).not.toContain(bit);
+    // «Parar con error»'s own words, which may cite a row, are not said either; every code has its reason.
+    expect(Object.values(NOTICE_REASONS).every((w) => !/[<>{}]|https?:/.test(w))).toBe(true);
+    expect(Object.keys(NOTICE_REASONS).sort()).toEqual([...STEP_FAILURES, ...CODE_FAILURES].sort());
+  });
+
+  it("AU-102 · an interrupted run and an hour that did not run count as failures of the streak: the one that opens it notifies, and the next ones do not", async () => {
+    const s = files.store();
+    const h = hourly(s);
+    const trigger = h.a.step("A su hora");
+    const notices: string[] = [];
+    onRunEvent(s, (e) => {
+      if (e.notice) notices.push(e.notice.text);
+    });
+    // An hour that did not run opens the streak.
+    expect(missRun(s, h.a.id, trigger, at(8))).toBe(true);
+    // A run cut by a restart, which had started alone: closed at start-up, it is a failure of the same streak.
+    s.journal.createAutomationRun({
+      id: newRunId(),
+      automation: h.a.id,
+      version: 1,
+      test: false,
+      state: "running",
+      trigger,
+      fields: JSON.stringify({ date: at(9) }),
+      startedBy: "schedule",
+      device: null,
+      retryOf: null,
+      at: Date.now(),
+      started: Date.now(),
+      doc: null,
+      slot: at(9),
+    });
+    interruptRuns(s);
+    h.answer(throwing("roto"));
+    await h.next();
+    expect(told(s, h.a.id)).toEqual(["failed", null, null]);
+    expect(notices).toEqual(["Revisar pedidos no corrió a su hora: Boni estaba apagado."]);
+    // After one that ends well, an interrupted run opens a streak and says so.
+    h.answer(answering());
+    await h.next();
+    const cut = newRunId();
+    s.journal.createAutomationRun({
+      id: cut,
+      automation: h.a.id,
+      version: 1,
+      test: false,
+      state: "running",
+      trigger,
+      fields: JSON.stringify({ date: at(12) }),
+      startedBy: "schedule",
+      device: null,
+      retryOf: null,
+      at: Date.now(),
+      started: Date.now(),
+      doc: null,
+      slot: at(12),
+    });
+    s.journal.setAutomationRunStep(cut, h.a.step("Calcular"));
+    interruptRuns(s);
+    expect(notices.at(-1)).toBe(
+      "Revisar pedidos se cortó en «Calcular»: Boni se apagó mientras corría.",
+    );
+    expect(missRun(s, h.a.id, trigger, at(13))).toBe(true);
+    expect(told(s, h.a.id)).toEqual(["failed", null, null, null, "failed", null]);
+  });
 });
 
 describe("the notice of what it wrote alone (F14d)", () => {
-  it.todo(
-    "AU-167 · a run that started alone and wrote gives one notice for the whole run, with counts and collection names and no value of any row, and its «Deshacer» undoes the run; a run that wrote nothing gives none",
-  );
+  it("AU-167 · a run that started alone and wrote gives one notice for the whole run, with counts and collection names and no value of any row, and its «Deshacer» undoes the run; a run that wrote nothing gives none", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-avisos-"));
+    const host = new AgentHost({ dataDir: dir, providers: null });
+    try {
+      const pushed: string[] = [];
+      host.pushNotice = (_account, text) => pushed.push(text);
+      const events: { event: string; data: unknown }[] = [];
+      host.subscribe(1, (event, data) => events.push({ event, data }));
+      const s = host.store(1);
+      seeded(s);
+      const streamed: RunEvent[] = [];
+      onRunEvent(s, (e) => streamed.push(e));
+      const h = hourly(s);
+      const secret = "<b>Comprar pan</b> https://ejemplo.example.com";
+      h.answer(
+        answering(
+          [],
+          [
+            { action: "create", collection: "Pedido", fields: { nota: secret } },
+            { action: "create", collection: "Pedido", fields: { nota: "otro" } },
+          ],
+        ),
+      );
+      const before = notes(s).length;
+      const r = await h.next();
+      expect(r.state).toBe("done");
+      expect(notes(s)).toHaveLength(before + 2);
+      expect(r.notice).toEqual({
+        kind: "wrote",
+        text: "Revisar pedidos creó 2 filas en Pedido.",
+      });
+      // One notice for the run, on the stream with its last event, for the app to paint with «Deshacer».
+      expect(streamed.filter((e) => e.notice)).toEqual([
+        {
+          automation: h.a.id,
+          run: r.id,
+          state: "done",
+          notice: { kind: "wrote", text: r.notice?.text, automation: h.a.id, run: r.id },
+        },
+      ]);
+      // Never to the phone, nor as the desktop's «notify» (decision 12).
+      expect(pushed).toEqual([]);
+      expect(events.filter((e) => e.event === "notify")).toEqual([]);
+      // Its «Deshacer» is the run's.
+      ok(undoAutomationRun(s, h.a.id, r.id, JUAN));
+      expect(notes(s)).toHaveLength(before);
+      // A run that wrote nothing tells nothing.
+      h.answer(answering());
+      expect((await h.next()).notice).toBeNull();
+    } finally {
+      host.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

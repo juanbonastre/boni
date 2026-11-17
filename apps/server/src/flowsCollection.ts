@@ -69,6 +69,8 @@ const isBoni = (store: UserStore, id: string) => !renamable(store, id);
  */
 const AUTOMATION_TRIGGERS: Readonly<Record<string, string>> = {
   manual: "Disparado por el usuario",
+  // F14d S3 (AU-114); the words its hours make («Cada día a las 08:00») are the screens' (P3).
+  schedule: "Programada",
 };
 export const NO_TRIGGER = "—";
 export const automationTriggerWords = (type: string | null): string =>
@@ -120,21 +122,27 @@ export function flowsCollection(store: UserStore): { type: TypeDef; rows: Entity
     if (!triggers.has(tid)) triggers.set(tid, opt(tid, words));
     return tid;
   };
-  const autos: Entity[] = store.journal.automations().map((a, i) => ({
-    id: F.automation + a.id,
-    type: SYS_FLOWS,
-    values: {
-      [F.title]: a.name,
-      [F.trigger]: triggerOption(automationTriggerWords(a.trigger)),
-      // AU-194: «Sin publicar» until its first version; then the switch says it.
-      [F.state]: a.published === null ? F.unpublished : a.enabled ? F.on : F.off,
-      [F.runs]: 0,
-      [F.by]: F.user,
-    },
-    created: i,
-    updated: a.updated,
-    version: a.rev,
-  }));
+  // «Ejecuciones» and «Última ejecución» (AU-61, AU-103): a table the store keeps as each run is kept, never a count.
+  const counted = store.journal.automationRunCounts();
+  const autos: Entity[] = store.journal.automations().map((a, i) => {
+    const runs = counted.get(a.id);
+    return {
+      id: F.automation + a.id,
+      type: SYS_FLOWS,
+      values: {
+        [F.title]: a.name,
+        [F.trigger]: triggerOption(automationTriggerWords(a.trigger)),
+        // AU-194: «Sin publicar» until its first version; then the switch says it.
+        [F.state]: a.published === null ? F.unpublished : a.enabled ? F.on : F.off,
+        [F.runs]: runs?.runs ?? 0,
+        ...(runs?.last != null ? { [F.last]: new Date(runs.last).toISOString() } : {}),
+        [F.by]: F.user,
+      },
+      created: i,
+      updated: a.updated,
+      version: a.rev,
+    };
+  });
   const flows = store.journal
     .flows()
     .slice()

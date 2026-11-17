@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { chainExisting } from "./audit.ts";
-import { AUTOMATION_RUNS_MIGRATION } from "./automationRuns.ts";
+import { AUTOMATION_RUNS_MIGRATION, automationRunsKeepMigration } from "./automationRuns.ts";
 import {
   AUTOMATIONS_MIGRATION,
   automationsScheduleMigration,
@@ -391,6 +391,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   AUTOMATION_RUNS_MIGRATION,
   // 29: a «Programada»'s hours in a column, where they count from, and each scheduled run's hour (F14d S3, AU-114).
   automationsScheduleMigration,
+  // 30: what a run told, when its steps were let go, and the list's counts by a table (F14d S4, AU-102, AU-103, AU-61).
+  automationRunsKeepMigration,
 ];
 
 export function migrate(db: DatabaseSync): void {

@@ -28,6 +28,7 @@ import {
 import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
+import { SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { ACTIONS, runAction } from "../actions.ts";
 import { AgentHost } from "../agent.ts";
@@ -35,12 +36,16 @@ import { addUser } from "../auth.ts";
 import { renameCollection } from "../data.ts";
 import { openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
+import { flowMap } from "../flowMap.ts";
+import { flowsCollection } from "../flowsCollection.ts";
 import { makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { withAutomationActions, withPublishActions, withRunActions } from "./actions.ts";
 import { sandboxBox } from "./box.ts";
+import { KEEP_TESTS, KEEP_WHOLE, PRUNE_BATCH, pruneAllRuns, pruneRuns } from "./keep.ts";
 import { publish } from "./publish.ts";
+import { ASKED_STEP } from "./record.ts";
 import { RUN_ACTIONS } from "./routes.ts";
 import {
   interruptRuns,
@@ -55,6 +60,7 @@ import {
   runView,
   settled,
   startRun,
+  startScheduledRun,
   undoAutomationRun,
   unpinStep,
 } from "./runs.ts";
@@ -245,6 +251,70 @@ const orders = (s = store) =>
   );
 const notes = (s = store) => s.list(PEDIDO).map((e) => e.entity.values[field(s, PEDIDO, "nota")]);
 const opLog = (s = store) => s.logPage(0, 1_000_000).length;
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Keeps runs of `id` straight in the store, ended, as a year of them would be: each with the steps (and one row per
+ * output) of `steps`, at `at(i)`; `o.test` makes them tests. Inside one batch: the volume tests' seed.
+ */
+function seedRuns(
+  id: string,
+  trigger: string,
+  n: number,
+  at: (i: number) => number,
+  o: {
+    steps?: ReturnType<UserStore["journal"]["automationRunSteps"]>;
+    test?: boolean;
+    prefix?: string;
+    state?: (i: number) => "done" | "failed";
+  } = {},
+  s = store,
+): string[] {
+  const ids: string[] = [];
+  s.batch(() => {
+    for (let i = 0; i < n; i++) {
+      const run = `r_${o.prefix ?? "sem"}${String(i).padStart(6, "0")}`;
+      ids.push(run);
+      const t = at(i);
+      s.journal.createAutomationRun({
+        id: run,
+        automation: id,
+        version: o.test ? null : 1,
+        test: !!o.test,
+        state: "running",
+        trigger,
+        fields: "{}",
+        startedBy: "schedule",
+        device: null,
+        retryOf: null,
+        at: t,
+        started: t,
+        doc: o.test ? "{}" : null,
+      });
+      for (const [k, st] of (o.steps ?? []).entries())
+        s.journal.keepAutomationRunStep(run, {
+          step: st.step,
+          n: k,
+          record: st.record,
+          rows: { main: ['{"json":{},"label":null}'] },
+        });
+      s.journal.endAutomationRun(run, {
+        state: o.state?.(i) ?? "done",
+        ended: t + 40,
+        ms: 40,
+        step: null,
+        error: null,
+        line: JSON.stringify({ writes: [], asked: [], outside: false }),
+      });
+    }
+  });
+  return ids;
+}
+/** Whether a run is still whole: its row not pruned and its steps there. */
+const whole = (run: string, s = store) =>
+  s.journal.automationRun(run)?.pruned === null && s.journal.automationRunSteps(run).length > 0;
 
 /** Starts a run by hand and waits for it to end. */
 async function ran(
@@ -575,9 +645,65 @@ describe("the record of a run (F14d)", () => {
     expect(Object.keys(one.steps)).toHaveLength(2);
   });
 
-  it.todo(
-    "AU-99 · with a year of hourly runs, the counts the list of automations shows answer within the time written here (the list's run column is the screens', P1)",
-  );
+  it("AU-99 AU-47 · with 200 scheduled automations, one of them with a year of hourly runs, the list of automations and the map count them within the time written here, from a table and an index, never counting rows; tests and hours that did not run are not counted", async () => {
+    const schedule: StepSpec = [
+      "A su hora",
+      "schedule",
+      { rules: [{ key: "r_cada_hora", every: "hour", at: "08:00" }] },
+    ];
+    const autos = Array.from({ length: 200 }, () => {
+      const a = made([schedule, CREATE("fija")]);
+      a.publish();
+      return a;
+    });
+    // A year of every hour for the first; a day of them for each of the others.
+    const year = 8_760;
+    for (const [k, a] of autos.entries()) {
+      const n = k === 0 ? year : 24;
+      seedRuns(a.id, a.step("A su hora"), n, (i) => NOW - (n - i) * HOUR, {
+        prefix: `m${k}_`,
+        state: (i) => (i % 30 === 0 ? "failed" : "done"),
+      });
+      seedRuns(a.id, a.step("A su hora"), 3, (i) => NOW - i * MINUTE, {
+        prefix: `t${k}_`,
+        test: true,
+      });
+    }
+    const first = autos[0] as (typeof autos)[number];
+    store.journal.missAutomationRun({
+      id: "r_no_corrio",
+      automation: first.id,
+      version: 1,
+      trigger: first.step("A su hora"),
+      fields: "{}",
+      slot: NOW,
+      at: NOW,
+    });
+    const F = SYS.flows;
+    let t = clock();
+    const list = flowsCollection(store).rows;
+    under(clock() - t, 60, "clock");
+    const row = list.find((r) => r.id === `${F.automation}${first.id}`);
+    expect(row?.values[F.runs]).toBe(year);
+    expect(row?.values[F.last]).toBe(new Date(NOW - HOUR).toISOString());
+    t = clock();
+    const map = flowMap(store, {
+      now: NOW,
+      days: 365,
+      tz: "Europe/Madrid",
+      mailType: null,
+      mailAccount: null,
+    });
+    under(clock() - t, 150, "clock");
+    const node = map.nodes.filter((m) => m.kind === "automation");
+    expect(node).toHaveLength(200);
+    // The year's hours, the hour that did not run and the tests left out.
+    expect(node.find((m) => m.id === `auto:${first.id}`)).toMatchObject({ runs: year, version: 1 });
+    // A run kept as a summary (AU-103) still counts: the table is the store's, kept as each run is kept.
+    expect(pruneRuns(store, first.id, NOW)).toBe(PRUNE_BATCH);
+    const after = flowsCollection(store).rows.find((r) => r.id === `${F.automation}${first.id}`);
+    expect(after?.values[F.runs]).toBe(year);
+  });
 });
 
 describe("undoing a run (F14d)", () => {
@@ -670,9 +796,28 @@ describe("undoing a run (F14d)", () => {
   });
 
   // What was accepted of a run's proposal, undone with the run: proposal.test.ts (S3).
-  it.todo(
-    "AU-18 AU-103 · a run of which only the summary is left is undone the same (the summary left is S4's, AU-103)",
-  );
+  it("AU-18 AU-103 · a run of which only the summary is left is undone the same: undoing reads the operation log, not its steps", async () => {
+    const a = made([START, CREATE()]);
+    a.publish();
+    const before = orders();
+    const r = await ran(a.id, a.step("Inicio"), { nota: "de hace tiempo" });
+    expect(notes()).toContain("de hace tiempo");
+    // Forty days later it is old: its steps and rows go, its row stays.
+    expect(pruneRuns(store, a.id, Date.now() + 40 * DAY)).toBe(1);
+    const kept = ok(runView(store, a.id, r.id));
+    expect(store.journal.automationRunSteps(r.id)).toEqual([]);
+    expect(kept.run).toMatchObject({ state: "done", undone: null });
+    expect(kept.run.pruned).not.toBeNull();
+    expect(kept.run.line?.writes).toEqual([
+      { collection: "pedido", name: "Pedido", action: "create", n: 1 },
+    ]);
+    expect(kept.undoable).toBe(true);
+    // Its rows are not there to pin.
+    expect(pinFromRun(store, a.id, r.id, JUAN)).toEqual({ refused: "pruned" });
+    ok(undoAutomationRun(store, a.id, r.id, JUAN));
+    expect(orders()).toEqual(before);
+    expect(ok(runView(store, a.id, r.id)).run.undone).not.toBeNull();
+  });
 
   it("AU-17 AU-18 · «Las que cumplan…» with several rows, stopped by the limit partway on the real server: what the earlier rows saved stays, undone whole leaves the store as it was; «Reintentar» runs it again from the store as it finds it", async () => {
     const importe = field(store, PEDIDO, "importe");
@@ -977,12 +1122,110 @@ describe("«Probar» from a shared device (F14d)", () => {
 });
 
 describe("what is kept of old runs (F14d)", () => {
-  it.todo(
-    "AU-103 · a run is kept whole while it is among the last 100 of its automation and younger than 30 days; of the others its summary stays and its steps and rows go; of the tests the last 20 stay and older ones go entirely",
-  );
-  it.todo(
-    "AU-103 · a year of hourly runs of one automation leaves 100 whole, and pruning them, at the end of a run and at start-up, stays within the time written here",
-  );
+  it("AU-103 · a run is kept whole while it is among the last 100 of its automation and younger than 30 days; of the others its summary stays and its steps and rows go; of the tests the last 20 stay and older ones go entirely", async () => {
+    expect([KEEP_WHOLE, KEEP_TESTS]).toEqual([100, 20]);
+    const a = made([START, CREATE()]);
+    a.publish();
+    const sample = await ran(a.id, a.step("Inicio"), { nota: "muestra" });
+    const steps = store.journal.automationRunSteps(sample.id);
+    const t0 = Date.now();
+    const trigger = a.step("Inicio");
+    // Young, all of them: the 10 oldest (and the sample) are past the newest 100.
+    const young = seedRuns(a.id, trigger, 110, (i) => t0 + (i + 1) * MINUTE, { steps });
+    // Among the last 100 of theirs, but 40 days old.
+    const b = made([START, CREATE()]);
+    b.publish();
+    const old = seedRuns(b.id, b.step("Inicio"), 5, (i) => t0 - 40 * DAY + i * HOUR, {
+      steps,
+      prefix: "viejo",
+    });
+    const tests = seedRuns(a.id, trigger, 25, (i) => t0 + i * MINUTE, {
+      steps,
+      test: true,
+      prefix: "prueba",
+    });
+    const now = t0 + DAY;
+    expect(pruneRuns(store, a.id, now)).toBe(11 + 5);
+    expect(pruneRuns(store, b.id, now)).toBe(5);
+    for (const r of [sample.id, ...young.slice(0, 10), ...old]) {
+      expect(whole(r), r).toBe(false);
+      // Its summary stays: what it did, how it ended, which version, what started it.
+      const view = ok(runView(store, store.journal.automationRun(r)?.automation as string, r));
+      expect(view.run).toMatchObject({ state: "done", version: 1, pruned: now });
+      expect(view.run.line).not.toBeNull();
+      expect(view.steps).toEqual({});
+    }
+    for (const r of young.slice(10)) expect(whole(r), r).toBe(true);
+    // Of the tests, the last 20; the rest are gone whole.
+    for (const r of tests.slice(0, 5)) expect(store.journal.automationRun(r)).toBeNull();
+    for (const r of tests.slice(5)) expect(whole(r), r).toBe(true);
+    // The list still shows every real run, the summary ones with the rest.
+    expect(ok(runsOf(store, a.id, {})).runs.at(-1)?.id).toBe(young[60]);
+    // Again, nothing more goes.
+    expect(pruneRuns(store, a.id, now)).toBe(0);
+    // Hours that did not run, newer than all of them, take no place among the last 100.
+    for (let i = 0; i < 5; i++)
+      store.journal.missAutomationRun({
+        id: `r_no_corrio${i}`,
+        automation: a.id,
+        version: 1,
+        trigger,
+        fields: "{}",
+        slot: t0 + (200 + i) * MINUTE,
+        at: t0 + (200 + i) * MINUTE,
+      });
+    pruneRuns(store, a.id, now);
+    for (const r of young.slice(10)) expect(whole(r), r).toBe(true);
+  });
+
+  it("AU-103 · a run whose proposal waits in the inbox stays whole until it is answered: what it asked is read when it is accepted", async () => {
+    const asks = made([START, ["Crear", "collection", { ...CREATE()[2], permission: "ask" }]]);
+    asks.publish();
+    const asked = await ran(asks.id, asks.step("Inicio"), { nota: "pedida" });
+    const proposal = asked.proposal as string;
+    expect(store.journal.proposal(proposal)?.status).toBe("pending");
+    const t0 = Date.now();
+    seedRuns(asks.id, asks.step("Inicio"), 100, (i) => t0 + (i + 1) * MINUTE);
+    expect(pruneRuns(store, asks.id, t0 + DAY)).toBe(0);
+    expect(store.journal.automationRunSteps(asked.id).map((x) => x.step)).toContain(ASKED_STEP);
+    store.journal.setProposal(proposal, "rejected", t0);
+    expect(pruneRuns(store, asks.id, t0 + DAY)).toBe(1);
+    expect(store.journal.automationRunSteps(asked.id)).toEqual([]);
+  });
+
+  it("AU-103 · a year of hourly runs of one automation leaves 100 whole, and pruning them, at the end of a run and at start-up, stays within the time written here", async () => {
+    const a = made([START, CREATE()]);
+    a.publish();
+    const sample = await ran(a.id, a.step("Inicio"), { nota: "muestra" });
+    const steps = store.journal.automationRunSteps(sample.id);
+    const year = 8_760;
+    const ids = seedRuns(a.id, a.step("Inicio"), year, (i) => NOW - (year - i) * HOUR, {
+      steps,
+      prefix: "ano",
+      state: (i) => (i % 50 === 0 ? "failed" : "done"),
+    });
+    // What a run's end does: one short write (task 137: the server answers nothing while it runs).
+    let t = clock();
+    expect(pruneRuns(store, a.id, NOW)).toBe(PRUNE_BATCH);
+    under(clock() - t, 60, "clock");
+    // At start-up: the rest, in writes as short, the event loop free between them.
+    let between = 0;
+    const timer = setInterval(() => between++, 0);
+    t = clock();
+    const rest = await pruneAllRuns(store, NOW);
+    const ms = clock() - t;
+    clearInterval(timer);
+    expect(rest).toBe(year + 1 - KEEP_WHOLE - PRUNE_BATCH);
+    under(ms, 3_000, "clock");
+    expect(between).toBeGreaterThan(0);
+    const left = ids.filter((r) => whole(r));
+    expect(left).toEqual(ids.slice(year - (KEEP_WHOLE - 1)));
+    expect(whole(sample.id)).toBe(true);
+    // The list and one run still answer as they did (AU-99).
+    t = clock();
+    expect(ok(runsOf(store, a.id, { before: ids[1_000] as string })).runs[0]?.id).toBe(ids[999]);
+    under(clock() - t, 40, "clock");
+  });
 });
 
 describe("a run a restart left half done (F14d)", () => {
@@ -1287,9 +1530,79 @@ describe("what a failure tells (F14d)", () => {
     expect(store.list(CLIENTE)).toHaveLength(1);
   });
 
-  it.todo(
-    "AU-102 · the kept record and the notice of a write outside its connection's filter (`code.write.outside`) are the same whether or not that row exists",
-  );
+  it("AU-102 · the kept record and the notice of a write outside its connection's filter (`code.write.outside`) are the same whether or not that row exists", async () => {
+    const a = made([
+      ["A su hora", "schedule", { rules: [{ key: "r_cada_hora", every: "hour", at: "08:00" }] }],
+      [
+        "Cambiar",
+        "code",
+        {
+          mode: "all",
+          source: "$col('Pedido').update('una fila', { nota: 'cambiada' })\nreturn []",
+        },
+        {
+          connections: [
+            {
+              ...newConnection("pedido"),
+              read: { where: [{ field: "nota", op: "is", value: "abierto" }] },
+              update: { mode: "yes" },
+            },
+          ],
+        },
+      ],
+    ]);
+    a.publish();
+    const uno = store.list(PEDIDO)[0]?.entity.id as string;
+    const nowhere = `${uno.slice(0, -6)}zzzzzz`;
+    expect(store.get(nowhere)).toBeNull();
+    let id = uno;
+    const box: Box = {
+      run: async () =>
+        answering(
+          id
+            ? [
+                {
+                  collection: "Pedido",
+                  action: "update",
+                  id,
+                  fields: { nota: "cambiada" },
+                  line: 1,
+                },
+              ]
+            : [],
+        ),
+    };
+    const at = async (slot: number) => {
+      const { run } = ok(
+        await startScheduledRun(store, a.id, a.step("A su hora"), slot, "Europe/Madrid", { box }),
+      );
+      await settled(store);
+      const r = ok(runView(store, a.id, run.id));
+      const step = store.journal
+        .automationRunSteps(run.id)
+        .find((x) => x.step === a.step("Cambiar"));
+      // The record without how long it took, the one thing that may differ.
+      const { ms: _ms, ...record } = JSON.parse(step?.record ?? "{}");
+      return { error: r.run.error, notice: r.run.notice, record };
+    };
+    const before = orders();
+    const outside = await at(NOW);
+    // One that ends well between them closes the streak, so the second failure tells too.
+    id = "";
+    await at(NOW + HOUR);
+    id = nowhere;
+    const missing = await at(NOW + 2 * HOUR);
+    expect(outside.error?.why).toMatchObject({
+      code: "code.write.outside",
+      detail: { why: "row" },
+    });
+    expect(outside.notice).toEqual({
+      kind: "failed",
+      text: "Revisar pedidos falló en «Cambiar»: el código guarda fuera de las filas que su conexión le deja.",
+    });
+    expect(missing).toEqual(outside);
+    expect(orders()).toEqual(before);
+  });
 });
 
 describe("the actions and their routes (F14d)", () => {

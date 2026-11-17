@@ -14,11 +14,14 @@ export {
 export type {
   AutomationPinRow,
   AutomationRunFilter,
+  AutomationRunMark,
   AutomationRunRow,
   AutomationRunState,
   AutomationRunsJournal,
+  AutomationRunsKeep,
   AutomationRunWrites,
 } from "./automationRuns.ts";
+export { AUTOMATION_RUNS_IN_SQL } from "./automationRuns.ts";
 export {
   type AutomationDraftRow,
   type AutomationPlace,

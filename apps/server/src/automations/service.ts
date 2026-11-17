@@ -65,6 +65,7 @@ import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
+import { pruneRuns } from "./keep.ts";
 import { automationPolicy } from "./policy.ts";
 import { keepTestRun, type PinView, pinnedRecords, pinsView } from "./record.ts";
 
@@ -670,6 +671,8 @@ export async function testAutomation(
   if (pinnedKept.length) store.journal.keepAutomationTests(id, pinnedKept);
   const run =
     request.step === undefined ? keepTestRun(store, id, a, execution, request, hand) : undefined;
+  // Of the tests, the last 20 stay (AU-103).
+  if (run) pruneRuns(store, id);
   return {
     state: execution.state,
     problems: [],
