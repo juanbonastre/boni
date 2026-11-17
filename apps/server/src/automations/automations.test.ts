@@ -20,6 +20,7 @@ import {
 import {
   AUTOMATION_LIMITS,
   type Automation,
+  bornParams,
   type ChangeWith,
   cellOf,
   FORMAT,
@@ -162,6 +163,12 @@ interface Draft {
   id(name: string): string;
 }
 
+/** A step's params as the editor writes them: the «Permiso» a «Colección» write step is born with comes first (AU-187). */
+function born(type: string, params: Record<string, unknown> | undefined) {
+  const p = params ?? {};
+  return { ...bornParams(type, typeof p.action === "string" ? p.action : undefined), ...p };
+}
+
 /** A draft from steps by name and arrows between names, the way the canvas would send it. */
 function draft(
   steps: readonly [string, string, Record<string, unknown>?, Record<string, unknown>?][],
@@ -185,7 +192,7 @@ function draft(
         id: id(n),
         name: n,
         type,
-        params: (params ?? {}) as Automation["steps"][number]["params"],
+        params: born(type, params) as Automation["steps"][number]["params"],
         ...(settings ? { settings } : {}),
       })),
       arrows: arrows.map(([from, to, output, input]) => ({

@@ -11,6 +11,7 @@ import {
   type Automation,
   type Box,
   type BoxJob,
+  bornParams,
   type Change,
   type ChangeWith,
   CODE_LIMITS,
@@ -392,6 +393,12 @@ type StepSpec = [
   more?: { connections?: Connection[]; settings?: Record<string, unknown> },
 ];
 
+/** A step's params as the editor writes them: the «Permiso» a «Colección» write step is born with comes first (AU-187). */
+function born(type: string, params: Record<string, unknown> | undefined) {
+  const p = params ?? {};
+  return { ...bornParams(type, typeof p.action === "string" ? p.action : undefined), ...p };
+}
+
 /**
  * A draft from steps by name, each after the one before it, the way the canvas would send it; with `limits`, the run's
  * own (AU-17) where a test writes more than their defaults.
@@ -408,7 +415,7 @@ function chain(steps: readonly StepSpec[], limits?: Partial<RunLimits>) {
       id: id(name),
       name,
       type,
-      params: (params ?? {}) as Automation["steps"][number]["params"],
+      params: born(type, params) as Automation["steps"][number]["params"],
       ...(more?.settings ? { settings: more.settings } : {}),
       ...(more?.connections ? { connections: more.connections } : {}),
     })),
