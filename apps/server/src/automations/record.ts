@@ -23,8 +23,33 @@ import { newId } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { type KeptRecord, sha256 } from "./service.ts";
 
-/** A run's id: what every operation it saves carries in the log (`ops.run`). */
-export const newRunId = (): string => newId("o").replace(/^o_/, "r_");
+const BASE32 = "0123456789abcdefghjkmnpqrstvwxyz";
+/** The id after `id` in the ids' order: its last character up by one, carrying as in a sum. */
+function after(id: string): string {
+  const chars = id.split("");
+  for (let i = chars.length - 1; i > 1; i--) {
+    const n = BASE32.indexOf(chars[i] as string);
+    if (n < BASE32.length - 1) {
+      chars[i] = BASE32[n + 1] as string;
+      return chars.join("");
+    }
+    chars[i] = "0";
+  }
+  return chars.join("");
+}
+let lastRunId = "";
+
+/**
+ * A run's id: what every operation it saves carries in the log (`ops.run`). Each is after the one before, even in the
+ * same millisecond (a missed hour and a run cut by a restart are kept at the same instant at start-up): «Ejecuciones»
+ * lists runs by when they were asked and then by id (`automationRuns`), and a streak of failures is opened by the
+ * first one kept (`streakMark`), so two runs of one instant are listed in the order they were kept (AU-99, AU-102).
+ */
+export function newRunId(): string {
+  const fresh = newId("o").replace(/^o_/, "r_");
+  lastRunId = fresh > lastRunId ? fresh : after(lastRunId);
+  return lastRunId;
+}
 
 /** What a step's «Código» saved, asked or would save, in a run's record: counts, never the rows. */
 export interface WritesCount {
