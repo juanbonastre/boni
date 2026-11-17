@@ -54,6 +54,43 @@ const chain = automation(
   [arrow("s_inicio", "s_buscar"), arrow("s_buscar", "s_filtrar")],
 );
 
+describe("the «Permiso» a «Colección» step is born with (AU-187, AU-188, decision 13)", () => {
+  it("AU-187 · a «Colección» write step his hand adds carries its «Permiso» written in the step: «Sí» on create, update and create-or-update, «Preguntar» on remove; a reading one and another type carry none", () => {
+    const born = (action: string) =>
+      addStep(automation([trigger]), "collection", action, { from: "top" }, names, ids()).draft
+        .steps[1]?.params;
+    expect(born("create")).toEqual({ action: "create", permission: "yes" });
+    expect(born("update")).toEqual({ action: "update", permission: "yes" });
+    expect(born("upsert")).toEqual({ action: "upsert", permission: "yes" });
+    expect(born("trash")).toEqual({ action: "trash", permission: "ask" });
+    expect(born("find")).toEqual({ action: "find" });
+    expect(
+      addStep(automation([trigger]), "sort", undefined, { from: "top" }, names, ids()).draft
+        .steps[1]?.params,
+    ).toEqual({});
+  });
+  it("AU-188 · another action never carries the «Permiso» of the one it had: a «Sí» given to create is not one given to remove; the new action gets the one it is born with, and losing it is not named", () => {
+    const yes = automation([
+      step("s_c", "collection", "Crear una fila en Gastos", {
+        action: "create",
+        collection: "gastos",
+        permission: "yes",
+      }),
+    ]);
+    const trash = changeAction(yes, "s_c", "trash", names);
+    expect(trash.draft.steps[0]?.params.permission).toBe("ask");
+    expect(trash.dropped).not.toContain("permission");
+    expect(changeAction(yes, "s_c", "find", names).draft.steps[0]?.params).not.toHaveProperty(
+      "permission",
+    );
+    expect(changeAction(yes, "s_c", "find", names).dropped).not.toContain("permission");
+    // Back from remove to update by his hand: born again, «Sí».
+    expect(
+      changeAction(trash.draft, "s_c", "update", names).draft.steps[0]?.params.permission,
+    ).toBe("yes");
+  });
+});
+
 describe("adding, connecting and removing", () => {
   it("AU-65 · a step is added in four ways and each gives the same step: from the top (connected to nothing), from an output (hung from it), on an arrow (between its two ends, the arrow made two) and on the canvas (connected to nothing)", () => {
     const top = addStep(chain, "sort", undefined, { from: "top" }, names, ids());
@@ -364,7 +401,8 @@ describe("a step's parameters and its name", () => {
     ]);
     const created = changeAction(bare, "s_b", "create", names);
     expect(created.dropped).toEqual([]);
-    expect(created.draft.steps[0]?.params).toEqual({ action: "create" });
+    // «Crear una fila» gets the «Permiso» it is born with (AU-187), written; nothing else.
+    expect(created.draft.steps[0]?.params).toEqual({ action: "create", permission: "yes" });
     expect(created.draft.steps[0]?.name).toBe("Crear una fila");
     // A name Juan wrote stays; the same action again is no change.
     const mine = rename(written, "s_buscar", "Lo de este mes");
@@ -388,7 +426,7 @@ describe("a step's parameters and its name", () => {
     const trashed = changeAction(update, "s_m", "trash", names);
     expect(trashed.dropped).toEqual(["fields"]);
     expect(Object.keys(trashed.draft.steps[0]?.params ?? {}).sort()).toEqual(
-      ["action", "collection", "target", "where"].sort(),
+      ["action", "collection", "permission", "target", "where"].sort(),
     );
   });
   it("AU-86 · the name follows the parameters while it is the automatic one (the collection changes, the name changes) and stops once Juan writes another; a rename rewrites every citation of the step", () => {

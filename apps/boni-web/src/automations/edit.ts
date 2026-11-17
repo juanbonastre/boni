@@ -15,12 +15,14 @@ import {
   type Arrow,
   type Automation,
   actionOf,
+  bornParams,
   inputsOf,
   isTrigger,
   newConnection,
   outputsOf,
   type ParamSpec,
   type ParamValue,
+  PERMISSION,
   renameStep,
   SETTINGS_DEFAULTS,
   type Step,
@@ -45,7 +47,8 @@ export type NewId = () => string;
  * A new step of `type` (with `action`, for a type that has several), where `at` says (AU-65): hung from an output,
  * between the two ends of an arrow (the arrow becomes two: into the step's first input, out of its first output),
  * or connected to nothing. Its parameters are the catalogue's defaults and nothing else: no option is added for
- * Juan (AU-87). Gives the draft and the step's id, to select and open it (AU-69).
+ * Juan (AU-87), except the «Permiso» a «Colección» write action is born with when his hand adds it (`bornParams`,
+ * AU-187, decision 13). Gives the draft and the step's id, to select and open it (AU-69).
  */
 export function addStep(
   draft: Automation,
@@ -59,13 +62,12 @@ export function addStep(
   if (!spec) throw new Error(`automations: no step type ${type}`);
   // A type with several actions holds the one chosen, or its first: without one it would have no output to hang
   // the next step from. Nothing else: every other parameter is its default until Juan sets it (AU-87).
-  const params: Record<string, ParamValue> =
+  const chosen =
     spec.actions.length > 1
-      ? {
-          [ACTION]:
-            spec.actions.find((a) => a.key === action)?.key ?? (spec.actions[0]?.key as string),
-        }
-      : {};
+      ? (spec.actions.find((a) => a.key === action)?.key ?? (spec.actions[0]?.key as string))
+      : undefined;
+  const params: Record<string, ParamValue> =
+    chosen === undefined ? {} : { [ACTION]: chosen, ...bornParams(type, chosen) };
   const bare: Step = { id: newId(), name: "", type, params };
   const step: Step = { ...bare, name: uniqueName(draft, names.auto(bare)) };
   const arrows = [...draft.arrows];
@@ -311,6 +313,8 @@ export function setSetting<K extends keyof StepSettings>(
 /**
  * Another action for a step (AU-82): the parameters the two actions share by key and control keep their values,
  * the rest go, and `dropped` names the ones that had a value Juan wrote, in the panel's order, for the notice.
+ * The «Permiso» never passes from one action to another: a «Sí» given to create is not one given to remove
+ * (AU-188); the new action gets the one it is born with (`bornParams`, AU-187).
  */
 export function changeAction(
   draft: Automation,
@@ -324,10 +328,12 @@ export function changeAction(
   if (!before || !spec || !next || before.params[ACTION] === action) return { draft, dropped: [] };
   const was = [...spec.params, ...(actionOf(before)?.params ?? [])];
   const now = [...spec.params, ...next.params];
-  const params: Record<string, ParamValue> = { [ACTION]: action };
+  const born = bornParams(before.type, action);
+  const params: Record<string, ParamValue> = { [ACTION]: action, ...born };
   const gone = new Set<string>();
   for (const [key, value] of Object.entries(before.params)) {
-    if (key === ACTION) continue;
+    // The «Permiso» is the new action's own, never carried nor reported as lost (AU-188).
+    if (key === ACTION || key === PERMISSION) continue;
     const p = was.find((q) => q.key === key);
     const q = now.find((x) => x.key === key);
     if (p && q && sameKind(p, q)) params[key] = value;

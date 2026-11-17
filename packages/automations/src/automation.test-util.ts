@@ -3,8 +3,10 @@
 // anyone's names (D-14). Steps have no id kind of their own yet: `s_` is the tests' until the editor gives them one.
 import { type FieldType, type IdKind, newId } from "@boni/entities";
 import { rng } from "../../entities/src/random.test-util.ts";
+import { bornParams } from "./catalogue.ts";
 import type { CollectionShape, FieldShape } from "./effects.ts";
 import {
+  ACTION,
   type Arrow,
   type Automation,
   FORMAT,
@@ -28,7 +30,10 @@ export function ids(seed = 1): (kind: IdKind | "s") => string {
 }
 
 export interface Sketch {
-  /** Adds a step; `name` is also how the test names it after. */
+  /**
+   * Adds a step as the person's hand does in the editor (`addStep`): with the «Permiso» a «Colección» write action
+   * is born with (`bornParams`, AU-187) unless `params` says another; `name` is also how the test names it after.
+   */
   step(
     name: string,
     type: string,
@@ -53,7 +58,9 @@ export function sketch(seed = 1): Sketch {
     step(name, type, params = {}, settings) {
       const stepId = next("s");
       byName.set(name, stepId);
-      steps.push({ id: stepId, name, type, params, ...(settings ? { settings } : {}) });
+      const action = typeof params[ACTION] === "string" ? params[ACTION] : undefined;
+      const all = { ...bornParams(type, action), ...params };
+      steps.push({ id: stepId, name, type, params: all, ...(settings ? { settings } : {}) });
       return sketchApi;
     },
     arrow(from, to, output = MAIN, input = MAIN) {

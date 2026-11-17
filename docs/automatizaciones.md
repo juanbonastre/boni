@@ -1507,7 +1507,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   que la fase deja la función hecha y cerrado el camino: toda función del servidor que escribe un borrador está en
   una lista, como de su mano (el editor, «Duplicar») o como venida de fuera de ella, y las segundas pasan por
   `lowerYes`. Una función nueva que escriba un borrador y no esté en la lista hace fallar la prueba.
-  Hecho en E1: `lowerYes`, con lo que baja y lo que deja, y el valor con el que nace cada acción (AU-187). Falta: la
+  Hecho en E1: `lowerYes`, con lo que baja y lo que deja, y el valor con el que nace cada acción (AU-187). Después
+  de E1: `lowerYes` escribe «Preguntar» también donde faltaba el «Permiso», y cambiar la acción de un paso en el
+  editor no lleva el «Sí» de la anterior (un «Sí» para crear no es uno para eliminar): nace con el de la nueva. Falta: la
   lista de quien escribe un borrador, cada caso de la tabla sobre el servidor y el dispositivo personal
   (`publish.test.ts`, S1).
   Lo sostienen `consent.test.ts` (`packages/automations`; `lowerYes`: baja crear, modificar y eliminar, en las
@@ -1629,16 +1631,21 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   celda; «Publicar» lo dice en su línea («con datos de fuera», AU-182). Llegados de otra manera nacen con
   «Preguntar» (AU-188). Es un valor del catálogo (`PERMISSION_BORN`) y una prueba.
   En la F14d: es un parámetro más de cada una de las tres acciones en el catálogo, a la vista (cambia el resultado:
-  AU-77), con las dos palabras de las celdas de una conexión, de las mismas claves de `i18n.ts`. Un documento
-  guardado sin él se lee con el valor con el que nace: hasta aquí todo borrador lo escribió su mano. `stepChanges`
+  AU-77), con las dos palabras de las celdas de una conexión, de las mismas claves de `i18n.ts`. El valor con el que
+  nace lo escribe el código en el paso cuando su mano lo añade o le cambia la acción (`bornParams`), y un paso
+  guardado sin él se lee «Preguntar», venga de donde venga: un «Sí» nunca es un valor que falta. `stepChanges`
   deja de dar eliminar siempre como «Preguntar» y lee el parámetro en las tres, así que la tarjeta («Elimina en
   Gastos · sin preguntar»), «Haría esto» y «Lo que podrá hacer» lo dicen igual que de un «Código» (AU-189).
   `lowerYes` lo baja como una celda (AU-188).
   Hecho en E1: el parámetro en las tres y en «Crear o modificar», que también guarda (nace con «Sí», como crear y
   modificar), con las palabras de las celdas; con qué valor nace cada una; `stepChanges` lo lee en todas; `lowerYes`
-  lo baja. Falta: la marca de la tarjeta y su prueba en la pantalla (`automations-publish.spec.ts`, pantallas).
-  Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro en las tres acciones, con qué valor nace y lo
-  que `stepChanges` da con cada uno) y `automations-publish.spec.ts` (el control y la marca de la tarjeta).
+  lo baja. Después de E1 (tarea 128): el valor con el que nace va escrito en el paso que añade su mano, y un paso
+  sin él pregunta. Falta: la marca de la tarjeta y su prueba en la pantalla (`automations-publish.spec.ts`,
+  pantallas).
+  Lo sostienen `consent.test.ts` (`packages/automations`: el parámetro en las tres acciones, con qué valor nace, que
+  un paso sin él pregunta, y lo que `stepChanges` da con cada uno), `edit.test.ts` (`apps/boni-web`: el paso que
+  añade su mano lleva su «Permiso» escrito; cambiar la acción no lleva el «Sí» de la otra) y
+  `automations-publish.spec.ts` (el control y la marca de la tarjeta).
 - **AU-123** (F14a, hecho) · «Si» tiene dos salidas, «sí» y «no». «Elegir rama» tiene una por regla y, a la
   vista, «Si ninguna coincide» (nada, o una salida «otras») y «La primera que coincida | Todas las que coincidan».
 - **AU-124** (F14a, hecho) · «Combinar» tiene dos entradas con nombre y junta por un campo, por posición o todas
