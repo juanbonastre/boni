@@ -2315,7 +2315,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   La tabla nombra las piezas; entre ellas la automatización lleva los «Si» y «Elegir rama» que hagan falta, donde el
   flujo tenía «Solo si» y `case`. En una automatización de Boni un lector es su pieza («Decisora», y no
   «Clasificar»): lleva lo que el correo le añade. La pregunta de la «Decisora» cuando duda es parte de su paso: no
-  deja la ejecución esperando, y la respuesta de Juan inicia otra lectura de ese correo, como hoy.
+  deja la ejecución esperando, y la respuesta de Juan inicia otra lectura de ese correo, como hoy. Convertida,
+  la «Decisora» elige entre las mismas colecciones que hoy, todas (decisión 20): su panel las lista, y Juan quita
+  una y publica cuando quiera.
   Una pieza solo existe en su automatización (A-19 se queda): el panel de añadir no la ofrece en otra, y una copia
   la pierde y lo dice. Por dentro es el código de hoy, que el motor llama por un puerto (`RunDeps.boni`, como
   `RunDeps.ai` para los modelos): `packages/automations` conoce su tipo, sus parámetros y sus salidas, y no importa
@@ -2649,22 +2651,22 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
 - **AU-152** (F16, pendiente) · Al terminar se quitan el motor de listas, el editor viejo y sus pruebas, y los
   principios y la guía de diseño se reescriben en el mismo PR.
   En la F16: es el último PR de la fase. El despliegue de la F16 sale con todo lo demás y con el motor de antes
-  dormido: nada en la app dice «Formato anterior», porque todo está convertido, y el motor de antes solo corre si
-  Juan pulsa «Volver al flujo de antes» (AU-225). Cuando él dice que las convertidas valen, se mezcla este PR y sale
-  en el despliegue siguiente. Es contraer después de comprobar, y es de Juan decidir si prefiere que salga ya
-  quitado (se pregunta en el PR de este diseño). Se van: el editor de antes (`FlowEditor.tsx`, `FlowStepPanel.tsx`,
-  `ExprField.tsx`, `FlowPreview.tsx`, `core/flowLayout.ts`, `core/flowEdit.ts`, de donde antes salen las dos esperas
-  del borrador que usa el editor nuevo), el intérprete de listas de `packages/agent/src/agent.ts` (`turn`, `dryRun` y
-  `background` quedan como entradas que traducen y llaman al motor nuevo), el catálogo y `checkFlow` de
-  `apps/server/src/flows.ts`, `flowScheduler.ts`, las rutas y las acciones `flows.*`, la clave «Formato anterior» y
-  las pruebas de todo ello. Se quedan: el lenguaje de planes con `validatePlan` y `checkPlan` (es lo que escribe el
-  modelo, A-01), `rounds.ts`, los lectores, el código de las piezas, las tablas `flows` y `flow_drafts` como archivo,
-  y `runs` y `run_steps` para los turnos. El mapa (`flowMap.ts`, `FlowMap.tsx`) se calcula solo de automatizaciones,
-  y gana la flecha «avisa» (de la tarea 83). En el mismo PR se reescriben los principios que hablan de flujos (D-41,
-  D-43, D-44, D-47 a D-53, D-55, D-61, A-16, A-19, I-24, I-27), cada uno con su prueba apuntando a la del motor
-  nuevo, `docs/flujos.md` y `docs/sistema.md` dicen arriba que los sustituye este documento, y la guía de diseño
-  pierde el editor de antes. La prueba: `e2e-boni/automations-before.spec.ts` (ningún «Formato anterior») y
-  `apps/server/src/automations/convert.test.ts` (nada importa lo que se fue).
+  dormido: nada en la app dice «Formato anterior», porque todo está convertido, y el motor de antes solo corre si Juan
+  pulsa «Volver al flujo de antes» (AU-225). Cuando él dice que las convertidas valen, se mezcla este PR y sale en el
+  despliegue siguiente. Es contraer después de comprobar, y Juan lo decidió así (decisión 21). Se van: el editor de
+  antes (`FlowEditor.tsx`, `FlowStepPanel.tsx`, `ExprField.tsx`, `FlowPreview.tsx`, `core/flowLayout.ts`,
+  `core/flowEdit.ts`, de donde antes salen las dos esperas del borrador que usa el editor nuevo), el intérprete de
+  listas de `packages/agent/src/agent.ts` (`turn`, `dryRun` y `background` quedan como entradas que traducen y llaman
+  al motor nuevo), el catálogo y `checkFlow` de `apps/server/src/flows.ts`, `flowScheduler.ts`, las rutas y las
+  acciones `flows.*`, la clave «Formato anterior» y las pruebas de todo ello. Se quedan: el lenguaje de planes con
+  `validatePlan` y `checkPlan` (es lo que escribe el modelo, A-01), `rounds.ts`, los lectores, el código de las
+  piezas, las tablas `flows` y `flow_drafts` como archivo, y `runs` y `run_steps` para los turnos. El mapa
+  (`flowMap.ts`, `FlowMap.tsx`) se calcula solo de automatizaciones, y gana la flecha «avisa» (de la tarea 83). En el
+  mismo PR se reescriben los principios que hablan de flujos (D-41, D-43, D-44, D-47 a D-53, D-55, D-61, A-16, A-19,
+  I-24, I-27), cada uno con su prueba apuntando a la del motor nuevo, `docs/flujos.md` y `docs/sistema.md` dicen
+  arriba que los sustituye este documento, y la guía de diseño pierde el editor de antes. La prueba:
+  `e2e-boni/automations-before.spec.ts` (ningún «Formato anterior») y `apps/server/src/automations/convert.test.ts`
+  (nada importa lo que se fue).
 - **AU-229** (F16, pendiente) · El teléfono, el escritorio y el MCP no se quedan atrás. El teléfono ve, ejecuta,
   enciende y apaga las convertidas como cualquier otra (AU-74), ve el aviso de la conversión y sigue sin editar. Una
   app anterior al despliegue no se rompe: cuando el motor de antes se quita (AU-152), `GET /api/agent/flows` contesta
@@ -3417,7 +3419,7 @@ Decidido por Juan el 2026-11-15 (decisión 8 del §10) y aplicado a la cola ese 
 
 | Tarea | Qué le pasa |
 |---|---|
-| **103** La explicación de los flujos | Se cierra con este documento. Sus decisiones: la 1 la decide el mensaje de Juan; la 2 es la decisión 5 de aquí; la 3 queda en 3a (AU-127); la 4 es el «Antes» del §8; la 5 y la 7 son este apartado; la 6 (los destinos de la Decisora) sigue siendo suya y se pregunta al convertir «Leer correo» (F16) |
+| **103** La explicación de los flujos | Se cierra con este documento. Sus decisiones: la 1 la decide el mensaje de Juan; la 2 es la decisión 5 de aquí; la 3 queda en 3a (AU-127); la 4 es el «Antes» del §8; la 5 y la 7 son este apartado; la 6 (los destinos de la Decisora) es la decisión 20 de aquí |
 | **61** Flujos F1–F6 | Se cierra: lo sustituyen la F14 y la F16. Lo que no se probó con sus datos (el resumen de las 8) va en «Antes» |
 | **70** El editor con control | Se cierra. Lo abierto pasa a la F14b: el «+» en una flecha (AU-65), los valores de salida tras probar (AU-72) |
 | **63** Lo que los diseños piden y no está | Cinco puntos suyos pasan a las fases: el 3 (los valores de salida tras «Probar») y el 4 («+» en una flecha), a la F14b; el 11 (código propio como paso), a la F14c; el 13 (probar por el MCP), a la F16; el 14 (en el teléfono, ver y ejecutar), a la F14b y la F14d. Se queda abierta solo con el 8 (proponer «Solo») y el 17 (la tarjeta «¿Lo recuerdo?»), que no son de automatizaciones |
@@ -3717,6 +3719,35 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       (ejecuta las que lo permiten) y AU-143 (lo que hizo se guarda como una); «Pedir a Boni» en el editor es AU-141.
       Prueba: `apps/server/src/automations/chat.test.ts` («AU-231 · the chat of a page is in the list of
       automations…»).
+
+20. **Convertida, la «Decisora» de «Leer correo» elige entre las mismas colecciones que hoy.** El diseño de la F16
+    (tarea 130) preguntó: «Cuando «Leer correo» se convierta, ¿entre qué colecciones elige su paso «Decisora»?», con
+    la recomendación de dejarlas como hoy. **Juan, 2026-11-17: «Sí, las dos»** (a «¿Aceptas las dos recomendaciones
+    del diseño de la fase que convierte tus flujos (F16)?»: esta y la decisión 21). La otra respuesta era solo la
+    colección de cosas por hacer. Por ejemplo, escribe alguien de quien no tiene fila pidiendo verse el jueves: como
+    hoy, la Bandeja enseña una tarjeta que propone una cosa por hacer y otra que propone una fila nueva en la
+    colección de personas. Con la otra respuesta habría una sola tarjeta, la cosa por hacer, enlazada a la persona
+    solo si su fila ya existe, y ningún correo propondría una persona nueva. Lo que queda:
+    - La conversión no cambia los destinos de la «Decisora»: son todas las colecciones de hoy (AU-127, AU-221). Es
+      la decisión 6 de la tarea 103 (§9).
+    - El panel del paso «Decisora» lista las colecciones entre las que elige. Juan quita una y publica cuando
+      quiera, y eso es una versión suya de «Leer correo», con «Volver al de Boni» (AU-221). Prueba:
+      `apps/server/src/automations/boni.test.ts` («AU-127 · the mail automation, converted, reads an invented
+      mail and proposes what the old flow proposed…»).
+21. **El despliegue de la F16 sale con el motor de antes todavía dentro, dormido.** El diseño de la F16 (tarea 130)
+    preguntó: «¿El despliegue de la F16 sale con el motor de antes todavía dentro, dormido, o ya quitado?», con la
+    recomendación de dejarlo dentro. **Juan, 2026-11-17: «Sí, las dos»** (la misma respuesta de la decisión 20). La
+    otra respuesta era que saliera ya quitado. Por ejemplo, un resumen programado de la mañana que, convertido, sale
+    mal: en esa automatización pulsa «⋯ → Volver al flujo de antes» y a la mañana siguiente el flujo corre como
+    siempre. Ya quitado, la habría apagado a la espera de una conversión corregida, o la cuenta entera habría vuelto
+    desde la copia hecha antes de convertir, con las versiones anteriores del servidor y de las apps. Lo que queda:
+    - En ese despliegue nada en la app dice «Formato anterior», y cada automatización convertida tiene «⋯ → Volver al
+      flujo de antes» mientras el motor de antes esté dentro (AU-225). Prueba:
+      `apps/server/src/automations/convert.test.ts` («AU-225 · «Volver al flujo de antes» leaves the flow running as
+      it was…»).
+    - La retirada (AU-152) se mezcla cuando Juan dice que las convertidas valen, y sale en un despliegue pequeño
+      después. Hasta entonces los dos motores están en `main` y cada flujo corre en uno solo (AU-228). Prueba:
+      `apps/server/src/automations/convert.test.ts` («AU-152 · after the removal nothing imports the old engine…»).
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
