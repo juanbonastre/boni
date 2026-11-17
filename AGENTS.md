@@ -46,12 +46,18 @@ with the same click fixed twice, was «todo un poco liado»):
    state and the criterion of done, what Juan will see). At most one task «Ahora». What Juan asks while trying things
    goes into the queue and is prioritised, never answered with one PR per sentence.
 2. A branch from `main`; nothing is pushed to `main` directly. One PR per task, with its tests, docs and principle.
+   A phase's plan splits it into as few PRs as can each be reviewed whole, never more only to keep one small: every PR
+   pays the whole cycle (check, suites, CI, review, the coordinator's check); the conformance review (item 4) stays
+   once per phase or task (Juan, 2026-11-17: «me da la sensación … de que el desarrollo está siendo muy lento, con
+   errores, y gastando mucha cuota»; F14d went out in 13 PRs).
 3. `make check && git commit && git push` (a failure stops the chain), then a PR. The moment it is opened, turn on
    auto-merge (`gh pr merge --auto --squash`) and the app's Auto-fix, without asking (Juan, 2026-11-11: he does not
    want to wait on this): it merges when CI is green (with Android changes, also the APK build), and a failing CI
    wakes the session to fix it on its branch; never poll CI. While CI runs, go on with the next thing. Before saying a
    check passed, read the exit code of the command that ran it (a line in the background ends with its last
-   command's: on 2026-11-05 a failed `make check` was reported as passing).
+   command's: on 2026-11-05 a failed `make check` was reported as passing). Its lint (format included) and typecheck
+   run before its tests wait in the queue (T-08); still, run `pnpm format` and the package's `typecheck` first, so no
+   queue turn goes to them (2026-11-17: one session lost two turns of `make check` to formatting).
 4. **«En main» is not «hecha»** (Juan, 2026-11-05, task 64, measures C and D, after phases F1–F6 were called done
    with points of their design missing):
    - Before a phase or task is called finished (its PR, the design's phase table, the CHANGELOG), an agent that did
@@ -76,7 +82,15 @@ with the same click fixed twice, was «todo un poco liado»):
    screens have reference captures, made by the «screens» workflow (I-07).
 8. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
 9. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
-   `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05).
+   `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05). A design,
+   and a brief for a piece with a known hard part (tests tied to the clock, a sandbox, an editor engine, a scheduler,
+   a migration), also first looks up how that problem is solved elsewhere and names the approach it takes and its
+   pitfalls, in the design doc or in the PR's «What each builder must know». A builder that fails twice on the same
+   thing searches before a third try and says in its PR what it took from it. Ideas only: nobody else's code or texts
+   are copied (Juan, 2026-11-17: «muchos de estos problemas ya estarán resueltos en internet, a lo mejor podría
+   explorarse en internet cómo abordar estos problemas para evitar tener que pelearse con el código por errores que se
+   podrían haber evitado con mejor planificación/investigación»; two whole tasks, 134 and 143, went to tests tied to
+   the clock).
 10. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
    the built web app, phone-sized viewports, typing at a person's pace where timing matters, and **data shaped like
    his** (generated ids, his collections' keys and names: `e2e/server-data.ts`, `seed.test-util.ts`), never only the
@@ -96,6 +110,10 @@ calls for five messages, context near a million; the cost was re-reading, not te
 
 - **One session per task**: a new session in its own worktree, never a big one resumed after more than an hour's pause.
   A session that coordinates others never reads code: it briefs them and checks their results.
+- **At most two sessions build at the same time** (Juan, 2026-11-17, with the rules of items 2, 3 and 9 above: five
+  sessions at once took the five-hour usage window from 21 % to 62 % in twenty-five minutes and to 78 % in
+  thirty-eight). The test queue is one (T-08), so a third builder mostly waits and pays for each wake-up; a design
+  session on the largest model counts as one. Before starting a session, the coordinating one reads the plan's usage.
 - **Model and effort per role**: Opus high to build, medium for routine changes; Haiku low to explore (the `explorer`
   agent); Sonnet high to review (the `conformance-reviewer` agent, one round); Fable only to design a phase or for a
   hard bug. Every subagent call names its model; every file in `.claude/agents/` declares `model` and `effort` (T-06).

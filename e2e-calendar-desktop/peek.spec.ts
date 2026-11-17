@@ -164,11 +164,13 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   await line.click();
   await peek.keyboard.press("Home");
   for (let i = 0; i < 12; i++) await peek.keyboard.press("ArrowRight");
-  for (let i = 0; i < 4; i++) await peek.keyboard.press("Shift+ArrowRight");
+  // One Shift+→ at a time, each read before the next, as a person selects: at the machine's pace one was lost on
+  // CI's runner and «tem» stayed selected (PR #417, and again on PR #493's run, task 143).
+  for (const sel of ["t", "te", "tem", "tema"]) {
+    await peek.keyboard.press("Shift+ArrowRight");
+    await expect.poll(() => peek.evaluate(() => String(window.getSelection()))).toBe(sel);
+  }
   await expect(peek.getByRole("toolbar", { name: "Formato" })).toBeVisible();
-  // The editor has read the last Shift+→ before Ctrl+B: on CI's runner it came a step late and «tem» went bold
-  // (PR #417), a pace no person types at.
-  await expect.poll(() => peek.evaluate(() => String(window.getSelection()))).toBe("tema");
   await peek.keyboard.press("Control+b");
   await expect(line.locator(".md-strong")).toHaveText("tema");
   await expect(line).toHaveText("Preparar el **tema** 3.");

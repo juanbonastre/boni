@@ -637,20 +637,33 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
       const insert = db.prepare("INSERT INTO links (src, field, dst, pos) VALUES (?, ?, ?, ?)");
       for (const [pos, dst] of ids.entries()) insert.run(e.id, f.id, dst, pos);
     }
-    // The search index: title and every text, nothing of deleted entities.
-    db.prepare("DELETE FROM entities_fts WHERE entity = ?").run(e.id);
+    // The search index: title and every text, nothing of deleted entities. A record's entry is found by its rowid
+    // (`fts_rows`, migration 31): FTS5 does not key `entity`, so finding it by that column read the whole index and a
+    // write cost more the more records the store had (task 137). The entry keeps its rowid when it is rewritten.
+    const at = db.prepare("SELECT rid FROM fts_rows WHERE entity = ?").get(e.id) as
+      | { rid: number }
+      | undefined;
+    if (at) db.prepare("DELETE FROM entities_fts WHERE rowid = ?").run(at.rid);
     if (e.deleted === undefined && def) {
       const title = e.values[def.titleField];
       const texts = def.fields
         .filter((f) => (f.type === "text" || f.type === "longtext") && f.id !== def.titleField)
         .map((f) => e.values[f.id])
         .filter((v): v is string => typeof v === "string");
-      db.prepare("INSERT INTO entities_fts (entity, title, text) VALUES (?, ?, ?)").run(
-        e.id,
-        typeof title === "string" ? title : "",
-        [...texts, e.body ?? ""].join("\n"),
-      );
-    }
+      const put = db
+        .prepare("INSERT INTO entities_fts (rowid, entity, title, text) VALUES (?, ?, ?, ?)")
+        .run(
+          at?.rid ?? null,
+          e.id,
+          typeof title === "string" ? title : "",
+          [...texts, e.body ?? ""].join("\n"),
+        );
+      if (!at)
+        db.prepare("INSERT INTO fts_rows (entity, rid) VALUES (?, ?)").run(
+          e.id,
+          put.lastInsertRowid,
+        );
+    } else if (at) db.prepare("DELETE FROM fts_rows WHERE entity = ?").run(e.id);
   }
 
   function writeLabels(id: EntityId, labels: Record<string, Label | null>, seq: number): void {
