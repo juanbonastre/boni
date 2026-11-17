@@ -17,6 +17,9 @@ export {
   type AutomationRow,
   type AutomationsJournal,
   type AutomationTestRow,
+  type AutomationVersionInfo,
+  type AutomationVersionRow,
+  HOLDS_OUTSIDE_SQL,
   TEST_ROWS_CHUNK,
 } from "./automations.ts";
 export { type BlameLine, blame } from "./blame.ts";

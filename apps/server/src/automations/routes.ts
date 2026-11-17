@@ -81,6 +81,39 @@ export const AUTOMATION_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   },
 };
 
+/**
+ * F14d S1's touches (publish.ts): their functions and actions are made (`withPublishActions`), and they enter the
+ * registry, `ROUTES`, `ROUTE_RUNS` and http.ts with their controls in the app, P1's screens, in one PR: a
+ * registered action with no control fails actions.test.ts. Their reads are `automations.read`'s parts, already
+ * routed (`AUTOMATION_ROUTES`).
+ */
+export const PUBLISH_ACTIONS: Readonly<Record<string, AutomationAction>> = {
+  "automations.publish": {
+    effect: "touch",
+    undo: "nothing undoes a version (AU-95): publish another, or «Volver a esta» in «Versiones»",
+    control: "«Publicar» in pantalla 10, and «Volver a esta» in «Versiones»",
+  },
+  "automations.enable": {
+    effect: "touch",
+    undo: "the switch again",
+    control: "the switch in the editor's header and in the list's «⋯»",
+  },
+};
+
+/**
+ * The routes of an automation that change something and that a shared device may still call (decision 13 of §10):
+ * «Probar», which writes in no collection (AU-90). Every other one that is not a read is from a personal device.
+ */
+export const SHARED_DEVICE_ROUTES: ReadonlySet<string> = new Set([
+  "POST /api/agent/automations/:id/test",
+]);
+
+/** The routes P1 adds with the controls, each with its action and the function of publish.ts it runs. */
+export const PUBLISH_ROUTES: Readonly<Record<string, { action: string; runs: string }>> = {
+  "POST /api/agent/automations/:id/publish": { action: "automations.publish", runs: "publish" },
+  "PUT /api/agent/automations/:id/enabled": { action: "automations.enable", runs: "setEnabled" },
+};
+
 /** No tool of the MCP in F14b for any of them: the reason `ACTION_MCP` gives. */
 export const NO_MCP_YET =
   "the MCP's tools for automations arrive with F16 (docs/automatizaciones.md §8)";
@@ -104,4 +137,8 @@ export const AUTOMATION_ROUTES: Readonly<Record<string, { action: string; runs: 
     action: "automations.read",
     runs: "previewExpression",
   },
+  // F14d S1 (publish.ts): what «Publicar» shows (also for «Volver a esta», with ?version=), and «Versiones».
+  "GET /api/agent/automations/:id/publish": { action: "automations.read", runs: "publishView" },
+  "GET /api/agent/automations/:id/versions": { action: "automations.read", runs: "versionsOf" },
+  "GET /api/agent/automations/:id/versions/:n": { action: "automations.read", runs: "versionOf" },
 };

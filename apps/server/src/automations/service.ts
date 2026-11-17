@@ -34,6 +34,7 @@ import {
   isExpr,
   isTrigger,
   type Kept,
+  type KeptNames,
   keep,
   OUT,
   outputsOf,
@@ -147,8 +148,8 @@ export interface AutomationView {
 
 export type ServiceError = { error: "not-found" | "bad-request" | "too-large" };
 
-const NOT_FOUND: ServiceError = { error: "not-found" };
-const BAD: ServiceError = { error: "bad-request" };
+export const NOT_FOUND: ServiceError = { error: "not-found" };
+export const BAD: ServiceError = { error: "bad-request" };
 
 /** An automation's id: a ULID like any of the account's, with its own prefix. */
 const automationId = () => `a_${newId("e").slice(2)}`;
@@ -157,7 +158,7 @@ const automationId = () => `a_${newId("e").slice(2)}`;
 export const automationLabel = (id: string): Label =>
   label("user", "personal", [{ kind: "user-edit", id: `automation:${id}` }]);
 
-const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+export const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** A document as a draft: its JSON within the size, in the format. `id`: the id it must have (or is given). */
 function draftOf(doc: unknown, id: string, give: boolean): Automation | ServiceError {
@@ -180,19 +181,64 @@ function draftOf(doc: unknown, id: string, give: boolean): Automation | ServiceE
   return a.id === id ? a : BAD;
 }
 
+/**
+ * The version that runs of an automation not deleted (AU-95), parsed, with the names its code cited when it was
+ * published (AU-192), or null: never published, or deleted.
+ */
+export function publishedOf(
+  store: UserStore,
+  id: string,
+): { n: number; automation: Automation; hash: string; names: KeptNames } | null {
+  const row = store.journal.automation(id);
+  if (!row || row.deleted || row.published === null) return null;
+  const v = store.journal.automationVersion(id, row.published);
+  if (!v) return null;
+  return {
+    n: v.n,
+    automation: parseAutomation(JSON.parse(v.doc)),
+    hash: v.hash,
+    names: JSON.parse(v.names) as KeptNames,
+  };
+}
+
+/**
+ * The label of what Juan types for a test (AU-94): his own from a personal device; from a shared one, which may test
+ * and not change (decision 13), what a shared device gives (`ambient`).
+ */
+const typedLabel = (hand: Hand & { trust: Trust }): Label =>
+  hand.trust === "personal"
+    ? handLabel(hand.device)
+    : label("ambient", "personal", [{ kind: "user-edit", id: `device:${hand.device}` }]);
+
 /** The automation, if there is one and it is not deleted, with its draft parsed. */
-function open(store: UserStore, id: string) {
+export function open(store: UserStore, id: string) {
   const row = store.journal.automation(id);
   const draft = row && !row.deleted ? store.journal.automationDraft(id) : null;
   if (!draft) return null;
   return { draft, automation: parseAutomation(JSON.parse(draft.doc)) };
 }
 
-const isError = (x: unknown): x is ServiceError =>
+export const isError = (x: unknown): x is ServiceError =>
   typeof x === "object" && x !== null && "error" in x && Object.keys(x).length === 1;
 
 /** What the list says starts it (AU-61): its first trigger's type, kept at each save so no list parses a draft. */
 export const triggerOf = (a: Automation): string | null => a.steps.find(isTrigger)?.type ?? null;
+
+/**
+ * Every function of the server that writes a draft (AU-188, decision 13 of §10), and how what it writes arrives: from
+ * Juan's hand (the editor, «Duplicar», his actions), or without it (an assistant's proposal, the MCP, a package: none
+ * in F14d), which must pass the document through `lowerYes` (`@boni/automations`' writes.ts) before it is a draft, so
+ * no «Sí» arrives but by his hand. `publish.test.ts` finds every function that writes one and holds this list to
+ * them: a new one missing here fails it, and one marked `outside` that does not call `lowerYes` fails it too.
+ * Publishing, «Volver a esta», the switch, «Eliminar» and «Recuperar» write no draft (AU-98, AU-191).
+ */
+export const DRAFT_WRITERS: Readonly<Record<string, "hand" | "outside">> = {
+  createAutomation: "hand",
+  keepDraft: "hand",
+  duplicateAutomation: "hand",
+  // The actions of Juan's hand (actions.ts) that call the three above.
+  withAutomationActions: "hand",
+};
 
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */
 export function createAutomation(
@@ -218,7 +264,7 @@ export function createAutomation(
 }
 
 /** What is kept of a step's test, read back: the record without rows, and its print. */
-function keptTests(
+export function keptTests(
   store: UserStore,
   id: string,
 ): Map<string, AutomationTestRow & { kept: KeptRecord }> {
@@ -248,7 +294,7 @@ function asDeclared(
 }
 
 /** By trigger id, the fields of the row it gave in its kept test (AU-94). */
-function testedFields(
+export function testedFields(
   store: UserStore,
   a: Automation,
   kept: ReadonlyMap<string, { kept: KeptRecord }>,
@@ -433,11 +479,14 @@ const writes = (step: Step) => actionOf(step)?.effect === "write";
  */
 /**
  * What an automation runs with on the server: the user's store behind the policy of the origin `automation` (P28),
- * whoever starts the run (A-36), with the «Sí» of each write read from the document the store keeps (AU-188): until
- * publishing lands (S1) that is the draft, as «Probar» asks it; then a real run reads its published version. His
- * clock and zone, the box and the collections by name. A test has no `run` and writes nothing. A run for real (F14d: only a published
- * version runs, AU-95) gives its id, and every operation it saves carries it in the log, so `undoRun` takes back all
- * the run saved, each step's change whole (AU-174, AU-185). Make one per run: the policy's counter is the run's.
+ * whoever starts the run (A-36), with the «Sí» of each write read from the document the store keeps (AU-188, A-37):
+ * for a run for real (`run` given) that is the published version, and an automation with none has no run for real
+ * at all (this throws: a draft never runs for real, AU-95); for «Probar», which saves nothing, the draft, so its
+ * test says what it would save and what it would ask. His clock and zone, the box and the collections by name. A
+ * run for real gives its id, and every operation it saves carries it in the log, so `undoRun` takes back all the
+ * run saved, each step's change whole (AU-174, AU-185). Make one per run: the policy's counter is the run's.
+ * The only caller with a `run` is `runPublished` (publish.ts), which reads the document it runs from the same
+ * version.
  */
 export function runDeps(
   store: UserStore,
@@ -447,8 +496,11 @@ export function runDeps(
   run?: string,
 ): RunDeps & { policy: ReturnType<typeof automationPolicy> } {
   const own = automationLabel(id);
+  const doc = run ? publishedOf(store, id)?.automation : open(store, id)?.automation;
+  if (run && !doc)
+    throw new Error(`automation ${id} has no published version: nothing runs for real`);
   return {
-    policy: automationPolicy(open(store, id)?.automation, own),
+    policy: automationPolicy(doc, own),
     collections: storeCollections(store, {
       actor: "user",
       device: hand.device,
@@ -525,7 +577,7 @@ export async function testAutomation(
       {
         automation: a,
         trigger: request.trigger,
-        fields: { json: request.fields, label: handLabel(hand.device) },
+        fields: { json: request.fields, label: typedLabel(hand) },
         prints,
         ...(request.step !== undefined ? { step: request.step, kept } : {}),
       },

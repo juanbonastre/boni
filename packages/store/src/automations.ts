@@ -6,7 +6,8 @@ import type { DatabaseSync } from "node:sqlite";
  * entity: no collection lists it but Boni's own «Automatizaciones», which is made on each read. `Journal` extends
  * `AutomationsJournal`, and `automationsJournal` is its part of `openJournal`.
  *
- * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`; entry 26 adds `automation_drafts.trigger`):
+ * The migration (`AUTOMATIONS_MIGRATION`, entry 25 of `MIGRATIONS`; entry 26 adds `automation_drafts.trigger`; entry
+ * 27, F14d, adds the versions, `automations.published` and `automations.enabled`: `automationsVersionsMigration`):
  *
  *   CREATE TABLE automations (
  *     id TEXT PRIMARY KEY, by TEXT NOT NULL, created INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0
@@ -26,11 +27,19 @@ import type { DatabaseSync } from "node:sqlite";
  *     id TEXT NOT NULL, step TEXT NOT NULL, output TEXT NOT NULL, chunk INTEGER NOT NULL, rows TEXT NOT NULL,
  *     PRIMARY KEY (id, step, output, chunk)
  *   ) WITHOUT ROWID;
+ *   CREATE TABLE automation_versions (
+ *     id TEXT NOT NULL, n INTEGER NOT NULL, doc TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL,
+ *     device TEXT, by TEXT NOT NULL, names TEXT NOT NULL, PRIMARY KEY (id, n)
+ *   ) WITHOUT ROWID;   -- with two triggers that refuse any UPDATE or DELETE of a row (AU-95)
+ *   ALTER TABLE automations ADD COLUMN published INTEGER;               -- the version that runs, null unpublished
+ *   ALTER TABLE automations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0;  -- the switch (AU-194)
  *
  * What is undone and how (D-02). None of these is in the operation log: nothing here is a record of a collection.
  * - The draft is undone in the editor (AU-68), change by change; each undo is one more save.
  * - «Eliminar» sets `deleted` and its notice's «Deshacer» clears it: the draft, the places and the kept tests stay.
  * - A test writes nothing in any collection (AU-90), so it has nothing to undo.
+ * - A version is never undone (AU-95): another is published. «Volver a esta» publishes a new one with an old one's
+ *   document (AU-98). No Undo of the store, a turn or a run reaches a draft or a version (AU-188).
  * What an automation writes in the collections when it runs for real is F14d's: one group of the operation log per
  * run (AU-18).
  */
@@ -42,6 +51,33 @@ export interface AutomationRow {
   by: string;
   created: number;
   deleted: boolean;
+  /** The number of the version that runs (AU-95), or null: never published, nothing runs it for real. */
+  published: number | null;
+  /** The switch (AU-194): the first publish turns it on, «Eliminar» turns it off. Off, no run starts for real. */
+  enabled: boolean;
+}
+
+/**
+ * A published version (AU-95): a row that never changes once written. «Versiones» lists them without their
+ * documents (AU-98).
+ */
+export interface AutomationVersionInfo {
+  id: string;
+  /** 1, 2, 3…: one more each publish. */
+  n: number;
+  /** The document's print (sha256 of its JSON with `version` 0): what tells whether a draft is the one that runs. */
+  hash: string;
+  at: number;
+  device: string | null;
+  /** Whose it is: `user` (Juan's hand) today; `preset` (Boni's own) from F16. */
+  by: string;
+}
+
+/** A version whole: its document as it runs (its `version` is `n`), and the names its code cited (AU-192). */
+export interface AutomationVersionRow extends AutomationVersionInfo {
+  doc: string;
+  /** JSON of `KeptNames` (`@boni/automations`): by step, each name its code cites and the key it was. */
+  names: string;
 }
 
 /**
@@ -94,9 +130,35 @@ export interface AutomationsJournal {
   /** One automation, deleted or not, or null. */
   automation(id: string): AutomationRow | null;
   /** A new automation with its first draft (`rev` 1), in one transaction. */
-  createAutomation(a: Omit<AutomationRow, "deleted">, draft: Omit<AutomationDraftRow, "rev">): void;
-  /** «Eliminar» and its «Deshacer». */
+  createAutomation(
+    a: Omit<AutomationRow, "deleted" | "published" | "enabled">,
+    draft: Omit<AutomationDraftRow, "rev">,
+  ): void;
+  /** «Eliminar» and its «Deshacer» or «Recuperar» (AU-191): deleting turns it off, and bringing it back leaves it off. */
   setAutomationDeleted(id: string, deleted: boolean): void;
+  /** The deleted ones, the newest first, with their draft's name and when it was saved last (AU-191). */
+  deletedAutomations(): (AutomationRow & Pick<AutomationDraftRow, "name" | "updated">)[];
+  /** An automation's versions, the newest first, without their documents (AU-98). */
+  automationVersions(id: string): AutomationVersionInfo[];
+  /** One version whole, or null. */
+  automationVersion(id: string, n: number): AutomationVersionRow | null;
+  /**
+   * Writes the next version and makes it the one that runs, in one transaction; the first one also turns the switch
+   * on (AU-194, decision 12) and a later one leaves it as it was. `doc` is written as given: its `version` must be
+   * the number this gives, which is `expect` (the caller read it with `automation`): another number throws and
+   * writes nothing.
+   */
+  publishAutomation(
+    v: Omit<AutomationVersionRow, "n">,
+    expect: number,
+  ): { n: number; enabled: boolean };
+  /** The switch (AU-194). */
+  setAutomationEnabled(id: string, enabled: boolean): void;
+  /**
+   * Whether some live row of the collection (a type id) holds a value from outside today (AU-182, AU-170: a label
+   * below `imported`, as the policy reads it): one query over the collection's labels that reads no row whole.
+   */
+  holdsOutside(type: string): boolean;
   automationDraft(id: string): AutomationDraftRow | null;
   /** Keeps a draft over the one it had and gives its new `rev`. */
   saveAutomationDraft(d: Omit<AutomationDraftRow, "rev">): number;
@@ -160,6 +222,38 @@ export function automationsTriggerMigration(db: DatabaseSync): void {
     db.exec("ALTER TABLE automation_drafts ADD COLUMN trigger TEXT");
 }
 
+/**
+ * Migration 27 (F14d, AU-95, AU-194): the versions, and which one runs and whether it is on. It may run again on a
+ * database that has it (as 25), so each piece is added only when it is not there. A version is a row that never
+ * changes: two triggers refuse an UPDATE or a DELETE of one, whoever tries.
+ */
+export function automationsVersionsMigration(db: DatabaseSync): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS automation_versions (
+     id TEXT NOT NULL, n INTEGER NOT NULL, doc TEXT NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL,
+     device TEXT, by TEXT NOT NULL, names TEXT NOT NULL, PRIMARY KEY (id, n)
+   ) WITHOUT ROWID;
+   CREATE TRIGGER IF NOT EXISTS automation_versions_fixed BEFORE UPDATE ON automation_versions
+     BEGIN SELECT RAISE(ABORT, 'a version never changes'); END;
+   CREATE TRIGGER IF NOT EXISTS automation_versions_kept BEFORE DELETE ON automation_versions
+     BEGIN SELECT RAISE(ABORT, 'a version is never removed'); END;`);
+  const cols = db.prepare("PRAGMA table_info(automations)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "published"))
+    db.exec("ALTER TABLE automations ADD COLUMN published INTEGER");
+  if (!cols.some((c) => c.name === "enabled"))
+    db.exec("ALTER TABLE automations ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0");
+}
+
+/** The label integrities below `imported` (`@boni/entities`' order): a value from outside, a model's or ambient. */
+const OUTSIDE_INTEGRITY = "('external', 'model', 'ambient')";
+/**
+ * Whether a collection holds a value from outside (AU-182): one `EXISTS` over its rows' labels, by `entities_type`,
+ * reading no row whole. There is no index by integrity; its plan and its time at 3,000 rows are held in the server's
+ * `publish.test.ts`.
+ */
+export const HOLDS_OUTSIDE_SQL = `SELECT EXISTS (SELECT 1 FROM entities e JOIN field_prov p ON p.entity = e.id
+  WHERE e.type = ? AND e.deleted IS NULL
+    AND json_extract(p.label, '$.integrity') IN ${OUTSIDE_INTEGRITY}) AS found`;
+
 /** How many rows of a kept test one chunk holds: one page of the step view (AU-71, AU-72). */
 export const TEST_ROWS_CHUNK = 50;
 
@@ -187,13 +281,23 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
     by: r.by as string,
     created: Number(r.created),
     deleted: Number(r.deleted) === 1,
+    published: r.published === null || r.published === undefined ? null : Number(r.published),
+    enabled: Number(r.enabled) === 1,
+  });
+  const info = (r: Record<string, unknown>): AutomationVersionInfo => ({
+    id: r.id as string,
+    n: Number(r.n),
+    hash: r.hash as string,
+    at: Number(r.at),
+    device: (r.device as string | null) ?? null,
+    by: r.by as string,
   });
   return {
     automations: () =>
       (
         db
           .prepare(
-            `SELECT a.id, a.by, a.created, a.deleted, d.name, d.trigger, d.rev, d.updated
+            `SELECT a.id, a.by, a.created, a.deleted, a.published, a.enabled, d.name, d.trigger, d.rev, d.updated
              FROM automations a JOIN automation_drafts d ON d.id = a.id
              WHERE a.deleted = 0 ORDER BY a.created DESC, a.id DESC`,
           )
@@ -223,7 +327,55 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
         ).run(a.id, d.name, d.trigger, d.doc, d.device, d.updated);
       }),
     setAutomationDeleted: (id, deleted) =>
-      void db.prepare("UPDATE automations SET deleted = ? WHERE id = ?").run(deleted ? 1 : 0, id),
+      void (deleted
+        ? db.prepare("UPDATE automations SET deleted = 1, enabled = 0 WHERE id = ?").run(id)
+        : db.prepare("UPDATE automations SET deleted = 0 WHERE id = ?").run(id)),
+    deletedAutomations: () =>
+      (
+        db
+          .prepare(
+            `SELECT a.*, d.name, d.updated FROM automations a JOIN automation_drafts d ON d.id = a.id
+             WHERE a.deleted = 1 ORDER BY d.updated DESC, a.id DESC`,
+          )
+          .all() as Record<string, unknown>[]
+      ).map((r) => ({ ...row(r), name: r.name as string, updated: Number(r.updated) })),
+    automationVersions: (id) =>
+      (
+        db
+          .prepare(
+            "SELECT id, n, hash, at, device, by FROM automation_versions WHERE id = ? ORDER BY n DESC",
+          )
+          .all(id) as Record<string, unknown>[]
+      ).map(info),
+    automationVersion: (id, n) => {
+      const r = db.prepare("SELECT * FROM automation_versions WHERE id = ? AND n = ?").get(id, n) as
+        | Record<string, unknown>
+        | undefined;
+      return r ? { ...info(r), doc: r.doc as string, names: r.names as string } : null;
+    },
+    publishAutomation: (v, expect) =>
+      atomic(() => {
+        const last = db
+          .prepare("SELECT coalesce(max(n), 0) AS n FROM automation_versions WHERE id = ?")
+          .get(v.id) as { n: number };
+        const n = Number(last.n) + 1;
+        if (n !== expect) throw new Error(`version ${expect} of ${v.id} is not the next (${n})`);
+        db.prepare(
+          "INSERT INTO automation_versions (id, n, doc, hash, at, device, by, names) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).run(v.id, n, v.doc, v.hash, v.at, v.device, v.by, v.names);
+        const r = db
+          .prepare(
+            `UPDATE automations SET enabled = CASE WHEN published IS NULL THEN 1 ELSE enabled END, published = ?
+             WHERE id = ? RETURNING enabled`,
+          )
+          .get(n, v.id) as { enabled: number } | undefined;
+        if (!r) throw new Error(`no automation ${v.id}`);
+        return { n, enabled: Number(r.enabled) === 1 };
+      }),
+    setAutomationEnabled: (id, enabled) =>
+      void db.prepare("UPDATE automations SET enabled = ? WHERE id = ?").run(enabled ? 1 : 0, id),
+    holdsOutside: (type) =>
+      Number((db.prepare(HOLDS_OUTSIDE_SQL).get(type) as { found: number }).found) === 1,
     automationDraft: (id) => {
       const r = db.prepare("SELECT * FROM automation_drafts WHERE id = ?").get(id) as
         | Record<string, unknown>

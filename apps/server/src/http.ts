@@ -27,6 +27,7 @@ import {
   systemColumns,
 } from "./audit.ts";
 import { listUsers, login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
+import { SHARED_DEVICE_ROUTES } from "./automations/routes.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { createByName } from "./byName.ts";
 import {
@@ -416,13 +417,14 @@ export function makeApp(opts: ServerOptions): App {
         listener,
       );
     // «Automatizaciones» (docs/automatizaciones.md §7, AU-168): each route runs its action (automations/actions.ts)
-    // through `runAction`, which asks the policy with the real arguments as Juan's hand. Changing one is from a
-    // personal device, as a flow (D-41); reading one, any of his.
+    // through `runAction`, which asks the policy with the real arguments as Juan's hand. Changing one (and so
+    // setting a «Sí» and publishing) is from a personal device, as a flow (D-41, decision 13); reading and testing
+    // one, any of his: «Probar» writes in no collection (AU-90).
     if (url.pathname.startsWith("/api/agent/automations")) {
       const s = sessionUser(db, tokenOf(req));
       if (!s) return send(res, 401, { error: "unauthorized" });
       if (!opts.agent) return send(res, 503, { error: "agent-off" });
-      if (req.method !== "GET" && s.trust !== "personal")
+      if (req.method !== "GET" && !SHARED_DEVICE_ROUTES.has(route) && s.trust !== "personal")
         return send(res, 403, { error: "personal-device-only" });
       const store = opts.agent.store(s.user.id);
       const id = params.id ?? "";
@@ -516,6 +518,19 @@ export function makeApp(opts: ServerOptions): App {
             ...(expr !== null ? { expr } : {}),
           });
         }
+        // «Publicar» (AU-96), for the draft or, with ?version=, for «Volver a esta» (AU-98); and «Versiones».
+        case "GET /api/agent/automations/:id/publish": {
+          const version = url.searchParams.get("version");
+          return automation("automations.read", {
+            id,
+            part: "publish",
+            ...(version !== null ? { version } : {}),
+          });
+        }
+        case "GET /api/agent/automations/:id/versions":
+          return automation("automations.read", { id, part: "versions" });
+        case "GET /api/agent/automations/:id/versions/:n":
+          return automation("automations.read", { id, part: "version", version: params.n ?? "" });
         default:
           return send(res, 404, { error: "not-found" });
       }
