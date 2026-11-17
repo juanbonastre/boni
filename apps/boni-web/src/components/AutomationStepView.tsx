@@ -28,11 +28,15 @@ import { citedName } from "../automations/cite.ts";
 import type { Sample } from "../automations/client.ts";
 import { codeBlocked, codeContextOf, isCode } from "../automations/code.ts";
 import {
+  allowAction,
   changeAction,
   connectCollection,
+  disconnectCollection,
   removeOption,
   rename,
+  setCell,
   setParam,
+  setReadLimits,
   setSetting,
 } from "../automations/edit.ts";
 import {
@@ -57,7 +61,8 @@ import { DO, KEY, labelWord, type Namer, summaryWords } from "../automations/wor
 import type { DataType as AppType, DataField } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
-import { CodeConsole, CodeParams } from "./AutomationCode.tsx";
+import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
+import { ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
 import {
   StepInput,
@@ -957,6 +962,17 @@ export function AutomationStepView({
         fields={fieldsOut(state.draft, step.id, fieldsOf)}
         goToParam={goToParam}
       />
+      {codeContext && (
+        <CodeWould
+          t={t}
+          test={state.tests[step.id]}
+          locale={cite.locale}
+          nameOf={(key) => codeContext.collectionName?.(key) ?? key}
+          fieldNames={(key) =>
+            Object.fromEntries((fieldsOf(key) ?? []).map((f) => [f.key, f.name]))
+          }
+        />
+      )}
       {codeContext && <CodeConsole t={t} test={state.tests[step.id]} locale={cite.locale} />}
     </section>
   );
@@ -1034,6 +1050,27 @@ export function AutomationStepView({
             }
             connect={(key) => edit((d) => connectCollection(d, step.id, key))}
             {...(codeFailure ? { failure: codeFailure } : {})}
+          />
+        )}
+        {codeContext && (
+          <ConnectionsTable
+            t={t}
+            step={step}
+            context={codeContext}
+            locale={cite.locale}
+            readOnly={phone}
+            fieldsOf={fieldsOf}
+            filterEditor={(fields, items, set) => (
+              <FilterItemsEditor
+                type={asType(fields)}
+                items={items}
+                onChange={(next) => set(next)}
+              />
+            )}
+            setCell={(key, action, cell) => edit((d) => setCell(d, step.id, key, action, cell))}
+            allow={(key, action) => edit((d) => allowAction(d, step.id, key, action))}
+            disconnect={(key) => edit((d) => disconnectCollection(d, step.id, key))}
+            setLimits={(key, limits) => edit((d) => setReadLimits(d, step.id, key, limits))}
           />
         )}
         {options.length > 0 && (

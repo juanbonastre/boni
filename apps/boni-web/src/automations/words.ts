@@ -90,6 +90,8 @@ export const DO = {
   rowAfter: "auto.do.rowAfter",
   /** «Conecta «Gastos» a este paso» (AU-31): connects the collection the code cites. */
   connect: "auto.do.connect",
+  allow: "auto.do.allow",
+  disconnect: "auto.do.disconnect",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */

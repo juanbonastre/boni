@@ -13132,3 +13132,166 @@ button.auto-log-line {
     border-bottom: 1px solid var(--line);
   }
 }
+/* What a step can change, first in its card's labels (AU-180): said apart from the labels. */
+.auto-label.change {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+/* A step's connections (AU-40, AU-178): chips hanging under its card by a dotted line, never clicked. */
+.auto-card-conns {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 18px;
+  margin: 0;
+  padding: 0 0 0 10px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 1px dotted var(--line-strong);
+  pointer-events: none;
+  max-width: 260px;
+}
+.auto-card-conns::before {
+  content: "";
+  position: absolute;
+  top: -12px;
+  left: -1px;
+  height: 12px;
+  border-left: 1px dotted var(--line-strong);
+}
+.auto-conn-chip {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10.5px;
+  line-height: 16px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.auto-conn-chip-name {
+  font-weight: 600;
+}
+.auto-conn-chip-words {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The connections' table of a «Código» (AU-41): a cell the code uses without permission is red (AU-176). */
+.auto-param-connections {
+  grid-template-columns: 1fr;
+}
+.auto-conn-table select {
+  font: inherit;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 4px;
+}
+.auto-conn-table select:disabled {
+  opacity: 1;
+  border-color: transparent;
+  appearance: none;
+}
+.auto-conn-cell {
+  white-space: nowrap;
+}
+.auto-conn-use {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.auto-conn-cell.missing {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}
+.auto-conn-cell.missing select,
+.auto-conn-cell.missing .auto-conn-use {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+.auto-conn-allow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  border-color: var(--bad);
+}
+.auto-conn-allow span {
+  flex: 1;
+  min-width: 0;
+}
+.auto-conn-limits {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.auto-conn-limits summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.auto-conn-limits-said {
+  color: var(--text);
+}
+.auto-conn-limit {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.auto-conn-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.auto-conn-fields legend {
+  width: 100%;
+  padding: 0;
+}
+.auto-conn-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.auto-conn-limit input[type="number"] {
+  width: 9em;
+}
+.auto-conn-sentence {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--text-2, var(--muted));
+}
+/* «Haría esto» of a «Código» (AU-181): what its requests would save, folded above «Consola». */
+.auto-would-code {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  font-size: 12.5px;
+}
+.auto-would-code summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  cursor: pointer;
+}
+.auto-would-line {
+  color: var(--muted);
+}
+.auto-would-code .auto-table-wrap {
+  margin-top: 6px;
+}
+.auto-would-code[open] .auto-console-fold {
+  transform: rotate(90deg);
+}
+.auto-would-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}

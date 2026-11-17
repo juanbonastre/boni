@@ -438,3 +438,63 @@ test("AU-38 · in the desktop app over the real server and the real box, express
   // The server's test fixes 10 s for five steps of JavaScript (AU-38, S1 and task 138); with the app's own share: 15 s.
   under(clock() - from, 15_000, "clock", "the test of 3,000 rows in the desktop app");
 });
+
+/** A «Código» that doubles every expense it reads: it asks to modify 3,000 rows of «Gasto» (AU-172). */
+const DOUBLES = `const gastos = $col('Gasto').find({ limit: 5000 });
+for (const g of gastos) $col('Gasto').update(g.id, { importe: g.importe * 2 });
+return [];`;
+
+test("AU-176 AU-180 AU-181 · the criterion of F14c for a code that saves, in the desktop app over the real server and the real box: its card says what it changes and its connection what it can save; without permission the table says how to fix it and «Permitir» sets «Preguntar»; «Probar paso» shows «Haría esto» over 3,000 rows and saves none", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  const name = "Doblar cada gasto";
+  const code = {
+    id: "s_01kx3dobla00",
+    name: "Código",
+    type: "code",
+    params: { source: DOUBLES },
+    connections: [{ collection: "gasto", read: {}, create: false, update: false, remove: false }],
+  };
+  const id = await make(w, name, [START, code]);
+  const before = await counts(w);
+  await openAutomation(w, name, 2);
+  const card = w.locator(`.auto-card[data-step="${code.id}"]`);
+  // On the canvas, before opening it: what it changes, and what its connection lets it do.
+  await expect(card.locator(".auto-label.change")).toHaveText("Modifica Gasto");
+  await expect(card.locator(".auto-conn-chip")).toHaveText("GastoSolo lee");
+  await card.dblclick();
+  await expect(view(w)).toHaveAttribute("data-step", code.id);
+  const table = param(w, "connections");
+  const cell = table.locator('tr[data-collection="gasto"] .auto-conn-cell[data-action="update"]');
+  await expect(cell).toHaveClass(/\bmissing\b/);
+  const notice = table.locator(".auto-conn-allow");
+  await expect(notice).toContainText("Permite modificar en «Gasto»");
+  const testStep = view(w).locator(".auto-view-test").getByRole("button", { name: "Probar paso" });
+  await expect(testStep).toBeDisabled();
+  await notice.getByRole("button", { name: "Permitir" }).click();
+  await expect(cell).toHaveAttribute("data-cell", "ask");
+  await expect(table.locator(".auto-conn-sentence")).toHaveText(
+    "Puede leer y modificar Gasto. No puede crear ni eliminar nada.",
+  );
+  await expect(card.locator(".auto-conn-chip")).toHaveText("GastoLee y modifica · pregunta antes");
+  await expect(testStep).toBeEnabled();
+  await testStep.click();
+  const would = view(w).getByRole("region", { name: "Salida" }).locator(".auto-would-code");
+  await expect(would.locator(".auto-would-line")).toHaveText(["Modificaría 3000 filas en Gasto"], {
+    timeout: 60_000,
+  });
+  await would.locator("summary").click();
+  await expect(would).toContainText("Al ejecutarse, preguntaría antes de guardar");
+  await expect(would.locator("tbody tr")).toHaveCount(100);
+  // Only `importe` changes, before and after; the rows whose `importe` is 0 stay the same (0 × 2), so not every one.
+  await expect(would.locator("tbody tr td.changed").first()).toBeVisible();
+  for (const row of await would.locator("tbody tr").all())
+    expect(await row.locator("td.changed").count()).toBeLessThanOrEqual(1);
+  await expect(would.locator(".auto-console-more")).toHaveText("y 2900 filas más");
+  // Saved with the draft: «Modificar» at «Preguntar», never «Sí»; and nothing was written.
+  const draft = await ask(w, "GET", `api/agent/automations/${id}`);
+  const saved = draft.automation.steps.find((s: { id: string }) => s.id === code.id);
+  expect(saved.connections).toEqual([
+    { collection: "gasto", read: {}, create: false, update: { mode: "ask" }, remove: false },
+  ]);
+  expect(await counts(w)).toEqual(before);
+});

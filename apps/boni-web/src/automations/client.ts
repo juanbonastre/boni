@@ -18,6 +18,7 @@ import type {
   StepError,
   StepFailure,
   StepState,
+  WriteAction,
 } from "@boni/automations";
 import type { Label } from "@boni/entities";
 import { type AgentApi, queryValue } from "../core/agent.ts";
@@ -48,6 +49,21 @@ export interface StepTest {
   stale: boolean;
   /** «Consola» (AU-33): the code's own text, checked before it is painted (automations/code.ts `consoleOf`). */
   console?: { lines: ConsoleLine[]; dropped: number };
+  /** «Haría esto» of a «Código» (AU-181): its values are the code's, painted as plain text (A-01). */
+  would?: CodeWould;
+}
+
+/** What a «Código»'s requests would save in a test (AU-181), as the server keeps it: the counts and the first rows. */
+export interface CodeWould {
+  asks: boolean;
+  counts: { collection: string; action: WriteAction; n: number }[];
+  records: {
+    collection: string;
+    action: WriteAction;
+    id?: string;
+    before?: Record<string, Cell>;
+    after?: Record<string, Cell>;
+  }[];
 }
 
 /** What the editor opens with. */
