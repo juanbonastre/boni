@@ -82,6 +82,7 @@ export function TestRows({
   names,
   choices,
   from,
+  noAsk = false,
 }: {
   t: T;
   ask: RowsAsk;
@@ -90,6 +91,8 @@ export function TestRows({
   names: Readonly<Record<string, string>>;
   choices?: Choices;
   from?: string;
+  /** A removal with «Permiso» «Sí»: «Haría esto» says «sin preguntar» of each row it sends to the trash (AU-187). */
+  noAsk?: boolean;
 }) {
   const locale = useStore((s) => s.settings.language) === "en" ? "en-GB" : "es-ES";
   const [rows, setRows] = useState<RowView[] | null>(null);
@@ -145,7 +148,7 @@ export function TestRows({
           )}
         </pre>
       ) : show === "would" ? (
-        <WouldTable t={t} rows={said} names={names} />
+        <WouldTable t={t} rows={said} names={names} noAsk={noAsk} />
       ) : (
         <RowsTable t={t} rows={said} names={names} />
       )}
@@ -323,16 +326,19 @@ function RowsTable({
 
 /**
  * «Haría esto» (AU-72, AU-122): one row per row the step would write. To change one, each field that changes says
- * its value before and after; to make one, only after; to send one to the trash, the row as it was.
+ * its value before and after; to make one, only after; to send one to the trash, the row as it was, with «sin
+ * preguntar» when a run would not ask (AU-187, AU-189: as the card and «Lo que podrá hacer» say it).
  */
 export function WouldTable({
   t,
   rows,
   names,
+  noAsk = false,
 }: {
   t: T;
   rows: readonly Pick<RowView, "json" | "before" | "would">[];
   names: Readonly<Record<string, string>>;
+  noAsk?: boolean;
 }) {
   const cols = columnsOf(rows);
   return (
@@ -353,7 +359,10 @@ export function WouldTable({
             const would = r.would ?? (r.before ? "update" : "create");
             return (
               <tr key={i} className={`would-${would}`} data-would={would}>
-                <td className="auto-would-what">{t(`auto.would.${would}`)}</td>
+                <td className="auto-would-what">
+                  {t(`auto.would.${would}`)}
+                  {would === "trash" && noAsk ? ` · ${t("auto.conn.noAsk")}` : ""}
+                </td>
                 {cols.map((c) => {
                   const before = r.before?.[c];
                   const after = r.json[c];

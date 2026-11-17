@@ -347,11 +347,12 @@ test("AU-65 AU-21 AU-70 · the criterion of F14b in the desktop app over the rea
 
 test("AU-62 AU-05 · the draft made in the desktop app is on the server: after a reload, with the app closed and opened again, and in the app of another computer of the account, the same canvas, each box where it was left and each step with its last test; «Duplicar» with the same places, «Eliminar» and its «Deshacer»", async () => {
   let w = await (app as ElectronApplication).firstWindow();
-  // The header has back, the name, «Guardado» and «⋯», nothing else of its own (AU-62).
+  // The header has back, the name, «Guardado», «Publicar» (F14d) and «⋯», nothing else of its own (AU-62).
   await expect(nameBox(w)).toHaveValue(NAME);
   await expect(saved(w)).toHaveText("Guardado");
-  await expect(head(w).getByRole("button")).toHaveCount(2);
+  await expect(head(w).getByRole("button")).toHaveCount(3);
   await expect(head(w).getByRole("button", { name: "Volver a Automatizaciones" })).toBeVisible();
+  await expect(head(w).getByRole("button", { name: "Publicar", exact: true })).toBeVisible();
   await expect(head(w).getByRole("button", { name: "Más" })).toBeVisible();
   // «Filtrar» dropped lower: its place is saved apart, the draft does not change (AU-05).
   const filtrar = (await cardNamed(w, "Filtrar").getAttribute("data-step")) as string;

@@ -22,12 +22,14 @@ import {
 import { label, newId } from "@boni/entities";
 import { cpu, under } from "@boni/pace";
 import { HOLDS_OUTSIDE_SQL, openUserStore, type UserStore } from "@boni/store";
+import { SYS } from "@boni/views";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { ACTIONS, runAction } from "../actions.ts";
 import { AgentHost } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
+import { flowsCollection } from "../flowsCollection.ts";
 import { makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
 import { ROUTES } from "../routes.ts";
@@ -638,8 +640,11 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
     expect(JSON.stringify(r)).toMatch(/not-personal|refused/);
     const read = await runAction("automations.read", { id: a.id, part: "versions" }, shared);
     expect("out" in read).toBe(true);
-    // Not registered for everyone yet: their controls are P1's (routes.ts).
-    expect(ACTIONS.get("automations.publish") ?? null).toBeNull();
+    // Registered for everyone with their controls (P1), each route listed and run by its action.
+    for (const [route, { action }] of Object.entries(PUBLISH_ROUTES)) {
+      expect(ACTIONS.get(action)?.name, route).toBe(action);
+      expect(ROUTES[route], route).toBe("tailnet");
+    }
 
     // Over HTTP from a shared device: a draft save is refused; «Probar» and the reads are not.
     const { server, host, call, trust } = await served();
@@ -655,6 +660,37 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
       const trigger = view.automation.steps[0]?.id as string;
       const tested = await call("POST", `${path}/test`, { trigger, fields: {} });
       expect(tested.status, JSON.stringify(tested.body)).toBe(200);
+      // «Publicar» and the switch: refused from the shared device, done from his own (AU-95, AU-194).
+      const rev = Number((await call("GET", path)).body.rev);
+      // «Estado» in the list (AU-194): «Sin publicar», then what the switch says.
+      const F = SYS.flows;
+      const state = () =>
+        flowsCollection(own).rows.find((r) => r.id === `${F.automation}${view.id}`)?.values[
+          F.state
+        ];
+      expect(state()).toBe(F.unpublished);
+      expect(await call("POST", `${path}/publish`, { rev })).toEqual({
+        status: 403,
+        body: { error: "personal-device-only" },
+      });
+      expect((await call("PUT", `${path}/enabled`, { enabled: false })).status).toBe(403);
+      trust("personal");
+      expect(await call("POST", `${path}/publish`, { rev: rev + 7 })).toEqual({
+        status: 200,
+        body: { refused: "stale", rev },
+      });
+      expect(await call("POST", `${path}/publish`, { rev })).toEqual({
+        status: 200,
+        body: { version: 1, enabled: true },
+      });
+      expect((await call("GET", `${path}/versions`)).body.running).toBe(1);
+      expect(state()).toBe(F.on);
+      expect(await call("PUT", `${path}/enabled`, { enabled: false })).toEqual({
+        status: 200,
+        body: { enabled: false },
+      });
+      expect(state()).toBe(F.off);
+      expect((await call("PUT", `${path}/enabled`, {})).status).toBe(400);
     } finally {
       server.close();
     }

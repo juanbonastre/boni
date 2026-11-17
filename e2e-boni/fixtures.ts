@@ -79,7 +79,22 @@ export interface Options {
       keptOnly?: string[];
       tested?: Record<string, Record<string, unknown>>;
     };
+    /**
+     * F14d P1: published `versions` times (each version the draft as given, the last one running) and its switch.
+     * Never published, without it: «Sin publicar».
+     */
+    published?: { versions: number; enabled?: boolean };
+    /**
+     * What `GET …/publish` says besides `rev`, `running`, `first` and `same` (which the fake computes): the diff, what
+     * stops it, what is worth a look and «Lo que podrá hacer», as the server computes them with `@boni/automations`.
+     * With `blocks`, publishing is refused as `blocked`.
+     */
+    publish?: Record<string, unknown>;
+    /** What `POST …/run` answers (S2's shape): started by default; `refused`, refused with it. */
+    run?: { refused?: string; problems?: Record<string, unknown>[] };
   }[];
+  /** A shared device (decision 13): every touch but a test is refused with 403 «personal-device-only». */
+  sharedDevice?: boolean;
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
    * api/agent/turn"); the last one repeats. */
   agent?: Record<string, unknown[]>;
@@ -903,6 +918,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         tests: Record<string, Record<string, unknown>>;
         tested: Record<string, Record<string, unknown>>;
         prints: Record<string, string>;
+        /** F14d: the versions, each the document it published, and the switch. */
+        versions: { n: number; at: number; doc: AutoHere["doc"] }[];
+        enabled: boolean;
+        publish?: Record<string, unknown>;
+        run?: { refused?: string; problems?: Record<string, unknown>[] };
       };
       const autoDoc = (id: string, name: string, trigger?: string | null) => ({
         format: 1,
@@ -932,7 +952,27 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         tests: {},
         tested: a.test?.tested ?? {},
         prints: {},
+        versions: [],
+        enabled: false,
+        publish: a.publish,
+        run: a.run,
       }));
+      for (const [i, a] of autos.entries()) {
+        const p = opts.automations?.[i]?.published;
+        if (!p) continue;
+        for (let n = 1; n <= p.versions; n++)
+          a.versions.push({
+            n,
+            at: 1_700_000_000_000 + n * 86_400_000,
+            doc: { ...a.doc, version: n },
+          });
+        a.enabled = p.enabled ?? true;
+      }
+      /** The draft against a version: what a print sees (no `version`), as the server's `isSame` does. */
+      const sameDoc = (x: AutoHere["doc"], y: AutoHere["doc"]) =>
+        JSON.stringify({ ...x, version: 0, id: "" }) ===
+        JSON.stringify({ ...y, version: 0, id: "" });
+      const runningOf = (a: AutoHere) => a.versions.at(-1) ?? null;
       /** What makes a step's test stale (AU-91): anything but its name and its place. */
       const printOf = (step: Record<string, unknown>) =>
         JSON.stringify({ ...step, name: undefined });
@@ -1042,8 +1082,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             places: [],
             updated: Date.now(),
             deleted: false,
+            versions: [],
+            enabled: false,
           };
-          autos.push(a);
+          autos.push(a as AutoHere);
           return [200, autoView(a)];
         }
         const a = autos.find((x) => x.id === id);
@@ -1054,6 +1096,132 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         if (a.deleted) return gone;
         if (!rest && method === "GET") return [200, autoView(a)];
+        // A shared device sees and tests; every other touch is refused (decision 13, http.ts).
+        if (opts.sharedDevice && method !== "GET" && rest !== "/test")
+          return [403, '{"error":"personal-device-only"}'];
+        // «Publicar» (AU-96): what the screen shows of the draft; publishing it by its `rev`, the first turning it on
+        // (AU-194). Every publish asked: `window.__autoPublish`.
+        const running = runningOf(a);
+        if (rest === "/publish" && method === "GET")
+          return [
+            200,
+            JSON.stringify({
+              rev: a.rev,
+              running: running?.n ?? null,
+              first: running === null,
+              same: !!running && sameDoc(running.doc, a.doc),
+              diff: null,
+              blocks: [],
+              looks: [],
+              abilities: [],
+              outside: [],
+              ...(running
+                ? {
+                    diff: {
+                      added: [],
+                      removed: [],
+                      changed: [],
+                      arrows: { added: [], removed: [] },
+                      triggers: [],
+                      limits: [],
+                    },
+                  }
+                : {}),
+              ...a.publish,
+            }),
+          ];
+        if (rest === "/publish" && method === "POST") {
+          const req = (body ?? {}) as { rev?: unknown };
+          record("__autoPublish", JSON.stringify(req));
+          if (typeof req.rev !== "number") return bad;
+          if (req.rev !== a.rev) return [200, JSON.stringify({ refused: "stale", rev: a.rev })];
+          const blocks = a.publish?.blocks as unknown[] | undefined;
+          if (blocks?.length)
+            return [200, JSON.stringify({ refused: "blocked", problems: blocks })];
+          if (running && sameDoc(running.doc, a.doc)) return [200, '{"refused":"unchanged"}'];
+          const n = (running?.n ?? 0) + 1;
+          a.versions.push({ n, at: Date.now(), doc: { ...a.doc, version: n } });
+          if (!running) a.enabled = true;
+          return [200, JSON.stringify({ version: n, enabled: a.enabled })];
+        }
+        if (rest === "/versions" && method === "GET")
+          return [
+            200,
+            JSON.stringify({
+              versions: a.versions.map((v) => ({
+                n: v.n,
+                at: v.at,
+                device: "d_portatil",
+                by: "user",
+              })),
+              running: running?.n ?? null,
+              enabled: a.enabled,
+            }),
+          ];
+        const vm = rest ? /^\/versions\/(\d+)$/.exec(rest) : null;
+        if (vm && method === "GET") {
+          const v = a.versions.find((x) => x.n === Number(vm[1]));
+          if (!v) return gone;
+          return [
+            200,
+            JSON.stringify({
+              n: v.n,
+              at: v.at,
+              device: "d_portatil",
+              by: "user",
+              automation: v.doc,
+            }),
+          ];
+        }
+        if (rest === "/enabled" && method === "PUT") {
+          const req = (body ?? {}) as { enabled?: unknown };
+          if (typeof req.enabled !== "boolean") return bad;
+          if (!running) return [200, '{"refused":"unpublished"}'];
+          a.enabled = req.enabled;
+          return [200, JSON.stringify({ enabled: a.enabled })];
+        }
+        // «Ejecutar» (AU-97), S2's shape: the published version, refused off or never published. Every body asked:
+        // `window.__autoRuns`.
+        if (rest === "/run" && method === "POST") {
+          const req = (body ?? {}) as { trigger?: unknown; fields?: unknown };
+          if (typeof req.trigger !== "string" || !req.fields || typeof req.fields !== "object")
+            return bad;
+          record("__autoRuns", JSON.stringify(req));
+          if (!running) return [200, '{"refused":"unpublished"}'];
+          if (!a.enabled) return [200, '{"refused":"off"}'];
+          if (a.run?.refused)
+            return [
+              200,
+              JSON.stringify({
+                refused: a.run.refused,
+                problems: a.run.problems,
+                run: "r_01jejemplo0000",
+              }),
+            ];
+          return [
+            200,
+            JSON.stringify({
+              run: {
+                id: "r_01jejemplo0001",
+                automation: a.id,
+                version: running.n,
+                test: false,
+                state: "queued",
+                startedBy: "user",
+                device: "d_portatil",
+                at: Date.now(),
+                started: null,
+                ended: null,
+                ms: null,
+                step: null,
+                error: null,
+                line: null,
+                undone: null,
+                retryOf: null,
+              },
+            }),
+          ];
+        }
         if (!rest && method === "DELETE") {
           a.deleted = true;
           return [200, '{"ok":true}'];
@@ -1289,8 +1457,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             places: JSON.parse(JSON.stringify(a.places)),
             updated: Date.now(),
             deleted: false,
+            // A copy is a new draft: never published, off (AU-194).
+            versions: [],
+            enabled: false,
           };
-          autos.push(copy);
+          autos.push(copy as AutoHere);
           return [200, autoView(copy)];
         }
         return bad;
@@ -1348,7 +1519,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           values: {
             f_titulo: a.doc.name,
             f_disparador: wordId(autoTrigger(a)),
-            f_estado: "o_estado_sin_publicar",
+            f_estado: !a.versions.length
+              ? "o_estado_sin_publicar"
+              : a.enabled
+                ? "o_estado_encendido"
+                : "o_estado_apagado",
             f_ejecuciones: 0,
             f_de: "o_de_tu",
           },
@@ -1991,7 +2166,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run)?$/.exec(
             p,
           );
         if (automation)

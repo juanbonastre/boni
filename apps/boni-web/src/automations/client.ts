@@ -4,16 +4,20 @@
  * app cannot import the server, so the shapes are written twice: the desktop e2e (the real app on the real server)
  * and the server's own tests hold them together. Every path is under `api/agent/`, which the desktop's `paths.cjs`
  * and Android's `Net.kt` already allow, each query value escaped strictly (`queryValue`). C1 of F14b makes the calls of the list and the editor's header real, C2 the boxes'
- * places, E the test, its rows and the sample.
+ * places, E the test, its rows and the sample. P1 of F14d «Publicar», the versions and the switch, and «Ejecutar» over
+ * the shapes S2 gives its route (`POST automations/:id/run`).
  *
  * The catalogue and validation are not asked: the app imports `@boni/automations` and runs the same code the
  * server runs (the server validates again before it tests: it trusts nothing the app says).
  */
 import type {
+  Ability,
   Automation,
+  AutomationDiff,
   Cell,
   CodeFailure,
   ConsoleLine,
+  Look,
   Problem,
   StepError,
   StepFailure,
@@ -131,6 +135,55 @@ export type ExprPreview =
   | { state: "untested"; steps: string[] }
   | { state: "failed"; failure: StepFailure | CodeFailure; row: number; of: number };
 
+/** What «Publicar» shows (AU-96): the server's `PublishView` (apps/server/src/automations/publish.ts). */
+export interface PublishView {
+  /** The draft's `rev` it was read with: what «Publicar» sends back. */
+  rev: number;
+  /** The version that runs, or null. */
+  running: number | null;
+  /** Never published: publishing turns it on (AU-194). */
+  first: boolean;
+  /** The same document as the one that runs: nothing to publish. */
+  same: boolean;
+  diff: AutomationDiff | null;
+  blocks: Problem[];
+  looks: Look[];
+  abilities: Ability[];
+  outside: string[];
+}
+
+/** One published version (AU-95): its number, when and from which device. */
+export interface VersionInfo {
+  n: number;
+  at: number;
+  device: string | null;
+  by: string;
+}
+
+/** `GET automations/:id/versions`: the versions, the one that runs and the switch (AU-194). */
+export interface Versions {
+  versions: VersionInfo[];
+  running: number | null;
+  enabled: boolean;
+}
+
+/** Why the server did nothing (a 200 with `refused`, publish.ts and S2's runs): the screen words each one. */
+export interface Refused {
+  refused: string;
+  rev?: number;
+  problems?: Problem[];
+  /** «Ya se está ejecutando»: the run in progress. */
+  run?: string;
+}
+
+/** `POST automations/:id/publish`: the version made and the switch, or why not. */
+export type PublishAnswer = { version: number; enabled: boolean } | Refused;
+/** `POST automations/:id/run` (AU-97, S2's route): the run as it started, or why not. */
+export type RunAnswer = { run: { id: string; state: string; version: number | null } } | Refused;
+
+export const isRefused = (x: unknown): x is Refused =>
+  !!x && typeof x === "object" && typeof (x as Refused).refused === "string";
+
 export interface AutomationsClient {
   /** `GET automations/:id`. */
   open(id: string): Promise<Opened>;
@@ -162,6 +215,18 @@ export interface AutomationsClient {
     id: string,
     at: { step: string; param: string; row: number; expr: string },
   ): Promise<ExprPreview>;
+  /** `GET automations/:id/publish`: what «Publicar» shows for the draft, or with `version` for «Volver a esta». */
+  publishView(id: string, version?: number): Promise<PublishView>;
+  /** `POST automations/:id/publish`: the draft the screen showed (`rev`), or an old `version` again. */
+  publish(id: string, what: { rev: number } | { version: number }): Promise<PublishAnswer>;
+  /** `GET automations/:id/versions`. */
+  versions(id: string): Promise<Versions>;
+  /** `GET automations/:id/versions/:n`: that version's document as it runs. */
+  version(id: string, n: number): Promise<Automation>;
+  /** `PUT automations/:id/enabled`: the switch (AU-194). */
+  setEnabled(id: string, enabled: boolean): Promise<{ enabled: boolean } | Refused>;
+  /** `POST automations/:id/run` (AU-97): the published version, with the trigger and its fields. */
+  run(id: string, request: { trigger: string; fields: Record<string, Cell> }): Promise<RunAnswer>;
 }
 
 /**
@@ -274,6 +339,71 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
         .join("&");
       return previewOf(await api.automations("GET", path(id, `/test/preview?${q}`)));
     },
+    publishView: async (id, version) =>
+      publishViewOf(
+        await api.automations(
+          "GET",
+          path(id, version === undefined ? "/publish" : `/publish?version=${version}`),
+        ),
+      ),
+    publish: async (id, what) => {
+      const r = await api.automations("POST", path(id, "/publish"), what);
+      if (isRefused(r)) return r;
+      const o = isObj(r) ? r : {};
+      return { version: Number(o.version) || 0, enabled: o.enabled === true };
+    },
+    versions: async (id) => {
+      const o = await api.automations("GET", path(id, "/versions"));
+      const x = isObj(o) ? o : {};
+      return {
+        versions: Array.isArray(x.versions)
+          ? (x.versions.filter(isObj) as unknown as VersionInfo[])
+          : [],
+        running: typeof x.running === "number" ? x.running : null,
+        enabled: x.enabled === true,
+      };
+    },
+    version: async (id, n) => {
+      const o = await api.automations("GET", path(id, `/versions/${n}`));
+      if (!isObj(o) || !isObj(o.automation)) throw new Error("automations: not a version");
+      return o.automation as unknown as Automation;
+    },
+    setEnabled: async (id, enabled) => {
+      const r = await api.automations("PUT", path(id, "/enabled"), { enabled });
+      if (isRefused(r)) return r;
+      return { enabled: isObj(r) && r.enabled === true };
+    },
+    run: async (id, request) => {
+      const r = await api.automations("POST", path(id, "/run"), request);
+      if (isRefused(r)) return r;
+      const run = isObj(r) && isObj(r.run) ? r.run : {};
+      return {
+        run: {
+          id: typeof run.id === "string" ? run.id : "",
+          state: typeof run.state === "string" ? run.state : "queued",
+          version: typeof run.version === "number" ? run.version : null,
+        },
+      };
+    },
+  };
+}
+
+/** What `GET automations/:id/publish` answers, read as «Publicar» needs it. */
+export function publishViewOf(x: unknown): PublishView {
+  const o = isObj(x) ? x : {};
+  const list = <X>(v: unknown) => (Array.isArray(v) ? (v.filter(isObj) as unknown as X[]) : []);
+  return {
+    rev: typeof o.rev === "number" ? o.rev : 0,
+    running: typeof o.running === "number" ? o.running : null,
+    first: o.first === true,
+    same: o.same === true,
+    diff: isObj(o.diff) ? (o.diff as unknown as AutomationDiff) : null,
+    blocks: list<Problem>(o.blocks),
+    looks: list<Look>(o.looks),
+    abilities: list<Ability>(o.abilities),
+    outside: Array.isArray(o.outside)
+      ? o.outside.filter((s): s is string => typeof s === "string")
+      : [],
   };
 }
 

@@ -13295,3 +13295,92 @@ button.auto-log-line {
   flex-wrap: wrap;
   gap: 2px 10px;
 }
+
+/* F14d P1: the header's switch and «Publicar», pantalla 10, «Ajustes» and «Ejecutar» (AU-95, AU-96, AU-17, AU-97, AU-194). */
+.auto-switch {
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.auto-publish {
+  white-space: nowrap;
+}
+/* At 900 px «Publicar» was cut to «Publica»: what follows the name keeps its width and only the name gives way. */
+.auto-head > .auto-saved,
+.auto-head > .auto-published,
+.auto-head > .auto-switch,
+.auto-head > .auto-publish,
+.auto-head > .auto-run-phone,
+.auto-head > .icon-btn {
+  flex-shrink: 0;
+}
+.modal.auto-pub {
+  width: min(600px, 92vw);
+}
+.auto-pub-will {
+  margin: 10px 0 0;
+}
+.auto-pub-part ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.auto-pub-part li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+}
+.auto-pub-part li.bad {
+  color: var(--bad);
+}
+.auto-pub-part ul.auto-pub-can {
+  list-style: none;
+  padding-left: 0;
+}
+.auto-pub-step {
+  font-weight: 600;
+}
+.auto-limits {
+  display: grid;
+  gap: 14px;
+  padding-top: 14px;
+}
+.auto-limit {
+  display: grid;
+  gap: 4px;
+}
+.auto-limit label {
+  font-weight: 600;
+  font-size: 13px;
+}
+.auto-limit-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auto-limit-box .input {
+  width: 9em;
+}
+.auto-limit .input.bad {
+  border-color: var(--bad);
+}
+.auto-limit [role="alert"] {
+  color: var(--bad);
+  font-size: 12px;
+}
+.auto-run {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+.auto-run-version {
+  color: var(--muted);
+  margin: 0;
+}
+.auto-log-limit {
+  white-space: nowrap;
+}
+.auto-published {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}

@@ -126,7 +126,8 @@ export function flowsCollection(store: UserStore): { type: TypeDef; rows: Entity
     values: {
       [F.title]: a.name,
       [F.trigger]: triggerOption(automationTriggerWords(a.trigger)),
-      [F.state]: F.unpublished,
+      // AU-194: «Sin publicar» until its first version; then the switch says it.
+      [F.state]: a.published === null ? F.unpublished : a.enabled ? F.on : F.off,
       [F.runs]: 0,
       [F.by]: F.user,
     },

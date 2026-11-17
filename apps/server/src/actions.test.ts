@@ -121,6 +121,8 @@ describe("one list of actions (D-41, F10)", () => {
       "automations.delete",
       "automations.duplicate",
       "automations.edit",
+      "automations.enable",
+      "automations.publish",
       "automations.restore",
       "connectors.mail",
       "connectors.mail_guide",

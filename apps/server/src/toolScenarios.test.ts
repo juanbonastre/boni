@@ -21,6 +21,10 @@ const AUTOMATION_TEST =
 const AUTOMATION_PROBAR =
   "AU-90 · «Probar», «Probar paso», the rows and the sample, as the editor calls them";
 const FUNCTIONS = "apps/server/src/functionSteps.test.ts";
+/** «Publicar» and the switch (F14d P1), over HTTP as the editor calls them, from a shared and a personal device. */
+const AUTOMATION_PUBLISH = "apps/server/src/automations/publish.test.ts";
+const PUBLISH_TEST =
+  "AU-188 · setting a «Sí» and publishing are refused from a device that is not personal; reading and testing are not";
 
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
 const REVIEW_TEST =
@@ -236,6 +240,8 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "automations.duplicate": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.delete": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
   "automations.restore": [{ file: AUTOMATION_ROUTES, test: AUTOMATION_TEST }],
+  "automations.publish": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
+  "automations.enable": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
   "flows.save": [
     {
       file: AGENT,
