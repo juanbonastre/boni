@@ -796,8 +796,9 @@ test.describe("«Ejecuciones»", () => {
     const pages = await recorded(page, "__autoRunPages");
     expect(pages).toHaveLength(2);
     expect(pages[1]).toMatch(/^all r_01jhora\d{6}$/);
-    // A setting saved meanwhile (here the theme; the desktop saves some on its own) is no other list: the hundred
-    // stay (once it put the list back to its first fifty, in the desktop's test at volume).
+    // A setting saved meanwhile (here the theme; the desktop broadcasts its settings on its own, each time its live
+    // connection to the server changes state) is no other list: the hundred stay. It put the list back to its first
+    // fifty in the desktop's test at volume, whose server restarts just before the list opens.
     await page.getByRole("button", { name: "Ajustes" }).click();
     const settings = page.locator(".modal");
     await settings.getByRole("tab", { name: "Apariencia" }).click();
