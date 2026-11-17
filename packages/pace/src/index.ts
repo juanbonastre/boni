@@ -8,8 +8,10 @@
  * CPU time. Its CPU time barely moves with the load; its clock stretches as much as other work stops this thread
  * (task 134, measured with 16 busy loops on 8 cores: the clock ×4 to ×7, CPU time ×1.1 to ×1.25). Their ratio is the
  * factor, so nothing here knows any machine's speed: the same code is as tight in CI as on a laptop. The load average
- * per core is the second signal: it is printed with every failure, and it widens vitest's limits, which are set once
- * when a package's tests start, before the other packages of the same run load the machine.
+ * per core is the second signal: it is printed with every failure; past one per core, the clock's factor is at least
+ * it, because what a test waits for may run in other threads (the box's workers) that the load stops while this
+ * thread's short reference ran free (task 143); and it widens vitest's limits, which are set once when a package's
+ * tests start, before the other packages of the same run load the machine.
  *
  * On a free machine every factor is 1 and every bound is as tight as it was written. Each factor has a cap, so a hang
  * still fails, and a code three times over its bound fails at any load: the same load that widens the bound slows the
@@ -28,7 +30,10 @@ export const clock = (): number => performance.now();
 
 /** How loaded the machine is now: what each kind of bound is multiplied by. */
 export interface Pace {
-  /** The factor for a bound on the clock: how much longer the clock ran than the CPU on the reference. 1 to 2.5. */
+  /**
+   * The factor for a bound on the clock: how much longer the clock ran than the CPU on the reference, or the load per
+   * core when it is over one and more. 1 to 2.5.
+   */
   clock: number;
   /** The factor for a bound in this thread's CPU time: what a busy machine adds to it (shared caches, cores). 1 to 1.5. */
   cpu: number;
@@ -77,16 +82,28 @@ export function pace(): Pace {
     ratios.push(dc > 0 ? dw / dc : 1);
   }
   ratios.sort((a, b) => a - b);
-  const ratio = ratios[SAMPLES >> 1] ?? 1;
-  const over = ratio < FREE ? 1 : ratio;
   const [one = 0, five = 0] = loadavg();
   const cores = availableParallelism();
+  return factors(ratios[SAMPLES >> 1] ?? 1, one / cores, five / cores);
+}
+
+/**
+ * The factors from what was read: the reference's clock-to-CPU ratio and the load average per core of the last minute
+ * and of the last five (`pace()` reads them at the call, never at import). Apart so the tests give it a load instead
+ * of reading this machine's.
+ */
+export function factors(ratio: number, load: number, recent?: number): Pace {
+  const over = ratio < FREE ? 1 : ratio;
   return {
-    clock: clamp(over, CLOCK_CAP),
+    // At least the load per core past one: what a test waits for may run in other threads or processes (the box's
+    // workers), which a loaded machine stops while this thread's short reference ran free (task 143: ×1.00 at
+    // 2.27 per core, and a call of the box 935 ms against 600). The minute's average lags: for about a minute after
+    // a wave the bound stays wide. Still capped, so three times the bound fails.
+    clock: clamp(Math.max(over, load > 1 ? load : 1), CLOCK_CAP),
     // From the ratio before its cap: CPU time grew about a tenth of what the clock did (task 134, measured).
     cpu: clamp(1 + (over - 1) / 10, CPU_CAP),
-    load: one / cores,
-    recent: five / cores,
+    load,
+    ...(recent === undefined ? {} : { recent }),
   };
 }
 

@@ -6,6 +6,7 @@ import {
   CPU_CAP,
   clock,
   cpu,
+  factors,
   type Pace,
   pace,
   TIMEOUT_CAP,
@@ -42,6 +43,28 @@ describe("the machine's pace (T-11, task 134)", () => {
     expect(p.cpu).toBeGreaterThanOrEqual(1);
     expect(p.cpu).toBeLessThanOrEqual(CPU_CAP);
     expect(p.load).toBeGreaterThanOrEqual(0);
+  });
+
+  it("T-11: the clock's factor is at least the load per core past one, up to its cap, as what a test waits for may run in other threads (task 143)", () => {
+    // At a load of one per core or less, with the reference free, a bound is exactly as written.
+    for (const load of [0, 0.5, 1]) {
+      expect(factors(1, load)).toMatchObject({ clock: 1, cpu: 1, load });
+      expect(() => under(599.9, 600, "clock", "it", factors(1, load))).not.toThrow();
+      expect(() => under(600.1, 600, "clock", "it", factors(1, load))).toThrow(/×1\.00/);
+    }
+    // Over one it grows with the load, though the reference ran free; the CPU's factor does not move with it.
+    expect(factors(1, 1.13).clock).toBeCloseTo(1.13);
+    expect(factors(1, 2.27)).toMatchObject({ clock: 2.27, cpu: 1 });
+    expect(() => under(935, 600, "clock", "a call of the box", factors(1, 2.27))).not.toThrow();
+    // The reference's own ratio still counts when it is the larger.
+    expect(factors(2.1, 1.5).clock).toBeCloseTo(2.1);
+    // The cap holds: three times the bound fails at any load, and the failure says the factor and the load.
+    for (const load of [2.5, 4, 20]) {
+      expect(factors(1, load).clock).toBe(CLOCK_CAP);
+      expect(() => under(1800, 600, "clock", "it", factors(1, load))).toThrow(
+        new RegExp(`×2\\.50 slower.*load ${load.toFixed(2).replace(".", "\\.")} per core`),
+      );
+    }
   });
 
   it("T-11: on a free machine a bound is as tight as written", () => {
@@ -86,10 +109,16 @@ describe("the machine's pace (T-11, task 134)", () => {
     expect(CPU_CAP).toBeLessThan(3);
     // And measured, on this machine now: the bound is one round's CPU time (what it takes on a free machine); three
     // rounds go over it on the clock and in CPU time, whatever the load.
+    // One round is the median of five: a single round slowed by a pause would make the bound three rounds are held
+    // to as wide as they are, and nothing would fail (task 142).
     work(2);
-    const c0 = cpu();
-    work(1);
-    const one = cpu() - c0;
+    const rounds: number[] = [];
+    for (let r = 0; r < 5; r++) {
+      const c0 = cpu();
+      work(1);
+      rounds.push(cpu() - c0);
+    }
+    const one = rounds.sort((a, b) => a - b)[2]!;
     const w = clock();
     const c = cpu();
     work(3);
