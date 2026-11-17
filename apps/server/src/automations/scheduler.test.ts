@@ -593,8 +593,10 @@ describe("a failure that started alone (F14d)", () => {
     onRunEvent(s, (e) => {
       if (e.notice) notices.push(e.notice.text);
     });
-    // An hour that did not run opens the streak.
-    expect(missRun(s, h.a.id, trigger, at(8))).toBe(true);
+    // An hour that did not run opens the streak. It and the run cut by a restart are kept in the same millisecond, as
+    // at start-up: the one kept first is listed first and opens the streak.
+    const t0 = Date.now();
+    expect(missRun(s, h.a.id, trigger, at(8), t0)).toBe(true);
     // A run cut by a restart, which had started alone: closed at start-up, it is a failure of the same streak.
     s.journal.createAutomationRun({
       id: newRunId(),
@@ -607,8 +609,8 @@ describe("a failure that started alone (F14d)", () => {
       startedBy: "schedule",
       device: null,
       retryOf: null,
-      at: Date.now(),
-      started: Date.now(),
+      at: t0,
+      started: t0,
       doc: null,
       slot: at(9),
     });
@@ -644,6 +646,42 @@ describe("a failure that started alone (F14d)", () => {
     );
     expect(missRun(s, h.a.id, trigger, at(13))).toBe(true);
     expect(told(s, h.a.id)).toEqual(["failed", null, null, null, "failed", null]);
+  });
+
+  it("AU-102 · runs kept in the same millisecond are listed in the order they were kept, and the first of them opens the streak", () => {
+    const s = files.store();
+    const h = hourly(s);
+    const trigger = h.a.step("A su hora");
+    const t0 = Date.now();
+    const hours = Array.from({ length: 20 }, (_, i) => at(0, i * 2));
+    for (const hour of hours) expect(missRun(s, h.a.id, trigger, hour, t0)).toBe(true);
+    expect(slots(s, h.a.id)).toEqual(hours);
+    expect(told(s, h.a.id)).toEqual(["failed", ...hours.slice(1).map(() => null)]);
+    // One that ended well, then two failures, all in one millisecond: the first failure opens the streak and the
+    // second, whose run before is that failure and not the one that ended well, tells nothing.
+    const t1 = t0 + 1;
+    for (let round = 0; round < 10; round++) {
+      const day = 18 + round;
+      s.journal.createAutomationRun({
+        id: newRunId(),
+        automation: h.a.id,
+        version: 1,
+        test: false,
+        state: "done",
+        trigger,
+        fields: JSON.stringify({ date: at(9, 0, day) }),
+        startedBy: "schedule",
+        device: null,
+        retryOf: null,
+        at: t1 + round,
+        started: t1 + round,
+        doc: null,
+        slot: at(9, 0, day),
+      });
+      expect(missRun(s, h.a.id, trigger, at(10, 0, day), t1 + round)).toBe(true);
+      expect(missRun(s, h.a.id, trigger, at(11, 0, day), t1 + round)).toBe(true);
+      expect(told(s, h.a.id).slice(-3)).toEqual([null, "failed", null]);
+    }
   });
 });
 
