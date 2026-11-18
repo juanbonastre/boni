@@ -326,7 +326,7 @@ código fuente en cada turno:
 
 ## 9. Papeles de modelo
 
-Propuesto el 2026-11-18 (tarea 154, `docs/automatizaciones.md` §5.16): «Modelos» deja de ordenarse por papeles. El
+Decidido el 2026-11-18 (tarea 154, `docs/automatizaciones.md` §5.16): «Modelos» deja de ordenarse por papeles. El
 papel que declara un paso de una extensión pasa a ser su clase de llamada, y su modelo, el de «De la cuenta» de esa
 clase.
 
