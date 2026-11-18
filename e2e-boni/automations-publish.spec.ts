@@ -9,7 +9,7 @@ import {
   MAP,
   MODELS,
 } from "./agent-scenarios.ts";
-import { ALL_DONE, TESTED, testOf, withRuns } from "./automation-data.ts";
+import { ALL_DONE, arrow, step, TESTED, testOf, withRuns } from "./automation-data.ts";
 import { emit, openApp } from "./fixtures.ts";
 
 /**
@@ -770,6 +770,49 @@ test.describe("«Ejecutar»", () => {
     expect(runs[0]?.trigger).toBe("s_inicio");
     expect(Number((runs[0]?.fields as Record<string, unknown> | undefined)?.minimo)).toBe(250);
   });
+  test("AU-97 · with two triggers, «Ejecutar» asks which to run from as «Ejecutar desde», the word of running and not «Probar desde», and runs from the one chosen", async ({
+    page,
+  }) => {
+    const two = {
+      ...PUBLISHED,
+      steps: [...PUBLISHED.steps, step("s_01jotro", "Disparado por el usuario 2", "manual")],
+      arrows: [...PUBLISHED.arrows, arrow("s_01jotro", "s_01jbuscar")],
+      places: [...PUBLISHED.places, { step: "s_01jotro", x: 0, y: 200 }],
+    };
+    await openApp(page, "/?still", { automations: [two], agent: BEFORE() });
+    await openList(page);
+    await page.locator(".db-table tbody tr").getByText(two.name, { exact: true }).click();
+    await expect(nameBox(page)).toHaveValue(two.name);
+    await more(page, "Ejecutar");
+    const from = screen(page).getByRole("radiogroup", { name: "Ejecutar desde" });
+    await expect(from.getByRole("radio")).toHaveCount(2);
+    await expect(screen(page).getByRole("radiogroup", { name: "Probar desde" })).toHaveCount(0);
+    await from.getByText("Disparado por el usuario 2").click();
+    await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
+    await expect(screen(page)).toHaveCount(0);
+    const runs = await sent(page, `POST api/agent/automations/${PUBLISHED.id}/run `);
+    expect(runs.map((r) => r.trigger)).toEqual(["s_01jotro"]);
+  });
+  test("AU-97 AU-98 · Esc closes «Publicar», «Ejecutar» and «Ajustes» and nothing else: the editor stays open, as with «Eliminadas»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [PUBLISHED, NEVER], agent: BEFORE() });
+    await openCanvas(page, NEVER.name);
+    await publishButton(page).click();
+    await expect(screen(page)).toHaveAccessibleName("Publicar");
+    await page.keyboard.press("Escape");
+    await expect(screen(page)).toHaveCount(0);
+    await expect(nameBox(page)).toHaveValue(NEVER.name);
+    await openCanvas(page, PUBLISHED.name);
+    for (const item of ["Ejecutar", "Ajustes"]) {
+      await more(page, item);
+      await expect(screen(page)).toHaveAccessibleName(item);
+      await page.keyboard.press("Escape");
+      await expect(screen(page)).toHaveCount(0);
+      await expect(nameBox(page)).toHaveValue(PUBLISHED.name);
+      await expect(page.locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    }
+  });
   test("AU-97 · run, the app goes to «Ejecuciones» and the run is seen advancing step by step", async ({
     page,
   }) => {
@@ -1311,6 +1354,37 @@ test.describe("«Versiones» and the deleted ones", () => {
     await expect(page.locator(".auto-card")).toHaveCount(TESTED.steps.length);
   });
 
+  test("AU-98 · an old version's canvas is looked at, never changed: its cards cannot be dragged, and dragging one moves nothing and sends nothing", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VERSIONED], agent: BEFORE() });
+    await openCanvas(page, TESTED.name);
+    await more(page, "Versiones");
+    await versionItems(page).nth(2).click();
+    const canvas = versionCanvas(page, 1);
+    await expect(canvas.locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    await expect(canvas.locator(".react-flow__node.draggable")).toHaveCount(0);
+    // Dragged with the mouse at a person's pace: the card keeps its place beside the others.
+    const moved = canvas.locator(".auto-card[data-step='s_01jsi']");
+    const still = canvas.locator(".auto-card[data-step='s_01jbuscar']");
+    const gap = async () => {
+      const [a, b] = [await moved.boundingBox(), await still.boundingBox()];
+      return a && b ? { x: Math.round(a.x - b.x), y: Math.round(a.y - b.y) } : null;
+    };
+    const before = await gap();
+    expect(before).not.toBeNull();
+    const box = await moved.boundingBox();
+    if (!box) throw new Error("no card");
+    const from = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x + 120, from.y + 80, { steps: 15 });
+    await page.mouse.up();
+    expect(await gap()).toEqual(before);
+    const sentNow = await recorded(page, "__automations");
+    expect(sentNow.filter((x) => x.startsWith("PUT "))).toEqual([]);
+  });
+
   test("AU-98 · «Volver a esta» opens «Publicar» with that version's document, and publishing there leaves the draft saying «cambios sin publicar»", async ({
     page,
   }) => {
@@ -1545,6 +1619,32 @@ test.describe("«Fijar» and «Programada»", () => {
     await salida(page).getByRole("button", { name: "Soltar" }).click();
     await expect(card(page, "s_01jbuscar").locator(".auto-card-pin")).toHaveCount(0);
     expect(await recorded(page, "__autoPins")).toEqual(["PUT s_01jbuscar", "DELETE s_01jbuscar"]);
+  });
+  test("AU-93 · a pinned output whose step changed since its test says so on its card, «Salida fijada · desactualizada», and stays pinned", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page, "/?still", {
+      automations: [{ ...testOf(ALL_DONE, { kept: FIVE_MIN }), id: NEVER.id, name: NEVER.name }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, NEVER.name);
+    await openStep(page, "s_01jsi");
+    await salida(page).getByRole("button", { name: "Fijar" }).click();
+    const pin = card(page, "s_01jsi").locator(".auto-card-pin");
+    await expect(pin).toHaveText("Salida fijada");
+    // Its condition changed: the output pinned is the one of before.
+    const tab = view(page).getByRole("tab", { name: "Parámetros" });
+    if (await tab.count()) await tab.click();
+    const value = param(page, "where").getByRole("spinbutton", { name: "Valor" }).first();
+    await value.fill("400");
+    await value.press("Enter");
+    await expect(pin).toHaveText("Salida fijada · desactualizada");
+    await expect(salida(page).getByRole("button", { name: "Soltar" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await recorded(page, "__autoPins")).toEqual(["PUT s_01jsi"]);
   });
   test("AU-114 · «Programada» is in «Añadir paso» among the triggers; its panel lists its rules in words («Cada día a las 08:00», «Cada lunes a las 09:00», «Cada hora»), adds and removes one, and with none the step is marked", async ({
     page,

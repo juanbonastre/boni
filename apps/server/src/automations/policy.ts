@@ -17,8 +17,9 @@
  *   started it never reaches `decide` (AU-195, A-36). `hand` (P25) is not used for a run any more;
  * - with every call, `yes`: whether the document this policy was made over says «Sí» for that step, collection and
  *   action (`consentOf`, AU-186, AU-187). The server reads that document from its store; nothing in the call (the
- *   box's answer, a request) can claim one (AU-188). The trash keeps `alwaysConfirm`, as the list's action does: for
- *   this origin `decide` lifts it only with that «Sí» (P5's new sentence).
+ *   box's answer, a request) can claim one (AU-188). The trash carries no fixed `alwaysConfirm` (AU-186): it is told
+ *   to `decide` with it, as the list's action is, only when that «Sí» is not there (`actTool`), so without it P5
+ *   confirms as before, and with it P28 saves (P5's new sentence).
  *
  * One counter per run, kept here: every write the policy lets through counts, test or not, and the policy's own limit
  * (P11) counts over the whole run of an origin it applies to (not `automation`: its cap is the run's own, AU-17).
@@ -110,10 +111,20 @@ export const ACTS: Readonly<Record<"query" | "get" | "create" | "update" | "tras
     area: "data",
     describe: "an automation's step sends a row to the trash",
     args: { id: ENTITY },
-    alwaysConfirm: true,
     undo: ["trash"],
   },
 };
+
+/** The trash as `decide` is told it without the version's «Sí»: the list's action, which Juan confirms (P5). */
+const TRASH_CONFIRMED: ToolDef = { ...ACTS.trash, alwaysConfirm: true };
+
+/**
+ * The act of one call as `decide` is told it (AU-186): the trash carries P5's confirmation unless `yes`, the «Sí» the
+ * server read of the version it keeps (`consentIn`); nothing in the call can say it. The other acts are as listed.
+ */
+export function actTool(act: keyof typeof ACTS, yes: boolean): ToolDef {
+  return act === "trash" && !yes ? TRASH_CONFIRMED : ACTS[act];
+}
 
 /**
  * «Avisar» as the policy is told it (AU-201, AU-246, F15): a call with no recipient. Its text is content, and «Dónde» and «Por dónde»
@@ -317,15 +328,16 @@ export function runPolicy(
   return {
     count,
     decide(call): Decision {
+      const said = yes(call);
       const d = decide(
         {
-          tool: ACTS[actOf(call)],
+          tool: actTool(actOf(call), said),
           args: argsOf(call, own),
           control: call.control,
           flow: true,
           dry: call.test,
           ...(call.rows !== undefined ? { rows: call.rows } : {}),
-          yes: yes(call),
+          yes: said,
           ...reached(call),
         },
         origin,

@@ -211,9 +211,7 @@ describe("the citation a dragged field writes", () => {
 
   it("AU-25 · a field dropped into a «Código» is written by its key as its mode cites it: with a current row as an expression does, with all the rows from the first row of its input or of its step; right after a dot, the key alone; and what is written reads that field", () => {
     // «Una vez por fila»: the expression's own citation.
-    expect(codeCitation(draft, "s_orden", "s_filtro", ["importe"], "perRow")).toBe(
-      "$json.importe",
-    );
+    expect(codeCitation(draft, "s_orden", "s_filtro", ["importe"], "perRow")).toBe("$json.importe");
     expect(codeCitation(draft, "s_orden", "s_gastos", ["importe"], "perRow")).toBe(
       "$('Buscar gastos').item.importe",
     );
@@ -232,12 +230,12 @@ describe("the citation a dragged field writes", () => {
       "$('Ordenar').first().fecha",
     ]);
     // After `fila.` (a row the code holds), its key; a key that cannot follow a dot is cited whole.
-    expect(codeCitation(draft, "s_orden", "s_filtro", ["importe"], "all", "for (const fila of x) fila.")).toBe(
-      "importe",
-    );
-    expect(codeCitation(draft, "s_orden", "s_gastos", ["cuenta", "nombre completo"], "perRow", "f.")).toBe(
-      `cuenta["nombre completo"]`,
-    );
+    expect(
+      codeCitation(draft, "s_orden", "s_filtro", ["importe"], "all", "for (const fila of x) fila."),
+    ).toBe("importe");
+    expect(
+      codeCitation(draft, "s_orden", "s_gastos", ["cuenta", "nombre completo"], "perRow", "f."),
+    ).toBe(`cuenta["nombre completo"]`);
     expect(codeCitation(draft, "s_orden", "s_filtro", ["nombre completo"], "perRow", "f.")).toBe(
       `$json["nombre completo"]`,
     );

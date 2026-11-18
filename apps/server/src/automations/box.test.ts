@@ -832,7 +832,12 @@ describe("what «Código» did, kept with the test", () => {
     const k = keptOf(a.id, a.step("Código"));
     expect(k.reads?.length).toBeGreaterThan(0);
     const given = t.tests[a.step("Código")]?.reads;
-    expect(given).toEqual(k.reads?.map((r) => ({ collection: r.collection, rows: r.rows })));
+    expect(given).toEqual(
+      (k.reads as { collection: string; rows: number }[] | undefined)?.map((r) => ({
+        collection: r.collection,
+        rows: r.rows,
+      })),
+    );
     expect(given?.reduce((n, r) => n + r.rows, 0)).toBe(10);
   }, 30_000);
 

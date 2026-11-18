@@ -242,6 +242,14 @@ const writtenFields = (call: Call): string[] => {
 };
 
 /**
+ * Whether a tool sends a record to the trash: Undo brings it back from the trash, or it is the one Juan confirms (P5).
+ * An automation's trash carries P5's confirmation only without the version's «Sí» (AU-186), so its undo is what says it.
+ */
+const trashes = (tool: ToolDef) =>
+  Boolean(tool.alwaysConfirm) ||
+  (tool.effect === "write" && Array.isArray(tool.undo) && tool.undo.includes("trash"));
+
+/**
  * P29 (AU-205, docs/nucleo.md §7.5): an automation's AI step does only what its connection gives, as the server read
  * it. The collection must be connected and no model's private; the action not in «No»; a row it modifies or removes,
  * or creates, inside «Solo estas filas» of reading and of the action (a row that is not there is said the same way);
@@ -255,10 +263,10 @@ function byReach(call: Call, tool: ToolDef): Decision | null {
   // has no connection and is left to its own rule (P2, P9, P28), which denies it.
   const onCollection = tool.effect === "read" || tool.effect === "write";
   if (!r) return call.byAgent && onCollection ? deny("P29", "no-reach") : null;
-  // The act the server put must be the tool's: a read for a read, a trash (P5's mark) for a trash. Create and modify
-  // are the same kind of tool here, so which of the two it is stays the server's to put right (`actOf`).
+  // The act the server put must be the tool's: a read for a read, a trash for a trash. Create and modify are the same
+  // kind of tool here, so which of the two it is stays the server's to put right (`actOf`).
   if ((r.action === "read") !== (tool.effect === "read")) return deny("P29", "not-the-action");
-  if (r.action !== "read" && (r.action === "remove") !== Boolean(tool.alwaysConfirm))
+  if (r.action !== "read" && (r.action === "remove") !== trashes(tool))
     return deny("P29", "not-the-action");
   if (r.private) return deny("P29", "private-collection");
   if (!r.cells) return deny("P29", "not-connected");

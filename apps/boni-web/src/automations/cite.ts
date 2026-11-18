@@ -118,8 +118,7 @@ export function codeCitation(
     return first + printCitation({ step: null, pick: "item", path: rest }).slice("$json".length);
   const cite = citationFor(draft, into, from, path);
   if (mode === "perRow") return printCitation(cite);
-  if (cite.step === null)
-    return `$input.first()${printCitation(cite).slice("$json".length)}`;
+  if (cite.step === null) return `$input.first()${printCitation(cite).slice("$json".length)}`;
   return printCitation({ ...cite, pick: cite.pick === "item" ? "first" : cite.pick });
 }
 

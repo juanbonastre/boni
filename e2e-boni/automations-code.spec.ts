@@ -433,9 +433,9 @@ test.describe("«Código»", () => {
     const lines = contentOf(page).locator(".cm-line");
     // Let go past the end of the first line: it goes at that line's end, not where the caret was (nowhere yet).
     await dragOnto(page, inputField(page, "Título · titulo"), lines.nth(0), "end");
-    await expect.poll(() => sourceIn(page)).toBe(
-      ["const a = $json.titulo", "const b = ", "return [{ a, b }];"].join("\n"),
-    );
+    await expect
+      .poll(() => sourceIn(page))
+      .toBe(["const a = $json.titulo", "const b = ", "return [{ a, b }];"].join("\n"));
     // With all the rows there is no current row: the input's first row, at the second line's end.
     await param(page, "mode").getByText("Una vez con todas las filas").click();
     await dragOnto(page, inputField(page, "Páginas · paginas"), lines.nth(1), "end");
