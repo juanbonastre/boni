@@ -718,7 +718,9 @@ interface ModelProvider {
 ```
 
 - **Un modelo por papel**, elegido en la configuración del servidor (Juan no tiene que tocar nada). La seguridad no
-  depende de cuál sea.
+  depende de cuál sea. Propuesto el 2026-11-18 (tarea 154, `docs/automatizaciones.md` §5.16): los papeles dejan de ser
+  la manera de elegir modelo (una lista de modelos, etiquetas y un modelo de la cuenta por clase de llamada); la clase
+  de llamada la sigue fijando el código y la seguridad sigue sin depender del modelo.
 - **Proveedores configurables desde la app (decidido, Juan, 2026-10-20; diseño propuesto):** Anthropic, OpenRouter,
   OpenAI y cualquier API compatible con la de OpenAI (vLLM, llama.cpp, Ollama y similares, en local o en un servidor
   propio), elegidos por papel. En Ajustes, solo desde un dispositivo personal; las claves se guardan cifradas en el

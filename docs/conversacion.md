@@ -343,7 +343,9 @@ pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maquet
 - **«Parar»** corta la llamada al modelo (`AbortSignal`) o para antes del paso siguiente. Si el turno esperaba una
   pregunta, lo termina.
 - **El modelo de cada conversación** se elige entre el de la cuenta y los que Juan ha evaluado para planear en
-  «Modelos». Es la misma puerta que para dar un papel a un modelo.
+  «Modelos». Es la misma puerta que para dar un papel a un modelo. Propuesto el 2026-11-18
+  (`docs/automatizaciones.md` §5.16, AU-242): «Modelos» sin papeles; el chip lista «El de la cuenta» y los modelos
+  cargados con la evaluación «Agente», y termina en «Añadir modelo».
 - **En la web:**
   - el historial a la izquierda, como en otras IA;
   - los pasos con su punto que late;

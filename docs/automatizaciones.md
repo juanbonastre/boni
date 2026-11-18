@@ -52,6 +52,9 @@ cuando cada punto suyo tiene su prueba.
   cuatro partes); la IA con conexiones; lo de Boni y lo suyo, migrado, con el MCP nuevo y sin el editor viejo; las
   páginas; más disparadores y automatizaciones que llaman a otras; paquetes y la IA que propone. Antes, un arreglo
   pequeño: el resumen de la mañana que falla (§8).
+- **«Modelos» deja de tener usos (propuesto el 2026-11-18, §5.16).** Una lista de modelos cargados; el chat elige
+  uno; un paso de IA elige uno o una etiqueta que Juan puso a varios; la evaluación pasa a ser una marca del modelo.
+  Fase FM, sin construir; tres dudas suyas en el §10 (22 a 24).
 - **Salir fuera no está en estas fases** (peticiones HTTP, webhooks, credenciales, enviar un correo). Es mucho de lo
   que se hace con n8n y aquí queda para después, en una fase propia (F20) con su diseño (decisión 9 del §10).
 
@@ -1101,6 +1104,8 @@ que un paso espere a Juan.
   parámetros (`AGENT_PARAMS`: «Instrucciones», obligatorio, «Modelo», «Lecturas», «Respuesta» y sus «Campos», «Se
   ejecuta» y «Rondas máximas»), y la validación lo deja entrar solo con un puerto para llamar a un modelo
   (`ValidationContext.ai`), como a los lectores. Falta: el paso en el editor y su prueba (P2).
+  Desde la tarea 154 (§5.16, propuesta): «Modelos» deja de tener usos. Donde este punto dice «el uso «Agente»» será
+  la clase de llamada «Agente» (AU-235), y «Modelo» admite también una etiqueta (AU-238).
 - **AU-51** (F15, en parte) · «Lecturas» tiene dos modos. «Las decide la IA» (por defecto): busca en sus conexiones
   lo que necesite. «Las hace este código»: un editor como el de «Código» que lee, cruza colecciones y devuelve lo
   que la IA recibe; entonces la IA no busca por su cuenta.
@@ -1242,6 +1247,8 @@ que un paso espere a Juan.
   datos», `classifySchema` y `labelEachSchema` con «nada encaja»); la lista cerrada de «Modelo» se comprueba al
   publicar (AU-199). Falta: el tiempo de un modelo de verdad por lote, que solo mide una evaluación a mano; y los
   pasos en el editor, con sus palabras y «Recortó 3 textos» (P2).
+  Desde la tarea 154 (§5.16, propuesta): donde este punto dice «el uso «Lector»» será la clase de llamada «Lectura»
+  (AU-235); su «Modelo» admite también una etiqueta (AU-238).
 - **AU-58** (F15, en parte) · Detrás de «Añadir opción»: «Pasos máximos», «Memoria» (en un chat) y «Herramientas
   de código»: funciones con nombre y entradas declaradas que la IA puede llamar, y que corren en la caja.
   En la F15: «Rondas máximas» (nace en 5, hasta 10) es el nombre de «Pasos máximos»: un paso es ya una caja del
@@ -1353,6 +1360,9 @@ que un paso espere a Juan.
   Cada llamada va con un tope de tiempo y no se repite (una que se agotó pudo cobrarse); la que vuelve, y la que
   falló cobrada, quedan en el diario con su gasto. Al publicar, un «Modelo» que no está en `modelChoices` de su uso
   es un problema del paso (`param.value`, `model`; `aiProblems` de `publish.ts`). Falta: la lista en el editor (P1).
+  Desde la tarea 154 (§5.16, propuesta): la lista del editor se construye con la forma de AU-238 («El de la
+  cuenta», etiquetas y modelos), `modelChoices(cuenta, uso)` pasa a preguntar por clase de llamada (AU-235) y «El de
+  la cuenta» es la fila «De la cuenta» de esa clase (AU-236). Lo demás de este punto no cambia.
 - **AU-200** (F15, en parte) · Lo que decide una IA se dice con esas palabras donde Juan da el permiso y donde lo
   ve usado: «decide la IA». En «Lo que podrá hacer» (AU-182) un «Agente» da una línea por colección y acción que su
   conexión no tiene en «No» (no hay análisis que diga menos: puede todo lo que su conexión deja), con las marcas de
@@ -2631,6 +2641,8 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   y ese informe nunca entran en el repositorio. Solo se despliega si todas coinciden o su diferencia es una de «Lo
   que cambia». No se corren los dos motores a la vez en su cuenta de verdad: doblaría las llamadas a modelos y
   retrasaría lo que quiere usar. La prueba: `apps/server/src/automations/convert.test.ts`.
+  Desde la tarea 154 (§5.16, propuesta): qué «Modelo» lleva cada paso convertido lo dice AU-245 (ninguno, salvo
+  la «Revisora» de una cuenta cuyo «Revisor» no es su «Lector»).
 - **AU-223** (F16, pendiente) · La tabla de traducción: cada cosa que el lenguaje de planes sabe decir tiene su fila,
   con el paso al que va o, si no lo tiene, dicho con su nombre. Una prueba recorre el lenguaje (las cuatro
   operaciones, `READERS`, los controles de `ask`, `REPLY_COMPONENTS`, `FNS`, los disparadores y las acciones de la
@@ -2905,6 +2917,299 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   dispositivo, y deshacer desde `undoAutomationRun`, que pide un dispositivo personal (también por la acción
   `automations.undo_run`, que la política confirma con él, P21); y nada de S3 llama a un modelo ni pasa una cuenta
   a un paso.
+
+### 5.16 Modelos sin usos
+
+**Propuesta (2026-11-18, tarea 154). Nada construido.** Tres dudas esperan a Juan (decisiones 22 a 24 del §10); lo de
+abajo está escrito con la recomendada de cada una y dice qué cambiaría con la otra.
+
+Juan, 2026-11-18: «en general no sé si seguirás con el mismo formato de modelos que teníamos hasta ahora: lector,
+agente, etc. ¿Crees que con este workflow tiene sentido? A lo mejor habría que quitar ese tipo de roles y
+simplemente en el chat de conversación puedo elegir entre modelos precargados (o agregar nuevo) y en automatizaciones
+elegimos qué modelo o modelos usar en un paso de agente. Podría a lo mejor en la sección de modelos ver todos los que
+se han cargado sin estar clasificando con lo de agente, lector, etc. Como mucho se me ocurre ponerle etiquetas a los
+modelos para que pueda asignarle roles en las automatizaciones, tipo "este paso lo puede ejecutar cualquier modelo
+de esta categoría"».
+
+**La respuesta: no tiene sentido seguir con los usos, y se quitan.** Los cuatro usos de hoy («Agente», «Lector»,
+«Decisor», «Revisor») nacieron cuando Boni hacía cuatro cosas fijas con un modelo cada una. Con el lienzo, quien
+dice qué modelo hace qué es cada paso, y el chat ya elige el suyo. «Modelos» pasa a ser una lista de modelos
+cargados; el chat elige uno; un paso de IA elige uno, o una etiqueta que Juan puso a varios.
+
+Dos cosas de los usos se quedan, porque no eran de la pantalla:
+
+- **La clase de llamada.** Un «Agente» llama al modelo por rondas, con herramientas dentro de sus conexiones; un
+  lector («Extraer datos», «Clasificar», «Resumir», «Escribir texto», las piezas que leen) le da un texto sin
+  herramientas y le pide una forma cerrada; la pieza «Decisora» le hace elegir entre opciones que pone el código.
+  Son tres clases: «Agente», «Lectura» y «Decisión». La clase la fija el tipo del paso (AU-50, AU-57, AU-127), no
+  el modelo, ni una etiqueta, ni Juan: leer lo de fuera sin herramientas es cómo llama el paso, y sigue igual lo
+  conteste el modelo que lo conteste (`docs/nucleo.md` §7.4).
+- **La evaluación antes de usar.** Cada modelo responde distinto, así que antes de usarse para una clase de llamada
+  pasa la evaluación de esa clase (Juan, 2026-10-24). Deja de ser «la evaluación del uso» y pasa a ser una marca del
+  modelo (AU-234). Que la puerta siga también en el chat es la decisión 24.
+
+**Lo que hay hoy y lo que se extiende (T-05).**
+
+| Hoy | Después |
+|---|---|
+| Cuatro usos, cada uno con su modelo elegido (`models/config` en los ajustes del almacén: `roles`) | Una lista de modelos cargados, con su orden; tres filas «De la cuenta» (AU-232, AU-236) |
+| Un modelo es conexión + modelo + ruta, y su id es `conexión:modelo[:zdr]` (`choiceId` de `models.ts`) | Igual: el mismo id. Lo que una conversación o un paso guardaron sigue valiendo sin tocarlo (AU-244) |
+| No hay lista de modelos cargados: «los evaluados hace poco para ese uso» hacen de lista (`modelChoices`) | La lista existe y es suya: «Añadir modelo», «Quitar» (AU-233) |
+| La evaluación es de un uso; se guardan las últimas 20 de la cuenta (`models/evals`) | Tres evaluaciones por modelo, la última de cada una (AU-234) |
+| «Revisor» se evalúa con los casos de «Lector» (`evalRole`: son los mismos) | «Revisor» desaparece: sus evaluaciones cuentan como «Lectura» (AU-244) |
+| El chat lista `GET /api/agent/planners`: el del uso «Agente» y los evaluados para él | Lo mismo con otro nombre: «El de la cuenta» y los modelos con la evaluación «Agente» (AU-242) |
+| El «Modelo» de un paso guarda un id o nada («El de la cuenta»); en el editor aún es un texto libre | Un desplegable cerrado; guarda nada, un id o una etiqueta (AU-238) |
+| `stepProvider(cuenta, uso, id)` da el proveedor o dice `no-model` / `no-key` | La misma puerta, con la etiqueta resuelta delante (AU-239) |
+| Las claves, selladas en «Claves»; el presupuesto del mes; la píldora de privacidad de cada ruta | No cambian |
+| Los modelos que trae el servidor valen sin evaluación para su uso | Igual: «Del servidor», para su clase de llamada (AU-235) |
+
+**Qué pasa con cada uso de hoy** (el cambio entero, en AU-244).
+
+| Uso de hoy | Su modelo elegido pasa a | Sus evaluaciones pasan a | Lo que lo usaba |
+|---|---|---|---|
+| «Agente» (`planner`) | La fila «De la cuenta · Agente» | «Agente» | El chat y cada «Agente» sin modelo elegido: siguen con él, por «El de la cuenta» |
+| «Lector» (`reader`) | La fila «De la cuenta · Lectura» | «Lectura» | Los lectores sin modelo elegido y los de un turno: siguen con él |
+| «Decisor» (`decider`) | La fila «De la cuenta · Decisión» | «Decisión» | La pieza «Decisora»: sigue con él. Un `classify` de un flujo suyo, convertido, pasa a leerlo «Lectura» (AU-245) |
+| «Revisor» (`reviewer`) | Ninguna fila. Si era otro modelo que el «Lector», la conversión lo deja escrito en la pieza «Revisora» (AU-245) | «Lectura» (son sus mismos casos) | Lo que revisa lee con «Lectura» |
+
+**Lo que se miró fuera (ideas, nada copiado).** n8n no tiene usos ni modelo de la cuenta: cada agente lleva colgado
+su modelo con su credencial, y para elegir entre varios hay un nodo aparte con reglas en orden (gana la primera).
+Dify tiene lista de modelos y un modelo por defecto por cada clase de trabajo, que vale donde el nodo no elige. Los
+enrutadores (LiteLLM) agrupan modelos bajo un nombre o una etiqueta y prueban el siguiente cuando uno falla. Los
+editores de código (Continue, Zed) tienen una lista plana y cada función cae al modelo por defecto. De ahí sale la
+forma: lista plana, un valor por defecto por clase de llamada y la elección en el paso. Y cuatro tropiezos que las
+reglas de abajo cierran: el salto callado a un modelo más caro cuando uno falla (decisión 23), la referencia a un
+modelo que ya no está (AU-233, AU-241), no saber cuál contesta cuando un grupo tiene dos (AU-239) y un «automático»
+que cambia de modelo sin que nadie lo toque (AU-239).
+
+**Las palabras.**
+
+| Palabra | Qué es |
+|---|---|
+| Modelo | Un modelo cargado en «Modelos»: su nombre, por una conexión y una ruta |
+| Etiqueta | Un nombre que Juan pone a uno o varios modelos, para que un paso diga «cualquiera de estos» |
+| Evaluación | La prueba de un modelo para una clase de llamada: «Agente», «Lectura», «Decisión» |
+| De la cuenta | El modelo, o la etiqueta, que vale donde un paso o una conversación no eligen: una fila por clase de llamada |
+| El de la cuenta | La opción de un paso o de una conversación que no elige: la fila «De la cuenta» de su clase |
+| Del servidor | Un modelo que trae el servidor configurado, sin clave de Juan |
+| Sin evaluar · Sin modelo | Un modelo sin esa evaluación · Una etiqueta o una fila «De la cuenta» sin ningún modelo que valga |
+
+**Un ejemplo.** Juan tiene cargados «m-ejemplo-grande» y «m-ejemplo-rápido» (los nombres son inventados: ni el
+código ni este diseño nombran modelos). «De la cuenta» dice «Agente: m-ejemplo-grande» y «Lectura: m-ejemplo-rápido».
+Su automatización «Ordenar gastos» tiene un «Clasificar» con «El de la cuenta» y un «Agente» con «m-ejemplo-grande».
+Carga «m-ejemplo-nuevo», lo evalúa para «Lectura», le pone la etiqueta «Barato» y se la pone también a
+«m-ejemplo-rápido». En el «Clasificar» elige «Barato»: la línea dice «Barato · m-ejemplo-rápido», porque es el
+primero de los dos en su lista. Si un día sube «m-ejemplo-nuevo» por encima, ese «Clasificar» y cualquier otro paso
+con «Barato» pasan a usarlo, sin abrir ninguna automatización; «Lo que hizo» de cada ejecución dice qué modelo
+contestó.
+
+**La pantalla.** Ajustes → Modelos, en el mismo sitio, con las dos formas que la página ya tiene: una lista, y lo
+que se abre en su lugar al pulsar una fila (por eso no lleva boceto en `docs/maquetas/`):
+
+```
+Modelos                                                                     [ Añadir modelo ]
+
+De la cuenta
+  Agente    m-ejemplo-grande                                                          Cambiar
+  Lectura   Barato · m-ejemplo-rápido                                                 Cambiar
+
+  m-ejemplo-grande   OpenRouter   No guarda tus datos                Agente 38/40 · Lectura 40/40   4,10 €
+  m-ejemplo-rápido   OpenRouter   No guarda tus datos       Barato   Lectura 39/40                  0,62 €
+  m-ejemplo-nuevo    OpenRouter   Puede guardar tus datos   Barato   Lectura 37/40                  —
+
+Gasto de noviembre · Presupuesto · Claves                                           (como hoy)
+```
+
+Al pulsar un modelo, en lugar de la lista: su nombre, su conexión y su ruta con la píldora de privacidad;
+«Etiquetas»; «Evaluaciones» (una fila por evaluación: el resultado y su fecha, o «Sin evaluar»; «Ver los casos»;
+«Evaluar»); «Se usa en» (las filas «De la cuenta», cuántas automatizaciones y cuántas conversaciones); su gasto del
+mes; y «Quitar». Nada de esto explica nada dentro de la app: son nombres y valores.
+
+- **AU-232** (FM, pendiente) · «Modelos» es una lista de modelos cargados, sin usos. Cada fila: el nombre, la
+  conexión, la píldora de privacidad de su ruta (la de hoy), sus etiquetas, sus evaluaciones con resultado y el
+  gasto del mes. El mismo modelo por dos conexiones o dos rutas son dos filas. El orden es de Juan (arrastrar, o
+  «Subir» y «Bajar» en el menú de la fila) y solo sirve para una cosa: decir cuál gana en una etiqueta (AU-239). Un
+  modelo nuevo entra al final. Los que trae el servidor salen como «Del servidor» y no se quitan. Como mucho 30
+  modelos. Encima de la lista, «De la cuenta» (AU-236); debajo, el gasto, el presupuesto y «Claves», como hoy. Toda
+  escritura de «Modelos» pide un dispositivo personal, como hoy (D-05), y ninguna es una acción ni una herramienta
+  (AU-243). La lista se pide una vez al abrir la página, con el gasto ya sumado por modelo: con 30 modelos y un año
+  del diario de llamadas responde en su tiempo (A-15). Las pruebas: `apps/server/src/models.test.ts` («AU-232 · the
+  list gives every loaded model once, in the person's order, with its tags, its evaluations and the month's cost»)
+  y `e2e-boni/models.spec.ts` («AU-232 · «Modelos» is one list and no use is named in it», también a ancho de
+  teléfono).
+- **AU-233** (FM, pendiente) · Añadir y quitar. «Añadir modelo» abre el buscador de hoy (la conexión y su catálogo,
+  con la ruta sin retención cuando la hay); pide la clave de esa conexión en «Claves» si falta, con el aviso de hoy.
+  El modelo entra «Sin evaluar» y no se puede elegir en ningún sitio hasta tener una evaluación (AU-235). «Quitar»
+  pregunta antes cuando el modelo se usa, y dice dónde: «Se usa en 2 automatizaciones y en «De la cuenta ·
+  Lectura»». Quitado, sus evaluaciones y su gasto en el diario se quedan (volver a cargarlo las recupera si siguen
+  vigentes); una conversación que lo tenía vuelve a «El de la cuenta» (ya pasa hoy: `plannerFor` no lo encuentra);
+  un paso publicado que lo nombraba falla diciéndolo y sigue su «Si falla» (AU-199); un borrador que lo nombraba
+  tiene un problema en ese paso. Una fila «De la cuenta» que lo tenía vuelve al del servidor, o queda «Sin modelo»
+  si el servidor no trae ninguno, y la pregunta lo dice. Quitar una clave en «Claves» pregunta lo mismo por los
+  modelos de su conexión. Las pruebas: `apps/server/src/models.test.ts` («AU-233 · removing a model in use says
+  where it is used, keeps its evaluations and leaves every reference answering «no-model»») y
+  `e2e-boni/models.spec.ts` («AU-233 · a model added is «Sin evaluar» and is offered nowhere»).
+- **AU-234** (FM, pendiente) · La evaluación es una marca del modelo. Hay tres, una por clase de llamada: «Agente»,
+  «Lectura» y «Decisión», con los casos inventados de hoy (`evalPlanner`, `evalReader`, `evalDecider`; no se
+  escribe ninguno nuevo). Se lanza a mano con «Evaluar» en el modelo, una cada vez por cuenta, con lo que cuesta a
+  la vista y sumado al gasto del mes, como hoy; nunca en CI. Se guarda la última de cada modelo y evaluación (hoy,
+  las últimas 20 de la cuenta), con «Ver los casos» y la línea de cada fallo como hoy (I-40, que no cambia). Vale
+  30 días (`EVAL_DAYS`); pasada, la marca dice «Caducada» junto a su resultado. La marca enseña el resultado («38
+  de 40») y no un aprobado: quien decide si le vale es Juan, como hoy. Las pruebas:
+  `apps/server/src/models.test.ts` («AU-234 · the last evaluation of each kind is kept per model and one older
+  than its days is marked expired», con el reloj de `@boni/pace` y un modelo de guion, sin modelo real).
+- **AU-235** (FM, pendiente) · La puerta es por clase de llamada, no por uso. Un modelo se puede elegir donde se
+  hace una clase de llamada (el chat y un «Agente»: «Agente»; los lectores: «Lectura»; «De la cuenta · Decisión»:
+  «Decisión») solo con su clave puesta y la evaluación vigente de esa clase. Es la puerta de hoy (`evaluated`,
+  `needs-evaluation`) con la clase donde estaba el uso. Uno del servidor vale sin evaluación para la clase en que
+  el servidor lo trae, como hoy. Lo ya elegido sigue valiendo aunque su evaluación caduque: una versión publicada,
+  una conversación y una fila «De la cuenta» siguen con su modelo (AU-199), y la marca «Caducada» lo dice en
+  «Modelos». La clase de llamada no es un permiso: qué puede hacer la llamada lo siguen diciendo las conexiones del
+  paso y la política (AU-204, AU-205). Las pruebas: `apps/server/src/models.test.ts` («AU-235 · a model is offered
+  for a kind of call only with its key and a current evaluation of that kind») y
+  `apps/server/src/automations/ai.test.ts` («AU-235 · a published step keeps its model when its evaluation
+  expires»).
+- **AU-236** (FM, pendiente) · «De la cuenta» son tres filas, una por clase de llamada: «Agente», «Lectura» y
+  «Decisión». Cada una es un modelo o una etiqueta, se cambia con «Cambiar» entre los que valen para su clase
+  (AU-235) y es lo que usan un paso o una conversación con «El de la cuenta», resuelta en cada ejecución (AU-239).
+  Un paso con «El de la cuenta» se publica siempre que su fila tenga modelo, como hoy.
+  «Decisión» solo sale cuando hay un modelo con esa evaluación o el servidor trae uno; sin ella, o si falla, decide
+  la lectura, como hoy. La usa la pieza «Decisora» (AU-127). No hay fila «Revisor»: las piezas que revisan leen con
+  «Lectura». Cambiar una fila cambia desde la siguiente ejecución lo que hacen todas las automatizaciones y
+  conversaciones que no eligieron, y «Cambiar» lo dice con su cuenta («La usan 6 automatizaciones») antes de
+  guardar. Que estas filas existan es la decisión 22. Las pruebas: `apps/server/src/models.test.ts` («AU-236 · a
+  step and a conversation that chose nothing use the account's row of their kind, read at each run»).
+- **AU-237** (FM, pendiente) · Una etiqueta es un nombre de Juan sobre modelos. La pone y la quita él en «Modelos»,
+  en el modelo («Etiquetas» → escribir un nombre nuevo o elegir uno que ya existe); un modelo lleva las que él
+  quiera y una etiqueta, los modelos que él quiera. Tiene un identificador por debajo: cambiarle el nombre no rompe
+  los pasos que la usan. Hasta 20 etiquetas, de 24 caracteres como mucho, con nombres distintos entre sí. Boni no
+  trae ninguna, el código no nombra ninguna y la migración no crea ninguna (D-14): «Barato» significa lo que él
+  decida. Una etiqueta sin modelos desaparece sola si nadie la usa; si un paso o una fila «De la cuenta» la usan,
+  se queda y dice «Sin modelo» (AU-241). Las pruebas: `apps/server/src/models.test.ts` («AU-237 · a tag renamed
+  keeps every step that names it, and no tag exists that the person did not write»).
+- **AU-238** (FM, pendiente) · El «Modelo» de un paso de IA es un desplegable cerrado con tres partes: «El de la
+  cuenta» (por defecto; no guarda nada), las etiquetas y los modelos que valen para la clase del paso. Cada
+  etiqueta, y «El de la cuenta», dicen al lado el modelo que contestaría hoy: «Barato · m-ejemplo-rápido». Una
+  etiqueta vale cuando ese modelo, el que contestaría (AU-239), vale (AU-235): elegirla no da más que elegirlo a
+  él. Si no, sale apagada con su motivo: «Sin modelo» o «Caducada». El paso guarda nada, el id de un modelo o
+  `tag:` con el identificador de una etiqueta: nunca una clave, una ruta ni un ajuste (AU-50). Un paso elige un
+  modelo o una etiqueta, no una lista: «varios modelos» es una etiqueta. Sustituye al texto libre que el editor tiene hoy (lo que le faltaba a AU-199),
+  y vale igual para «Agente», los cuatro lectores y las piezas de Boni que enseñan «Modelo». La lista la da una
+  ruta por clase de llamada (`GET /api/agent/models/choices?kind=…`, en `routes.ts`, solo en la red privada, A-03);
+  `GET /api/agent/planners` se queda como su caso «Agente» mientras haya una versión de escritorio que la pida. Las
+  pruebas: `e2e-boni/automations-ai.spec.ts` («AU-238 · «Modelo» offers «El de la cuenta», the tags and the models
+  of the step's kind, each tag with the model that would answer»; es el `fixme` de hoy) y
+  `packages/automations/src/catalogue.test.ts` («AU-238 · «Modelo» takes nothing, a model's id or a tag, and
+  nothing else»).
+- **AU-239** (FM, pendiente) · Qué modelo contesta lo dice una sola función (`resolveModel(cuenta, clase, valor)`
+  en `models.ts`, delante de `stepProvider`), para el chat, los pasos, las piezas y «De la cuenta». Con un modelo:
+  ese. Con nada: la fila «De la cuenta» de la clase. Con una etiqueta: el primero, en el orden de la lista de
+  «Modelos», de sus modelos con clave y con la evaluación de esa clase, vigente o caducada (nunca uno sin evaluar;
+  una etiqueta no da más de lo que daría elegir ese modelo directamente). Con dos modelos en una etiqueta gana el
+  de arriba, siempre: el calendario no cambia cuál contesta, solo lo cambian actos de Juan (ordenar, etiquetar,
+  cargar, quitar, una clave). Se resuelve una vez al empezar el paso y todas sus filas, sus rondas y sus
+  reintentos van con ese modelo. Si la llamada falla, el paso falla y sigue su «Si falla»: no se prueba el
+  siguiente de la etiqueta (decisión 23). El diario y «Lo que hizo» dicen el modelo que contestó y, si llegó por
+  una etiqueta, cuál («m-ejemplo-rápido · Barato»); el diario sigue guardando la clase de llamada donde hoy guarda
+  el uso (`model_calls.role`, sin migrar). Las pruebas: `apps/server/src/models.test.ts` («AU-239 · a tag with two
+  models answers with the first in the list's order, an expired evaluation changes nothing and a model never
+  evaluated is never taken») y `apps/server/src/automations/ai.test.ts` («AU-239 · a step resolves its model once
+  and a failed call does not try the tag's next model»).
+- **AU-240** (FM, pendiente) · Una etiqueta o un sitio en la lista no dan ni quitan un permiso, y no son una
+  guarda. La política juzga cada llamada por el modelo que la hace de verdad (su ruta, su clase de privacidad, «Lo
+  que ve la IA», P29) y por las conexiones del paso, igual que si Juan hubiera elegido ese modelo a mano; la
+  etiqueta no entra en lo que `decide` recibe. Resolver no consulta la política: si la política niega la llamada
+  al modelo que salió, la llamada se niega y no se busca otro modelo de la etiqueta que sí pasaría. Lo privado
+  sigue sin conectarse a una IA sea cual sea el modelo (AU-45), y lo que recibe el modelo de un «Agente» sigue
+  siendo la lista cerrada de AU-197, que no cambia con el modelo ni con la etiqueta. Las pruebas:
+  `apps/server/src/automations/ai.test.ts` («AU-240 · the same call gets the same decision whether its model came
+  from a tag, from the account or by its id, and a denial tries no other model»).
+- **AU-241** (FM, pendiente) · Sin modelo. Una etiqueta o una fila «De la cuenta» sin ningún modelo con clave y con
+  la evaluación de la clase dice «Sin modelo»: en el desplegable del paso sale apagada; al publicar, el paso tiene
+  el problema de hoy («Elige otro modelo en «Clasificar»», AU-199) y no se publica, igual que con una etiqueta cuyo
+  modelo tiene la evaluación caducada (AU-238); en una versión ya publicada, el paso falla con `no-model` o
+  `no-key` y sigue su «Si falla», y en una conversación el turno lo dice con el aviso de hoy. Para que eso no
+  llegue sin que él lo vea, lo que dejaría «Sin modelo» algo que se usa pregunta antes y dice dónde: quitar la
+  etiqueta al último modelo que vale, quitar ese modelo o quitar su clave («Barato se queda sin modelo. La usan 3
+  automatizaciones»). Las pruebas: `apps/server/src/models.test.ts` («AU-241 · what would leave a tag in use
+  without a model says where it is used before it is done») y `apps/server/src/automations/ai.test.ts` («AU-241 ·
+  a tag without a usable model is a problem of its step at publish and «no-model» in a published run»).
+- **AU-242** (FM, pendiente) · El chat elige un modelo cargado. El chip de la barra lista «El de la cuenta» y los
+  modelos que valen para «Agente» (AU-235), y termina en «Añadir modelo», que abre Ajustes → Modelos (solo desde
+  un dispositivo personal; en los demás no sale). Sin etiquetas: en el chat se elige un modelo. Una conversación
+  nueva nace con «El de la cuenta» y guarda el id del modelo solo si él lo cambia (`conversations.model`, como
+  hoy). Los lectores de un turno usan «De la cuenta · Lectura». El chat de una página es una automatización
+  (decisión 19) y su modelo es el «Modelo» de su «Agente» (AU-238). Las pruebas:
+  `apps/server/src/models.test.ts` («AU-242 · a conversation is offered the account's and the models evaluated for
+  the agent, and one whose model is gone answers with the account's») y `e2e-boni/models.spec.ts` («AU-242 · the
+  chat's chip ends in «Añadir modelo» only on a personal device»).
+- **AU-243** (FM, pendiente) · Un modelo no elige modelo. Qué modelo recibe un texto es decir adónde va ese texto y
+  cuánto cuesta, así que lo pone la mano de Juan, como un «Sí» (AU-187). En un borrador que proponen el asistente,
+  el MCP o «Pedir a Boni» (AU-140, AU-141, AU-144), un paso nuevo, o uno cuyo «Modelo» no es el que Juan le había
+  puesto, llega con «El de la cuenta»; los pasos que la propuesta no toca conservan el suyo. Ninguna acción ni
+  herramienta carga o quita un modelo, pone una etiqueta, cambia el orden ni cambia «De la cuenta», y «Modelos» no
+  es una colección que una conexión pueda abrir. Las pruebas: `apps/server/src/automations/ai.test.ts` («AU-243 ·
+  a proposed draft carries no model its author chose, and no action writes models, tags, order or the account's
+  rows»).
+- **AU-244** (FM, pendiente) · El cambio no pierde nada. Al abrir el almacén, una vez, por código y sin modelo, la
+  cuenta pasa a la forma nueva; repetirlo no cambia nada. La lista de modelos: el de cada uso de hoy, cada modelo
+  que hoy sale en `modelChoices` (evaluado hace poco, con clave) y cada modelo que una conversación o un paso
+  guardado nombran; primero los de «De la cuenta», después los demás por su última evaluación. «De la cuenta»:
+  «Agente» ← el uso «Agente», «Lectura» ← «Lector», «Decisión» ← «Decisor»; lo que hoy es «El del servidor» sigue
+  siéndolo. Las evaluaciones pasan con su fecha y sus casos: las de «Agente» a «Agente», las de «Lector» y
+  «Revisor» a «Lectura» (son los mismos casos; de dos, la más nueva), las de «Decisor» a «Decisión». Ninguna
+  etiqueta. El presupuesto, el cambio a euros, el aviso y el diario, sin tocar; las claves no se leen ni se mueven.
+  Los ids que guardan las conversaciones y los pasos no se reescriben: son los mismos. El campo `roles` de hoy se
+  queda como estaba, para la vuelta atrás y para el motor de antes mientras siga dentro (decisión 21); las rutas
+  por uso de hoy (`…/models/roles/:uso`) siguen contestando a la versión de escritorio anterior hasta la entrega
+  que trae la pantalla nueva. Si su «Revisor» de hoy es otro modelo que su «Lector», el motor de antes lo sigue
+  usando hasta la conversión, y la conversión lo deja escrito en el paso (AU-245). Las pruebas:
+  `apps/server/src/models.test.ts` («AU-244 · with settings shaped like a person's, every use, conversation and
+  step answers with the same connection and model before and after, twice run changes nothing, and the keys are
+  not read»).
+- **AU-245** (FM, pendiente) · Lo que lleva de modelo un paso convertido (F16, AU-150, AU-223). Los flujos de hoy
+  no guardan modelo en sus pasos: lo ponía el uso. La conversión no escribe «Modelo» en ningún paso («El de la
+  cuenta»), con una excepción: la pieza «Revisora», cuando el «Revisor» de la cuenta es otro modelo que su
+  «Lector», lleva el id de ese modelo, para que revise el mismo de siempre y se vea en su paso. Lo dice una
+  función de `models.ts` (`modelRefOf(cuenta, uso)`: nada para «Agente», «Lector» y «Decisor»; nada o un id para
+  «Revisor»), que la conversión llama en el servidor; el traductor puro (`planToAutomation`) no escribe modelos.
+  Las versiones «De: Boni» de las automatizaciones de Boni no llevan modelo nunca (son las mismas para toda
+  cuenta). La pieza «Decisora» sigue llamando a «De la cuenta · Decisión». Un `classify` de un flujo suyo se
+  convierte en «Clasificar» (AU-223), que es una lectura: si la cuenta tiene un modelo de decisión, hoy ese
+  `classify` lo contesta él y convertido lo contesta la lectura; es una línea de «Lo que cambia» (AU-224) que la
+  conversión tiene que decir. Las pruebas: `apps/server/src/models.test.ts` («AU-245 · the model a converted step
+  carries: none for the agent, the reader and the decider, and the reviewer's own only when it differs from the
+  reader's»).
+
+**Qué cambia en lo ya construido.**
+
+- De la F15 (pantallas): el «Modelo» del paso deja de ser un texto libre (`AutomationStepView.tsx`, el control
+  `MODEL` de `catalogue.ts`) y se construye ya con esta forma, una sola vez; el `test.fixme` de
+  `e2e-boni/automations-ai.spec.ts` es su prueba. `aiProblems` (`publish.ts`) comprueba por `resolveModel`. La
+  línea de «Lo que hizo» añade la etiqueta cuando la hubo. Nada más de la F15 cambia: conexiones, «Preguntar»,
+  Bandeja, topes y aprender no nombran modelos.
+- Ajustes → Modelos: `Models.tsx` y `ModelsSettings.tsx` se rehacen (las tarjetas de uso se van; el buscador de
+  modelos, el gasto, el presupuesto y «Claves» se quedan), los textos «Usos» de `i18n.ts` se retiran y
+  `e2e-boni/models.spec.ts` se reescribe. `docs/design-guide.md` («Ajustes → Modelos» y el chip del chat) cambia
+  en ese PR.
+- El chip del chat (`Chat.tsx`, `ModelChip`): la misma lista con «Añadir modelo» al final.
+- El mapa (`flowMap.ts`): los nodos de uso pasan a ser el modelo que contestaría cada paso.
+- Extensiones (`docs/extensiones.md` §9): el papel que declara un paso de una extensión es su clase de llamada, y
+  su modelo es el de «De la cuenta» de esa clase; `reviewer` lee con «Lectura».
+- Android y escritorio: `Net.kt` y `paths.cjs` ya dejan pasar `api/agent` entero; no cambian.
+- Principios: D-05 se queda (la configuración, solo en Ajustes → Modelos); entran las filas del §11.
+
+**El plan de construcción: dos PR**, cada uno revisable entero, y una revisión de conformidad al final.
+
+| PR | Qué | Antes de |
+|---|---|---|
+| **M1** Servidor y núcleo | La lista, las etiquetas, «De la cuenta», las tres evaluaciones, `resolveModel`, la migración (AU-244), la ruta de opciones con `planners` como su caso, el valor `tag:` en el catálogo y en `aiProblems`, `modelRefOf` (AU-245), el mapa, y las rutas por uso de hoy contestando igual. Sin pantalla: en la app no cambia nada | La conversión de la F16 (su S1), que llama a `modelRefOf` y cuyo informe en seco compara modelos |
+| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega |
+
+M1 no toca lo que construye ahora la F16 (su parte pura no escribe modelos) y puede ir en paralelo con ella. M2 toca
+el mismo panel del paso que las pantallas de la F15: va después de ellas, no a la vez. Si M1 se desplegara antes que
+la conversión, un «Revisor» distinto del «Lector» seguiría valiendo sin verse en la pantalla nueva hasta convertir:
+el CHANGELOG de esa entrega lo diría.
 
 ## 6. Seguridad: qué aguanta y qué cambia
 
@@ -3575,6 +3880,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |
 | **F18** Más maneras | «Cuando cambia una colección» con sus topes, «Al subir un archivo», «Falla una automatización», «Llamar automatización», «Esperar», «Por tandas» | Los dos ejemplos de la tarea 88: el aviso por un movimiento grande llega una vez, y marcar hecha una tarea que se repite crea la siguiente con Deshacer; un ciclo no se puede publicar | pendiente |
 | **F19** Lo demás | Paquetes (tarea 89), «Pedir a Boni», «Escribir con IA», plantillas, funciones guardadas | Pide en el editor «añade un aviso si se pasa del presupuesto» y acepta el cambio marcado paso a paso | pendiente |
+| **FM** Modelos | «Modelos» sin usos (§5.16): una lista de modelos cargados, etiquetas, «De la cuenta», la evaluación como marca del modelo, el «Modelo» de un paso con un modelo o una etiqueta, y el cambio desde los cuatro usos sin perder nada | En Ajustes → Modelos ve sus modelos de hoy en una lista, sin usos; pone «Barato» a dos, la elige en un «Clasificar» y «Lo que hizo» dice cuál contestó; su chat y sus automatizaciones siguen con el mismo modelo que antes | pendiente |
 
 El lienzo (F14b) se enseña a Juan en cuanto se puede tocar, antes de seguir: si la forma no le vale, se cambia ahí y
 no cuatro fases después.
@@ -3584,6 +3890,9 @@ Lo que sale fuera (peticiones HTTP, webhooks, credenciales, enviar un correo) no
 
 Las tareas de la cola (2026-11-15): «Antes» es la 124; la F14a, la 125; la F14b, la 126; la F14c, la 127; la F14d,
 la 128; la F15, la 129; la F16, la 130; la F17, lo abierto de la 87; la F18, la 88; la F19, la 89.
+
+La FM (2026-11-18) se diseñó en la tarea 154 y no sigue el orden de las otras: su primer PR (M1, §5.16) tiene que
+estar en `main` antes de la conversión de la F16, y el segundo, antes de su despliegue.
 
 ## 9. La cola, adaptada
 
@@ -3938,6 +4247,45 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       después. Hasta entonces los dos motores están en `main` y cada flujo corre en uno solo (AU-228). Prueba:
       `apps/server/src/automations/convert.test.ts` («AU-152 · after the removal nothing imports the old engine…»).
 
+**Pendientes (tarea 154, 2026-11-18): las tres dudas de «Modelos» sin usos (§5.16).** La recomendada va primero; el
+§5.16 está escrito con ella.
+
+22. **Qué queda de los cuatro usos (pendiente).** Se decide una vez, cuando llegue la pantalla nueva de «Modelos», y
+    vale después para cada paso y cada conversación donde no elija modelo.
+    - **Recomendada: tres filas «De la cuenta»** encima de la lista: «Agente», «Lectura» y, si hay un modelo de
+      decisión, «Decisión». «Revisor» desaparece (lo que revisa lee con «Lectura»). Un paso o una conversación con
+      «El de la cuenta» usan la fila de su clase (AU-236).
+    - **La otra: ninguna fila.** «El de la cuenta» desaparece: cada paso de IA y cada conversación nombran un modelo
+      o una etiqueta, y el cambio escribe en cada uno el modelo que hoy le toca.
+    - **Un ejemplo.** Hoy lee con «m-ejemplo-rápido» y quiere pasar a «m-ejemplo-nuevo». Con la recomendada cambia
+      «De la cuenta · Lectura» una vez («La usan 6 automatizaciones») y desde la siguiente ejecución «Leer correo» y
+      los pasos que no eligieron leen con el nuevo. Con la otra, abre cada una de las seis automatizaciones, cambia
+      el «Modelo» del paso y la publica (o, si desde el principio les puso una etiqueta, mueve la etiqueta); y un
+      paso nuevo nace sin modelo y no se publica hasta que elige uno.
+23. **Una etiqueta con dos modelos: si el primero falla, entra el segundo o no (pendiente).** Pasa en cada ejecución
+    de un paso que eligió una etiqueta, en el momento en que su modelo no contesta (el proveedor caído, el tiempo
+    agotado).
+    - **Recomendada: no entra.** Contesta siempre el de arriba en su lista. Si falla, el paso falla y sigue su «Si
+      falla» (AU-239).
+    - **La otra: entra el siguiente** de la etiqueta, en el orden de su lista.
+    - **Un ejemplo.** Su «Clasificar» tiene «Barato», con «m-ejemplo-rápido» arriba y «m-ejemplo-grande» debajo, y
+      a las 7:00 el proveedor del primero no contesta. Con la recomendada, la ejecución sale en «Ejecuciones» como
+      fallida en ese paso y hace lo que diga su «Si falla»; no se gasta nada en otro modelo. Con la otra, clasifica
+      «m-ejemplo-grande»: el correo de esa mañana queda clasificado, esa llamada cuesta lo que cueste el grande (y
+      la primera, agotada, pudo cobrarse también), y lo que clasifica ese día puede no coincidir con lo de siempre;
+      «Lo que hizo» dice cuál contestó.
+24. **Un modelo recién cargado, sin evaluar, en el chat (pendiente).** Pasa cada vez que pulse «Añadir modelo»,
+    justo después.
+    - **Recomendada: la evaluación se pide en todas partes, también en el chat.** El modelo no sale en el chip
+      hasta tener la evaluación «Agente» (AU-235).
+    - **La otra: en el chat vale sin evaluar.** Sale en el chip al cargarlo, con «Sin evaluar»; los pasos de una
+      automatización siguen pidiendo la evaluación.
+    - **Un ejemplo.** Carga «m-ejemplo-nuevo» para probarlo en una conversación. Con la recomendada pulsa «Evaluar»
+      en el modelo, espera unos minutos, ve «36 de 40» y lo que costó, y entonces lo elige en el chip. Con la otra
+      lo elige al momento; si ese modelo arma mal los planes lo nota en respuestas que fallan, sin haber visto
+      antes cuántos casos acierta. En las dos, el código comprueba cada plan igual: un modelo sin evaluar no puede
+      hacer nada que otro no pueda.
+
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
 | Principio | Su prueba | Fase |
@@ -3992,3 +4340,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Un modelo o el MCP proponen un borrador, nunca publican (AU-140, AU-144; A-10, A-35) | Aceptar la propuesta deja un borrador con cada «Sí» bajado, sin publicar y sin encender | F16 |
 | A cada flujo o automatización lo corre un solo motor (AU-228) | Ningún identificador tiene a la vez un flujo que corre y una automatización encendida | F16 |
 | El historial de antes sigue a la vista y la conversión cabe en su tiempo (AU-227; A-15) | Un año de ejecuciones copiado por tandas sin parar al servidor; sus filas «De antes» se deshacen | F16 |
+| Una etiqueta o un sitio en la lista de modelos no dan un permiso ni son una guarda (AU-240) | La misma llamada recibe la misma decisión venga su modelo de una etiqueta, de la cuenta o de su id; una negativa no prueba otro modelo | FM |
+| Solo actos de Juan cambian qué modelo contesta (AU-239, AU-243) | En una etiqueta con dos contesta el de arriba aunque su evaluación caduque; un borrador propuesto no trae un modelo que eligió su autor | FM |
+| Un modelo se elige para una clase de llamada solo con su evaluación (AU-235; donde AU-199 decía «su uso») | Sin clave o sin la evaluación vigente de esa clase no sale en ninguna lista; lo publicado sigue | FM |
+| Pasar a modelos sin usos no pierde nada (AU-244) | Con ajustes como los suyos, cada uso, conversación y paso contesta con el mismo modelo antes y después; hacerlo dos veces da lo mismo | FM |
