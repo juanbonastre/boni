@@ -26,6 +26,7 @@
  */
 import {
   decide,
+  leaf,
   type Origin,
   type PolicyRequest,
   type ReachAction,
@@ -41,6 +42,7 @@ import {
   consentOf,
   type Decision,
   type Labelled,
+  type Notice,
   type Policy,
   type PolicyCall,
   type WriteAction,
@@ -112,6 +114,42 @@ export const ACTS: Readonly<Record<"query" | "get" | "create" | "update" | "tras
     undo: ["trash"],
   },
 };
+
+/**
+ * «Avisar» as the policy is told it (AU-201, F15 S2): a call with no recipient. Its text is content, and «Dónde» a
+ * value of the step as saved, from a closed list of his own devices: neither is a destination (P2, P14).
+ */
+export const NOTICE: ToolDef = {
+  name: "notify",
+  title: "Avisar",
+  run: judgedOnly,
+  effect: "notify",
+  area: "boni",
+  describe: "an automation's step sends a notice to Juan's own devices",
+  args: {
+    text: { role: "content", required: true, describe: "the text" },
+    where: { role: "value", describe: "which of his own devices" },
+  },
+};
+
+/**
+ * Whether a notice goes (decided overnight 2026-11-18, for Juan to confirm): every one passes through `decide` as a
+ * call of the origin `automation` with no recipient, its text with its own label. Today that is P1's «sí»; a rule
+ * that one day refuses a notice refuses it here too. The other way was the closed list of «Dónde» alone, with no
+ * call of the policy.
+ */
+export function noticeDecision(notice: Notice, own: Label): Decision {
+  return decide(
+    {
+      tool: NOTICE,
+      args: { text: leaf(notice.text, notice.label), where: leaf(notice.where, own) },
+      control: null,
+      flow: true,
+    },
+    AUTOMATION,
+    { writes: 0, sensitiveReads: 0 },
+  );
+}
 
 /** Which act a call of the gate is: a write with no row known before is a new one (`rows` absent). */
 export function actOf(call: PolicyCall): keyof typeof ACTS {

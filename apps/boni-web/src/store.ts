@@ -49,6 +49,7 @@ import {
   type ProposalView,
   type Related,
   type Reply,
+  type RequestAnswer,
   type RunDetail,
   type RunSummary,
   type ScreenRefs,
@@ -2667,7 +2668,7 @@ export function acceptProposal(
  * Answering a question of background work (Juan, 2026-10-24): the work goes on with the answer, as background work
  * (what it makes arrives as proposals, read again once the queue is empty).
  */
-export function answerRequest(id: string, a: { choice: number } | { text: string }) {
+export function answerRequest(id: string, a: RequestAnswer) {
   return decide(id, "accept", async () => {
     try {
       const r = await agent.answerRequest(id, a);

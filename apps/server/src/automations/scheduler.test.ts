@@ -396,7 +396,7 @@ describe("«Programada» (F14d)", () => {
     await settled(s);
   });
 
-  it("AU-114 · a tick over 200 scheduled automations reads their hours from a column, no document, and stays within the time written here", async () => {
+  it("AU-114 AU-203 · a tick over 200 scheduled automations, one with a year of runs and 20 of them waiting, reads their hours from a column, no document, and the waits by their index, and stays within the time written here", async () => {
     const s = files.store();
     const ids: string[] = [];
     for (let i = 0; i < 200; i++) {
@@ -426,14 +426,24 @@ describe("«Programada» (F14d)", () => {
             doc: null,
             slot,
           });
-          s.journal.endAutomationRun(`r_${k}_${h}`, {
-            state: "done",
-            ended: slot + 1000,
-            ms: 1000,
-            step: null,
-            error: null,
-            line: null,
-          });
+          // The last 20 of the year wait for an answer, as many as may (AU-203), until tomorrow.
+          if (k === 0 && h < 20)
+            s.journal.waitAutomationRun(`r_${k}_${h}`, {
+              ms: 1000,
+              line: null,
+              automation: id,
+              until: at(9) + 24 * HOUR,
+              execution: "{}",
+            });
+          else
+            s.journal.endAutomationRun(`r_${k}_${h}`, {
+              state: "done",
+              ended: slot + 1000,
+              ms: 1000,
+              step: null,
+              error: null,
+              line: null,
+            });
         }
       }
     });
@@ -444,6 +454,11 @@ describe("«Programada» (F14d)", () => {
     let start = clock();
     expect(t.sched.tick()).toHaveLength(0);
     under(clock() - start, 50, "cpu", "a tick with nothing due over 200 automations");
+    // What a «Preguntar» asks of the store before it waits, and the tick of the waits past their limit: an index each.
+    start = clock();
+    expect(s.journal.automationWaiting(ids[0] as string)).toBe(20);
+    expect(s.journal.automationWaitsDue(at(9, 30), 50)).toEqual([]);
+    under(clock() - start, 10, "cpu", "the waiting count and the waits due over a year of runs");
     // The list of the one with a year of runs: a page, by the index.
     start = clock();
     expect(ok(runsOf(s, ids[0] as string, {})).runs).toHaveLength(50);

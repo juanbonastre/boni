@@ -969,7 +969,13 @@ contraseña ni un código aquí» under a question.
   came from (the mailbox, the sender and the subject, outside text with its mark, and the mail's two icons), its options as
   pills or a line to type in with "Enviar", and a quiet "Descartar" (Boni does nothing more with it). The clicked
   answer turns into the same spinner as deciding a proposal; one that no longer waits (answered elsewhere, expired)
-  says so on the card with "Quitar". The counts (top bar, sidebar, conversation) are proposals and questions together,
+  says so on the card with "Quitar". **An automation's «Preguntar»** (F15 S2, AU-125, AU-203) is the same card: the
+  automation's name on the muted line under the prompt, and its control by «Respuesta»: «Sí» and «No» as two pills of
+  the same weight (neither first, neither tinted), the options as pills, several ones as pills that stay pressed
+  (`.on`, `aria-pressed`) with "Enviar", or the line to type in. Only a personal device answers it or puts it away;
+  past its limit, or once its run was cancelled, it says «Ya no vale». Its run's row says «Esperando tu respuesta»
+  meanwhile (not in `--bad`), and «Cancelada · 0,4 s» when turning the automation off, deleting it or undoing the run
+  ended it. The counts (top bar, sidebar, conversation) are proposals and questions together,
   and a new question opens the panel as a new proposal does. The **inbox** (Juan, 2026-10-22) is a panel on the right
   (the top bar's "Bandeja (N)"; it comes out by itself when a new proposal arrives, checked every minute; in a narrow
   window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card is titled by the proposal
@@ -1215,7 +1221,7 @@ contraseña ni un código aquí» under a question.
   tab with the run it started. On the left, 330 px, «Todas | Fallos | Pruebas» (`.segmented`) over the runs, the
   newest first and fifty at a time with «Ver más»: each a row of three lines, when («hoy, 09:12», «ayer, 19:44»,
   «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
-  en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra»), and who with which version, muted («Programada · versión
+  en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra», «Esperando tu respuesta», «Cancelada · 0,4 s»), and who with which version, muted («Programada · versión
   3 · reintento», «Prueba del borrador»; one started by its «Programada» is «A su hora · versión 3», and an hour it
   missed is «No corrió: Boni estaba apagado a su hora», with neither «Reintentar» nor «Deshacer»). How long it took is said of every run that ended; «Bien» is the word of a
   step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date

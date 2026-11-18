@@ -203,6 +203,19 @@ describe("what «Ejecuciones» says of a run", () => {
     ).toBe("No hizo nada");
     expect(didWords(es, "es", summary({ test: true }), names)).toBeNull();
     expect(didWords(es, "es", summary({ state: "running" }), names)).toBeNull();
+    // AU-203: while it waits for an answer, its proposal is not made yet; what it saved so far is said.
+    expect(didWords(es, "es", { ...r, state: "waiting" }, names)).toBe(
+      "Creó 1 fila en Tareas · con datos de fuera",
+    );
+    const asksOnly = summary({
+      state: "waiting",
+      line: {
+        writes: [],
+        asked: [{ collection: "c_tareas", name: "Tareas", action: "create", n: 1 }],
+        outside: false,
+      },
+    });
+    expect(didWords(es, "es", asksOnly, names)).toBeNull();
   });
   it("AU-18 · S2's refusals in words: a shared device in the app's own, and a later run that stands by the row's title", () => {
     expect(runRefusedWords(es, { refused: "not-personal" })).toBe(

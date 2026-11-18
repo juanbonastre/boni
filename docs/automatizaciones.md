@@ -2340,8 +2340,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`param.shape`, `param.value`). Manda por `PeoplePort.notify` un aviso por ejecución con las filas, que siguen; por
   fila, 5 y uno que dice cuántos más (`more`, las palabras son de la app), cada texto recortado a 300 caracteres por
   puntos de código. El texto es el del paso tal cual, plano, con la etiqueta de lo que cita, y lo de fuera no cambia
-  a dónde va. En una prueba no manda nada y su registro dice lo que mandaría (`notices`, `sent: false`). Falta: el
-  `notify` del servidor con «Dónde» y que tocarlo abra su ejecución (S2), y el paso en el lienzo y «Avisaría…» (P2).
+  a dónde va. En una prueba no manda nada y su registro dice lo que mandaría (`notices`, `sent: false`). Hecho en
+  S2: el `notify` del servidor (`waits.ts`, `peoplePort`) pasa por la política como una llamada sin destinatario
+  (`noticeDecision`: P1, como desde un turno) y va a donde dice «Dónde»: al canal de la app (`notify`, con la
+  ejecución que abre) con `all` y `desktop`, y al móvil con `all` y `phone`; uno que junta dice «y N más». Falta:
+  el paso en el lienzo y «Avisaría…» (P2).
 - **AU-202** (F15, en parte) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
   respuesta de la ejecución, que se ve donde se inició: en la F15, en el panel de «Ejecutar» y de «Probar» y en la
   línea de la ejecución (sus primeros 200 caracteres); con el disparador de chat será el mensaje (F16), y en una
@@ -2384,10 +2387,25 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `noAnswer` aunque llegue una respuesta. El tiempo de la ejecución suma lo que corrió antes y después, no la espera;
   filas escritas y llamadas a modelos se cuentan juntas («Como mucho» es de cada paso, que corre a un solo lado de
   la espera). Como mucho 20 esperando por automatización (`ask.waiting`, que una prueba no cuenta) y 2 MB de lo
-  guardado, medido cuando ya corrió todo lo que no depende de la respuesta (`ask.kept`, sin preguntar). Falta, del servidor
-  (S2): soltar el turno y seguir en el suyo, guardarlo en el almacén del usuario y podarlo, el reinicio, el
-  planificador de límites vencidos, la tarjeta y «Ya no vale», cancelar, el «Sí» más bajo al seguir (con AU-210), y
-  la propuesta junta al terminar; de la pantalla (P2), «Esperando tu respuesta» y la pregunta en el panel de la
+  guardado, medido cuando ya corrió todo lo que no depende de la respuesta (`ask.kept`, sin preguntar).
+  Hecho en S2, en el servidor (`apps/server/src/automations/runs.ts` y `waits.ts`): una ejecución que espera suelta su
+  turno (`openAutomationRun` solo cuenta las que están en cola o corriendo) y guarda lo suyo en el almacén del
+  usuario, en `automation_run_waits` (migración 32: la ejecución guardada, sus respuestas y el límite más cercano),
+  que la poda no toca mientras espera. Un reinicio no la corta (`interruptRuns` solo cierra las que estaban en cola
+  o corriendo), y el planificador, en cada tick y antes de las programadas, sigue las que pasaron su límite
+  (`expireWaits`, 50 cada vez), que salen por «sin respuesta». Cada pregunta es una tarjeta de la Bandeja
+  (`RequestRow`, con `view.automation`: ejecución, paso y pregunta), pintada por código con los controles de la app
+  («Sí o no», una opción, varias o texto); se contesta o se aparta solo desde un dispositivo personal, y la
+  respuesta lleva su mano y su dispositivo (`GivenAnswer.by`). Cuando todas las preguntas de un paso tienen
+  respuesta, la ejecución sigue en su turno con la versión con la que empezó y el «Sí» más bajo entre esa versión y
+  la publicada en ese momento (`lowerYes`: un paso que cambió pregunta entero); la propuesta se hace al terminar.
+  Apagar o eliminar la automatización, o deshacer la ejecución, la cancela («Cancelada») y sus tarjetas quedan
+  «Ya no vale», igual que la de una ejecución que ya siguió o pasó su límite. Con los modelos apagados, la Bandeja
+  sigue sirviendo lo que una ejecución puso en ella por código, su propuesta (`automations.accept_run`) y su
+  «Preguntar», y se aceptan, rechazan y contestan igual (por la política y desde un dispositivo personal); una
+  propuesta que escribió un modelo y el resto de `/api/agent` siguen apagados (`OFF_ROUTES` en `agent.ts`; decidido
+  de noche, para que Juan lo confirme). Falta: la pausa de AU-210 al seguir
+  (S3), y de la pantalla (P2) el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la
   prueba.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».

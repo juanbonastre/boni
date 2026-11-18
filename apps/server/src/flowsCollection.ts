@@ -19,6 +19,7 @@ import {
 } from "@boni/entities";
 import type { FlowRow, UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
+import { cancelWaits } from "./automations/runs.ts";
 import { DataError } from "./data.ts";
 import { createFlow, type Problem, renamable, renameFlow } from "./flows.ts";
 import { getPage } from "./pages.ts";
@@ -229,6 +230,7 @@ export function deleteAutomationRow(store: UserStore, row: string, deleted: bool
   const id = automationRowTarget(row);
   if (!id || !store.journal.automation(id)) throw new DataError("not-found");
   store.journal.setAutomationDeleted(id, deleted);
+  if (deleted) cancelWaits(store, id);
 }
 
 /**

@@ -9,20 +9,23 @@
 // in each test's name (`make check` reads them, T-10).
 import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { fakePlanner, type ModelProvider, type ModelRequest } from "@boni/agent";
 import {
   type Automation,
   type Box,
   type Cell,
+  DAY_MS,
   newConnection,
   parseAutomation,
 } from "@boni/automations";
 import { label } from "@boni/entities";
 import { clock, under } from "@boni/pace";
-import type { UserStore } from "@boni/store";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { AgentHost } from "../agent.ts";
+import { openUserStore, type UserStore } from "@boni/store";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { AgentHost, serveAgent } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { openDb } from "../db.ts";
 import { AccountModels } from "../models.ts";
@@ -31,20 +34,27 @@ import { wireAutomationModels } from "./ai.ts";
 import { reachStore } from "./collections.ts";
 import { automationPolicy } from "./policy.ts";
 import type { RunProposalView } from "./proposal.ts";
+import { setEnabled } from "./publish.ts";
 import {
   cite,
   folder,
   JUAN,
   made,
   NOW,
+  notes,
+  CREATE as ORDER,
   ok,
   ran,
+  SHARED,
   START,
   type StepSpec,
+  scheduler,
+  seeded as seedOrders,
   ZONE,
 } from "./run.test-util.ts";
-import { runView, undoAutomationRun } from "./runs.ts";
-import { testAutomation } from "./service.ts";
+import { answerAsk, interruptRuns, runView, settled, undoAutomationRun } from "./runs.ts";
+import { setDeleted, testAutomation } from "./service.ts";
+import { askCardId } from "./waits.ts";
 
 const files = folder("ia");
 const closing: (() => void)[] = [];
@@ -715,10 +725,326 @@ describe("an AI step's reach, from the version the server keeps (AU-205)", () =>
 });
 
 describe("a run that waits for an answer (AU-203, phase F15 S2)", () => {
-  it.todo(
-    "AU-203 · a waiting run lets the automation's next run start, survives a restart, and is answered only from a personal device",
-  );
-  it.todo(
-    "AU-203 · the 21st waiting run of an automation fails at its question; turning the automation off cancels its waits and their cards no longer hold",
-  );
+  const ASKS: StepSpec = ["Preguntar", "ask", { question: "¿Lo creo?", answer: "yesNo" }];
+  const cardOf = (s: UserStore, run: string, step: string) =>
+    s.journal.request(askCardId(run, step, 0));
+  const count = (s: UserStore, nota: string) => notes(s).filter((n) => n === nota).length;
+  afterEach(() => vi.useRealTimers());
+
+  it("AU-203 · a waiting run lets the automation's next run start, survives a restart, and is answered only from a personal device; past its limit it leaves by «sin respuesta» and its card no longer holds", async () => {
+    // The engine reads the instant from `Date`: only it is the test's, the timers stay real.
+    vi.useFakeTimers({ toFake: ["Date"], now: NOW });
+    const path = join(files.dir, "espera.db");
+    const s = openUserStore(path, { now: () => Date.now() });
+    seedOrders(s);
+    const NOTA = "creado tras la respuesta";
+    const a = made(s, [START, ASKS, ORDER(NOTA)]);
+    ok(a.publish());
+    const ask = a.step("Preguntar");
+    const first = await ran(s, a.id, a.step("Inicio"), { nota: "uno" });
+    expect(first).toMatchObject({ state: "waiting", proposal: null });
+    // Its card, painted by code: the question as plain text, until the step's limit (a day, born so).
+    expect(cardOf(s, first.id, ask)).toMatchObject({
+      status: "pending",
+      run: first.id,
+      expires: NOW + DAY_MS,
+      view: { kind: "ask", control: "yesno", prompt: { t: "v", value: "¿Lo creo?" } },
+    });
+    // It let go of its turn: the next run starts, and waits too.
+    const second = await ran(s, a.id, a.step("Inicio"), { nota: "dos" });
+    expect(second.state).toBe("waiting");
+    expect(count(s, NOTA)).toBe(0);
+    s.close();
+
+    // A restart: neither is cut as interrupted (AU-190); their waits and their cards stay.
+    const s2 = openUserStore(path, { now: () => Date.now() });
+    closing.push(() => s2.close());
+    expect(interruptRuns(s2)).toEqual([]);
+    for (const r of [first, second]) {
+      expect(runOf(s2, a.id, r.id).run.state).toBe("waiting");
+      expect(cardOf(s2, r.id, ask)?.status).toBe("pending");
+    }
+    // A shared device reads the card and cannot answer it nor put it away; an answer its control does not take is
+    // refused. The card stays as it was.
+    const card1 = askCardId(first.id, ask, 0);
+    expect(answerAsk(s2, card1, { yes: true }, SHARED)).toEqual({ refused: "not-personal" });
+    expect(answerAsk(s2, card1, null, SHARED)).toEqual({ refused: "not-personal" });
+    expect(answerAsk(s2, card1, { choice: 0 }, JUAN)).toHaveProperty("error");
+    expect(cardOf(s2, first.id, ask)?.status).toBe("pending");
+    // His hand on a personal device: the run goes on in its turn, with the version it started with, and saves.
+    expect(answerAsk(s2, card1, { yes: true }, JUAN)).toEqual({ run: first.id });
+    await settled(s2);
+    expect(runOf(s2, a.id, first.id).run).toMatchObject({ state: "done", version: 1 });
+    expect(cardOf(s2, first.id, ask)?.status).toBe("answered");
+    expect(s2.journal.automationWait(first.id)).toBeFalsy();
+    expect(count(s2, NOTA)).toBe(1);
+    // Answered, the card no longer holds («Ya no vale»).
+    expect(answerAsk(s2, card1, { yes: true }, JUAN)).toEqual({ gone: true });
+
+    // The other waits until its limit; past it, the scheduler's tick takes it by «sin respuesta», which goes nowhere:
+    // nothing is saved and its card no longer holds.
+    const until = s2.journal.automationWait(second.id)?.until as number;
+    expect(until).toBe(NOW + DAY_MS);
+    const t = scheduler(s2);
+    await t.at(until - 1);
+    expect(runOf(s2, a.id, second.id).run.state).toBe("waiting");
+    vi.setSystemTime(until + 1);
+    await t.at(until + 1);
+    expect(runOf(s2, a.id, second.id).run.state).toBe("done");
+    expect(cardOf(s2, second.id, ask)?.status).toBe("expired");
+    expect(s2.journal.automationWait(second.id)).toBeFalsy();
+    expect(count(s2, NOTA)).toBe(1);
+    const late = { ...JUAN, now: until + 1 };
+    expect(answerAsk(s2, askCardId(second.id, ask, 0), { yes: true }, late)).toEqual({
+      gone: true,
+    });
+  });
+
+  it("AU-203 · the 21st waiting run of an automation fails at its question; turning the automation off cancels its waits and their cards no longer hold", async () => {
+    const s = files.store();
+    const a = made(s, [START, ASKS, ORDER("nunca")]);
+    ok(a.publish());
+    const ask = a.step("Preguntar");
+    const waiting = [];
+    for (let i = 0; i < 20; i++) waiting.push(await ran(s, a.id, a.step("Inicio"), { nota: "x" }));
+    expect(waiting.map((r) => r.state)).toEqual(Array(20).fill("waiting"));
+    // The 21st fails at its «Preguntar» without asking, saying why.
+    const over = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+    expect(over).toMatchObject({
+      state: "failed",
+      error: { step: ask, people: { code: "ask.waiting", detail: { max: 20 } } },
+    });
+    expect(cardOf(s, over.id, ask)).toBeFalsy();
+    // Undoing one that waits and saved nothing cancels it.
+    const [undone, ...rest] = waiting as [(typeof waiting)[0], ...typeof waiting];
+    expect(ok(undoAutomationRun(s, a.id, undone.id, JUAN)).run.state).toBe("cancelled");
+    expect(cardOf(s, undone.id, ask)?.status).toBe("expired");
+    // Put away from a personal device, the card counts as no answer: the run goes on by «sin respuesta» and saves
+    // nothing.
+    const dismissed = rest.pop() as (typeof waiting)[0];
+    expect(answerAsk(s, askCardId(dismissed.id, ask, 0), null, JUAN)).toEqual({
+      run: dismissed.id,
+    });
+    await settled(s);
+    expect(runOf(s, a.id, dismissed.id).run.state).toBe("done");
+    expect(cardOf(s, dismissed.id, ask)?.status).toBe("dismissed");
+    expect(s.journal.automationWait(dismissed.id)).toBeFalsy();
+    // Turned off, every other one is cancelled: nothing of it runs, its card says «Ya no vale».
+    ok(setEnabled(s, a.id, false, JUAN));
+    for (const r of rest) {
+      expect(runOf(s, a.id, r.id).run.state).toBe("cancelled");
+      expect(cardOf(s, r.id, ask)?.status).toBe("expired");
+      expect(s.journal.automationWait(r.id)).toBeFalsy();
+    }
+    expect(answerAsk(s, askCardId(rest[0]?.id ?? "", ask, 0), { yes: true }, JUAN)).toEqual({
+      gone: true,
+    });
+    // On again, it starts nothing of what it cancelled; deleted, what waits is cancelled too.
+    ok(setEnabled(s, a.id, true, JUAN));
+    const next = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+    expect(next.state).toBe("waiting");
+    ok(setDeleted(s, a.id, true));
+    expect(s.journal.automationRun(next.id)?.state).toBe("cancelled");
+    expect(cardOf(s, next.id, ask)?.status).toBe("expired");
+    expect(notes(s)).not.toContain("nunca");
+  });
+
+  it("AU-203 · a run that goes on after its wait saves with the lowest «Sí» between its version's and the one published now, and its proposal is made when it ends", async () => {
+    const s = files.store();
+    const NOTA = "con el sí de antes";
+    const a = made(s, [START, ASKS, ORDER(NOTA)]);
+    ok(a.publish());
+    const r = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+    expect(r.state).toBe("waiting");
+    // Meanwhile Juan lowers the cell to «Preguntar», in a new version.
+    a.edit([START, ASKS, ORDER(NOTA, "ask")]);
+    ok(a.publish());
+    expect(answerAsk(s, askCardId(r.id, a.step("Preguntar"), 0), { yes: true }, JUAN)).toEqual({
+      run: r.id,
+    });
+    await settled(s);
+    const done = runOf(s, a.id, r.id).run;
+    // Its steps are its version's; what it saves asks, as the version published now does.
+    expect(done).toMatchObject({ state: "done", version: 1, proposal: expect.any(String) });
+    expect(done.line?.asked).toEqual([expect.objectContaining({ action: "create", n: 1 })]);
+    expect(notes(s)).not.toContain(NOTA);
+  });
+
+  it("AU-201 · «Avisar» goes where its «Dónde» says, among his own devices: the app's stream, the phone or both; a «Preguntar» refreshes the Bandeja", async () => {
+    const host = new AgentHost({
+      dataDir: mkdtempSync(join(files.dir, "avisos-")),
+      providers: null,
+    });
+    try {
+      const pushed: string[] = [];
+      host.pushNotice = (_account, text) => pushed.push(text);
+      const events: { event: string; data: unknown }[] = [];
+      host.subscribe(1, (event, data) => events.push({ event, data }));
+      const s = host.store(1);
+      seedOrders(s);
+      const tell = (name: string, where: string): StepSpec => [
+        name,
+        "notify",
+        { text: `Aviso a ${where}`, where },
+      ];
+      const a = made(s, [
+        START,
+        tell("A todos", "all"),
+        tell("Al ordenador", "desktop"),
+        tell("Al móvil", "phone"),
+      ]);
+      ok(a.publish());
+      const r = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+      expect(r).toMatchObject({ state: "done", error: null });
+      const about = { automation: a.id, run: r.id };
+      expect(events.filter((e) => e.event === "notify").map((e) => e.data)).toEqual([
+        { text: "Aviso a all", integrity: expect.any(String), about },
+        { text: "Aviso a desktop", integrity: expect.any(String), about },
+      ]);
+      expect(pushed).toEqual(["Aviso a all", "Aviso a phone"]);
+      // A question tells the app to read the Bandeja again, and sends nothing to the phone.
+      const b = made(s, [START, ASKS]);
+      ok(b.publish());
+      events.length = 0;
+      expect((await ran(s, b.id, b.step("Inicio"), { nota: "x" })).state).toBe("waiting");
+      expect(events.map((e) => e.event)).toContain("requests");
+      expect(pushed).toHaveLength(2);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-203 AU-193 · with the models off, the Bandeja serves what a run put there by code: its proposal, listed, accepted and rejected, and its «Preguntar», answered; a proposal a model wrote and the rest of the agent stay off", async () => {
+    const host = new AgentHost({
+      dataDir: mkdtempSync(join(files.dir, "apagado-")),
+      providers: null,
+    });
+    try {
+      const s = host.store(1);
+      seedOrders(s);
+      const ask = async (
+        route: string,
+        o: { id?: string; body?: unknown; trust?: "personal" | "shared" } = {},
+      ) => {
+        const got = { status: 0, body: "" };
+        const res = {
+          writeHead: (st: number) => {
+            got.status = st;
+            return res;
+          },
+          end: (b?: string) => {
+            got.body = b ?? "";
+            return res;
+          },
+          setHeader: () => res,
+        } as unknown as ServerResponse;
+        const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(o.body ?? {}))]), {
+          url: "/",
+        }) as unknown as IncomingMessage;
+        await serveAgent(host, req, res, route, o.id ? { id: o.id } : {}, {
+          account: 1,
+          device: JUAN.device,
+          trust: o.trust ?? "personal",
+        });
+        return {
+          status: got.status,
+          json: JSON.parse(got.body || "null") as Record<string, unknown>,
+        };
+      };
+      expect(host.onFor(1)).toBe(false);
+      // A run that proposes, and one a model wrote (a turn's, by hand here: no model runs).
+      const a = made(s, [START, ORDER("propuesta con el agente apagado", "ask")]);
+      ok(a.publish());
+      const r = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+      const proposal = r.proposal as string;
+      expect(proposal).toBeTypeOf("string");
+      s.journal.addProposal({
+        id: "p_de_un_modelo",
+        run: "r_de_un_turno",
+        tool: "entities.create",
+        args: { type: "pedido", values: { nota: "de un modelo" } },
+        view: null,
+        sources: [],
+        created: NOW,
+      });
+      const listed = (await ask("GET /api/agent/proposals")).json.proposals as { id: string }[];
+      expect(listed.map((p) => p.id)).toEqual([proposal]);
+      expect(await ask("POST /api/agent/proposals/:id/accept", { id: "p_de_un_modelo" })).toEqual({
+        status: 503,
+        json: { error: "agent-off" },
+      });
+      expect(
+        (await ask("POST /api/agent/proposals/:id/reject", { id: "p_de_un_modelo" })).status,
+      ).toBe(503);
+      expect(s.journal.proposal("p_de_un_modelo")?.status).toBe("pending");
+      // Accepting still passes through the policy: not from a shared device.
+      const shared = await ask("POST /api/agent/proposals/:id/accept", {
+        id: proposal,
+        trust: "shared",
+      });
+      expect(shared.json.error).toBe("accept-on-a-personal-device");
+      expect(count(s, "propuesta con el agente apagado")).toBe(0);
+      expect((await ask("POST /api/agent/proposals/:id/accept", { id: proposal })).status).toBe(
+        200,
+      );
+      expect(s.journal.proposal(proposal)?.status).toBe("accepted");
+      expect(count(s, "propuesta con el agente apagado")).toBe(1);
+      // Another run's proposal is rejected the same way.
+      const r2 = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+      expect(
+        (await ask("POST /api/agent/proposals/:id/reject", { id: r2.proposal as string })).status,
+      ).toBe(200);
+      expect(s.journal.proposal(r2.proposal as string)?.status).toBe("rejected");
+
+      // A «Preguntar»: its card is listed and answered; a question of the agent's is not listed.
+      const b = made(s, [START, ASKS, ORDER("tras la pregunta")]);
+      ok(b.publish());
+      const w = await ran(s, b.id, b.step("Inicio"), { nota: "x" });
+      expect(w.state).toBe("waiting");
+      const card = askCardId(w.id, b.step("Preguntar"), 0);
+      s.journal.addRequest({
+        id: "q_del_agente",
+        run: "r_de_un_turno",
+        view: { kind: "ask", control: "choice", prompt: { t: "v", value: "¿Cuál?" }, options: [] },
+        created: NOW,
+        expires: Date.now() + DAY_MS,
+      });
+      const requests = (await ask("GET /api/agent/requests")).json.requests as { id: string }[];
+      expect(requests.map((q) => q.id)).toEqual([card]);
+      expect(
+        (
+          await ask("POST /api/agent/requests/:id/answer", {
+            id: "q_del_agente",
+            body: { choice: 0 },
+          })
+        ).status,
+      ).toBe(503);
+      expect(
+        (await ask("POST /api/agent/requests/:id/dismiss", { id: "q_del_agente" })).status,
+      ).toBe(503);
+      expect(
+        (
+          await ask("POST /api/agent/requests/:id/answer", {
+            id: card,
+            body: { yes: true },
+            trust: "shared",
+          })
+        ).status,
+      ).toBe(403);
+      const answered = await ask("POST /api/agent/requests/:id/answer", {
+        id: card,
+        body: { yes: true },
+      });
+      expect(answered).toMatchObject({ status: 200, json: { run: w.id } });
+      await settled(s);
+      expect(count(s, "tras la pregunta")).toBe(1);
+      // Nothing else of the agent opens.
+      expect((await ask("POST /api/agent/turn", { body: { text: "hola" } })).status).toBe(503);
+      expect((await ask("POST /api/agent/proposals/:id/restore", { id: proposal })).status).toBe(
+        503,
+      );
+    } finally {
+      host.close();
+    }
+  });
 });
