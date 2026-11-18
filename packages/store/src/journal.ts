@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { type AutomationRunsJournal, automationRunsJournal } from "./automationRuns.ts";
 import { type AutomationsJournal, automationsJournal } from "./automations.ts";
 
@@ -421,6 +421,15 @@ export function openJournal(db: DatabaseSync): Journal {
     decided: (r.decided as number | null) ?? null,
     answer: p(r.answer),
   });
+  // Prepared once: the Bandeja and the daily pass read one area after another (A-15).
+  let judged: StatementSync | undefined;
+  const judgedQuery = (): StatementSync => {
+    if (!judged)
+      judged = db.prepare(
+        "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? AND at > ? AND result IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
+      );
+    return judged;
+  };
   const decisionOf = (r: Record<string, unknown>): DecisionRow => ({
     id: r.id as string,
     run: r.run as string,
@@ -480,13 +489,7 @@ export function openJournal(db: DatabaseSync): Journal {
           .all(area, limit) as Record<string, unknown>[]
       ).map(decisionOf),
     judgedDecisions: (area, limit, after = 0) =>
-      (
-        db
-          .prepare(
-            "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? AND at > ? AND result IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
-          )
-          .all(area, after, limit) as Record<string, unknown>[]
-      ).map(decisionOf),
+      (judgedQuery().all(area, after, limit) as Record<string, unknown>[]).map(decisionOf),
     startRun: (r) =>
       void db
         .prepare(

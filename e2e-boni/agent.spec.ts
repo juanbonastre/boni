@@ -1315,7 +1315,7 @@ test("a rehearsal (task 27, §3.4): what it would do, folded until «Revisar»; 
   ]);
 });
 
-test("an old card checked again (task 27, §3.4 rule 3a): changed since, it comes back made again with «Ha cambiado», and nothing was answered", async ({
+test("an old card checked again (task 27, §3.4 rule 3a): changed since, it comes back made again with «Modificada», and nothing was answered", async ({
   page,
 }) => {
   await openApp(page, "/?still", {

@@ -643,42 +643,43 @@ describe("what Boni learns from the answers to an automation (F15)", () => {
     expect(cells[0]?.declined).toBeTypeOf("number");
   });
 
-  it("AU-209 · AU-210 · A-15 · the Bandeja's list of pauses and suggestions over 200 published automations, each with a year of daily answers, stays within a frame", async () => {
+  it("AU-209 · AU-210 · A-15 · the Bandeja's list of pauses and suggestions over 200 published automations and a year of hourly answers among their cells stays within a frame", async () => {
     const { s } = moving();
     const state: Record<string, unknown> = {};
+    const areas: string[] = [];
     for (let i = 0; i < 200; i++) {
-      {
-        const a = made(s, [START, CREATE(`n${i}`, i % 2 ? "ask" : "yes")]);
-        ok(a.publish());
-        const key = learningKey(s, a.id, {
-          step: a.step("Crear"),
-          collection: "pedido",
-          action: "create",
-        }) as CellKey;
-        const area = cellArea(key);
-        state[area] =
-          i % 2
-            ? { ...key, suggested: NOW - i }
-            : { ...key, paused: { at: NOW - i, why: "share", run: "r_x" } };
-        // A year of daily answers of this cell, judged.
-        s.batch(() => {
-          for (let d = 0; d < 365; d++) {
-            const id = randomUUID();
-            s.journal.addDecision({
-              id,
-              run: `r_${i}_${d}`,
-              area,
-              cost: "B",
-              p: 1,
-              outcome: "do",
-              detail: null,
-              at: NOW - d * DAY,
-            });
-            s.journal.setDecisionResult(id, d % 5 ? "right" : "wrong", NOW - d * DAY + DAY);
-          }
-        });
-      }
+      const a = made(s, [START, CREATE(`n${i}`, i % 2 ? "ask" : "yes")]);
+      ok(a.publish());
+      const key = learningKey(s, a.id, {
+        step: a.step("Crear"),
+        collection: "pedido",
+        action: "create",
+      }) as CellKey;
+      const area = cellArea(key);
+      areas.push(area);
+      state[area] =
+        i % 2
+          ? { ...key, suggested: NOW - i }
+          : { ...key, paused: { at: NOW - i, why: "share", run: "r_x" } };
     }
+    // A year of hourly answers among the 200 cells, all judged: AU-207's daily pass has the same volume.
+    s.batch(() => {
+      for (let h = 0; h < 365 * 24; h++) {
+        const id = randomUUID();
+        const when = NOW - h * HOUR;
+        s.journal.addDecision({
+          id,
+          run: `r_${h}`,
+          area: areas[h % 200] as string,
+          cost: "B",
+          p: 1,
+          outcome: "do",
+          detail: null,
+          at: when,
+        });
+        s.journal.setDecisionResult(id, h % 5 ? "right" : "wrong", when + DAY);
+      }
+    });
     s.setSetting("automations/learning", JSON.stringify(state));
     const start = clock();
     const listed = learningNotices(s);

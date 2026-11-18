@@ -2242,7 +2242,7 @@ export function stopTurn() {
 }
 /**
  * An answer to Boni's question (docs/conversacion.md §3.4), with what the card showed (rule 3a): the server checks
- * the question again first, and a question that changed comes back as it is now («Ha cambiado»), nothing answered.
+ * the question again first, and a question that changed comes back as it is now («Modificada»), nothing answered.
  */
 export async function answerAsk(entryId: string, a: AskAnswer) {
   const e = get().chat.find((x) => x.id === entryId);
