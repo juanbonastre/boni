@@ -1682,7 +1682,7 @@ que un paso espere a Juan.
   cuando es de uno, y la pantalla lo dice con `i18n.ts`; la frase en inglés del motor es para el registro y no se
   enseña. Los estados y lo que dice cada uno: la lista vacía, lo de cualquier colección, con «Nueva»; el lienzo
   vacío, «Disparador»; ENTRADA sin datos, «Sin datos de entrada» con su botón; SALIDA sin probar, «Sin
-  probar» con «Probar paso»; una salida vieja, «puede estar vieja» con «Probar paso»; un fallo, el motivo con «Ir al
+  probar» con «Probar paso»; una salida vieja, «desactualizada» con «Probar paso»; un fallo, el motivo con «Ir al
   parámetro»; un buscador sin resultados, «Nada con «…»»; un borrador que no se guardó, «Sin guardar · Reintentar».
   Hecho en E: todos.
 - **AU-85** (F14b, hecho) · Una palabra por acción: una prueba comprueba que cada acción («Probar paso», «Añadir
@@ -1723,7 +1723,7 @@ que un paso espere a Juan.
   colección sean otros tampoco: la salida dice cuándo se probó (AU-72). «Probar paso» siempre vuelve a ejecutar ese
   paso. De cada automatización se guarda la última prueba de cada paso; se guarda en el servidor, así que se ve igual
   en otro dispositivo.
-- **AU-92** (F14b, hecho) · La salida de un paso que cambió después de probar se marca «puede estar vieja».
+- **AU-92** (F14b, hecho) · La salida de un paso que cambió después de probar se marca «desactualizada».
   En la F14b se lee en la cabecera de SALIDA y, en el lienzo, la cuenta de sus flechas queda atenuada. Lo dice el
   servidor al guardar cada cambio del borrador.
   Hecho en E: la marca en SALIDA con «Probar paso», las cuentas atenuadas del paso y de lo que cuelga de él, y nada
