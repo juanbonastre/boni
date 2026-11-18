@@ -1405,7 +1405,7 @@ const es = {
   "auto.problem.code.fieldNotGiven": "La última prueba de «{name}» no dio «{field}»",
   "auto.problem.connection.notAllowed": "Este paso no lleva conexiones",
   "auto.problem.connection.notAllowed.private": "{collection} es privada: quítala de este paso",
-  "auto.problem.connection.unknown": "Conexión no encontrada",
+  "auto.problem.connection.unknown": "Colección no encontrada",
   "auto.problem.connection.repeated": "Hay dos conexiones con «{collection}»",
   "auto.problem.connection.many": "Tiene más conexiones de las que caben",
   "auto.problem.connection.limits.field":
@@ -4944,7 +4944,7 @@ const en: Record<Key, string> = {
   "auto.problem.code.fieldNotGiven": "The last test of «{name}» did not give «{field}»",
   "auto.problem.connection.notAllowed": "This step takes no connections",
   "auto.problem.connection.notAllowed.private": "{collection} is private: take it out of this step",
-  "auto.problem.connection.unknown": "Connection not found",
+  "auto.problem.connection.unknown": "Collection not found",
   "auto.problem.connection.repeated": "There are two connections to «{collection}»",
   "auto.problem.connection.many": "It has more connections than fit",
   "auto.problem.connection.limits.field":

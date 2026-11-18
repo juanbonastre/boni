@@ -2411,10 +2411,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   por lo que diga «Por dónde» (nace con «Notificación» y «Bandeja», AU-246), y la pregunta vive en su ejecución, que
   se contesta también desde «Ejecuciones» y desde la notificación (AU-247). La tarjeta de la Bandeja solo existe con
   «Bandeja» en «Por dónde».
-- **AU-201** (F15, en parte) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, por el
+- **AU-201** (F15, en parte) · «Avisar» enseña **Texto** (con expresiones) y, desde la decisión 29, **Por dónde**
+  (AU-246). Manda un aviso a Juan, por el
   `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a quién (P2, P14). Detrás
   de «Añadir opción», **Dónde**: «Ordenador y móvil» (nace así), «Solo ordenador» o «Solo móvil» (confirmadas
-  por Juan el 2026-11-18; el diseño decía «En el ordenador y el móvil», «Solo en el ordenador» y «Solo en el móvil»); es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
+  por Juan el 2026-11-18; el diseño decía «En el ordenador y el móvil», «Solo en el ordenador» y «Solo en el móvil»), que se aplica a «Notificación»; es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
   que guarda sola una ejecución no avisa, y un aviso es este paso). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
   los junta («y 12 más»). El texto se pinta plano, recortado a 300 caracteres, y tocarlo abre su ejecución. En una
   prueba dice «Avisaría…» y no manda nada. No es el aviso de AU-102 (el de un fallo, que manda Boni): este lo pone
@@ -2563,7 +2564,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   `apps/boni-web/src/automations/client.test.ts` («AU-247 · a waiting run's question is answered by its own path…»)
   y `e2e-boni/automations-ai.spec.ts` («AU-247 · A-15 · a waiting run's questions are answered from its run…»).
   Falta: en el móvil, tocar la notificación abre la app pero no la ejecución (el aviso del móvil no lleva todavía su
-  `about`; hace falta leerlo en `Notices.kt` y un `PendingIntent` que abra la ejecución); en el escritorio la abre.
+  `about`; hace falta leerlo en `Notices.kt` y un `PendingIntent` que abra la ejecución). En el escritorio el aviso lleva su `about`; que tocarlo abra la ejecución
+  no tiene todavía una prueba con la app (AU-203).
   No se construye: abrir un chat desde la notificación ni botones de respuesta en la del móvil (tarea 148).
 - **AU-248** (F15, hecho) · «Avisar» y «Preguntar» son un paso con **Acción**, como «Colección» (decisión 29 del
   §10). «Avisar» cuenta y la ejecución sigue; «Preguntar» cuenta y espera, con «respuesta» y «sin respuesta». La

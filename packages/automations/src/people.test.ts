@@ -224,7 +224,7 @@ describe("the people steps (F15)", () => {
     });
     expect(port.asked).toBe(0);
 
-    // 20 runs already waiting: the next fails in that step («Ya hay 20 preguntas sin responder»); a test waits in
+    // 20 runs already waiting: the next fails in that step («Límite de ejecuciones en espera alcanzado (20)»); a test waits in
     // no Bandeja, so it does not count them.
     const full = await go(once.automation, { people: recorder(20), collections: db(1) });
     expect(rec(full, once.id).error?.people?.code).toBe("ask.waiting");
