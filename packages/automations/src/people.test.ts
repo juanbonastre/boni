@@ -135,8 +135,14 @@ describe("the people steps (F15)", () => {
       paramsOf(step(params))
         .filter((p) => p.place === "shown")
         .map((p) => p.key);
-    expect(shown({ answer: "yesNo" })).toEqual(["question", "answer", "waitDays"]);
-    expect(shown({ answer: "one" })).toEqual(["question", "answer", "options", "waitDays"]);
+    expect(shown({ answer: "yesNo" })).toEqual(["question", "via", "answer", "waitDays"]);
+    expect(shown({ answer: "one" })).toEqual([
+      "question",
+      "via",
+      "answer",
+      "options",
+      "waitDays",
+    ]);
     expect(paramsOf(step({})).find((p) => p.key === "mode")?.place).toBe("option");
     expect(paramsOf(step({})).find((p) => p.key === "waitDays")?.default).toBe(1);
     expect(outputsOf(step({}))).toEqual([MAIN, NO_ANSWER]);
@@ -345,7 +351,7 @@ describe("the people steps (F15)", () => {
   it("AU-201 · «Avisar» has no recipient parameter; one notice per run, and «Una vez por fila» sends 5 and then one that groups the rest", async () => {
     // No parameter names to whom: a text, its mode, and «Dónde», a closed list of his own devices fixed in the step.
     const keys = (type: string) => specOf(type)?.actions.flatMap((a) => a.params.map((p) => p.key));
-    expect(keys(NOTIFY_TYPE)).toEqual(["text", "mode", "where"]);
+    expect(keys(NOTIFY_TYPE)).toEqual(["text", "via", "mode", "where"]);
     expect(keys(REPLY_TYPE)).toEqual(["text"]);
     const where = specOf(NOTIFY_TYPE)?.actions[0]?.params.find((p) => p.key === "where");
     expect(where).toMatchObject({
@@ -398,6 +404,7 @@ describe("the people steps (F15)", () => {
         text: "Hay tareas",
         label: OWN,
         where: "phone",
+        via: ["notification"],
       },
     ]);
     expect(jsonOf(e, one.after)).toHaveLength(3);
@@ -440,6 +447,7 @@ describe("the people steps (F15)", () => {
       "label",
       "step",
       "text",
+      "via",
       "where",
     ]);
   });
@@ -462,6 +470,7 @@ describe("the people steps (F15)", () => {
           text: "Revisa las tareas",
           label: OWN,
           where: "desktop",
+          via: ["notification"],
         },
       ],
     });

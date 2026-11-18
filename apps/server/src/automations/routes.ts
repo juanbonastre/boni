@@ -123,6 +123,11 @@ export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
     undo: "a pause comes back by the next failures; a «No» stays while the step stays the same (AU-209)",
     control: "«Quitar pausa» and «No» in the Bandeja's card of a pause or a suggestion",
   },
+  "automations.answer": {
+    effect: "touch",
+    undo: "nothing: an answer given goes on with its run, as its card's in the Bandeja (AU-203)",
+    control: "the question's controls in a waiting run of «Ejecuciones», where its notification opens (AU-247)",
+  },
   "automations.pin": {
     effect: "touch",
     undo: "the same button again: it releases the pin",
@@ -149,14 +154,22 @@ export const RUN_ROUTES: Readonly<Record<string, { action: string; runs: string 
   },
   // F15 P2 (learning.ts): «Quitar pausa» and «No» to a suggestion (AU-209, AU-210).
   "POST /api/agent/automations/:id/learning": { action: "automations.learn", runs: "unpause" },
+  // F15 P2 (C): a waiting run's question, answered from the run (AU-247, decision 29 of §10).
+  "POST /api/agent/automations/:id/runs/:run/answer": {
+    action: "automations.answer",
+    runs: "answerRun",
+  },
 };
 
 /**
  * The routes of an automation that change something and that a shared device may still call (decision 13 of §10):
- * «Probar», which writes in no collection (AU-90). Every other one that is not a read is from a personal device.
+ * «Probar», which writes in no collection (AU-90), and answering a waiting run's question, which its step decides
+ * (`mayAnswer`, decision 26: a shared device unless the step asks for a personal one, a speaker never). Every other
+ * one that is not a read is from a personal device.
  */
 export const SHARED_DEVICE_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/agent/automations/:id/test",
+  "POST /api/agent/automations/:id/runs/:run/answer",
 ]);
 
 /** The routes P1 adds with the controls, each with its action and the function of publish.ts it runs. */

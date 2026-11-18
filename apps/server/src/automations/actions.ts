@@ -29,6 +29,9 @@ import {
   runAsked,
   runRows,
   runsOf,
+  answerRun,
+  askGivenOf,
+  runAsks,
   runView,
   startRun,
   undoAutomationRun,
@@ -170,7 +173,12 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       }
       if (part === "run") {
         const view = answer(runView(s.store, automation, textOf(a.run) ?? ""));
-        return leaf({ ...view, run: withUntil(s.store, view.run) } as never, code);
+        // The questions it waits for, answered from the run (AU-247), and whether this device answers them.
+        const asks = runAsks(s.store, view.run.id, s.trust ?? "ambient");
+        return leaf(
+          { ...view, run: withUntil(s.store, view.run), ...(asks.length ? { asks } : {}) } as never,
+          code,
+        );
       }
       if (part === "runRows") {
         const offset = a.offset ? plain(a.offset) : 0;
@@ -500,6 +508,39 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
         answer(undoAutomationRun(s.store, idOf(a.id), idOf(a.run), runHand(s))) as never,
         code,
       );
+    },
+  });
+  r.register({
+    name: "automations.answer",
+    icon: "ClipboardCheck",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.answer"),
+    title: "Contestar una pregunta de una ejecución que espera",
+    describe:
+      "Answer one question a waiting run of an automation asks (step, i: its place among the step's questions), with yes, choice, choices or text as its «Respuesta» takes, or put it away with none: as its card in the inbox would. Any device of the account unless the step asks for a personal one",
+    args: {
+      id,
+      run: { role: "option", required: true, describe: "the run's id" },
+      step: { role: "option", required: true, describe: "the «Preguntar»'s step id" },
+      i: { role: "option", required: true, describe: "the question's place, from 0" },
+      answer: {
+        role: "option",
+        describe: "{yes}, {choice}, {choices} or {text}; absent puts the question away",
+      },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      const i = numberOf(a.i);
+      if (i === undefined) throw new ToolError("bad-argument");
+      const raw = a.answer ? plain(a.answer) : null;
+      const given = raw === null || raw === undefined ? null : askGivenOf(raw);
+      if (raw !== null && raw !== undefined && !given) throw new ToolError("bad-argument");
+      const r = answerRun(s.store, idOf(a.id), idOf(a.run), idOf(a.step), i, given, runHand(s));
+      // As its card's: a device its step does not let answer is refused with the Bandeja's word.
+      if ("refused" in r) throw new ToolError("personal-device-only");
+      return leaf(answer(r) as never, code);
     },
   });
   r.register({
