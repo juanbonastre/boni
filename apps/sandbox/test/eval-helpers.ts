@@ -119,15 +119,19 @@ export const evals = (r: EvalResponse): readonly WireEvaluated[] => {
 export const CASES = join(import.meta.dirname, "cases", "evaluacion");
 export const caseCode = (name: string) => readFileSync(join(CASES, name), "utf8");
 /** A case tried the three ways: «Código» with all the rows, «Código» once per row, and as an expression. */
-const FORMS: { label: string; req: (body: string) => EvalRequest }[] = [
-  { label: "«Código», all the rows", req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }]) },
+const FORMS: { label: string; req: (body: string, more: Partial<EvalRequest>) => EvalRequest }[] = [
+  {
+    label: "«Código», all the rows",
+    req: (b, more) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }], more),
+  },
   {
     label: "«Código», per row",
-    req: (b) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }], { mode: "perRow" }),
+    req: (b, more) => evalRequest("code", [b], [{ i: 0 }, { i: 1 }], { ...more, mode: "perRow" }),
   },
   {
     label: "an expression",
-    req: (b) => evalRequest("expressions", [`(() => {\n${b}\n})()`], [{ i: 0 }, { i: 1 }]),
+    req: (b, more) =>
+      evalRequest("expressions", [`(() => {\n${b}\n})()`], [{ i: 0 }, { i: 1 }], more),
   },
 ];
 export async function tryCase(
@@ -136,9 +140,12 @@ export async function tryCase(
 ) {
   const code = caseCode(name);
   const want = /^\/\/ expect: (.*)$/m.exec(code)?.[1] ?? "";
+  // A case may ask for its own limits, as a request may (`// limits: {…}`), as the cases of the run protocol do.
+  const limits = /^\/\/ limits: (.*)$/m.exec(code)?.[1];
+  const more: Partial<EvalRequest> = limits ? { limits: JSON.parse(limits) } : {};
   for (const form of FORMS) {
     const at = `${name}, ${form.label}`;
-    const r = await (opts.through ?? evaluateCall)(form.req(code));
+    const r = await (opts.through ?? evaluateCall)(form.req(code, more));
     if (want.startsWith("call ")) {
       expect(r.ok, at).toBe(false);
       expect(want.slice(5).split("|"), at).toContain(!r.ok && r.error);

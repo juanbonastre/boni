@@ -2442,9 +2442,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   sigue sirviendo lo que una ejecución puso en ella por código, su propuesta (`automations.accept_run`) y su
   «Preguntar», y se aceptan, rechazan y contestan igual (por la política y desde un dispositivo personal); una
   propuesta que escribió un modelo y el resto de `/api/agent` siguen apagados (`OFF_ROUTES` en `agent.ts`; decidido
-  de noche, para que Juan lo confirme). Falta: la pausa de AU-210 al seguir
-  (S3), y de la pantalla (P2) el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la
-  prueba.
+  de noche, para que Juan lo confirme). Hecho en S3: al seguir, la ejecución lee también la pausa de AU-210
+  (`resumePublished` con `pausedDoc`), que solo baja; esa lectura no tiene todavía una prueba propia. Falta, de la
+  pantalla (P2), el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la prueba.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -2857,7 +2857,7 @@ Lo que AU-186 dejó abierto se cierra así. La seudoaceptación de `docs/fiabili
 que se ve: en la conexión, la cuenta bajo la celda; en la Bandeja, la misma cuenta en la tarjeta de la propuesta; y,
 cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
 
-- **AU-207** (F15, pendiente) · Las señales las junta el código, sin ningún modelo, y solo de actos de su mano en un
+- **AU-207** (F15, hecho) · Las señales las junta el código, sin ningún modelo, y solo de actos de su mano en un
   dispositivo personal. Por cada celda y cada ejecución hay una decisión, no una por fila: la propuesta aceptada
   (acierto) o rechazada (fallo); y, de lo que se guardó (aceptado, o con «Sí»), deshacer la ejecución, o que su mano
   cambie esos mismos campos o mande a la papelera una de sus filas en los 7 días siguientes (fallo: «corregida»). Lo
@@ -2869,12 +2869,20 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   cambió su mano se mira una vez al día en el registro de operaciones, por las operaciones de cada ejecución (AU-18),
   nunca en cada petición, y se mide con un año de ejecuciones (A-15). Se podan con sus ejecuciones. La prueba:
   `apps/server/src/automations/learning.test.ts`.
+  Hecho en S3 (`automations/learning.ts`): `recordRun` deja una decisión por celda en «Sí» que guardó al terminar la
+  ejecución; `learnAnswer` (rutas de aceptar y rechazar de la Bandeja, `agent.ts`) una por celda que preguntó, solo
+  desde un dispositivo personal y una vez; `learnUndo` («Deshacer lo que hizo») las pasa a fallo; y `judgeCells`, una
+  vez al día en el tick del planificador, mira el registro por los índices de las decisiones (`decisions_at`,
+  migración 33), de cada ejecución y de sus filas, una consulta por ejecución (`handOpsOnRun`): su mano cambiando los mismos campos, mandando a la
+  papelera, sacando de ella lo que la ejecución mandó o deshaciendo una de sus operaciones. El ámbito es la celda con
+  la huella del paso sin los modos (`cellPrint`): pasar de «Preguntar» a «Sí» sigue la misma cuenta. Una ejecución
+  cancelada mientras esperaba no llega a terminar y lo que guardó con «Sí» no cuenta.
 - **AU-208** (F15, pendiente) · La cuenta está a la vista y la pinta el código. Bajo la celda, en la tabla de
   conexiones (donde «lo usa», AU-179) y junto al «Permiso» de un «Colección»: «18 de 20 aceptadas» con «Preguntar»,
   «12 de 12 sin deshacer» con «Sí»; nada hasta que hay 5 decisiones. En la tarjeta de la propuesta de una ejecución,
   una línea por paso: «Has aceptado 18 de las últimas 20 de «Analista» en Notas». Es un número, no una ayuda. La
   prueba: `e2e-boni/automations-ai.spec.ts`.
-- **AU-209** (F15, pendiente) · Con 20 decisiones y el 95 % aceptadas en una celda con «Preguntar», Boni lo sugiere
+- **AU-209** (F15, en parte) · Con 20 decisiones y el 95 % aceptadas en una celda con «Preguntar», Boni lo sugiere
   una vez, con la forma de una sugerencia de siempre: «Has aceptado 20 de 20 propuestas de «Analista» en Notas.
   ¿Quieres que guarde sin preguntar?» [Abrir] [No]. «Abrir» lleva a esa celda en el editor: ponerla en «Sí» es un
   toque suyo y publicar otro (decisión 13). Boni nunca pone un «Sí», ni en el borrador. Un «No» no se repite mientras
@@ -2882,7 +2890,13 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   cuenta salen también en Ajustes › Decisiones, con las demás. Ese «No» y la pausa de AU-210 se guardan en el almacén
   del usuario, con las decisiones (D-02), con su registro y su Deshacer. La prueba:
   `apps/server/src/automations/learning.test.ts`.
-- **AU-210** (F15, pendiente) · Cuando un «Sí» falla, Boni vuelve a preguntar. Con tres fallos seguidos, o uno de
+  Hecho en S3: la sugerencia es un aviso de la ejecución que la ganó («suggested», `notices.ts`), con el día
+  compartido con «Revisar la guía» (`maySuggest`, `learning/suggested`), y no toca la versión ni el borrador;
+  `declineSuggestion` guarda el «No» y solo desde un dispositivo personal. Falta: [Abrir] y [No] en la app y las
+  celdas en Ajustes › Decisiones (P2, P3: hasta entonces `accuracy()` deja fuera esos ámbitos, que la app pintaría
+  como texto crudo); y el «No» y la pausa se guardan en un ajuste del almacén (`automations/learning`), sin registro
+  ni Deshacer (decidido de noche, para que Juan lo confirme; la otra, filas con su operación en el registro).
+- **AU-210** (F15, en parte) · Cuando un «Sí» falla, Boni vuelve a preguntar. Con tres fallos seguidos, o uno de
   cada cinco en las últimas 20 decisiones (la regla de `docs/fiabilidad.md`), esa celda queda en pausa: las
   ejecuciones la tratan como «Preguntar». La versión publicada no cambia (decisión 10): la pausa se guarda aparte, el
   servidor la lee junto al «Sí» (AU-188) y solo puede bajar, nunca subir (como `lowerYes`). La celda dice «Sí · en
@@ -2891,6 +2905,11 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   cambiado también la quita. La decisión 10 no nombra esta pausa: extiende a la celda lo que `docs/fiabilidad.md` ya
   hace cuando «Solo» falla, y que Boni baje un «Sí» que puso su mano lo decidió Juan el 2026-11-17 (decisión 16);
   la otra era quedarse en el aviso, sin pausa. La prueba: `apps/server/src/automations/learning.test.ts`.
+  Hecho en S3: `backOff` de `@boni/agent` sobre las últimas 20 juzgadas de la celda (así, un fallo en las tres
+  primeras ya es uno de cada cinco); la pausa se guarda aparte y `pausedDoc` la aplica al ejecutar y al seguir
+  (`lowerCells`, que solo baja), por la huella del paso: publicar ese paso cambiado la deja atrás. `unpause` la quita
+  solo desde un dispositivo personal y cuenta desde ahí. Falta (P2): «Sí · en pausa» en la celda y [Quitar pausa] en
+  el aviso; y el registro y el Deshacer de AU-209.
 - **AU-211** (F16, pendiente) · Lo que necesita un modelo para aprender: un revisor que mira lo que Juan corrigió y
   propone
   un cambio en las «Instrucciones» de un «Agente», un ejemplo, o filas en una colección que el paso lee. Lo propone
@@ -2913,12 +2932,17 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   que necesita un modelo. Lo demás no cambia de sitio: las señales, las cuentas, la sugerencia de abrir una celda y
   la pausa son de la F15 (AU-207 a AU-210, AU-212), código del servidor y no pasos, y ninguna de ellas pone ni quita
   un «Sí». La prueba: `apps/server/src/automations/boni.test.ts`.
-- **AU-212** (F15, pendiente) · Los límites de aprender. El interruptor «Aprender» lo para todo: ni sugerencias ni
+- **AU-212** (F15, hecho) · Los límites de aprender. El interruptor «Aprender» lo para todo: ni sugerencias ni
   pausas nuevas (las señales se siguen guardando, que son de Juan). Como mucho una sugerencia al día que no nazca de
   un chat, contando las de `docs/preferencias.md`. Nada de fuera mueve una cuenta: solo cuentan actos de su mano en
   un dispositivo personal, y aceptar algo con texto de fuera cuenta el acto, no el texto (P9). Ningún modelo ve una
   cuenta ni la cambia, y ninguna cuenta entra en lo que recibe un «Agente» (AU-197). Aprender nunca cambia una
   versión publicada ni pone un «Sí». La prueba: `apps/server/src/automations/learning.test.ts`.
+  Hecho en S3: con «Aprender» apagado se guardan las decisiones y no hay sugerencia ni pausa nueva; una sugerencia
+  al día entre todos los que aprenden; aceptar y rechazar cuentan desde las rutas de la Bandeja con su
+  dispositivo, y deshacer desde `undoAutomationRun`, que pide un dispositivo personal (también por la acción
+  `automations.undo_run`, que la política confirma con él, P21); y nada de S3 llama a un modelo ni pasa una cuenta
+  a un paso.
 
 ## 6. Seguridad: qué aguanta y qué cambia
 
