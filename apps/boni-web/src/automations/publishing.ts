@@ -154,7 +154,7 @@ export function checkLines(
  * Tareas · las guarda · con datos de fuera», «Elimina filas en Gastos · sin preguntar», «Modifica filas en Notas ·
  * pregunta». `name`: a collection's name by its key (the key itself when the app does not know it). What an
  * «Agente» does says so (AU-200), and its «Como mucho» read from the step's connection in `draft`, summed over its
- * steps when each has one: «Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20 · con datos de
+ * steps when each has one: «Elimina filas en Tareas · sin preguntar · decidido por un modelo · como mucho 20 · con datos de
  * fuera».
  */
 export function abilityLine(

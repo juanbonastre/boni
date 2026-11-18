@@ -120,8 +120,8 @@ test.describe("the criterion of F14d in the desktop app", () => {
     // Its hour comes with the screen open: the run arrives by the desktop's events, no one asking.
     await expect(runItems(w)).toHaveCount(1, { timeout: due - Date.now() + 150_000 });
     await runItems(w).first().click();
-    await expect(runBar(w)).toContainText("Bien", { timeout: 30_000 });
-    await expect(runBar(w)).toContainText("A su hora");
+    await expect(runBar(w)).toContainText("Completada", { timeout: 30_000 });
+    await expect(runBar(w)).toContainText("Programada");
     await expect(runBar(w)).toContainText("Creó 1 fila en Tareas");
     // It saved alone: its line says so, «Deshacer lo que hizo» beside it (S4; decision 17: no window pops up).
     await expect(runBar(w).locator(".auto-run-notice")).toBeVisible();
@@ -333,7 +333,7 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
       "aria-selected",
       "true",
     );
-    await expect(runBar(w)).toContainText("Bien", { timeout: 60_000 });
+    await expect(runBar(w)).toContainText("Completada", { timeout: 60_000 });
     await expect(runBar(w)).toContainText("Creó 1 fila en Tareas");
     await expect(runItems(w)).toHaveCount(1);
     expect(await tareas(w)).toBe(ROWS + 1);
@@ -410,7 +410,7 @@ test.describe("«Ejecuciones» in the desktop app (F14d P2)", () => {
       () => expect(runItems(w)).toHaveCount(100, { timeout: 15_000 }),
     );
     await runItems(w).nth(1).click();
-    await expect(runBar(w)).toContainText("Bien");
+    await expect(runBar(w)).toContainText("Completada");
     const open = await timed(
       () => runItems(w).nth(0).click(),
       () => expect(runBar(w)).toContainText("Deshecha", { timeout: 15_000 }),
@@ -644,11 +644,11 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     // Its hour comes with the screen open: the run arrives by the desktop's events.
     await expect(runItems(w)).toHaveCount(1, { timeout: due - Date.now() + 150_000 });
     await runItems(w).first().click();
-    await expect(runBar(w)).toContainText("Bien", { timeout: 30_000 });
-    await expect(runBar(w)).toContainText("A su hora");
+    await expect(runBar(w)).toContainText("Completada", { timeout: 30_000 });
+    await expect(runBar(w)).toContainText("Programada");
     await expect(runBar(w)).toContainText("Propuso crear 3 filas en Tareas");
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveText(
-      "Esperando en la Bandeja · Ver en la Bandeja",
+      "Pendiente en la Bandeja · Ver en la Bandeja",
     );
     // Nothing saved yet (the other runs of that hour are done by now: the one with «Sí» made 3, the trash took 5).
     await expect.poll(() => tareas(w), { timeout: 30_000 }).toBe(ROWS + 3 - 5);
@@ -661,7 +661,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
       "Copiar lo del correo quiere crear 3 filas en Tareas",
     );
     await expect(card.locator(".run-proposal-line")).toHaveText(
-      "versión 1 · A su hora · Esperando en la Bandeja",
+      "versión 1 · Programada · Pendiente en la Bandeja",
     );
     await expect(card.locator(".run-asked-row")).toHaveCount(3);
     await expect(card.locator(".run-asked-outside")).toHaveCount(3);
@@ -678,7 +678,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await runsOf(w, "Releer las copias", 3, 0);
     await head(w).getByRole("button", { name: "Más" }).click();
     await w.getByRole("menuitemradio", { name: "Ejecutar", exact: true }).click();
-    await expect(runBar(w)).toContainText("Bien", { timeout: 60_000 });
+    await expect(runBar(w)).toContainText("Completada", { timeout: 60_000 });
     await expect(runBar(w)).toContainText("Creó 3 filas en Tareas · con datos de fuera");
     expect(await tareas(w)).toBe((before as number) + 6);
     await runBar(w).getByRole("button", { name: "Deshacer lo que hizo" }).click();
@@ -695,9 +695,9 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     test.setTimeout(180_000);
     const w = await (app as ElectronApplication).firstWindow();
     await runsOf(w, "Guardar lo del correo", 4, 1);
-    // At its hour: saved alone, said in its line with «Deshacer», nothing in the Bandeja (decision 17).
-    await expect(runBar(w)).toContainText("Bien", { timeout: 30_000 });
-    await expect(runBar(w)).toContainText("A su hora");
+    // Scheduled: saved alone, said in its line with «Deshacer», nothing in the Bandeja (decision 17).
+    await expect(runBar(w)).toContainText("Completada", { timeout: 30_000 });
+    await expect(runBar(w)).toContainText("Programada");
     await expect(runBar(w)).toContainText("Creó 3 filas en Tareas · con datos de fuera");
     await expect(runBar(w).locator(".auto-run-notice")).toBeVisible();
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveCount(0);
@@ -710,8 +710,8 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await expect(start.getByRole("radio", { name: "Disparado por el usuario" })).toBeChecked();
     await start.getByRole("button", { name: "Ejecutar", exact: true }).click();
     await expect(runItems(w)).toHaveCount(2, { timeout: 30_000 });
-    await expect(runBar(w)).toContainText("Bien", { timeout: 60_000 });
-    await expect(runBar(w)).not.toContainText("A su hora");
+    await expect(runBar(w)).toContainText("Completada", { timeout: 60_000 });
+    await expect(runBar(w)).not.toContainText("Programada");
     await expect(runBar(w)).toContainText("Creó 3 filas en Tareas · con datos de fuera");
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveCount(0);
     expect(await tareas(w)).toBe(before + 3);
@@ -719,7 +719,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await runBar(w).getByRole("button", { name: "Deshacer lo que hizo" }).click();
     await expect(runBar(w)).toContainText("Deshecha", { timeout: 30_000 });
     await runItems(w).nth(1).click();
-    await expect(runBar(w)).toContainText("A su hora");
+    await expect(runBar(w)).toContainText("Programada");
     await runBar(w).getByRole("button", { name: "Deshacer lo que hizo" }).click();
     await expect(runBar(w)).toContainText("Deshecha", { timeout: 30_000 });
     expect(await tareas(w)).toBe(before - 3);
@@ -729,7 +729,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     test.setTimeout(180_000);
     const w = await (app as ElectronApplication).firstWindow();
     await runsOf(w, "Tirar lo viejo", 2, 1);
-    await expect(runBar(w)).toContainText("Bien", { timeout: 30_000 });
+    await expect(runBar(w)).toContainText("Completada", { timeout: 30_000 });
     await expect(runBar(w)).toContainText("Mandó a la papelera 5 filas de Tareas");
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveCount(0);
     const before = (await tareas(w)) as number;
@@ -740,7 +740,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await runsOf(w, "Tirar preguntando", 2, 1);
     await expect(runBar(w)).toContainText("Propuso mandar a la papelera 4 filas de Tareas");
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveText(
-      "Esperando en la Bandeja · Ver en la Bandeja",
+      "Pendiente en la Bandeja · Ver en la Bandeja",
     );
     await runBar(w).getByRole("button", { name: "Ver en la Bandeja" }).click();
     const card = cardOf(w, "Tirar preguntando");

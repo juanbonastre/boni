@@ -13372,6 +13372,107 @@ button.auto-log-line {
   margin: 6px 0 0;
   color: var(--muted);
 }
+/* «Preguntar», «Avisar» and «Responder» in SALIDA (AU-201, AU-202, AU-203): the answer whole, as plain text. */
+.auto-people-reply {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* «Opciones» of a «Preguntar» (AU-125): one line each, «Borrar» beside it, «Añadir» below. */
+.auto-ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.auto-ask-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.auto-ask-option .auto-input {
+  flex: 1;
+  min-width: 0;
+}
+.auto-ask-option-add {
+  align-self: flex-start;
+}
+/* A test that waits for an answer (AU-203): its questions just above «Probar», in the test's own panel. */
+.auto-ask {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  max-height: 50vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.auto-ask-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.auto-ask-until {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.auto-ask-question {
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.auto-ask-text {
+  padding: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.auto-ask-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.auto-ask-choices .btn.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.auto-ask-option-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.auto-ask-input {
+  min-height: 60px;
+  resize: vertical;
+}
+.auto-ask-actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 639px) {
+  .auto-ask {
+    left: 0;
+    right: 0;
+    width: auto;
+    transform: none;
+  }
+}
 /* «Haría esto» of a «Código» (AU-181): what its requests would save, folded above «Consola». */
 .auto-would-code {
   margin-top: 10px;

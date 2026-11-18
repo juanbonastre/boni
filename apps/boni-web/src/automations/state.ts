@@ -45,6 +45,8 @@ export type SaveState = "saving" | "saved" | "failed";
 export type LogLine =
   | { kind: "untested" }
   | { kind: "problems"; count: number; first: string }
+  /** It reached a «Preguntar» (AU-203): «Última prueba hace 1 min · esperando respuesta», its panel asks. */
+  | { kind: "waiting"; at: number; step: string }
   | { kind: "tested"; at: number; ok: true; steps: number; ms: number; wouldWrite: number }
   | { kind: "tested"; at: number; ok: false; failedAt: string; steps: number; ms: number };
 
@@ -402,6 +404,9 @@ export function logLine(state: EditorState): LogLine {
     const shown = errors.length ? errors : last.problems;
     return { kind: "problems", count: shown.length, first: shown.find((p) => p.step)?.step ?? "" };
   }
+  const waiting = Object.entries(state.tests).find(([, t]) => t.state === "waiting");
+  if (waiting && (!last || last.state === "waiting"))
+    return { kind: "waiting", at: last?.at ?? waiting[1].at, step: waiting[0] };
   if (last) {
     const steps = last.ran.length + last.reused.length;
     if (last.state === "failed" && last.failedAt)

@@ -15,6 +15,7 @@ import {
   MAIN,
   type ParamSpec,
   type ParamValue,
+  type PeopleFailure,
   paramsOf,
   paramValue,
   resultName,
@@ -194,7 +195,7 @@ export type OutputSays =
   | { kind: "untested" }
   | { kind: "skipped" }
   | { kind: "stopped" }
-  | { kind: "failed"; failure: StepFailure | CodeFailure; param?: ParamSpec }
+  | { kind: "failed"; failure: StepFailure | CodeFailure | PeopleFailure; param?: ParamSpec }
   | { kind: "empty" };
 
 export function outputSays(step: Step, test: StepTest | undefined): OutputSays | null {
@@ -203,8 +204,10 @@ export function outputSays(step: Step, test: StepTest | undefined): OutputSays |
   if (test.state === "skipped") return { kind: "skipped" };
   if (test.state === "stopped") return { kind: "stopped" };
   if (test.state === "failed") {
-    // A failure of JavaScript says which in `why` (`CodeFault`): that is what is said, not its general `other`.
-    const failure: StepFailure | CodeFailure = test.error?.why ??
+    // A failure of JavaScript says which in `why` (`CodeFault`), one of «Preguntar», «Avisar» or «Responder» in
+    // `people` (`PeopleFault`): that is what is said, not its general `other`.
+    const failure: StepFailure | CodeFailure | PeopleFailure = test.error?.why ??
+      test.error?.people ??
       test.error?.failure ?? { code: "other" };
     // `param` is written as a problem's is: the parameter's key, then the path inside it.
     const key = failure.param?.split(".")[0];

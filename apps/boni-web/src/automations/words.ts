@@ -6,7 +6,6 @@
  */
 import {
   ACTION,
-  AGENT_TYPE,
   AI_CATEGORY,
   type Automation,
   actionOf,
@@ -17,12 +16,13 @@ import {
   CODE_FAILURES,
   CODE_LIMITS,
   CODE_PROBLEMS,
-  CODE_TYPE,
   HARD_LIMITS,
   isExpr,
   OUT,
   type ParamSpec,
   type ParamValue,
+  PEOPLE_CATEGORY,
+  PEOPLE_FAILURES,
   PROBLEMS,
   parseExpression,
   RUN_LIMIT_KEYS,
@@ -30,11 +30,11 @@ import {
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
-  type StepTypeSpec,
   specOf,
   WRITE_ACTIONS,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
+import { BESIDE_CATALOGUE } from "./adding.ts";
 import type { RowView } from "./client.ts";
 import { type CardLabel, type ConditionField, isEmpty } from "./panel.ts";
 import type { LogLine } from "./state.ts";
@@ -122,7 +122,7 @@ export const DO = {
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
 export function catalogueKeys(): string[] {
   const keys = new Set<string>();
-  for (const c of [...CATEGORIES, AI_CATEGORY]) keys.add(KEY.category(c));
+  for (const c of [...CATEGORIES, AI_CATEGORY, PEOPLE_CATEGORY]) keys.add(KEY.category(c));
   const params = (type: string, list: readonly ParamSpec[]) => {
     for (const p of list) {
       if (p.place === "hidden") continue;
@@ -133,9 +133,9 @@ export function catalogueKeys(): string[] {
     }
   };
   const measures = new Set<string>();
-  // «Código» and «Agente» (AU-30, AU-50): in the panel beside the catalogue (adding.ts), worded the same.
-  const beside = [CODE_TYPE, AGENT_TYPE].map((type) => specOf(type) as StepTypeSpec);
-  for (const spec of [...CATALOGUE, ...beside]) {
+  // «Código», «Agente» and the three that talk to Juan (AU-30, AU-50, AU-69): in the panel beside the catalogue
+  // (adding.ts), worded the same.
+  for (const spec of [...CATALOGUE, ...BESIDE_CATALOGUE]) {
     keys.add(KEY.step(spec.type));
     params(spec.type, spec.params);
     if (spec.actions.length > 1) {
@@ -324,7 +324,7 @@ export function rowsWords(t: T, lang: "es" | "en", n: number): string {
 }
 
 /**
- * The line of «Registro» (AU-64): «Sin probar»; «2 problemas»; «Última prueba hace 2 min · bien · 6 pasos · 4,1 s ·
+ * The line of «Registro» (AU-64): «Sin probar»; «2 problemas»; «Última prueba hace 2 min · completada · 6 pasos · 4,1 s ·
  * no escribió nada»; «… · falló en «Filtrar»». `nameOf`: a step's name by its id.
  */
 export function logWords(
@@ -336,6 +336,8 @@ export function logWords(
 ): string {
   if (line.kind === "untested") return t("auto.view.untested");
   if (line.kind === "problems") return t("auto.log.problems", { n: line.count });
+  if (line.kind === "waiting")
+    return `${t("auto.log.last", { ago: agoWords(t, line.at, now) })} · ${t("auto.log.waiting")}`;
   const parts = [
     t("auto.log.last", { ago: agoWords(t, line.at, now) }),
     line.ok ? t("auto.log.ok") : t("auto.log.failedAt", { step: nameOf(line.failedAt) }),
@@ -548,6 +550,8 @@ function saidKeys(): string[] {
     for (const [code, r] of Object.entries(SOME[kind]))
       for (const reason of r.of)
         keys.push(`${(kind === "problem" ? KEY.problem : KEY.failure)(code)}.${reason}`);
+  // Why «Preguntar», «Avisar» or «Responder» failed (people.ts): one key each.
+  for (const code of PEOPLE_FAILURES) keys.push(KEY.failure(code));
   for (const l of HARD_LIMITS) keys.push(KEY.limit(l));
   for (const a of WRITE_ACTIONS) keys.push(KEY.writeAction(a));
   return keys;
@@ -637,5 +641,8 @@ export function said(
     for (const n of ["max", "got"] as const)
       if (typeof d[n] === "number") vars[n] = amountOf(d.limit, d[n] as number, locale);
   }
+  // What a waiting run keeps (AU-203) is said in bytes: «pasa de 2 MB».
+  if (x.code === "ask.kept" && typeof d.max === "number")
+    vars.max = amountOf("memoryBytes", d.max, locale);
   return t(key, vars);
 }

@@ -661,12 +661,12 @@ export const CARD_TODAY = {
     now: { fromToday: 0, state: null },
   },
 };
-/** The same card once its hour has gone by: «Ya pasó», and «Aceptar» sends the word it showed. */
+/** The same card once its hour has gone by: «Pasado», and «Aceptar» sends the word it showed. */
 export const CARD_PAST = {
   ...CARD_TODAY,
   card: { ...CARD_TODAY.card, now: { fromToday: 0, state: "past" } },
 };
-/** One the calendar already has, done (the same task, ticked): «Ya hecho». */
+/** One the calendar already has, done (the same task, ticked): «Hecho». */
 export const CARD_DONE = {
   ...CARD_LINKED,
   id: "c74",

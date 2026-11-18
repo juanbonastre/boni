@@ -332,7 +332,9 @@ test("AU-65 AU-21 AU-70 · the criterion of F14b in the desktop app over the rea
 
   // «Probar» the whole draft: each arrow says its rows, the «Registro» that nothing was written.
   await testBar(w).locator(".auto-test-go").click();
-  await expect(testBar(w).locator(".auto-log-line")).toContainText("bien", { timeout: 30_000 });
+  await expect(testBar(w).locator(".auto-log-line")).toContainText("completada", {
+    timeout: 30_000,
+  });
   await expect(testBar(w).locator(".auto-log-line")).toContainText("no escribió nada");
   await expect(countOn(w, buscar, filtrar)).toHaveText(rows(ROWS));
   await expect(countOn(w, filtrar, si)).toHaveText(rows(FILTERED));

@@ -432,14 +432,14 @@ export interface InboxCard {
   } | null;
   /**
    * The card checked again now (task 73): its day from today (-1, 0, 1: «Ayer», «Hoy», «Mañana»; null: further)
-   * and its state word («Ya hecho», «Ya está en el calendario», «Ya pasó»), sent back as `seen` on «Aceptar».
+   * and its state word («Hecho», «Ya está en el calendario», «Pasado»), sent back as `seen` on «Aceptar».
    */
   now: { fromToday: -1 | 0 | 1 | null; state: CardState | null };
   /** Why it was made: the reader's quote of the mail (verbatim when the server found it in the mail). */
   why: { text: string; verbatim: boolean } | null;
   familiar: number;
   complete: boolean;
-  /** "Ya lo hice" can make it already done (its collection has a task column). */
+  /** "Marcar como hecha" can make it already done (its collection has a task column). */
   canMarkDone: boolean;
   /** Boni would have accepted it alone (measured only, Juan 2026-10-23). */
   wouldAccept: boolean;
@@ -983,6 +983,14 @@ export interface InboxRequest {
   about: RunWhat | null;
   /** The mail's own row, for "Ver correo". */
   open: { type: string; id: string } | null;
+  /** An automation's «Preguntar» (AU-125): the automation that asks, as the version that ran names it. */
+  automation?: { id: string; name: string };
+  /**
+   * Whether this device answers or puts away the card, as the server says it (`mayAnswer`, decision 26 of
+   * docs/automatizaciones.md §10: any device of the account, unless the step asks for a personal one). Absent from a
+   * server that does not say: the card answers, and the server decides when it is sent.
+   */
+  mayAnswer?: boolean;
 }
 
 /** «Modelos» (Juan, 2026-10-24): which model does each role, what it spends, how it treats the data. */
@@ -3141,7 +3149,7 @@ export class AgentApi {
     },
     /**
      * The state word the card showed (task 73): the server checks the card again and answers 409 «changed» when
-     * it says another, so a card that turned «Ya pasó» is not accepted without Juan's seeing it.
+     * it says another, so a card that turned «Pasado» is not accepted without Juan's seeing it.
      */
     seen: CardState | null = null,
   ) =>
@@ -3185,6 +3193,16 @@ export class AgentApi {
             expires: typeof r.expires === "number" ? r.expires : 0,
             about: runWhat(r.about) ?? null,
             open,
+            ...(isObj(r.automation) && str(r.automation.id, 80)
+              ? {
+                  automation: {
+                    id: r.automation.id as string,
+                    name:
+                      typeof r.automation.name === "string" ? r.automation.name.slice(0, 200) : "",
+                  },
+                }
+              : {}),
+            ...(typeof r.mayAnswer === "boolean" ? { mayAnswer: r.mayAnswer } : {}),
           },
         ];
       });

@@ -165,7 +165,7 @@ interface CardData extends Record<string, unknown> {
   test: { blocked: boolean; testing: boolean };
   /** Its connections, each a chip hanging under it by a dotted line (AU-40, AU-178): the collection and its words. */
   chips: { collection: string; name: string; words: string }[];
-  /** «Salida fijada» (AU-93), with «puede estar vieja» once the step changed; null when nothing is pinned. */
+  /** «Salida fijada» (AU-93), with «desactualizada» once the step changed; null when nothing is pinned. */
   pinned: string | null;
 }
 type CardNode = Node<CardData, "step">;

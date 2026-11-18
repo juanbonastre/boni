@@ -696,6 +696,9 @@ export function RequestCard({ r }: { r: InboxRequest }) {
   // Whole days left, rounded (a new question says 7; less than half a day, "hoy").
   const days = Math.round((r.expires - Date.now()) / DAY_MS);
   const about = r.about;
+  // What this device may do is the server's word, never a rule of this screen (decision 26): a card it may not
+  // answer is read-only, with the reason, since putting it away follows the same rule.
+  const answers = r.mayAnswer !== false;
   return (
     <section
       className="card inbox-card request-card"
@@ -725,7 +728,17 @@ export function RequestCard({ r }: { r: InboxRequest }) {
       )}
       {about?.kind === "review" && <p className="inbox-source muted">{t("inbox.fromReview")}</p>}
       {about?.kind === "flow" && <p className="inbox-source muted">{about.flow}</p>}
-      {r.ask.control === "yesno" ? (
+      {r.automation && (
+        // The automation that asks (AU-125), by its name: his words, plain text.
+        <p className="inbox-source muted">
+          {r.automation.name
+            ? t("inbox.ask.from", { name: r.automation.name })
+            : t("inbox.run.unnamed")}
+        </p>
+      )}
+      {!answers ? (
+        <p className="inbox-source muted">{t("inbox.ask.personalOnly")}</p>
+      ) : r.ask.control === "yesno" ? (
         // An automation's «Sí o no» (AU-125): the words are the app's, neither is the first.
         <div className="ask-options even">
           {([true, false] as const).map((yes) => (
@@ -808,26 +821,28 @@ export function RequestCard({ r }: { r: InboxRequest }) {
           </button>
         </form>
       )}
-      <div className="inbox-actions">
-        {busy === "accept" && r.ask.control === "choice" && (
-          <span className="muted small" role="status">
-            {t("inbox.answering")}
-          </span>
-        )}
-        <span className="spacer" />
-        <button
-          type="button"
-          className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
-          disabled={off}
-          title={t("inbox.putAwayHelp")}
-          aria-busy={busy === "reject"}
-          aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
-          onClick={() => void dismissRequest(r.id)}
-        >
-          <span className="decide-label">{t("inbox.putAway")}</span>
-          {busy === "reject" && <span className="spinner" aria-hidden="true" />}
-        </button>
-      </div>
+      {answers && (
+        <div className="inbox-actions">
+          {busy === "accept" && r.ask.control === "choice" && (
+            <span className="muted small" role="status">
+              {t("inbox.answering")}
+            </span>
+          )}
+          <span className="spacer" />
+          <button
+            type="button"
+            className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
+            disabled={off}
+            title={t("inbox.putAwayHelp")}
+            aria-busy={busy === "reject"}
+            aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
+            onClick={() => void dismissRequest(r.id)}
+          >
+            <span className="decide-label">{t("inbox.putAway")}</span>
+            {busy === "reject" && <span className="spinner" aria-hidden="true" />}
+          </button>
+        </div>
+      )}
       {failed && (
         <p className="decide-error" role="alert">
           <span>{failed.text}</span>
@@ -857,7 +872,7 @@ function WouldAccept() {
 }
 
 /**
- * Aceptar, Ya lo hice and Rechazar of one proposal: the one clicked turns into a spinner while the server answers (Juan,
+ * Aceptar, Marcar como hecha and Rechazar of one proposal: the one clicked turns into a spinner while the server answers (Juan,
  * 2026-10-23), both stay off meanwhile, and other cards can be decided. A failure says why under them; one that
  * can no longer be decided (stale, already decided) can be taken out of the list.
  */
@@ -873,8 +888,8 @@ function alreadyText(c: InboxCard | null): string | null {
 
 type T = ReturnType<typeof useStore.getState>["t"];
 /**
- * The card's word, checked each time it is seen (task 73): «Ya hecho» (the same task, done), «Ya está en el
- * calendario: …», «Ya pasó» (its day or hour has gone by). Nothing takes the card out: Juan decides.
+ * The card's word, checked each time it is seen (task 73): «Hecho» (the same task, done), «Ya está en el
+ * calendario: …», «Pasado» (its day or hour has gone by). Nothing takes the card out: Juan decides.
  */
 function stateOf(t: T, c: InboxCard | null): { state: string; text: string } | null {
   const already = alreadyText(c);
@@ -935,7 +950,7 @@ function DecideButtons({
   acceptLabel?: string;
   /** «Es el mismo» (task 58): the proposal goes into the entry the calendar already has at that moment. */
   same?: { label: string; run: () => void };
-  /** "Ya lo hice": only where the proposal can be made already done. */
+  /** "Marcar como hecha": only where the proposal can be made already done. */
   done?: () => void;
   reject: () => void;
 }) {

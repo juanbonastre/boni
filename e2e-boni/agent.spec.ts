@@ -1740,7 +1740,7 @@ test("a card can be corrected before accepting: its title and its collection go 
   );
 });
 
-test("«Ya lo hice» saves a task already done; a card Boni would have accepted says so, and the Registro how often", async ({
+test("«Marcar como hecha» saves a task already done; a card Boni would have accepted says so, and the Registro how often", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
@@ -1769,7 +1769,7 @@ test("«Ya lo hice» saves a task already done; a card Boni would have accepted 
   const card = page.locator(".inbox-panel .inbox-card").first();
   await expect(card.locator(".would-accept")).toHaveText("Boni la habría aceptado");
   await page.screenshot({ path: `${SHOTS}/inbox-done.png` });
-  await card.getByRole("button", { name: "Ya lo hice" }).click();
+  await card.getByRole("button", { name: "Marcar como hecha" }).click();
   await expect(card.getByRole("button", { name: "Apuntando como hecha…" })).toBeVisible();
   await expect(page.locator(".toast")).toContainText("Apuntada como hecha");
   await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(0);
@@ -1784,7 +1784,7 @@ test("«Ya lo hice» saves a task already done; a card Boni would have accepted 
   );
 });
 
-test("without a task column there is no «Ya lo hice», and no mark when Boni would not accept it", async ({
+test("without a task column there is no «Marcar como hecha», and no mark when Boni would not accept it", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
@@ -1796,7 +1796,7 @@ test("without a task column there is no «Ya lo hice», and no mark when Boni wo
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
   await expect(card.getByRole("button", { name: "Aceptar" })).toBeVisible();
-  await expect(card.getByRole("button", { name: "Ya lo hice" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Marcar como hecha" })).toHaveCount(0);
   await expect(card.locator(".would-accept")).toHaveCount(0);
 });
 
@@ -1828,7 +1828,7 @@ test("accepting shows a spinner on that card, the next one can be decided meanwh
   await second.getByRole("button", { name: "Aceptar" }).click();
   // The first leaves when its answer comes; the second was stale: it says so and can be taken out.
   await expect(first).toHaveCount(0);
-  await expect(second.locator(".decide-error")).toContainText("Ya no vale");
+  await expect(second.locator(".decide-error")).toContainText("Caducada");
   await second.getByRole("button", { name: "Quitar" }).click();
   await expect(panel.locator(".inbox-card")).toHaveCount(0);
 });
@@ -2362,7 +2362,7 @@ test("the panel: questions and proposals in one queue as they came, each saying 
   // One that no longer waits (answered elsewhere): it says so and can be taken out.
   const q4 = panel.locator(".request-card").first();
   await q4.getByRole("button", { name: "Sí" }).click();
-  await expect(q4.locator(".decide-error")).toContainText("ya no espera respuesta");
+  await expect(q4.locator(".decide-error")).toContainText("Pregunta cerrada");
   await q4.getByRole("button", { name: "Quitar" }).click();
   await expect(panel.locator(".request-card")).toHaveCount(0);
   await expect(top).toHaveText("Bandeja (1)");
@@ -2690,7 +2690,7 @@ test("a task without a time: the card offers the first free hour, one tap takes 
     ]);
 });
 
-test("a card checked again each time it is seen: «Hoy», «Leído», «Ya pasó», «Ya hecho»; nothing leaves on its own (task 73)", async ({
+test("a card checked again each time it is seen: «Hoy», «Leído», «Pasado», «Hecho»; nothing leaves on its own (task 73)", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
@@ -2715,10 +2715,10 @@ test("a card checked again each time it is seen: «Hoy», «Leído», «Ya pasó
   expect(
     await today.locator(".inbox-read").evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
   ).toBe(true);
-  // The calendar has it ticked: «Ya hecho», with what it is.
-  const done = cards.filter({ hasText: "Ya hecho" });
+  // The calendar has it ticked: «Hecho», with what it is.
+  const done = cards.filter({ hasText: "Hecho" });
   await expect(done.locator(".inbox-state")).toHaveAttribute("data-state", "done");
-  await expect(done.locator(".inbox-state")).toHaveText("· Ya hecho: Reconocimiento, 12:00–13:00");
+  await expect(done.locator(".inbox-state")).toHaveText("· Hecho: Reconocimiento, 12:00–13:00");
   await expect(done.locator(".inbox-what")).toContainText("Hoy, ");
   await page.screenshot({ path: `${SHOTS}/inbox-recheck.png` });
 });
@@ -2748,7 +2748,7 @@ test("«Aceptar» on a card that changed since it was seen is stopped and says s
   ]);
 });
 
-test("a card that says «Ya pasó» is accepted only with that word, and on the phone too (task 73)", async ({
+test("a card that says «Pasado» is accepted only with that word, and on the phone too (task 73)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -2765,7 +2765,7 @@ test("a card that says «Ya pasó» is accepted only with that word, and on the 
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   const card = page.locator(".inbox-card").first();
-  await expect(card.locator(".inbox-state")).toHaveText("· Ya pasó");
+  await expect(card.locator(".inbox-state")).toHaveText("· Pasado");
   await expect(card.locator(".inbox-what")).toContainText("Hoy, ");
   await iconsWhole(card, 44);
   await card.screenshot({ path: `${SHOTS}/phone-inbox-past.png` });

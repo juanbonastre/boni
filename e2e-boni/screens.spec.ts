@@ -202,7 +202,7 @@ async function tested(page: Page) {
     .getByRole("dialog")
     .getByRole("button", { name: "Probar" })
     .click();
-  await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("bien · 7 pasos");
+  await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("completada · 7 pasos");
   await still(page);
 }
 async function openStep(page: Page, id: string) {
@@ -315,7 +315,9 @@ test.describe("on the phone", () => {
       .getByRole("dialog")
       .getByRole("button", { name: "Probar" })
       .tap();
-    await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText("bien · 7 pasos");
+    await expect(page.locator(".auto-test-bar .auto-log-line")).toContainText(
+      "completada · 7 pasos",
+    );
     await still(page);
     await shot(page, "automatizaciones-telefono");
   });

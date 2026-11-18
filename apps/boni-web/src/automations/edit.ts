@@ -342,7 +342,7 @@ export type FieldFill = "none" | "ai" | "fixed";
 
 /**
  * How each field of a create or modify cell is filled, from `fields` and `fixed` (AU-52): no `fields` is every field
- * the AI decides, but for the fixed ones.
+ * decided by a model, but for the fixed ones.
  */
 export function fieldFills(
   cell: Exclude<Connection["create" | "update"], false>,
@@ -356,7 +356,7 @@ export function fieldFills(
 }
 
 /**
- * One field of a create or modify cell set to «No lo escribe», «Lo decide la IA» or «Fijo» with `value` (AU-52). A
+ * One field of a create or modify cell set to «No lo escribe», «Decidido por un modelo» or «Fijo» with `value` (AU-52). A
  * field is in `fields` or in `fixed`, never both (AU-48); a field that leaves the AI loses its line. `fields` stays
  * out only while every field is the AI's, with no fixed value and no line: then the connection says «every field».
  */

@@ -482,6 +482,8 @@ export function makeApp(opts: ServerOptions): App {
             trigger: b.trigger,
             fields: b.fields,
             ...(b.step !== undefined ? { step: b.step } : {}),
+            // The answers of the test's panel to the test that waits (AU-203).
+            ...(b.answers !== undefined ? { answers: b.answers } : {}),
           });
         }
         // The last test's rows, a page at a time (AU-71, AU-72), and the sample a step's expressions preview with

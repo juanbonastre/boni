@@ -20,7 +20,7 @@ import {
 import { ListTree, Pin, Play } from "lucide-react";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { dragFrom } from "../automations/cite.ts";
-import type { ExprPreview, Sample } from "../automations/client.ts";
+import type { ExprPreview, Sample, TestGiven } from "../automations/client.ts";
 import {
   type ConditionField,
   cannotTest,
@@ -47,6 +47,7 @@ import {
 } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
+import { AskPanel, waitingAsks } from "./AutomationPeople.tsx";
 import { type RowsAsk, type RowsShow, TestRows } from "./AutomationRows.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
@@ -56,6 +57,11 @@ type Apply = (f: (s: EditorState) => EditorState) => void;
 export interface Tester {
   /** «Probar» (`step` null) or «Probar paso», from `trigger` (by default the one the arrows reach it from). */
   run: (step: string | null, trigger?: string) => void;
+  /**
+   * The test that waits goes on with the panel's answers (AU-203), by «Preguntar» and question; null is «Sin
+   * respuesta». None in a run.
+   */
+  answer?: (answers: Record<string, (TestGiven | null)[]>) => void;
   /** The rows of one input or output of a step's last test, a page at a time. */
   rows: (at: { step: string; side: "in" | "out"; name: string }) => RowsAsk;
   /** The first rows of the last test as `step` sees them: what the preview of an expression reads (AU-20). */
@@ -249,8 +255,20 @@ export function TestBar({
       </button>
     </div>
   );
+  const asks = line.kind === "waiting" ? waitingAsks(state.tests) : [];
   return (
     <div className="auto-test-bar">
+      {asks.length > 0 && tester?.answer && (
+        <AskPanel
+          key={asks.map((a) => `${a.step}:${a.ask.until}`).join(" ")}
+          t={t}
+          lang={lang}
+          asks={asks}
+          nameOf={nameOf}
+          sending={testing}
+          answer={tester.answer}
+        />
+      )}
       {only && !triggerFields(state.draft, only.id).length ? (
         <button
           type="button"
@@ -563,7 +581,7 @@ const removesNoAsk = (step: Step) =>
   );
 
 /**
- * SALIDA after a test (AU-72, AU-84, AU-92): a tab per output with its count, «puede estar vieja» with «Probar paso»
+ * SALIDA after a test (AU-72, AU-84, AU-92): a tab per output with its count, «desactualizada» with «Probar paso»
  * when the step changed since, the rows 50 at a time, and at the foot when it was tested and how long it took. In
  * place of rows, what to do next: «Sin probar», «Saltado», «Parado», the reason of a failure with «Ir al parámetro»,
  * or «0 filas».

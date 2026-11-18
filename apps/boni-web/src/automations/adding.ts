@@ -9,6 +9,8 @@ import {
   CATALOGUE,
   type Category,
   CODE_TYPE,
+  PEOPLE_CATEGORY,
+  PEOPLE_TYPES,
   type StepTypeSpec,
   specOf,
 } from "@boni/automations";
@@ -16,7 +18,8 @@ import {
 /**
  * The panel's categories in its order, by the catalogue's: said by what one wants to do through `KEY.category`
  * (words.ts). F14b's three: «Leer o escribir en una colección» (`data`), «Transformar filas» (`transform`) and
- * «Decidir el camino» (`logic`); and F15's «Usar IA» (`ai`, the «Agente», AU-50). The triggers (`trigger`) are no
+ * «Decidir el camino» (`logic`); and F15's «Usar IA» (`ai`, the «Agente», AU-50) and «Preguntar o avisar» (`people`:
+ * «Preguntar», «Avisar» and «Responder», AU-125, AU-201, AU-202). The triggers (`trigger`) are no
  * category of the list: they are what an empty canvas asks («¿Cómo empieza?») and what «Añadir otro disparador» opens.
  */
 export const PANEL_CATEGORIES = [
@@ -24,7 +27,8 @@ export const PANEL_CATEGORIES = [
   "transform",
   "logic",
   AI_CATEGORY,
-] as const satisfies readonly (Category | typeof AI_CATEGORY)[];
+  PEOPLE_CATEGORY,
+] as const satisfies readonly (Category | typeof AI_CATEGORY | typeof PEOPLE_CATEGORY)[];
 
 /**
  * The step types listed as one entry per action, each said as a phrase («Buscar filas», «Crear una fila»): the
@@ -64,13 +68,16 @@ export function panelList(showing: "empty" | "triggers" | "steps"): PanelList {
 
 /**
  * The types the engine runs that are not in `CATALOGUE` yet (code.ts says why), each at the end of its category:
- * «Código» under «Transformar» (AU-30), and the «Agente» under «Usar IA» (AU-50).
+ * «Código» under «Transformar» (AU-30), the «Agente» under «Usar IA» (AU-50), and the three that talk to Juan under
+ * «Preguntar o avisar» (AU-69).
  */
-const BESIDE_CATALOGUE: readonly StepTypeSpec[] = [CODE_TYPE, AGENT_TYPE].map(
-  (type) => specOf(type) as StepTypeSpec,
-);
+export const BESIDE_CATALOGUE: readonly StepTypeSpec[] = [
+  CODE_TYPE,
+  AGENT_TYPE,
+  ...PEOPLE_TYPES,
+].map((type) => specOf(type) as StepTypeSpec);
 
-const entriesOf = (category: Category | typeof AI_CATEGORY): PanelEntry[] =>
+const entriesOf = (category: (typeof PANEL_CATEGORIES)[number] | "trigger"): PanelEntry[] =>
   [...CATALOGUE, ...BESIDE_CATALOGUE].filter((t) => t.category === category).flatMap(entriesOfType);
 const entriesOfType = (spec: StepTypeSpec): PanelEntry[] =>
   ACTIONS_AS_ENTRIES.includes(spec.type)

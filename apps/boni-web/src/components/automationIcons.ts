@@ -4,6 +4,7 @@
  */
 import {
   ArrowUpDown,
+  Bell,
   Bot,
   Braces,
   CalendarDays,
@@ -16,9 +17,11 @@ import {
   ListFilter,
   type LucideIcon,
   Merge,
+  MessageCircleQuestion,
   MousePointerClick,
   OctagonX,
   PencilLine,
+  Reply,
   Signpost,
   Split,
   Workflow,
@@ -42,6 +45,9 @@ const ICONS: Readonly<Record<string, LucideIcon>> = {
   stop: OctagonX,
   code: Braces,
   agent: Bot,
+  ask: MessageCircleQuestion,
+  notify: Bell,
+  reply: Reply,
 };
 
 export const iconOf = (type: string): LucideIcon => ICONS[type] ?? Workflow;

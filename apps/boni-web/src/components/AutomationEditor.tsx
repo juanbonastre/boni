@@ -275,6 +275,26 @@ export function AutomationPage({
           }
         })();
       },
+      answer: (answers) => {
+        const s = latest.current;
+        if (!s?.id || s.testing) return;
+        const id = s.id;
+        apply((cur) => askTest(cur, null));
+        void (async () => {
+          // The test that waits keeps its trigger and fields (the server's): only the answers go.
+          const request = { trigger: "", fields: {}, answers };
+          try {
+            const answer = await client.test(id, request);
+            apply((x) => tested(x, answer, Date.now()));
+          } catch (e) {
+            apply(testLost);
+            // Nothing waits any more (another test since, a restart): «Prueba caducada», and «Probar» asks again.
+            toast(
+              e instanceof ApiError && e.status === 404 ? t("auto.ask.expired") : errorText(t, e),
+            );
+          }
+        })();
+      },
       rows: (at) => (offset) => {
         const id = latest.current?.id;
         return id ? client.rows(id, { ...at, offset }) : Promise.resolve({ rows: [], total: 0 });
