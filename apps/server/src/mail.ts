@@ -46,7 +46,9 @@ import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import {
   GUIDE_AREA,
   GUIDE_COST,
+  lastSuggested,
   learningOn,
+  markSuggested,
   mayReview,
   reviewEvery,
   TRIED_FOR,
@@ -1302,7 +1304,8 @@ export class Mails {
           !mayReview({
             learning: learningOn(store),
             waiting: !!st.suggestion,
-            suggestedAt: st.suggestedAt ?? null,
+            // The budget is every learner's (AU-212): an automation's suggestion counts too.
+            suggestedAt: Math.max(st.suggestedAt ?? 0, lastSuggested(store) ?? 0) || null,
             lookedAt: st.reviewedAt ?? null,
             now,
             fresh: () => this.freshDecisions(store, st.reviewedAt ?? 0),
@@ -1369,6 +1372,7 @@ export class Mails {
       if (suggestion) {
         after.suggestion = suggestion;
         after.suggestedAt = this.now();
+        markSuggested(store, after.suggestedAt);
         // A suggestion is a decision of docs/fiabilidad.md: class B (it touches his guide), always asked, as sure
         // as the candidate guide was on the mail measured; Juan's answer judges it (`answerSuggestion`).
         store.journal.addDecision({

@@ -569,10 +569,13 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
           const rows = db.prepare("DELETE FROM automation_run_rows WHERE run = ?");
           const steps = db.prepare("DELETE FROM automation_run_steps WHERE run = ?");
           const runs = db.prepare("DELETE FROM automation_runs WHERE id = ?");
+          // What Boni learned of a run goes with it (AU-207); a test has none, this keeps it so.
+          const decisions = db.prepare("DELETE FROM decisions WHERE run = ?");
           for (const { id } of old) {
             rows.run(id);
             steps.run(id);
             runs.run(id);
+            decisions.run(id);
           }
           left -= old.length;
         }
@@ -743,6 +746,7 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
         db.prepare("DELETE FROM automation_run_rows WHERE run = ?").run(id);
         db.prepare("DELETE FROM automation_run_steps WHERE run = ?").run(id);
         db.prepare("DELETE FROM automation_runs WHERE id = ?").run(id);
+        db.prepare("DELETE FROM decisions WHERE run = ?").run(id);
       }),
     automationRunWrites: (run) => {
       const counts = (

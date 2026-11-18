@@ -2,6 +2,7 @@ export type { AgentCall, AgentReply } from "./agent.ts";
 export * from "./ai.ts";
 export * from "./box.ts";
 export * from "./catalogue.ts";
+export * from "./cells.ts";
 export * from "./code.ts";
 export * from "./connections.ts";
 export * from "./effects.ts";

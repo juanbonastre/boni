@@ -24,7 +24,8 @@ import {
 import type { AutomationRunRow, UserStore } from "@boni/store";
 import type { RunCount, RunLine } from "./runs.ts";
 
-export type NoticeKind = "failed" | "wrote";
+/** `paused` and `suggested` are what Boni learned of a cell (learning.ts, AU-209, AU-210): in the app only. */
+export type NoticeKind = "failed" | "wrote" | "paused" | "suggested";
 
 /** What a run told (AU-102, AU-167), as kept with it. */
 export interface RunNotice {

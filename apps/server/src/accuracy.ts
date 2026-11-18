@@ -10,6 +10,7 @@ import {
   measure,
   setAutoState,
 } from "./autoAccept.ts";
+import { CELL_AREA } from "./learning.ts";
 
 /** An area's last decisions, counted: how many Boni took alone, asked or left, and what Juan made of the ones alone. */
 export interface AreaAccuracy {
@@ -42,9 +43,14 @@ export interface AreaView extends AreaAccuracy {
   earnsWith: { decisions: number; accuracy: number };
 }
 
-/** The last 200 decisions of each area (docs/fiabilidad.md §3.3: an area's acierto, and what moves its thresholds). */
+/**
+ * The last 200 decisions of each area (docs/fiabilidad.md §3.3: an area's acierto, and what moves its thresholds).
+ * An automation's cells (automations/learning.ts) are not among them yet: their count is the cell's, painted where
+ * the cell is (AU-208, AU-209), and Settings shows them with their names when the screen does (F15 P2/P3).
+ */
 export function accuracy(store: UserStore): AreaAccuracy[] {
-  return store.journal.decisionAreas().map((area) => {
+  const areas = store.journal.decisionAreas().filter((area) => !area.startsWith(CELL_AREA));
+  return areas.map((area) => {
     const rows = store.journal.decisions(area, 200);
     const alone = rows.filter((r) => r.outcome === "do");
     const judged = rows.filter((r) => r.result);

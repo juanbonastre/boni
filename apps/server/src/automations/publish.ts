@@ -54,6 +54,7 @@ import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
+import { pausedDoc } from "./learning.ts";
 import { cancelWaits } from "./runs.ts";
 import { scheduleColumn } from "./scheduler.ts";
 import {
@@ -395,10 +396,12 @@ export async function runPublished(
     return BAD;
   const version = publishedOf(store, id);
   if (!version) return NOT_FOUND;
+  // Its cells paused by what Boni learned ask instead (AU-210): lowered, never raised, the version as it is.
+  const automation = pausedDoc(store, id, version.automation);
   try {
     return await runAutomation(
       {
-        automation: version.automation,
+        automation,
         trigger: request.trigger,
         // Typed by his hand, or the hour a «Programada» was due: the code's, not his device's.
         fields: {
@@ -408,7 +411,7 @@ export async function runPublished(
         test: false,
         startedBy,
       },
-      { ...runDeps(store, id, hand, box, run), ...watch },
+      { ...runDeps(store, id, hand, box, run, { automation, names: version.names }), ...watch },
     );
   } catch (e) {
     if (e instanceof CannotRun) return { refused: "invalid", problems: [...(e.problems ?? [])] };
@@ -429,8 +432,8 @@ export interface ResumeRequest {
  * The other way a run for real reaches the engine (AU-95, AU-203): a run that waited for an answer goes on, with the
  * version it started with, read from the store by its number, and the lowest «Sí» between that version's and the one
  * published now (`lowerYes`, AU-125: a step that is not the same in both asks, so waiting never keeps a «Sí» Juan
- * took back; the pause of AU-210 is S3's). Like `runPublished`, it takes no document. That version gone, nothing
- * goes on (`NOT_FOUND`); runs.ts checks the switch and the deletion before.
+ * took back), and a cell paused since (AU-210, `pausedDoc`). Like `runPublished`, it takes no document. That version
+ * gone, nothing goes on (`NOT_FOUND`); runs.ts checks the switch and the deletion before.
  */
 export async function resumePublished(
   store: UserStore,
@@ -444,7 +447,8 @@ export async function resumePublished(
   const v = store.journal.automationVersion(id, request.version);
   if (!v) return NOT_FOUND;
   const started = parseAutomation(JSON.parse(v.doc));
-  const automation = lowerYes(started, publishedOf(store, id)?.automation);
+  // And a cell paused since it started asks too (AU-210): both only lower.
+  const automation = pausedDoc(store, id, lowerYes(started, publishedOf(store, id)?.automation));
   const names = JSON.parse(v.names) as KeptNames;
   return resume(
     {

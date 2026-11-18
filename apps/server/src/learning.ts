@@ -10,6 +10,12 @@ export const DAY = 24 * 60 * 60 * 1000;
 export const GUIDE_AREA = "mail.guide";
 export const GUIDE_COST: CostClass = "B";
 
+/**
+ * The area of an automation's cell's decisions: this prefix and the cell as JSON (automations/learning.ts). Here, with
+ * no imports, so that what lists the areas (accuracy.ts) does not load the automations.
+ */
+export const CELL_AREA = "automation.cell ";
+
 export const learningOn = (store: UserStore): boolean => store.setting(SETTING) !== "off";
 
 export function setLearning(store: UserStore, on: boolean): void {
@@ -29,6 +35,28 @@ export function reviewEvery(setting: unknown, fallback: number): number {
     typeof setting === "number" && Number.isFinite(setting) ? Math.round(setting) : fallback;
   return Math.min(REVIEW_EVERY.max, Math.max(REVIEW_EVERY.min, n));
 }
+
+/**
+ * When any learner last suggested something without Juan asking (docs/preferencias.md §5, AU-212): the mail reviewer's
+ * guide and an automation's cell share one budget, at most one a day, kept in his store.
+ */
+const SUGGESTED = "learning/suggested";
+
+export function lastSuggested(store: UserStore): number | null {
+  const v = Number(store.setting(SUGGESTED));
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+export function markSuggested(store: UserStore, at: number): void {
+  store.setSetting(SUGGESTED, String(at));
+}
+
+/** Whether a learner may suggest now: «Aprender» on and no suggestion of any learner within a day. */
+export const maySuggest = (store: UserStore, now: number): boolean => {
+  if (!learningOn(store)) return false;
+  const last = lastSuggested(store);
+  return last === null || now - last >= DAY;
+};
 
 /** A candidate tried and dropped (it measured no better) is not tried again for this long. */
 export const TRIED_FOR = 7 * DAY;

@@ -241,6 +241,11 @@ export interface UserStore {
    * run's or action's operations (by their indexes). Without one it is the whole log with every before and after:
    * read it with `logPage` or `recentOps` instead, never whole (a big store's log is more than the server's memory). */
   log(q?: { target?: string; run?: string; action?: number }): LogRow[];
+  /**
+   * The operations on one row after `from` and up to `to` (instants), oldest first, by its index: what changed it in a
+   * few days without reading the rest of its history (AU-207: a row an automation changes every hour for a year).
+   */
+  opsOn(target: string, from: number, to: number): LogRow[];
   /** The operations after `afterSeq`, oldest first, at most `limit`: the whole log a page at a time (an export). */
   logPage(afterSeq: number, limit: number): LogRow[];
   /** The latest operations, newest first, without what each changed (what changed lately, at any size). */
@@ -1379,6 +1384,12 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
               ? db.prepare("SELECT * FROM ops WHERE action = ? ORDER BY seq").all(q.action)
               : db.prepare("SELECT * FROM ops ORDER BY seq").all();
       return rows.map(logRow);
+    },
+    opsOn(target, from, to) {
+      return db
+        .prepare("SELECT * FROM ops WHERE target = ? AND at > ? AND at <= ? ORDER BY seq")
+        .all(target, from, to)
+        .map(logRow);
     },
     logPage(afterSeq, limit) {
       return db

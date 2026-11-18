@@ -55,6 +55,7 @@ import {
 import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
+import { learnUndo, recordRun } from "./learning.ts";
 import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
 import { type AskedView, askedOf, proposeRun } from "./proposal.ts";
 import {
@@ -191,6 +192,14 @@ export function onRunEvent(store: UserStore, listener: (e: RunEvent) => void): (
   return () => events.off("run", listener);
 }
 const told = (store: UserStore, e: RunEvent) => laneOf(store).events.emit("run", e);
+
+/** What Boni learned of a cell (learning.ts: a pause, a suggestion), told once on the stream with the run it came of. */
+export function tellLearned(store: UserStore, notices: readonly AutomationNotice[]): void {
+  for (const notice of notices) {
+    const r = store.journal.automationRun(notice.run);
+    if (r) told(store, { automation: notice.automation, run: notice.run, state: r.state, notice });
+  }
+}
 
 /** A run ended: what it tells is kept with it and goes with its last event, and what is no longer whole is let go. */
 function hasEnded(store: UserStore, id: string, run: string, state: AutomationRunState): void {
@@ -546,6 +555,8 @@ function finish(
     error: result.error ? JSON.stringify(result.error) : null,
     line: JSON.stringify(lineOf(store, run, result.asked)),
   });
+  // What it saved with «Sí» is one decision of each cell, judged later (AU-207).
+  recordRun(store, run, result);
   hasEnded(store, id, run, state);
 }
 
@@ -584,7 +595,7 @@ export function goOn(store: UserStore, run: string, o: { zone: string; box?: Box
 /**
  * Goes on with a waiting run by its turn: the version it started with, its steps as they were, and the lowest «Sí»
  * between that version's and the one published now (`lowerYes`: a step that is not the same in both asks, so waiting
- * never keeps a «Sí» Juan took back; the pause of AU-210 is S3's). Off or deleted meanwhile, it is cancelled.
+ * never keeps a «Sí» Juan took back), and a cell paused since asks (AU-210). Off or deleted meanwhile, it is cancelled.
  */
 async function carryOn(store: UserStore, run: string, zone: string, box: Box): Promise<void> {
   const r = store.journal.automationRun(run);
@@ -817,6 +828,8 @@ function undoAll(store: UserStore, r: AutomationRunRow, hand: Hand): RunRefusal 
     throw e;
   }
   store.journal.setAutomationRunUndone(r.id, hand.now);
+  // His hand undid it (a personal device: `undoAutomationRun`, `retryRun`): what it saved was wrong (AU-207).
+  tellLearned(store, learnUndo(store, r.id, hand.now));
   if (waiting) cancelWait(store, r, hand.now);
   // What it still proposed goes with it: accepting it would save into a run undone (AU-193).
   if (r.proposal && store.journal.proposal(r.proposal)?.status === "pending")
