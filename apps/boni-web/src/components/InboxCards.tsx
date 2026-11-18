@@ -50,6 +50,7 @@ import { FlowPreview } from "./FlowPreview.tsx";
 import { type OptionsLoader, SearchList } from "./FormView.tsx";
 import { GmailMark, KeptMail } from "./MailIcons.tsx";
 import { MenuRow, PointMenu } from "./Popover.tsx";
+import { RunProposalCard } from "./RunProposalCard.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -385,6 +386,8 @@ function useCorrection(p: Proposal) {
 }
 
 export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }) {
+  // What a run of an automation asked (AU-193): its own card, painted from the run's view.
+  if (p.runAsked) return <RunProposalCard p={p} asked={p.runAsked} />;
   return p.flow ? (
     <FlowProposalCard p={p} flow={p.flow} />
   ) : (
@@ -1150,6 +1153,12 @@ export function ProposalPage({ id, onDone }: { id: string; onDone?: () => void }
     return (
       <div className="content proposal-page">
         <FlowProposalCard p={p} flow={p.flow} />
+      </div>
+    );
+  if (p.runAsked)
+    return (
+      <div className="content proposal-page">
+        <RunProposalCard p={p} asked={p.runAsked} />
       </div>
     );
   return <ProposalPageOf p={p} onDone={onDone} />;

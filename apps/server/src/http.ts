@@ -595,6 +595,16 @@ export function makeApp(opts: ServerOptions): App {
             offset: Number.isInteger(offset) ? offset : -1,
           });
         }
+        // «Ver todo» of what a run asked (AU-193): 50 at a time from ?offset.
+        case "GET /api/agent/automations/:id/runs/:run/asked": {
+          const offset = Number(url.searchParams.get("offset") ?? "0");
+          return automation("automations.read", {
+            id,
+            part: "asked",
+            run: params.run ?? "",
+            offset: Number.isInteger(offset) ? offset : -1,
+          });
+        }
         default:
           return send(res, 404, { error: "not-found" });
       }

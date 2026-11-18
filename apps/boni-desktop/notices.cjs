@@ -2,7 +2,8 @@
 // Boni runs, with its window open or only in the tray; each "notify" event (the agent's notify, a flow's «Avisar»,
 // the month's budget) becomes a system notification with its text as plain text. Each "run" event (an automation's
 // run as it goes, F14d P2: its state, the step that ended and its counts, never rows) goes to the windows, so
-// «Ejecuciones» follows it without asking the server every second.
+// «Ejecuciones» follows it without asking the server every second. A notice about a run (AU-102) says which, so its
+// notification opens that run.
 const { parseSse, backoff } = require("./live.cjs");
 
 /** As the server cuts a notice (packages/agent's notify). */
@@ -38,6 +39,22 @@ function noticeOf(e) {
   }
 }
 
+/** An id as the server makes them (an automation's, a run's): what the page's `run:` screen takes, nothing more. */
+const ID = /^[A-Za-z0-9_-]{1,80}$/;
+
+/** The run a "notify" event is about (AU-102: a run that failed alone), or null: its two ids, checked. */
+function aboutOf(e) {
+  if (e.event !== "notify") return null;
+  try {
+    const a = JSON.parse(e.data).about;
+    return a && ID.test(a.automation) && ID.test(a.run)
+      ? { automation: a.automation, run: a.run }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The fields of a "run" event the page takes (runs.ts's `RunEvent`), or null: ids and counts, nothing else. */
 function runOf(e) {
   if (e.event !== "run") return null;
@@ -65,7 +82,8 @@ function runOf(e) {
 }
 
 /**
- * Keeps the agent's stream open while `target()` gives a server and a token; `onNotice(text)` for each notice and
+ * Keeps the agent's stream open while `target()` gives a server and a token; `onNotice(text, about)` for each notice
+ * (`about`: the run it is about, or null) and
  * `onRun(run)` for each run's event. A session
  * that ended waits for the next `restart` (a new login); a server without the stream is asked again in ten minutes;
  * anything else reconnects as the live changes do (live.cjs). `fetch` is Electron's `net.fetch` (injectable in tests).
@@ -109,7 +127,7 @@ function createNotices({ fetch, target, onNotice, onRun = () => {}, log = () => 
         buffer = rest;
         for (const e of events) {
           const text = noticeOf(e);
-          if (text) onNotice(text);
+          if (text) onNotice(text, aboutOf(e));
           const run = runOf(e);
           if (run) onRun(run);
         }
@@ -141,4 +159,4 @@ function createNotices({ fetch, target, onNotice, onRun = () => {}, log = () => 
   };
 }
 
-module.exports = { noticeBody, noticeOf, runOf, createNotices, RETRY_MS };
+module.exports = { noticeBody, noticeOf, aboutOf, runOf, createNotices, RETRY_MS };

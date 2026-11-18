@@ -25,6 +25,7 @@ import {
   pinFromRun,
   pinStep,
   retryRun,
+  runAsked,
   runRows,
   runsOf,
   runView,
@@ -110,22 +111,22 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset)",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset); with part asked, a page of what a run asked, as its card in the inbox shows it (run, offset)",
     args: {
       id,
       part: {
         role: "option",
         describe:
-          "view (the default), rows, sample, preview, publish, versions, version, runs, run or runRows",
+          "view (the default), rows, sample, preview, publish, versions, version, runs, run, runRows or asked",
       },
-      run: { role: "option", describe: "run and runRows: the run's id" },
+      run: { role: "option", describe: "run, runRows and asked: the run's id" },
       filter: { role: "option", describe: "runs: all (the default), failed or tests" },
       before: { role: "option", describe: "runs: the id of the last run of the page before" },
       version: { role: "option", describe: "publish and version: a version's number" },
       step: { role: "option", describe: "rows, sample and preview: the step's id" },
       side: { role: "option", describe: "rows: in or out" },
       name: { role: "option", describe: "rows: the input's or output's name" },
-      offset: { role: "option", describe: "rows: the first row, from 0" },
+      offset: { role: "option", describe: "rows, runRows and asked: the first row, from 0" },
       param: { role: "option", describe: "preview: the path to the value in the step" },
       row: { role: "option", describe: "preview: which row of the step's input, from 0" },
       expr: { role: "definition", describe: "preview: the expression as it is being typed" },
@@ -167,6 +168,14 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
           offset,
         };
         return leaf(answer(runRows(s.store, automation, textOf(a.run) ?? "", at)) as never, code);
+      }
+      if (part === "asked") {
+        const offset = a.offset ? plain(a.offset) : 0;
+        if (typeof offset !== "number") throw new ToolError("bad-argument");
+        return leaf(
+          answer(runAsked(s.store, automation, textOf(a.run) ?? "", offset)) as never,
+          code,
+        );
       }
       const step = textOf(a.step);
       if (!step) throw new ToolError("bad-argument");

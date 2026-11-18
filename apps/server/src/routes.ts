@@ -116,6 +116,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/agent/automations/:id/runs": "tailnet",
   "GET /api/agent/automations/:id/runs/:run": "tailnet",
   "GET /api/agent/automations/:id/runs/:run/rows": "tailnet",
+  "GET /api/agent/automations/:id/runs/:run/asked": "tailnet",
   // F14d P2: «Ejecutar», «Reintentar», «Deshacer lo que hizo» and «Fijar» (automations.run, undo_run, pin; runs.ts).
   "POST /api/agent/automations/:id/run": "tailnet",
   "POST /api/agent/automations/:id/runs/:run/retry": "tailnet",
