@@ -6,6 +6,8 @@
  */
 import {
   ACTION,
+  AGENT_TYPE,
+  AI_CATEGORY,
   type Automation,
   actionOf,
   CATALOGUE,
@@ -15,6 +17,7 @@ import {
   CODE_FAILURES,
   CODE_LIMITS,
   CODE_PROBLEMS,
+  CODE_TYPE,
   HARD_LIMITS,
   isExpr,
   OUT,
@@ -27,6 +30,7 @@ import {
   SETTINGS_DEFAULTS,
   STEP_FAILURES,
   type Step,
+  type StepTypeSpec,
   specOf,
   WRITE_ACTIONS,
 } from "@boni/automations";
@@ -118,7 +122,7 @@ export const DO = {
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
 export function catalogueKeys(): string[] {
   const keys = new Set<string>();
-  for (const c of CATEGORIES) keys.add(KEY.category(c));
+  for (const c of [...CATEGORIES, AI_CATEGORY]) keys.add(KEY.category(c));
   const params = (type: string, list: readonly ParamSpec[]) => {
     for (const p of list) {
       if (p.place === "hidden") continue;
@@ -129,7 +133,9 @@ export function catalogueKeys(): string[] {
     }
   };
   const measures = new Set<string>();
-  for (const spec of CATALOGUE) {
+  // «Código» and «Agente» (AU-30, AU-50): in the panel beside the catalogue (adding.ts), worded the same.
+  const beside = [CODE_TYPE, AGENT_TYPE].map((type) => specOf(type) as StepTypeSpec);
+  for (const spec of [...CATALOGUE, ...beside]) {
     keys.add(KEY.step(spec.type));
     params(spec.type, spec.params);
     if (spec.actions.length > 1) {
@@ -505,6 +511,18 @@ const WITH: Readonly<Record<"problem" | "failure", Readonly<Record<string, strin
   failure: { "code.threw": "line", "code.limit": "got" },
 };
 
+/**
+ * The codes said by reason only for some reasons, and by their own key otherwise: a collection no model may read
+ * connected to an «Agente» (AU-166, `why: "private"`), and a request past «Como mucho» or naming a field the
+ * connection leaves out (AU-196, AU-48: `why: "many"`, `why: "field"`).
+ */
+const SOME: Readonly<
+  Record<"problem" | "failure", Readonly<Record<string, { by: string; of: readonly string[] }>>>
+> = {
+  problem: { "connection.notAllowed": { by: "why", of: ["private"] } },
+  failure: { "code.write.notAllowed": { by: "why", of: ["many", "field"] } },
+};
+
 /** Every key the words of JavaScript need: what `catalogueKeys` adds, so both languages must have them. */
 function saidKeys(): string[] {
   const keys: string[] = [];
@@ -524,6 +542,10 @@ function saidKeys(): string[] {
   // The codes of the run said by reason (AU-17): their reasons are the run's limits.
   for (const kind of ["problem", "failure"] as const)
     for (const [code, r] of Object.entries(REASONS[kind]))
+      for (const reason of r.of)
+        keys.push(`${(kind === "problem" ? KEY.problem : KEY.failure)(code)}.${reason}`);
+  for (const kind of ["problem", "failure"] as const)
+    for (const [code, r] of Object.entries(SOME[kind]))
       for (const reason of r.of)
         keys.push(`${(kind === "problem" ? KEY.problem : KEY.failure)(code)}.${reason}`);
   for (const l of HARD_LIMITS) keys.push(KEY.limit(l));
@@ -583,11 +605,15 @@ export function said(
   const base = (kind === "problem" ? KEY.problem : KEY.failure)(x.code);
   const reason = REASONS[kind][x.code];
   const w = WITH[kind][x.code];
+  const some = SOME[kind][x.code];
+  const why = some ? d[some.by] : undefined;
   const key = reason
     ? `${base}.${String(d[reason.by] ?? reason.of[0])}`
     : w && d[w] !== undefined
       ? `${base}.${w}`
-      : base;
+      : some && typeof why === "string" && some.of.includes(why)
+        ? `${base}.${why}`
+        : base;
   // A read's limit of rows, which a few say without a detail naming it.
   const vars: Record<string, string | number> = {
     readRows: amountOf("readRows", CODE_LIMITS.readRows, locale),
@@ -598,7 +624,13 @@ export function said(
   if (collection !== undefined) vars.collection = names.collection?.(collection) ?? collection;
   if (typeof d.field === "string" && collection !== undefined)
     vars.field = names.field?.(collection, d.field) ?? d.field;
-  if (typeof d.action === "string") vars.action = t(KEY.writeAction(d.action));
+  if (typeof d.action === "string") {
+    vars.action = t(KEY.writeAction(d.action));
+    // The action as a verb alone («Quiso eliminar 240 filas en Tareas», AU-196).
+    if ((WRITE_ACTIONS as readonly string[]).includes(d.action))
+      vars.verb =
+        d.action === "remove" ? t(DO.remove).toLocaleLowerCase() : t(`auto.conn.to.${d.action}`);
+  }
   if (typeof d.limit === "string") {
     // A code said by its limit names it in its own words; the box's limits are named in a common sentence.
     if (reason?.by !== "limit") vars.limit = t(KEY.limit(d.limit));

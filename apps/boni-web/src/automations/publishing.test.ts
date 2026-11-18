@@ -141,6 +141,63 @@ describe("pantalla 10", () => {
       abilityLine(t, { collection: "c_01jotra", action: "remove", how: "noAsk", steps: [] }, name),
     ).toBe("Elimina filas en c_01jotra · sin preguntar");
   });
+  it("AU-200 AU-196 · an «Agente»'s line says «decide la IA» and its «Como mucho», summed over the steps when each has one, before «con datos de fuera»", () => {
+    const name = (key: string) => NAMES[key] ?? key;
+    const agent = (id: string, limit?: number): Step => ({
+      id,
+      name: "Analista",
+      type: "agent",
+      params: { instructions: "Ordena las tareas" },
+      connections: [
+        {
+          collection: "tareas",
+          read: {},
+          create: false,
+          update: false,
+          remove: { mode: "yes", ...(limit === undefined ? {} : { limit }) },
+        },
+      ],
+    });
+    const two = draft([trigger, agent("s_01jagente", 20), agent("s_01jotro", 5)]);
+    const line = (steps: string[], outside = false) =>
+      abilityLine(
+        t,
+        {
+          collection: "tareas",
+          action: "remove",
+          how: "noAsk",
+          byAgent: true,
+          ...(outside ? { outside } : {}),
+          steps,
+        },
+        name,
+        two,
+      );
+    expect(line(["s_01jagente"], true)).toBe(
+      "Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20 · con datos de fuera",
+    );
+    expect(line(["s_01jagente", "s_01jotro"])).toBe(
+      "Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 25",
+    );
+    // One with no «Como mucho»: nothing is said of it.
+    const open = draft([trigger, agent("s_01jagente", 20), agent("s_01jotro")]);
+    expect(
+      abilityLine(
+        t,
+        {
+          collection: "tareas",
+          action: "remove",
+          byAgent: true,
+          steps: ["s_01jagente", "s_01jotro"],
+        },
+        name,
+        open,
+      ),
+    ).toBe("Elimina filas en Tareas · decide la IA");
+    expect(
+      abilityLine(t, { collection: "tareas", action: "read", byAgent: true, steps: [] }, name, two),
+    ).toBe("Lee Tareas · decide la IA");
+  });
   it("AU-96 · «Publicar» with something that stops it marks the steps as a test that could not start does", () => {
     const state = openedEditor(opened(WRITING));
     const blocks = [
@@ -157,6 +214,45 @@ describe("«Ajustes»: the limits", () => {
   it("AU-17 · «Tiempo» always, «Filas escritas» only when a step writes", () => {
     expect(shownLimits(READING, named)).toEqual(["ms"]);
     expect(shownLimits(WRITING, named)).toEqual(["ms", "rowsWritten"]);
+  });
+  it("AU-206 · «Llamadas a modelos» when a step calls a model, an «Agente» or a reader, with its default and its ceiling; never for one that does not", () => {
+    const analista: Step = {
+      id: "s_01janalista",
+      name: "Analista",
+      type: "agent",
+      params: { instructions: "Ordena las tareas" },
+      connections: [
+        {
+          collection: "tareas",
+          read: {},
+          create: { mode: "ask", limit: 20 },
+          update: false,
+          remove: false,
+        },
+      ],
+    };
+    const reading: Step = {
+      ...analista,
+      connections: [{ ...analista.connections![0]!, create: false }],
+    };
+    expect(shownLimits(draft([trigger, analista]), named)).toEqual([
+      "ms",
+      "rowsWritten",
+      "modelCalls",
+    ]);
+    expect(shownLimits(draft([trigger, reading]), named)).toEqual(["ms", "modelCalls"]);
+    const classify: Step = {
+      id: "s_01jclasificar",
+      name: "Clasificar",
+      type: "classify",
+      params: { text: "{{ $json.titulo }}" },
+    };
+    expect(shownLimits(draft([trigger, buscar, classify]), named)).toEqual(["ms", "modelCalls"]);
+    expect(limitField(draft([trigger, analista]), "modelCalls")).toBe(
+      AUTOMATION_LIMITS.modelCalls.default,
+    );
+    expect(withLimit(draft([trigger, analista]), "modelCalls", "41")).toBe("over");
+    expect(t("auto.limitName.modelCalls")).toBe("Llamadas a modelos");
   });
   it("AU-17 · a field shows the default in its unit, and a value typed is kept in the draft until its ceiling", () => {
     expect(limitField(WRITING, "ms")).toBe(60);

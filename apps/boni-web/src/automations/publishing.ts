@@ -7,6 +7,7 @@
  */
 import {
   type Ability,
+  AI_CATEGORY,
   AUTOMATION_LIMITS,
   type Automation,
   type AutomationDiff,
@@ -18,6 +19,7 @@ import {
   limitsOf,
   RUN_LIMIT_KEYS,
   type RunLimit,
+  specOf,
   WRITE_ACTIONS,
 } from "@boni/automations";
 import type { T } from "../i18n.ts";
@@ -150,20 +152,49 @@ export function checkLines(
 /**
  * «Lo que podrá hacer» (AU-182, decision 11): one line per collection and action, «Lee Notas», «Crea filas en
  * Tareas · las guarda · con datos de fuera», «Elimina filas en Gastos · sin preguntar», «Modifica filas en Notas ·
- * pregunta». `name`: a collection's name by its key (the key itself when the app does not know it).
+ * pregunta». `name`: a collection's name by its key (the key itself when the app does not know it). What an
+ * «Agente» does says so (AU-200), and its «Como mucho» read from the step's connection in `draft`, summed over its
+ * steps when each has one: «Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20 · con datos de
+ * fuera».
  */
-export function abilityLine(t: T, a: Ability, name: (key: string) => string): string {
+export function abilityLine(
+  t: T,
+  a: Ability,
+  name: (key: string) => string,
+  draft?: Automation,
+  locale = "es",
+): string {
   const parts = [t(`auto.can.${a.action}`, { collection: name(a.collection) })];
   if (a.how === "saves") parts.push(t("auto.can.saves"));
   else if (a.how === "asks") parts.push(t("auto.can.asks"));
   else if (a.how === "noAsk") parts.push(t("auto.conn.noAsk"));
+  if (a.byAgent) {
+    parts.push(t("auto.conn.byAgent"));
+    const most = a.action === "read" || !draft ? undefined : mostOf(draft, a);
+    if (most !== undefined) parts.push(t("auto.conn.mostN", { n: most.toLocaleString(locale) }));
+  }
   if (a.outside) parts.push(t("auto.can.outside"));
   return parts.join(" · ");
 }
 
+/** The «Como mucho» of a write ability over its steps (AU-196): their sum, or undefined if one of them has none. */
+function mostOf(draft: Automation, a: Ability): number | undefined {
+  if (a.action === "read") return undefined;
+  let sum = 0;
+  for (const id of a.steps) {
+    const cell = draft.steps
+      .find((s) => s.id === id)
+      ?.connections?.find((c) => c.collection === a.collection)?.[a.action];
+    if (!cell || cell.limit === undefined) return undefined;
+    sum += cell.limit;
+  }
+  return a.steps.length > 0 ? sum : undefined;
+}
+
 /**
- * The limits «Ajustes» lists (AU-17): «Tiempo» always, «Filas escritas» when a step writes; model calls arrive with
- * F15 and a step that repeats with F18. `named`: a collection by its name, for what a «Código» cites.
+ * The limits «Ajustes» lists (AU-17): «Tiempo» always, «Filas escritas» when a step writes, «Llamadas a modelos» when
+ * a step calls a model (AU-206); a step that repeats arrives with F18. `named`: a collection by its name, for what a
+ * «Código» cites.
  */
 export function shownLimits(
   draft: Automation,
@@ -172,7 +203,10 @@ export function shownLimits(
   const writes = abilities(draft, { collectionNamed: named }).some((a) =>
     (WRITE_ACTIONS as readonly string[]).includes(a.action),
   );
-  return RUN_LIMIT_KEYS.filter((k) => k === "ms" || (k === "rowsWritten" && writes));
+  const calls = draft.steps.some((s) => specOf(s.type)?.category === AI_CATEGORY);
+  return RUN_LIMIT_KEYS.filter(
+    (k) => k === "ms" || (k === "rowsWritten" && writes) || (k === "modelCalls" && calls),
+  );
 }
 
 /** A limit as «Ajustes» types it: seconds for the time, a count for the rest. */

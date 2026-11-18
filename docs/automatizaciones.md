@@ -877,6 +877,9 @@ interface Connection {
   Hecho en P3: la tabla en la vista del «Código» (`AutomationConnections.tsx`): «Leer» dice «Sí» con sus límites
   («Sí · con filtro», «Sí · 4 campos · hasta 200 filas»), y cada celda de escribir es un «No / Preguntar / Sí» por su
   lado, que se guarda con el borrador; cada fila tiene «Desconectar» y abre sus límites (AU-43).
+  Hecho en P1 de la F15: la misma tabla en la vista del «Agente»: «Leer» es «No» o «Sí», cada celda dice sus límites
+  («Preguntar · hasta 20», «Sí · 1 campo · hasta 5»), y una colección se conecta con «Conectar», que solo ofrece las
+  que un modelo puede leer (AU-166); conectada, solo lee (`connections.test.ts`, `automations-ai.spec.ts`).
 - **AU-42** (F15, en parte) · «Preguntar» es una propuesta: en una conversación, una tarjeta para aceptar o no; en
   segundo plano, espera en la Bandeja. La ejecución no se queda esperando: termina, y en «Ejecuciones» dice «1
   propuesta sin responder». «Sí» escribe con Deshacer.
@@ -888,7 +891,7 @@ interface Connection {
   Hecho en S1: en el servidor, lo que un «Agente» pide con «Preguntar» entra en la propuesta de la ejecución junto a
   lo de los otros pasos, y cada cambio de su vista (`AskedView`) dice su paso y `byAgent`, leído de la versión que
   corrió (la guardada, o el documento de una prueba) y nunca del cambio. Falta: pintar «lo decidió la IA» en la
-  Bandeja y en la ejecución (P1, P2).
+  Bandeja y en la ejecución (P2; la P1 de la F15 no lo hizo).
 - **AU-43** (F14c, hecho) · Leer puede llevar «Solo estas filas» (el filtro de las vistas), «Solo estos campos»
   y un límite. El filtro se suma a todo lo que el paso busque: puede estrechar, nunca ensanchar.
   En la F14c: el filtro vale para `find`, `get`, `count` y `sum`. Con «Solo estos campos» la fila llega con esos
@@ -928,6 +931,10 @@ interface Connection {
   un «Agente» verá como filas que puede modificar o eliminar (E3). Falta: la fila abierta en la pantalla (P1), el
   control de AU-52 (P2; las expresiones de `fixed` las resuelve el motor desde E3) y que el servidor ponga la conexión en la llamada de un paso
   de IA para que P29 la compruebe también (S1).
+  Hecho en P1 de la F15: la fila abierta de un «Agente» (`AutomationConnections.tsx`): bajo «Leer» sus tres límites,
+  y bajo cada acción que no está en «No» los suyos, «Solo estas filas» (modificar y eliminar), los campos (crear y
+  modificar, con el control de AU-52) y «Como mucho»; cada uno se guarda en su acción, uno vacío no se guarda, y la
+  celda los dice («Preguntar · con filtro · hasta 20», `writeLimitsOf`). Falta: las expresiones en los fijos (P2).
   Hecho en el segundo PR de E3 (decisión 18): `update.fixed`, con la misma forma, la misma validación (un campo que
   la colección no tiene, uno que también está en `fields` y, fuera de un «Agente», uno que no es un valor escrito) y
   el mismo trato que `create.fixed`: cada fila que el paso modifica acaba con esos valores, los pone el código al
@@ -940,7 +947,7 @@ interface Connection {
   está guardado (`fixedOf` de `engine.ts`), nunca de una petición, del modelo ni de la caja. Falta: el control bajo
   «Modificar» (P2), que la frase del paso diga los fijos (AU-44, P2: hoy no los dice ni para crear) y que el servidor
   lleve los de modificar en la celda de P29 (S1).
-- **AU-196** (F15, en parte) · «Como mucho N filas». Cada acción de escribir de una conexión puede llevar un tope
+- **AU-196** (F15, hecho) · «Como mucho N filas». Cada acción de escribir de una conexión puede llevar un tope
   de filas por ejecución (`limit`, como el de leer, de 1 a 5.000). Cuenta las filas que el paso pide crear,
   modificar o mandar a la papelera con esa acción, se guarden o se propongan, por paso y ejecución, sumando sus
   unidades de trabajo, y se comprueba antes de guardar. En un «Código», la petición que lo pasa falla como
@@ -964,6 +971,9 @@ interface Connection {
   «Código» sin tope. Medido: 240 peticiones sobre 3.000 filas se niegan en 1 ms. Falta: las palabras «Quiso eliminar
   240 filas en Tareas · como mucho 20» y la celda «Preguntar · hasta 20» (P1; hoy salen las de
   `code.write.notAllowed`). Desde E3 la negación de un «Agente» se le dice al modelo (`over-limit`) sin hacer fallar el paso.
+  Hecho en P1 de la F15: la celda «Preguntar · hasta 20» de un «Agente» (nace con 20 cuando la mano la saca de «No»;
+  un «Código», sin tope), «Como mucho» en la fila abierta, y las palabras «Quiso eliminar 240 filas en Tareas · como
+  mucho 20» en los dos idiomas (`connections.test.ts`, `words.test.ts`, `automations-ai.spec.ts`).
 - **AU-44** (F14c, hecho) · Una frase calculada resume todas las conexiones de un paso, debajo de su tabla:
   «Puede leer Gastos (solo los de este año) y Categorías, y proponer filas nuevas en Notas. No puede modificar ni
   eliminar nada.» En la F14c dice lo que lee y lo que el código puede guardar (AU-178). Al
@@ -989,7 +999,8 @@ interface Connection {
   no la celda. Hecho en E4: «Avisar», «Responder» y «Preguntar» no tienen destinatario (ningún parámetro nombra a
   quién; «Dónde» es una lista cerrada de sus dispositivos, nunca una expresión), y lo de fuera en su texto no cambia
   a dónde va (`people.test.ts`). Falta: que una colección privada no salga entre las que se conectan a un paso de IA
-  (P1).
+  (P1). Hecho en P1 de la F15: «Conectar» de un «Agente» no ofrece ninguna colección cuyo nivel no sea `visible`, ni
+  una de Boni, ni una ya conectada (`agentConnectable`; AU-166).
 - **AU-46** (F14c, hecho) · Las usan «Código» (leer, y guardar con permiso: AU-176), «Agente» (todo: F15) y
   el chat de una página (F16: sustituyen a su lista fija de cinco acciones).
   En la F14c: una conexión en cualquier otro tipo de paso no pasa la validación.
@@ -1089,7 +1100,7 @@ que un paso espere a Juan.
 | Los límites de la ejecución | AU-17, `AUTOMATION_LIMITS` | Las llamadas a modelos se cuentan (AU-206) |
 | Las decisiones y la autonomía ganada | `docs/fiabilidad.md`, `packages/agent/src/decisions.ts` | Lo que Boni aprende de sus respuestas (§5.15) |
 
-- **AU-50** (F15, pendiente) · «Agente» enseña seis cosas: **Instrucciones** (texto, con expresiones), **Modelo**
+- **AU-50** (F15, en parte) · «Agente» enseña seis cosas: **Instrucciones** (texto, con expresiones), **Modelo**
   («El de la cuenta» o un modelo evaluado para su uso: AU-199), **Conexiones** (§5.5), **Lecturas**, **Respuesta** y
   **Se ejecuta** (AU-55). El tipo de paso fija el uso de «Modelos» que gasta: un «Agente», el uso «Agente». En un
   paso no hay claves, ni temperatura, ni tokens (Juan, 2026-11-15; hasta entonces «Modelo» era «uno de los papeles de
@@ -1101,6 +1112,11 @@ que un paso espere a Juan.
   parámetros (`AGENT_PARAMS`: «Instrucciones», obligatorio, «Modelo», «Lecturas», «Respuesta» y sus «Campos», «Se
   ejecuta» y «Rondas máximas»), y la validación lo deja entrar solo con un puerto para llamar a un modelo
   (`ValidationContext.ai`), como a los lectores. Falta: el paso en el editor y su prueba (P2).
+  Hecho en P1 de la F15: el paso en el editor, bajo «Usar IA» con su icono: sus seis cosas en ese orden
+  («Instrucciones», «Modelo», «Conexiones», «Lecturas», «Respuesta», «Se ejecuta»), ninguna clave, temperatura ni
+  token, y «Las hace este código» enseña su código en un cuadro de texto (`automations-ai.spec.ts`, en el escritorio
+  y en el teléfono, que solo lee). Falta: las palabras propias del paso sin «Instrucciones» («Escribe qué tiene que
+  hacer»; hoy dice «Falta este dato», como cualquier dato obligatorio) y el editor del código (P2).
 - **AU-51** (F15, en parte) · «Lecturas» tiene dos modos. «Las decide la IA» (por defecto): busca en sus conexiones
   lo que necesite. «Las hace este código»: un editor como el de «Código» que lee, cruza colecciones y devuelve lo
   que la IA recibe; entonces la IA no busca por su cuenta.
@@ -1145,6 +1161,10 @@ que un paso espere a Juan.
   (`update.fixed`), con sus expresiones resueltas por unidad de trabajo como las de crear: un fijo que una expresión
   toma de un valor de fuera lleva la etiqueta de fuera (AU-170), el modelo recibe solo sus nombres en el esquema
   (`update.fixed`), nunca su valor, y si pide uno se le niega como a crear (`outside-fields`).
+  Hecho en P1 de la F15: bajo «Crear» y bajo «Modificar» de la fila abierta, cada campo es «No lo escribe», «Lo
+  decide la IA» o «Fijo» con su valor, pintado por su tipo como en «los campos de una fila»: los de la IA son
+  `fields` (todos, sin lista), los fijos `fixed`, nunca los dos, y un campo que deja de ser de la IA pierde su línea
+  (`setWriteField`, `connections.test.ts`). Falta: «Expresión» y la línea de cada campo (P2).
 - **AU-53** (F15, en parte) · «Respuesta» es «Texto» o «Campos» (una lista de campos con su tipo). Sale como una
   fila que los pasos siguientes citan como cualquier otra.
   En la F15: «Texto» da una fila con el campo `texto`; «Campos», hasta 12 campos, cada uno con su nombre, su tipo
@@ -1176,6 +1196,14 @@ que un paso espere a Juan.
   asa), hasta 50 y las demás contadas (`more`); `ai` lleva las llamadas, los modelos y el tiempo de todas sus
   unidades. En una prueba nada se guarda ni se propone, y sus escrituras dicen `tested`. Falta: las palabras de cada
   línea en la app y la fila que propondría (P2, de `writes`), y el modelo de verdad en una prueba (S1).
+  Hecho en P1 de la F15: «Lo que hizo» en la «Salida» de la vista, encima de la respuesta y en texto plano
+  (`didLines`): su coste primero («2 rondas · 3 llamadas al modelo · el modelo · 3,6 s»), luego las líneas de cada
+  unidad, las escrituras iguales seguidas dichas juntas, las de una prueba por su celda («Propondría…» con
+  «Preguntar», «Crearía…» con «Sí»), lo negado por su porqué, y «y 12 más». Con «Una vez por fila» enseña las 20
+  primeras unidades, cada una con su fila, y cuenta las demás («y 4980 filas más»): 5.000 unidades de 50 líneas se
+  dicen en 3 a 4 ms. El servidor guarda `agent` y `ai` con la prueba del paso y el editor los vuelve a leer
+  (`apps/server/src/automations/ai.test.ts`). Falta: la fila que propondría y «Lo que hizo» en el registro de una
+  ejecución (P2).
 - **AU-55** (F15, en parte) · «Se ejecuta» tiene dos modos, a la vista como en «Código» (AU-30): «Una vez con todas
   las filas» (por defecto) y «Una vez por fila». Es un parámetro suyo y no un ajuste: «Ajustes» es igual en todos los
   pasos (AU-78). Junto a él se ve lo que cuesta: cuántas filas llegaron en la última prueba y el tope de llamadas a
@@ -1353,6 +1381,11 @@ que un paso espere a Juan.
   Cada llamada va con un tope de tiempo y no se repite (una que se agotó pudo cobrarse); la que vuelve, y la que
   falló cobrada, quedan en el diario con su gasto. Al publicar, un «Modelo» que no está en `modelChoices` de su uso
   es un problema del paso (`param.value`, `model`; `aiProblems` de `publish.ts`). Falta: la lista en el editor (P1).
+  Hecho en P1 de la F15: «Modelo» del «Agente» es una lista de `modelChoices` de su uso (`GET …/agent/planners`, la
+  ruta que ya tenía el chat): «El de la cuenta · el modelo» primero, sin guardar nada, y debajo los evaluados; el
+  paso guarda el id de la elección, y uno que ya no está se dice en la misma lista («… · ya no está en la lista»).
+  Falta: las palabras «Elige otro modelo en «Clasificar»» del problema al publicar (hoy «Este valor no vale aquí») y
+  la lista de los cuatro lectores con su uso «Lector» (P2).
 - **AU-200** (F15, en parte) · Lo que decide una IA se dice con esas palabras donde Juan da el permiso y donde lo
   ve usado: «decide la IA». En «Lo que podrá hacer» (AU-182) un «Agente» da una línea por colección y acción que su
   conexión no tiene en «No» (no hay análisis que diga menos: puede todo lo que su conexión deja), con las marcas de
@@ -1372,6 +1405,11 @@ que un paso espere a Juan.
   marcada `byAgent` («decide la IA»), y «con datos de fuera» como en un «Código» (con «Sí» la línea lo lleva; con
   «Preguntar» no, porque propone). Falta: las palabras y «como mucho
   20» en «Lo que podrá hacer» (P2, que lee el tope de la conexión).
+  Hecho en P1 de la F15: «Lo que podrá hacer» dice «decide la IA» y «como mucho N» (la suma de los pasos de esa
+  línea, y nada si alguno no tiene tope) antes de «con datos de fuera»; la ficha de la conexión en el lienzo lleva
+  «decide la IA» en lo que puede escribir, y la frase bajo la tabla «…(como mucho 20), lo que decida la IA»
+  (`publishing.test.ts`, `connections.test.ts`, `automations-ai.spec.ts`). Falta: «Lee lo que decida la IA en…» en
+  la frase, su «proponer filas nuevas», y la marca en la propuesta y en la línea de una ejecución (P2).
 
 ### 5.7 La pantalla
 
@@ -3055,7 +3093,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   lee de lo guardado, nunca de la respuesta de la caja ni de un navegador) y `proposal.test.ts` (servidor: una eliminación con
   «Sí» de una versión publicada va a la papelera sin propuesta y se deshace con la ejecución, con algo de fuera
   también; con «Preguntar», se propone).
-- **AU-166** (F15, en parte) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
+- **AU-166** (F15, hecho) · Lo privado no llega a un modelo: se comprueba al publicar donde se puede saber y
   siempre al ejecutar. El paso falla diciendo qué colección y por qué.
   En la F15: «privado» es lo que dice el acceso de la IA a la colección (`ai_access`, `docs/nucleo.md` §7.3):
   `hidden` (para un modelo no existe) y `opaque` (sus valores llevan `noModel`: ni un modelo que planifica ni un lector
@@ -3075,6 +3113,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   fallar la unidad con `ai.private` y la colección, la del código de «Las hace este código» con el parámetro. Al
   publicar, una colección así conectada a un «Agente» es un problema (`connection.notAllowed`, `why: "private"`) y
   no se publica. Falta: que el editor no la ofrezca entre las que se pueden conectar, y las palabras del problema (P1).
+  Hecho en P1 de la F15: «Conectar» no la ofrece (`agentConnectable`), y el problema dice «Gastos es privada:
+  quítala de este paso», con el paso de enlace en «Antes de publicar» (`words.test.ts`, `automations-ai.spec.ts`).
 - **AU-167** (F14d, hecho) · Lo que una automatización escribe sola en segundo plano sigue la regla de la
   decisión 5 del §10.
   En la F14d: la decisión 11 del §10 (2026-11-16) cambia la frase de la decisión 5 sobre lo de fuera, y esta
@@ -3300,7 +3340,8 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Hecho en S1: sobre el almacén de verdad con 3.000 filas, el «Sí» y `byAgent` leídos por el servidor de la versión
   guardada: con «Sí» lo que crea un «Agente» se guarda con la ejecución, con su etiqueta, y se deshace con ella; con
   «Preguntar» no se guarda nada y espera en la propuesta de la ejecución; «Probar» no guarda nada. Falta: decir
-  «decide la IA» en la ejecución y en «Lo que podrá hacer» (AU-200, P1, P2).
+  «decide la IA» en la ejecución y en «Lo que podrá hacer» (AU-200, P1, P2). Hecho en P1 de la F15: en «Lo que podrá
+  hacer». Falta: en la ejecución (P2).
 - **AU-205** (F15, hecho) · La conexión de un paso de IA la comprueba también la política: P29, una fila nueva
   de `docs/nucleo.md` §7.5. Una llamada de un «Agente» (de su plan, del código de «Las hace este código» o de una
   herramienta de código) se niega en `decide` si la colección no está conectada a ese paso, si la acción está en
@@ -3349,7 +3390,9 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   cada llamada, y la que pasaría el límite lanza `LimitPassed` (`run.limit`, con `modelCalls` y los dos números) sin
   hacerse. Hecho en E2: los cuatro lectores la llaman antes de cada llamada, la repetida también, y una ejecución
   llega a `run.limit` por ella (`ai-steps.test.ts`). Hecho en E3: el «Agente» la llama antes de cada ronda y de cada plan pedido otra vez.
-  Falta: el límite en «Ajustes» cuando un paso llama a un modelo (P1).
+  Falta: el límite en «Ajustes» cuando un paso llama a un modelo (P1). Hecho en P1 de la F15: «Ajustes» enseña
+  «Llamadas a modelos» cuando un paso llama a un modelo, un «Agente» o un lector, con su valor por defecto y su tope
+  (`shownLimits`, `publishing.test.ts`). Falta: verlo junto a «Se ejecuta» (AU-55, P2).
 - **AU-230** (F16, pendiente) · La F16 no mueve el suelo: cambia quién interpreta, no quién decide. Cada acto de
   una automatización convertida, de una pieza de Boni y de un turno sigue pasando por `decide`, y recibe lo mismo
   que recibía.

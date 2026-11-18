@@ -16,6 +16,7 @@ import {
   type Automation,
   actionOf,
   allowing,
+  bornCell,
   bornParams,
   type Connection,
   inputsOf,
@@ -35,6 +36,7 @@ import {
   type WriteMode,
   wouldCycle,
 } from "@boni/automations";
+import type { FilterItem } from "@boni/views";
 import { isEmpty, rowsOf } from "./panel.ts";
 import type { AddAt } from "./state.ts";
 import { type Namer, uniqueName } from "./words.ts";
@@ -269,10 +271,142 @@ export function setCell(
   action: WriteAction,
   cell: false | WriteMode,
 ): Automation {
+  // Out of «No» it is born as the core says (AU-196): an «Agente»'s with «Como mucho 20», a «Código»'s with none.
+  const type = draft.steps.find((s) => s.id === step)?.type ?? "";
   return withConnection(draft, step, collection, (c) => ({
     ...c,
-    [action]: cell === false ? false : { ...(c[action] || {}), mode: cell },
+    [action]:
+      cell === false ? false : c[action] ? { ...c[action], mode: cell } : bornCell(type, cell),
   }));
+}
+
+/**
+ * «Leer» of an «Agente»'s row (AU-41): «No» or «Sí». Back to «Sí» it reads with no limits; to «No» its read limits
+ * go with it.
+ */
+export function setRead(
+  draft: Automation,
+  step: string,
+  collection: string,
+  on: boolean,
+): Automation {
+  return withConnection(draft, step, collection, (c) =>
+    on === (c.read !== false) ? c : { ...c, read: on ? {} : false },
+  );
+}
+
+/** What a write action's own limits are made of (AU-48, AU-196), as `setWriteLimits` takes them. */
+export interface WriteLimits {
+  where?: FilterItem[] | undefined;
+  fields?: string[] | undefined;
+  fixed?: Record<string, ParamValue> | undefined;
+  lines?: Record<string, string> | undefined;
+  limit?: number | undefined;
+}
+
+/**
+ * A write action's own limits (AU-48, AU-196): «Solo estas filas» of modify and remove, the fields and fixed values of
+ * create and modify, and «Como mucho» of the three. Each key given replaces what was there; an empty filter, no
+ * fields list, no fixed values or no limit is not saved. A cell at «No» is left as it is.
+ */
+export function setWriteLimits(
+  draft: Automation,
+  step: string,
+  collection: string,
+  action: WriteAction,
+  limits: WriteLimits,
+): Automation {
+  return withConnection(draft, step, collection, (c) => {
+    const was = c[action];
+    if (was === false) return c;
+    const cell: Record<string, unknown> = { ...was };
+    const put = (key: keyof WriteLimits, empty: (v: never) => boolean) => {
+      if (!(key in limits)) return;
+      if (action === "remove" && key !== "where" && key !== "limit") return;
+      if (action === "create" && key === "where") return;
+      const v = limits[key];
+      if (v === undefined || empty(v as never)) delete cell[key];
+      else cell[key] = v;
+    };
+    put("where", (v: FilterItem[]) => v.length === 0);
+    put("fields", () => false);
+    put("fixed", (v: Record<string, ParamValue>) => Object.keys(v).length === 0);
+    put("lines", (v: Record<string, string>) => Object.keys(v).length === 0);
+    put("limit", () => false);
+    return { ...c, [action]: cell as Connection[WriteAction] };
+  });
+}
+
+/** How a field of a write action is filled (AU-52): not written, chosen by the AI, or a fixed value. */
+export type FieldFill = "none" | "ai" | "fixed";
+
+/**
+ * How each field of a create or modify cell is filled, from `fields` and `fixed` (AU-52): no `fields` is every field
+ * the AI decides, but for the fixed ones.
+ */
+export function fieldFills(
+  cell: Exclude<Connection["create" | "update"], false>,
+  keys: readonly string[],
+): Record<string, FieldFill> {
+  const fixed = cell.fixed ?? {};
+  const out: Record<string, FieldFill> = {};
+  for (const k of keys)
+    out[k] = k in fixed ? "fixed" : !cell.fields || cell.fields.includes(k) ? "ai" : "none";
+  return out;
+}
+
+/**
+ * One field of a create or modify cell set to «No lo escribe», «Lo decide la IA» or «Fijo» with `value` (AU-52). A
+ * field is in `fields` or in `fixed`, never both (AU-48); a field that leaves the AI loses its line. `fields` stays
+ * out only while every field is the AI's, with no fixed value and no line: then the connection says «every field».
+ */
+export function setWriteField(
+  draft: Automation,
+  step: string,
+  collection: string,
+  action: "create" | "update",
+  keys: readonly string[],
+  field: string,
+  fill: FieldFill,
+  value: ParamValue = "",
+): Automation {
+  const cell = draft.steps
+    .find((s) => s.id === step)
+    ?.connections?.find((c) => c.collection === collection)?.[action];
+  if (!cell) return draft;
+  const fills = { ...fieldFills(cell, keys), [field]: fill };
+  const fixed: Record<string, ParamValue> = {};
+  for (const k of keys)
+    if (fills[k] === "fixed")
+      fixed[k] = k === field && value !== "" ? value : (cell.fixed?.[k] ?? value);
+  const ai = keys.filter((k) => fills[k] === "ai");
+  const lines = Object.fromEntries(
+    Object.entries(cell.lines ?? {}).filter(([k]) => fills[k] === "ai"),
+  );
+  const every = ai.length === keys.length && Object.keys(lines).length === 0;
+  return setWriteLimits(draft, step, collection, action, {
+    fields: every ? undefined : ai,
+    fixed,
+    lines,
+  });
+}
+
+/** A fixed field's value under «Crear» or «Modificar» (AU-48, AU-52): the AI does not choose it. */
+export function setFixedValue(
+  draft: Automation,
+  step: string,
+  collection: string,
+  action: "create" | "update",
+  field: string,
+  value: ParamValue,
+): Automation {
+  const cell = draft.steps
+    .find((s) => s.id === step)
+    ?.connections?.find((c) => c.collection === collection)?.[action];
+  if (!cell || !(field in (cell.fixed ?? {}))) return draft;
+  return setWriteLimits(draft, step, collection, action, {
+    fixed: { ...cell.fixed, [field]: value },
+  });
 }
 
 /** The fix of `code.write.notAllowed` (AU-176): that cell at «Preguntar», never «Sí» (`allowing`, the core's). */

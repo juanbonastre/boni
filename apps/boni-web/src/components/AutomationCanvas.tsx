@@ -706,7 +706,7 @@ function Canvas({
         chips: (step.connections ?? []).map((c) => ({
           collection: c.collection,
           name: nameOfCollection(c.collection),
-          words: chipWords(t, c, locale),
+          words: chipWords(t, c, locale, step.type),
         })),
         pinned: state.pins[step.id]
           ? [t("auto.pin.card"), ...(state.pins[step.id]?.stale ? [t("auto.pin.stale")] : [])].join(
