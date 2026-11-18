@@ -466,7 +466,6 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     const row = t.s.list(PEDIDO).find((e) => e.entity.values[nota] === NEW);
     const kept = t.s.get(row?.entity.id as string)?.labels[nota];
     expect(kept?.integrity).not.toBe("user");
-    console.log("MEASURE", ms, JSON.stringify(kept));
     // The model was told the collection's name, what it is for and its options' names, from the server (AU-197).
     const schema = JSON.stringify(t.sent[0]?.req);
     expect(schema).toContain('"name":"Pedido"');
@@ -479,7 +478,7 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     // Undone with the run: the order goes.
     ok(undoAutomationRun(t.s, yes.id, saved.id, JUAN));
     expect(notes()).not.toContain(NEW);
-    // A run of an «Agente» over 3,000 rows on the real store, two rounds: measured on 2026-11-18 (five runs).
+    // A run of an «Agente» over 3,000 rows on the real store, two rounds: 98 to 232 ms on 2026-11-18 (five runs).
     under(ms, 3000, "clock", "an «Agente» reading 3,000 rows on the real store and saving one");
 
     // «Preguntar» on creating clients: nothing is saved, the change waits in the run's one proposal.
@@ -542,6 +541,7 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     expect(pending.map((p) => p.id)).toEqual([r.proposal]);
     const view = pending[0]?.view as RunProposalView;
     expect(view.run.count).toBe(2);
+    // The two branches run side by side: which change comes first is not fixed.
     expect(
       view.run.first.map((x) => [
         x.step,
@@ -550,10 +550,12 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
         x.collection,
         x.values[Object.keys(x.values)[0] as string]?.value,
       ]),
-    ).toEqual([
-      [a.step("Crear"), false, "create", "pedido", "a mano"],
-      [a.step("Analista"), true, "create", "cliente", BEA],
-    ]);
+    ).toEqual(
+      expect.arrayContaining([
+        [a.step("Crear"), false, "create", "pedido", "a mano"],
+        [a.step("Analista"), true, "create", "cliente", BEA],
+      ]),
+    );
     // Whose step it is comes from the version that ran, not from the change: the same proposal read again says so.
     expect(ok(runView(t.s, a.id, r.id)).proposal).toEqual({ id: r.proposal, status: "pending" });
   });
