@@ -27,7 +27,7 @@
  * fails: «Parar» ends the run as `failed`, and every step not yet decided is `stopped`; «Seguir» drops the rows
  * that failed and goes on; «Salir por error» sends them out by `OUT.error`, each with the field `ERROR_FIELD`.
  */
-import type { Label, Labeled } from "@boni/entities";
+import { join, type Label, type Labeled } from "@boni/entities";
 import {
   AGENT_PARAMS,
   AGENT_ROUNDS,
@@ -123,6 +123,35 @@ import {
 } from "./format.ts";
 import { arrowsInto, executionOrder } from "./graph.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
+import {
+  ANSWER_FIELD,
+  ASK_LIMITS,
+  ASK_PARAMS,
+  ASK_TYPE,
+  type AskAnswer,
+  type AskOption,
+  type AskQuestion,
+  type AskRecord,
+  answerFits,
+  asPlainText,
+  cut,
+  DAY_MS,
+  type GivenAnswer,
+  NO_ANSWER,
+  NOTIFY_LIMITS,
+  NOTIFY_PARAMS,
+  NOTIFY_TYPE,
+  type Notice,
+  type NoticeRecord,
+  type NotifyWhere,
+  type PeopleFailure,
+  PeopleFault,
+  type PeoplePort,
+  REPLY_PARAMS,
+  REPLY_TYPE,
+  type RunCounts,
+  type RunReply,
+} from "./people.ts";
 import type { Cell, Row } from "./rows.ts";
 import { copy, fieldLabel, joinAll, StopRun, setField, TRANSFORM_AND_LOGIC } from "./steps.ts";
 import { type Problem, type ValidationContext, validate } from "./validate.ts";
@@ -202,6 +231,8 @@ export interface StepError {
   why?: CodeFailure;
   /** F15: why an AI step failed (ai.ts, `AI_FAILURES`), while `failure.code` is `other`. Never the value at fault. */
   ai?: AiFailure;
+  /** F15 E4: why a «Preguntar», an «Avisar» or a «Responder» failed (people.ts), while `failure.code` is `other`. */
+  people?: PeopleFailure;
 }
 
 /** What is kept of a step in a run (AU-15). What an AI step cost arrives with those steps (F15). */
@@ -239,6 +270,13 @@ export interface StepRecord {
   ai?: AiRecord;
   /** An «Agente»'s «Lo que hizo» (AU-54, F15 E3): each unit of work, its rounds and its lines, written by code. */
   agent?: AgentRecord;
+  /**
+   * A «Preguntar»'s questions, what each takes and until when it waits (AU-125, AU-203, F15 E4): `waiting` while its
+   * run waits, and kept once answered or left by «sin respuesta».
+   */
+  ask?: AskRecord;
+  /** What an «Avisar» sent or, in a test, would send (AU-201). */
+  notices?: NoticeRecord;
 }
 
 export interface Execution {
@@ -246,8 +284,11 @@ export interface Execution {
   /** The id of the trigger step it started in (AU-06). */
   trigger: string;
   test: boolean;
-  /** `done`: every step was decided. `failed`: a step stopped it. */
-  state: "done" | "failed";
+  /**
+   * `done`: every step was decided. `failed`: a step stopped it. `waiting`: a «Preguntar» waits for Juan (AU-203):
+   * what does not depend on the answer was decided, the steps after it are `queued`, and `resume` goes on.
+   */
+  state: "done" | "failed" | "waiting";
   /** Epoch ms, from the clock. */
   started: number;
   /**
@@ -265,6 +306,13 @@ export interface Execution {
   asked: Asked[];
   /** The step that stopped the run and why, when `state` is `failed`. */
   error?: StepError & { step: string };
+  /** The run's answer (AU-202): the last «Responder» that ran, kept across a wait. Absent when none did. */
+  reply?: RunReply;
+  /**
+   * While it waits (AU-203): the earliest wait limit of its questions, and what it counted so far, carried across the
+   * wait (its `ms` is only what ran).
+   */
+  waits?: { until: number; counts: RunCounts };
 }
 
 /** What `$run.startedBy` says (AU-195): by hand, or a «Programada» at its hour (F18 adds one per trigger). */
@@ -326,6 +374,11 @@ export interface RunDeps {
    * (S1); a test's scripted reader. Without one, the AI steps do not run: validation refuses them (`step.unknownType`).
    */
   ai?: AiPort;
+  /**
+   * How «Preguntar», «Avisar» and «Responder» reach Juan (people.ts, F15 E4): the server's notices and its Bandeja
+   * (S2); a test's recorder. Without one they do not run: validation refuses them (`step.unknownType`).
+   */
+  people?: PeoplePort;
 }
 
 /**
@@ -334,7 +387,7 @@ export interface RunDeps {
  */
 export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
   const collection = (key: string) => deps.collections.shape(key);
-  const ai = deps.ai ? { ai: true } : {};
+  const ai = { ...(deps.ai ? { ai: true } : {}), ...(deps.people ? { people: true } : {}) };
   if (!deps.box) return { collection, ...ai };
   return { collection, ...ai, collectionNamed: (name, step) => deps.collectionNamed?.(name, step) };
 }
@@ -375,6 +428,72 @@ export function runPlanned(
   plan: Plan,
 ): Promise<Execution> {
   return new Run(input, deps, triggerRow(trigger, input.fields), plan).go();
+}
+
+/**
+ * The answers to a waiting run's questions, by the «Preguntar»'s step id: one per question, in the order of its
+ * `AskRecord.questions`; null for one with no answer. A step not named here goes on waiting, unless its limit passed.
+ */
+export type Answers = Readonly<Record<string, readonly (GivenAnswer | null)[]>>;
+
+/**
+ * The state of a run that ended, for a caller that gives no `PeoplePort`: without one «Preguntar» does not validate
+ * (`step.unknownType`), so no run waits, and a waiting one here is a bug. F15 S2 gives the server its port and keeps
+ * the waiting runs.
+ */
+export function endedState(e: Pick<Execution, "state">): "done" | "failed" {
+  if (e.state === "waiting") throw new Error("a run waits for an answer with no people port");
+  return e.state;
+}
+
+/**
+ * Goes on with a run that waits (AU-203): from each «Preguntar» answered or past its limit, with the outputs its
+ * decided steps kept (`kept`, as the run left it, also after a restart), the version it started with (`input`'s
+ * automation, the same id and version), its counts and its running time. It rejects with `CannotRun`, before any
+ * effect, a run that does not wait, another version, another trigger or test, an answer to a step that does not
+ * wait, or one that does not fit its question; after that it never throws, as `run`.
+ */
+export async function resume(
+  input: RunInput,
+  deps: RunDeps,
+  kept: Execution,
+  answers: Answers,
+): Promise<Execution> {
+  const problems = validate(input.automation, validationOf(deps) as ValidationContext);
+  if (blocking(input.automation, problems).length)
+    throw new CannotRun("the automation has errors", problems);
+  if (kept.state !== "waiting") throw new CannotRun("the run does not wait");
+  if (
+    kept.automation.id !== input.automation.id ||
+    kept.automation.version !== input.automation.version
+  )
+    throw new CannotRun("a run goes on with the version it started with");
+  if (kept.trigger !== input.trigger || kept.test !== input.test)
+    throw new CannotRun("a run goes on as it started");
+  for (const [id, given] of Object.entries(answers)) {
+    const ask = kept.steps[id]?.state === "waiting" ? kept.steps[id]?.ask : undefined;
+    if (!ask) throw new CannotRun(`${id} does not wait for an answer`);
+    if (given.length !== ask.questions.length)
+      throw new CannotRun(`${id} asks ${ask.questions.length} questions`);
+    given.forEach((g, i) => {
+      if (g && !answerFits(ask.questions[i] as AskQuestion, ask.answer, g.value))
+        throw new CannotRun(`the answer ${i} of ${id} does not fit its question`);
+    });
+  }
+  const trigger = input.automation.steps.find((s) => s.id === input.trigger);
+  const first = Object.values(kept.steps[input.trigger]?.out ?? {})[0]?.[0];
+  if (!trigger || !isTrigger(trigger) || !first)
+    throw new CannotRun(`${input.trigger} is not a trigger of the run`);
+  const reuse = new Map(
+    Object.entries(kept.steps).filter(([, r]) => r.state !== "waiting" && r.state !== "queued"),
+  );
+  return new Run(
+    input,
+    deps,
+    first,
+    { order: kept.order, reuse },
+    { execution: kept, answers },
+  ).go();
 }
 
 /** The trigger's row a run would start with, or `CannotRun` (AU-110): what `run` checks before any effect. */
@@ -493,6 +612,7 @@ function stepErrorOf(e: unknown, step: Step): StepError {
     failure: failureOf(e, step),
     ...(e instanceof CodeFault ? { why: e.why } : {}),
     ...(e instanceof AiFault ? { ai: e.ai } : {}),
+    ...(e instanceof PeopleFault ? { people: e.people } : {}),
   };
 }
 
@@ -648,12 +768,29 @@ class Run {
   models = 0;
   /** Rows each step asked to write with each action in each collection, saved, tested or proposed (AU-196). */
   readonly actionRows = new Map<string, number>();
+  /** The run's answer (AU-202): the last «Responder» that ran. */
+  reply: RunReply | undefined;
+  /** The run it goes on from after a wait, and the answers it was given (AU-203). */
+  readonly from: { execution: Execution; answers: Answers } | undefined;
+  /** What ran before this part of the run (AU-203: its time limit counts what runs, not what waits), and when it began. */
+  spent = 0;
+  resumed = 0;
+  /** By «Avisar» step: the notices past `NOTIFY_LIMITS.notices`, sent as one that groups them (AU-201). */
+  readonly grouped = new Map<string, number>();
 
-  constructor(input: RunInput, deps: RunDeps, first: Row, plan?: Plan) {
+  constructor(
+    input: RunInput,
+    deps: RunDeps,
+    first: Row,
+    plan?: Plan,
+    from?: { execution: Execution; answers: Answers },
+  ) {
     this.input = input;
     this.deps = deps;
     this.first = first;
     this.plan = plan;
+    this.from = from;
+    this.reply = from?.execution.reply;
     this.byId = new Map(input.automation.steps.map((s) => [s.id, s]));
     this.byName = new Map(input.automation.steps.map((s) => [s.name, s]));
     this.limits = limitsOf(input.automation);
@@ -675,11 +812,41 @@ class Run {
     this.models = countModelCall(this.limits, this.models);
   }
 
+  /** What the run counted so far (AU-203): what a wait carries across. */
+  counts(): RunCounts {
+    return {
+      ran: this.ran,
+      written: this.written,
+      models: this.models,
+      actionRows: Object.fromEntries(this.actionRows),
+    };
+  }
+
+  /** The run's time so far (AU-17): what ran before a wait, and this part's. */
+  elapsed(): number {
+    return this.spent + this.deps.clock.now() - this.resumed;
+  }
+
   async go(): Promise<Execution> {
     const { automation, trigger, test } = this.input;
-    const started = this.deps.clock.now();
+    const before = this.from?.execution;
+    this.resumed = this.deps.clock.now();
+    const started = before?.started ?? this.resumed;
     this.started = started;
-    this.seed = this.input.seed ?? seedOf(started, "");
+    this.seed = this.input.seed ?? before?.seed ?? seedOf(started, "");
+    if (before) {
+      // What the run counted before it waited counts after it too (AU-203).
+      this.spent = before.ms;
+      this.boxed = before.seed !== undefined;
+      const counts = before.waits?.counts;
+      if (counts) {
+        this.ran = counts.ran;
+        this.written = counts.written;
+        this.models = counts.models;
+        for (const [k, n] of Object.entries(counts.actionRows)) this.actionRows.set(k, n);
+      }
+      this.asked.push(...before.asked);
+    }
     this.order = this.plan?.order ?? executionOrder(automation, trigger);
     let error: Execution["error"];
     for (const id of this.order) {
@@ -699,6 +866,25 @@ class Run {
         this.told(id, "ended");
         continue;
       }
+      // A question it waited on: answered, past its limit, or still waiting (AU-203).
+      const waited = before?.steps[id];
+      if (waited?.state === "waiting" && waited.ask) {
+        this.answered(step, waited);
+        continue;
+      }
+      // What depends on an answer not given yet waits with it (AU-203): no rows reach it until then.
+      if (
+        id !== trigger &&
+        inputsOf(step).some((name) =>
+          arrowsInto(automation, this.order, id, name).some((a) => {
+            const state = this.records[a.from.step]?.state;
+            return state === "waiting" || state === "queued";
+          }),
+        )
+      ) {
+        this.records[id] = blank();
+        continue;
+      }
       if (id === trigger) {
         this.made.set(this.first, { step: id, inputs: [] });
         this.records[id] = {
@@ -713,19 +899,202 @@ class Run {
       if (failure) error = { ...failure, step: id };
       this.told(id, "ended");
     }
+    // What a waiting run keeps to go on (AU-203): every step's outputs with their labels and its questions, measured
+    // after the steps that do not depend on the answer ran too. Over the limit, the first question fails and asks
+    // nothing: its record keeps no question for the Bandeja.
+    const asking = this.order.find((id) => this.records[id]?.state === "waiting");
+    if (!error && asking) {
+      const kept = utf8Bytes(JSON.stringify(this.records));
+      if (kept > ASK_LIMITS.keptBytes) {
+        const record = this.records[asking] as StepRecord;
+        const step = this.byId.get(asking) as Step;
+        record.error = stepErrorOf(
+          new PeopleFault(`${kept} bytes to keep, at most ${ASK_LIMITS.keptBytes}`, {
+            code: "ask.kept",
+            detail: { max: ASK_LIMITS.keptBytes },
+          }),
+          step,
+        );
+        record.state = "failed";
+        delete record.ask;
+        error = { ...record.error, step: asking };
+        this.told(asking, "ended");
+      }
+    }
+    // A run that failed waits for nothing: what waited, or waited on it, stops with it.
+    const waiting = this.order.filter((id) => {
+      const state = this.records[id]?.state;
+      return state === "waiting" || state === "queued";
+    });
+    if (error)
+      for (const id of waiting) {
+        (this.records[id] as StepRecord).state = "stopped";
+        this.told(id, "ended");
+      }
+    const until = waiting.flatMap((id) => {
+      const ask = this.records[id]?.state === "waiting" ? this.records[id]?.ask : undefined;
+      return ask ? [ask.until] : [];
+    });
     return {
       automation: { id: automation.id, version: automation.version },
       trigger,
       test,
-      state: error ? "failed" : "done",
+      state: error ? "failed" : until.length ? "waiting" : "done",
       started,
       ...(this.boxed ? { seed: this.seed } : {}),
-      ms: this.deps.clock.now() - started,
+      ms: this.elapsed(),
       order: this.order,
       steps: this.records,
       asked: this.asked,
       ...(error ? { error } : {}),
+      ...(this.reply ? { reply: this.reply } : {}),
+      ...(!error && until.length
+        ? { waits: { until: Math.min(...until), counts: this.counts() } }
+        : {}),
     };
+  }
+
+  /**
+   * A «Preguntar» its run waited on (AU-203): with its answers, or past its wait limit, it gives its rows (each with
+   * `respuesta`, or by «sin respuesta» when its question had none); otherwise it goes on waiting. Its rows are the ones
+   * the steps before it kept, so a restart loses nothing.
+   */
+  answered(step: Step, waited: StepRecord): void {
+    const ask = waited.ask as AskRecord;
+    const given = this.from?.answers[step.id];
+    const late = this.deps.clock.now() >= ask.until;
+    const record: StepRecord = { ...waited, out: {}, ask: { ...ask } };
+    this.records[step.id] = record;
+    if (!given && !late) return;
+    for (const o of outputsOf(step)) record.out[o] = [];
+    const rows = this.arriving(step);
+    const by = { [inputsOf(step)[0] as string]: rows };
+    const path = this.path(step, this.scope(null), by);
+    let answeredAny = false;
+    ask.questions.forEach((q, i) => {
+      // Past its limit, an answer no longer counts («Ya no vale»).
+      const a = late ? null : (given?.[i] ?? null);
+      const units = ask.mode === "perRow" ? [rows[i] as Row] : rows;
+      const at = (k: number) => (ask.mode === "perRow" ? i : k);
+      if (!a) {
+        for (const [k, r] of units.entries())
+          (record.out[NO_ANSWER] as Row[]).push(this.row(step.id, copy(r), at(k), path, rows));
+        return;
+      }
+      answeredAny = true;
+      const value = { value: a.value, label: this.answerLabel(ask.answer, q, a), derived: false };
+      if (!units.length) {
+        // Asked with no row (an empty list that goes on, AU-14): its row is the answer alone.
+        const out: RowOut = { json: {}, label: value.label };
+        setField(out, ANSWER_FIELD, value);
+        (record.out[OUT.main] as Row[]).push(this.row(step.id, out, null, path, rows));
+      }
+      for (const [k, r] of units.entries()) {
+        const out = copy(r);
+        setField(out, ANSWER_FIELD, value);
+        (record.out[OUT.main] as Row[]).push(this.row(step.id, out, at(k), path, rows));
+      }
+    });
+    (record.ask as AskRecord).ended = answeredAny ? "answered" : "noAnswer";
+    record.state = "done";
+    this.told(step.id, "ended");
+  }
+
+  /**
+   * The label of an answer (AU-125): the hand's when he writes it; the option's when he chooses one (the
+   * automation's own for «Sí o no» and for fixed options, the expression's for options it gave).
+   */
+  answerLabel(kind: AskAnswer, q: AskQuestion, a: GivenAnswer): Label {
+    if (kind === "text") return a.by;
+    if (kind === "yesNo") return this.deps.own;
+    const chosen = Array.isArray(a.value) ? a.value : [a.value];
+    const labels = (q.options ?? []).filter((o) => chosen.includes(o.value)).map((o) => o.label);
+    return labels.length ? join(labels[0] as Label, ...labels.slice(1)) : this.deps.own;
+  }
+
+  /**
+   * A «Preguntar» reached (AU-125, AU-203): its questions, made before any is asked, or the fault that fails the step
+   * without asking: more than 20 with «Una vez por fila», the automation's 20 runs already waiting, options that are
+   * not a list of texts, or more than 2 MB to keep.
+   */
+  async ask(step: Step, rows: readonly Row[], scopeOf: (i: number) => Scope): Promise<AskRecord> {
+    const mode = actionOf(step)?.mode === "perRow" ? "perRow" : "all";
+    const count = mode === "perRow" ? rows.length : 1;
+    if (count > ASK_LIMITS.questions)
+      throw new PeopleFault(`${count} questions, at most ${ASK_LIMITS.questions}`, {
+        code: "ask.questions",
+        detail: { got: count, max: ASK_LIMITS.questions },
+      });
+    const port = this.deps.people;
+    if (!port) throw new PeopleFault("nothing can ask Juan here", { code: "people.unavailable" });
+    // A test is answered in its own panel: it waits in no Bandeja (AU-203).
+    if (!this.input.test && (await port.waiting(this.input.automation.id)) >= ASK_LIMITS.waiting)
+      throw new PeopleFault(`${ASK_LIMITS.waiting} runs already wait`, {
+        code: "ask.waiting",
+        detail: { max: ASK_LIMITS.waiting },
+      });
+    const answer = (step.params[ASK_PARAMS.answer] ?? "yesNo") as AskAnswer;
+    const questions: AskQuestion[] = [];
+    for (let i = 0; i < count; i++) {
+      const scope = scopeOf(i);
+      const q = resolve(step.params[ASK_PARAMS.question] ?? "", scope);
+      const question: AskQuestion = { text: asPlainText(q.value), label: q.label };
+      if (answer === "one" || answer === "several")
+        question.options = this.options(step.params[ASK_PARAMS.options] ?? null, scope);
+      questions.push(question);
+    }
+    const days = step.params[ASK_PARAMS.waitDays];
+    const until =
+      this.deps.clock.now() + (typeof days === "number" ? days : ASK_LIMITS.waitDays.born) * DAY_MS;
+    // What the run keeps is measured once it has done all it can before waiting (`go`): `ask.kept`.
+    return { answer, mode, questions, until };
+  }
+
+  /** A question's options (AU-125): fixed with the automation's label, or the list an expression gives with its own. */
+  options(v: ParamValue, scope: Scope): AskOption[] {
+    const got = resolve(v, scope);
+    const list = got.value;
+    if (
+      !Array.isArray(list) ||
+      !list.length ||
+      !list.every((o) => typeof o === "string" && o.trim() !== "") ||
+      new Set(list).size !== list.length
+    )
+      throw new PeopleFault("the options are not a list of texts", {
+        code: "ask.options",
+        param: ASK_PARAMS.options,
+      });
+    return (list as string[]).map((value) => ({ value, label: got.label }));
+  }
+
+  /**
+   * One notice of an «Avisar» (AU-201): its text plain and cut to 300 characters, to the devices its «Dónde» names
+   * as saved. Past the fifth of the step in this run, it is counted to be sent as one that groups them. In a test it
+   * is kept as what it would send, and nothing is sent.
+   */
+  async notify(step: Step, record: StepRecord, text: Labeled<Cell> | null): Promise<void> {
+    record.notices ??= { notices: [], sent: !this.input.test };
+    const notices = record.notices;
+    const where = (step.params[NOTIFY_PARAMS.where] ?? "all") as NotifyWhere;
+    if (text && notices.notices.length >= NOTIFY_LIMITS.notices) {
+      this.grouped.set(step.id, (this.grouped.get(step.id) ?? 0) + 1);
+      return;
+    }
+    const more = text ? undefined : this.grouped.get(step.id);
+    const notice: Notice = {
+      automation: this.input.automation.id,
+      step: step.id,
+      text: text ? cut(asPlainText(text.value), NOTIFY_LIMITS.chars) : "",
+      label: text ? text.label : this.deps.own,
+      where,
+      ...(more ? { more } : {}),
+    };
+    if (!this.input.test) {
+      if (!this.deps.people)
+        throw new PeopleFault("nothing can tell Juan here", { code: "people.unavailable" });
+      await this.deps.people.notify(notice);
+    }
+    notices.notices.push(notice);
   }
 
   /** Tells `onStep` of a step's record as it stands. */
@@ -781,7 +1150,7 @@ class Run {
     // a «Colección» that writes, the rows it would write, one per unit at most, before any is asked of the policy.
     // «Las que cumplan…» writes what it finds, known only once found: `StepContext.reserve` checks it then.
     try {
-      const elapsed = clock.now() - this.started;
+      const elapsed = this.elapsed();
       if (elapsed >= this.limits.ms) throw new LimitPassed("ms", this.limits.ms, elapsed);
       this.hold("steps", this.ran + 1);
       this.ran++;
@@ -822,7 +1191,11 @@ class Run {
           ? AGENT_EXECUTORS[action.mode]
           : isReaderType(step.type)
             ? READER_EXECUTOR
-            : EXECUTORS[executorKey(step.type, action.key)]
+            : step.type === NOTIFY_TYPE
+              ? NOTIFY_EXECUTORS[action.mode]
+              : step.type === REPLY_TYPE
+                ? REPLY_EXECUTOR
+                : EXECUTORS[executorKey(step.type, action.key)]
       : undefined;
     const tries = 1 + Math.max(0, settings.retry.times);
     let stop: StepError | undefined;
@@ -909,6 +1282,26 @@ class Run {
       record.uses = { clock: evaluated.run.clock, random: evaluated.run.random };
     }
 
+    // «Preguntar» (AU-125, AU-203): its questions, made before any is asked; then its run waits for the answer.
+    if (step.type === ASK_TYPE) {
+      try {
+        record.ask = await this.ask(step, all, (i) =>
+          this.scope(action?.mode === "perRow" ? (all[i] ?? null) : null, evaluated?.at(i)),
+        );
+      } catch (e) {
+        give(e, null, 0, all, this.path(step, this.scope(null), inputs));
+        if (stop) {
+          record.error = stop;
+          finish("failed");
+          return stop;
+        }
+        finish("done");
+        return;
+      }
+      finish(record.ask.questions.length ? "waiting" : "done");
+      return;
+    }
+
     // A reader's calls to a model, for every row, before any row is worked on (AU-57): in batches, each call counted
     // first (AU-206). What it decided for a row is that row's, on every try: a unit does not call the model again.
     let read: ReaderOutcome[] | undefined;
@@ -973,6 +1366,11 @@ class Run {
           if (agent)
             ctx.agent = (r, rows) =>
               this.agentUnit(step, { row: r, index, rows, scope, state: agent, pending, record });
+          if (step.type === NOTIFY_TYPE) ctx.notify = (t) => this.notify(step, record, t);
+          if (step.type === REPLY_TYPE)
+            ctx.reply = (t) => {
+              this.reply = { step: step.id, text: asPlainText(t.value), label: t.label };
+            };
           if (read) {
             const outcomes = read;
             ctx.read = (at) => outcomes[at] as ReaderOutcome;
@@ -1026,6 +1424,14 @@ class Run {
     // Row by row with an empty list: an action that reads or writes runs once with no row (AU-14).
     else if (action && action.effect !== "none")
       await unit(null, 0, all, this.scope(null, evaluated?.at(0)));
+
+    // The notices past the fifth, as one that groups them (AU-201).
+    if (!stop && this.grouped.get(step.id))
+      try {
+        await this.notify(step, record, null);
+      } catch (e) {
+        give(e, null, 0, all, this.path(step, this.scope(null), inputs));
+      }
 
     // What its «Código» or its «Agente» asked to save, decided for the whole step at once, when the step has not
     // stopped (AU-174, AU-198).
@@ -1963,6 +2369,10 @@ export interface StepContext {
    * the model receives (AU-55), and gives its row out with the answer (AU-53).
    */
   agent?(row: Row | null, rows: readonly Row[]): Promise<RowOut[]>;
+  /** An «Avisar» only (AU-201): sends its notice, or in a test keeps what it would send. */
+  notify?(text: Labeled<Cell>): Promise<void>;
+  /** A «Responder» only (AU-202): sets the run's answer, plain text with the label of what it cites. */
+  reply?(text: Labeled<Cell>): void;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */
@@ -2053,3 +2463,58 @@ const CODE_EXECUTORS: Readonly<Record<CodeMode, Executor>> = {
     run: async (ctx, _row, index) => ({ [OUT.main]: codeRows(ctx, index) }),
   },
 };
+
+/** The rows that came in, passed on as they are, each knowing its own (`pairs`). */
+const passOn = (input: Record<string, readonly Row[]>) =>
+  Object.values(input)
+    .flat()
+    .map((r, i) => copy(r, i));
+
+/** «Avisar» (AU-201), by «Se ejecuta»: one notice with all the rows, or one per row; the rows pass on. */
+const NOTIFY_EXECUTORS: Readonly<Record<"all" | "perRow", Executor>> = {
+  all: {
+    mode: "all",
+    run: async (ctx, input) => {
+      await notifyOf(ctx)(ctx.value(ctx.step.params[NOTIFY_PARAMS.text] ?? ""));
+      return { [OUT.main]: passOn(input) };
+    },
+  },
+  perRow: {
+    mode: "perRow",
+    run: async (ctx, row) => {
+      await notifyOf(ctx)(ctx.value(ctx.step.params[NOTIFY_PARAMS.text] ?? ""));
+      return { [OUT.main]: row ? [copy(row)] : [] };
+    },
+  },
+};
+const notifyOf = (ctx: StepContext) => {
+  if (!ctx.notify)
+    throw new PeopleFault("nothing can tell Juan here", { code: "people.unavailable" });
+  return ctx.notify;
+};
+
+/** «Responder» (AU-202): sets the run's answer once with all the rows; the rows pass on. */
+const REPLY_EXECUTOR: Executor = {
+  mode: "all",
+  run: async (ctx, input) => {
+    if (!ctx.reply)
+      throw new PeopleFault("this «Responder» has no run", { code: "people.unavailable" });
+    ctx.reply(ctx.value(ctx.step.params[REPLY_PARAMS.text] ?? ""));
+    return { [OUT.main]: passOn(input) };
+  },
+};
+
+/** The bytes of a text in UTF-8, without making them. */
+function utf8Bytes(text: string): number {
+  let n = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) n += 1;
+    else if (c < 0x800) n += 2;
+    else if (c >= 0xd800 && c <= 0xdbff) {
+      n += 4;
+      i++;
+    } else n += 3;
+  }
+  return n;
+}

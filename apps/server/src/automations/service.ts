@@ -28,6 +28,7 @@ import {
   type Cell,
   CODE_LIMITS,
   type Collections,
+  endedState,
   executionOrder,
   FormatError,
   inputsOf,
@@ -674,7 +675,7 @@ export async function testAutomation(
   // Of the tests, the last 20 stay (AU-103).
   if (run) pruneRuns(store, id);
   return {
-    state: execution.state,
+    state: endedState(execution),
     problems: [],
     ms: execution.ms,
     ran: execution.ran,
