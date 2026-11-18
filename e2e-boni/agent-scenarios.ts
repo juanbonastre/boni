@@ -583,7 +583,7 @@ export const CARD_BOOK = {
     context: [],
   },
 };
-/** A task without a time: Boni suggests the first free hour of its day («¿A las 16:00?»), one tap takes it. */
+/** A task without a time: Boni suggests the first free hour of its day («Hora propuesta: 16:00»), one tap takes it. */
 export const CARD_TIME = {
   ...CARD_DETAILED,
   id: "c6",

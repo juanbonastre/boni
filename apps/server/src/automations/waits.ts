@@ -1,18 +1,22 @@
 /**
- * The steps that talk to Juan, on the server (docs/automatizaciones.md AU-125, AU-201, AU-203; F15 S2): the
- * `PeoplePort` the engine tells through, and what a run that waits for his answer leaves in the Bandeja.
+ * The steps that talk to Juan, on the server (docs/automatizaciones.md AU-125, AU-201, AU-203, AU-246, AU-247; F15 S2
+ * and P2): the `PeoplePort` the engine tells through, and what a run that waits for his answer leaves.
  *
- * - **«Avisar»** passes through the policy as a call with no recipient (`noticeDecision`, policy.ts) and goes to the
- *   devices its «Dónde» names as saved, a closed list of his own: `all` to the app and the phone, `desktop` to the
- *   app only, `phone` to the phone only. The account's host sends it (`onPeople`, agent.ts); this module names no
- *   device and no person. Its text is plain, cut by the engine.
- * - **«Preguntar»**: each question of a waiting step is one card of the Bandeja (`RequestRow`, the panel of requests
- *   the flows already use), painted by code: the question as plain text with its label, its options, until when.
- *   Its `view.automation` says which run, step and question it is, so its answer goes to the run (runs.ts
- *   `answerAsk`) and not to the agent. No new path: the app's and the phone's lists of paths stay as they are.
+ * - **«Avisar»** passes through the policy as a call with no recipient (`noticeDecision`, policy.ts) and goes by its
+ *   «Por dónde» (AU-246, decision 29 of §10), closed lists of his own fixed in the step: a notification to the devices
+ *   its «Dónde» names (`all` to the app and the phone, `desktop` to the app only, `phone` to the phone only), and a
+ *   card in the Bandeja with its text and nothing to answer (`view.kind` "notice"). The account's host sends the
+ *   notification (`onPeople`, agent.ts); this module names no device and no person. Its text is plain, cut by the
+ *   engine.
+ * - **«Preguntar»**: its questions live in the run that waits and are answered from it (runs.ts `answerRun`). With
+ *   «Bandeja» in its «Por dónde», each question is also one card of the Bandeja (`RequestRow`, the panel of requests
+ *   the flows already use), painted by code: the question as plain text with its label, its options, until when. Its
+ *   `view.automation` says which run, step and question it is, so its answer goes to the run (runs.ts `answerAsk`)
+ *   and not to the agent. With «Notificación», one notification per run of the step (AU-247, `notifyAsks`), which
+ *   opens the run.
  *
- * Who may answer: a personal device only, as accepting a proposal (AU-193, decision 13). A shared device reads the
- * card and cannot answer it or put it away.
+ * Who may answer: any device signed in to the account, unless the step asks for a personal one; a speaker never
+ * (`mayAnswer`, decision 26 of §10).
  */
 
 import { EventEmitter } from "node:events";
@@ -20,16 +24,22 @@ import type { Painted, Trust } from "@boni/agent";
 import {
   type AskAnswer,
   type AskRecord,
+  askNotice,
+  DAY_MS,
   type Execution,
   type Notice,
   type PeoplePort,
   StepFault,
+  VIA_BORN,
 } from "@boni/automations";
 import type { Label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { noticeDecision } from "./policy.ts";
 
-/** What the account's host sends for a run's people steps: a notice, or that the Bandeja has new questions. */
+/**
+ * What the account's host sends for a run's people steps: a notification (a notice's, or a waiting question's), or
+ * that the Bandeja has new cards (`asked`: questions or notices).
+ */
 export type PeopleEvent =
   | { kind: "notice"; automation: string; run: string | null; notice: Notice }
   | { kind: "asked"; automation: string; run: string };
@@ -64,13 +74,21 @@ export function peoplePort(
   own: Label,
   run: string | null,
 ): PeoplePort {
+  /** The notice cards this run left so far: each one's place in its id. */
+  let cards = 0;
   return {
     async notify(notice) {
       const d = noticeDecision(notice, own);
       // A refusal fails the step without saying which rule: nothing of it is told.
       if (d.kind !== "allow")
         throw new StepFault("the policy refused the notice", { code: "policy.denied" });
-      tellPeople(store, { kind: "notice", automation: id, run, notice });
+      if (notice.via.includes("notification"))
+        tellPeople(store, { kind: "notice", automation: id, run, notice });
+      if (run && notice.via.includes("inbox")) {
+        cards += 1;
+        addNoticeCard(store, run, notice, cards, Date.now());
+        tellPeople(store, { kind: "asked", automation: id, run });
+      }
     },
     waiting(automation) {
       const n = store.journal.automationWaiting(automation);
@@ -80,11 +98,41 @@ export function peoplePort(
 }
 
 /**
- * A notice's text as it goes to the app and the phone: the step's own, or, for the one that groups the rest, «y 12
- * más» (the phone has no words of its own; the server's are Spanish, as notices.ts's).
+ * A notice's text as it goes to the app and the phone: the step's own; for the one that groups the rest, «y 12 más»;
+ * for a notification of several questions, «3 preguntas» (the phone has no words of its own; the server's are
+ * Spanish, as notices.ts's).
  */
 export const noticeText = (n: Notice): string =>
-  n.more !== undefined ? `y ${n.more} más` : n.text;
+  n.questions !== undefined
+    ? `${n.questions} preguntas`
+    : n.more !== undefined
+      ? `y ${n.more} más`
+      : n.text;
+
+/**
+ * A waiting run's notification of its questions (AU-247): one per run of each «Preguntar» with «Notificación» in its
+ * «Por dónde», never again for the same step however often the run waits, and it opens the run. Marks each ask it
+ * looked at (`notified`) in `e`, which the caller keeps after. Gives how many it told.
+ */
+export function notifyAsks(
+  store: UserStore,
+  id: string,
+  run: string,
+  e: Execution,
+  own: Label,
+): number {
+  let n = 0;
+  for (const [step, ask] of waitingAsks(e)) {
+    if (ask.notified) continue;
+    ask.notified = true;
+    const notice = askNotice(id, step, ask, own);
+    // As a notice, it passes through the policy as a call with no recipient; refused, nothing is told.
+    if (!notice || noticeDecision(notice, own).kind !== "allow") continue;
+    tellPeople(store, { kind: "notice", automation: id, run, notice });
+    n++;
+  }
+  return n;
+}
 
 // ---------------------------------------------------------------- the Bandeja's cards
 
@@ -96,7 +144,7 @@ const CONTROLS: Readonly<Record<AskAnswer, string>> = {
   text: "text",
 };
 
-/** Where an automation's card points: the run, the «Preguntar» and its question, and what it takes. */
+/** Where an automation's question points: the run, the «Preguntar» and its question, and what it takes. */
 export interface AskPlace {
   automation: string;
   run: string;
@@ -109,11 +157,12 @@ export interface AskPlace {
 }
 
 /**
- * Whether a device of this trust answers this card (decision 26 of docs/automatizaciones.md §10): any device signed in
- * to the account, personal or shared, unless its step asks for a personal one. A speaker (`ambient`) never does: it
- * speaks, never confirms. The list of cards says it per card (`mayAnswer`), so the screen keeps no rule of its own.
+ * Whether a device of this trust answers this question (decision 26 of docs/automatizaciones.md §10): any device
+ * signed in to the account, personal or shared, unless its step asks for a personal one. A speaker (`ambient`) never
+ * does: it speaks, never confirms. The list of cards and a run's view say it (`mayAnswer`), so the screen keeps no
+ * rule of its own.
  */
-export const mayAnswer = (place: AskPlace, trust: Trust): boolean =>
+export const mayAnswer = (place: Pick<AskPlace, "personal">, trust: Trust): boolean =>
   trust === "personal" || (trust === "shared" && !place.personal);
 
 /** The card's id: one per question of a run, the same however often the run waits again. */
@@ -126,7 +175,7 @@ const painted = (value: string, label: Label): Painted => ({
   sensitivity: label.sensitivity,
 });
 
-/** Where a card of the Bandeja points, when it is an automation's; null for any other (a flow's, the agent's). */
+/** Where a card of the Bandeja points, when it is an automation's question; null for any other. */
 export function askPlace(view: unknown): AskPlace | null {
   if (!view || typeof view !== "object") return null;
   const a = (view as { automation?: unknown }).automation;
@@ -154,8 +203,9 @@ export const untilOf = (e: Execution): number =>
   Math.min(...waitingAsks(e).map(([, a]) => a.until));
 
 /**
- * The cards of a run that waits (AU-125, AU-203): one per question not yet in the Bandeja, painted by code, each
- * waiting until its step's limit. Gives how many it added.
+ * The cards of a run that waits (AU-125, AU-203): with «Bandeja» in its step's «Por dónde» (AU-246; a step kept
+ * before it has both), one per question not yet in the Bandeja, painted by code, each waiting until its step's limit.
+ * Gives how many it added.
  */
 export function addAskCards(
   store: UserStore,
@@ -165,7 +215,8 @@ export function addAskCards(
   now: number,
 ): number {
   let added = 0;
-  for (const [step, ask] of waitingAsks(e))
+  for (const [step, ask] of waitingAsks(e)) {
+    if (!(ask.via ?? VIA_BORN.ask).includes("inbox")) continue;
     ask.questions.forEach((q, i) => {
       const card = askCardId(run, step, i);
       if (store.journal.request(card)) return;
@@ -192,6 +243,7 @@ export function addAskCards(
       });
       added++;
     });
+  }
   if (added) tellPeople(store, { kind: "asked", automation: id, run });
   return added;
 }
@@ -212,4 +264,67 @@ export function endAskCards(
     const place = askPlace(r.view);
     if (place && (!only || only(place))) store.journal.setRequest(r.id, status, now);
   }
+}
+
+// ---------------------------------------------------------------- a notice's card (AU-246)
+
+/**
+ * How long a notice's card stays in the Bandeja unless Juan puts it away: as long as a question may wait at most
+ * (AU-203's 30 days), so nothing stays there for ever.
+ */
+export const NOTICE_CARD_DAYS = 30;
+
+/** Where a notice's card points: the run and the «Avisar» that left it. */
+export interface NoticePlace {
+  automation: string;
+  run: string;
+  step: string;
+}
+
+/** The card's id: the run, the step and its place among the cards the run left. */
+export const noticeCardId = (run: string, step: string, n: number): string =>
+  `${run}~${step}~n${n}`;
+
+/** Where a notice's card of the Bandeja points; null for any other card. */
+export function noticePlace(view: unknown): NoticePlace | null {
+  if (!view || typeof view !== "object" || (view as { kind?: unknown }).kind !== "notice")
+    return null;
+  const a = (view as { automation?: unknown }).automation;
+  if (!a || typeof a !== "object") return null;
+  const p = a as Record<string, unknown>;
+  return typeof p.automation === "string" && typeof p.run === "string" && typeof p.step === "string"
+    ? { automation: p.automation, run: p.run, step: p.step }
+    : null;
+}
+
+/** Who puts a notice's card away (decision 26 of §10, as a question's): any device of the account, never a speaker. */
+export const mayDismissNotice = (trust: Trust): boolean =>
+  trust === "personal" || trust === "shared";
+
+/**
+ * A notice's card in the Bandeja (AU-246): its text, painted by code as plain text with its label (the app words the
+ * one that groups the rest, `more`), and nothing to answer. It stays until put away, or `NOTICE_CARD_DAYS`.
+ */
+export function addNoticeCard(
+  store: UserStore,
+  run: string,
+  n: Notice,
+  k: number,
+  now: number,
+): void {
+  const id = noticeCardId(run, n.step, k);
+  if (store.journal.request(id)) return;
+  store.journal.addRequest({
+    id,
+    run,
+    view: {
+      kind: "notice",
+      id,
+      prompt: painted(n.text, n.label),
+      ...(n.more !== undefined ? { more: n.more } : {}),
+      automation: { automation: n.automation, run, step: n.step } satisfies NoticePlace,
+    },
+    created: now,
+    expires: now + NOTICE_CARD_DAYS * DAY_MS,
+  });
 }

@@ -1559,7 +1559,7 @@ export function agentErrorText(t: T, code: string): string {
   if (code === "plan-invalid") return t("agent.error.planInvalid");
   // A card accepted from the conversation whose state changed since it was seen (task 73).
   if (code === "changed") return t("inbox.changed");
-  // A rehearsal's «Ahora no» (§3.4): nothing of it was done.
+  // A rehearsal's «Descartar» (§3.4): nothing of it was done.
   if (code === "not-saved") return t("agent.error.notSaved");
   // An earlier turn the planner asked to take back (C1) that could not be, as the edited message's say it.
   if (code === "tool-cannot-undo") return t("agent.error.turnCannotUndo");
@@ -1850,7 +1850,7 @@ export async function sendTurn(text: string) {
 }
 
 /**
- * A turn of Juan's: a message from the bar, his words for «Otra cosa…», or an edited message (`corrects`, the run of
+ * A turn of Juan's: a message from the bar, his words for «Otra…», or an edited message (`corrects`, the run of
  * the turn it corrects, §3.1). The error code when it failed.
  */
 async function turnOf(
@@ -2319,7 +2319,7 @@ export async function answerWithFile(
   return null;
 }
 /**
- * «Otra cosa…» (docs/conversacion.md §3.4, rule 2): the question ends, kept as text, and what Juan wrote is his next
+ * «Otra…» (docs/conversacion.md §3.4, rule 2): the question ends, kept as text, and what Juan wrote is his next
  * turn, where the planner reads it by the question.
  */
 export async function answerInWords(entryId: string, words: string) {

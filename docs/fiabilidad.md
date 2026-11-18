@@ -174,7 +174,7 @@ guarda con el resultado (`calibration` en `EvalResult`); «Modelos» la enseña 
 
 **Hecho, la hora de una tarea (2026-11-02, tarea 18):** un ámbito más del procedimiento, «Horas» (`time`, clase A,
 dentro de la propuesta): a una tarea del correo con día y sin hora, el código le busca la primera hora libre de ese
-día en el calendario (de 9:00 a 20:00, una hora) y la tarjeta la pregunta («¿A las 16:00?», un toque la toma); la
+día en el calendario (de 9:00 a 20:00, una hora) y la tarjeta la pregunta («Hora propuesta: 16:00», un toque la toma); la
 `p` sale de cuántas de las horas propuestas tomó Juan (Wilson, calibrada por nivel) y desde 0,9 la hora se pone sola
 (la tarjeta ya la enseña; al aceptar va con la propuesta salvo que Juan ponga otra o ninguna). Se juzga al aceptar:
 tomada o dejada, acierto; quitada o ignorada, fallo. Las horas que el correo dice (eventos casi siempre) las saca el

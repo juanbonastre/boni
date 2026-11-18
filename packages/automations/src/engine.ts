@@ -167,6 +167,7 @@ import {
   REPLY_TYPE,
   type RunCounts,
   type RunReply,
+  viaOf,
 } from "./people.ts";
 import type { Cell, Row } from "./rows.ts";
 import { copy, fieldLabel, joinAll, StopRun, setField, TRANSFORM_AND_LOGIC } from "./steps.ts";
@@ -1112,6 +1113,10 @@ class Run {
       questions,
       until,
       ...(step.params[ASK_PARAMS.personal] === true ? { personal: true as const } : {}),
+      via: viaOf("ask", step.params[ASK_PARAMS.via]),
+      ...(step.params[ASK_PARAMS.where] && step.params[ASK_PARAMS.where] !== "all"
+        ? { where: step.params[ASK_PARAMS.where] as NotifyWhere }
+        : {}),
     };
   }
 
@@ -1152,6 +1157,7 @@ class Run {
       text: text ? cut(asPlainText(text.value), NOTIFY_LIMITS.chars) : "",
       label: text ? text.label : this.deps.own,
       where,
+      via: viaOf("notify", step.params[NOTIFY_PARAMS.via]),
       ...(more ? { more } : {}),
     };
     if (!this.input.test) {

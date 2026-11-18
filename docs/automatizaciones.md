@@ -1029,7 +1029,9 @@ interface Connection {
   ejecuciones del periodo; y una flecha «lee» o «escribe» por cada colección de `abilities` sobre esa versión, con
   sus pasos. Las ejecuciones se cuentan con una consulta que contesta el índice `automation_runs_count` sin leer
   ninguna (`AUTOMATION_RUNS_IN_SQL`); las pruebas y las horas que no corrieron no cuentan. Con 200 automatizaciones,
-  una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`).
+  una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`). Ese límite
+  de tiempo del mapa en el servidor está en cuarentena por la tarea 158 (2026-11-18: se atasca a veces, 159, 129 y
+  177 ms contra 150, con el código en unos 35 ms); lo que el mapa devuelve se sigue comprobando.
   Hecho en P3b: `FlowMap.tsx` pinta el nodo: el rayo, su nombre, «Disparado por el usuario · Programada · versión 2»
   y sus ejecuciones del periodo; apagada, «Apagada» y en gris; sus flechas «lee» y «escribe»; elegido, «Abrir» lleva
   a ella. Una sin publicar no está nunca (`automations-publish.spec.ts`, AU-47); con 200 automatizaciones, una con
@@ -1845,7 +1847,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Los avisos pequeños son el evento `run` del SSE: estado, paso y filas por salida, nunca las filas.
   Hecho en P1, sobre el servidor simulado con la forma de la ruta de S2: «Ejecutar» en «⋯» de la cabecera, en el
   aviso de publicar y, en el teléfono, en un botón de la cabecera (AU-74); con «Campos que pide», el cuadro de «Probar»; con cambios sin publicar, «Corre la versión N, sin
-  los cambios sin publicar»; apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
+  los cambios sin publicar» (desde la parte C de P2, «Versión publicada: N»); apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
   `automations.run` y su ruta (`withRunActions`, `RUN_ROUTES`) con `data-boni-action` en los controles, «Ejecutar» en la fila
   de la lista, llevar a «Ejecuciones» y verla avanzar (P2).
   Hecho en P2: `withRunActions` y `RUN_ROUTES` registrados, con `data-boni-action` en cada control; «Ejecutar» en
@@ -2406,10 +2408,16 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   «Sin respuesta». La prueba: `e2e-boni/automations-ai.spec.ts` («AU-125 · a «Preguntar» of a run waits as a card in
   the Bandeja…», «AU-125 · «Opciones» of a «Preguntar»…» y «AU-125 · A-15 · 200 questions…»). Falta: la línea de una
   ejecución que acabó sin respuesta lo dice solo como «Completada» (su registro dice `ended: "noAnswer"`).
-- **AU-201** (F15, en parte) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, por el
+  Cambiado en la parte C de P2 (decisión 29 del §10): «Preguntar» es la otra acción del paso de «Avisar» (AU-248) y
+  su primera vista es «Acción», la pregunta, «Por dónde», la respuesta y «Días de espera». No obliga a la Bandeja: va
+  por lo que diga «Por dónde» (nace con «Notificación» y «Bandeja», AU-246), y la pregunta vive en su ejecución, que
+  se contesta también desde «Ejecuciones» y desde la notificación (AU-247). La tarjeta de la Bandeja solo existe con
+  «Bandeja» en «Por dónde».
+- **AU-201** (F15, en parte) · «Avisar» enseña **Texto** (con expresiones) y, desde la decisión 29, **Por dónde**
+  (AU-246). Manda un aviso a Juan, por el
   `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a quién (P2, P14). Detrás
   de «Añadir opción», **Dónde**: «Ordenador y móvil» (nace así), «Solo ordenador» o «Solo móvil» (confirmadas
-  por Juan el 2026-11-18; el diseño decía «En el ordenador y el móvil», «Solo en el ordenador» y «Solo en el móvil»); es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
+  por Juan el 2026-11-18; el diseño decía «En el ordenador y el móvil», «Solo en el ordenador» y «Solo en el móvil»), que se aplica a «Notificación»; es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
   que guarda sola una ejecución no avisa, y un aviso es este paso). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
   los junta («y 12 más»). El texto se pinta plano, recortado a 300 caracteres, y tocarlo abre su ejecución. En una
   prueba dice «Avisaría…» y no manda nada. No es el aviso de AU-102 (el de un fallo, que manda Boni): este lo pone
@@ -2428,6 +2436,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   tras una prueba, «Avisaría» con cada aviso y a dónde iría («Archivados 3 · ordenador»), el que junta el resto
   como «y 12 más», todo en texto plano. La prueba: `e2e-boni/automations-ai.spec.ts` («AU-203 · AU-201 · AU-202 ·
   «Probar» that reaches a «Preguntar»…»). Falta: comprobar con la app que tocar el aviso abre su ejecución.
+  Cambiado en la parte C de P2 (decisión 29 del §10): «Avisar» es una acción del paso que también pregunta
+  (AU-248), y enseña **Texto** y **Por dónde** (AU-246): nace con «Notificación», la de siempre, a los dispositivos
+  que dice «Dónde»; con «Bandeja», deja además, o en su lugar, una tarjeta con su texto y «Descartar», sin nada que
+  contestar. «Dónde» es de la notificación. Sigue sin destinatario: «Por dónde» y «Dónde» son listas cerradas de
+  lo suyo, fijas en el paso. En SALIDA, cada aviso dice también por dónde iría («Archivados 3 · ordenador ·
+  Bandeja»).
 - **AU-202** (F15, en parte) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
   respuesta de la ejecución, que se ve donde se inició: en la F15, en el panel de «Ejecutar» y de «Probar» y en la
   línea de la ejecución (sus primeros 200 caracteres); con el disparador de chat será el mensaje (F16), y en una
@@ -2444,9 +2458,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   primeros 200 caracteres): el servidor no da todavía la respuesta de una ejecución en su resumen ni en su vista.
 - **AU-203** (F15, en parte) · Una ejecución que pregunta espera sin estorbar y nunca para siempre. Al llegar a un
   «Preguntar», el motor termina lo que no depende de la respuesta y la ejecución queda «Esperando» («Esperando tu
-  respuesta · hasta mañana a las 9:40»), con su tarjeta en la Bandeja. Mientras espera:
+  respuesta · hasta mañana a las 9:40»), con su pregunta en la ejecución y por donde diga su «Por dónde» (AU-246,
+  AU-247: una notificación, una tarjeta en la Bandeja o las dos). Mientras espera:
   - Suelta su turno: las ejecuciones siguientes de esa automatización corren, y como mucho 20 esperan a la vez por
-    automatización (la siguiente falla en ese paso: «Ya hay 20 preguntas sin responder»).
+    automatización (la siguiente falla en ese paso: «Límite de ejecuciones en espera alcanzado (20)», palabras de la parte C de P2).
   - Guarda lo que necesita para seguir: las salidas de sus pasos hechos, con sus etiquetas, hasta 2 MB (razonado y
     no medido); si no cabe, el paso falla sin preguntar y lo dice. Van en el almacén del usuario, con las tablas de
     la ejecución (D-02), y se podan con ella.
@@ -2521,6 +2536,49 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   «Prueba caducada» y la tarjeta de solo lectura con «Solo desde un dispositivo personal». La prueba: `e2e-boni/automations-ai.spec.ts` («AU-125 · a
   «Preguntar» of a run waits as a card in the Bandeja…», «AU-125 · «Solo desde un dispositivo personal»…» y «AU-203 ·
   a card of a cancelled run says «Pregunta cancelada»…»).
+  Cambiado en la parte C de P2 (decisión 29): la Bandeja es una de las vías, no la única, y la pregunta se contesta
+  también desde su ejecución (AU-247), con las mismas reglas de quién contesta (decisión 26) y los mismos límites:
+  20 ejecuciones esperando, 2 MB y los días de espera.
+- **AU-246** (F15, hecho) · **Por dónde** de «Avisar» y de «Preguntar» (decisión 29 del §10): «Notificación» y
+  «Bandeja», una o las dos, en la primera vista del paso. Es una lista cerrada de las vías de Juan, fija en el paso
+  y nunca una expresión: ni algo de fuera ni un modelo la elige, ni elige un destinatario (P2, P14). «Avisar» nace
+  con «Notificación» y «Preguntar» con las dos, y un paso guardado sin ella lee esas. «Dónde» («Ordenador y móvil»,
+  «Solo ordenador», «Solo móvil») sigue detrás de «Añadir opción» y vale para la notificación. Un aviso con «Bandeja»
+  deja una tarjeta con su texto, la automatización que lo manda y «Descartar», sin nada que contestar; la apartan
+  un dispositivo personal o uno compartido, nunca un altavoz, y caduca a los 30 días. Una pregunta con «Bandeja»
+  deja su tarjeta de siempre (AU-125); sin ella, ninguna. La política ve por dónde va cada aviso (`via` de la
+  herramienta de aviso). En el editor son casillas, y la última marcada no se desmarca. La prueba:
+  `packages/automations/src/people.test.ts` («AU-246 · «Por dónde» is fixed in the step…»),
+  `apps/server/src/automations/ai.test.ts` («AU-246 · «Por dónde» of an «Avisar»…») y
+  `e2e-boni/automations-ai.spec.ts` («AU-248 · AU-246 · «Avisar» and «Preguntar» are one step with «Acción»…» y
+  «AU-246 · A-15 · an «Avisar» with «Bandeja» leaves a card…»).
+- **AU-247** (F15, en parte) · La pregunta de un «Preguntar» vive en la ejecución que espera (decisión 29 del §10).
+  Se contesta desde la ejecución en «Ejecuciones», con sus controles cuando el servidor dice `mayAnswer` (si no, la
+  pregunta y «Solo desde un dispositivo personal», sin controles); desde su tarjeta, si «Por dónde» tiene
+  «Bandeja»; y desde la notificación, que abre la ejecución. Una pregunta por llamada
+  (`POST /api/agent/automations/:id/runs/:run/answer`, la acción `automations.answer`, por la política), y
+  contestada en un sitio, su tarjeta acaba con ella. Quién contesta sigue la decisión 26: decide el servidor, un
+  altavoz nunca, y lo escrito desde un dispositivo compartido lleva la etiqueta de fuera. La notificación de una
+  pregunta es una por ejecución del paso, solo con «Notificación» en «Por dónde»: la pregunta misma, o cuántas son
+  si son varias, en texto plano, recortada a 300 caracteres y con su etiqueta. La prueba:
+  `packages/automations/src/people.test.ts` («AU-247 · a question's notification is one per run of the step…»),
+  `apps/server/src/automations/ai.test.ts` («AU-247 · a «Preguntar»'s question lives in its run…»),
+  `apps/boni-web/src/automations/client.test.ts` («AU-247 · a waiting run's question is answered by its own path…»)
+  y `e2e-boni/automations-ai.spec.ts` («AU-247 · A-15 · a waiting run's questions are answered from its run…»).
+  Falta: en el móvil, tocar la notificación abre la app pero no la ejecución (el aviso del móvil no lleva todavía su
+  `about`; hace falta leerlo en `Notices.kt` y un `PendingIntent` que abra la ejecución). En el escritorio el aviso lleva su `about`; que tocarlo abra la ejecución
+  no tiene todavía una prueba con la app (AU-203).
+  No se construye: abrir un chat desde la notificación ni botones de respuesta en la del móvil (tarea 148).
+- **AU-248** (F15, hecho) · «Avisar» y «Preguntar» son un paso con **Acción**, como «Colección» (decisión 29 del
+  §10). «Avisar» cuenta y la ejecución sigue; «Preguntar» cuenta y espera, con «respuesta» y «sin respuesta». La
+  primera vista enseña solo «Acción», el texto, «Por dónde» y, de «Preguntar», su respuesta (con sus opciones) y
+  «Días de espera»; lo demás está detrás de «Añadir opción». Cambiar la acción guarda lo que las dos comparten (el
+  texto, que «Preguntar» llama pregunta, «Por dónde» tal como se veía, «Dónde» y «Se ejecuta»), quita lo demás
+  nombrándolo, el nombre automático sigue a la acción, y las flechas de «sin respuesta» se van con ella. La paleta
+  sigue nombrando «Avisar» y «Preguntar»; «Responder» es otro paso. El motor guarda sus dos tipos y la pantalla
+  cambia de uno a otro (lo no elegido: un tipo con un parámetro de acción, que pedía migrar los pasos y las
+  ejecuciones guardados). La prueba: `apps/boni-web/src/automations/panel.test.ts` y `edit.test.ts` («AU-248 · …»)
+  y `e2e-boni/automations-ai.spec.ts` («AU-248 · AU-246 · …»).
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, en parte) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -4954,6 +5012,35 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       n8n, del que solo se tomó la idea); un límite del proveedor se respeta, y un fallo de red suele durar más de
       unos segundos. Contar intentos en vez de reintentos («2» serían dos llamadas en total): se cuenta lo que se
       añade a la llamada de siempre, para que 0 sea «como hoy».
+29. **«Avisar» y «Preguntar» son un paso con «Acción» y «Por dónde», como «Colección».** El diseño de la F15 tenía
+    dos pasos, y la pregunta solo en la Bandeja. **Juan, 2026-11-18: «preguntar no deberia obligar a hacerlo en
+    bandeja, podria ser notificacion que te abre un chat a lo mejor mas cosas que se nos ocurran en un futuro. No se
+    si "Preguntar" es el termino correcto, el concepto seria recibir un input del usuario y para ello necesita
+    avisarle de alguna forma. "Avisar" seria lo mismo pero (diferentes vias como notificacion o bandeja o las que
+    surjan en un futuro) pero no espera un input.»** Y: **«Me da la sensacion de que realmente avisar seria el
+    concepto de "comunicarse con el usuario" y "preguntas" es "me comunico y ademas espero su input"»**. Preguntado
+    «¿Uno «Avisar» y «Preguntar» en un paso con acción y «Por dónde», como «Colección»?», contestó **«Sí, así»**. Por
+    ejemplo, «Revisar facturas» tiene un paso con «Acción: Preguntar», «¿De qué cuenta es este cargo?» y «Por dónde:
+    Notificación»: le llega una notificación con la pregunta, la toca, se abre la ejecución que espera y contesta
+    allí, sin tarjeta en la Bandeja. Cambiada la acción a «Avisar», el mismo texto y la misma notificación, y la
+    ejecución sigue sin esperar. La respuesta no elegida: dos pasos aparte, con la pregunta solo en la Bandeja. Lo
+    que queda:
+    - Un paso de «Personas» con **Acción**: «Avisar» cuenta y la ejecución sigue; «Preguntar» cuenta y espera, con
+      sus salidas «respuesta» y «sin respuesta». Cambiar la acción es como en «Colección»: lo que comparten (el
+      texto, «Por dónde», «Dónde» y «Se ejecuta») se queda y lo demás se va, nombrado. La paleta sigue nombrando
+      «Avisar» y «Preguntar»; «Responder» es otro paso. El motor guarda sus dos tipos (`notify`, `ask`) y la
+      pantalla cambia de uno a otro; la otra manera, un tipo con un parámetro de acción, pedía migrar cada paso y
+      cada ejecución guardados (AU-248).
+    - **Por dónde**, de las dos acciones y en su primera vista: «Notificación» y «Bandeja», una o las dos, una lista
+      cerrada fija en el paso y nunca una expresión. «Avisar» nace con «Notificación», «Preguntar» con las dos; un
+      paso guardado sin ella lee la de su acción al nacer. «Dónde» sigue detrás de «Añadir opción» y es de la
+      notificación. Un aviso con «Bandeja» deja una tarjeta con su texto y nada que contestar (AU-246).
+    - La pregunta vive en la ejecución que espera, y se contesta desde ella en «Ejecuciones» (si el servidor dice
+      `mayAnswer`), desde su tarjeta si «Por dónde» tiene «Bandeja», o desde la notificación, que abre la
+      ejecución. La notificación de una pregunta es una por ejecución del paso: la pregunta, o cuántas son si son
+      varias, en texto plano, recortada y con su etiqueta (AU-247). Quién contesta sigue la decisión 26.
+    - No se construye todavía: abrir un chat desde la notificación, ni botones de respuesta en la notificación del
+      móvil (tarea 148).
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 

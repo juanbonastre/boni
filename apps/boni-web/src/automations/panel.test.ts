@@ -448,6 +448,45 @@ describe("«Parámetros»", () => {
     ).toEqual([]);
     expect(summary({ id: "s_f", name: "Filtrar", type: "filter", params: {} })).toEqual([]);
   });
+  it("AU-248 · «Avisar» and «Preguntar» are one step with «Acción» as its first row: the first view shows only the action, the text, «Por dónde» and, for «Preguntar», its answer and «Días de espera»; the rest is behind «Añadir opción»", () => {
+    const notify: Step = { id: "s_a", name: "Avisar", type: "notify", params: {} };
+    const ask: Step = { id: "s_p", name: "Preguntar", type: "ask", params: {} };
+    expect(rowsOf(notify).map((r) => r.param.key)).toEqual([ACTION, "text", "via"]);
+    expect(rowsOf(ask).map((r) => r.param.key)).toEqual([
+      ACTION,
+      "question",
+      "via",
+      "answer",
+      "waitDays",
+    ]);
+    // «Acción» is a choice of the two, its value the step's type, never empty.
+    for (const s of [notify, ask]) {
+      const [first] = rowsOf(s);
+      expect(first?.value).toBe(s.type);
+      expect(first?.param).toMatchObject({
+        control: "choice",
+        options: ["notify", "ask"],
+        required: true,
+        shape: true,
+      });
+      expect(missingOf(s).map((p) => p.key)).not.toContain(ACTION);
+    }
+    // «Una opción» shows its options too: still at most seven rows.
+    const one: Step = { ...ask, params: { answer: "one" } };
+    expect(rowsOf(one).map((r) => r.param.key)).toEqual([
+      ACTION,
+      "question",
+      "via",
+      "answer",
+      "options",
+      "waitDays",
+    ]);
+    expect(optionsLeft(notify).map((p) => p.key)).toEqual(["mode", "where"]);
+    expect(optionsLeft(ask).map((p) => p.key)).toEqual(["mode", "where", "personal"]);
+    // «Responder» stays its own step, with no «Acción».
+    const reply: Step = { id: "s_r", name: "Responder", type: "reply", params: {} };
+    expect(rowsOf(reply).map((r) => r.param.key)).toEqual(["text"]);
+  });
 });
 
 describe("what the output says in place of rows", () => {

@@ -819,7 +819,7 @@ test.describe("«Ejecutar»", () => {
     await nameBox(page).fill("Revisar pendientes cada semana");
     await nameBox(page).press("Enter");
     await more(page, "Ejecutar");
-    await expect(screen(page)).toContainText("Corre la versión 1, sin los cambios sin publicar");
+    await expect(screen(page)).toContainText("Versión publicada: 1");
     await screen(page).getByLabel("Mínimo").fill("300");
     await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
     await expect(toast(page)).toContainText("En ejecución");

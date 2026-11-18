@@ -264,7 +264,7 @@ const PICK = {
 };
 
 describe("a card with a free way out (§3.4, C3)", () => {
-  it("«Otra cosa…»: the question ends as text with its options, and the next turn's planner reads it", async () => {
+  it("«Otra…»: the question ends as text with its options, and the next turn's planner reads it", async () => {
     env = makeEnv();
     const c = createConversation(env.store, { now: now() });
     const a = env.agent(fakePlanner([PICK]));
@@ -409,7 +409,7 @@ describe("every kind of question has its answer (§3.4, C3)", () => {
     expect(said(both)).toContain("Regar las plantas");
   });
 
-  it("a number, a date and yes or no: each takes its own kind and «Otra cosa…» where it has one", async () => {
+  it("a number, a date and yes or no: each takes its own kind and «Otra…» where it has one", async () => {
     env = makeEnv();
     const c = createConversation(env.store, { now: now() });
     const a = env.agent(
@@ -509,7 +509,7 @@ describe("every kind of question has its answer (§3.4, C3)", () => {
     expect(said(done)).toContain("factura.pdf");
   });
 
-  it("a rehearsal: what it would write, and «Guardar» writes it; «Ahora no» writes nothing; with nothing to write, no card", async () => {
+  it("a rehearsal: what it would write, and «Guardar» writes it; «Descartar» writes nothing; with nothing to write, no card", async () => {
     env = makeEnv();
     const c = createConversation(env.store, { now: now() });
     const titles = () => env.store.list("t_tarea").map((s) => s.entity.values.f_titulo);

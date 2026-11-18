@@ -66,6 +66,7 @@ const view = (over: Partial<RunView> = {}): RunView => ({
   wrote: true,
   published: 3,
   proposal: null,
+  asks: [],
   ...over,
 });
 

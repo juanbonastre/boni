@@ -446,7 +446,9 @@ export function makeApp(opts: ServerOptions): App {
                 ? 413
                 : r.error === "not-available"
                   ? 503
-                  : 400;
+                  : r.error === "personal-device-only"
+                    ? 403
+                    : 400;
           return send(res, status, { error: r.error });
         }
         return send(res, 200, r.out ?? {});
@@ -576,6 +578,18 @@ export function makeApp(opts: ServerOptions): App {
         }
         case "GET /api/agent/automations/:id/learning":
           return automation("automations.read", { id, part: "learning" });
+        // A waiting run's question, answered from the run (AU-247): any device of the account unless its step asks
+        // for a personal one, a speaker never (decision 26; `answerRun` holds it). No `answer` puts it away.
+        case "POST /api/agent/automations/:id/runs/:run/answer": {
+          const b = await bodyOf(req);
+          return automation("automations.answer", {
+            id,
+            run: params.run ?? "",
+            step: b.step,
+            i: b.i,
+            ...(b.answer !== undefined && b.answer !== null ? { answer: b.answer } : {}),
+          });
+        }
         case "POST /api/agent/automations/:id/runs/:run/undo":
           return automation("automations.undo_run", { id, run: params.run ?? "" });
         case "PUT /api/agent/automations/:id/pins/:step":
