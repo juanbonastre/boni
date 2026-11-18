@@ -57,6 +57,19 @@ import {
   readRows,
 } from "./ai.ts";
 import {
+  BONI_ACTION_TYPE,
+  BONI_PARAMS,
+  BONI_READER_TYPE,
+  BONI_TRIGGERS,
+  BONI_VALUE,
+  type BoniAnswer,
+  type BoniCall,
+  type BoniPort,
+  boniPiece,
+  isBoniTrigger,
+  isBoniType,
+} from "./boni.ts";
+import {
   type Box,
   type ConsoleLine,
   type EvaluateInput,
@@ -380,6 +393,12 @@ export interface RunDeps {
    * (S2); a test's recorder. Without one they do not run: validation refuses them (`step.unknownType`).
    */
   people?: PeoplePort;
+  /**
+   * How a Boni step reaches Boni's code (boni.ts, F16): the server's port, which says which of Boni's automations this
+   * run is from where it is stored; a test's scripted one. Without one, the Boni steps do not run: validation refuses
+   * them (`step.unknownType`).
+   */
+  boni?: BoniPort;
 }
 
 /**
@@ -388,7 +407,13 @@ export interface RunDeps {
  */
 export function validationOf(deps: RunDeps): ValidationContext | CodeContext {
   const collection = (key: string) => deps.collections.shape(key);
-  const ai = { ...(deps.ai ? { ai: true } : {}), ...(deps.people ? { people: true } : {}) };
+  const ai = {
+    ...(deps.ai ? { ai: true } : {}),
+    ...(deps.people ? { people: true } : {}),
+    ...(deps.boni
+      ? { boni: deps.boni.automation ? { automation: deps.boni.automation } : {} }
+      : {}),
+  };
   if (!deps.box) return { collection, ...ai };
   return { collection, ...ai, collectionNamed: (name, step) => deps.collectionNamed?.(name, step) };
 }
@@ -523,6 +548,7 @@ const TRIGGER_TYPES: Record<string, (v: Cell) => boolean> = {
 
 /** The trigger's row (AU-110): every field it asks for, null where none was given; another field is refused. */
 function triggerRow(step: Step, given: RunInput["fields"]): Row {
+  if (isBoniTrigger(step.type)) return boniTriggerRow(step, given);
   const types = new Map<string, string>();
   // A «Programada» gives the hour that was due (AU-114); «Disparado por el usuario», the fields it asks for.
   if (step.type === "schedule") types.set("date", "datetime");
@@ -547,6 +573,25 @@ function triggerRow(step: Step, given: RunInput["fields"]): Row {
     json,
     label: given.label,
     ...(Object.keys(fields).length ? { fields } : {}),
+    path: null,
+    parent: null,
+  };
+}
+
+/**
+ * The row a Boni trigger gives (AU-220, AU-137): what Boni's code started it with, whose keys are Boni's code's to
+ * say. «Llega un correo»'s is labelled whole as from outside: given with any other label it does not start, and no
+ * field of it keeps a label of its own.
+ */
+function boniTriggerRow(step: Step, given: RunInput["fields"]): Row {
+  const mail = step.type === BONI_TRIGGERS.mail;
+  if (mail && given.label.integrity !== "external")
+    throw new CannotRun("a mail starts a run only labelled as from outside");
+  const fields = mail ? {} : (given.fields ?? {});
+  return {
+    json: { ...given.json },
+    label: given.label,
+    ...(Object.keys(fields).length ? { fields: { ...fields } } : {}),
     path: null,
     parent: null,
   };
@@ -1196,7 +1241,9 @@ class Run {
               ? NOTIFY_EXECUTORS[action.mode]
               : step.type === REPLY_TYPE
                 ? REPLY_EXECUTOR
-                : EXECUTORS[executorKey(step.type, action.key)]
+                : isBoniType(step.type)
+                  ? BONI_EXECUTORS[action.mode]
+                  : EXECUTORS[executorKey(step.type, action.key)]
       : undefined;
     const tries = 1 + Math.max(0, settings.retry.times);
     let stop: StepError | undefined;
@@ -1368,6 +1415,17 @@ class Run {
             ctx.agent = (r, rows) =>
               this.agentUnit(step, { row: r, index, rows, scope, state: agent, pending, record });
           if (step.type === NOTIFY_TYPE) ctx.notify = (t) => this.notify(step, record, t);
+          if (isBoniType(step.type) && this.deps.boni) {
+            const port = this.deps.boni;
+            ctx.boni = (call) =>
+              port.run({
+                ...call,
+                automation: this.input.automation.id,
+                step: step.id,
+                type: step.type,
+                test: this.input.test,
+              });
+          }
           if (step.type === REPLY_TYPE)
             ctx.reply = (t) => {
               this.reply = { step: step.id, text: asPlainText(t.value), label: t.label };
@@ -2401,6 +2459,8 @@ export interface StepContext {
   notify?(text: Labeled<Cell>): Promise<void>;
   /** A «Responder» only (AU-202): sets the run's answer, plain text with the label of what it cites. */
   reply?(text: Labeled<Cell>): void;
+  /** A Boni step only (AU-127): one unit through the port, which the engine completes with the run's own. */
+  boni?(call: Pick<BoniCall, "name" | "values" | "args" | "row">): Promise<BoniAnswer>;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */
@@ -2520,6 +2580,53 @@ const notifyOf = (ctx: StepContext) => {
     throw new PeopleFault("nothing can tell Juan here", { code: "people.unavailable" });
   return ctx.notify;
 };
+
+/**
+ * A Boni step (AU-127, AU-223): one call to Boni's code per unit (with all the rows, the first is its row), with its
+ * parameters resolved and labelled. Its row out holds the answer as `BONI_VALUE`, labelled with the answer's label
+ * joined with everything the call was given: Boni's code can lower a label, never raise one above what it read. It
+ * has no write cell: what Boni's code changes is decided behind the port (`decide`), and in «Probar» it changes nothing.
+ */
+const BONI_EXECUTORS: Readonly<Record<"all" | "perRow", Executor>> = {
+  all: {
+    mode: "all",
+    run: async (ctx, input) => ({
+      [OUT.main]: [await boniUnit(ctx, Object.values(input).flat()[0] ?? null)],
+    }),
+  },
+  perRow: {
+    mode: "perRow",
+    run: async (ctx, row) => ({ [OUT.main]: [await boniUnit(ctx, row)] }),
+  },
+};
+/** The parameters the port is not given as `values`: the arguments, and how the step runs. */
+const BONI_NOT_VALUES: ReadonlySet<string> = new Set([BONI_PARAMS.args, BONI_PARAMS.mode]);
+async function boniUnit(ctx: StepContext, row: Row | null): Promise<RowOut> {
+  if (!ctx.boni) throw new StepFault("nothing reaches Boni's code here", { code: "other" });
+  const step = ctx.step;
+  const values: Record<string, Labeled<Cell>> = {};
+  for (const p of paramsOf(step)) {
+    if (BONI_NOT_VALUES.has(p.key)) continue;
+    const v = paramValue(step, p);
+    if (v !== undefined) values[p.key] = ctx.value(v);
+  }
+  const args: Record<string, Labeled<Cell>> = {};
+  const listed = step.params[BONI_PARAMS.args];
+  for (const a of Array.isArray(listed) ? listed : []) {
+    const o = a as Record<string, ParamValue>;
+    if (typeof o.key === "string" && o.value !== undefined) args[o.key] = ctx.value(o.value);
+  }
+  const name =
+    step.type === BONI_ACTION_TYPE
+      ? String(step.params[BONI_PARAMS.action] ?? "")
+      : step.type === BONI_READER_TYPE
+        ? String(step.params[BONI_PARAMS.reader] ?? "")
+        : (boniPiece(step.type)?.old ?? step.type);
+  const answer = await ctx.boni({ name, values, args, row });
+  const read = [...Object.values(values), ...Object.values(args)].map((v) => v.label);
+  if (row) read.push(row.label, ...Object.values(row.fields ?? {}).map((f) => f.label));
+  return { json: { [BONI_VALUE]: answer.value }, label: join(answer.label, ...read) };
+}
 
 /** «Responder» (AU-202): sets the run's answer once with all the rows; the rows pass on. */
 const REPLY_EXECUTOR: Executor = {

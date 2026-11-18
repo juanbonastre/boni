@@ -413,6 +413,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: 0.135.0
         version: 0.135.0
+      '@boni/automations':
+        specifier: workspace:*
+        version: link:../automations
       '@boni/entities':
         specifier: workspace:*
         version: link:../entities
