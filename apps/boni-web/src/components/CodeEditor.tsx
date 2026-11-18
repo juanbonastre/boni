@@ -3,7 +3,8 @@
  * from its theme's variables, completion from the core's `completions` and the marks of validation at their place.
  * Loaded only when a «Código» is opened (`React.lazy`, AutomationStepView.tsx), so the rest of the app never pays for
  * it. It decides nothing: what it completes and what it marks come in as props, read by the same `readCode` as the
- * server's validation, so what it underlines is what the server will say.
+ * server's validation, so what it underlines is what the server will say. A field of ENTRADA dropped on it is written
+ * where it is let go (AU-25): `drop` says what, CodeMirror's `posAtCoords` says where.
  */
 import {
   autocompletion,
@@ -18,7 +19,7 @@ import { javascript } from "@codemirror/lang-javascript";
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { type Diagnostic, lintKeymap, setDiagnostics } from "@codemirror/lint";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
+import { dropCursor, EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 
@@ -47,6 +48,12 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   /** What an empty editor shows. */
   hint?: string;
+  /**
+   * What a drag let go on the editor writes (AU-25), given the code just before where it lands: a text (empty: the
+   * drag is ours and writes nothing), or null when the drag is not one this editor takes (then it is CodeMirror's own,
+   * as a text dragged in). Also asked on every `dragover`, with `peek` and no `before`, only to know whether it is ours.
+   */
+  drop?: (e: DragEvent, before: string, peek: boolean) => string | null;
 }
 
 /** The theme: every colour is one of the app's variables, so light and dark follow it (I-01). */
@@ -67,6 +74,8 @@ const theme = EditorView.theme({
   },
   ".cm-content": { caretColor: "var(--text)", padding: "6px 0" },
   ".cm-cursor": { borderLeftColor: "var(--text)" },
+  // Where a field dragged over the editor will go (AU-25).
+  ".cm-dropCursor": { borderLeft: "2px solid var(--accent)" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
     backgroundColor: "var(--accent-soft) !important",
   },
@@ -190,6 +199,36 @@ export default function CodeEditor(props: CodeEditorProps) {
             EditorView.editable.of(!props.readOnly),
           ]),
           ...(props.hint ? [placeholder(props.hint)] : []),
+          // A field dropped (AU-25) goes where the pointer is let go, not where the caret was. Taken before
+          // CodeMirror's own drop, which would write the drag's plain text (the bare key) instead; `posAtCoords(…,
+          // false)` gives the nearest place also past a line's end or under the last line, where the precise one
+          // gives none.
+          dropCursor(),
+          EditorView.domEventHandlers({
+            dragover: (e, v) => {
+              const drop = latest.current.drop;
+              if (!drop || v.state.readOnly || drop(e, "", true) === null) return false;
+              if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+              return true;
+            },
+            drop: (e, v) => {
+              const drop = latest.current.drop;
+              if (!drop || v.state.readOnly) return false;
+              const at = v.posAtCoords({ x: e.clientX, y: e.clientY }, false);
+              const text = drop(e, v.state.sliceDoc(Math.max(0, at - 200), at), false);
+              if (text === null) return false;
+              if (text) {
+                v.focus();
+                v.dispatch({
+                  changes: { from: at, insert: text },
+                  selection: { anchor: at + text.length },
+                  userEvent: "input.drop",
+                  scrollIntoView: true,
+                });
+              }
+              return true;
+            },
+          }),
           EditorView.contentAttributes.of({ "aria-label": props.label }),
           EditorView.updateListener.of((u) => {
             if (u.docChanged) latest.current.onChange?.(u.state.doc.toString());

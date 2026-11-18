@@ -46,10 +46,12 @@ export function dragField(e: React.DragEvent, field: DraggedField) {
   e.dataTransfer.setData("text/plain", field.path.join("."));
   e.dataTransfer.effectAllowed = "copy";
 }
-export const carriesField = (e: React.DragEvent) => e.dataTransfer.types.includes(FIELD);
-export function draggedOf(e: React.DragEvent): DraggedField | null {
+/** A drag as React or the DOM gives it: the «Código» editor's is the DOM's (CodeEditor.tsx). */
+type Dragged = { dataTransfer: DataTransfer | null };
+export const carriesField = (e: Dragged) => !!e.dataTransfer?.types.includes(FIELD);
+export function draggedOf(e: Dragged): DraggedField | null {
   try {
-    const v = JSON.parse(e.dataTransfer.getData(FIELD)) as Partial<DraggedField>;
+    const v = JSON.parse(e.dataTransfer?.getData(FIELD) ?? "") as Partial<DraggedField>;
     return typeof v.from === "string" && Array.isArray(v.path) && v.path.length
       ? { from: v.from, path: v.path.map(String) }
       : null;

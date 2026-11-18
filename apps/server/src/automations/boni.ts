@@ -23,7 +23,8 @@ import {
   type Val,
 } from "@boni/agent";
 import type { BoniAnswer, BoniAutomation, BoniCall, BoniPort } from "@boni/automations";
-import { BONI_PARAMS } from "@boni/automations";
+import { BONI_PARAMS, BONI_TRIGGER_OWNER } from "@boni/automations";
+import type { Label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 
 export interface BoniWiring {
@@ -31,6 +32,18 @@ export interface BoniWiring {
   reaches(store: UserStore): boolean;
   /** The account's agent of that store, made at the first call of a Boni step. */
   agentOf(store: UserStore): Agent;
+  /**
+   * The row Boni's code would give the trigger of one of its automations now, for «Probar» (F16 S2c): «El gasto
+   * llega al aviso»'s, the month's spending and the budget, as the flow's «Probar» bound them (models.ts). Null when
+   * the code gives none.
+   */
+  triggerRow?(store: UserStore, automation: BoniAutomation): BoniRow | null;
+}
+
+/** A trigger's row as Boni's code makes it: its values, and its label, the code's (never a hand's). */
+export interface BoniRow {
+  json: Record<string, Json>;
+  label: Label;
 }
 
 let wired: BoniWiring | null = null;
@@ -59,6 +72,36 @@ export function boniOf(store: UserStore, id: string): BoniAutomation | undefined
   const automation = BONI_STORED[id];
   if (!automation) return undefined;
   return store.journal.automation(id)?.by === BONI_AUTHOR ? automation : undefined;
+}
+
+/**
+ * Whether Boni's flow `id` runs as its automation (F16 S2c): converted, and the automation Boni's. «Volver al flujo
+ * de antes» (reverted) or a flow that could not be converted yet (kept) runs on the engine of before, as it did.
+ */
+export function onNewEngine(store: UserStore, id: string): boolean {
+  return store.journal.flowConversion(id)?.state === "converted" && boniOf(store, id) !== undefined;
+}
+
+/** Whether Boni's automation `id` is on: its switch (AU-194), as the flow's was. */
+export function boniEnabled(store: UserStore, id: string): boolean {
+  const row = store.journal.automation(id);
+  return !!row && !row.deleted && row.by === BONI_AUTHOR && row.enabled;
+}
+
+/**
+ * What «Probar» gives the trigger `type` of automation `id` when the screen gives nothing (F16 S2c): the row Boni's
+ * code would give it now, only for one of Boni's automations and one of its triggers; else null.
+ */
+export function boniTestRow(
+  store: UserStore,
+  id: string,
+  type: string | undefined,
+): BoniRow | null {
+  const automation = boniOf(store, id);
+  if (!automation || !type || BONI_TRIGGER_OWNER[type] !== automation) return null;
+  const w = wired;
+  if (!w?.reaches(store)) return null;
+  return w.triggerRow?.(store, automation) ?? null;
 }
 
 /** The fixed codes a Boni unit fails with: what the agent stopped on, never a text of outside. */

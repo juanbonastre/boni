@@ -60,17 +60,7 @@ function DeletedScreen({ onClose }: { onClose: () => void }) {
       gone = true;
     };
   }, [t]);
-  // Esc closes it and stays on the list: taken before the app's own Esc, which on this page goes back to the start
-  // (App.tsx `useShortcuts` listens on the window before the modal does).
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      e.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [onClose]);
+  // Esc closes it and stays on the list: the modal's own (`Modal`, before the app's Esc).
   const nameOf = (row: DataRow) => String(row.values[SYS.flows.title] ?? "");
   /** «Recuperar»: back to the list, off; it leaves this one. */
   const recover = async (row: DataRow) => {

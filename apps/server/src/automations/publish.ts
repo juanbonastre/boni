@@ -49,10 +49,11 @@ import {
   type StartedBy,
   stepPrints,
 } from "@boni/automations";
+import type { Label } from "@boni/entities";
 import type { AutomationVersionInfo, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
-import { boniContextFor } from "./boni.ts";
+import { boniContextFor, boniOf } from "./boni.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { pausedDoc } from "./learning.ts";
@@ -365,6 +366,15 @@ export function setEnabled(
   return { enabled };
 }
 
+/**
+ * How Boni's code starts a run of one of Boni's automations (F16 S2c, AU-220): its trigger's row as that code made it
+ * («El gasto llega al aviso»: the month's spending and the budget, the code's own figures). Only code passes it; a
+ * request never does, and it starts no automation of a person's.
+ */
+export interface BoniStart {
+  row: { json: Record<string, Cell>; label: Label };
+}
+
 export interface RunRequest {
   /** The trigger it starts in. */
   trigger: string;
@@ -378,6 +388,7 @@ export interface RunRequest {
  * never published or off, nothing starts (AU-191, AU-194). `run`: the run's id, which every operation it saves
  * carries in the log; the execution names the version it ran (`automation.version`). `watch.onStep` is told as each
  * step starts and ends, which is how runs.ts keeps the run as it goes (AU-99); it reaches nothing the run decides.
+ * `watch.boni` is how Boni's code starts its own (`BoniStart`): refused for an automation that is not Boni's.
  */
 export async function runPublished(
   store: UserStore,
@@ -386,9 +397,11 @@ export async function runPublished(
   hand: Hand & { trust: Trust; zone: string },
   run: string,
   box: Box = sandboxBox(),
-  watch: Pick<RunDeps, "onStep"> = {},
+  watch: Pick<RunDeps, "onStep"> & { boni?: BoniStart } = {},
   startedBy: StartedBy = "user",
 ): Promise<Execution | Refusal | ServiceError> {
+  const { boni: start, ...seen } = watch;
+  if (start && !boniOf(store, id)) return BAD;
   const row = store.journal.automation(id);
   if (!row || row.deleted) return NOT_FOUND;
   if (row.published === null) return { refused: "unpublished" };
@@ -410,15 +423,21 @@ export async function runPublished(
       {
         automation,
         trigger: request.trigger,
-        // Typed by his hand, or the hour a «Programada» was due: the code's, not his device's.
-        fields: {
-          json: request.fields,
-          label: startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
-        },
+        // Typed by his hand, or the hour a «Programada» was due: the code's, not his device's; Boni's, as its code
+        // made it.
+        fields: start
+          ? start.row
+          : {
+              json: request.fields,
+              label: startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
+            },
         test: false,
         startedBy,
       },
-      { ...runDeps(store, id, hand, box, run, { automation, names: version.names }), ...watch },
+      {
+        ...runDeps(store, id, hand, box, run, { automation, names: version.names }),
+        ...seen,
+      },
     );
   } catch (e) {
     if (e instanceof CannotRun) return { refused: "invalid", problems: [...(e.problems ?? [])] };

@@ -43,7 +43,7 @@ import {
   type Val,
 } from "@boni/agent";
 import { type EvalResult, evalModel, evalRole } from "@boni/agent/evals";
-import { callKindOf } from "@boni/automations";
+import { BONI_TRIGGERS, callKindOf } from "@boni/automations";
 import { wrappedKeysIn } from "@boni/identity";
 import { fetchText } from "@boni/net";
 import {
@@ -55,6 +55,10 @@ import {
   wrappedKeyProvider,
 } from "@boni/store";
 import type { AgentHost, Providers } from "./agent.ts";
+import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
+import { type BoniFlow, keepBoniFlows } from "./automations/convert.ts";
+import { runBoni } from "./automations/runs.ts";
+import { publishedOf } from "./automations/service.ts";
 import type { Db } from "./db.ts";
 import { BUDGET_FLOW, ensureFlow } from "./flows.ts";
 import { bodyOf, send } from "./reply.ts";
@@ -128,6 +132,21 @@ const toldIn = (store: UserStore, run: string): boolean =>
       (x) => x.decision === "allow" && (x.detail as { tool?: unknown } | null)?.tool === "notify",
     );
 
+/** «Aviso del presupuesto» as one of Boni's automations (F16 S2c): converted and kept current by `noticeFlow`. */
+const BUDGET_BONI: BoniFlow = { id: BUDGET_FLOW, boni: "budgetNotice" };
+/** The row its trigger gets on the engine of automations: the code's own figures, as the flow's trigger bound them. */
+const rowOf = (f: Figures): BoniRow => ({
+  json: { spent: f.spent, budget: f.budget },
+  label: codeLabel("spending"),
+});
+/** Whether a run of the automation told: one of its steps' records sent a notice (an «Avisar» that ran). */
+const toldInRun = (store: UserStore, run: string): boolean =>
+  store.journal.automationRunSteps(run).some((x) => {
+    const n = (JSON.parse(x.record) as { notices?: { notices?: unknown[]; sent?: boolean } })
+      .notices;
+    return !!n?.sent && (n.notices?.length ?? 0) > 0;
+  });
+
 /** One evaluation kept for the page (the last few per account). */
 export interface Evaluation extends EvalResult {
   role: Role;
@@ -158,6 +177,8 @@ export interface ModelsOptions {
   /** The server's own keys (its environment), used when the account has none of its own. */
   serverKeys: Partial<Record<Connection, string>>;
   now?: () => number;
+  /** The accounts' zone (IANA), for a run of «Aviso del presupuesto» on the engine of automations; UTC when not given. */
+  zone?: string;
   /** Tests only: the catalogue's download. */
   fetchCatalogue?: (url: string) => Promise<string>;
   /** Tests only: how a role's provider is made (default: the real one for its connection). */
@@ -408,6 +429,10 @@ export class AccountModels {
       console.warn(`models ${account}: «Aviso del presupuesto» not kept (${(e as Error).message})`);
     }
     const passed = `${figures.spent} € of ${figures.budget} € this month, past the warning`;
+    if (onNewEngine(store, BUDGET_FLOW)) {
+      this.warnByAutomation(account, store, month, figures);
+      return;
+    }
     if (flow && !flow.enabled) {
       if (this.silent.get(account) !== month)
         console.log(`models ${account}: ${passed}; «Aviso del presupuesto» is off: no notice`);
@@ -461,10 +486,87 @@ export class AccountModels {
     void job.finally(() => this.jobs.delete(job));
   }
 
-  /** Boni's «Aviso del presupuesto» at its latest version: the user's when he saved one, else Boni's, saved only when
-   * it changed (as the mail's flows are kept). */
+  /**
+   * `warn` once «Aviso del presupuesto» is one of Boni's automations (F16 S2c, AU-220, AU-221): the same, with its
+   * published version run by `runBoni`, its trigger's row the code's figures. Off (its switch), nothing is told and the
+   * month stays unmarked. The month is marked before the run starts, as for the flow. The notice is never lost to the
+   * machinery: refused before it ran (unpublished, a version that does not validate), or failed before its «Avisar»
+   * told, the code tells with its own text. A run that ended or waits on a question of a version of Juan's without
+   * telling is his version's doing, as a flow's run that ended was.
+   */
+  private warnByAutomation(
+    account: number,
+    store: UserStore,
+    month: string,
+    figures: Figures,
+  ): void {
+    const passed = `${figures.spent} € of ${figures.budget} € this month, past the warning`;
+    if (!boniEnabled(store, BUDGET_FLOW)) {
+      if (this.silent.get(account) !== month)
+        console.log(`models ${account}: ${passed}; «Aviso del presupuesto» is off: no notice`);
+      this.silent.set(account, month);
+      return;
+    }
+    store.setSetting(WARNED, month);
+    const byCode = (why: string) => {
+      this.o.host.notify(
+        account,
+        `Los modelos llevan ${figures.spent} € de ${figures.budget} € este mes.`,
+        "own",
+      );
+      console.log(`models ${account}: ${passed}: told by code (${why})`);
+    };
+    const trigger =
+      publishedOf(store, BUDGET_FLOW)?.automation.steps.find(
+        (x) => x.type === BONI_TRIGGERS.spending,
+      )?.id ?? "trigger";
+    // After this check has answered: the run is its own work, not a part of the model call that asked.
+    const job = Promise.resolve()
+      .then(() =>
+        runBoni(
+          store,
+          BUDGET_FLOW,
+          { trigger, fields: rowOf(figures).json },
+          { row: rowOf(figures) },
+          this.o.zone ?? "UTC",
+        ),
+      )
+      .then(
+        (r) => {
+          if ("refused" in r || !("id" in r)) {
+            byCode(`its automation did not start (${"refused" in r ? r.refused : r.error})`);
+            return;
+          }
+          console.log(
+            `models ${account}: ${passed}: «Aviso del presupuesto» v${r.version ?? "?"} ran (${r.state})`,
+          );
+          if (r.state === "failed" && !toldInRun(store, r.id))
+            byCode("its run failed before «Avisar»");
+        },
+        (e) => {
+          console.error(
+            `models ${account}: «Aviso del presupuesto» failed (${(e as Error).message})`,
+          );
+          byCode("its run failed");
+        },
+      )
+      // Whatever goes wrong telling, the job ends: nothing here may take the server down.
+      .catch((e) =>
+        console.error(`models ${account}: the notice failed (${(e as Error).message})`),
+      );
+    this.jobs.add(job);
+    void job.finally(() => this.jobs.delete(job));
+  }
+
+  /**
+   * Boni's «Aviso del presupuesto» at its latest version: the user's when he saved one, else Boni's, saved only when
+   * it changed (as the mail's flows are kept). Then, as one of Boni's automations (F16 S2c): converted while it is not
+   * yet, and Boni's version kept current with that flow version (`keepBoniFlows`); a version Juan published stays,
+   * and one he sent back to the flow («Volver al flujo de antes») runs on the engine of before.
+   */
   private noticeFlow(store: UserStore): FlowRow {
-    return ensureFlow(
+    const now = this.now();
+    const flow = ensureFlow(
       store,
       {
         id: BUDGET_FLOW,
@@ -473,8 +575,20 @@ export class AccountModels {
         plan: BUDGET_PLAN,
         by: "preset",
       },
-      this.now(),
+      now,
     );
+    try {
+      keepBoniFlows(store, [BUDGET_BONI], now);
+    } catch (e) {
+      // The flow stays as it was, and runs on the engine of before.
+      console.warn(`«Aviso del presupuesto» not converted (${(e as Error).message})`);
+    }
+    return flow;
+  }
+
+  /** What «Probar» of the automation gives its trigger when nothing is typed (boni.ts `triggerRow`). */
+  noticeRow(account: number): BoniRow {
+    return rowOf(figuresOf(this.spending(account).eur, this.config(account).budget.monthlyEur));
   }
 
   /**
@@ -1308,6 +1422,12 @@ export class AccountModels {
     store.setSetting(LIST, JSON.stringify(list));
   }
 
+  /** «Aviso del presupuesto» is on: its automation's switch once converted, else its flow's (on when not kept yet). */
+  private noticeOn(store: UserStore): boolean {
+    if (onNewEngine(store, BUDGET_FLOW)) return boniEnabled(store, BUDGET_FLOW);
+    return store.journal.flow(BUDGET_FLOW)?.enabled ?? true;
+  }
+
   /** What the page reads. */
   view(account: number) {
     const c = this.config(account);
@@ -1322,7 +1442,7 @@ export class AccountModels {
       })),
       budget: c.budget,
       // «Aviso del presupuesto» is on: passing the warning tells (off, Ajustes says the notice is off; D-53).
-      notice: this.o.host.store(account).journal.flow(BUDGET_FLOW)?.enabled ?? true,
+      notice: this.noticeOn(this.o.host.store(account)),
       usdToEur: c.usdToEur,
       spending,
       over: c.budget.monthlyEur > 0 && spending.eur >= c.budget.monthlyEur,

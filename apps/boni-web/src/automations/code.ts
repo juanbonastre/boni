@@ -149,8 +149,11 @@ export function codeBlocked(
 }
 
 /** «Consola» as the last test kept it, each line checked: anything else is left out, never painted (A-01). */
-export function consoleOf(test: StepTest | undefined): { lines: ConsoleLine[]; dropped: number } {
-  const c = (test as { console?: unknown } | undefined)?.console;
+export function consoleOf(test: { console?: unknown } | undefined): {
+  lines: ConsoleLine[];
+  dropped: number;
+} {
+  const c = test?.console;
   if (!c || typeof c !== "object") return { lines: [], dropped: 0 };
   const raw = (c as { lines?: unknown }).lines;
   const dropped = (c as { dropped?: unknown }).dropped;

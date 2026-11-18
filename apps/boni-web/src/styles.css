@@ -13966,6 +13966,12 @@ button.auto-log-line {
   padding: 0 6px 0 78px;
   color: var(--muted);
 }
+/* A «Código»'s «Consola» in the tree (AU-101): its lines as under its output, a little shorter. */
+.auto-tree-console .auto-console-lines {
+  margin-top: 2px;
+  max-height: 160px;
+  color: var(--text);
+}
 
 /* ---------------------------------------------------------------- what a run asked, in the inbox (AU-193, F14d P3b) */
 .run-asked {

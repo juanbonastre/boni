@@ -96,16 +96,20 @@ function Ask({
   );
 }
 
-function askLines(t: T, lang: string, w: ModelWhere): string[] {
+/**
+ * The question's lines (AU-233, AU-241): where the model is used, then one line per tag a change leaves «Sin modelo»
+ * with how many automations use it («Barato se queda sin modelo. La usan 3 automatizaciones.»), from the list's own
+ * counts (`tags[].uses`); a tag the list does not have, or no automation uses, says only that it is left.
+ */
+function askLines(t: T, lang: string, w: ModelWhere, tags: ModelsList["tags"]): string[] {
   return [
     ...(used(w) ? [t("models.removeAsk", { where: whereText(t, lang, w) })] : []),
-    ...(w.tagsLeft.length
-      ? [
-          t(w.tagsLeft.length === 1 ? "models.leftAsk" : "models.leftAskMany", {
-            tags: w.tagsLeft.join(", "),
-          }),
-        ]
-      : []),
+    ...w.tagsLeft.map((name) => {
+      const n = tags.find((g) => g.name === name)?.uses.automations ?? 0;
+      return n > 0
+        ? t("models.leftAskUses", { tags: name, uses: t("models.rowUses", { n }) })
+        : t("models.leftAsk", { tags: name });
+    }),
   ];
 }
 
@@ -469,6 +473,7 @@ function Cases({ t, cases }: { t: T; cases: EvalCase[] }) {
 export function Connections({
   t,
   view,
+  tags,
   open,
   readOnly,
   onToggle,
@@ -476,6 +481,8 @@ export function Connections({
 }: {
   t: T;
   view: View;
+  /** The list's tags, with how many automations use each: the question says it (AU-241). */
+  tags: ModelsList["tags"];
   open: boolean;
   readOnly: boolean;
   onToggle: () => void;
@@ -509,7 +516,7 @@ export function Connections({
           ...(used(w)
             ? [t("models.keyAsk", { model: nameOfId(w.id), where: whereText(t, lang, w) })]
             : []),
-          ...askLines(t, lang, { ...w, rows: [], automations: 0, conversations: 0 }),
+          ...askLines(t, lang, { ...w, rows: [], automations: 0, conversations: 0 }, tags),
         ]),
       });
     } catch (e) {
@@ -851,7 +858,7 @@ export function ModelPanel({
     try {
       const r = await agentApi.tagModel(m.id, next, confirm);
       if (r && "where" in r)
-        setAsk({ what: "tags", tags: next, lines: askLines(t, lang, r.where) });
+        setAsk({ what: "tags", tags: next, lines: askLines(t, lang, r.where, list.tags) });
       else if (r) {
         setAsk(null);
         onList(r);
@@ -884,7 +891,8 @@ export function ModelPanel({
     setProblem(null);
     try {
       const r = await agentApi.removeModel(m.id, confirm);
-      if (r && "where" in r) setAsk({ what: "remove", lines: askLines(t, lang, r.where) });
+      if (r && "where" in r)
+        setAsk({ what: "remove", lines: askLines(t, lang, r.where, list.tags) });
       else if (r) {
         onClose();
         onList(r);

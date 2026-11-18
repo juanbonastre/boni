@@ -228,7 +228,6 @@ test.describe("an expression with JavaScript", () => {
     await expect(editor.locator(".auto-expr-code")).toHaveText("{{ $json.total + 1 }}");
     await expect(editor.locator(".auto-chip")).toHaveCount(1);
   });
-  test.fixme("AU-25 · a field dragged into JavaScript is written by its key (`$json.precio`), the entry and the completion show its name («Precio»), and nowhere outside an expression or a «Código» is a key read", async () => {});
 });
 
 /** A «Código» that reads the books it receives and writes a line per book to «Consola» (AU-30, AU-33). */
@@ -306,6 +305,29 @@ const failedWith = (why: Record<string, unknown>) =>
 const editorOf = (page: Page) => param(page, "source").locator(".cm-editor");
 const contentOf = (page: Page) => editorOf(page).locator(".cm-content");
 const options = (page: Page) => page.locator(".cm-tooltip-autocomplete li");
+/** A field of ENTRADA's «Esquema», by what it shows («Título · titulo» in a «Código»). */
+const inputField = (page: Page, shown: string) =>
+  view(page)
+    .getByRole("region", { name: "Entrada" })
+    .locator(".auto-schema-list:not(.nested) > .auto-schema-field")
+    .filter({ has: page.locator(".auto-schema-name", { hasText: new RegExp(`^${shown}$`) }) })
+    .first();
+/** Drags `from` with the mouse at a person's pace and lets it go over `to`: its middle, or near its right end. */
+async function dragOnto(
+  page: Page,
+  from: ReturnType<Page["locator"]>,
+  to: ReturnType<Page["locator"]>,
+  where: "middle" | "end" = "middle",
+) {
+  const a = await from.boundingBox();
+  const b = await to.boundingBox();
+  if (!a || !b) throw new Error("nothing to drag or nowhere to drop");
+  await page.mouse.move(a.x + Math.min(20, a.width / 2), a.y + a.height / 2);
+  await page.mouse.down();
+  const x = where === "end" ? b.x + b.width - 6 : b.x + b.width / 2;
+  await page.mouse.move(x, b.y + b.height / 2, { steps: 15 });
+  await page.mouse.up();
+}
 /** The text of the editor, as CodeMirror holds it. */
 const sourceIn = (page: Page) =>
   contentOf(page).evaluate((el) =>
@@ -396,6 +418,79 @@ test.describe("«Código»", () => {
     await expect(after).not.toContainText("· titulo");
   });
 
+  test("AU-25 · a field dragged from ENTRADA into JavaScript is written by its key where it is let go (`$json.titulo` with a current row, `$input.first().paginas` with all the rows), the entry shows its name, and the draft keeps it", async ({
+    page,
+  }) => {
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6c10";
+    const a = coded(id, ["const a = ", "const b = ", "return [{ a, b }];"].join("\n"));
+    const perRow = {
+      ...a,
+      steps: a.steps.map((s) =>
+        s.id === "s_01jcodigo" ? { ...s, params: { ...s.params, mode: "perRow" } } : s,
+      ),
+    };
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, perRow));
+    const lines = contentOf(page).locator(".cm-line");
+    // Let go past the end of the first line: it goes at that line's end, not where the caret was (nowhere yet).
+    await dragOnto(page, inputField(page, "Título · titulo"), lines.nth(0), "end");
+    await expect
+      .poll(() => sourceIn(page))
+      .toBe(["const a = $json.titulo", "const b = ", "return [{ a, b }];"].join("\n"));
+    // With all the rows there is no current row: the input's first row, at the second line's end.
+    await param(page, "mode").getByText("Una vez con todas las filas").click();
+    await dragOnto(page, inputField(page, "Páginas · paginas"), lines.nth(1), "end");
+    const written = [
+      "const a = $json.titulo",
+      "const b = $input.first().paginas",
+      "return [{ a, b }];",
+    ].join("\n");
+    await expect.poll(() => sourceIn(page)).toBe(written);
+    // The editor has the caret after what was dropped, and the draft saved it.
+    await expect(contentOf(page)).toBeFocused();
+    await expect
+      .poll(async () => {
+        const last = (await drafts(page, id)).at(-1) as
+          | { steps: { id: string; params?: { source?: string } }[] }
+          | undefined;
+        return last?.steps.find((s) => s.id === "s_01jcodigo")?.params?.source ?? null;
+      })
+      .toBe(written);
+  });
+
+  test("AU-25 · the completion writes a field's key and shows its name after the current row (`$json.`) and after another step's row (`$('Paso').first().`), as after the input's first row", async ({
+    page,
+  }) => {
+    const a = coded("a_01jx8x0t2v4x6z8b0d2f4h6c11", "return [];");
+    const perRow = {
+      ...a,
+      steps: a.steps.map((s) =>
+        s.id === "s_01jcodigo" ? { ...s, params: { ...s.params, mode: "perRow" } } : s,
+      ),
+    };
+    await openCode(page, testOf(CODE_DONE(), { kept: FIVE_MIN }, perRow));
+    await contentOf(page).click();
+    await page.keyboard.press("ControlOrMeta+Home");
+    // The current row: its fields by key, each with its name beside.
+    await page.keyboard.type("const a = $json.", { delay: 60 });
+    await expect(options(page).filter({ hasText: "paginas" })).toContainText("Páginas");
+    await page.keyboard.type("pag", { delay: 60 });
+    await expect(options(page)).toHaveCount(1);
+    await page.waitForTimeout(250);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => sourceIn(page)).toContain("const a = $json.paginas");
+    await typeLine(page, ";");
+    // Another step's row: the fields its last test gave, the same way.
+    await page.keyboard.type("const b = $('Buscar filas en Libros').first().", { delay: 40 });
+    await expect(options(page).filter({ hasText: "titulo" })).toContainText("Título");
+    await page.keyboard.type("tit", { delay: 60 });
+    await expect(options(page)).toHaveCount(1);
+    await page.waitForTimeout(250);
+    await page.keyboard.press("Enter");
+    await expect
+      .poll(() => sourceIn(page))
+      .toContain("const b = $('Buscar filas en Libros').first().titulo");
+  });
+
   test("AU-33 · after «Probar paso», «Consola» is a strip under the step's output, folded when it is empty, with each line and the line of the code that wrote it; with lines left out it says how many", async ({
     page,
   }) => {
@@ -414,6 +509,36 @@ test.describe("«Código»", () => {
     // A line written for a row says which, counted from 1.
     await expect(lines.nth(1).locator(".auto-console-where")).toHaveText("línea 3 · fila 2");
     await expect(strip.locator(".auto-console-more")).toHaveText("y 340 líneas más");
+  });
+
+  test("AU-101 · a «Código» tested in the editor has in «Registro»'s tree what it read and its whole «Consola», as a run has: each line with the line of the code, how many were left out, and the code's text as plain text", async ({
+    page,
+  }) => {
+    await openCode(
+      page,
+      testOf(
+        CODE_DONE({ reads: [{ collection: "libros", rows: 128 }] }),
+        {},
+        coded("a_01jx8x0t2v4x6z8b0d2f4h6c12"),
+      ),
+    );
+    await testStep(page).click();
+    await expect(view(page).locator(".auto-console")).toHaveAttribute("open");
+    // The step's view is closed first: open, it covers the bar of «Registro».
+    await view(page).getByRole("button", { name: "Cerrar" }).click();
+    await page.locator(".auto-test-bar").getByRole("button", { name: "Ver cada paso" }).click();
+    const line = page.locator(".auto-tree-line").filter({ hasText: "Código" });
+    await expect(line).toContainText("Leyó 128 filas de Libros");
+    const wrote = line.locator(".auto-tree-console");
+    await expect(wrote).toContainText("Consola");
+    const lines = wrote.locator(".auto-console-line");
+    await expect(lines).toHaveCount(2);
+    await expect(lines.first().locator(".auto-console-text")).toHaveText(
+      "fila <b>Rayuela</b> [aquí](https://ejemplo.example.com)",
+    );
+    await expect(lines.nth(1).locator(".auto-console-where")).toHaveText("línea 3 · fila 2");
+    await expect(wrote.locator(".auto-console-more")).toHaveText("y 340 líneas más");
+    await expect(wrote.locator("b, a, button")).toHaveCount(0);
   });
 
   test("AU-33 · code that throws marks its line in the editor and says the message as it is, as plain text: a message with HTML or a link is read letter by letter", async ({

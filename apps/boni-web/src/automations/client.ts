@@ -67,6 +67,8 @@ export interface StepTest {
   stale: boolean;
   /** «Consola» (AU-33): the code's own text, checked before it is painted (automations/code.ts `consoleOf`). */
   console?: { lines: ConsoleLine[]; dropped: number };
+  /** What its JavaScript read through its connections (AU-101): which collection and how many rows, never the rows. */
+  reads?: { collection: string; rows: number }[];
   /** «Haría esto» of a «Código» (AU-181): its values are the code's, painted as plain text (A-01). */
   would?: CodeWould;
   /**
