@@ -50,6 +50,11 @@ export interface PolicyCall {
    */
   row?: Readonly<Record<string, Cell>>;
   written?: number;
+  /**
+   * A read: the fields it filters, sorts, counts or sums by, as the step asked it, before the connection's own filter
+   * was added (`narrow`). What P29 checks against «Solo estos campos» for an AI step (AU-205).
+   */
+  fields?: readonly string[];
 }
 
 /**
@@ -72,11 +77,21 @@ export interface FieldShape {
    * only one of these (AU-52); the server's collections give them (S1), and a field without them is not checked.
    */
   options?: readonly string[];
+  /**
+   * The options' names by id, for an «Agente»'s schema (AU-197): only those a planner may read (not from outside).
+   * A value is always the option's id.
+   */
+  optionNames?: Readonly<Record<string, string>>;
 }
-/** A collection as validation and the steps need it: its fields by key. Names are the app's business. */
+/**
+ * A collection as validation and the steps need it: its fields by key. Its name and what it is for are only for an
+ * «Agente»'s schema (AU-197), and only when a planner may read them (what Juan wrote, never a text from outside).
+ */
 export interface CollectionShape {
   key: string;
   fields: readonly FieldShape[];
+  name?: string;
+  description?: string;
 }
 
 /** A row as the collections give it: its fields by key, its labels and the saved row it is (AU-04). */
@@ -191,9 +206,14 @@ export type Labelled = Record<string, Labeled<Cell>>;
 export interface Gate {
   shape(collection: string): CollectionShape | undefined;
   /** `values`: the resolved values of the conditions, by their place, with their labels. */
-  find(query: FindQuery, values: Labelled): Promise<StoredRow[]>;
+  find(query: FindQuery, values: Labelled, fields?: readonly string[]): Promise<StoredRow[]>;
   get(collection: string, id: Labeled<Cell>): Promise<StoredRow | undefined>;
-  aggregate(query: AggregateQuery, values: Labelled): Promise<AggregateResult[]>;
+  /** `fields` (find and aggregate): what the step asked to filter, sort or sum by (`PolicyCall.fields`). */
+  aggregate(
+    query: AggregateQuery,
+    values: Labelled,
+    fields?: readonly string[],
+  ): Promise<AggregateResult[]>;
   /** `values`: the fields written with their labels (empty for `trash`). */
   write(change: Change, values: Labelled): Promise<WriteResult>;
   /**
@@ -235,10 +255,11 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
     values: Labelled,
     rows?: number,
     as?: {
-      action: string;
-      destroys: boolean;
+      action?: string;
+      destroys?: boolean;
       row?: Readonly<Record<string, Cell>>;
       written?: number;
+      fields?: readonly string[];
     },
   ): Decision =>
     policy.decide({
@@ -256,10 +277,16 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
       test: unit.test,
       ...(as?.row === undefined ? {} : { row: as.row }),
       ...(as?.written === undefined ? {} : { written: as.written }),
+      ...(as?.fields === undefined ? {} : { fields: as.fields }),
     });
   /** A read goes on only with `allow`: it cannot wait for Juan, so `confirm` and `propose` are a no as well. */
-  const read = (collection: string, values: Labelled, rows?: number): void => {
-    const d = ask("read", collection, values, rows);
+  const read = (
+    collection: string,
+    values: Labelled,
+    rows?: number,
+    fields?: readonly string[],
+  ): void => {
+    const d = ask("read", collection, values, rows, fields ? { fields } : undefined);
     if (d.kind === "deny") throw new Denied(d.rule, d.reason);
     if (d.kind !== "allow")
       throw new Denied(d.rule, `a read cannot wait for Juan (${d.kind})`, true);
@@ -267,16 +294,16 @@ export function guard(policy: Policy, collections: Collections, unit: GateUnit):
   return {
     // The fields of a collection are no data of Juan's: validation reads them too, with no policy.
     shape: (collection) => collections.shape(collection),
-    async find(query, values) {
-      read(query.collection, values);
+    async find(query, values, fields) {
+      read(query.collection, values, undefined, fields);
       return collections.find(query);
     },
     async get(collection, id) {
       read(collection, { id }, 1);
       return typeof id.value === "string" ? collections.get(collection, id.value) : undefined;
     },
-    async aggregate(query, values) {
-      read(query.collection, values);
+    async aggregate(query, values, fields) {
+      read(query.collection, values, undefined, fields);
       return collections.aggregate(query);
     },
     async write(change, values) {

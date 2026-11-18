@@ -516,3 +516,52 @@ class Rounds {
 export function runRounds(call: AgentCall, planner: Planner): Promise<AgentReply> {
   return new Rounds(call, planner).go();
 }
+
+/**
+ * What the model of an «Agente» is told in every round (AU-197, S1): the step's own words come in the request
+ * (`instructions`), never here. It speaks only of «the connected collections» (D-14) and receives nothing of what
+ * Boni knows of the person and none of their instructions for assistants (PR 490, choice 3). The code checks every
+ * plan and decides every call; this text only helps the model write one that passes.
+ */
+export const AGENT_PROMPT = `You are one step of an automation the user built. You never act and you have no tools of
+your own: each round you answer with one plan, which the code checks and runs call by call. The code decides what is
+allowed; a call it refuses comes back as {"refused": "<reason>"} and the rest of the plan goes on.
+
+Input (JSON): "instructions" (what the user wants this step to do: each item is {json, ...}), "rows" (the rows that
+came into the step, or what its code gave), "connections" (the only collections you may use: each one's key, name,
+description, its fields with their types and, for an option field, the values it takes, and what you may do with it:
+"read", "create", "update", "trash", each false or with its limits), "rounds" (what each earlier round's plan gave,
+as "$round1", "$round2"…), "seen" (what a view left out: at a path, how many of how many), "answer" (the shape of the
+answer you must give), "tools" (the tools you may call this round), "codeTools" (more tools, by name and inputs),
+"today", "zone" and "language" (the language of any text you write). "again": your last plan or answer did not fit,
+with the reasons; write it again.
+
+The plan: {"version": 1, "steps": [...]}, at most 40 steps, each {"id", "op": "call", "tool", "args": {name: expr}}
+with a unique id (lowercase letters, digits, _), and optionally "when": expr and "each": {"ref": "$step"} (once per
+item, the item is "$item"). Only "call": no other op runs here.
+Tools: find {collection, query} (query: {"lit": {...}} with "where", "sort" and "limit"), get {collection, id},
+count {collection, query}, sum {collection, field, query}; create {collection, fields}, update {collection, id,
+fields}, trash {collection, id}; answer {<the answer's fields>}, which ends the rounds. Collections by their key.
+Expressions: {"lit": x} (one string, number, boolean or null; a JSON object only for "query"), {"ref":
+"$rows[0].field"}, {"ref": "$round1.s1"}, {"ref": "$instructions"}, or {"fn": name, "args": [...]} (count, sum, min,
+max, pick, item, field, filter_eq, concat, obj, merge, list, length, eq, ne, gt, lt, and, or, not, today, add_days,
+case; obj(key, value, ...) builds the "fields" of create and update).
+
+Read what you need first and write in a later round: a round sees only what earlier rounds gave. Some values come as
+handles ({"handle": "..."}) instead of their text: you may pass them on, never read them. Write only what the
+instructions ask, only in the connected collections, only with values that fit each field. When you are done, call
+answer.`;
+
+/** The JSON schema of a round's plan (AU-198): the plan language's, with the argument names this round's tools take. */
+export function roundArgNames(call: Pick<AgentCall, "answer" | "codeTools">): string[] {
+  const names = new Set([
+    "collection",
+    "fields",
+    "id",
+    "query",
+    "field",
+    ...answerKeys(call.answer),
+  ]);
+  for (const t of call.codeTools ?? []) for (const i of t.inputs) names.add(i.name);
+  return [...names];
+}

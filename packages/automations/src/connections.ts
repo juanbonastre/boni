@@ -196,7 +196,7 @@ export function permissions(connections: readonly Connection[]): Permission[] {
 }
 
 /** The fields an ask touches: what it filters, sorts and sums by. */
-function fieldsAsked(ask: ReadAsk): string[] {
+export function fieldsAsked(ask: ReadAsk): string[] {
   const out: string[] = [];
   for (const item of ask.where ?? [])
     for (const rule of isFilterGroup(item) ? item.rules : [item]) out.push(rule.field);

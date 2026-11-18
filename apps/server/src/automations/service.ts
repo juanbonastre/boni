@@ -63,8 +63,9 @@ import {
 import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
+import { aiFor } from "./ai.ts";
 import { sandboxBox } from "./box.ts";
-import { collectionNamed, storeCollections } from "./collections.ts";
+import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { pruneRuns } from "./keep.ts";
 import { automationPolicy } from "./policy.ts";
@@ -518,8 +519,11 @@ export function runDeps(
     const s = step === undefined ? undefined : steps.get(step);
     return s && version ? namedFor(s, version.names, today)(name) : today(name);
   };
+  // The AI steps' models (AU-199): a run's calls are kept under its id, a test's under the automation's.
+  const ai = aiFor(store, run ?? `test:${id}`, !run);
   return {
-    policy: automationPolicy(doc, own),
+    policy: automationPolicy(doc, own, reachStore(store, hand.zone)),
+    ...(ai ? { ai } : {}),
     collections: storeCollections(store, {
       actor: "user",
       device: hand.device,

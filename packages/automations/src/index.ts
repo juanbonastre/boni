@@ -1,3 +1,4 @@
+export type { AgentCall, AgentReply } from "./agent.ts";
 export * from "./ai.ts";
 export * from "./box.ts";
 export * from "./catalogue.ts";

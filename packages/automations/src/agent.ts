@@ -283,15 +283,16 @@ export function hiddenLines(
  * The schema of a step's connections as its model receives it (AU-197): for each connected collection, its key and
  * the fields it may read or write (with each one's type, options and relation), its reading (`false`: said, so the
  * answer can say it cannot), and only the actions not in «No», with their limits and the line of each field the AI
- * decides (AU-52). Fixed fields are named, never their values: the code puts them. Names and descriptions are the
- * server's to add (S1): the engine knows collections by key.
+ * decides (AU-52). Fixed fields are named, never their values: the code puts them. The collection's name and what it
+ * is for, and its options' names, come when the collections give them (the server, only what a planner may read).
  */
 export function agentSchema(
   connections: readonly Connection[],
   shape: (collection: string) => CollectionShape | undefined,
 ): Cell {
   return connections.map((c) => {
-    const fields = shape(c.collection)?.fields ?? [];
+    const known = shape(c.collection);
+    const fields = known?.fields ?? [];
     const readable = c.read === false ? [] : (c.read.fields ?? fields.map((f) => f.key));
     const writable = new Set([
       ...(c.create ? (c.create.fields ?? []) : []),
@@ -299,12 +300,17 @@ export function agentSchema(
     ]);
     const out: Record<string, Cell> = {
       collection: c.collection,
+      ...(known?.name ? { name: known.name } : {}),
+      ...(known?.description ? { description: known.description } : {}),
       fields: fields
         .filter((f) => readable.includes(f.key) || writable.has(f.key))
         .map((f) => ({
           key: f.key,
           type: f.type,
           ...(f.options ? { options: [...f.options] } : {}),
+          ...(f.optionNames && Object.keys(f.optionNames).length
+            ? { optionNames: { ...f.optionNames } }
+            : {}),
           ...(f.target ? { target: f.target } : {}),
         })),
       read:

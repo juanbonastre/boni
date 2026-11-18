@@ -40,7 +40,14 @@ import {
   StepFault,
   type StoredRow,
 } from "@boni/automations";
-import { type FieldDef, join, type Label, SYSTEM_TYPES, type TypeDef } from "@boni/entities";
+import {
+  type FieldDef,
+  join,
+  type Label,
+  plannerMaySee,
+  SYSTEM_TYPES,
+  type TypeDef,
+} from "@boni/entities";
 import {
   entityLabel,
   type OpMeta,
@@ -50,6 +57,7 @@ import {
   type Writes,
 } from "@boni/store";
 import { type FilterItem, isFilterGroup, matchesFilters } from "@boni/views";
+import type { ReachStore } from "./policy.ts";
 
 export interface CollectionsFor {
   /** Who writes: Juan's hand on a test never does; a run for real is F14d's. */
@@ -67,6 +75,52 @@ export interface CollectionsFor {
 }
 
 const SYSTEM: ReadonlySet<string> = new Set(SYSTEM_TYPES);
+/** Whose description of a collection a planner reads (packages/agent's `schemaView`). */
+const JUAN_S: ReadonlySet<string> = new Set(["user", "own", "imported"]);
+
+/**
+ * What P29 reads of the store for an AI step's call (AU-166, AU-205; `reachIn`): whether no model may read a
+ * collection (its level for models is not `visible`: opaque, restricted or private, `docs/nucleo.md` §7.3), its
+ * fields' types by key, and the run's day in `zone`. Each read once per run and collection: one policy is one run.
+ * A key that is no collection an automation reaches has no types and is private (nothing reads it).
+ */
+export function reachStore(store: UserStore, zone: string): ReachStore {
+  const levels = new Map<string, boolean>();
+  const types = new Map<string, Record<string, string>>();
+  const typeOf = (key: string): TypeDef | undefined => {
+    const t = Object.values(store.schema().types).find((x) => x.key === key);
+    return t && !t.archived && !t.system && !SYSTEM.has(t.id) ? t : undefined;
+  };
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return {
+    privateTo(key) {
+      let closed = levels.get(key);
+      if (closed === undefined) {
+        const t = typeOf(key);
+        closed = !t || (store.aiAccess()[t.id] ?? "visible") !== "visible";
+        levels.set(key, closed);
+      }
+      return closed;
+    },
+    types(key) {
+      let out = types.get(key);
+      if (!out) {
+        const t = typeOf(key);
+        out = Object.fromEntries(
+          (t?.fields ?? []).filter((f) => !f.archived).map((f) => [f.key, f.type as string]),
+        );
+        types.set(key, out);
+      }
+      return out;
+    },
+    today: () => day.format(Date.now()),
+  };
+}
 
 /**
  * A collection's key by its name as Juan sees it now: what `$col('…')` cites (javascript.ts). Only a collection an
@@ -223,9 +277,29 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
       if (!t) return undefined;
       const fields: FieldShape[] = live(t).map((f) => {
         const target = f.relation ? keyOfType(f.relation.target) : undefined;
-        return { key: f.key, type: f.type, ...(target ? { target } : {}) };
+        // An option's value is its id (AU-52); its name only where a planner may read it (A-01, as `schemaView`).
+        const names = (f.options ?? []).filter((o) => plannerMaySee(o.label));
+        return {
+          key: f.key,
+          type: f.type,
+          ...(target ? { target } : {}),
+          ...(f.options ? { options: f.options.map((o) => o.id) } : {}),
+          ...(names.length
+            ? { optionNames: Object.fromEntries(names.map((o) => [o.id, o.name])) }
+            : {}),
+        };
       });
-      return { key: t.key, fields } satisfies CollectionShape;
+      // What the collection is for, as the conversation's planner reads it: only what Juan (or Boni, or an import)
+      // wrote, never a model's text waiting for him nor one from outside.
+      const d = t.description;
+      return {
+        key: t.key,
+        fields,
+        ...(plannerMaySee(t.label) ? { name: t.name } : {}),
+        ...(d && JUAN_S.has(d.label.integrity) && plannerMaySee(d.label)
+          ? { description: d.text }
+          : {}),
+      } satisfies CollectionShape;
     },
     async find(q: FindQuery) {
       const t = typeByKey(q.collection);
