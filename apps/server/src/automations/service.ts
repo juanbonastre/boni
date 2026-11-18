@@ -106,6 +106,11 @@ export interface StepTestView {
   failed: number;
   /** Writes of a test are never done: how many it would do («Haría esto»). */
   wouldWrite: number;
+  /**
+   * Of the writes it reached, how many it would ask Juan about instead of doing them: its «Permiso» «Preguntar»
+   * (every write of a converted flow is born so, decision 13) or the policy's answer. Not counted in `wouldWrite`.
+   */
+  wouldAsk: number;
   /** Why it failed: `error.failure` is the key the screen says, with the parameter at fault (AU-84). */
   error?: StepError;
   /** Its kept test no longer stands for the step as it is (AU-92). */
@@ -367,6 +372,7 @@ function views(
       retries: k.retries,
       failed: k.failed,
       wouldWrite: k.wouldWrite,
+      wouldAsk: k.asked ?? 0,
       ...(k.error ? { error: k.error } : {}),
       ...(k.console ? { console: k.console } : {}),
       ...(k.would ? { would: k.would } : {}),

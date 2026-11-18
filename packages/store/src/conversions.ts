@@ -118,7 +118,8 @@ export interface ConversionsJournal {
   reconvertFlow(id: string, at: number): "ok" | "changed" | "no";
   /**
    * Up to `limit` finished runs of the flow not copied yet, copied as «De antes» rows of its automation (AU-227), with
-   * their ids (so «Deshacer lo que hizo» still undoes them); the count copied. At 0 the copy is marked done.
+   * their ids (so «Deshacer lo que hizo» still undoes them); the count copied. At 0 the copy is marked done, unless a
+   * run of before has not ended yet (it waits on a question): that one is copied when it has.
    */
   copyBeforeRuns(id: string, limit: number, at: number): number;
 }
@@ -172,6 +173,10 @@ const COPY_SQL = `INSERT OR IGNORE INTO automation_runs (id, automation, version
      AND NOT EXISTS (SELECT 1 FROM automation_runs a WHERE a.id = r.id)
    ORDER BY r.started
    LIMIT ?`;
+
+/** A run of before of the flow that has not ended yet (one waiting on a question, AU-226). */
+const UNFINISHED_SQL = `SELECT 1 FROM runs
+   WHERE flow = ? AND origin != 'test' AND (finished IS NULL OR status = 'running') LIMIT 1`;
 
 export function conversionsJournal(db: DatabaseSync): ConversionsJournal {
   let n = 0;
@@ -295,7 +300,9 @@ export function conversionsJournal(db: DatabaseSync): ConversionsJournal {
     copyBeforeRuns: (id, limit, at) =>
       atomic(() => {
         const copied = Number(db.prepare(COPY_SQL).run(id, limit).changes);
-        if (copied === 0)
+        // Done only when no run of before is still going: one that waited on a question at the conversion ends on
+        // the engine that started it (AU-226) and is copied at a later opening.
+        if (copied === 0 && !db.prepare(UNFINISHED_SQL).get(id))
           db.prepare("UPDATE flow_conversions SET copied = ? WHERE id = ?").run(at, id);
         return copied;
       }),

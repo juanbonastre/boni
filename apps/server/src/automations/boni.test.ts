@@ -8,7 +8,17 @@
 import { type Agent, leaf } from "@boni/agent";
 import type { BoniCall } from "@boni/automations";
 import { afterEach, describe, expect, it } from "vitest";
-import { BoniFault, boniPortFor, unitPlan, wireBoni } from "./boni.ts";
+import { BUDGET_FLOW, FETCH_FLOW, MAIL_FLOW, REVIEW_FLOW } from "../flows.ts";
+import {
+  BONI_AUTHOR,
+  BONI_STORED,
+  BoniFault,
+  boniContextFor,
+  boniOf,
+  boniPortFor,
+  unitPlan,
+  wireBoni,
+} from "./boni.ts";
 import { folder, OUTSIDE } from "./run.test-util.ts";
 
 const f = folder("boni");
@@ -98,6 +108,50 @@ describe("the port of Boni's code on the server (F16 S1)", () => {
       reader: "classify",
       input: { ref: "$input" },
     });
+  });
+
+  it("AU-221 · S2: which of Boni's automations a run is comes from its stored id and its author, never from the document: a person's automation under one of those ids is none of Boni's", () => {
+    const store = f.store();
+    try {
+      // The ids of the four flows of before, the same as flows.ts names them.
+      expect(BONI_STORED).toEqual({
+        [FETCH_FLOW]: "fetchMail",
+        [MAIL_FLOW]: "readMail",
+        [REVIEW_FLOW]: "reviewGuide",
+        [BUDGET_FLOW]: "budgetNotice",
+      });
+      const made = (id: string, by: string) =>
+        store.journal.createAutomation(
+          { id, by, created: 1 },
+          {
+            id,
+            name: "Automatización de ejemplo",
+            trigger: null,
+            doc: "{}",
+            device: null,
+            updated: 1,
+          },
+        );
+      made(MAIL_FLOW, BONI_AUTHOR);
+      made(REVIEW_FLOW, "user");
+      made("a-ejemplo-01hq", BONI_AUTHOR);
+      expect(boniOf(store, MAIL_FLOW)).toBe("readMail");
+      expect(boniOf(store, REVIEW_FLOW)).toBeUndefined();
+      expect(boniOf(store, "a-ejemplo-01hq")).toBeUndefined();
+      expect(boniOf(store, FETCH_FLOW)).toBeUndefined();
+      wireBoni({
+        reaches: () => true,
+        agentOf: () => {
+          throw new Error("no Boni call here");
+        },
+      });
+      expect(boniPortFor(store, MAIL_FLOW)?.automation).toBe("readMail");
+      expect(boniPortFor(store, REVIEW_FLOW)?.automation).toBeUndefined();
+      expect(boniContextFor(store, MAIL_FLOW)).toEqual({ boni: { automation: "readMail" } });
+      expect(boniContextFor(store, REVIEW_FLOW)).toEqual({ boni: {} });
+    } finally {
+      store.close();
+    }
   });
 
   it("AU-230 · S1: the port answers with the label of what Boni's code made, fails with its code when the agent stops, and is null with no agent wired, so a Boni step does not validate", async () => {

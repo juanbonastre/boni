@@ -12,11 +12,12 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
-import { newId } from "@boni/entities";
+import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { jsBox } from "../../../../packages/agent/test/convert.test-util.ts";
 import { AgentHost, trashFlow } from "../agent.ts";
 import { DataError } from "../data.ts";
 import { lastSlot } from "../flowScheduler.ts";
@@ -35,7 +36,7 @@ import {
 import { publish, setEnabled, versionsOf } from "./publish.ts";
 import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
 import { undoAutomationRun } from "./runs.ts";
-import { automationView } from "./service.ts";
+import { automationView, testAutomation } from "./service.ts";
 
 const DAY = 24 * HOUR;
 const lit = (v: unknown) => ({ lit: v });
@@ -138,6 +139,16 @@ function flow(
   return id;
 }
 
+/** A host with no model, its store seeded: what an old run's proposal and question are answered through. */
+function hosted(): { host: AgentHost; s: UserStore } {
+  const dir = join(f.dir, `host-${randomUUID()}`);
+  mkdirSync(join(dir, "users"), { recursive: true });
+  const host = new AgentHost({ dataDir: dir, providers: null });
+  const s = host.store(1);
+  seeded(s);
+  return { host, s };
+}
+
 /** A finished run of a flow of before, as the old engine kept it. */
 function oldRun(s: UserStore, id: string, at: number, status = "done", origin = "turn"): string {
   const run = randomUUID();
@@ -164,9 +175,6 @@ describe("the saved flows converted to automations (F16)", () => {
   );
   it.todo(
     "AU-225 · the conversion's list says for each automation «Hace lo mismo» or «Lo que cambia», and how many runs it has had since and how many failed",
-  );
-  it.todo(
-    "AU-226 · a proposal waiting in the Bandeja is accepted as before, an old run that waits is resumed only by the engine that started it, and a scheduled flow runs once in each slot across the conversion",
   );
   it.todo(
     "AU-227 · with a year of runs the conversion, the copy and the list of runs of the mail automation stay within their times",
@@ -364,6 +372,170 @@ describe("the saved flows converted to automations (F16)", () => {
       .automationRuns(id, { filter: "all", limit: 10 })
       .filter((r) => !r.before);
     expect(runs.map((r) => r.slot)).toEqual([today + DAY]);
+  });
+
+  it("AU-226 · S2: a proposal an old run left waiting in the Bandeja is accepted as before once its flow is converted, and accepting it starts no run of the automation", async () => {
+    const { host, s } = hosted();
+    try {
+      const id = flow({ trigger: ALONE, plans: [CREATE(lit("de antes"))] }, s);
+      const agent = host.agent(1, true);
+      const old = await agent.background(CREATE(lit("de antes")), {}, [], undefined, {
+        id,
+        version: 1,
+        by: "user",
+      });
+      expect(old.proposals).toHaveLength(1);
+      const proposal = old.proposals[0] as string;
+      expect(convertFlow(s, id, NOW)).toMatchObject({ state: "converted" });
+      const accepted = await agent.acceptProposal(proposal, "personal");
+      expect(accepted.error).toBeNull();
+      expect(s.journal.proposal(proposal)?.status).toBe("accepted");
+      const notes = s.list(PEDIDO).map((e) => JSON.stringify(e.entity.values));
+      expect(notes.filter((v) => v.includes("de antes"))).toHaveLength(1);
+      // The acceptance is the proposal's, as before: no run of the new engine.
+      expect(
+        s.journal.automationRuns(id, { filter: "all", limit: 10 }).filter((r) => !r.before),
+      ).toEqual([]);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-226 · S2: an old run waiting on a question at the conversion is resumed only by the engine that started it, and its row is copied once it has ended", async () => {
+    const { host, s } = hosted();
+    try {
+      const asking = plan(
+        { id: "q", op: "ask", control: "text", prompt: lit("¿Qué nota?") },
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: { type: lit("pedido"), values: fn("obj", lit("nota"), ref("$q")) },
+        },
+      );
+      const id = flow({ trigger: ALONE, plans: [asking] }, s);
+      const agent = host.agent(1, true);
+      const asked = await agent.background(asking, {}, [], undefined, {
+        id,
+        version: 1,
+        by: "user",
+      });
+      if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+      expect(convertFlow(s, id, NOW)).toMatchObject({ state: "converted" });
+      // While it waits, the copy takes nothing of it and is not marked done.
+      expect(await copyBeforeRuns(s, NOW)).toBe(0);
+      expect(s.journal.automationRun(asked.run)).toBeNull();
+      expect(s.journal.flowConversion(id)?.copied).toBeNull();
+      // Answered: the old engine goes on with it, and what it creates is proposed, as before.
+      const done = await agent.answer(
+        asked.run,
+        asked.pending.id,
+        { text: "una nota de ejemplo" },
+        { trust: "personal" },
+      );
+      expect(done.error).toBeNull();
+      expect(done.proposals).toHaveLength(1);
+      expect(
+        s.journal.automationRuns(id, { filter: "all", limit: 10 }).filter((r) => !r.before),
+      ).toEqual([]);
+      // Ended, it is copied as a run «De antes» of the automation, and the copy is done.
+      expect(await copyBeforeRuns(s, NOW + HOUR)).toBe(1);
+      expect(s.journal.automationRun(asked.run)).toMatchObject({ before: true, version: 1 });
+      expect(s.journal.flowConversion(id)?.copied).toBe(NOW + HOUR);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-224 · S2: the same flows shaped like a person's, dry on the engine of before and in «Probar» converted, ask for the same writes: one by the clock, a search with no rows, a list of 50, a «Solo si» false and a count", async () => {
+    const { host, s } = hosted();
+    try {
+      // A list of 50 «Pedido», as a person's grows: the two seeded and 48 more.
+      const nota = s.schema().types[PEDIDO]?.fields.find((x) => x.key === "nota")?.id as string;
+      for (let i = 0; i < 48; i++)
+        s.create(
+          PEDIDO,
+          { [nota]: { value: `pedido ${i}`, label: label("user", "personal", []) } },
+          { actor: "user", device: JUAN.device },
+        );
+      const none = {
+        id: "q",
+        op: "call",
+        tool: "entities.query",
+        args: { type: lit("pedido"), field: lit("nota"), equals: lit("ninguna") },
+      };
+      const all = { id: "q", op: "call", tool: "entities.query", args: { type: lit("pedido") } };
+      const perRow = (extra: Record<string, unknown>) => ({
+        id: "c",
+        op: "call",
+        tool: "entities.create",
+        ...extra,
+        args: { type: lit("pedido"), values: fn("obj", lit("nota"), lit("de cada uno")) },
+      });
+      const cases: { name: string; trigger: unknown; plan: unknown; writes: number }[] = [
+        { name: "Uno cada día", trigger: DAILY, plan: CREATE(lit("cada día")), writes: 1 },
+        {
+          name: "Ninguno encontrado",
+          trigger: ALONE,
+          plan: plan(none, perRow({ each: ref("$q") })),
+          writes: 0,
+        },
+        {
+          name: "Cincuenta",
+          trigger: ALONE,
+          plan: plan(all, perRow({ each: ref("$q") })),
+          writes: 50,
+        },
+        {
+          name: "Solo si no hay",
+          trigger: ALONE,
+          plan: plan(none, perRow({ when: ref("$q") })),
+          writes: 0,
+        },
+        { name: "Contar", trigger: DAILY, plan: COUNT, writes: 0 },
+      ];
+      const agent = host.agent(1, true);
+      const log = s.logPage(0, 1_000_000).length;
+      for (const c of cases) {
+        const id = flow({ name: c.name, trigger: c.trigger, plans: [c.plan] }, s);
+        const old = await agent.dryRun(
+          c.plan,
+          {},
+          {
+            origin: { kind: "background", trust: "personal" },
+            flow: { id, version: 1, by: "user" },
+          },
+        );
+        expect(old.status, `${c.name}: ${old.error}`).toBe("done");
+        const before = Object.values(old.would)
+          .flat()
+          .filter((w) => w.tool === "entities.create");
+        expect(convertFlow(s, id, NOW), c.name).toMatchObject({ state: "converted" });
+        // The sandbox runs in its own process on the server; here, the translator's tests' box evaluates the same.
+        const t = await testAutomation(s, id, { trigger: "trigger", fields: {} }, JUAN, jsBox());
+        if ("error" in t) throw new Error(`${c.name}: ${t.error}`);
+        expect(
+          t.state,
+          `${c.name}: ${t.failedAt} ${JSON.stringify(t.failedAt ? t.tests[t.failedAt]?.error : t.problems)}`,
+        ).toBe("done");
+        // Born «Preguntar» (decision 13): each write is asked about, none done, as the engine of before proposed it.
+        const views = Object.values(t.tests);
+        const asks = views.reduce((n, x) => n + x.wouldAsk, 0);
+        expect([before.length, asks], c.name).toEqual([c.writes, c.writes]);
+        expect(
+          views.reduce((n, x) => n + x.wouldWrite, 0),
+          c.name,
+        ).toBe(0);
+        expect(
+          before.every((w) => w.decision === "propose"),
+          c.name,
+        ).toBe(true);
+      }
+      // Both dry: neither wrote anything.
+      expect(s.logPage(0, 1_000_000).length).toBe(log);
+    } finally {
+      host.close();
+    }
   });
 
   it("AU-227 · S1: the old runs are «De antes» rows of their automation with their ids, copied in chunks with the server free between them, and «Deshacer lo que hizo» still undoes what one wrote", async () => {

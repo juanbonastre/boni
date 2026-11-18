@@ -7,8 +7,10 @@
  * D-43). Its answer is the step's value as the tool or the reader labelled it; the engine joins that label with
  * everything the call was given (AU-230), so it can only go down.
  *
- * Which of Boni's automations a run is comes from where the automation is stored (`BONI_STORED`, its author), never
- * from the document: none in S1, where Boni's four stay flows (S2 moves them).
+ * Which of Boni's automations a run is comes from where the automation is stored and who made it (`boniOf`: one of
+ * `BONI_STORED`'s ids, made by `BONI_AUTHOR`), never from the document: a person's automation is never one of Boni's,
+ * whatever its id or its steps say. Boni's four are still flows in main, so none is found yet: they become automations
+ * with their callers (F16 S2b).
  */
 import {
   type Agent,
@@ -37,8 +39,27 @@ export function wireBoni(w: BoniWiring | null): void {
   wired = w;
 }
 
-/** Boni's own automations by the id they are stored under: empty until S2 moves the four flows. */
-export const BONI_STORED: Readonly<Record<string, BoniAutomation>> = {};
+/**
+ * Boni's own automations by the id they are stored under: the ids of their flows of before (flows.ts `FETCH_FLOW`,
+ * `MAIL_FLOW`, `REVIEW_FLOW`, `BUDGET_FLOW`; written here so this file imports nothing of the old engine, AU-228, and
+ * held equal by boni.test.ts), which their automations keep (AU-221).
+ */
+export const BONI_STORED: Readonly<Record<string, BoniAutomation>> = {
+  "traer-correo": "fetchMail",
+  "leer-correo": "readMail",
+  "revisar-guia": "reviewGuide",
+  "aviso-presupuesto": "budgetNotice",
+};
+
+/** Who made Boni's automations: the author of their flows' versions of before (`by: "preset"`, AU-221). */
+export const BONI_AUTHOR = "preset";
+
+/** Which of Boni's automations `id` is in `store`: one stored under its id and made by Boni, else undefined. */
+export function boniOf(store: UserStore, id: string): BoniAutomation | undefined {
+  const automation = BONI_STORED[id];
+  if (!automation) return undefined;
+  return store.journal.automation(id)?.by === BONI_AUTHOR ? automation : undefined;
+}
 
 /** The fixed codes a Boni unit fails with: what the agent stopped on, never a text of outside. */
 export class BoniFault extends Error {
@@ -53,7 +74,7 @@ export class BoniFault extends Error {
 export function boniPortFor(store: UserStore, id: string): BoniPort | null {
   const w = wired;
   if (!w?.reaches(store)) return null;
-  const automation = BONI_STORED[id];
+  const automation = boniOf(store, id);
   return {
     ...(automation ? { automation } : {}),
     run: (call) => runUnit(w.agentOf(store), call),
@@ -66,7 +87,7 @@ export function boniContextFor(
   id: string,
 ): { boni: { automation?: BoniAutomation } } | Record<string, never> {
   if (!wired?.reaches(store)) return {};
-  const automation = BONI_STORED[id];
+  const automation = boniOf(store, id);
   return { boni: automation ? { automation } : {} };
 }
 
