@@ -8,6 +8,7 @@ import {
 } from "@boni/automations";
 import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
+import { learningCardOf } from "../core/agent.ts";
 import { translator } from "../i18n.ts";
 import type { CodeWould } from "./client.ts";
 import {
@@ -18,6 +19,7 @@ import {
   connectionsSentence,
   DID_UNITS,
   didLines,
+  learnedWords,
   wouldLines,
   writeLimitsOf,
 } from "./connections.ts";
@@ -446,6 +448,58 @@ describe("an «Agente»'s connections", () => {
     ]);
     expect(run?.more).toBe(0);
     expect(didLines(t, { ms: 10 }, step, "es-ES", nameOf)).toBeNull();
+  });
+  it("AU-208 · a cell says its count from 5 decisions on, «Sí · en pausa» while paused, and nothing when the draft's mode is not the published one", () => {
+    const ask = { mode: "ask" as const, decided: 20, right: 18, paused: false };
+    expect(learnedWords(t, "ask", ask)).toEqual(["18 de 20 aceptadas"]);
+    expect(learnedWords(t, "ask", { ...ask, decided: 4, right: 4 })).toEqual([]);
+    const yes = { mode: "yes" as const, decided: 12, right: 12, paused: false };
+    expect(learnedWords(t, "yes", yes)).toEqual(["12 de 12 sin deshacer"]);
+    expect(learnedWords(t, "yes", { ...yes, decided: 3, right: 0, paused: true })).toEqual([
+      "Sí · en pausa",
+    ]);
+    // Another mode in the draft is another count; no count, nothing.
+    expect(learnedWords(t, "yes", ask)).toEqual([]);
+    expect(learnedWords(t, false, yes)).toEqual([]);
+    expect(learnedWords(t, "ask", undefined)).toEqual([]);
+  });
+  it("AU-209 · AU-210 · a pause or a suggestion from the wire: only its known fields, the names as plain text, and `mayDecide` only when true", () => {
+    const wire = {
+      kind: "suggested",
+      automation: "a_1",
+      step: "s_1",
+      collection: "notas",
+      action: "create",
+      name: "<b>Copiar</b>",
+      stepName: "Crear",
+      collectionName: "Notas",
+      why: null,
+      decided: 20,
+      right: 19,
+      at: 5,
+      print: "p",
+      yes: true,
+    };
+    const [card] = learningCardOf(wire);
+    expect(card).toEqual({
+      kind: "suggested",
+      automation: "a_1",
+      step: "s_1",
+      collection: "notas",
+      action: "create",
+      name: "<b>Copiar</b>",
+      stepName: "Crear",
+      collectionName: "Notas",
+      why: null,
+      decided: 20,
+      right: 19,
+      at: 5,
+      mayDecide: false,
+    });
+    expect(learningCardOf({ ...wire, mayDecide: "true" })[0]?.mayDecide).toBe(false);
+    expect(learningCardOf({ ...wire, mayDecide: true })[0]?.mayDecide).toBe(true);
+    expect(learningCardOf({ ...wire, kind: "yes" })).toEqual([]);
+    expect(learningCardOf({ ...wire, action: "read" })).toEqual([]);
   });
   it("AU-54 · «Lo que hizo» in a run's record: the run's step brings the engine's `agent` and `ai`, painted as a test's, and the calls «Reintentar si el modelo falla» asked again are said beside the calls", () => {
     const step = agentStep([conn("notas", { create: { mode: "yes", limit: 20 } })]);

@@ -172,6 +172,8 @@ export interface Options {
      */
     runs?: FakeRun[];
     manyRuns?: number;
+    /** The published cells with their counts (AU-208), as `GET automations/:id/learning` answers them. */
+    learning?: Record<string, unknown>[];
   }[];
   /** A shared device (decision 13): every touch but a test is refused with 403 «personal-device-only». */
   sharedDevice?: boolean;
@@ -341,6 +343,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let asked = (
         opts.agent?.["GET api/agent/requests"]?.[0] as { requests: { id: string }[] } | undefined
       )?.requests;
+      // The pauses and suggestions that wait (AU-209, AU-210): «Quitar pausa» or «No» takes one out.
+      let learned = (
+        opts.agent?.["GET api/agent/requests"]?.[0] as
+          | {
+              learning?: { automation: string; step: string; collection: string; action: string }[];
+            }
+          | undefined
+      )?.learning;
       // The pages as the server keeps them (apps/server/src/pages.ts), with its trash for Undo.
       const pageList = (pages ?? []).map((x, i) => ({
         icon: "",
@@ -1443,6 +1453,27 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               ...(v.names ? { names: v.names } : {}),
             }),
           ];
+        }
+        // The cells' counts (AU-208), and «Quitar pausa» or «No» (AU-209, AU-210): every body asked,
+        // `window.__autoLearn`.
+        if (rest === "/learning" && method === "GET")
+          return [
+            200,
+            JSON.stringify({ cells: opts.automations?.find((x) => x.id === id)?.learning ?? [] }),
+          ];
+        if (rest === "/learning" && method === "POST") {
+          const req = (body ?? {}) as { step?: unknown; collection?: unknown; action?: unknown };
+          record("__autoLearn", JSON.stringify(body));
+          learned = learned?.filter(
+            (x) =>
+              !(
+                x.automation === id &&
+                x.step === req.step &&
+                x.collection === req.collection &&
+                x.action === req.action
+              ),
+          );
+          return [200, '{"done":true}'];
         }
         if (rest === "/enabled" && method === "PUT") {
           const req = (body ?? {}) as { enabled?: unknown };
@@ -2620,7 +2651,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked)?)?|\/pins\/[^/]+)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked)?)?|\/pins\/[^/]+|\/learning)?$/.exec(
             p,
           );
         if (automation)
@@ -2633,7 +2664,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           );
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
-        if (p === "api/agent/requests" && asked) return [200, JSON.stringify({ requests: asked })];
+        if (p === "api/agent/requests" && asked)
+          return [
+            200,
+            JSON.stringify({ requests: asked, ...(learned ? { learning: learned } : {}) }),
+          ];
         if (opts.live && p.startsWith("api/agent/live/") && method === "GET") {
           const from = Number(new URLSearchParams(path.split("?")[1] ?? "").get("after")) || 0;
           return [200, JSON.stringify({ events: opts.live.events.slice(from), done: false })];

@@ -480,3 +480,29 @@ export function didLines(
   });
   return { head: head.join(" · "), units, more: Math.max(0, record.units.length - DID_UNITS) };
 }
+
+/** Under 5 decisions a cell says no count (AU-208): too few to read anything from. */
+export const COUNT_FROM = 5;
+
+/**
+ * What a cell says of his answers (AU-208): «Sí · en pausa» while paused, then its count, «18 de 20 aceptadas»
+ * for «Preguntar» and «12 de 12 sin deshacer» for «Sí», from 5 decisions on. Only when the draft's cell still has
+ * the published cell's mode: another mode is another count. Code's words over the server's numbers.
+ */
+export function learnedWords(
+  t: T,
+  cell: false | "ask" | "yes",
+  count: { mode: "yes" | "ask"; decided: number; right: number; paused: boolean } | undefined,
+): string[] {
+  if (!count || cell !== count.mode) return [];
+  const out: string[] = [];
+  if (count.paused && count.mode === "yes") out.push(t("auto.conn.paused"));
+  if (count.decided >= COUNT_FROM)
+    out.push(
+      t(count.mode === "ask" ? "inbox.learn.right" : "auto.conn.count.kept", {
+        right: count.right,
+        n: count.decided,
+      }),
+    );
+  return out;
+}

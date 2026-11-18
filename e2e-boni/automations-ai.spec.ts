@@ -930,5 +930,154 @@ test.describe("the steps that talk to him (F15, P2)", () => {
 });
 
 test.describe("the AI steps of an automation (F15, P2)", () => {
-  test.fixme("AU-208 · the count of accepted proposals shows under the cell and on the proposal's card, and not before 5 decisions", async () => {});
+  const EVENTOS = {
+    collection: "eventos",
+    read: {},
+    create: { mode: "yes", limit: 20 },
+    update: false,
+    remove: false,
+  };
+  test("AU-208 · the count of his answers shows under the cell from 5 decisions on, «Sí · en pausa» while paused, and none under a mode the draft changed", async ({
+    page,
+  }) => {
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6r08";
+    await openAgent(page, {
+      ...ordering(id, [TAREAS({ update: { mode: "ask", limit: 20 } }), EVENTOS]),
+      learning: [
+        {
+          step: AGENT_ID,
+          collection: "tareas",
+          action: "create",
+          mode: "ask",
+          decided: 20,
+          right: 18,
+        },
+        // Published as «Sí», the draft has it at «Preguntar»: another count.
+        {
+          step: AGENT_ID,
+          collection: "tareas",
+          action: "update",
+          mode: "yes",
+          decided: 9,
+          right: 9,
+        },
+        {
+          step: AGENT_ID,
+          collection: "eventos",
+          action: "create",
+          mode: "yes",
+          decided: 3,
+          right: 0,
+          paused: true,
+        },
+      ],
+    });
+    await expect(cellOf(page, "tareas", "create").locator(".auto-conn-use")).toContainText(
+      "18 de 20 aceptadas",
+    );
+    await expect(cellOf(page, "tareas", "update")).not.toContainText("sin deshacer");
+    const paused = cellOf(page, "eventos", "create");
+    await expect(paused.locator(".auto-conn-use")).toContainText("Sí · en pausa");
+    // Fewer than 5 decisions: no count.
+    await expect(paused).not.toContainText("de 3");
+  });
+
+  /** A pause and a suggestion as `GET requests` gives them (AU-209, AU-210). */
+  const LEARNING = (mayDecide: boolean) => [
+    {
+      kind: "suggested",
+      automation: "a_01jx8x0t2v4x6z8b0d2f4h6r09",
+      name: "Ordenar tareas",
+      step: AGENT_ID,
+      stepName: "Analista",
+      collection: "tareas",
+      collectionName: "Tareas",
+      action: "create",
+      why: null,
+      decided: 20,
+      right: 19,
+      at: Date.now() - HOUR,
+      mayDecide,
+    },
+    {
+      kind: "paused",
+      automation: "a_01jx8x0t2v4x6z8b0d2f4h6r09",
+      name: "Ordenar tareas",
+      step: AGENT_ID,
+      stepName: "Analista",
+      collection: "eventos",
+      collectionName: "Eventos",
+      action: "create",
+      why: "inARow",
+      decided: 3,
+      right: 0,
+      at: Date.now() - 2 * HOUR,
+      mayDecide,
+    },
+  ];
+  const openInbox = async (page: Page) => {
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
+    return page.locator(".inbox-panel .learning-card");
+  };
+
+  test("AU-209 · AU-210 · the Bandeja's cards of a suggestion and a pause: «No» and «Quitar pausa» name the cell and never a «Sí», and «Abrir» opens the automation", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [ordering("a_01jx8x0t2v4x6z8b0d2f4h6r09", [TAREAS(), EVENTOS]) as never],
+      agent: {
+        ...AGENT(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], learning: LEARNING(true) }],
+      },
+      agenda: true,
+    });
+    let cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first().locator(".inbox-kind")).toHaveText("Sugerencia");
+    await expect(cards.first().locator("h3")).toHaveText("Ordenar tareas: Analista en Tareas");
+    await expect(cards.first()).toContainText("19 de 20 aceptadas");
+    await expect(cards.nth(1).locator(".inbox-kind")).toHaveText("En pausa");
+    await expect(cards.nth(1)).toContainText("3 seguidas deshechas, rechazadas o corregidas");
+    // «Abrir» opens the automation; the cards wait in the Bandeja.
+    await cards.nth(1).getByRole("button", { name: "Abrir" }).click();
+    await expect(page.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(
+      "Ordenar tareas",
+    );
+    if (!(await cards.first().isVisible())) cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    await cards.first().getByRole("button", { name: "No", exact: true }).click();
+    await expect(cards).toHaveCount(1);
+    await cards.first().getByRole("button", { name: "Quitar pausa" }).click();
+    await expect(cards).toHaveCount(0);
+    const asked = await page.evaluate(() => (window as { __autoLearn?: string[] }).__autoLearn);
+    expect(asked?.map((x) => JSON.parse(x))).toEqual([
+      { do: "decline", step: AGENT_ID, collection: "tareas", action: "create" },
+      { do: "unpause", step: AGENT_ID, collection: "eventos", action: "create" },
+    ]);
+    // What the screen sends names the cell: no «Sí», no print, nothing the server would trust.
+    expect(JSON.stringify(asked)).not.toMatch(/yes|print|byAgent|reach/);
+  });
+
+  test("AU-209 · AU-210 · on a shared device the cards are read-only: «Solo desde un dispositivo personal», no «Abrir», «No» or «Quitar pausa»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      sharedDevice: true,
+      agent: {
+        ...BEFORE(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], learning: LEARNING(false) }],
+      },
+    });
+    const cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    for (const i of [0, 1]) {
+      await expect(cards.nth(i)).toContainText("Solo desde un dispositivo personal");
+      await expect(cards.nth(i).getByRole("button")).toHaveCount(0);
+    }
+  });
 });

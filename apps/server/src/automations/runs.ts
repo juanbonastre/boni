@@ -262,7 +262,7 @@ const nameOfKey = (store: UserStore, key: string): string | null => {
 };
 
 /** The marks a run's own record gives its line (AU-202, AU-204, AU-125): nothing from a row, only code's words. */
-function marksOf(e: Pick<Execution, "steps" | "reply"> | undefined): Partial<RunLine> {
+export function marksOf(e: Pick<Execution, "steps" | "reply"> | undefined): Partial<RunLine> {
   if (!e) return {};
   const steps = Object.values(e.steps ?? {});
   const byAgent = steps.some((s) =>

@@ -127,6 +127,7 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "POST /api/agent/automations/:id/run": ["automations.run"],
   "POST /api/agent/automations/:id/runs/:run/retry": ["automations.run"],
   "POST /api/agent/automations/:id/runs/:run/undo": ["automations.undo_run"],
+  "POST /api/agent/automations/:id/learning": ["automations.learn"],
   "PUT /api/agent/automations/:id/pins/:step": ["automations.pin"],
   "DELETE /api/agent/automations/:id/pins/:step": ["automations.pin"],
   "POST /api/agent/automations/:id/runs/:run/pin": ["automations.pin"],
@@ -248,6 +249,7 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "POST /api/agent/automations/:id/run": "automations.run",
   "POST /api/agent/automations/:id/runs/:run/retry": "automations.run",
   "POST /api/agent/automations/:id/runs/:run/undo": "automations.undo_run",
+  "POST /api/agent/automations/:id/learning": "automations.learn",
   "PUT /api/agent/automations/:id/pins/:step": "automations.pin",
   "DELETE /api/agent/automations/:id/pins/:step": "automations.pin",
   "POST /api/agent/automations/:id/runs/:run/pin": "automations.pin",
@@ -597,6 +599,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "automations.enable": { why: NO_MCP_YET },
   "automations.run": { why: NO_MCP_YET },
   "automations.undo_run": { why: NO_MCP_YET },
+  "automations.learn": { why: NO_MCP_YET },
   "automations.pin": { why: NO_MCP_YET },
   "automations.accept_run": {
     why: "Juan's touch: a run's proposal is his card in the Bandeja, accepted from a personal device (AU-193)",

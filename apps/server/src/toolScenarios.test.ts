@@ -249,6 +249,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "automations.enable": [{ file: AUTOMATION_PUBLISH, test: PUBLISH_TEST }],
   "automations.run": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
   "automations.undo_run": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
+  "automations.learn": [
+    {
+      file: "apps/server/src/automations/learning.test.ts",
+      test: "AU-209 · AU-210 · the Bandeja lists the pause and the suggestion that wait; «Quitar pausa» and «No» go through their action from a personal device only, and the screen names the cell but never its print",
+    },
+  ],
   "automations.pin": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
   "automations.accept_run": [
     {

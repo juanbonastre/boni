@@ -50,6 +50,7 @@ import { ASKED_STEP } from "./record.ts";
 import { RUN_ACTIONS, RUN_ROUTES } from "./routes.ts";
 import {
   interruptRuns,
+  marksOf,
   onRunEvent,
   pinFromRun,
   pinStep,
@@ -1717,6 +1718,31 @@ describe("what a failure tells (F14d)", () => {
     });
     expect(missing).toEqual(outside);
     expect(orders()).toEqual(before);
+  });
+});
+
+describe("what a run's line says of its own record (F15 P2)", () => {
+  it("AU-204 · AU-125 · AU-202 · a run's line marks what an «Agente» saved, a «Preguntar» ended by «sin respuesta», and its reply cut to 200 characters as plain text", () => {
+    const applied = { op: "create", collection: "c_tareas", state: "applied" };
+    const asked = { op: "create", collection: "c_tareas", state: "asked" };
+    const step = (lines: unknown[]) =>
+      ({ agent: { units: [{ rounds: 1, more: 0, seen: [], lines }] } }) as never;
+    expect(marksOf(undefined)).toEqual({});
+    expect(marksOf({ steps: { s_agente: step([asked]) } } as never)).toEqual({});
+    expect(marksOf({ steps: { s_agente: step([asked, applied]) } } as never)).toEqual({
+      byAgent: true,
+    });
+    const reply = `<a href="x">${"é".repeat(300)}`;
+    const marks = marksOf({
+      steps: { s_preguntar: { ask: { ended: "noAnswer" } } as never },
+      reply: { text: reply },
+    } as never);
+    expect(marks.noAnswer).toBe(true);
+    expect([...(marks.reply ?? "")]).toHaveLength(200);
+    expect(marks.reply?.startsWith('<a href="x">')).toBe(true);
+    expect(
+      marksOf({ steps: { s_preguntar: { ask: { ended: "answered" } } as never } } as never),
+    ).toEqual({});
   });
 });
 

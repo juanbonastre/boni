@@ -35,6 +35,7 @@ import {
   type ExtensionView,
   fieldEditable,
   type InboxRequest,
+  type LearningCard,
   type LiveEvent,
   type MailGuide,
   type MailInput,
@@ -427,6 +428,8 @@ interface State {
   inbox: Proposal[];
   /** Questions from background work waiting for Juan (Juan, 2026-10-24: one queue with the proposals). */
   requests: InboxRequest[];
+  /** The pauses and the suggestions of the automations' cells that wait (AU-209, AU-210). */
+  cellNotices: LearningCard[];
   /** The inbox is being read for a proposal opened by its id (its page waits instead of saying it is gone). */
   inboxLoading: boolean;
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
@@ -581,6 +584,7 @@ export const useStore = create<State>(() => ({
   fileChoice: null,
   inbox: [],
   requests: [],
+  cellNotices: [],
   inboxLoading: false,
   deciding: {},
   decideErrors: {},
@@ -2487,12 +2491,13 @@ export async function loadInbox() {
     const [inbox, asked] = await Promise.all([
       agent.proposals(),
       // An older server has no questions: the inbox goes on with its proposals.
-      agent.requests().catch((e) => {
+      agent.asks().catch((e) => {
         if (e instanceof OfflineError) throw e;
         return null;
       }),
     ]);
-    const requests = asked ?? get().requests;
+    const requests = asked?.requests ?? get().requests;
+    const cellNotices = asked?.learning ?? get().cellNotices;
     // Something new since the last look (not the first one, when the window opens): the panel comes out.
     const ids = [...inbox.map((p) => p.id), ...requests.map((r) => r.id)];
     const fresh = inboxSeen !== null && ids.some((id) => !inboxSeen?.has(id));
@@ -2506,6 +2511,7 @@ export async function loadInbox() {
     set({
       inbox: [...kept, ...inbox],
       requests: [...keptAsked, ...requests],
+      cellNotices,
       ...(fresh ? { inboxOpen: true } : {}),
     });
   } catch {
@@ -2513,6 +2519,19 @@ export async function loadInbox() {
   }
 }
 let inboxSeen: Set<string> | null = null;
+/** A pause lifted or a suggestion answered (AU-209, AU-210): its card goes. */
+export const dropLearning = (c: LearningCard) =>
+  set({
+    cellNotices: get().cellNotices.filter(
+      (x) =>
+        !(
+          x.automation === c.automation &&
+          x.step === c.step &&
+          x.collection === c.collection &&
+          x.action === c.action
+        ),
+    ),
+  });
 export const toggleInbox = (open = !get().inboxOpen) => {
   set({ inboxOpen: open });
   if (open) void loadInbox();

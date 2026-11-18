@@ -19,6 +19,7 @@ import {
 } from "@boni/agent";
 import type { Cell } from "@boni/automations";
 import type { UserStore } from "@boni/store";
+import { declineSuggestion, learningKey, learningOf, unpause } from "./learning.ts";
 import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
 import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
 import {
@@ -124,13 +125,13 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset); with part asked, a page of what a run asked, as its card in the inbox shows it (run, offset)",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset); with part asked, a page of what a run asked, as its card in the inbox shows it (run, offset); with part learning, the cells of its published version with their counts, pauses and suggestions",
     args: {
       id,
       part: {
         role: "option",
         describe:
-          "view (the default), rows, sample, preview, publish, versions, version, runs, run, runRows or asked",
+          "view (the default), rows, sample, preview, publish, versions, version, runs, run, runRows, asked or learning",
       },
       run: { role: "option", describe: "run, runRows and asked: the run's id" },
       filter: { role: "option", describe: "runs: all (the default), failed or tests" },
@@ -190,6 +191,9 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
           code,
         );
       }
+      // The cells of its published version with their counts, pauses and suggestions (AU-208 to AU-210).
+      if (part === "learning")
+        return leaf(answer({ cells: learningOf(s.store, automation) }) as never, code);
       const step = textOf(a.step);
       if (!step) throw new ToolError("bad-argument");
       if (part === "sample")
@@ -496,6 +500,39 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
         answer(undoAutomationRun(s.store, idOf(a.id), idOf(a.run), runHand(s))) as never,
         code,
       );
+    },
+  });
+  r.register({
+    name: "automations.learn",
+    icon: "Lightbulb",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.learn"),
+    title: "Quitar la pausa de una celda de una automatización o decir «No» a su sugerencia",
+    describe:
+      "Lift the pause of one cell of an automation's published version (do unpause), or say «No» to its suggestion (do decline): the step, the collection and the action name the cell. It never sets a «Sí»",
+    args: {
+      id,
+      do: { role: "option", required: true, describe: "unpause or decline" },
+      step: { role: "option", required: true, describe: "the step's id" },
+      collection: { role: "option", required: true, describe: "the collection's key" },
+      action: { role: "option", required: true, describe: "create, update or remove" },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      const h = runHand(s);
+      const what = textOf(a.do);
+      if (what !== "unpause" && what !== "decline") throw new ToolError("bad-argument");
+      // The print is the published version's (learningKey): the screen only names the cell.
+      const key = learningKey(s.store, idOf(a.id), {
+        step: idOf(a.step),
+        collection: idOf(a.collection),
+        action: idOf(a.action),
+      });
+      if (!key) throw new ToolError("not-found");
+      const refused = (what === "unpause" ? unpause : declineSuggestion)(s.store, key, h);
+      return leaf(answer(refused ?? { done: true }) as never, code);
     },
   });
   r.register({

@@ -30,7 +30,7 @@ import type { FilterItem } from "@boni/views";
 import { Trash2, X } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { citedName } from "../automations/cite.ts";
-import type { Sample } from "../automations/client.ts";
+import { automationsClient, type CellCount, type Sample } from "../automations/client.ts";
 import { codeBlocked, codeContextOf, isCode } from "../automations/code.ts";
 import { agentConnectable, type AgentDid as Did, didLines } from "../automations/connections.ts";
 import {
@@ -69,7 +69,7 @@ import { change, type EditorState, undo } from "../automations/state.ts";
 import { DO, entryWords, KEY, labelWord, type Namer, summaryWords } from "../automations/words.ts";
 import type { DataType as AppType, DataField, Planner } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
-import { loadPlanners, useStore } from "../store.ts";
+import { agentApi, loadPlanners, useStore } from "../store.ts";
 import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
 import { type AgentConnections, ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
@@ -900,6 +900,30 @@ function useWide(): boolean {
   return wide;
 }
 
+const learning = automationsClient(agentApi);
+
+/**
+ * The published cells' counts of one automation (AU-208), read when a step that writes opens: the server's, from
+ * his answers. Nothing on an automation never published, or when the read fails.
+ */
+function useCellCounts(id: string | null, step: string | undefined): readonly CellCount[] {
+  const [counts, setCounts] = useState<readonly CellCount[]>([]);
+  useEffect(() => {
+    if (!id || !step) return;
+    let live = true;
+    learning
+      .learning(id)
+      .then((c) => {
+        if (live) setCounts(c.filter((x) => x.step === step));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [id, step]);
+  return counts;
+}
+
 export function AutomationStepView({
   state,
   apply,
@@ -924,6 +948,7 @@ export function AutomationStepView({
   const box = useRef<HTMLDivElement>(null);
   const step = state.draft.steps.find((s) => s.id === state.open);
   const stepId = step?.id;
+  const counts = useCellCounts(state.id, step?.connections?.length ? stepId : undefined);
   // Opened, the view takes the keys: Esc closes it and nothing typed reaches the canvas behind.
   useEffect(() => {
     box.current?.focus();
@@ -1248,6 +1273,7 @@ export function AutomationStepView({
       allow={(key, action) => edit((d) => allowAction(d, step.id, key, action))}
       disconnect={(key) => edit((d) => disconnectCollection(d, step.id, key))}
       setLimits={(key, limits) => edit((d) => setReadLimits(d, step.id, key, limits))}
+      counts={counts}
       {...(agent ? { agent } : {})}
     />
   );

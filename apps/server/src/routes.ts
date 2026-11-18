@@ -121,6 +121,9 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/agent/automations/:id/run": "tailnet",
   "POST /api/agent/automations/:id/runs/:run/retry": "tailnet",
   "POST /api/agent/automations/:id/runs/:run/undo": "tailnet",
+  // F15 P2: the cells' counts, «Quitar pausa» and «No» to a suggestion (automations.read, automations.learn).
+  "GET /api/agent/automations/:id/learning": "tailnet",
+  "POST /api/agent/automations/:id/learning": "tailnet",
   "PUT /api/agent/automations/:id/pins/:step": "tailnet",
   "DELETE /api/agent/automations/:id/pins/:step": "tailnet",
   "POST /api/agent/automations/:id/runs/:run/pin": "tailnet",

@@ -32,7 +32,14 @@ import type {
   WriteAction,
 } from "@boni/automations";
 import type { Label } from "@boni/entities";
-import { type AgentApi, type AskedRow, parseAskedRow, queryValue } from "../core/agent.ts";
+import {
+  type AgentApi,
+  type AskedRow,
+  type CellName,
+  cellNameOf,
+  parseAskedRow,
+  queryValue,
+} from "../core/agent.ts";
 
 /** Where a step's box is on the canvas, in the canvas's own units (AU-05). */
 export interface Place {
@@ -337,6 +344,28 @@ const PROPOSAL_STATUS: readonly string[] = ["pending", "accepted", "rejected", "
 
 export type RunsFilter = "all" | "failed" | "tests";
 
+/** One cell of the published version with its count (AU-208): the server's, from his answers. */
+export interface CellCount extends CellName {
+  mode: "yes" | "ask";
+  decided: number;
+  right: number;
+  paused: boolean;
+}
+
+const count = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
+export function cellCountOf(x: unknown): CellCount | null {
+  const name = cellNameOf(x);
+  const o = x as Record<string, unknown>;
+  if (!name || (o.mode !== "yes" && o.mode !== "ask")) return null;
+  return {
+    ...name,
+    mode: o.mode,
+    decided: count(o.decided),
+    right: count(o.right),
+    paused: !!o.paused,
+  };
+}
+
 export const isRefused = (x: unknown): x is Refused =>
   !!x && typeof x === "object" && typeof (x as Refused).refused === "string";
 
@@ -413,6 +442,10 @@ export interface AutomationsClient {
     id: string,
     run: string,
   ): Promise<{ pins: Record<string, Pin>; trigger: string } | Refused>;
+  /** `GET automations/:id/learning` (AU-208): the published cells with their counts. */
+  learning(id: string): Promise<CellCount[]>;
+  /** `POST automations/:id/learning` (AU-209, AU-210): «Quitar pausa» or «No» to a suggestion; never a «Sí». */
+  learn(id: string, what: "unpause" | "decline", cell: CellName): Promise<{ done: true } | Refused>;
 }
 
 /**
@@ -717,6 +750,15 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
     unpin: async (id, step) => {
       const r = await api.automations("DELETE", path(id, `/pins/${encodeURIComponent(step)}`));
       return isRefused(r) ? r : { pins: pinsOf(isObj(r) ? r.pins : null) };
+    },
+    learning: async (id) => {
+      const r = await api.automations("GET", path(id, "/learning"));
+      const cells = isObj(r) && Array.isArray(r.cells) ? r.cells : [];
+      return cells.slice(0, 500).flatMap((c) => cellCountOf(c) ?? []);
+    },
+    learn: async (id, what, cell) => {
+      const r = await api.automations("POST", path(id, "/learning"), { do: what, ...cell });
+      return isRefused(r) ? r : { done: true };
     },
     pinFromRun: async (id, run) => {
       const r = await api.automations("POST", path(id, `/runs/${encodeURIComponent(run)}/pin`));

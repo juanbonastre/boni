@@ -40,7 +40,7 @@ const initials = (user: string) =>
 export function MobileHome() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
-  const waiting = useStore((s) => s.inbox.length + s.requests.length);
+  const waiting = useStore((s) => s.inbox.length + s.requests.length + s.cellNotices.length);
   const recent = useStore((s) => s.recent);
   const rejected = useStore((s) => s.rejected);
   const today = useStore((s) => s.today);

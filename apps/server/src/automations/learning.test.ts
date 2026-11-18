@@ -9,13 +9,16 @@ import { mkdtempSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { ToolRegistry } from "@boni/agent";
 import { type Automation, cellPrint } from "@boni/automations";
 import { label } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, describe, expect, it } from "vitest";
+import { runAction } from "../actions.ts";
 import { AgentHost, serveAgent } from "../agent.ts";
 import { DAY, lastSuggested, markSuggested, setLearning } from "../learning.ts";
+import { withAutomationActions, withPublishActions, withRunActions } from "./actions.ts";
 import {
   CELL_AREA,
   type CellKey,
@@ -23,7 +26,9 @@ import {
   cellOfArea,
   declineSuggestion,
   judgeCells,
+  type LearningNotice,
   learnAnswer,
+  learningKey,
   learningOf,
   pausedDoc,
   unpause,
@@ -102,6 +107,11 @@ function hosted() {
       ask("POST /api/agent/proposals/:id/accept", id, trust),
     reject: (id: string, trust?: "personal" | "shared") =>
       ask("POST /api/agent/proposals/:id/reject", id, trust),
+    /** What the Bandeja reads of the pauses and the suggestions, with whether this device decides them. */
+    learning: async (trust?: "personal" | "shared") =>
+      (await ask("GET /api/agent/requests", "", trust)).json.learning as (LearningNotice & {
+        mayDecide: boolean;
+      })[],
   };
 }
 
@@ -538,6 +548,98 @@ describe("what Boni learns from the answers to an automation (F15)", () => {
     expect(cellOf(s, c.id)).toMatchObject({ mode: "yes", paused: null, decided: 0 });
     expect((await ran(s, c.id, c.step("Inicio"), { nota: "x" })).proposal).toBeNull();
     expect(notes(s)).toContain("cuarta");
+  });
+
+  it("AU-209 · AU-210 · the Bandeja lists the pause and the suggestion that wait; «Quitar pausa» and «No» go through their action from a personal device only, and the screen names the cell but never its print", async () => {
+    const h = hosted();
+    const registry = withRunActions(withPublishActions(withAutomationActions(new ToolRegistry())));
+    const mine = { store: h.s, trust: "personal" as const, device: JUAN.device, registry };
+    const shared = { ...mine, trust: "shared" as const, device: SHARED.device };
+    // A pause: three runs undone in a row.
+    const p = made(h.s, [START, CREATE("sola")]);
+    ok(p.publish());
+    for (let i = 0; i < 3; i++) {
+      const r = await ran(h.s, p.id, p.step("Inicio"), { nota: "x" });
+      ok(undoAutomationRun(h.s, p.id, r.id, JUAN));
+    }
+    // A suggestion: twenty proposals accepted.
+    const q = made(h.s, [START, CREATE("pedida", "ask")]);
+    ok(q.publish());
+    for (let i = 0; i < 20; i++) {
+      const r = await ran(h.s, q.id, q.step("Inicio"), { nota: "x" });
+      expect((await h.accept(r.proposal as string)).status).toBe(200);
+    }
+    const listed = await h.learning();
+    expect(listed).toMatchObject([
+      {
+        kind: "suggested",
+        automation: q.id,
+        step: q.step("Crear"),
+        stepName: "Crear",
+        collectionName: "Pedido",
+        action: "create",
+        why: null,
+        decided: 20,
+        right: 20,
+        mayDecide: true,
+      },
+      {
+        kind: "paused",
+        automation: p.id,
+        stepName: "Crear",
+        why: "inARow",
+        decided: 3,
+        right: 0,
+        mayDecide: true,
+      },
+    ]);
+    // No print reaches the screen: the server works it out from the published version.
+    expect(JSON.stringify(listed)).not.toMatch(/"print"/);
+    const [suggested, paused] = listed as unknown as [LearningNotice, LearningNotice];
+    const cellOfNotice = (n: LearningNotice) => ({
+      step: n.step,
+      collection: n.collection,
+      action: n.action,
+    });
+    expect(learningKey(h.s, p.id, cellOfNotice(paused))?.print).toBe(
+      printOf(publishedOf(h.s, p.id)?.automation as Automation, p.step("Crear")),
+    );
+    // A shared device reads them and decides nothing.
+    expect((await h.learning("shared")).map((n) => n.mayDecide)).toEqual([false, false]);
+    const learn = (n: LearningNotice, what: string, hand: typeof mine | typeof shared) =>
+      runAction("automations.learn", { id: n.automation, do: what, ...cellOfNotice(n) }, hand);
+    expect(JSON.stringify(await learn(paused, "unpause", shared))).toMatch(/not-personal|refused/);
+    expect(JSON.stringify(await learn(suggested, "decline", shared))).toMatch(
+      /not-personal|refused/,
+    );
+    expect(await h.learning()).toHaveLength(2);
+    // A cell the published version does not have is not found, whatever the screen says.
+    expect(
+      JSON.stringify(
+        await runAction(
+          "automations.learn",
+          {
+            id: p.id,
+            do: "unpause",
+            step: "s_otro",
+            collection: paused.collection,
+            action: "create",
+          },
+          mine,
+        ),
+      ),
+    ).toMatch(/not-found/);
+    // His hand on a personal device: the pause lifts, the «No» is kept, and the Bandeja lists neither.
+    expect(JSON.stringify(await learn(paused, "unpause", mine))).toMatch(/"done":true/);
+    expect((await h.learning()).map((n) => n.kind)).toEqual(["suggested"]);
+    expect(JSON.stringify(await learn(suggested, "decline", mine))).toMatch(/"done":true/);
+    expect(await h.learning()).toEqual([]);
+    expect(JSON.stringify(await learn(suggested, "decline", mine))).toMatch(/nothing/);
+    // The cells with their counts, read from a shared device too (AU-208): no «Sí» was set anywhere.
+    const read = await runAction("automations.read", { id: q.id, part: "learning" }, shared);
+    const cells = (read as { out: { cells: ReturnType<typeof learningOf> } }).out.cells;
+    expect(cells).toMatchObject([{ mode: "ask", decided: 20, right: 20 }]);
+    expect(cells[0]?.declined).toBeTypeOf("number");
   });
 
   it("AU-210 · a pause can only lower a «Sí»: nothing it stores makes a run save what the cell would ask", async () => {
