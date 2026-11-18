@@ -3773,24 +3773,9 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
     - El aviso de un fallo de una automatización que corre sola no cambia: lo manda Boni una vez por racha (AU-102,
       decisión 12).
     Prueba: `people.test.ts` («AU-201 · «Avisar» has no recipient parameter…» y «AU-201 · in a test it says what it
-    would notify…»).
-
-17. **Lo que una «Programada» guarda sola no salta como aviso: avisar es un paso suyo.** El PR de lo que una
-    ejecución cuenta y pregunta (F14d P3, tarea 128) preguntó: «Lo que una automatización con disparador
-    «Programada» guarda sola, ¿salta también como aviso en el escritorio?». **Juan, 2026-11-17: «dependeria de si la
-    automatizacion tiene una salida que vaya por avisos en escritorio, moviles o lo que sea».** Queda como está
-    construido. Lo que guardó una ejecución se ve en su línea de «Ejecuciones», con «Deshacer lo que hizo» al lado
-    (`.auto-run-notice`), y nada salta en la pantalla ni en el móvil. Un aviso es un paso que él pone en la
-    automatización, «Avisar» (AU-201, E4 de la F15): una «Programada» que quiera avisar de lo que guardó lo dice con
-    ese paso, hacia el escritorio, el móvil o donde sea. Un fallo de una automatización que corre sola sigue avisando
-    una vez por racha (decisión 12, AU-102). Por ejemplo, «Repaso de cada mañana» crea una fila en Tareas a las
-    08:00: a las 08:00 no salta nada; en su línea de «Ejecuciones» se lee «A su hora · Creó 1 fila en Tareas», con
-    «Deshacer lo que hizo»; y si un día falla, salta una vez «Repaso de cada mañana falló en «Crear una fila»». La
-    otra respuesta: un aviso en el escritorio cada vez que una ejecución programada guarda algo, sin que la
-    automatización lo pida, y una «Cada hora» que guarda saltaría veinticuatro veces al día. Prueba:
-    `automations-publish.spec.ts` (`e2e-boni`, «AU-167 · decision 17: …»: el evento de una ejecución que guardó sola
-    no saca ningún aviso, y su línea lo dice con «Deshacer») y el criterio de la F14d en la app de escritorio
-    (`e2e-boni-desktop/automations-publish.spec.ts`, AU-95).
+    would notify…»); lo que guardó sola, sin aviso y con «Deshacer» en su línea: `automations-publish.spec.ts`
+    (`e2e-boni`, «AU-167 · decision 17: …») y en la app de escritorio sobre el servidor real
+    (`e2e-boni-desktop/automations-publish.spec.ts`, «AU-195 AU-167 · …»).
 
 18. **Un «Agente» que modifica filas puede llevar valores fijos, como al crear.** El segundo PR de E3 de la F15
     (tarea 129) preguntó: «Cuando un paso «Agente» modifica filas, ¿quieres poder fijar tú el valor de un campo?».
