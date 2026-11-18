@@ -2621,7 +2621,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   servidor (`apps/server/src/automations/boni.ts`): cada unidad es un plan de un paso que hace el código, que el agente
   de la cuenta corre como un flujo en segundo plano (lo que crea, propuesto; las etiquetas de fuera, como hoy), y en
   seco con «Probar» (`boni.test.ts`). Falta (S2): «Leer correo» convertida leyendo un correo inventado.
-- **AU-221** (F16, pendiente) · Las automatizaciones de Boni son las cuatro que hoy son flujos («Traer correo», «Leer
+- **AU-221** (F16, en parte) · Las automatizaciones de Boni son las cuatro que hoy son flujos («Traer correo», «Leer
   correo», «Revisar la guía» y «Aviso del presupuesto») y una nueva, «Revisar los agentes» (AU-211). Están en la lista
   con «De: Boni», se abren en el lienzo, se cambian, se prueban y
   se apagan, y se puede volver a la de Boni; no se eliminan.
@@ -2636,6 +2636,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   formato. Apagada, no corre y lo dice donde hoy (los ajustes del correo, «Modelos»): sin «Traer correo» no entra
   correo. «Mantenimiento» (las copias cada seis horas) sigue fuera: no es una automatización. La prueba:
   `apps/server/src/automations/boni.test.ts` y `e2e-boni/automations-before.spec.ts`.
+  Hecho en S2: cuál de las de Boni es una ejecución sale de dónde está guardada y de quién la hizo (`boniOf`: uno de
+  los cuatro identificadores de sus flujos de antes, `BONI_STORED`, y su autor `preset`), nunca del documento: una
+  automatización de Juan con ese identificador o esos pasos no es de Boni. Falta (S2b): las cuatro como
+  automatizaciones con sus llamadores, «Leer correo» dibujada a mano y «Revisar los agentes».
 - **AU-128** (sin fase) · Lo que sale fuera (una petición HTTP, un webhook, enviar un correo) no entra en estas
   fases: va después, en la F20 (decisión 9 del §10). Cuando entre, el destino lo escribe Juan y nunca sale de un
   dato ni de un modelo (P2), lo que vuelve cuenta como de fuera, y las claves se guardan en el servidor sin que el
@@ -2884,7 +2888,9 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   una forma que no conoce se dice y no rompe la conversión. Hecho en S1: `entities.update` y `entities.delete` por
   identificador siguen sin paso: el flujo que los usa se queda en el motor de antes y lo dice (AU-228); para
   traducirlos, un paso «Colección» que modifique o elimine la fila que le llega tendría que saber de qué colección
-  es antes de correr. Falta: `entities.get` decidido sobre los flujos de verdad; la comprobación con `checkFlow` de que
+  es antes de correr. Juan lo confirmó el 2026-11-18 a la pregunta «¿Un flujo que modifica o elimina una fila por su
+  id se queda en el motor de antes por ahora?»: «Sí, por ahora». No elegido: convertirlo con ese paso como «Acción de
+  Boni», que correría la acción por su nombre sin que el lienzo dijera sobre qué colección escribe. Falta: `entities.get` decidido sobre los flujos de verdad; la comprobación con `checkFlow` de que
   nada de lo que hoy puede guardar un flujo queda sin paso; y la de que lo que cabía en los topes del lenguaje (50
   vueltas, 40 pasos, 3 niveles) cabe convertido, donde un paso puede dar hasta siete.
 - **AU-224** (F16, en parte) · Convertida, hace lo mismo. Con las mismas entradas y las mismas respuestas de los
@@ -2907,6 +2913,14 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   vez, con tres filas y con ninguna, y lo que escribe propuesto (`plan-to-automation.test.ts`). Falta (S1): la prueba
   diferencial contra el ensayo en seco del motor de antes, con respuestas de modelo guionizadas, sobre la tabla de
   AU-223, las cuatro de Boni y los flujos inventados.
+  Hecho en S2: la prueba diferencial del servidor (`apps/server/src/automations/convert.test.ts`) sobre flujos con la
+  forma de los de un usuario, guardados y convertidos como los suyos: uno por la hora, una búsqueda sin filas, una
+  lista de 50, un «Solo si» falso y uno que solo cuenta; el ensayo en seco del motor de antes y «Probar» del nuevo
+  piden el mismo número de escrituras (1, 0, 50, 0 y 0), las de antes todas propuestas, y ninguno escribe nada. «Probar» no
+  contaba lo que un paso preguntaría: ahora lo da aparte (`wouldAsk`), sin sumarlo a lo que escribiría; pintarlo en
+  su pantalla es de la E2. Falta (S2b): lectores con respuestas guionizadas y uno que falla, que cada escritura sea
+  la misma (colección, valores y orden, no solo cuántas), las etiquetas de lo que viene de fuera paso a paso, cada
+  fila de la tabla de AU-223 y las cuatro de Boni.
 - **AU-225** (F16, en parte) · Cuándo se convierte, qué ve Juan, cómo lo comprueba y cómo vuelve. Una vez: al abrir
   su almacén tras el despliegue que la trae, por código, sin modelo y sin que él haga nada. Para Juan es un solo
   momento: decidió (2026-11-17) que nada de estas fases se despliega hasta acabar la F16, así que ese despliegue es
@@ -2958,8 +2972,13 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   prueba:
   `apps/server/src/automations/convert.test.ts`.
   Hecho en S1: el programado corre una vez en cada hueco: la conversión cuenta las horas desde la última vez que
-  corrió (o desde que se guardó), como el programador de antes. Falta: la prueba de una propuesta en la Bandeja y de
-  una ejecución de antes que espera, y «Traer correo» y «Leer correo» en la misma transacción (S2).
+  corrió (o desde que se guardó), como el programador de antes.
+  Hecho en S2: una propuesta que dejó en la Bandeja una ejecución de antes se acepta igual con el flujo ya convertido,
+  y aceptarla no inicia ninguna ejecución del motor nuevo; una ejecución de antes que espera una pregunta al
+  convertir la sigue el motor de antes al responderla, y su fila se copia como «De antes» en la primera apertura del
+  almacén después de acabar (antes la copia se daba por hecha con ella esperando y nunca la copiaba: ahora la copia
+  se reintenta en cada apertura mientras quede una sin acabar). Falta (S2b): «Traer
+  correo» y «Leer correo» cambian de motor en la misma transacción.
 - **AU-227** (F16, en parte) · El historial de antes y el volumen. Las ejecuciones de un flujo siguen en
   «Ejecuciones» de su automatización como filas de resumen, marcadas «De antes»: cuándo, cómo acabó, cuánto tardó y
   qué versión, como las recortadas de AU-103, sin sus pasos (que siguen en «Registro», donde están hoy). Se copian
@@ -3002,7 +3021,11 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   con «Formato anterior» junto a su nombre, y sigue encendido, apagado y ejecutándose como estaba.
 - **AU-152** (F16, pendiente) · Al terminar se quitan el motor de listas, el editor viejo y sus pruebas, y los
   principios y la guía de diseño se reescriben en el mismo PR.
-  En la F16: es el último PR de la fase. El despliegue de la F16 sale con todo lo demás y con el motor de antes
+  En la F16: es el último PR de la fase. No puede salir mientras quede un flujo que modifica o elimina una fila por
+  su id (AU-223: se queda en el motor de antes, «Sí, por ahora» de Juan): antes, el traductor tiene que seguir el
+  `ref` de ese id hasta el `entities.query` o el `entities.get` que nombra su colección, y el paso pasa a ser
+  «Colección · Modificar» o «· Eliminar» sobre la fila que le llega; un id que viene de un campo o de un lector no
+  tiene colección y ese flujo seguiría sin paso. El despliegue de la F16 sale con todo lo demás y con el motor de antes
   dormido: nada en la app dice «Formato anterior», porque todo está convertido, y el motor de antes solo corre si Juan
   pulsa «Volver al flujo de antes» (AU-225). Cuando él dice que las convertidas valen, se mezcla este PR y sale en el
   despliegue siguiente. Es contraer después de comprobar, y Juan lo decidió así (decisión 21). Se van: el editor de
