@@ -166,7 +166,8 @@ test("AU-232 · «Modelos» is one list and no use is named in it", async ({ pag
   ]);
   await expect(panel.locator(".models-cases li.fail")).toHaveCount(2);
   // The grader's detail is not painted (task 132, I-40).
-  await expect(panel.locator(".models-cases")).not.toContainText("wrong collection");
+  for (const c of await panel.locator(".models-cases").all())
+    await expect(c).not.toContainText("wrong collection");
   await expect(panel.getByRole("region", { name: "Se usa en" })).toContainText(
     "«De la cuenta · Lectura» y 3 automatizaciones",
   );
@@ -306,7 +307,7 @@ test("AU-233 AU-241 · «Quitar» a model or a key in use asks first and says wh
   await openModels(page);
   await rows(page).first().locator(".models-item-main").click();
   const panel = page.locator(".models-panel");
-  await panel.getByRole("button", { name: "Quitar" }).click();
+  await panel.getByRole("button", { name: "Quitar", exact: true }).click();
   const ask = panel.locator(".models-ask");
   await expect(ask.locator(".models-line")).toHaveText([
     "Se usa en «De la cuenta · Lectura» y 3 automatizaciones.",
