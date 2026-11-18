@@ -288,12 +288,15 @@ describe("what Boni learns from the answers to an automation (F15)", () => {
     // Accepted and then corrected by his hand within the week: the daily pass turns it wrong.
     const fixed = await next();
     expect((await h.accept(fixed.proposal)).status).toBe(200);
+    // His edit comes after the accept (a later instant than the decision's, on this store's real clock).
+    await new Promise((r) => setTimeout(r, 5));
     h.s.update(
       rowOf(h.s, fixed.run),
       { [fieldOf(h.s, "nota")]: typed("aceptada y corregida") },
       BY_HAND,
     );
-    judgeCells(h.s, Date.now() + 8 * DAY, MINE);
+    // Two days later: within the week the pass reads, and within his 7 days to correct it.
+    judgeCells(h.s, Date.now() + 2 * DAY, MINE);
     expect(cellDecisions(h.s, fixed.run)).toMatchObject([{ outcome: "ask", result: "wrong" }]);
   });
 

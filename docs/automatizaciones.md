@@ -2835,7 +2835,7 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   ejecución; `learnAnswer` (rutas de aceptar y rechazar de la Bandeja, `agent.ts`) una por celda que preguntó, solo
   desde un dispositivo personal y una vez; `learnUndo` («Deshacer lo que hizo») las pasa a fallo; y `judgeCells`, una
   vez al día en el tick del planificador, mira el registro por los índices de las decisiones (`decisions_at`,
-  migración 33), de cada ejecución y de cada fila (`opsOn`): su mano cambiando los mismos campos, mandando a la
+  migración 33), de cada ejecución y de sus filas, una consulta por ejecución (`handOpsOnRun`): su mano cambiando los mismos campos, mandando a la
   papelera, sacando de ella lo que la ejecución mandó o deshaciendo una de sus operaciones. El ámbito es la celda con
   la huella del paso sin los modos (`cellPrint`): pasar de «Preguntar» a «Sí» sigue la misma cuenta. Una ejecución
   cancelada mientras esperaba no llega a terminar y lo que guardó con «Sí» no cuenta.

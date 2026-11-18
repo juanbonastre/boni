@@ -242,10 +242,14 @@ export interface UserStore {
    * read it with `logPage` or `recentOps` instead, never whole (a big store's log is more than the server's memory). */
   log(q?: { target?: string; run?: string; action?: number }): LogRow[];
   /**
-   * The operations on one row after `from` and up to `to` (instants), oldest first, by its index: what changed it in a
-   * few days without reading the rest of its history (AU-207: a row an automation changes every hour for a year).
+   * What a person's hand (actor «user», no run) did after `from` and up to `to` (instants) to the rows a run wrote,
+   * oldest first, in one query by the indexes of the run and of each row: what changed them in a few days without
+   * reading the rest of their history, nor another run's (AU-207: a run that saved thousands of rows, a row an
+   * automation changes every hour for a year).
    */
-  opsOn(target: string, from: number, to: number): LogRow[];
+  handOpsOnRun(run: string, from: number, to: number): LogRow[];
+  /** The types of these rows, trashed too, in one query by the entities' key (a run's rows, AU-207). */
+  typesOf(ids: readonly string[]): Map<EntityId, TypeId>;
   /** The operations after `afterSeq`, oldest first, at most `limit`: the whole log a page at a time (an export). */
   logPage(afterSeq: number, limit: number): LogRow[];
   /** The latest operations, newest first, without what each changed (what changed lately, at any size). */
@@ -1385,11 +1389,20 @@ export function openUserStore(path: string, opts: StoreOptions = {}): UserStore 
               : db.prepare("SELECT * FROM ops ORDER BY seq").all();
       return rows.map(logRow);
     },
-    opsOn(target, from, to) {
+    handOpsOnRun(run, from, to) {
       return db
-        .prepare("SELECT * FROM ops WHERE target = ? AND at > ? AND at <= ? ORDER BY seq")
-        .all(target, from, to)
+        .prepare(
+          `SELECT * FROM ops WHERE target IN (SELECT target FROM ops WHERE run = ?)
+             AND run IS NULL AND actor = 'user' AND at > ? AND at <= ? ORDER BY seq`,
+        )
+        .all(run, from, to)
         .map(logRow);
+    },
+    typesOf(ids) {
+      const rows = db
+        .prepare("SELECT id, type FROM entities WHERE id IN (SELECT value FROM json_each(?))")
+        .all(JSON.stringify(ids)) as { id: string; type: string }[];
+      return new Map(rows.map((r) => [r.id as EntityId, r.type as TypeId]));
     },
     logPage(afterSeq, limit) {
       return db

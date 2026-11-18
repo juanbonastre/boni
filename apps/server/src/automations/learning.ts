@@ -172,16 +172,14 @@ interface Saved {
 function savedOf(store: UserStore, run: string): Map<string, Saved> {
   const out = new Map<string, Saved>();
   const types = store.schema().types;
-  const keyOf = new Map<string, string | null>();
-  for (const op of store.log({ run })) {
+  const ops = store.log({ run });
+  // The rows' types in one query, not one read of each row (a run that saved thousands, A-15).
+  const typeOf = store.typesOf([...new Set(ops.map((op) => op.target))]);
+  for (const op of ops) {
     const action = ACTION_OF[op.kind];
     if (!action || op.undoes !== null) continue;
-    let collection = keyOf.get(op.target);
-    if (collection === undefined) {
-      const e = store.get(op.target);
-      collection = (e ? types[e.entity.type]?.key : undefined) ?? null;
-      keyOf.set(op.target, collection);
-    }
+    const type = typeOf.get(op.target);
+    const collection = type ? types[type]?.key : undefined;
     if (!collection) continue;
     const k = cellOf(collection, action);
     const s = out.get(k) ?? { rows: new Map(), seqs: new Set(), at: op.at };
@@ -312,7 +310,7 @@ const byHand = (op: LogRow, personal: ReadonlySet<string>) =>
 
 /**
  * The day's look at the operation log (AU-207): the decisions of the last days still standing, each run's
- * operations once and each of its rows' operations once, by their indexes. Corrected by his hand within 7 days, a
+ * operations once and its hand on their rows in one query, by their indexes. Corrected by his hand within 7 days, a
  * decision is wrong; what was saved with «Sí» and left 7 days is right. `personal`: his personal devices' names.
  * Gives what it judged and what it paused.
  */
@@ -331,20 +329,25 @@ export function judgeCells(
     .filter((d) => d.result !== "wrong" && (d.outcome === "do" || d.result === "right"));
   const byRun = new Map<string, DecisionRow[]>();
   for (const d of standing) byRun.set(d.run, [...(byRun.get(d.run) ?? []), d]);
-  const onRow = new Map<string, LogRow[]>();
-  const opsOf = (row: string) => {
-    let ops = onRow.get(row);
-    if (!ops) {
-      ops = store.opsOn(row, since, now).filter((op) => byHand(op, personal));
-      onRow.set(row, ops);
-    }
-    return ops;
+  /** His hand's operations on a run's rows in the days looked at, by row: one query a run (A-15). */
+  const handOn = (run: string) => {
+    const byRow = new Map<string, LogRow[]>();
+    for (const op of store.handOpsOnRun(run, since, now))
+      if (byHand(op, personal)) byRow.set(op.target, [...(byRow.get(op.target) ?? []), op]);
+    return byRow;
   };
   /** When his hand first corrected what was saved, after `from` and up to `to`, or null. */
-  const corrected = (s: Saved, from: number, to: number): number | null => {
+  const corrected = (
+    s: Saved,
+    hand: Map<string, LogRow[]>,
+    from: number,
+    to: number,
+  ): number | null => {
     let first: number | null = null;
-    for (const [row, w] of s.rows)
-      for (const op of opsOf(row)) {
+    for (const [row, ops] of hand) {
+      const w = s.rows.get(row);
+      if (!w) continue;
+      for (const op of ops) {
         if (op.at <= from || op.at > to) continue;
         const hit =
           op.undoes !== null
@@ -354,17 +357,19 @@ export function judgeCells(
               (op.kind === "update" && fieldsOf(op).some((f) => w.fields.has(f)));
         if (hit && (first === null || op.at < first)) first = op.at;
       }
+    }
     return first;
   };
   let judged = 0;
   const notices: AutomationNotice[] = [];
   for (const [run, ds] of byRun) {
     const saved = savedOf(store, run);
+    const hand = handOn(run);
     for (const d of ds) {
       const key = cellOfArea(d.area);
       if (!key) continue;
       const s = saved.get(cellOf(key.collection, key.action));
-      const hit = s ? corrected(s, d.at, Math.min(d.at + CORRECTED_WITHIN, now)) : null;
+      const hit = s ? corrected(s, hand, d.at, Math.min(d.at + CORRECTED_WITHIN, now)) : null;
       if (hit !== null) {
         store.journal.reviseDecision(d.id, "wrong", hit);
         judged++;
