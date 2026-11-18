@@ -940,7 +940,7 @@ interface Connection {
   Hecho en P1 de la F15: la fila abierta de un «Agente» (`AutomationConnections.tsx`): bajo «Leer» sus tres límites,
   y bajo cada acción que no está en «No» los suyos, «Solo estas filas» (modificar y eliminar), los campos (crear y
   modificar, con el control de AU-52) y «Como mucho»; cada uno se guarda en su acción, uno vacío no se guarda, y la
-  celda los dice («Preguntar · con filtro · hasta 20», `writeLimitsOf`). Falta: las expresiones en los fijos (P2).
+  celda los dice («Preguntar · con filtro · hasta 20», `writeLimitsOf`). Falta: las expresiones en los fijos (P3).
   Hecho en el segundo PR de E3 (decisión 18): `update.fixed`, con la misma forma, la misma validación (un campo que
   la colección no tiene, uno que también está en `fields` y, fuera de un «Agente», uno que no es un valor escrito) y
   el mismo trato que `create.fixed`: cada fila que el paso modifica acaba con esos valores, los pone el código al
@@ -1121,7 +1121,7 @@ que un paso espere a Juan.
   Hecho en P1 de la F15: el paso en el editor, bajo «Usar IA» con su icono: sus seis cosas en ese orden
   («Instrucciones», «Modelo», «Conexiones», «Lecturas», «Respuesta», «Se ejecuta»), ninguna clave, temperatura ni
   token, y «Las hace este código» enseña su código en un cuadro de texto (`automations-ai.spec.ts`, en el escritorio
-  y en el teléfono, que solo lee). Falta: el editor del código (P2). Hecho en P2 de la F15: sin «Instrucciones» el problema dice «Escribe
+  y en el teléfono, que solo lee). Falta: el editor del código (P3). Hecho en P2 de la F15: sin «Instrucciones» el problema dice «Escribe
   qué tiene que hacer», no «Falta este dato» (`BY_PARAM` de `words.ts`), y un paso de IA que falla dice cuál de sus
   fallos (`AI_FAILURES`: «Presupuesto del mes agotado», «Falta la clave de la conexión», «Respuesta del modelo no
   válida»…), nunca su `other` (`words.test.ts`, «AU-50 · AU-199 · AU-59 · an AI step's failures…»).
@@ -1175,7 +1175,7 @@ que un paso espere a Juan.
   Hecho en P1 de la F15: bajo «Crear» y bajo «Modificar» de la fila abierta, cada campo es «No lo escribe», «Decidido
   por un modelo» o «Fijo» con su valor, pintado por su tipo como en «los campos de una fila»: los de la IA son
   `fields` (todos, sin lista), los fijos `fixed`, nunca los dos, y un campo que deja de ser de la IA pierde su línea
-  (`setWriteField`, `connections.test.ts`). Falta: «Expresión» y la línea de cada campo (P2).
+  (`setWriteField`, `connections.test.ts`). Falta: «Expresión» y la línea de cada campo (P3).
 - **AU-53** (F15, en parte) · «Respuesta» es «Texto» o «Campos» (una lista de campos con su tipo). Sale como una
   fila que los pasos siguientes citan como cualquier otra.
   En la F15: «Texto» da una fila con el campo `texto`; «Campos», hasta 12 campos, cada uno con su nombre, su tipo
@@ -2408,8 +2408,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   ejecución que acabó sin respuesta lo dice solo como «Completada» (su registro dice `ended: "noAnswer"`).
 - **AU-201** (F15, en parte) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, por el
   `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a quién (P2, P14). Detrás
-  de «Añadir opción», **Dónde**: «En el ordenador y el móvil» (nace así), «Solo en el ordenador» o «Solo en el
-  móvil»; es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
+  de «Añadir opción», **Dónde**: «Ordenador y móvil» (nace así), «Solo ordenador» o «Solo móvil» (confirmadas
+  por Juan el 2026-11-18; el diseño decía «En el ordenador y el móvil», «Solo en el ordenador» y «Solo en el móvil»); es una lista cerrada de sus dispositivos, fija en el paso y nunca una expresión (decisión 17 del §10: lo
   que guarda sola una ejecución no avisa, y un aviso es este paso). Uno por ejecución; «Una vez por fila», detrás de «Añadir opción», manda hasta 5 y después uno que
   los junta («y 12 más»). El texto se pinta plano, recortado a 300 caracteres, y tocarlo abre su ejecución. En una
   prueba dice «Avisaría…» y no manda nada. No es el aviso de AU-102 (el de un fallo, que manda Boni): este lo pone
@@ -2516,7 +2516,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   con `run-cancelled`. Hecho en P2: la opción en el editor, «Solo desde un dispositivo personal» detrás de «Añadir
   opción» de «Preguntar», apagada al nacer; la tarjeta según `mayAnswer` (sin él, contesta: un servidor de antes), y
   una que ese dispositivo no contesta no tiene controles ni «Descartar» y dice «Solo desde un dispositivo personal»;
-  una tarjeta cancelada dice «Pregunta cancelada». La prueba: `e2e-boni/automations-ai.spec.ts` («AU-125 · a
+  una tarjeta cancelada dice «Pregunta cancelada». Juan confirmó el 2026-11-18 estas palabras y las de la parte A de
+  P2: «Caducada», «Completada»/«Completado», «Días de espera», las tres de «Dónde» (AU-201), «Pregunta cancelada»,
+  «Prueba caducada» y la tarjeta de solo lectura con «Solo desde un dispositivo personal». La prueba: `e2e-boni/automations-ai.spec.ts` («AU-125 · a
   «Preguntar» of a run waits as a card in the Bandeja…», «AU-125 · «Solo desde un dispositivo personal»…» y «AU-203 ·
   a card of a cancelled run says «Pregunta cancelada»…»).
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
@@ -3806,7 +3808,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   conexión no deja leer. El Deshacer no lo usa (lee el registro de operaciones del almacén). Desde E3, las
   escrituras de un «Agente» se recortan igual (pasan por el mismo `applyWrites`), «Lo que hizo» no lleva filas y a su
   modelo se le devuelve solo la cuenta («will create 1 row in …»).
-- **AU-204** (F15, en parte) · Lo que guarda un paso de IA. Cambia la tercera fila de P28 (AU-167), que hasta
+- **AU-204** (F15, hecho) · Lo que guarda un paso de IA. Cambia la tercera fila de P28 (AU-167), que hasta
   aquí proponía todo valor escrito por un modelo. Desde la F15:
 
   | Lo que escribe un paso de una versión publicada | Qué pasa |
@@ -4438,7 +4440,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       construyó S4 de la F14d (AU-167). La otra respuesta era «un aviso cada vez que una ejecución programada guarda,
       sin que la automatización lo pida».
     - Si él quiere enterarse, pone un «Avisar» en el grafo, y ese aviso lleva **Dónde** detrás de «Añadir opción»:
-      «En el ordenador y el móvil» (nace así), «Solo en el ordenador» o «Solo en el móvil» (AU-201). Son sus
+      «Ordenador y móvil» (nace así), «Solo ordenador» o «Solo móvil» (AU-201; confirmadas por Juan el 2026-11-18). Son sus
       dispositivos, nunca uno que se nombre: es una lista cerrada fija en el paso, no una expresión, así que ni algo
       de fuera ni un modelo elige a dónde va.
     - El aviso de un fallo de una automatización que corre sola no cambia: lo manda Boni una vez por racha (AU-102,
