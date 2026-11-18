@@ -799,14 +799,14 @@ test.describe("«Ejecutar»", () => {
     await openApp(page, "/?still", { automations: [PUBLISHED, NEVER], agent: BEFORE() });
     await openCanvas(page, NEVER.name);
     await publishButton(page).click();
-    await expect(screen(page)).toHaveAccessibleName("Publicar");
+    await expect(screen(page)).toHaveAccessibleName(/^Publicar/);
     await page.keyboard.press("Escape");
     await expect(screen(page)).toHaveCount(0);
     await expect(nameBox(page)).toHaveValue(NEVER.name);
     await openCanvas(page, PUBLISHED.name);
     for (const item of ["Ejecutar", "Ajustes"]) {
       await more(page, item);
-      await expect(screen(page)).toHaveAccessibleName(item);
+      await expect(screen(page)).toHaveAccessibleName(new RegExp(`^${item}`));
       await page.keyboard.press("Escape");
       await expect(screen(page)).toHaveCount(0);
       await expect(nameBox(page)).toHaveValue(PUBLISHED.name);

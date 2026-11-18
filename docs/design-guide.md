@@ -1199,12 +1199,14 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   disables it too. Published, the notice says «Publicada la versión 5» with «Ejecutar». **«Ejecutar»** runs the
   published version: with «Campos que pide», a modal with the same fields as «Probar» and «Ejecutar»; with changes
   not published, the modal says «Versión publicada: 4» first; off, the notice says «Apagada» with
-  «Encender»; one in progress, «En ejecución». **«Ajustes»** is a modal of the automation's limits: «Tiempo»
+  «Encender»; one in progress, «En ejecución». With several triggers the modal asks «Ejecutar desde» first (the
+  triggers as radios). **«Ajustes»** is a modal of the automation's limits: «Tiempo»
   (seconds) always, «Filas escritas» when a step writes, each a number with «Por defecto 1000 · máximo 20.000» under
   it; over its ceiling it says «Como mucho 20.000» in `--bad` and keeps the last value. A test that stopped at a limit
   says «Cambiar el límite» in «Registro», which opens «Ajustes» on that field. From a shared device «Publicar», the
   switch and «Ejecutar» say «Solo desde un dispositivo personal» and change nothing. A «Eliminar filas» with «Sí»
-  says «A la papelera · sin preguntar» in each row of «Haría esto».
+  says «A la papelera · sin preguntar» in each row of «Haría esto». Esc closes «Publicar», «Ejecutar», «Ajustes» and
+  «Eliminadas» and nothing else: the editor stays open (an open menu inside one closes first).
 - **«Versiones»** (F14d P3b, `AutomationVersions.tsx`, `automations/versions.ts`; AU-98, decision 12; the sketch's
   screen 8 as a model). «⋯» has «Versiones» under «Ajustes» once it is published (not on the phone). It takes the
   canvas's place, laid out as «Ejecuciones»: on the left, 330 px, «Volver al editor» over the versions, the newest
@@ -1363,7 +1365,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   After a test «Registro» has «Ver cada paso» (the list-tree icon): a 380 px pop-up with one line per step in the
   order it ran, its pill, its name, «128 → 3» and its seconds, and under it, muted, what it touched («Guardaría 3
   cambios», «Consola: 4 líneas»); a line opens its step. A run's «Ver cada paso» is the same, with «Guardó»,
-  «Propuso» and what it read («Leyó 128 filas de Libros»), which a test of the editor does not give yet. In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
+  «Propuso»; both say what a step read («Leyó 128 filas de Libros»), and a «Código» that wrote in its «Consola» has it
+  whole under its line, the step view's own lines (plain text, «línea 3 · fila 2», «y 340 líneas más»), at most 160 px
+  and then scrolling. In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
   output that ended well: the card says «Salida fijada» (with «desactualizada» once the step changes), «Probar»
   gives that output without running it, and the same button, now «Soltar», lets it go.
   In the step's view, ENTRADA and SALIDA have a head with what they hold and «Ver como»: «Esquema» (each field with
@@ -1458,7 +1462,10 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   `--accent-soft`, `--line-strong` for its border, a 2 px `--accent` outline when focused), with
   `return $input.all();` as its hint. What it completes is the core's `completions`: the steps before by name inside
   `$('`, the connected collections inside `$col('`, the fields after `$json.`, `$input.first().` and
-  `$('Paso').first().`, each written by its key and shown by its name. Each problem of validation with a place is
+  `$('Paso').first().`, each written by its key and shown by its name. A field of ENTRADA dragged into the editor is
+  written by its key where it is let go, a caret showing where while it is dragged: `$json.importe` (`$('Paso').item.importe`
+  for a step before) once per row, `$input.first().importe` (`$('Paso').first().importe`) once for all, and the key
+  alone right after a dot; a read-only editor takes no drop. Each problem of validation with a place is
   underlined where it is (an error in `--bad`, a warning in `--warn`) with its words on hover; under the editor in
   12 px `--muted` «1.234 de 20.000 caracteres», and below it what has no place (too long) in `--bad`. A collection
   cited and not connected: a notice «Conecta «Categorías» a este paso» with «Conectar» (small button), once per
