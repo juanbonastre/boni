@@ -1629,7 +1629,7 @@ function ReplyView({ reply }: { reply: Reply }) {
 }
 
 /**
- * What Juan answered, as text (§3.4, rule 3): yes or no, «Guardar» or «Ahora no», «Ninguna» for no box ticked, and
+ * What Juan answered, as text (§3.4, rule 3): yes or no, «Guardar» or «Descartar», «Ninguna» for no box ticked, and
  * anything else as its value reads (a day in his language, a file by its name, several joined).
  */
 function AskedAnswer({ answer, control }: { answer: Painted; control?: Painted }) {
@@ -1651,7 +1651,7 @@ function AskedAnswer({ answer, control }: { answer: Painted; control?: Painted }
 
 /**
  * A question's card (docs/conversacion.md §3.4): its control, and a free way out where it makes sense (rule 2):
- * «Nueva…» among rows or a property's options, «Otra cosa…» among the rest; yes or no and a rehearsal have none. What
+ * «Nueva…» among rows or a property's options, «Otra…» among the rest; yes or no and a rehearsal have none. What
  * it shows the server checks again when it is answered (rule 3a): changed since, it comes back made again, «Ha
  * cambiado», with nothing answered.
  */
@@ -1703,7 +1703,7 @@ function askField(
 }
 
 /**
- * «Otra cosa…», «Nueva…» or «Más…» open: the line to write in. «Otra cosa…» ends the question with his words (the
+ * «Otra…», «Nueva…» or «Más…» open: the line to write in. «Otra…» ends the question with his words (the
  * next turn); «Nueva…» makes the row or adds the option; «Más…» finds one of the property's other options.
  */
 type Out = { kind: "other" | "new" | "more"; text: string; saving: boolean };
@@ -2003,7 +2003,7 @@ function YesNo({ entryId }: { entryId: string }) {
   );
 }
 
-/** Words, a number or a day (§3.4); a number or a day also has «Otra cosa…». */
+/** Words, a number or a day (§3.4); a number or a day also has «Otra…». */
 function Typed({ entryId, control }: { entryId: string; control: "text" | "number" | "date" }) {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
@@ -2075,7 +2075,7 @@ function Typed({ entryId, control }: { entryId: string; control: "text" | "numbe
 /**
  * A file (§3.4: upload it or drop it): it goes up as one dropped on the conversation, or attached on the phone, does,
  * a row of his files, and that row is the answer. The phone chooses with its own picker and has nothing to drop on.
- * Where the device cannot send a file, it says so; «Otra cosa…» stays.
+ * Where the device cannot send a file, it says so; «Otra…» stays.
  */
 function FileAnswer({ entryId }: { entryId: string }) {
   const t = useStore((s) => s.t);
@@ -2164,7 +2164,7 @@ function FileAnswer({ entryId }: { entryId: string }) {
 
 /**
  * A rehearsal (§3.4): what the rest of the turn would write, each with its card's rows, folded until «Revisar»;
- * «Guardar» does it (a confirmation still asks), «Ahora no» does nothing of it. No free way out (rule 2).
+ * «Guardar» does it (a confirmation still asks), «Descartar» does nothing of it. No free way out (rule 2).
  */
 function Rehearsal({ entryId, pending }: { entryId: string; pending: AskPending }) {
   const t = useStore((s) => s.t);

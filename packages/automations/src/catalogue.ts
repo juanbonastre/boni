@@ -49,8 +49,10 @@ import {
   NOTIFY_TYPE,
   NOTIFY_WHERE,
   PEOPLE_MODES,
+  PEOPLE_VIA,
   REPLY_PARAMS,
   REPLY_TYPE,
+  VIA_BORN,
 } from "./people.ts";
 
 export const CATEGORIES = ["trigger", "data", "transform", "logic"] as const;
@@ -110,16 +112,19 @@ interface ParamBase {
   changesRows?: true;
   /** Painted, and counted, only while that parameter (a `shape` one) holds one of these values. */
   when?: { param: string; in: readonly string[] };
-  /** What it holds in a new step. */
-  default?: string | number | boolean;
+  /** What it holds in a new step. A list only for a choice of `many` («Por dónde», AU-246). */
+  default?: string | number | boolean | string[];
 }
 
 export type ParamSpec = ParamBase &
   /** `time`: an hour of the day, "HH:MM" (a «Programada»'s rule, AU-114). */
   (
     | { control: "value"; of: "text" | "number" | "date" | "time" | "any" }
-    /** One of `options` (keys), or one field. */
-    | { control: "choice"; options: readonly string[] | FieldsOf }
+    /**
+     * One of `options` (keys), or one field. `many`: one or more of `options`, distinct, kept as a list in their
+     * order («Por dónde», AU-246); never fields.
+     */
+    | { control: "choice"; options: readonly string[] | FieldsOf; many?: true }
     | { control: "toggle" }
     /** Rows that Juan adds, each with these columns; `min` rows at least. */
     | { control: "list"; columns: readonly ParamSpec[]; min?: number; max?: number }
@@ -1214,9 +1219,34 @@ const PEOPLE_MODE: ParamSpec = {
   default: "all",
 };
 /**
- * «Preguntar» (AU-125, F15 E4): reachable by its type, only with `ValidationContext.people`. Its three shown
- * parameters; the options only for «Una opción» and «Varias opciones», fixed or from an expression that gives the list.
- * Two outputs: the row with its answer, and «sin respuesta». Its effect is `none`: it asks Juan, and the engine waits.
+ * «Por dónde» (AU-246, decision 29 of §10): one or both of Juan's own surfaces, shown, fixed in the step (never an
+ * expression), born as `VIA_BORN` says for each type.
+ */
+const via = (type: "ask" | "notify"): ParamSpec => ({
+  key: ASK_PARAMS.via,
+  control: "choice",
+  options: PEOPLE_VIA,
+  many: true,
+  place: "shown",
+  required: true,
+  shape: true,
+  default: [...VIA_BORN[type]],
+});
+/** «Dónde» (AU-201), behind «Añadir opción»: the devices a notification goes to, a closed list of his own. */
+const WHERE: ParamSpec = {
+  key: NOTIFY_PARAMS.where,
+  control: "choice",
+  options: NOTIFY_WHERE,
+  place: "option",
+  shape: true,
+  default: "all",
+};
+/**
+ * «Preguntar» (AU-125, F15 E4): reachable by its type, only with `ValidationContext.people`. Shown: the question,
+ * «Por dónde» (AU-246), the kind of answer with its options (only for «Una opción» and «Varias opciones», fixed or from
+ * an expression that gives the list) and «Días de espera»; behind «Añadir opción», «Una vez por fila», «Dónde» of its
+ * notification and «Solo desde un dispositivo personal». Two outputs: the row with its answer, and «sin respuesta».
+ * Its effect is `none`: it asks Juan, and the engine waits.
  */
 const ASK_ACTION: ActionSpec = {
   key: RUN,
@@ -1227,6 +1257,7 @@ const ASK_ACTION: ActionSpec = {
   outputs: [MAIN, NO_ANSWER],
   params: [
     { key: ASK_PARAMS.question, control: "value", of: "text", place: "shown", required: true },
+    via("ask"),
     {
       key: ASK_PARAMS.answer,
       control: "choice",
@@ -1252,6 +1283,7 @@ const ASK_ACTION: ActionSpec = {
       default: ASK_LIMITS.waitDays.born,
     },
     PEOPLE_MODE,
+    WHERE,
     // «Solo desde un dispositivo personal» (decision 26 of §10): off when born, any device of the account answers.
     { key: ASK_PARAMS.personal, control: "toggle", place: "option", shape: true, default: false },
   ],
@@ -1265,9 +1297,9 @@ const ASK_STEP: StepTypeSpec = {
 };
 const ASK_PER_ROW: ActionSpec = { ...ASK_ACTION, mode: "perRow" };
 /**
- * «Avisar» (AU-201): **Texto**, and behind «Añadir opción» «Una vez por fila» and «Dónde» (decision 17 of §10). No
- * parameter names a recipient: a notice goes to Juan, on the devices «Dónde» names from a closed list fixed in the
- * step (P2, P14). The rows pass on as they came.
+ * «Avisar» (AU-201): **Texto** and «Por dónde» (AU-246), and behind «Añadir opción» «Una vez por fila» and «Dónde»
+ * (decision 17 of §10). No parameter names a recipient: a notice goes to Juan, by the surfaces «Por dónde» and on the
+ * devices «Dónde» names, closed lists fixed in the step (P2, P14). The rows pass on as they came.
  */
 const NOTIFY_ACTION: ActionSpec = {
   key: RUN,
@@ -1278,15 +1310,9 @@ const NOTIFY_ACTION: ActionSpec = {
   outputs: [MAIN],
   params: [
     { key: NOTIFY_PARAMS.text, control: "value", of: "text", place: "shown", required: true },
+    via("notify"),
     PEOPLE_MODE,
-    {
-      key: NOTIFY_PARAMS.where,
-      control: "choice",
-      options: NOTIFY_WHERE,
-      place: "option",
-      shape: true,
-      default: "all",
-    },
+    WHERE,
   ],
 };
 const NOTIFY_STEP: StepTypeSpec = {

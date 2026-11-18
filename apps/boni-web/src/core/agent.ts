@@ -140,7 +140,7 @@ export type Pending = AskPending | { kind: "confirm"; id: string; view: ConfirmV
 export type AskAnswer =
   | { choice: number }
   | { text: string }
-  /** «Otra cosa…»: the question ends; they are the next turn. */
+  /** «Otra…»: the question ends; they are the next turn. */
   | { words: string }
   /** A row made with «Nueva…». */
   | { record: string }
@@ -152,7 +152,7 @@ export type AskAnswer =
   | { yes: boolean }
   /** A file of his (a row of his files), as a chip dropped on the conversation makes one. */
   | { file: string }
-  /** A rehearsal: «Guardar» or «Ahora no». */
+  /** A rehearsal: «Guardar» or «Descartar». */
   | { save: boolean };
 export interface Notice {
   code: string;
@@ -441,7 +441,7 @@ export interface InboxCard {
   mode: "compact" | "detailed";
   context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
   /**
-   * A time for a task the mail gave none for (the first free hour of its day): asked on the card («¿A las 16:00?»,
+   * A time for a task the mail gave none for (the first free hour of its day): asked on the card («Hora propuesta: 16:00»,
    * one tap takes it), or already set when Boni earned it (`do`: the card's start and end say it).
    */
   suggestedTime: {
@@ -473,7 +473,7 @@ export interface InboxCard {
       external: string | null;
     } | null;
     /**
-     * An entry at the same moment that may be it («¿Es «X»?», task 58): «Es el mismo» accepts the proposal into
+     * An entry at the same moment that may be it («Posible duplicado: «X»», task 58): «Es el mismo» accepts the proposal into
      * that record (`id`), or linked to that external event (`external`).
      */
     same: {
@@ -1042,6 +1042,11 @@ export interface InboxRequest {
   open: { type: string; id: string } | null;
   /** An automation's «Preguntar» (AU-125): the automation that asks, as the version that ran names it. */
   automation?: { id: string; name: string };
+  /**
+   * An «Avisar»'s card (AU-246, «Por dónde» with «Bandeja»): nothing to answer, only «Descartar». Its text is
+   * `ask.prompt`, an `ask` of no options that is never answered.
+   */
+  notice?: true;
   /**
    * Whether this device answers or puts away the card, as the server says it (`mayAnswer`, decision 26 of
    * docs/automatizaciones.md §10: any device of the account, unless the step asks for a personal one). Absent from a
@@ -3482,7 +3487,12 @@ export class AgentApi {
       .flatMap((r) => {
         const id = str(r.id, 80);
         const run = str(r.run, 80);
-        const ask = parseAsk(r.view);
+        // An «Avisar»'s card (AU-246): its text alone, as plain text with its label.
+        const notice =
+          isObj(r.view) && r.view.kind === "notice" ? parsePainted(r.view.prompt) : null;
+        const ask: AskPending | null = notice
+          ? { kind: "ask", id: id ?? "", control: "text", prompt: notice, options: [] }
+          : parseAsk(r.view);
         if (!id || !run || !ask) return [];
         const open =
           isObj(r.open) && str(r.open.type, 80) && str(r.open.id, 80)
@@ -3507,6 +3517,7 @@ export class AgentApi {
                 }
               : {}),
             ...(typeof r.mayAnswer === "boolean" ? { mayAnswer: r.mayAnswer } : {}),
+            ...(notice ? { notice: true as const } : {}),
           },
         ];
       });

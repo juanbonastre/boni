@@ -188,7 +188,7 @@ Las reglas:
    Las tarjetas atajan; no limitan.
 2. **Una salida libre donde tenga sentido,** como la opción «Otra» de `AskUserQuestion`:
    - Una elección entre filas o categorías trae «Nueva…».
-   - Una elección entre opciones trae «Otra cosa…», que abre una línea para escribir.
+   - Una elección entre opciones trae «Otra…», que abre una línea para escribir.
    - Una regla trae «Cambiarla…», «Es esporádico: sin regla» y «Más general…».
    - El sí o no y la confirmación no llevan salida libre.
 3. **Una tarjeta vieja se vuelve a comprobar.** Al pulsarla, el código mira si lo que leyó ha cambiado (como `stale` en
@@ -388,7 +388,7 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   | # | Punto | Estado |
   |---|---|---|
   | 1 | La barra nunca se bloquea | Hecho (antes de la 27) |
-  | 2a | «Otra cosa…» en una elección entre opciones: lo escrito termina la pregunta y es el turno siguiente | Hecho |
+  | 2a | «Otra…» en una elección entre opciones: lo escrito termina la pregunta y es el turno siguiente | Hecho |
   | 2b | «Nueva…» en una elección entre filas o categorías: la crea y es la respuesta | Hecho: entre filas (la 27) y entre las opciones de una propiedad (la 27, segunda parte) |
   | 2c | Una regla trae «Cambiarla…», «Es esporádico» y «Más general…» | Falta (C6, con las reglas) |
   | 2d | El sí o no y la confirmación sin salida libre | Hecho |
@@ -413,11 +413,11 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
   - **una fecha:** el selector de día del sistema; el servidor comprueba que el día existe;
   - **un archivo:** «Subir un archivo…» o soltarlo en la tarjeta. Sube igual que uno soltado en la conversación (A-24)
     y la respuesta es su fila de Archivos. En el móvil, «Subir un archivo…» abre su selector, como «Adjuntar» (la
-    114), y no hay dónde soltar. Donde el dispositivo no puede subir archivos, lo dice y queda «Otra cosa…»;
+    114), y no hay dónde soltar. Donde el dispositivo no puede subir archivos, lo dice y queda «Otra…»;
   - **sí o no:** dos botones, ninguno teñido, sin salida libre.
-  - Número, fecha y archivo traen «Otra cosa…», como una elección.
+  - Número, fecha y archivo traen «Otra…», como una elección.
 - **El ensayo.** El resto del plan corre en seco, como «Probar»: lo que escribiría, cada cosa con las filas de su
-  tarjeta, plegado hasta «Revisar». «Guardar» lo hace de verdad, y lo que pide confirmación la sigue pidiendo; «Ahora no»
+  tarjeta, plegado hasta «Revisar». «Guardar» lo hace de verdad, y lo que pide confirmación la sigue pidiendo; «Descartar»
   no hace nada («No se ha guardado nada.»). Si no escribiría nada, no hay tarjeta.
 - **Una tarjeta vieja se vuelve a comprobar (regla 3a).** Cada tarjeta lleva un resumen de lo que enseña (`seen`). Al
   contestar, el servidor la vuelve a leer: sus registros a su versión de ahora, las opciones de la propiedad, el ensayo

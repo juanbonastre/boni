@@ -923,7 +923,7 @@ test("a mail of a reply opens in a window of its own in the desktop app, and pro
   ]);
   // Already waiting in the inbox: the toast says so and offers to read it again (task 54), which asks again.
   await list.getByRole("button", { name: "Proponer tarea" }).click();
-  await expect(page.locator(".toast")).toContainText("Ya en la Bandeja");
+  await expect(page.locator(".toast")).toContainText("En la Bandeja");
   await page.locator(".toast").getByRole("button", { name: "Otra vez" }).click();
   await expect(page.locator(".toast")).toContainText("Propuesta en la Bandeja");
   expect(await requests(page, "POST api/mail/propose ")).toEqual([
@@ -1039,8 +1039,8 @@ test("a question: the options are buttons, the answer goes back once", async ({ 
   await expect(page.locator(".ask input[type=password]")).toHaveCount(0);
   await expect(page.locator(".ask")).not.toContainText("contraseña");
   await page.screenshot({ path: `${SHOTS}/agent-ask.png` });
-  // Options that are not rows of one collection: «Otra cosa…», never «Nueva…».
-  await expect(page.getByRole("button", { name: "Otra cosa…" })).toBeVisible();
+  // Options that are not rows of one collection: «Otra…», never «Nueva…».
+  await expect(page.getByRole("button", { name: "Otra…" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Nueva…" })).toHaveCount(0);
   await page.locator(".ask-options .pill").nth(1).click();
   await expect(page.locator(".turn-answer")).toContainText("Hecho.");
@@ -1049,7 +1049,7 @@ test("a question: the options are buttons, the answer goes back once", async ({ 
   ]);
 });
 
-test("a card's free way out (task 27, §3.4): «Otra cosa…» ends the question and his words are the next turn; the question stays as text", async ({
+test("a card's free way out (task 27, §3.4): «Otra…» ends the question and his words are the next turn; the question stays as text", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
@@ -1060,8 +1060,8 @@ test("a card's free way out (task 27, §3.4): «Otra cosa…» ends the question
   });
   await ask(page, "marca como leído el de Cortázar");
   await expect(page.locator(".ask-prompt")).toHaveText("¿Cuál de los dos?");
-  await page.getByRole("button", { name: "Otra cosa…" }).click();
-  const words = page.getByRole("textbox", { name: "Otra cosa…" });
+  await page.getByRole("button", { name: "Otra…" }).click();
+  const words = page.getByRole("textbox", { name: "Otra…" });
   await expect(words).toBeFocused();
   await words.pressSequentially("ninguno, el de Borges que tengo en papel", { delay: 40 });
   await words.press("Enter");
@@ -1083,7 +1083,7 @@ test("a card's free way out (task 27, §3.4): «Otra cosa…» ends the question
   expect(turns[1]).toContain('"text":"ninguno, el de Borges que tengo en papel"');
 });
 
-test("«Otra cosa…» refused (task 27, §3.4): an answer the server does not take leaves the question open, and his words are not sent on their own", async ({
+test("«Otra…» refused (task 27, §3.4): an answer the server does not take leaves the question open, and his words are not sent on their own", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
@@ -1093,8 +1093,8 @@ test("«Otra cosa…» refused (task 27, §3.4): an answer the server does not t
     },
   });
   await ask(page, "marca como leído el de Cortázar");
-  await page.getByRole("button", { name: "Otra cosa…" }).click();
-  const words = page.getByRole("textbox", { name: "Otra cosa…" });
+  await page.getByRole("button", { name: "Otra…" }).click();
+  const words = page.getByRole("textbox", { name: "Otra…" });
   await words.pressSequentially("el de Borges", { delay: 40 });
   await words.press("Enter");
   await expect(page.getByRole("button", { name: "Enviar" })).toBeVisible();
@@ -1155,7 +1155,7 @@ test("every kind of question has its answer on the card (task 27, §3.4): severa
   await expect(card.locator(".ask-prompt")).toHaveText("¿Cuáles has leído?");
   await expect(card.getByRole("checkbox")).toHaveCount(3);
   await expect(card.getByRole("button", { name: "Responder", exact: true })).toBeDisabled();
-  await expect(card.getByRole("button", { name: "Otra cosa…" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Otra…" })).toBeVisible();
   await card.getByRole("checkbox", { name: "Rayuela" }).check();
   await card.getByRole("checkbox", { name: "Pedro Páramo" }).check();
   // Something ticked, «Ninguna» is not an answer.
@@ -1168,7 +1168,7 @@ test("every kind of question has its answer on the card (task 27, §3.4): severa
   const number = page.getByRole("textbox", { name: "Número" });
   await number.pressSequentially("doce", { delay: 40 });
   await number.press("Enter");
-  await expect(page.locator(".ask .turn-error")).toHaveText("Eso no es un número");
+  await expect(page.locator(".ask .turn-error")).toHaveText("Número no válido");
   await number.fill("");
   await number.pressSequentially("1.250,5", { delay: 40 });
   await number.press("Enter");
@@ -1182,7 +1182,7 @@ test("every kind of question has its answer on the card (task 27, §3.4): severa
   await ask(page, "¿y favorito?");
   // Yes or no: two buttons, neither tinted, and no other way out.
   await expect(page.locator(".ask .pill")).toHaveText(["Sí", "No"]);
-  await expect(page.locator(".ask").getByRole("button", { name: "Otra cosa…" })).toHaveCount(0);
+  await expect(page.locator(".ask").getByRole("button", { name: "Otra…" })).toHaveCount(0);
   await page.locator(".ask").getByRole("button", { name: "No", exact: true }).click();
   await expect(page.locator(".reply-asked").last()).toContainText("No");
   expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
@@ -1276,7 +1276,7 @@ test("a file as the answer (task 27, §3.4): chosen in the system's dialog or dr
   ]);
 });
 
-test("a rehearsal (task 27, §3.4): what it would do, folded until «Revisar»; «Guardar» goes on, «Ahora no» saves nothing", async ({
+test("a rehearsal (task 27, §3.4): what it would do, folded until «Revisar»; «Guardar» goes on, «Descartar» saves nothing", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1293,12 +1293,12 @@ test("a rehearsal (task 27, §3.4): what it would do, folded until «Revisar»; 
   const card = page.locator(".ask");
   await expect(card).toContainText("Cambios que haría: 2");
   await expect(card.locator(".ask-would")).toHaveCount(0);
-  await expect(card.getByRole("button", { name: "Otra cosa…" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Otra…" })).toHaveCount(0);
   await card.getByRole("button", { name: "Revisar" }).click();
   const would = card.locator(".ask-would > li");
   await expect(would).toHaveCount(2);
   await expect(would.nth(0)).toContainText("Rayuela");
-  await expect(would.nth(1)).toContainText("Enviar correo · te lo preguntará antes");
+  await expect(would.nth(1)).toContainText("Enviar correo · requiere confirmación");
   // At a phone's width nothing of it leaves the screen.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await page.screenshot({ path: `${SHOTS}/agent-ask-rehearsal-phone.png` });
@@ -1307,7 +1307,7 @@ test("a rehearsal (task 27, §3.4): what it would do, folded until «Revisar»; 
   await expect(page.locator(".reply-asked").last()).toContainText("Guardar");
 
   await askOnPhone(page, "y lo mismo con Ficciones");
-  await page.locator(".ask").getByRole("button", { name: "Ahora no" }).click();
+  await page.locator(".ask").getByRole("button", { name: "Descartar" }).click();
   await expect(page.locator(".turn").last()).toContainText("No se ha guardado nada.");
   expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
     'POST api/agent/answer {"run":"r-ensayo","ask":"a-ensayo","save":true}',
@@ -1731,7 +1731,7 @@ test("a card can be corrected before accepting: its title and its collection go 
   await expect(form).not.toContainText("aprende");
   await page.screenshot({ path: `${SHOTS}/inbox-correct.png` });
   await card.getByRole("button", { name: "Aceptar" }).click();
-  await expect(page.locator(".toast")).toContainText("Aceptada con tus cambios");
+  await expect(page.locator(".toast")).toContainText("Aceptada con cambios");
   const sent = (await recorded(page)).requests.find((r) =>
     r.startsWith("POST api/agent/proposals/c1/accept"),
   );
@@ -2679,9 +2679,9 @@ test("a task without a time: the card offers the first free hour, one tap takes 
   const card = page.locator(".inbox-panel .inbox-card").first();
   await expect(card.locator(".inbox-what")).toContainText("Docencia · jue, 29 oct");
   await expect(card.locator(".inbox-what .muted")).not.toContainText("16:00");
-  await card.getByRole("button", { name: "¿A las 16:00?" }).click();
+  await card.getByRole("button", { name: "Hora propuesta: 16:00" }).click();
   await expect(card.locator(".inbox-what")).toContainText("jue, 29 oct, 16:00–17:00");
-  await expect(card.getByRole("button", { name: "¿A las 16:00?" })).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Hora propuesta: 16:00" })).toHaveCount(0);
   await card.getByRole("button", { name: "Aceptar" }).click();
   await expect
     .poll(() => requests(page, "POST api/agent/proposals/c6/accept"))

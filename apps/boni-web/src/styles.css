@@ -12696,6 +12696,25 @@ tr[data-boni-pointed] > td {
   justify-self: start;
   margin-top: 7px;
 }
+/* «Por dónde» (AU-246): one box per surface, side by side, wrapping on a phone. */
+.auto-many {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 6px 0 0;
+  border: 0;
+  min-width: 0;
+}
+.auto-many-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.auto-many-item input:disabled {
+  cursor: default;
+}
 .auto-list {
   display: flex;
   flex-direction: column;
@@ -13560,6 +13579,19 @@ button.auto-log-line {
 .auto-ask-actions {
   display: flex;
   gap: 8px;
+}
+/* A waiting run's questions in «Ejecuciones» (AU-247): the same block, in the detail's flow above its canvas, and
+   no higher than a third of the screen so the canvas stays in view; the 20 a step may ask scroll inside it. */
+.auto-ask.auto-run-asks {
+  position: static;
+  transform: none;
+  width: auto;
+  max-height: 34vh;
+  box-shadow: none;
+}
+.auto-run-asks .auto-ask-step + .auto-ask-step {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
 }
 @media (max-width: 639px) {
   .auto-ask {

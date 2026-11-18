@@ -79,6 +79,7 @@ import {
   triggerPrint,
 } from "./record.ts";
 import {
+  automationLabel,
   BAD,
   type Hand,
   isError,
@@ -94,9 +95,11 @@ import {
 import {
   type AskPlace,
   addAskCards,
+  askCardId,
   askPlace,
   endAskCards,
   mayAnswer,
+  notifyAsks,
   untilOf,
   waitingAsks,
 } from "./waits.ts";
@@ -545,8 +548,10 @@ async function execute(
 }
 
 /**
- * A run reached a «Preguntar» (AU-203): it waits, keeping what it needs to go on, its questions in the Bandeja, and
- * its turn let go (the lane goes on with the next). Nothing is proposed yet: its proposal is made once, as it ends.
+ * A run reached a «Preguntar» (AU-203): it waits, keeping what it needs to go on, and its turn let go (the lane goes
+ * on with the next). Its questions are in the run, and in the Bandeja and notified as each step's «Por dónde» says
+ * (AU-246, AU-247: one notification per run of a step, marked in what it keeps). Nothing is proposed yet: its
+ * proposal is made once, as it ends.
  */
 function wait(
   store: UserStore,
@@ -556,6 +561,7 @@ function wait(
   ms: number,
   now: number,
 ): void {
+  notifyAsks(store, id, run, e, automationLabel(id));
   store.journal.waitAutomationRun(run, {
     ms,
     line: JSON.stringify(lineOf(store, run, e.asked, e)),
@@ -721,6 +727,19 @@ export type AskGiven =
   | { choices: number[] }
   | { text: string };
 
+/** What a question was answered with, as the Bandeja and «Ejecuciones» send it; null when it is none of them. */
+export function askGivenOf(b: unknown): AskGiven | null {
+  if (!b || typeof b !== "object") return null;
+  const g = b as Record<string, unknown>;
+  if (typeof g.yes === "boolean") return { yes: g.yes };
+  if (Number.isInteger(g.choice)) return { choice: g.choice as number };
+  if (Array.isArray(g.choices) && g.choices.length <= 100 && g.choices.every(Number.isInteger))
+    return { choices: g.choices as number[] };
+  if (typeof g.text === "string" && g.text.length > 0 && g.text.length <= 500)
+    return { text: g.text };
+  return null;
+}
+
 /** The answer's value for its question, or null when it does not fit (a number out of the options, say). */
 function answerValue(place: AskPlace, ask: AskRecord, given: unknown): Cell | null {
   const g = (given ?? {}) as Record<string, unknown>;
@@ -767,27 +786,130 @@ export function answerAsk(
   const place = r ? askPlace(r.view) : null;
   if (!r || !place) return NOT_FOUND;
   if (r.status === "cancelled") return { gone: true, cancelled: true };
+  if (r.status !== "pending" || r.expires <= hand.now) return { gone: true };
+  return answerPlace(store, place, given, hand, box);
+}
+
+/**
+ * Juan answers one question of a waiting run from the run itself (AU-247, decision 29 of §10: the question lives in
+ * the run, wherever it was told): in «Ejecuciones», or from the notification that opens it. The same rules as its
+ * card (`answerAsk`): who may (`mayAnswer`), the answer that fits, the label of the device; its card, if it has one,
+ * ends answered too. A run that no longer waits for it is `gone`, `cancelled` when Juan cancelled it.
+ */
+export function answerRun(
+  store: UserStore,
+  id: string,
+  run: string,
+  step: string,
+  i: number,
+  given: AskGiven | null,
+  hand: RunHand,
+  box?: Box,
+): { run: string } | { gone: true; cancelled?: true } | RunRefusal | ServiceError {
+  const r = runOf(store, id, run);
+  if (!r || r.test) return NOT_FOUND;
+  if (r.state === "cancelled") return { gone: true, cancelled: true };
+  const w = store.journal.automationWait(run);
+  if (r.state !== "waiting" || !w) return { gone: true };
+  const ask = (JSON.parse(w.execution) as Execution).steps[step]?.ask;
+  if (!ask || !Number.isInteger(i) || i < 0 || i >= ask.questions.length) return NOT_FOUND;
+  return answerPlace(
+    store,
+    {
+      automation: id,
+      run,
+      step,
+      i,
+      answer: ask.answer,
+      ...(ask.personal ? { personal: true as const } : {}),
+    },
+    given,
+    hand,
+    box,
+  );
+}
+
+/**
+ * One answer, or none (`given` null: put away), to one question of a waiting run, from its card or from the run: kept
+ * with the wait, labelled by the device (`answerLabel`); once every question of its step has one, the run goes on in
+ * its turn. A question answered already, or past its step's limit, is `gone`.
+ */
+function answerPlace(
+  store: UserStore,
+  place: AskPlace,
+  given: AskGiven | null,
+  hand: RunHand,
+  box?: Box,
+): { run: string } | { gone: true } | RunRefusal | ServiceError {
   const w = store.journal.automationWait(place.run);
-  if (r.status !== "pending" || r.expires <= hand.now || !w) return { gone: true };
+  if (!w) return { gone: true };
   if (!mayAnswer(place, hand.trust)) return { refused: "not-personal" };
   const ask = (JSON.parse(w.execution) as Execution).steps[place.step]?.ask;
-  if (!ask || ask.ended) return { gone: true };
-  const value = given === null ? null : answerValue(place, ask, given);
-  if (given !== null && value === null) return BAD;
-  store.journal.setRequest(
-    card,
-    given === null ? "dismissed" : "answered",
-    hand.now,
-    given ?? undefined,
-  );
+  if (!ask || ask.ended || ask.until <= hand.now) return { gone: true };
   const answers = keptAnswers(w.answers);
   const step = answers[place.step] ?? {};
+  if (String(place.i) in step) return { gone: true };
+  const value = given === null ? null : answerValue(place, ask, given);
+  if (given !== null && value === null) return BAD;
+  // Its card, from wherever it was answered: it leaves the Bandeja as answered or put away.
+  const card = store.journal.request(askCardId(place.run, place.step, place.i));
+  if (card?.status === "pending")
+    store.journal.setRequest(
+      card.id,
+      given === null ? "dismissed" : "answered",
+      hand.now,
+      given ?? undefined,
+    );
   step[String(place.i)] = value === null ? null : { value, by: answerLabel(hand) };
   answers[place.step] = step;
   store.journal.setAutomationWaitAnswers(place.run, JSON.stringify(answers));
   if (ask.questions.every((_, i) => String(i) in step))
     void goOn(store, place.run, { zone: hand.zone, ...(box ? { box } : {}) });
   return { run: place.run };
+}
+
+/** A question of a waiting run as its view shows it (AU-247): what it asks, whether it has its answer already. */
+export interface RunQuestion {
+  text: string;
+  label: AskRecord["questions"][number]["label"];
+  options?: AskRecord["questions"][number]["options"];
+  /** It has its answer (or was put away) and waits for the step's other questions. */
+  answered: boolean;
+}
+/** A waiting «Preguntar» of a run, as «Ejecuciones» paints it, with whether this device answers it (decision 26). */
+export interface RunAsk {
+  step: string;
+  answer: AskRecord["answer"];
+  until: number;
+  questions: RunQuestion[];
+  mayAnswer: boolean;
+}
+
+/** The questions a run waits for (AU-247), step by step, in the order of its steps; empty for one that waits not. */
+export function runAsks(store: UserStore, run: string, trust: Trust): RunAsk[] {
+  const w = store.journal.automationWait(run);
+  if (!w) return [];
+  const answers = keptAnswers(w.answers);
+  // Branches reach their «Preguntar» in either order; the view keeps the document's, so it does not reshuffle.
+  const r = store.journal.automationRun(run);
+  const doc = r ? docOf(store, r) : null;
+  const at = new Map((doc?.steps ?? []).map((s, i) => [s.id, i]));
+  const place = (step: string) => at.get(step) ?? Number.MAX_SAFE_INTEGER;
+  const waiting = waitingAsks(JSON.parse(w.execution) as Execution).sort(
+    ([a], [b]) => place(a) - place(b),
+  );
+  return waiting.map(([step, ask]) => ({
+    step,
+    answer: ask.answer,
+    until: ask.until,
+    questions: ask.questions.map((q, i) => ({
+      text: q.text,
+      label: q.label,
+      ...(q.options ? { options: q.options } : {}),
+      answered: String(i) in (answers[step] ?? {}),
+    })),
+    mayAnswer: mayAnswer(ask, trust),
+  }));
 }
 
 /** The waits past their limit go on, by «sin respuesta» (AU-203): the scheduler's, each tick, 50 at most. */

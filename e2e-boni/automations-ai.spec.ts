@@ -991,6 +991,247 @@ test.describe("the steps that talk to him (F15, P2)", () => {
     );
     await expect(first.locator(".bad")).toHaveCount(0);
   });
+
+  test("AU-248 · AU-246 · «Avisar» and «Preguntar» are one step with «Acción»: changing it keeps the text and «Por dónde», a closed list of «Notificación» and «Bandeja» painted as boxes, one at least, born with the notification for «Avisar» and both for «Preguntar»", async ({
+    page,
+  }) => {
+    const a = archiving("a_01jx8x0t2v4x6z8b0d2f4h6p01", { steps: {} });
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE() });
+    await openCanvas(page, "Archivar leídos", 4);
+    const stepOf = async (id: string) =>
+      (await drafts(page, a.id)).at(-1)?.steps.find((x) => x.id === id);
+    // «Preguntar» is born with both, and its first view is the action, the question, «Por dónde», the answer and the
+    // days of wait.
+    await openStep(page, ASK_ID);
+    await expect(view(page).locator(".auto-param")).toHaveCount(5);
+    const askVia = param(page, "via");
+    await expect(askVia.getByRole("checkbox", { name: "Notificación" })).toBeChecked();
+    await expect(askVia.getByRole("checkbox", { name: "Bandeja" })).toBeChecked();
+    await page.keyboard.press("Escape");
+    // «Avisar» is born with the notification alone, and the last box ticked cannot be unticked.
+    await openStep(page, NOTIFY_ID);
+    await expect(view(page).locator(".auto-param")).toHaveCount(3);
+    const action = param(page, "action").getByRole("combobox");
+    await expect(action.locator("option:checked")).toHaveText("Avisar");
+    await expect(action.locator("option")).toHaveText(["Avisar", "Preguntar"]);
+    const via = param(page, "via");
+    const notification = via.getByRole("checkbox", { name: "Notificación" });
+    const inbox = via.getByRole("checkbox", { name: "Bandeja" });
+    await expect(notification).toBeChecked();
+    await expect(notification).toBeDisabled();
+    await expect(inbox).not.toBeChecked();
+    await inbox.check();
+    await expect
+      .poll(async () => (await stepOf(NOTIFY_ID))?.params.via)
+      .toEqual(["notification", "inbox"]);
+    // «Acción»: the step becomes a «Preguntar» with its text as the question and the same «Por dónde».
+    await action.selectOption({ label: "Preguntar" });
+    await expect
+      .poll(async () => {
+        const s = await stepOf(NOTIFY_ID);
+        return s && { type: s.type, name: s.name, params: s.params };
+      })
+      .toEqual({
+        type: "ask",
+        name: "Preguntar 2",
+        params: { question: "Archivados", via: ["notification", "inbox"] },
+      });
+    await expect(view(page).locator(".auto-param")).toHaveCount(5);
+    await expect(param(page, "answer")).toBeVisible();
+    await expect(param(page, "waitDays")).toBeVisible();
+    await notification.uncheck();
+    await expect(inbox).toBeDisabled();
+    await expect.poll(async () => (await stepOf(NOTIFY_ID))?.params.via).toEqual(["inbox"]);
+    // And back to «Avisar»: what only a question has goes, named.
+    await action.selectOption({ label: "Avisar" });
+    await expect
+      .poll(async () => {
+        const s = await stepOf(NOTIFY_ID);
+        return s && { type: s.type, params: s.params };
+      })
+      .toEqual({ type: "notify", params: { text: "Archivados", via: ["inbox"] } });
+    await expect(view(page).locator(".auto-param")).toHaveCount(3);
+  });
+
+  test("AU-246 · A-15 · an «Avisar» with «Bandeja» leaves a card with its text, its automation and only «Descartar», painted as plain text; 200 of them open at once", async ({
+    page,
+  }, info) => {
+    const notice = (i: number, text: string) => {
+      const id = `q_01javiso${String(i).padStart(4, "0")}`;
+      return {
+        id,
+        run: `r_${id}`,
+        view: {
+          kind: "notice",
+          id,
+          prompt: { t: "v", value: text, ...LABEL },
+          automation: {
+            automation: `a_01jx8x0t2v4x6z8b0d2f4v${String(i).padStart(4, "0")}`,
+            run: `r_${id}`,
+            step: NOTIFY_ID,
+          },
+        },
+        created: Date.now() - HOUR,
+        expires: Date.now() + 30 * 24 * HOUR,
+        about: null,
+        open: null,
+        automation: {
+          id: `a_01jx8x0t2v4x6z8b0d2f4v${String(i).padStart(4, "0")}`,
+          name: i === 0 ? "Archivar <i>leídos</i>" : `Archivar ${i + 1}`,
+        },
+      };
+    };
+    const many = Array.from({ length: 200 }, (_, i) =>
+      notice(i, i === 0 ? LOOKS_LIKE_MARKUP : `Archivados ${i + 1}`),
+    );
+    await openApp(page, "/?still", {
+      agent: {
+        ...BEFORE(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: many }],
+        "POST api/agent/requests/:id/dismiss": [{ dismissed: true }],
+      },
+    });
+    const top = page.locator(".topbar").getByRole("button", { name: /^Bandeja/ });
+    await expect(top).toHaveText("Bandeja (200)");
+    const pressed = clock();
+    await top.click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".inbox-panel .notice-card").length === 200,
+      null,
+      { polling: "raf" },
+    );
+    const opened = clock() - pressed;
+    info.annotations.push({
+      type: "A-15",
+      description: `200 automation notices in the Bandeja: drawn in ${opened.toFixed(0)} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    const cards = page.locator(".inbox-panel .notice-card");
+    const first = cards.first();
+    await expect(first.locator(".inbox-kind")).toHaveText("Aviso");
+    await expect(first.locator(".request-prompt")).toHaveText(LOOKS_LIKE_MARKUP);
+    await expect(first).toContainText("De «Archivar <i>leídos</i>»");
+    await expect(first.locator("img, a, i, strong")).toHaveCount(0);
+    // Nothing to answer: «Descartar» alone.
+    await expect(first.getByRole("button")).toHaveText(["Descartar"]);
+    await first.getByRole("button", { name: "Descartar" }).click();
+    await expect(cards).toHaveCount(199);
+    const sent = await page.evaluate(() =>
+      ((window as unknown as { __requests?: string[] }).__requests ?? []).filter((r) =>
+        r.startsWith("POST api/agent/requests/"),
+      ),
+    );
+    expect(sent.map((r) => r.split(" ").slice(0, 2).join(" "))).toEqual([
+      "POST api/agent/requests/q_01javiso0000/dismiss",
+    ]);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBe(
+      undefined,
+    );
+    // The margin is for CI, as the 200 questions': a notice card is lighter than a question's.
+    under(opened, 1_500, "clock", "opening the Bandeja with 200 automation notices");
+  });
+
+  test("AU-247 · A-15 · a waiting run's questions are answered from its run in «Ejecuciones», one at a time, as plain text; a run the server says this device may not answer shows them with the reason and no controls", async ({
+    page,
+  }, info) => {
+    const now = Date.now();
+    const questions = Array.from({ length: 20 }, (_, i) => ({
+      text: i === 0 ? LOOKS_LIKE_MARKUP : `¿Archivo el libro ${i + 1}?`,
+      options: [],
+      answered: false,
+    }));
+    const a = {
+      ...archiving("a_01jx8x0t2v4x6z8b0d2f4h6p01", { steps: {} }),
+      published: { versions: 1 },
+      runs: [
+        {
+          id: "r_01jespera",
+          at: now - HOUR / 2,
+          version: 1,
+          state: "waiting",
+          until: now + 20 * HOUR,
+          steps: {
+            s_inicio: { state: "done", in: {}, out: { main: 1 }, ms: 5 },
+            [ASK_ID]: { state: "waiting", in: { main: 20 }, out: {}, ms: 10 },
+          },
+          asks: [
+            { step: ASK_ID, answer: "yesNo", until: now + 20 * HOUR, mayAnswer: true, questions },
+          ],
+        },
+        {
+          id: "r_01jcompartido",
+          at: now - HOUR,
+          version: 1,
+          state: "waiting",
+          until: now + 10 * HOUR,
+          steps: {
+            s_inicio: { state: "done", in: {}, out: { main: 1 }, ms: 5 },
+            [ASK_ID]: { state: "waiting", in: { main: 1 }, out: {}, ms: 10 },
+          },
+          asks: [
+            {
+              step: ASK_ID,
+              answer: "yesNo",
+              until: now + 10 * HOUR,
+              mayAnswer: false,
+              questions: [{ text: "¿Sigo?", options: [], answered: false }],
+            },
+          ],
+        },
+      ],
+    };
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE() });
+    await openCanvas(page, "Archivar leídos", 4);
+    await page.locator(".auto-head").getByRole("tab", { name: "Ejecuciones" }).click();
+    const items = page.locator(".auto-runs-item");
+    await expect(items).toHaveCount(2);
+    const pressed = clock();
+    await items.first().click();
+    await page.waitForFunction(
+      () => document.querySelectorAll(".auto-run-asks .auto-ask-question").length === 20,
+      null,
+      { polling: "raf" },
+    );
+    const opened = clock() - pressed;
+    info.annotations.push({
+      type: "A-15",
+      description: `a waiting run with 20 questions opened in «Ejecuciones» in ${opened.toFixed(0)} ms`,
+    });
+    console.log(info.annotations.at(-1)?.description);
+    const asks = page.locator(".auto-run-asks");
+    await expect(asks.locator(".auto-ask-head")).toContainText("Preguntar");
+    await expect(asks.locator(".auto-ask-until")).toContainText("hasta");
+    const q = asks.locator(".auto-ask-question");
+    await expect(q.first().locator(".auto-ask-text")).toHaveText(LOOKS_LIKE_MARKUP);
+    await expect(asks.locator("img, a, strong")).toHaveCount(0);
+    const send = q.first().getByRole("button", { name: "Enviar" });
+    await expect(send).toBeDisabled();
+    await q.first().getByRole("button", { name: "Sí", exact: true }).click();
+    await send.click();
+    await expect(q.first().locator(".auto-ask-done")).toHaveText("Respondida");
+    await q.nth(1).getByRole("button", { name: "Sin respuesta" }).click();
+    await expect(q.nth(1).locator(".auto-ask-done")).toHaveText("Respondida");
+    const answered = await page.evaluate(() =>
+      ((window as unknown as { __autoAnswer?: string[] }).__autoAnswer ?? []).map(
+        (b) => JSON.parse(b) as Record<string, unknown>,
+      ),
+    );
+    expect(answered).toEqual([
+      { run: "r_01jespera", step: ASK_ID, i: 0, answer: { yes: true } },
+      { run: "r_01jespera", step: ASK_ID, i: 1 },
+    ]);
+    // A device the server says may not answer (decision 26): the question, the reason, and nothing to press.
+    await items.nth(1).click();
+    await expect(asks.locator(".auto-ask-text")).toHaveText(["¿Sigo?"]);
+    await expect(asks).toContainText("Solo desde un dispositivo personal");
+    await expect(asks.getByRole("button")).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBe(
+      undefined,
+    );
+    // AU-203: 20 questions a run at most, so 20 is his volume here; the margin is for CI.
+    under(opened, 1_500, "clock", "opening a waiting run with 20 questions in «Ejecuciones»");
+  });
 });
 
 test.describe("the AI steps of an automation (F15, P2)", () => {

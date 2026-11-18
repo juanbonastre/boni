@@ -59,16 +59,27 @@ import {
 import {
   answerAsk,
   answerLabel,
+  answerRun,
   interruptRuns,
   pinFromRun,
   retryRun,
+  runAsks,
   runView,
   settled,
   startRun,
   undoAutomationRun,
 } from "./runs.ts";
 import { automationView, setDeleted, testAutomation } from "./service.ts";
-import { type AskPlace, askCardId, askPlace, mayAnswer } from "./waits.ts";
+import {
+  type AskPlace,
+  askCardId,
+  askPlace,
+  mayAnswer,
+  mayDismissNotice,
+  NOTICE_CARD_DAYS,
+  noticeCardId,
+  noticePlace,
+} from "./waits.ts";
 
 const files = folder("ia");
 /** A speaker of the account (`ambient`): it speaks, never confirms. */
@@ -302,6 +313,35 @@ const WRITE = (model: string | null): StepSpec => [
 ];
 
 const runOf = (s: UserStore, id: string, run: string) => ok(runView(s, id, run));
+
+/** One call of the agent's routes on account 1, from Juan's device with this trust: its status and its JSON. */
+async function serve(
+  host: AgentHost,
+  route: string,
+  o: { id?: string; body?: unknown; trust?: "personal" | "shared" | "ambient" } = {},
+): Promise<{ status: number; json: Record<string, unknown> }> {
+  const got = { status: 0, body: "" };
+  const res = {
+    writeHead: (st: number) => {
+      got.status = st;
+      return res;
+    },
+    end: (b?: string) => {
+      got.body = b ?? "";
+      return res;
+    },
+    setHeader: () => res,
+  } as unknown as ServerResponse;
+  const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(o.body ?? {}))]), {
+    url: "/",
+  }) as unknown as IncomingMessage;
+  await serveAgent(host, req, res, route, o.id ? { id: o.id } : {}, {
+    account: 1,
+    device: JUAN.device,
+    trust: o.trust ?? "personal",
+  });
+  return { status: got.status, json: JSON.parse(got.body || "null") as Record<string, unknown> };
+}
 
 // ---------------------------------------------------------------- AU-199: the model of a step
 
@@ -1267,13 +1307,201 @@ describe("a run that waits for an answer (AU-203, phase F15 S2)", () => {
         { text: "Aviso a desktop", integrity: expect.any(String), about },
       ]);
       expect(pushed).toEqual(["Aviso a all", "Aviso a phone"]);
-      // A question tells the app to read the Bandeja again, and sends nothing to the phone.
+      // A question tells the app to read the Bandeja again; saved with no «Por dónde», it has both, as one is born
+      // (AU-246), so its notification goes to the app and the phone too, opening its run (AU-247).
       const b = made(s, [START, ASKS]);
       ok(b.publish());
       events.length = 0;
-      expect((await ran(s, b.id, b.step("Inicio"), { nota: "x" })).state).toBe("waiting");
+      const w = await ran(s, b.id, b.step("Inicio"), { nota: "x" });
+      expect(w.state).toBe("waiting");
       expect(events.map((e) => e.event)).toContain("requests");
-      expect(pushed).toHaveLength(2);
+      expect(events.filter((e) => e.event === "notify").map((e) => e.data)).toEqual([
+        {
+          text: "¿Lo creo?",
+          integrity: expect.any(String),
+          about: { automation: b.id, run: w.id },
+        },
+      ]);
+      expect(pushed).toEqual(["Aviso a all", "Aviso a phone", "¿Lo creo?"]);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-246 · «Por dónde» of an «Avisar»: «Notificación» notifies, «Bandeja» leaves a card with its text and nothing to answer, both do both; a card is put away from any device of the account, never a speaker", async () => {
+    const host = new AgentHost({
+      dataDir: mkdtempSync(join(files.dir, "pordonde-")),
+      providers: null,
+    });
+    try {
+      const pushed: string[] = [];
+      host.pushNotice = (_account, text) => pushed.push(text);
+      const events: { event: string; data: unknown }[] = [];
+      host.subscribe(1, (event, data) => events.push({ event, data }));
+      const s = host.store(1);
+      seedOrders(s);
+      const tell = (name: string, via: string[]): StepSpec => [
+        name,
+        "notify",
+        { text: `Por ${via.join(" y ")}`, via },
+      ];
+      const a = made(s, [
+        START,
+        tell("Solo aviso", ["notification"]),
+        tell("Solo Bandeja", ["inbox"]),
+        tell("Las dos", ["notification", "inbox"]),
+      ]);
+      ok(a.publish());
+      const r = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+      expect(r).toMatchObject({ state: "done", error: null });
+      const notified = events.filter((e) => e.event === "notify").map((e) => e.data);
+      expect(notified.map((d) => (d as { text: string }).text)).toEqual([
+        "Por notification",
+        "Por notification y inbox",
+      ]);
+      expect(pushed).toEqual(["Por notification", "Por notification y inbox"]);
+      // The cards: one per notice with «Bandeja», its text painted plain with its label, pointing at its run.
+      const cards = s.journal.requests("pending").filter((q) => noticePlace(q.view));
+      expect(cards.map((q) => q.id)).toEqual([
+        noticeCardId(r.id, a.step("Solo Bandeja"), 1),
+        noticeCardId(r.id, a.step("Las dos"), 2),
+      ]);
+      expect(cards[0]?.view).toMatchObject({
+        kind: "notice",
+        prompt: { t: "v", value: "Por inbox" },
+        automation: { automation: a.id, run: r.id, step: a.step("Solo Bandeja") },
+      });
+      expect(cards[0]?.view).not.toHaveProperty("control");
+      expect(cards[0]?.view).not.toHaveProperty("options");
+      expect((cards[0]?.expires ?? 0) - (cards[0]?.created ?? 0)).toBe(NOTICE_CARD_DAYS * DAY_MS);
+      expect(events.map((e) => e.event)).toContain("requests");
+      expect([JUAN, SHARED, SPEAKER].map((h) => mayDismissNotice(h.trust))).toEqual([
+        true,
+        true,
+        false,
+      ]);
+      // Listed in the Bandeja with who left it, also with the models off; nothing to answer; put away from a shared
+      // device, never a speaker, and it ends nothing else.
+      const listed = (await serve(host, "GET /api/agent/requests", { trust: "shared" })).json
+        .requests as { id: string; mayAnswer: boolean; automation?: { id: string } }[];
+      const one = listed.find((q) => q.id === cards[0]?.id);
+      expect(one).toMatchObject({ mayAnswer: true, automation: { id: a.id } });
+      const heard = (await serve(host, "GET /api/agent/requests", { trust: "ambient" })).json
+        .requests as { id: string; mayAnswer: boolean }[];
+      expect(heard.find((q) => q.id === cards[0]?.id)?.mayAnswer).toBe(false);
+      const id = cards[0]?.id ?? "";
+      expect(
+        (await serve(host, "POST /api/agent/requests/:id/answer", { id, body: { yes: true } }))
+          .status,
+      ).toBe(400);
+      expect(
+        (await serve(host, "POST /api/agent/requests/:id/dismiss", { id, trust: "ambient" }))
+          .status,
+      ).toBe(403);
+      expect(s.journal.request(id)?.status).toBe("pending");
+      expect(
+        await serve(host, "POST /api/agent/requests/:id/dismiss", { id, trust: "shared" }),
+      ).toEqual({ status: 200, json: { dismissed: true } });
+      expect(s.journal.request(id)?.status).toBe("dismissed");
+      expect(s.journal.request(cards[1]?.id ?? "")?.status).toBe("pending");
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-247 · a «Preguntar»'s question lives in its run: one notification per run of the step that opens it, a card only with «Bandeja», and answered from the run by any device of the account, never a speaker, its card ending with it", async () => {
+    const host = new AgentHost({
+      dataDir: mkdtempSync(join(files.dir, "enlaejecucion-")),
+      providers: null,
+    });
+    try {
+      const pushed: string[] = [];
+      host.pushNotice = (_account, text) => pushed.push(text);
+      const events: { event: string; data: unknown }[] = [];
+      host.subscribe(1, (event, data) => events.push({ event, data }));
+      const s = host.store(1);
+      seedOrders(s);
+      const a = made(
+        s,
+        [
+          START,
+          ["Una", "ask", { question: "¿Una?", answer: "yesNo", via: ["notification"] }],
+          ["Otra", "ask", { question: "¿Otra?", answer: "yesNo", where: "desktop" }],
+          ORDER("tras las dos"),
+        ],
+        {
+          arrows: [
+            ["Inicio", "Una"],
+            ["Inicio", "Otra"],
+            ["Una", "Crear"],
+            ["Otra", "Crear"],
+          ],
+        },
+      );
+      ok(a.publish());
+      const w = await ran(s, a.id, a.step("Inicio"), { nota: "x" });
+      expect(w.state).toBe("waiting");
+      const about = { automation: a.id, run: w.id };
+      const notified = () => events.filter((e) => e.event === "notify").map((e) => e.data);
+      // The two branches run in either order: one notification each.
+      expect(notified()).toHaveLength(2);
+      expect(notified()).toEqual(
+        expect.arrayContaining([
+          { text: "¿Una?", integrity: expect.any(String), about },
+          { text: "¿Otra?", integrity: expect.any(String), about },
+        ]),
+      );
+      // «Dónde» of the question's notification: «Otra» goes to the app only.
+      expect(pushed).toEqual(["¿Una?"]);
+      // A card only for the one with «Bandeja» in its «Por dónde».
+      expect(s.journal.request(askCardId(w.id, a.step("Una"), 0))).toBeFalsy();
+      const card = askCardId(w.id, a.step("Otra"), 0);
+      expect(s.journal.request(card)?.status).toBe("pending");
+      // The run says what it waits for, and whether this device answers it.
+      const asks = runAsks(s, w.id, "shared");
+      expect(asks.map((x) => [x.step, x.mayAnswer, x.questions.map((q) => q.text)])).toEqual([
+        [a.step("Una"), true, ["¿Una?"]],
+        [a.step("Otra"), true, ["¿Otra?"]],
+      ]);
+      expect(runAsks(s, w.id, "ambient").map((x) => x.mayAnswer)).toEqual([false, false]);
+      const hand = { store: s, trust: "shared" as const, device: "d_salon" };
+      const read = await runAction("automations.read", { id: a.id, part: "run", run: w.id }, hand);
+      expect((read as { out: { asks: unknown[] } }).out.asks).toHaveLength(2);
+
+      // A speaker never answers; a shared device does, through the action its route runs.
+      expect(answerRun(s, a.id, w.id, a.step("Una"), 0, { yes: true }, SPEAKER)).toEqual({
+        refused: "not-personal",
+      });
+      const answered = await runAction(
+        "automations.answer",
+        { id: a.id, run: w.id, step: a.step("Una"), i: 0, answer: { yes: true } },
+        hand,
+      );
+      expect(answered).toMatchObject({ out: { run: w.id } });
+      await settled(s);
+      // Still waiting for the other: waiting again tells nothing new (one notification per run of the step).
+      expect(runOf(s, a.id, w.id).run.state).toBe("waiting");
+      expect(notified()).toHaveLength(2);
+      expect(runAsks(s, w.id, "personal").map((x) => x.step)).toEqual([a.step("Otra")]);
+      // Answered once, it is gone; an answer that does not fit is refused.
+      expect(answerRun(s, a.id, w.id, a.step("Una"), 0, { yes: true }, JUAN)).toEqual({
+        gone: true,
+      });
+      expect(answerRun(s, a.id, w.id, a.step("Otra"), 0, { text: "sí" }, JUAN)).toEqual({
+        error: "bad-request",
+      });
+      expect(answerRun(s, a.id, w.id, a.step("Otra"), 3, { yes: true }, JUAN)).toEqual({
+        error: "not-found",
+      });
+      // From the run, its card ends answered too, and the run goes on.
+      expect(answerRun(s, a.id, w.id, a.step("Otra"), 0, { yes: true }, JUAN)).toEqual({
+        run: w.id,
+      });
+      expect(s.journal.request(card)?.status).toBe("answered");
+      await settled(s);
+      expect(runOf(s, a.id, w.id).run.state).toBe("done");
+      expect(notes(s)).toContain("tras las dos");
+      expect(runAsks(s, w.id, "personal")).toEqual([]);
     } finally {
       host.close();
     }

@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { automationsClient, PREVIEW_QUERY_CHARS, previewFits } from "./client.ts";
+import { automationsClient, PREVIEW_QUERY_CHARS, previewFits, runAsksOf } from "./client.ts";
 
 /**
  * The paths the desktop app and Android let through, read out of their own files (`API_PATH` in paths.cjs and in
@@ -167,5 +167,64 @@ describe("«Ejecuciones» asked of the server", () => {
     ]);
     for (const p of asked) expect(allowed(p.split(" ")[1] as string), p).toBe(true);
     expect(new URLSearchParams(asked[0]?.split("?")[1]).get("filter")).toBe("failed");
+  });
+  it("AU-247 · a waiting run's question is answered by its own path, which both apps let through: one question a call, «Sin respuesta» with no answer, and what the server sends of the run's questions is read with nothing invented", async () => {
+    const asked: { path: string; body: unknown }[] = [];
+    const client = automationsClient({
+      automations: async (method: string, path: string, body?: unknown) => {
+        asked.push({ path: `${method} api/agent/automations/${path}`, body });
+        return asked.length === 1 ? { run: "r_01jx8x0t2v4x6z8b0d2f4h6k9q" } : { gone: true };
+      },
+    } as never);
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6k9p";
+    const run = "r_01jx8x0t2v4x6z8b0d2f4h6k9q";
+    expect(
+      await client.answerRun(id, run, { step: "s_01jpreguntar", i: 2 }, { yes: true }),
+    ).toEqual({
+      run,
+    });
+    expect(await client.answerRun(id, run, { step: "s_01jpreguntar", i: 0 }, null)).toEqual({
+      gone: true,
+    });
+    expect(asked.map((a) => a.path)).toEqual([
+      `POST api/agent/automations/${id}/runs/${run}/answer`,
+      `POST api/agent/automations/${id}/runs/${run}/answer`,
+    ]);
+    expect(asked.map((a) => a.body)).toEqual([
+      { step: "s_01jpreguntar", i: 2, answer: { yes: true } },
+      { step: "s_01jpreguntar", i: 0 },
+    ]);
+    for (const a of asked) expect(allowed(a.path.split(" ")[1] as string), a.path).toBe(true);
+    // What the run's view brings of its questions: a list of options as values or texts, and nothing that is not one.
+    expect(
+      runAsksOf([
+        {
+          step: "s_01jpreguntar",
+          answer: "one",
+          until: 1_800_000_000_000,
+          mayAnswer: true,
+          questions: [
+            { text: "¿Cuál?", options: [{ value: "A" }, "B", 3], answered: false },
+            { text: "¿Y esta?", answered: true },
+            { options: [] },
+          ],
+        },
+        { step: "s_x", answer: "draw" },
+        "nada",
+      ]),
+    ).toEqual([
+      {
+        step: "s_01jpreguntar",
+        answer: "one",
+        until: 1_800_000_000_000,
+        mayAnswer: true,
+        questions: [
+          { text: "¿Cuál?", options: ["A", "B"], answered: false },
+          { text: "¿Y esta?", options: [], answered: true },
+        ],
+      },
+    ]);
+    // Without its word the server's `mayAnswer`, the controls are not there: never answered by default.
+    expect(runAsksOf([{ step: "s_p", answer: "text", questions: [] }])[0]?.mayAnswer).toBe(false);
   });
 });

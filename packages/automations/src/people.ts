@@ -2,8 +2,13 @@
 // asks him and the run waits for his answer, «Avisar» sends him a notice, «Responder» sets the run's answer. Their
 // parameters, their limits, what a waiting run keeps of a question, and the port the engine tells through.
 //
-// None of them has a recipient (P2, P14): a notice and a question go to Juan, on his own devices, and «Dónde» is a
-// closed list fixed in the step as saved, never an expression, so nothing from outside and no model chooses to whom.
+// None of them has a recipient (P2, P14): a notice and a question go to Juan, on his own devices and surfaces, and «Por
+// dónde» and «Dónde» are closed lists fixed in the step as saved, never an expression, so nothing from outside and no
+// model chooses to whom or by where.
+//
+// On the screen «Avisar» and «Preguntar» are one step with «Acción» (decision 29 of §10, AU-246): «Avisar» tells and
+// the run goes on, «Preguntar» tells and waits. Here they stay two types, and the editor switches between them as
+// «Colección» switches its actions (apps/boni-web/src/automations/edit.ts `changeAction`).
 // What they say is the step's own text, or the code's words for what the code counts («y 12 más»), and it travels as
 // plain text: nothing here is HTML, Markdown or a link.
 import type { Label } from "@boni/entities";
@@ -30,7 +35,9 @@ export const ASK_PARAMS = {
   answer: "answer",
   options: "options",
   waitDays: "waitDays",
+  via: "via",
   mode: "mode",
+  where: "where",
   personal: "personal",
 } as const;
 /** «Respuesta» (AU-125): the controls the Bandeja already has (`FLOW_ASKS`: a choice or a text). */
@@ -56,8 +63,32 @@ export const ASK_LIMITS = {
 } as const;
 export const DAY_MS = 86_400_000;
 
-/** «Avisar»'s parameters (AU-201): **Texto**, and behind «Añadir opción» «Una vez por fila» and «Dónde». */
-export const NOTIFY_PARAMS = { text: "text", mode: "mode", where: "where" } as const;
+/**
+ * «Avisar»'s parameters (AU-201): **Texto** and «Por dónde», and behind «Añadir opción» «Una vez por fila» and «Dónde».
+ */
+export const NOTIFY_PARAMS = { text: "text", via: "via", mode: "mode", where: "where" } as const;
+
+/**
+ * «Por dónde» (AU-246, decision 29 of §10): the surfaces of Juan's own a notice or a question reaches him by, one or
+ * both, a closed list fixed in the step. `notification`: a notification on the devices «Dónde» names. `inbox`: a card
+ * in the Bandeja (a notice's, with its text and nothing to answer; a question's, with its controls). The list grows
+ * only by code.
+ */
+export const PEOPLE_VIA = ["notification", "inbox"] as const;
+export type PeopleVia = (typeof PEOPLE_VIA)[number];
+/** What «Por dónde» holds when born, and what a step saved without it reads: «Avisar» notifies, «Preguntar» does both. */
+export const VIA_BORN: Readonly<Record<"ask" | "notify", readonly PeopleVia[]>> = {
+  notify: ["notification"],
+  ask: ["notification", "inbox"],
+};
+/**
+ * A step's «Por dónde» as saved, in the list's order; its born value when it has none. Validation refuses anything
+ * but distinct entries of `PEOPLE_VIA`, at least one, so a run never meets another.
+ */
+export function viaOf(type: "ask" | "notify", v: unknown): PeopleVia[] {
+  if (!Array.isArray(v)) return [...VIA_BORN[type]];
+  return PEOPLE_VIA.filter((x) => v.includes(x));
+}
 /**
  * «Dónde» (AU-201, decision 17 of §10): Juan's own devices, never one named. `all` (born) is the desktop app and the
  * phone; `desktop` only the app; `phone` only the phone.
@@ -107,6 +138,18 @@ export interface AskRecord {
    * answers its cards. Absent, any device signed in to the account does.
    */
   personal?: true;
+  /**
+   * «Por dónde» as the step ran (AU-246): a notification of the question, a card per question in the Bandeja, or both.
+   * Absent in a record kept before it: both, as a «Preguntar» is born. Wherever it goes, it is answered from its run.
+   */
+  via?: PeopleVia[];
+  /** «Dónde» of its notification (AU-201): absent is `all`. */
+  where?: NotifyWhere;
+  /**
+   * The server told its notification already (AU-247: one per run of the step), so waiting again after another
+   * question of the run was answered tells nothing new. Written by the server into the run it keeps.
+   */
+  notified?: true;
   /** How it ended, once it did: answered, or left by «sin respuesta». Absent while it waits. */
   ended?: "answered" | "noAnswer";
 }
@@ -146,8 +189,40 @@ export interface Notice {
   text: string;
   label: Label;
   where: NotifyWhere;
+  /** «Por dónde» (AU-246): a notification, a card in the Bandeja with its text, or both. */
+  via: PeopleVia[];
   /** The notice that groups the rest: how many more there were («y 12 más»: the app's words). */
   more?: number;
+  /**
+   * A «Preguntar»'s notification (AU-247), one per run of the step: with one question, its text; with several, empty
+   * text and how many there are (the app's words: «3 preguntas»). Its questions wait in the run, which it opens.
+   */
+  questions?: number;
+}
+
+/**
+ * The notification of a waiting «Preguntar» (AU-247): one per run of the step, never one per question. With one
+ * question it says it, plain and cut as a notice is; with several, how many (`questions`: the words are the app's).
+ * Null when its «Por dónde» has no notification. The label is the question's, or the automation's for a count.
+ */
+export function askNotice(
+  automation: string,
+  step: string,
+  ask: AskRecord,
+  own: Label,
+): Notice | null {
+  const via = ask.via ?? VIA_BORN.ask;
+  if (!via.includes("notification") || !ask.questions.length) return null;
+  const one = ask.questions.length === 1 ? ask.questions[0] : undefined;
+  return {
+    automation,
+    step,
+    text: one ? cut(one.text, NOTIFY_LIMITS.chars) : "",
+    label: one ? one.label : own,
+    where: ask.where ?? "all",
+    via: ["notification"],
+    ...(one ? {} : { questions: ask.questions.length }),
+  };
 }
 
 /** What an «Avisar» did in its run: each notice, sent or (in a test) what it would send. */

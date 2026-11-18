@@ -80,6 +80,8 @@ export interface FakeRun {
   proposal?: { id: string; status: "pending" | "accepted" | "rejected" | "stale" } | null;
   /** Every change it asked, as the server's `AskedView`: what «Ver todo» reads, 50 at a time. */
   asked?: Record<string, unknown>[];
+  /** A waiting run's questions (AU-247), as the server's run view gives them; answering one marks it answered. */
+  asks?: Record<string, unknown>[];
 }
 
 export interface Options {
@@ -1270,6 +1272,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           wrote: runWrote(r),
           published: a.versions.at(-1)?.n ?? null,
           proposal: r.proposal ?? null,
+          asks: r.asks ?? [],
         };
       };
       /**
@@ -1540,7 +1543,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         }
         const rm = rest
-          ? /^\/runs\/([^/]+)(\/rows|\/retry|\/undo|\/pin|\/asked)?$/.exec(rest)
+          ? /^\/runs\/([^/]+)(\/rows|\/retry|\/undo|\/pin|\/asked|\/answer)?$/.exec(rest)
           : null;
         const fr = rm ? a.runs.find((r) => r.id === rm[1]) : undefined;
         if (rm && !fr) return gone;
@@ -1589,6 +1592,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               200,
               JSON.stringify({ asked: all.slice(offset, offset + 50), total: all.length }),
             ];
+          }
+          // A waiting run's question answered from «Ejecuciones» (AU-247): one a call, marked answered in the view.
+          // Every body: `window.__autoAnswer`.
+          if (what === "/answer" && method === "POST") {
+            const req = (body ?? {}) as { step?: string; i?: number };
+            record("__autoAnswer", JSON.stringify({ run: fr.id, ...req }));
+            const ask = (fr.asks ?? []).find((x) => x.step === req.step) as
+              | { questions?: { answered?: boolean }[] }
+              | undefined;
+            const q = ask?.questions?.[req.i ?? -1];
+            if (!q) return [200, JSON.stringify({ gone: true })];
+            q.answered = true;
+            return [200, JSON.stringify({ run: fr.id })];
           }
           // «Reintentar» (AU-100): another run with its trigger and fields, by the version that runs now; with `undo`,
           // that one undone first. Every body: `window.__autoRetry`.
@@ -2651,7 +2667,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked)?)?|\/pins\/[^/]+|\/learning)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked|\/answer)?)?|\/pins\/[^/]+|\/learning)?$/.exec(
             p,
           );
         if (automation)

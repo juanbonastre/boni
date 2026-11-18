@@ -927,8 +927,8 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   in a window of its own in the desktop app (the peek, which stays while Juan works elsewhere; task 30) and elsewhere
   in the side panel (the type's name as the panel's title, «Agrandar» takes it to its page), anything else as its
   page. A mail's line has a second small button, «Proponer tarea» (a list with a plus): the mail is read now by its
-  plan, a spinner meanwhile, and a toast says what came of it («2 propuestas en la Bandeja»; «Ya en la Bandeja» or
-  «Ya apuntada» when the mail's tasks already wait or were taken; «Sin tareas para ti» when the reader found none;
+  plan, a spinner meanwhile, and a toast says what came of it («2 propuestas en la Bandeja»; «En la Bandeja» or
+  «Apuntada» when the mail's tasks already wait or were taken; «Sin tareas para ti» when the reader found none;
   or where to choose the collections when there are none); when nothing new came of it, the toast's button «Otra
   vez» reads the mail afresh, the waiting ones giving way (task 54: Juan, 2026-11-04, «que el usuario pudiese
   volver a proponerlo»).
@@ -940,7 +940,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   te pedirá una contraseña» is gone, 2026-11-02). Answering it leaves the answer as it was and adds what the run did
   next, never the same blocks twice. **Its free ways out** (task 27, §3.4 rule 2; the «Other» of Claude Code's
   `AskUserQuestion`, which always lets the person type instead): after the options, quieter pills with a dashed border,
-  «Otra cosa…» and, when every option is a row of one collection Juan can write to, «Nueva…» before it; each opens a
+  «Otra…» and, when every option is a row of one collection Juan can write to, «Nueva…» before it; each opens a
   line below with «Responder» (Esc closes it). His words end the question and are his next message, run as a turn;
   «Nueva…» shows the collection's name as its placeholder, makes the row with what he typed («Guardando…» on its
   button meanwhile) and answers with it. A yes or no and a confirmation have none. An answered question stays as one
@@ -950,15 +950,15 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   answer); *a property's options*, the ones the plan suggests (all of them when eight or fewer), then the dashed «Más…»,
   a line that finds the rest as he types («No hay ninguna con eso»), and «Nueva…» with the property's name as its
   placeholder, which adds the option as the column's menu does (with its Undo) and answers with it; *a number*, a line
-  that reads it as he writes it in his language («1.250,5»), saying «Eso no es un número» beside «Responder» and sending
+  that reads it as he writes it in his language («1.250,5»), saying «Número no válido» beside «Responder» and sending
   nothing when it is not; *a day*, the system's date field; *a file*, «Subir un archivo…» with «o arrástralo aquí», the
   card taking a dashed accent border while a file is over it, the file going up as a dropped one does («Subiendo N %»
   where «o arrástralo aquí» was) and never as a chip in the bar; on the phone «Subir un archivo…» opens its own picker,
-  as «Adjuntar» does, with nothing to drop on; where the device cannot upload, a muted line says so and «Otra cosa…»
-  stays; *yes or no*, two pills, neither tinted. Number, day and file keep «Otra cosa…». **A rehearsal** shows what
+  as «Adjuntar» does, with nothing to drop on; where the device cannot upload, a muted line says so and «Otra…»
+  stays; *yes or no*, two pills, neither tinted. Number, day and file keep «Otra…». **A rehearsal** shows what
   the rest of the plan would write, «Cambios que haría: 2», folded under «Revisar» («Ocultar el detalle»): each change a
-  small surface card with its action as a heading and the rows of its card, a muted «· te lo preguntará antes» on what
-  still asks, «· irá a la Bandeja» on what proposes; «Guardar» (tinted) goes on, «Ahora no» saves nothing and the turn
+  small surface card with its action as a heading and the rows of its card, a muted «· requiere confirmación» on what
+  still asks, «· irá a la Bandeja» on what proposes; «Guardar» (tinted) goes on, «Descartar» saves nothing and the turn
   says «No se ha guardado nada.»; it fits a 390 px phone without scrolling sideways. **An old card changed since**
   (rule 3a): answering it answers nothing, and it comes back made again with the state word «Modificada» after its prompt.
   **«Antes te he dicho X, pero es Y»** (§3.1) is a confirmation, «Deshacer lo que hizo» with «Mensaje» and the old
@@ -993,13 +993,13 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card is titled by the proposal
   («Revisar actas») and under it says where it goes and when («Docencia · jue, 29 oct, 12:00–13:00»; Juan,
   2026-11-02: «Añadir tarea a Tarea» said nothing; «Añadir a Tarea» only without a title; a change or a deletion
-  as the view names it; a task the mail gave no time for has, after the day, a small «¿A las 16:00?» with the
+  as the view names it; a task the mail gave no time for has, after the day, a small «Hora propuesta: 16:00» with the
   first free hour of its day: one tap puts the time on the line and sends it with the acceptance; once Boni has
   earned it the line says the time already; when a reply in the same thread of mail moved it, «Antes: jue, 29
   oct, 12:00» in `--muted` after the day: the earlier card is gone and this one says what it was, task 46; when the
   calendar already has the same thing, «En el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
   it is an external calendar's event, the primary button reads «Enlazar» and the record is made linked to it; an
-  entry at the same moment with another title may be it: «¿Es «Quedada cafe, 16:00–17:00»?» and a button «Es el
+  entry at the same moment with another title may be it: «Posible duplicado: «Quedada cafe, 16:00–17:00»» and a button «Es el
   mismo» before «Aceptar» that puts into that record what the proposal adds (nothing of it overwritten; an external
   event's: the record linked to it), task 58; another entry at the same time is «Se solapa con X» in `--muted`,
   task 51). **The card is checked again each time it is seen** (task 73, D-57): its day by name and number, with
@@ -1061,7 +1061,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   once; a decided card leaves and the toast says «Aceptada» / «Rechazada» with «Deshacer» for a while (Juan,
   2026-11-02): taking it back undoes the acceptance's run and the card returns, pending again (the next decision's
   toast replaces it); a failed one says why under its buttons in `--bad`
-  ("Caducada…" for a stale one, "Ya decidida.") with "Quitar", and stays until taken out. **"Marcar como hecha"**
+  ("Caducada…" for a stale one, "Decidida") with "Quitar", and stays until taken out. **"Marcar como hecha"**
   (Juan, 2026-10-23), between Aceptar and Rechazar, only on a proposal to create something in a collection whose
   calendar has a task column: it is saved already done (struck through in the calendar), with the same spinner;
   the toast says "Apuntada como hecha". **"Aceptación prevista"**: a quiet muted mark with a small sparkle,
@@ -1199,7 +1199,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   versión 5», or «Sin cambios» disabled when the draft is the version that runs; something that stops it
   disables it too. Published, the notice says «Publicada la versión 5» with «Ejecutar». **«Ejecutar»** runs the
   published version: with «Campos que pide», a modal with the same fields as «Probar» and «Ejecutar»; with changes
-  not published, the modal says «Corre la versión 4, sin los cambios sin publicar» first; off, the notice says «Apagada» with
+  not published, the modal says «Versión publicada: 4» first; off, the notice says «Apagada» with
   «Encender»; one in progress, «En ejecución». **«Ajustes»** is a modal of the automation's limits: «Tiempo»
   (seconds) always, «Filas escritas» when a step writes, each a number with «Por defecto 1000 · máximo 20.000» under
   it; over its ceiling it says «Como mucho 20.000» in `--bad` and keeps the last value. A test that stopped at a limit
@@ -1402,6 +1402,22 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Pregunta cancelada» when answered, an expired one «Pregunta caducada». «Solo desde un dispositivo personal» of
   «Preguntar» and «Reintentar si el modelo falla» of «Agente» (0 when born, 1 or 2) are behind «Añadir opción». Every
   text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
+- **«Avisar» and «Preguntar» as one step** (F15 P2 part C, decision 29; AU-246, AU-247, AU-248): both still sit by
+  name in «Preguntar o avisar» of «+», and once on the canvas their first row is **«Acción»**, a select «Avisar /
+  Preguntar» like «Colección»'s; changing it keeps the text, «Por dónde», «Dónde» and «Se ejecuta», and the toast
+  names what went, as any other action. The first view is only «Acción», the text («Texto» or «Pregunta»), **«Por
+  dónde»** and, for «Preguntar», «Respuesta» (with «Opciones» when it has them) and «Días de espera»: three rows for
+  «Avisar», five for «Preguntar». «Por dónde» is a row of checkboxes, «Notificación» and «Bandeja», on one line
+  (`.auto-many`, wrapping on the phone); the last ticked one is disabled, so one always stays. «Avisar» is born with
+  «Notificación», «Preguntar» with both. In the card's summary they read «Notificación, Bandeja». In SALIDA a notice
+  says where it would go, «Archivados 3 · ordenador · Bandeja». An «Avisar» with «Bandeja» leaves a **notice card**
+  in the Bandeja: the muted line on top «Aviso» with a bell, its text as the title (plain text, as a question's
+  prompt), «De «Archivar leídos»» in `--muted` and one quiet «Descartar»: nothing to answer. **A waiting run's
+  questions** show in «Ejecuciones», in the run's detail between its bar and its canvas, in the test's question box
+  laid in the flow (no shadow, no higher than a third of the screen, scrolling inside): each step's name with «hasta
+  …», each question with its control, «Enviar» and «Sin respuesta»; an answered one says «Respondida» in `--muted`;
+  a run this device may not answer shows the questions with «Solo desde un dispositivo personal» and no buttons. One
+  answered elsewhere says «Pregunta cerrada» in a toast. The desktop's notification of a question opens that run.
 - **What Boni learns of a cell, on screen** (F15 P2 part B, `LearningCard.tsx`, `connections.ts` `learnedWords`;
   AU-208 to AU-210): under a published cell of an «Agente»'s connections table, after «lo usa», its count from 5
   decisions on, in the same 12 px `--muted`: «18 de 20 aceptadas» with «Preguntar», «12 de 12 sin deshacer» with
