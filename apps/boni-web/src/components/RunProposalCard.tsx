@@ -4,7 +4,7 @@
  * creates, modifies and sends to the trash in each collection («Tarea de la mañana quiere crear 4 filas en Tareas»),
  * and each row with its before, its after and the mark of what came from outside, every value as plain text (A-01).
  * «Ver todo» reads the rest a page at a time. Accepted, it has no «Deshacer» of its own: it is undone with its run,
- * which «Ver la ejecución» opens in «Ejecuciones». No longer valid, it says «Ya no vale» and runs it again.
+ * which «Ver la ejecución» opens in «Ejecuciones». Expired, it says «Caducada» and runs it again.
  */
 import { Inbox } from "lucide-react";
 import { useState } from "react";

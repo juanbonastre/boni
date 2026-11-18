@@ -25,6 +25,7 @@ import { label } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { runAction } from "../actions.ts";
 import { AgentHost, serveAgent } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { openDb } from "../db.ts";
@@ -939,6 +940,86 @@ describe("a run that waits for an answer (AU-203, phase F15 S2)", () => {
     } finally {
       host.close();
     }
+  });
+
+  it("AU-203 AU-201 AU-202 · «Probar» that reaches a «Preguntar» waits in its own panel, never in the Bandeja: its question comes with the step's test, its answer goes on from what waited, and «Avisaría…» and the reply come with the test", async () => {
+    const s = files.store();
+    const a = made(s, [
+      START,
+      ASKS,
+      ["Avisar", "notify", { text: "Aviso de prueba" }],
+      ["Responder", "reply", { text: "Hecho" }],
+    ]);
+    const ask = a.step("Preguntar");
+    const cards = () => s.journal.requests().length;
+    const before = cards();
+    const first = ok(
+      await testAutomation(s, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN),
+    );
+    expect(first).toMatchObject({ state: "waiting" });
+    expect(first.run).toBeUndefined();
+    expect(first.tests[ask]).toMatchObject({
+      state: "waiting",
+      ask: { answer: "yesNo", questions: [{ text: "¿Lo creo?" }] },
+    });
+    // What hangs from the answer waits with it: queued, with nothing it would send yet.
+    expect(first.tests[a.step("Avisar")]).toMatchObject({ state: "queued" });
+    expect(first.tests[a.step("Avisar")]?.notices).toBeUndefined();
+    expect(cards()).toBe(before);
+    // An answer its question does not take is refused, and the test goes on waiting.
+    expect(
+      await testAutomation(
+        s,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {}, answers: { [ask]: [{ text: "sí" }] } },
+        JUAN,
+      ),
+    ).toEqual({ error: "bad-request" });
+    // Answered from the panel (a shared device too: a test writes nothing), it goes on: what waited decides now.
+    const done = ok(
+      await testAutomation(
+        s,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {}, answers: { [ask]: [{ yes: true }] } },
+        SHARED,
+      ),
+    );
+    expect(done).toMatchObject({
+      state: "done",
+      run: expect.any(String),
+      reply: { step: a.step("Responder"), text: "Hecho" },
+    });
+    expect(done.tests[ask]).toMatchObject({ state: "done", ask: { ended: "answered" } });
+    expect(done.tests[a.step("Avisar")]).toMatchObject({
+      state: "done",
+      notices: { sent: false, notices: [{ text: "Aviso de prueba", where: "all" }] },
+    });
+    expect(cards()).toBe(before);
+    // Nothing waits any more: a second answer finds nothing.
+    expect(
+      await testAutomation(
+        s,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {}, answers: { [ask]: [{ yes: true }] } },
+        JUAN,
+      ),
+    ).toEqual({ error: "not-found" });
+    // A run for real that waits says until when, in «Ejecuciones» and in its own read (AU-203).
+    ok(a.publish());
+    const r = await ran(s, a.id, a.step("Inicio"), {});
+    expect(r.state).toBe("waiting");
+    const until = s.journal.automationWait(r.id)?.until;
+    expect(until).toEqual(expect.any(Number));
+    const hand = { store: s, trust: "shared" as const, device: "d_salon" };
+    const list = await runAction("automations.read", { id: a.id, part: "runs" }, hand);
+    const runs = (list as { out: { runs: { id: string; until?: number }[] } }).out.runs;
+    // The test's run, which waits no more, says no limit.
+    expect(runs.map((x) => [x.id === r.id, x.until])).toEqual([
+      [true, until],
+      [false, undefined],
+    ]);
+    const one = await runAction("automations.read", { id: a.id, part: "run", run: r.id }, hand);
+    expect(one).toMatchObject({ out: { run: { id: r.id, until } } });
   });
 
   it("AU-203 AU-193 · with the models off, the Bandeja serves what a run put there by code: its proposal, listed, accepted and rejected, and its «Preguntar», answered; a proposal a model wrote and the rest of the agent stay off", async () => {

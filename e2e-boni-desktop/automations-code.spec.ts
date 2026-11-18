@@ -245,7 +245,9 @@ test("AU-27 AU-23 · in the desktop app over the real server and the real box, t
   await expect(w.locator(".auto-card")).toHaveCount(3);
   // «Probar» the whole draft over the 3,000 rows.
   await testBar(w).locator(".auto-test-go").click();
-  await expect(testBar(w).locator(".auto-log-line")).toContainText("bien", { timeout: 60_000 });
+  await expect(testBar(w).locator(".auto-log-line")).toContainText("completada", {
+    timeout: 60_000,
+  });
   // What the test gave «Doblar»'s first three rows, as the server keeps them.
   const kept = await ask(
     w,
@@ -439,9 +441,9 @@ test("AU-38 · in the desktop app over the real server and the real box, express
   await expect(card).toHaveClass(/selected/, { timeout: 5_000 });
   const answered = clock() - asked;
   const log = testBar(w).locator(".auto-log-line");
-  expect(await log.textContent()).not.toContain("bien");
+  expect(await log.textContent()).not.toContain("completada");
   under(answered, 1_000, "clock", "selecting a box while the test runs");
-  await expect(log).toContainText("bien", { timeout: 60_000 });
+  await expect(log).toContainText("completada", { timeout: 60_000 });
   await expect(log).toContainText("4 pasos");
   // The server's test fixes 10 s for five steps of JavaScript (AU-38, S1 and task 138); with the app's own share: 15 s.
   under(clock() - from, 15_000, "clock", "the test of 3,000 rows in the desktop app");

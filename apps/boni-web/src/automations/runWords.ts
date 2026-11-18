@@ -59,14 +59,15 @@ export const bad = (r: RunSummary) =>
   r.state !== "done" && r.state !== "waiting" && r.state !== "cancelled" && ended(r);
 
 /**
- * How it ended, in a few words (the list's second line, the bar's start): «Bien · 4,1 s», «Falló en «Analista» · 2,0 s»,
- * «Interrumpida en «Buscar»» (how long, when it is known), «En marcha: «Buscar»», «En cola, detrás de otra», «No corrió: …», «Prueba · 4,0 s».
+ * How it ended, in a few words (the list's second line, the bar's start): «Completada · 4,1 s», «Falló en «Analista» · 2,0 s»,
+ * «Interrumpida en «Buscar»» (how long, when it is known), «En ejecución: «Buscar»», «En cola», «Omitida: …», «Esperando respuesta · hasta …».
  */
 export function howWords(
   t: T,
   lang: Lang,
   r: RunSummary,
   nameOf: (step: string) => string | undefined,
+  zone?: string,
 ): string {
   const secs = r.ms !== null ? ` · ${secsWords(t, lang, r.ms)}` : "";
   // A step the document no longer names is left unsaid, never shown by its id.
@@ -84,7 +85,10 @@ export function howWords(
     case "missed":
       return t("auto.run.how.missed");
     case "waiting":
-      return t("auto.run.how.waiting");
+      // Until when it waits for an answer (AU-203), in the device's zone; without it, only that it waits.
+      return r.until != null && zone
+        ? t("auto.run.how.waitingUntil", { when: fullWhen(lang, zone, r.until) })
+        : t("auto.run.how.waiting");
     case "cancelled":
       return `${t("auto.run.how.cancelled")}${secs}`;
     default:
@@ -93,7 +97,7 @@ export function howWords(
   }
 }
 
-/** Who started it and which version ran (the list's third line): «Iniciada por ti · versión 3 · reintento». */
+/** Who started it and which version ran (the list's third line): «Manual · versión 3 · reintento». */
 export function whoWords(t: T, r: RunSummary): string {
   if (r.test) return t("auto.run.by.test");
   const parts = [t(r.startedBy === "schedule" ? "auto.run.by.schedule" : "auto.run.by.user")];
@@ -119,7 +123,7 @@ function countWords(
 
 /**
  * What it did, in one line (AU-99), from what the log says it saved and what it proposed: «Creó 1 fila en Tareas ·
- * con datos de fuera», «Propuso modificar 12 filas en Gastos», «No hizo nada». A proposal is counted, and nothing
+ * con datos de fuera», «Propuso modificar 12 filas en Gastos», «Sin cambios». A proposal is counted, and nothing
  * more is promised of it (it waits for Juan, S3). Null while it runs, and for a test, which saves nothing; while it
  * waits for an answer, only what it saved so far (AU-203).
  */

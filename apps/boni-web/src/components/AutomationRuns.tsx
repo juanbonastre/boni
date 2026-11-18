@@ -242,7 +242,7 @@ export function RunsPane({
                   {whenWords(t, lang, zone, r.started ?? r.at, now)}
                 </span>
                 <span className={`auto-runs-how${bad(r) ? " bad" : ""}${ended(r) ? "" : " live"}`}>
-                  {howWords(t, lang, r, names)}
+                  {howWords(t, lang, r, names, zone)}
                 </span>
                 <span className="auto-runs-who">{whoWords(t, r)}</span>
               </button>
@@ -443,7 +443,9 @@ function RunDetail({
         <div className="auto-run-what">
           <strong className="auto-run-when">{fullWhen(lang, zone, r.started ?? r.at)}</strong>
           <span className="auto-run-line">
-            <span className={bad(r) ? "bad" : undefined}>{howWords(t, lang, r, stepName)}</span>
+            <span className={bad(r) ? "bad" : undefined}>
+              {howWords(t, lang, r, stepName, zone)}
+            </span>
             {` · ${whoWords(t, r)}`}
             {did ? ` · ${did}` : ""}
           </span>

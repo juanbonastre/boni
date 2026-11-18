@@ -1158,7 +1158,7 @@ function askGiven(b: Record<string, unknown> | null): AskGiven | null {
 /**
  * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from a personal
  * device only, as accepting a proposal (decision 13). A card that no longer counts answers as the agent's would, so
- * the card says «Ya no vale» (`run-expired`); one answered goes on in its run's turn, in the background.
+ * the card says «Pregunta caducada» (`run-expired`); one answered goes on in its run's turn, in the background.
  */
 function askAnswered(
   host: AgentHost,
@@ -1384,11 +1384,29 @@ async function answerAgent(
     case "GET /api/agent/requests": {
       const store = host.store(who.account);
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
+      // An automation's question (AU-125) names the automation that asks, as the version that ran calls it: read
+      // once per run, however many of its questions wait.
+      const askers = new Map<string, string>();
+      const askerOf = (run: string, id: string): string => {
+        const known = askers.get(run);
+        if (known !== undefined) return known;
+        const v = store.journal.automationRun(run)?.version;
+        const kept = v != null ? store.journal.automationVersion(id, v) : null;
+        let name = "";
+        try {
+          name = kept ? String((JSON.parse(kept.doc) as { name?: unknown }).name ?? "") : "";
+        } catch {
+          // the card shows without who asks
+        }
+        askers.set(run, name);
+        return name;
+      };
       return send(res, 200, {
         requests: agent
           .requests()
           .filter((r) => !off || askPlace(r.view))
           .map((r) => {
+            const place = askPlace(r.view);
             // Where it comes from (the mail that was being read), as the Registro says it.
             let about: RunInfo["what"] | null = null;
             let open: { type: string; id: string } | null = null;
@@ -1409,6 +1427,9 @@ async function answerAgent(
               expires: r.expires,
               about,
               open,
+              ...(place
+                ? { automation: { id: place.automation, name: askerOf(r.run, place.automation) } }
+                : {}),
             };
           }),
       });

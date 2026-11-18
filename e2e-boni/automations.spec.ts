@@ -950,13 +950,13 @@ test.describe("the editor", () => {
     await testGo(page).click();
     await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
     await expect(logLine(page)).toHaveText(
-      "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+      "Última prueba hace un momento · completada · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
     );
     // Opened again: the line of the tests the server keeps.
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     await openCanvas(page, TESTED.name, 7);
     await expect(logLine(page)).toHaveText(
-      "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+      "Última prueba hace un momento · completada · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
     );
   });
   test("AU-64 · «Probar» with several triggers opens a menu to choose one, asks a trigger's fields in a small box with the last ones filled in, says «Probando…» and cannot be pressed meanwhile; with problems it tests nothing, marks each step and «Registro» says how many and leads to the first", async ({
@@ -1012,7 +1012,7 @@ test.describe("the editor", () => {
       trigger: "s_inicio",
       fields: { minimo: 320 },
     });
-    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Completado");
     // The one with none starts without asking.
     await testGo(page).click();
     await menu.getByText("Disparado por el usuario 2", { exact: true }).click();
@@ -1548,7 +1548,7 @@ test.describe("the editor", () => {
       automations: [testOf(ALL_DONE), fails, none],
       agent: BEFORE(),
     });
-    // All fine: the count on each arrow and on the output with none, and «Bien» on each card.
+    // All fine: the count on each arrow and on the output with none, and «Completado» on each card.
     await openCanvas(page, TESTED.name, 7);
     await expect(page.locator(".auto-arrow-count")).toHaveCount(0);
     await testGo(page).click();
@@ -1560,7 +1560,7 @@ test.describe("the editor", () => {
     await expect(page.locator(".auto-arrow-count.dim")).toHaveCount(0);
     await expect(card(page, "s_01jcrear").locator(".auto-out-count")).toHaveText("1 fila");
     for (const id of TESTED.steps.map((s) => s.id))
-      await expect(stateOf(page, id)).toHaveText("Bien");
+      await expect(stateOf(page, id)).toHaveText("Completado");
     // «Si» fails: why on its card, in two lines at most; what hung from it, «Parado».
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     await openCanvas(page, "Revisar cortos", 7);
@@ -1573,7 +1573,7 @@ test.describe("the editor", () => {
     await expect(why).toHaveAttribute("title", "Un valor no es del tipo que hace falta");
     for (const id of ["s_01jmodificar", "s_01jeliminar", "s_01jcombinar", "s_01jcrear"])
       await expect(stateOf(page, id)).toHaveText("Parado");
-    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Completado");
     // No count on the arrows out of the step that failed, nor on those the test did not reach.
     await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveCount(0);
     await expect(countOn(page, "s_01jsi", "s_01jeliminar")).toHaveCount(0);
@@ -1617,7 +1617,7 @@ test.describe("the editor", () => {
     await expect(countOn(page, "s_01jsi", "s_01jeliminar")).not.toHaveClass(/\bdim\b/);
     await openStep(page, "s_01jmodificar");
     await expect(salida(page).locator('[data-out="skipped"]')).toHaveText(
-      "Saltado: no le llegaron filas",
+      "Saltado: sin filas de entrada",
     );
   });
 });
@@ -2038,7 +2038,7 @@ test.describe("the step's view", () => {
     await press(page, "Escape");
     await testGo(page).click();
     await testBar(page).getByRole("dialog").getByRole("button", { name: "Probar" }).click();
-    await expect(stateOf(page, "s_01jcombinar")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jcombinar")).toHaveText("Completado");
     await openStep(page, "s_01jcombinar");
     const tabs = entrada(page).getByRole("tablist", { name: "Entrada" }).getByRole("tab");
     await expect(tabs).toHaveText(["A (3)", "B (125)"]);
@@ -2135,7 +2135,7 @@ test.describe("the step's view", () => {
       else await expect.poll(sideways, { message: `${width} px` }).toEqual([]);
     }
   });
-  test("AU-72 · SALIDA is seen as «Tabla» (first; «Esquema» with one row), «Esquema» or «JSON», with how many rows and a tab per output («sí (3)», «no (125)»); its foot says when it was tested and how long it took; untested it says «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas», with no rows «0 filas»", async ({
+  test("AU-72 · SALIDA is seen as «Tabla» (first; «Esquema» with one row), «Esquema» or «JSON», with how many rows and a tab per output («sí (3)», «no (125)»); its foot says when it was tested and how long it took; untested it says «Sin probar» with «Probar paso», skipped «Saltado: sin filas de entrada», with no rows «0 filas»", async ({
     page,
   }) => {
     const none = testOf(
@@ -2186,7 +2186,7 @@ test.describe("the step's view", () => {
     await press(page, "Escape");
     await openStep(page, "s_01jmodificar");
     await expect(salida(page).locator('[data-out="skipped"]')).toHaveText(
-      "Saltado: no le llegaron filas",
+      "Saltado: sin filas de entrada",
     );
     await press(page, "Escape");
     await openStep(page, "s_01jsi");
@@ -2286,13 +2286,13 @@ test.describe("the step's view", () => {
     await expect(fromBar).toBeDisabled();
     await expect(testGo(page)).toBeDisabled();
     await expect(fromBar).toHaveText("Probar paso");
-    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jbuscar")).toHaveText("Completado");
     expect((await testsAsked(page)).at(-1)?.step).toBe("s_01jbuscar");
     // From the right click.
     await card(page, "s_01jsi").click({ button: "right" });
     await page.locator(".pop-box .menu-item", { hasText: "Probar paso" }).click();
     await expect.poll(async () => (await testsAsked(page)).at(-1)?.step).toBe("s_01jsi");
-    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Completado");
     // From the view: «Probando…» beside it, and it cannot be pressed.
     await openStep(page, "s_01jmodificar");
     const inView = view(page)
@@ -2507,7 +2507,7 @@ test.describe("the step's view", () => {
       await expect(box.getByRole("spinbutton", { name: "Mínimo" })).toHaveValue("300");
       await box.getByRole("button", { name: "Probar" }).tap();
       await expect(logLine(page)).toHaveText(
-        "Última prueba hace un momento · bien · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
+        "Última prueba hace un momento · completada · 7 pasos · 0,4 s · no escribió nada · habría escrito 129 filas",
       );
       // Tested: a step shows what it got and what it gave.
       await card(page, "s_01jsi").tap();
@@ -3328,13 +3328,13 @@ test.describe("against a sea of options", () => {
     await view(page).getByRole("tab", { name: "Ajustes" }).click();
     await failed.getByRole("button", { name: "Ir al parámetro" }).click();
     await expect(param(page, "where").locator(":focus")).toHaveCount(1);
-    // A stale one: «puede estar vieja» with «Probar paso». Esc in the field is the field's.
+    // A stale one: «desactualizada» with «Probar paso». Esc in the field is the field's.
     await view(page).getByRole("button", { name: "Cerrar" }).click();
     await openStep(page, "s_01jbuscar");
     await param(page, "limit").getByRole("spinbutton").fill("150");
     await expect(saved(page)).toHaveText("Guardado");
     const stale = salida(page).locator(".auto-out-stale");
-    await expect(stale).toContainText("puede estar vieja");
+    await expect(stale).toContainText("desactualizada");
     await expect(stale.getByRole("button", { name: "Probar paso" })).toBeEnabled();
     // A draft not saved: «Sin guardar · Reintentar».
     await serverDown(page, true);
@@ -3356,7 +3356,7 @@ test.describe("testing", () => {
     await testGo(page).click();
     const box = testBar(page).getByRole("dialog");
     await box.getByRole("button", { name: "Probar" }).click();
-    await expect(logLine(page)).toContainText("bien");
+    await expect(logLine(page)).toContainText("completada");
     await expect(logLine(page)).toContainText("7 pasos");
     await expect(logLine(page)).toContainText("no escribió nada");
     await expect(logLine(page)).toContainText("habría escrito 129 filas");
@@ -3366,7 +3366,7 @@ test.describe("testing", () => {
     expect(asks[0]?.step).toBeUndefined();
     expect(asks[0]).toMatchObject({ trigger: "s_inicio", fields: { minimo: 300 } });
     for (const id of TESTED.steps.map((s) => s.id))
-      await expect(stateOf(page, id)).toHaveText("Bien");
+      await expect(stateOf(page, id)).toHaveText("Completado");
     // The step that would write shows it; nothing was written to the collection.
     await openStep(page, "s_01jmodificar");
     await expect(showAs(salida(page), "Haría esto")).toBeChecked();
@@ -3398,9 +3398,9 @@ test.describe("testing", () => {
     await press(page, "Escape");
     for (const id of ["s_01jmodificar", "s_01jeliminar", "s_01jcombinar", "s_01jcrear"])
       await expect(stateOf(page, id)).toHaveCount(0);
-    await expect(stateOf(page, "s_01jsi")).toHaveText("Bien");
+    await expect(stateOf(page, "s_01jsi")).toHaveText("Completado");
   });
-  test("AU-92 · after a step changes, its SALIDA says «puede estar vieja» and the counts of its arrows and of what hangs from it are dimmed; moving it or renaming it marks nothing; testing it again clears the mark", async ({
+  test("AU-92 · after a step changes, its SALIDA says «desactualizada» and the counts of its arrows and of what hangs from it are dimmed; moving it or renaming it marks nothing; testing it again clears the mark", async ({
     page,
   }) => {
     await openApp(page, "/?still", {
@@ -3430,7 +3430,7 @@ test.describe("testing", () => {
     await press(page, "Enter");
     await expect(saved(page)).toHaveText("Guardado");
     const stale = salida(page).locator(".auto-out-stale");
-    await expect(stale).toContainText("puede estar vieja");
+    await expect(stale).toContainText("desactualizada");
     await press(page, "Escape");
     await expect(countOn(page, "s_01jsi", "s_01jmodificar")).toHaveClass(/\bdim\b/);
     await expect(countOn(page, "s_01jsi", "s_01jeliminar")).toHaveClass(/\bdim\b/);
@@ -3461,7 +3461,7 @@ test.describe("testing", () => {
     const minimo = box.getByRole("spinbutton", { name: "Mínimo" });
     await expect(minimo).toHaveValue("280");
     await box.getByRole("button", { name: "Probar" }).click();
-    await expect(logLine(page)).toContainText("bien");
+    await expect(logLine(page)).toContainText("completada");
     expect((await testsAsked(page)).at(-1)).toMatchObject({ fields: { minimo: 280 } });
     // Opened again, both say the last test's.
     await openStep(page, "s_inicio");

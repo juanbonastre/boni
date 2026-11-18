@@ -140,7 +140,7 @@ export function columnWord(t: T, a: WriteAction | "read" | "collection"): string
 /**
  * The chip of a connection under its step (AU-40, AU-178, AU-189): «Solo lee», «Lee · con filtro», «Lee y modifica
  * · pregunta antes», «Lee y elimina · sin preguntar». A removal with «Sí» is said apart from what asks. An «Agente»'s
- * that writes says so too (AU-200): «Lee y crea · pregunta antes · decide la IA».
+ * that writes says so too (AU-200): «Lee y crea · pregunta antes · decidido por un modelo».
  */
 export function chipWords(t: T, c: Connection, locale: string, type?: string): string {
   const writes = WRITE_ACTIONS.filter((a) => c[a] !== false);
@@ -175,7 +175,7 @@ export function chipWords(t: T, c: Connection, locale: string, type?: string): s
  * The sentence under the table (AU-44, AU-178): «Puede leer Categorías, y leer y modificar Gastos (con filtro). No
  * puede crear ni eliminar nada.» Connections that may do the same are said together. Empty with no connections. An
  * «Agente»'s says each write's «Como mucho» and who chooses (AU-200): «Puede leer Gastos, y leer y crear Notas (como
- * mucho 20), lo que decida la IA. No puede modificar ni eliminar nada.»
+ * mucho 20): decidido por un modelo. No puede modificar ni eliminar nada.»
  */
 export function connectionsSentence(
   t: T,

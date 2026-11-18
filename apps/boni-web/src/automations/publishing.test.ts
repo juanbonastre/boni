@@ -141,7 +141,7 @@ describe("pantalla 10", () => {
       abilityLine(t, { collection: "c_01jotra", action: "remove", how: "noAsk", steps: [] }, name),
     ).toBe("Elimina filas en c_01jotra · sin preguntar");
   });
-  it("AU-200 AU-196 · an «Agente»'s line says «decide la IA» and its «Como mucho», summed over the steps when each has one, before «con datos de fuera»", () => {
+  it("AU-200 AU-196 · an «Agente»'s line says «decidido por un modelo» and its «Como mucho», summed over the steps when each has one, before «con datos de fuera»", () => {
     const name = (key: string) => NAMES[key] ?? key;
     const agent = (id: string, limit?: number): Step => ({
       id,
@@ -174,10 +174,10 @@ describe("pantalla 10", () => {
         two,
       );
     expect(line(["s_01jagente"], true)).toBe(
-      "Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20 · con datos de fuera",
+      "Elimina filas en Tareas · sin preguntar · decidido por un modelo · como mucho 20 · con datos de fuera",
     );
     expect(line(["s_01jagente", "s_01jotro"])).toBe(
-      "Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 25",
+      "Elimina filas en Tareas · sin preguntar · decidido por un modelo · como mucho 25",
     );
     // One with no «Como mucho»: nothing is said of it.
     const open = draft([trigger, agent("s_01jagente", 20), agent("s_01jotro")]);
@@ -193,10 +193,10 @@ describe("pantalla 10", () => {
         name,
         open,
       ),
-    ).toBe("Elimina filas en Tareas · decide la IA");
+    ).toBe("Elimina filas en Tareas · decidido por un modelo");
     expect(
       abilityLine(t, { collection: "tareas", action: "read", byAgent: true, steps: [] }, name, two),
-    ).toBe("Lee Tareas · decide la IA");
+    ).toBe("Lee Tareas · decidido por un modelo");
   });
   it("AU-96 · «Publicar» with something that stops it marks the steps as a test that could not start does", () => {
     const state = openedEditor(opened(WRITING));
@@ -312,9 +312,9 @@ describe("the words of a refusal", () => {
   it("AU-188 · a shared device, a draft changed elsewhere, nothing to publish, off and already running each say theirs", () => {
     expect(refusedWords(t, "not-personal")).toBe(t("mail.error.personal-device-only"));
     expect(refusedWords(t, "stale")).toBe("El borrador cambió en otro dispositivo");
-    expect(refusedWords(t, "unchanged")).toBe("Nada que publicar");
-    expect(refusedWords(t, "off")).toBe("Está apagada");
-    expect(refusedWords(t, "running")).toBe("Ya se está ejecutando");
+    expect(refusedWords(t, "unchanged")).toBe("Sin cambios");
+    expect(refusedWords(t, "off")).toBe("Apagada");
+    expect(refusedWords(t, "running")).toBe("En ejecución");
     expect(refusedWords(t, "otra-cosa")).toBe(t("error.generic"));
   });
 });

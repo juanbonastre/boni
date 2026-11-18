@@ -1117,10 +1117,10 @@ que un paso espere a Juan.
   token, y «Las hace este código» enseña su código en un cuadro de texto (`automations-ai.spec.ts`, en el escritorio
   y en el teléfono, que solo lee). Falta: las palabras propias del paso sin «Instrucciones» («Escribe qué tiene que
   hacer»; hoy dice «Falta este dato», como cualquier dato obligatorio) y el editor del código (P2).
-- **AU-51** (F15, en parte) · «Lecturas» tiene dos modos. «Las decide la IA» (por defecto): busca en sus conexiones
+- **AU-51** (F15, en parte) · «Lecturas» tiene dos modos. «Decididas por un modelo» (por defecto): busca en sus conexiones
   lo que necesite. «Las hace este código»: un editor como el de «Código» que lee, cruza colecciones y devuelve lo
   que la IA recibe; entonces la IA no busca por su cuenta.
-  En la F15: con «Las decide la IA», el plan del modelo pide `find`, `get`, `count` y `sum` a sus conexiones, y cada
+  En la F15: con «Decididas por un modelo», el plan del modelo pide `find`, `get`, `count` y `sum` a sus conexiones, y cada
   lectura la estrecha `narrow` como a las de un «Código» (AU-43). Con «Las hace este código», el código es el de un
   «Código» (la caja, `$col`, el análisis de AU-183 y sus topes) y solo lee: una llamada de escribir en él es un
   problema (`agent.reads.write`). Corre una vez por unidad de trabajo, antes de la primera ronda, y lo que devuelve es
@@ -1128,7 +1128,7 @@ que un paso espere a Juan.
   entonces lecturas, y un plan que pida una se le niega (AU-198). Cambiar de modo no borra el código. La frase del
   paso (AU-44) dice quién lee: «Lee lo que decida la IA en Gastos y Categorías» o «Lee lo que hace su código en…». La
   prueba: `packages/automations/src/agent.test.ts`.
-  Hecho en E3: con «Las decide la IA» el plan pide `find`, `get`, `count` y `sum`, y cada lectura pasa por el mismo
+  Hecho en E3: con «Decididas por un modelo» el plan pide `find`, `get`, `count` y `sum`, y cada lectura pasa por el mismo
   `Reader` que un «Código» (`box.ts`): `narrow` con la conexión guardada, la puerta de la política y los topes del
   paso; lo leído queda en `StepRecord.reads`. Hecho en el segundo PR de E3: con «Las hace este código» (`reads`
   `code`, el parámetro `code`) el código corre en la caja una vez por unidad de trabajo, antes de la primera ronda, con
@@ -1139,14 +1139,14 @@ que un paso espere a Juan.
   pedirlo, falla al ejecutar (`code.write.unseen`); si el código falla, falla la unidad con su código (`CodeFault`), y
   si la política le niega una lectura, también, la de P29 incluida, como en un «Código» (`policy.denied`, o
   `ai.private` si la colección se hizo privada). Cambiar a
-  «Las decide la IA» guarda el código, y la versión cuenta los pasos que cita. Falta: la frase del paso y el editor
+  «Decididas por un modelo» guarda el código, y la versión cuenta los pasos que cita. Falta: la frase del paso y el editor
   del código (P2), y que renombrar un paso cambie su nombre dentro de este código, como en un «Código» (P2).
 - **AU-52** (F15, en parte) · En cada permiso de escribir, los campos se rellenan con el control de «los campos de
   una fila» (AU-80), que aquí, y solo aquí, tiene un tercer estado: cada campo es «Fijo», «Expresión» o «Lo decide la
   IA», con una línea que le dice para qué es. Las opciones salen del propio campo: una IA no puede inventar una
   opción que el campo no tiene.
   En la F15: el control va en la fila abierta de la conexión, bajo «Crear» y bajo «Modificar», y de él salen los
-  límites de AU-48: `fields` son los campos en «Lo decide la IA», y `fixed`, los «Fijo» y las «Expresión», que pone el
+  límites de AU-48: `fields` son los campos en «Decidido por un modelo», y `fixed`, los «Fijo» y las «Expresión», que pone el
   código al guardar y la IA no elige. Un campo sin marcar no se escribe. La línea de cada campo va al modelo dentro
   del esquema (AU-197). Un campo de opciones solo admite una de sus opciones, y una relación, una fila que el paso
   haya leído en esa ejecución: lo que no cumple se niega y se le dice al modelo (AU-198). Es el «que lo defina el
@@ -1161,8 +1161,8 @@ que un paso espere a Juan.
   (`update.fixed`), con sus expresiones resueltas por unidad de trabajo como las de crear: un fijo que una expresión
   toma de un valor de fuera lleva la etiqueta de fuera (AU-170), el modelo recibe solo sus nombres en el esquema
   (`update.fixed`), nunca su valor, y si pide uno se le niega como a crear (`outside-fields`).
-  Hecho en P1 de la F15: bajo «Crear» y bajo «Modificar» de la fila abierta, cada campo es «No lo escribe», «Lo
-  decide la IA» o «Fijo» con su valor, pintado por su tipo como en «los campos de una fila»: los de la IA son
+  Hecho en P1 de la F15: bajo «Crear» y bajo «Modificar» de la fila abierta, cada campo es «No lo escribe», «Decidido
+  por un modelo» o «Fijo» con su valor, pintado por su tipo como en «los campos de una fila»: los de la IA son
   `fields` (todos, sin lista), los fijos `fixed`, nunca los dos, y un campo que deja de ser de la IA pierde su línea
   (`setWriteField`, `connections.test.ts`). Falta: «Expresión» y la línea de cada campo (P2).
 - **AU-53** (F15, en parte) · «Respuesta» es «Texto» o «Campos» (una lista de campos con su tipo). Sale como una
@@ -1387,12 +1387,12 @@ que un paso espere a Juan.
   Falta: las palabras «Elige otro modelo en «Clasificar»» del problema al publicar (hoy «Este valor no vale aquí») y
   la lista de los cuatro lectores con su uso «Lector» (P2).
 - **AU-200** (F15, en parte) · Lo que decide una IA se dice con esas palabras donde Juan da el permiso y donde lo
-  ve usado: «decide la IA». En «Lo que podrá hacer» (AU-182) un «Agente» da una línea por colección y acción que su
+  ve usado: «decidido por un modelo». En «Lo que podrá hacer» (AU-182) un «Agente» da una línea por colección y acción que su
   conexión no tiene en «No» (no hay análisis que diga menos: puede todo lo que su conexión deja), con las marcas de
-  siempre y la nueva: «Elimina filas en Tareas · sin preguntar · decide la IA · como mucho 20». Cuando al paso puede
+  siempre y la nueva: «Elimina filas en Tareas · sin preguntar · decidido por un modelo · como mucho 20». Cuando al paso puede
   llegarle algo de fuera (por su camino, como en AU-182, o porque una colección que su conexión deja leer guarda
   valores de fuera: `holdsOutside`), la línea lo dice como en un «Código»: «Elimina filas en Tareas · sin preguntar
-  · decide la IA · como mucho 20 · con datos de fuera» (decisión 16 del §10).
+  · decidido por un modelo · como mucho 20 · con datos de fuera» (decisión 16 del §10).
   Sus lecturas dicen quién las elige: «Lee lo que decida la IA en Gastos y Categorías». La frase bajo la tabla del
   paso (AU-44) lo dice igual de lo que escribe: «Puede leer Gastos (solo los de este año) y Categorías, y proponer
   filas nuevas en Notas (como mucho 20), lo que decida la IA. No puede modificar ni eliminar nada.» La misma marca va en la ficha
@@ -1402,12 +1402,12 @@ que un paso espere a Juan.
   (AU-47) y las aceptaciones de la F16 y la F19. La prueba: `packages/automations/src/agent.test.ts` y
   `e2e-boni/automations-ai.spec.ts`.
   Hecho en E3: `abilities` da una línea por colección y acción que la conexión de un «Agente» no tiene en «No»,
-  marcada `byAgent` («decide la IA»), y «con datos de fuera» como en un «Código» (con «Sí» la línea lo lleva; con
+  marcada `byAgent` («decidido por un modelo»), y «con datos de fuera» como en un «Código» (con «Sí» la línea lo lleva; con
   «Preguntar» no, porque propone). Falta: las palabras y «como mucho
   20» en «Lo que podrá hacer» (P2, que lee el tope de la conexión).
-  Hecho en P1 de la F15: «Lo que podrá hacer» dice «decide la IA» y «como mucho N» (la suma de los pasos de esa
+  Hecho en P1 de la F15: «Lo que podrá hacer» dice «decidido por un modelo» y «como mucho N» (la suma de los pasos de esa
   línea, y nada si alguno no tiene tope) antes de «con datos de fuera»; la ficha de la conexión en el lienzo lleva
-  «decide la IA» en lo que puede escribir, y la frase bajo la tabla «…(como mucho 20), lo que decida la IA»
+  «decidido por un modelo» en lo que puede escribir, y la frase bajo la tabla «…(como mucho 20), lo que decida la IA»
   (`publishing.test.ts`, `connections.test.ts`, `automations-ai.spec.ts`). Falta: «Lee lo que decida la IA en…» en
   la frase, su «proponer filas nuevas», y la marca en la propuesta y en la línea de una ejecución (P2).
 
@@ -2215,7 +2215,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   por minuto), con las mismas funciones. Corre la última hora cumplida de cualquiera de sus reglas, una sola vez
   aunque coincidan varias, si es posterior a la publicación de la versión que corre, a que se encendió y a la
   última que corrió. Si el servidor estaba apagado, corre al volver solo esa última, y solo dentro del margen de
-  D-44 (30 minutos las de cada hora, 3 horas las demás); pasada de margen, queda una línea «No corrió: Boni estaba
+  D-44 (30 minutos las de cada hora, 3 horas las demás); pasada de margen, queda una línea «Omitida: Boni estaba
   apagado a su hora» en «Ejecuciones» y avisa como un fallo (AU-102). Nunca corre dos veces la misma hora: la
   ejecución guarda la hora que le tocaba y el almacén no admite otra con la misma. Si a su hora sigue corriendo la
   anterior, espera a la vuelta siguiente. Cada vuelta lee las horas de una columna de la automatización, escrita al
@@ -2235,7 +2235,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en P3: su panel dice cada regla en palabras, como los flujos de antes («Cada día a las 08:00», «Cada lunes a
   las 09:00», «Cada hora a y 15»), y pide «Día» solo con «Cada semana»; sin ninguna, falta (como la rechaza el
   servidor). Su tarjeta dice la primera y cuántas más; «Se inicia» de la lista, publicada, las dice todas, de la
-  columna escrita al publicar. En «Ejecuciones», la suya dice «A su hora», y la que no corrió, «No corrió: Boni
+  columna escrita al publicar. En «Ejecuciones», la suya dice «Programada», y la que no corrió, «Omitida: Boni
   estaba apagado a su hora». Lo sostienen `words.test.ts`, `flowsCollection.test.ts`, la prueba del navegador y la
   del escritorio sobre el servidor de verdad: publicada para el minuto siguiente, corre sola, crea su fila, se ve en
   «Ejecuciones» con la pantalla abierta y se deshace desde ahí.
@@ -2362,9 +2362,19 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`ask.questions`); unas opciones de una expresión que no dan una lista de textos fallan (`ask.options`). La
   pregunta guarda su texto tal cual, plano, con la etiqueta de lo que cita, y cada opción la suya. Una respuesta que
   no encaja con su pregunta se niega antes de seguir (`answerFits`, `CannotRun`); la escrita lleva la etiqueta de su
-  mano, la elegida la de la opción y «Sí o no» la de la automatización. Falta: la tarjeta en la Bandeja y quién da
-  la mano de la respuesta (S2), y el paso en el lienzo, sus palabras (también las que dicen que la ejecución acabó
-  sin respuesta: hoy su registro dice `ended: "noAnswer"`) y la prueba e2e (P2).
+  mano, la elegida la de la opción y «Sí o no» la de la automatización. Hecho en S2: la tarjeta en la Bandeja y
+  quién da la mano de la respuesta (AU-203). Hecho en P2: el paso en el lienzo, en la categoría «Preguntar o avisar»
+  con «Avisar» y «Responder», y sus palabras; «Opciones» solo con «Una opción» y «Varias opciones», una línea por
+  opción con «Borrar» y «Añadir» debajo, guardadas como una lista de textos; el límite se llama «Días de espera»
+  (decidido de noche, para que Juan lo confirme: el diseño decía «Límite de espera»). La tarjeta de la Bandeja dice
+  qué automatización pregunta («De «Archivar leídos»», el nombre de la versión que corrió, en texto plano: el
+  servidor lo da con la lista, `automation` en `GET /api/agent/requests`), y sus controles salen de lo que el
+  servidor dice que ese dispositivo puede hacer (`may.answer`, opcional: sin él, contesta y decide el servidor al
+  recibirla). En SALIDA, tras una prueba, la pregunta y cómo acabó: «Esperando respuesta · hasta…», «Respondida» o
+  «Sin respuesta». La prueba: `e2e-boni/automations-ai.spec.ts` («AU-125 · a «Preguntar» of a run waits as a card in
+  the Bandeja…», «AU-125 · «Opciones» of a «Preguntar»…» y «AU-125 · A-15 · 200 questions…»). Falta: la línea de una
+  ejecución que acabó sin respuesta lo dice solo como «Completada» (su registro dice `ended: "noAnswer"`), y
+  `may` no lo da todavía el servidor (su PR aparte, de quién contesta).
 - **AU-201** (F15, en parte) · «Avisar» enseña una cosa: **Texto** (con expresiones). Manda un aviso a Juan, por el
   `notify` de siempre: no tiene destinatario, así que nada de fuera ni ningún modelo elige a quién (P2, P14). Detrás
   de «Añadir opción», **Dónde**: «En el ordenador y el móvil» (nace así), «Solo en el ordenador» o «Solo en el
@@ -2382,7 +2392,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   S2: el `notify` del servidor (`waits.ts`, `peoplePort`) pasa por la política como una llamada sin destinatario
   (`noticeDecision`: P1, como desde un turno) y va a donde dice «Dónde»: al canal de la app (`notify`, con la
   ejecución que abre) con `all` y `desktop`, y al móvil con `all` y `phone`; uno que junta dice «y N más». Falta:
-  el paso en el lienzo y «Avisaría…» (P2).
+  el paso en el lienzo y «Avisaría…» (P2). Hecho en P2: el paso en el lienzo, con **Texto** a la vista y «Se
+  ejecuta» y «Dónde» detrás de «Añadir opción» («Ordenador y móvil», «Solo ordenador», «Solo móvil»); en SALIDA,
+  tras una prueba, «Avisaría» con cada aviso y a dónde iría («Archivados 3 · ordenador»), el que junta el resto
+  como «y 12 más», todo en texto plano. La prueba: `e2e-boni/automations-ai.spec.ts` («AU-203 · AU-201 · AU-202 ·
+  «Probar» that reaches a «Preguntar»…»). Falta: comprobar con la app que tocar el aviso abre su ejecución.
 - **AU-202** (F15, en parte) · «Responder» enseña una cosa: **Respuesta** (texto, con expresiones). Pone la
   respuesta de la ejecución, que se ve donde se inició: en la F15, en el panel de «Ejecutar» y de «Probar» y en la
   línea de la ejecución (sus primeros 200 caracteres); con el disparador de chat será el mensaje (F16), y en una
@@ -2392,7 +2406,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en E4: el paso `reply` en el motor, con `text` y nada más, una vez con todas las filas, que siguen. La
   ejecución guarda `reply` (el paso, el texto entero y plano, la etiqueta de lo que cita): la del último que corrió,
   también a través de una espera. Ninguno manda un aviso, tampoco en una ejecución que empezó sola. Falta: enseñarla
-  en el panel de «Ejecutar» y de «Probar» y en la línea de la ejecución (P2, con `REPLY_LINE`).
+  en el panel de «Ejecutar» y de «Probar» y en la línea de la ejecución (P2, con `REPLY_LINE`). Hecho en P2: en
+  «Probar», la respuesta entera y en texto plano en SALIDA del «Responder» que la dio (`reply` de la prueba, también
+  de una prueba que siguió tras una pregunta). La prueba: `e2e-boni/automations-ai.spec.ts` («AU-203 · AU-201 ·
+  AU-202 · «Probar» that reaches a «Preguntar»…»). Falta: el panel de «Ejecutar» y la línea de la ejecución (sus
+  primeros 200 caracteres): el servidor no da todavía la respuesta de una ejecución en su resumen ni en su vista.
 - **AU-203** (F15, en parte) · Una ejecución que pregunta espera sin estorbar y nunca para siempre. Al llegar a un
   «Preguntar», el motor termina lo que no depende de la respuesta y la ejecución queda «Esperando» («Esperando tu
   respuesta · hasta mañana a las 9:40»), con su tarjeta en la Bandeja. Mientras espera:
@@ -2411,8 +2429,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   el de esa versión y el de la publicada en ese momento (una celda que Juan bajó o quitó desde entonces pregunta) y
   con la pausa de AU-210: esperar nunca conserva un permiso que él ya retiró. La propuesta de la ejecución (AU-193)
   se junta cuando la ejecución termina, también después de una espera: mientras espera una respuesta su línea dice
-  «Esperando tu respuesta», y «1 propuesta sin responder» solo cuando ya terminó. Pasado el
-  límite sale por «sin respuesta» y la tarjeta queda «Ya no vale». Apagar o eliminar la automatización, o deshacer
+  «Esperando respuesta», y «1 propuesta sin responder» solo cuando ya terminó. Pasado el
+  límite sale por «sin respuesta» y la tarjeta queda «Caducada». Apagar o eliminar la automatización, o deshacer
   la ejecución, cancela la espera («Cancelada»). En «Probar» la pregunta sale en el panel de la prueba y se contesta
   allí: no va a la Bandeja. La prueba: `packages/automations/src/people.test.ts` y
   `apps/server/src/automations/ai.test.ts`.
@@ -2438,13 +2456,24 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   respuesta, la ejecución sigue en su turno con la versión con la que empezó y el «Sí» más bajo entre esa versión y
   la publicada en ese momento (`lowerYes`: un paso que cambió pregunta entero); la propuesta se hace al terminar.
   Apagar o eliminar la automatización, o deshacer la ejecución, la cancela («Cancelada») y sus tarjetas quedan
-  «Ya no vale», igual que la de una ejecución que ya siguió o pasó su límite. Con los modelos apagados, la Bandeja
+  «Caducada», igual que la de una ejecución que ya siguió o pasó su límite. Con los modelos apagados, la Bandeja
   sigue sirviendo lo que una ejecución puso en ella por código, su propuesta (`automations.accept_run`) y su
   «Preguntar», y se aceptan, rechazan y contestan igual (por la política y desde un dispositivo personal); una
   propuesta que escribió un modelo y el resto de `/api/agent` siguen apagados (`OFF_ROUTES` en `agent.ts`; decidido
   de noche, para que Juan lo confirme). Hecho en S3: al seguir, la ejecución lee también la pausa de AU-210
   (`resumePublished` con `pausedDoc`), que solo baja; esa lectura no tiene todavía una prueba propia. Falta, de la
-  pantalla (P2), el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la prueba.
+  pantalla (P2), el límite en «Esperando respuesta · hasta…» y la pregunta en el panel de la prueba. Hecho en P2:
+  en «Ejecuciones», la línea de una que espera dice «Esperando respuesta · hasta 18 nov 2026, 09:12» (`until` del
+  resumen, a la zona del dispositivo) y no cuenta como un fallo. En «Probar», una prueba que llega a un «Preguntar»
+  espera en el servidor, en memoria (decidido de noche, para que Juan lo confirme: no se guarda, y un reinicio la
+  pierde), y sus preguntas salen encima de «Probar», en el panel de la prueba y nunca en la Bandeja: «Sí» y «No»,
+  sus opciones, varias para marcar o un texto, «Enviar» cuando todas tienen respuesta y «Sin respuesta» para todas;
+  el «Registro» dice «esperando respuesta». Contestar sigue la misma prueba (`POST …/test` con `answers`), y una que
+  el servidor ya no tiene dice «Prueba caducada». La prueba: `apps/server/src/automations/ai.test.ts` («AU-203 AU-201
+  AU-202 · «Probar» that reaches a «Preguntar» waits in its own panel…»), `apps/boni-web/src/automations/state.test.ts`
+  y `runs.test.ts` («AU-203 · …») y `e2e-boni/automations-ai.spec.ts` («AU-203 · «Sin respuesta» answers every
+  question…» y «AU-203 · a run that waits for an answer says until when…»). Falta: la prueba propia de la pausa al
+  seguir (S3).
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -2592,7 +2621,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   tarjeta inerte en la conversación: el nombre, sus pasos en palabras y «Lo que podrá hacer» (AU-182), ya validada y
   probada en seco. Aceptarla, con su mano en un dispositivo personal, crea un **borrador** con cada «Sí» bajado a
   «Preguntar» (`lowerYes`, AU-188) y lo abre en el lienzo: ni publicado ni encendido. Una propuesta de cambio sobre
-  un borrador que cambió desde entonces dice «Ya no vale». Ejecutar una automatización desde un turno
+  un borrador que cambió desde entonces dice «Caducada». Ejecutar una automatización desde un turno
   (`automations.run`, antes `flows.run`) sigue como hoy, con confirmación (P8), hasta que la F18 traiga «La pueden
   iniciar» (AU-111, AU-142). Los botones de página con «Hace: Flujo» siguen pulsándose igual, por el mismo
   identificador. La prueba: `apps/server/src/automations/assistant.test.ts` y `e2e-boni/automations-before.spec.ts`.
@@ -2760,7 +2789,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   de un flujo que espera en la Bandeja guarda el acto ya resuelto: se acepta o se rechaza como siempre, sin motor.
   Una ejecución de antes que espera (una pregunta, o una confirmación en una conversación: `waiting_runs`) la
   reanuda el motor que la empezó mientras exista, nunca el otro; al quitarlo (AU-152), la que aún espere se cierra
-  con «Ya no vale · Ejecutar otra vez». Las preguntas y las propuestas del correo son datos del correo, no
+  con «Caducada · Ejecutar otra vez». Las preguntas y las propuestas del correo son datos del correo, no
   ejecuciones: siguen
   igual. Un flujo programado corre una vez en cada hueco: la conversión lleva a `AutomationScheduler` la última hora
   en que corrió, así que ni repite el hueco de hoy ni se salta el siguiente. El correo que llega durante la
@@ -3151,7 +3180,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   ejecución y va en su último evento (`RunEvent.notice`); no va al móvil ni como aviso del sistema
   (`scheduler.test.ts`).
   Hecho en P3b: la app no lo saca como aviso (decisión 17 del §10, 2026-11-17): lo que guardó sola se ve en su
-  línea de «Ejecuciones», «A su hora · Creó 1 fila en Libros», con «Deshacer lo que hizo», que deshace esa
+  línea de «Ejecuciones», «Programada · Creó 1 fila en Libros», con «Deshacer lo que hizo», que deshace esa
   ejecución (`automations-publish.spec.ts`, «AU-167 · decision 17»). Sobre el servidor real en la app de escritorio,
   a su hora: lo de fuera con «Preguntar» no guarda nada y deja una propuesta, y con «Sí» lo guarda con «con datos de
   fuera» en su línea, igual a mano (`e2e-boni-desktop/automations-publish.spec.ts`, AU-167 AU-193 AU-170 y AU-195
@@ -3248,7 +3277,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   ejecución, que ya es lo que P5 pide (pintada por el código desde el cambio real, aceptada en un dispositivo
   personal). Solo la papelera: lo irreversible sigue sin existir aquí, y ninguna otra propuesta gana esto. Lo aceptado
   se deshace con la ejecución (AU-18). Si una fila cambió desde que se propuso, no se guarda ninguna y la propuesta
-  queda «Ya no vale · Ejecutar otra vez». Rechazar no guarda nada, y la ejecución lo dice. Nada de esto es nuevo en
+  queda «Caducada · Ejecutar otra vez». Rechazar no guarda nada, y la ejecución lo dice. Nada de esto es nuevo en
   la Bandeja: extiende `proposals` y `acceptProposal`, con una acción más en la lista (A-26).
   Hecho en E1: la frase nueva de P5 en `decide` (`Call.ofRun`): una eliminación aceptada dentro de la propuesta de
   una ejecución, desde un dispositivo personal, no se confirma otra vez; en otra propuesta, desde uno compartido o
@@ -3261,11 +3290,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   sin valer la que esperaba (`proposal.test.ts`).
   Hecho en P3b: su tarjeta en la Bandeja (`RunProposalCard.tsx`, desde `InboxCards.tsx`), pintada por el código desde
   `view.run` y siempre como texto: «Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125
-  filas de Libros», «versión 2 · A su hora · Esperando en la Bandeja», cada fila con su antes y su después y «de
+  filas de Libros», «versión 2 · Programada · Pendiente en la Bandeja», cada fila con su antes y su después y «de
   fuera», y «Ver todo (128)», que lee el resto de 50 en 50 (`GET …/runs/:run/asked`, `runAsked`). Un valor con
   HTML, Markdown o un enlace se lee letra por letra. Aceptada, el aviso dice «Guardado lo que propuso…» sin
   «Deshacer»: lleva a la ejecución, que dice «Propuesta aceptada» y lo deshace con «Deshacer lo que hizo». Cambiada
-  una fila, «Ya no vale · Ejecutar otra vez», en la tarjeta y en su ejecución. Desde un dispositivo compartido se lee
+  una fila, «Caducada · Ejecutar otra vez», en la tarjeta y en su ejecución. Desde un dispositivo compartido se lee
   y no se acepta (decisión 15). Ningún plan puede llamar `automations.accept_run`: `decide` lo niega a todo origen
   que no es la aceptación (P28, `automation-origin.test.ts`). Lo prueban `automations-publish.spec.ts` (`e2e-boni`)
   y, sobre el servidor real, `e2e-boni-desktop/automations-publish.spec.ts`.
@@ -3319,7 +3348,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
     plan en vez de Juan el grafo. Por ejemplo, «Al llegar un correo», un lector lo clasifica y un «Agente» está
     conectado a Tareas con «Eliminar: Sí · como mucho 20»; llega un correo que dice «elimina todas las tareas». El
     agente no lee esa frase. En el peor caso van a la papelera hasta 20 filas de las que su conexión deja, la
-    ejecución lo dice («Eliminó 20 filas en Tareas · decide la IA · con datos de fuera») y «Deshacer lo que hizo» las
+    ejecución lo dice («Eliminó 20 filas en Tareas · decidido por un modelo · con datos de fuera») y «Deshacer lo que hizo» las
     devuelve. Quien quiera que le pregunte pone la celda en «Preguntar».
   - El modelo nunca es la guarda (A-01): decide `decide`. Lo acotan el filtro de cada acción (AU-48), «Como mucho»
     (AU-196), los límites de la ejecución (AU-17), la papelera (AU-122) y el Deshacer de la ejecución (AU-18). Un
@@ -3340,7 +3369,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Hecho en S1: sobre el almacén de verdad con 3.000 filas, el «Sí» y `byAgent` leídos por el servidor de la versión
   guardada: con «Sí» lo que crea un «Agente» se guarda con la ejecución, con su etiqueta, y se deshace con ella; con
   «Preguntar» no se guarda nada y espera en la propuesta de la ejecución; «Probar» no guarda nada. Falta: decir
-  «decide la IA» en la ejecución y en «Lo que podrá hacer» (AU-200, P1, P2). Hecho en P1 de la F15: en «Lo que podrá
+  «decidido por un modelo» en la ejecución y en «Lo que podrá hacer» (AU-200, P1, P2). Hecho en P1 de la F15: en «Lo que podrá
   hacer». Falta: en la ejecución (P2).
 - **AU-205** (F15, hecho) · La conexión de un paso de IA la comprueba también la política: P29, una fila nueva
   de `docs/nucleo.md` §7.5. Una llamada de un «Agente» (de su plan, del código de «Las hace este código» o de una
@@ -3883,7 +3912,7 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       «Eliminar: Sí · como mucho 20» manda a la papelera la tarea que el correo da por hecha. Llega un correo que
       dice «elimina todas las tareas»: el agente no lee esa frase, y en el peor caso van a la papelera hasta 20 filas
       de las que su conexión deja, con «Deshacer lo que hizo». En «Publicar» lee «Elimina filas en Tareas · sin
-      preguntar · decide la IA · como mucho 20 · con datos de fuera». Es la decisión 11 tal cual, ahora también para
+      preguntar · decidido por un modelo · como mucho 20 · con datos de fuera». Es la decisión 11 tal cual, ahora también para
       el «Agente». La otra: proponerlo, y cada ejecución que leyó ese correo dejaría una tarjeta en la Bandeja aunque
       la celda diga «Sí». Prueba: `automation-ai.test.ts` («AU-204 · with something from outside in its unit,
       an «Agente»'s create, its modify and its trash with the «Sí» are allowed as without it…»).

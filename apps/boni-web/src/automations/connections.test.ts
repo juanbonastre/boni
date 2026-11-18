@@ -311,7 +311,7 @@ describe("an «Agente»'s connections", () => {
     d = setRead(d, "s_analista", "gastos", true);
     expect(first(d)?.read).toEqual({});
   });
-  it("AU-52 · each field under «Crear» and «Modificar» is «No lo escribe», «Lo decide la IA» or «Fijo» with its value: `fields` are the AI's and `fixed` the fixed ones, never both; all the AI's saves no list; a field that leaves the AI loses its line", () => {
+  it("AU-52 · each field under «Crear» and «Modificar» is «No lo escribe», «Decidido por un modelo» or «Fijo» with its value: `fields` are the AI's and `fixed` the fixed ones, never both; all the AI's saves no list; a field that leaves the AI loses its line", () => {
     const keys = ["titulo", "importe", "categoria"];
     let d = draftWith([conn("notas", { create: { mode: "ask", limit: 20 } })]);
     const cell = () => first(d)?.create as Exclude<Connection["create"], false>;
@@ -343,16 +343,16 @@ describe("an «Agente»'s connections", () => {
     for (const k of keys) d = setWriteField(d, "s_analista", "notas", "create", keys, k, "ai");
     expect(cell()).toEqual({ mode: "ask", limit: 20 });
   });
-  it("AU-200 · the chip and the sentence of an «Agente» say «decide la IA» on what it may write, and each write's «Como mucho»; one that only reads says nothing of it", () => {
+  it("AU-200 · the chip and the sentence of an «Agente» say «decidido por un modelo» on what it may write, and each write's «Como mucho»; one that only reads says nothing of it", () => {
     const notas = conn("notas", { create: { mode: "ask", limit: 20 } });
     expect(chipWords(t, notas, "es-ES", AGENT_TYPE)).toBe(
-      "Lee y crea · pregunta antes · decide la IA",
+      "Lee y crea · pregunta antes · decidido por un modelo",
     );
     expect(chipWords(t, notas, "es-ES")).toBe("Lee y crea · pregunta antes");
     expect(chipWords(t, conn("gastos"), "es-ES", AGENT_TYPE)).toBe("Solo lee");
     expect(chipWords(t, conn("gastos", { read: false }), "es-ES", AGENT_TYPE)).toBe("No");
     expect(connectionsSentence(t, [conn("gastos"), notas], nameOf, AGENT_TYPE, "es-ES")).toBe(
-      "Puede leer Gastos, y leer y crear Notas (como mucho 20), lo que decida la IA. No puede modificar ni eliminar nada.",
+      "Puede leer Gastos, y leer y crear Notas (como mucho 20): decidido por un modelo. No puede modificar ni eliminar nada.",
     );
     expect(connectionsSentence(t, [conn("gastos")], nameOf, AGENT_TYPE, "es-ES")).toBe(
       "Puede leer Gastos. No puede crear, modificar ni eliminar nada.",

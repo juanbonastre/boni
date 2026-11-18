@@ -149,7 +149,7 @@ describe("what «Ejecuciones» says of a run", () => {
   });
   it("AU-99 · how it ended, by the step's name; a step the document no longer has is left unsaid, never said by its id", () => {
     const names = (s: string) => (s === "s_01jbuscar" ? "Buscar facturas" : undefined);
-    expect(howWords(es, "es", summary({ ms: 4_100 }), names)).toBe("Bien · 4,1 s");
+    expect(howWords(es, "es", summary({ ms: 4_100 }), names)).toBe("Completada · 4,1 s");
     const failed = summary({ state: "failed", error: { step: "s_01jbuscar" } as never });
     expect(howWords(es, "es", failed, names)).toBe("Falló en «Buscar facturas»");
     const gone = summary({ state: "failed", error: { step: "s_01jborrado" } as never });
@@ -161,18 +161,31 @@ describe("what «Ejecuciones» says of a run", () => {
     expect(howWords(es, "es", summary({ state: "interrupted", step: "s_01jbuscar" }), names)).toBe(
       "Interrumpida en «Buscar facturas»",
     );
-    expect(howWords(es, "es", summary({ state: "queued" }), names)).toBe("En cola, detrás de otra");
+    expect(howWords(es, "es", summary({ state: "queued" }), names)).toBe("En cola");
     // An hour a «Programada» missed with the server off (AU-114).
     expect(howWords(es, "es", summary({ state: "missed", ms: null }), names)).toBe(
-      "No corrió: Boni estaba apagado a su hora",
+      "Omitida: Boni estaba apagado",
     );
     // A state a newer server gives is said as a failure, never as nothing.
     expect(howWords(es, "es", summary({ state: "nueva" as never }), names)).toBe("Falló");
   });
-  it("AU-99 · AU-100 · AU-114 · who started it and which version ran, one started by its «Programada» «A su hora», and a retry says so", () => {
-    expect(whoWords(es, summary({ version: 3 }))).toBe("Iniciada por ti · versión 3");
+  it("AU-203 · a run that waits for an answer says until when, at the device's zone; without its moment, only that it waits", () => {
+    const names = () => undefined;
+    const until = Date.UTC(2026, 10, 18, 8, 12);
+    expect(howWords(es, "es", summary({ state: "waiting", until }), names, ZONE)).toMatch(
+      /^Esperando respuesta · hasta 18 nov,? 2026,? 09:12$/,
+    );
+    expect(howWords(es, "es", summary({ state: "waiting", until: null }), names, ZONE)).toBe(
+      "Esperando respuesta",
+    );
+    expect(howWords(en, "en", summary({ state: "waiting", until }), names, ZONE)).toMatch(
+      /^Awaiting answer · until /,
+    );
+  });
+  it("AU-99 · AU-100 · AU-114 · who started it and which version ran, one started by its schedule «Programada», and a retry says so", () => {
+    expect(whoWords(es, summary({ version: 3 }))).toBe("Manual · versión 3");
     expect(whoWords(es, summary({ version: 3, startedBy: "schedule", retryOf: "r_00" }))).toBe(
-      "A su hora · versión 3 · reintento",
+      "Programada · versión 3 · reintento",
     );
     expect(whoWords(es, summary({ test: true }))).toBe("Prueba del borrador");
   });
@@ -200,7 +213,7 @@ describe("what «Ejecuciones» says of a run", () => {
     );
     expect(
       didWords(es, "es", summary({ line: { writes: [], asked: [], outside: false } }), names),
-    ).toBe("No hizo nada");
+    ).toBe("Sin cambios");
     expect(didWords(es, "es", summary({ test: true }), names)).toBeNull();
     expect(didWords(es, "es", summary({ state: "running" }), names)).toBeNull();
     // AU-203: while it waits for an answer, its proposal is not made yet; what it saved so far is said.

@@ -2570,11 +2570,13 @@ function decideFailed(id: string, code: string | { text: string }) {
         ? t("inbox.stale")
         : code === "no-such-proposal"
           ? t("inbox.alreadyDecided")
-          : code === "nothing-pending" || code === "run-expired"
-            ? t("inbox.requestGone")
-            : SHARED_REFUSALS.has(code)
-              ? t("mail.error.personal-device-only")
-              : agentErrorText(t, code);
+          : code === "run-expired"
+            ? t("inbox.requestExpired")
+            : code === "nothing-pending"
+              ? t("inbox.requestGone")
+              : SHARED_REFUSALS.has(code)
+                ? t("mail.error.personal-device-only")
+                : agentErrorText(t, code);
   set((s) => ({
     decideErrors: {
       ...s.decideErrors,
@@ -2595,7 +2597,7 @@ export function dismissProposal(id: string) {
 }
 
 /**
- * `done` ("Ya lo hice", Juan 2026-10-23): the task is made already marked done, and the reading counts as right.
+ * `done` ("Marcar como hecha", Juan 2026-10-23): the task is made already marked done, and the reading counts as right.
  */
 export function acceptProposal(
   id: string,

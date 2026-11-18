@@ -11,10 +11,13 @@ import {
   ACTION,
   AGENT_PARAMS,
   AGENT_TYPE,
+  ASK_PARAMS,
+  ASK_TYPE,
   type Automation,
   CODE_PARAMS,
   type Control,
   isExpr,
+  isPeopleType,
   isTrigger,
   MAX_RETRIES,
   type ParamSpec,
@@ -70,6 +73,7 @@ import { loadPlanners, useStore } from "../store.ts";
 import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
 import { type AgentConnections, ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
+import { PeopleOut } from "./AutomationPeople.tsx";
 import {
   KeptContext,
   StepInput,
@@ -156,6 +160,72 @@ function ValueControl(p: ControlProps) {
       }}
     >
       <FixedValue {...p} run={run} />
+    </ValueBox>
+  );
+}
+
+/**
+ * «Opciones» of a «Preguntar» (AU-125): fixed, a list of texts, one input each with «Borrar» and «Añadir» under them;
+ * with «{ }», an expression that gives the list (each row its own). Its texts are the step's own, painted as text.
+ */
+function AskOptionsControl(p: ControlProps) {
+  const v = useView();
+  const run = useRef(0);
+  const { value, set, path, label, marked } = p;
+  const list = Array.isArray(value) ? value.map((x) => (typeof x === "string" ? x : "")) : [];
+  const optionName = (i: number) => v.t("auto.option.n", { n: i + 1 });
+  return (
+    <ValueBox
+      value={value}
+      set={(x, typed) => set(x, typed ? v.typing(path, run.current) : undefined)}
+      text={false}
+      label={label}
+      marked={marked}
+      param={path}
+      onFocus={() => {
+        run.current = ++entered;
+      }}
+    >
+      <div className="auto-ask-options" role="group" aria-label={label}>
+        {list.map((o, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: an option is its place in the list.
+          <div key={i} className="auto-ask-option">
+            <input
+              className="input auto-input"
+              aria-label={optionName(i)}
+              aria-invalid={(marked && o.trim() === "") || undefined}
+              value={o}
+              onFocus={() => {
+                run.current = ++entered;
+              }}
+              onChange={(e) =>
+                set(
+                  list.map((x, j) => (j === i ? e.target.value : x)),
+                  v.typing(`${path}.${i}`, run.current),
+                )
+              }
+              onKeyDown={enterEnds}
+            />
+            <button
+              type="button"
+              className="btn ghost small"
+              data-boni-action="automations.edit"
+              aria-label={`${v.t(DO.eraseRow)}: ${optionName(i)}`}
+              onClick={() => set(list.filter((_, j) => j !== i))}
+            >
+              {v.t(DO.eraseRow)}
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn ghost small auto-ask-option-add"
+          data-boni-action="automations.edit"
+          onClick={() => set([...list, ""])}
+        >
+          {v.t(DO.addRow)}
+        </button>
+      </div>
     </ValueBox>
   );
 }
@@ -1032,6 +1102,7 @@ export function AutomationStepView({
   const blocked = codeContext ? codeBlocked(step, state.draft, codeContext) : null;
   // An «Agente»'s connections read collections by the same context (AU-41); it cites none by name in a source.
   const isAgent = step.type === AGENT_TYPE;
+  const isAsk = step.type === ASK_TYPE;
   const agentContext = isAgent
     ? codeContextOf(
         collections,
@@ -1128,6 +1199,16 @@ export function AutomationStepView({
         </ul>
       )}
       {did && <AgentDidBox t={t} did={did} locale={cite.locale} />}
+      {isPeopleType(step.type) && (
+        <PeopleOut
+          t={t}
+          lang={lang === "en" ? "en" : "es"}
+          step={step}
+          test={state.tests[step.id]}
+          reply={state.last?.reply}
+          locale={cite.locale}
+        />
+      )}
       <StepOutput
         key={step.id}
         state={state}
@@ -1219,7 +1300,9 @@ export function AutomationStepView({
                       onChange={(e) => p.set(e.target.value, `${step.id}.${param.key}`)}
                     />
                   )
-                : PARAM_CONTROLS[row.param.control];
+                : isAsk && param.key === ASK_PARAMS.options
+                  ? AskOptionsControl
+                  : PARAM_CONTROLS[row.param.control];
           const name = paramName(param.key);
           const isMarked = marked.has(param.key);
           const shown = (

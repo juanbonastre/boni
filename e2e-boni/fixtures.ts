@@ -21,7 +21,7 @@ export interface Shell {
 
 /** One step's test as the fake server answers it (`automations[].test.steps`). */
 export interface AutoTestSpec {
-  state?: "done" | "failed" | "skipped" | "stopped";
+  state?: "done" | "failed" | "skipped" | "stopped" | "waiting";
   in?: Record<string, number>;
   out?: Record<string, number>;
   ms?: number;
@@ -36,6 +36,10 @@ export interface AutoTestSpec {
   agent?: Record<string, unknown>;
   /** What its calls to a model cost (AU-54, `AiRecord`). */
   ai?: Record<string, unknown>;
+  /** A «Preguntar»'s questions (AU-125, AU-203, `AskRecord`); a test that waits has one without `ended`. */
+  ask?: Record<string, unknown>;
+  /** What an «Avisar» would send (AU-201, `NoticeRecord`). */
+  notices?: Record<string, unknown>;
 }
 
 /**
@@ -70,6 +74,8 @@ export interface FakeRun {
   notice?: { kind: "failed" | "wrote"; text: string } | null;
   changed?: string;
   advancing?: boolean;
+  /** A run that waits for an answer (AU-203): until when. */
+  until?: number | null;
   /** F14d P3b (AU-193): the proposal it left in the inbox and where it is; accepting or rejecting it moves it. */
   proposal?: { id: string; status: "pending" | "accepted" | "rejected" | "stale" } | null;
   /** Every change it asked, as the server's `AskedView`: what «Ver todo» reads, 50 at a time. */
@@ -114,9 +120,21 @@ export interface Options {
      */
     test?: {
       steps: Record<string, AutoTestSpec>;
-      state?: "done" | "failed" | "invalid";
+      state?: "done" | "failed" | "invalid" | "waiting";
       problems?: Record<string, unknown>[];
       failedAt?: string;
+      /** The test's answer (AU-202): the last «Responder» that ran (`RunReply`). */
+      reply?: Record<string, unknown>;
+      /**
+       * A test that waits (AU-203) goes on when its panel answers: these steps' tests, its state and its answer.
+       * `expired`: the server no longer has it (404), as after a restart.
+       */
+      answered?: {
+        steps: Record<string, AutoTestSpec>;
+        state?: "done" | "failed";
+        reply?: Record<string, unknown>;
+        expired?: boolean;
+      };
       kept?: number;
       keptOnly?: string[];
       tested?: Record<string, Record<string, unknown>>;
@@ -1096,6 +1114,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         ...(spec.would ? { would: spec.would } : {}),
         ...(spec.agent ? { agent: spec.agent } : {}),
         ...(spec.ai ? { ai: spec.ai } : {}),
+        ...(spec.ask ? { ask: spec.ask } : {}),
+        ...(spec.notices ? { notices: spec.notices } : {}),
         stale: false,
       });
       const stepsBefore = (a: AutoHere, step: string) => {
@@ -1220,6 +1240,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           line: now.done && !r.test ? (r.line ?? { writes: [], asked: [], outside: false }) : null,
           undone: r.undone ?? null,
           retryOf: r.retryOf ?? null,
+          until: r.until ?? null,
           slot: null,
           notice: now.done ? (r.notice ?? null) : null,
         };
@@ -1645,6 +1666,26 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             return bad;
           record("__autoTests", JSON.stringify(req));
           const spec = a.spec;
+          // The answers to a test that waits (AU-203): it goes on with them, as the server's `answerTest`.
+          const answers = (body as { answers?: unknown } | undefined)?.answers;
+          if (answers && typeof answers === "object") {
+            const then = spec?.answered;
+            if (!then || then.expired) return [404, '{"error":"not-found"}'];
+            const at = Date.now();
+            for (const [x, st] of Object.entries(then.steps)) a.tests[x] = stepTest(st, at);
+            return [
+              200,
+              JSON.stringify({
+                state: then.state ?? "done",
+                problems: [],
+                ms: 200,
+                ran: Object.keys(then.steps),
+                reused: [],
+                tests: a.tests,
+                ...(then.reply ? { reply: then.reply } : {}),
+              }),
+            ];
+          }
           if (spec?.state === "invalid")
             return [
               200,
@@ -1694,6 +1735,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               pinned,
               tests: a.tests,
               ...(spec?.failedAt ? { failedAt: spec.failedAt } : {}),
+              ...(spec?.reply ? { reply: spec.reply } : {}),
             }),
           ];
         }

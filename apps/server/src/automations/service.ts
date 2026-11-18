@@ -20,16 +20,21 @@
 import { createHash } from "node:crypto";
 import type { Trust } from "@boni/agent";
 import {
+  type AskAnswer,
+  type AskRecord,
   type Automation,
   actionOf,
+  answerFits,
   arrowsInto,
   type Box,
   CannotRun,
   type Cell,
   CODE_LIMITS,
   type Collections,
+  type Execution,
   executionOrder,
   FormatError,
+  type GivenAnswer,
   inputsOf,
   isExpr,
   isTrigger,
@@ -47,6 +52,8 @@ import {
   preview,
   type Row,
   type RunDeps,
+  type RunReply,
+  resume,
   runTest,
   SETTINGS_DEFAULTS,
   type Step,
@@ -56,6 +63,8 @@ import {
   type StepWrites,
   staleSteps,
   stepPrints,
+  type TestExecution,
+  type TestInput,
   type WriteAction,
   type WriteRecord,
 } from "@boni/automations";
@@ -108,6 +117,13 @@ export interface StepTestView {
   agent?: KeptRecord["agent"];
   /** What its calls to a model cost (AU-54): how many, which models answered, how long, how many texts were cut. */
   ai?: KeptRecord["ai"];
+  /**
+   * A «Preguntar»'s questions in that test (AU-125, AU-203): while the test waits, what the test's panel asks and
+   * answers; once answered, how it ended. Its texts are plain, with their labels: the app paints them as text.
+   */
+  ask?: KeptRecord["ask"];
+  /** What an «Avisar» would send (AU-201: «Avisaría…»): a test sends nothing. */
+  notices?: KeptRecord["notices"];
 }
 
 /**
@@ -341,6 +357,8 @@ function views(
       ...(k.would ? { would: k.would } : {}),
       ...(k.agent ? { agent: k.agent } : {}),
       ...(k.ai ? { ai: k.ai } : {}),
+      ...(k.ask ? { ask: k.ask } : {}),
+      ...(k.notices ? { notices: k.notices } : {}),
       stale: prints[step] !== undefined && prints[step] !== t.print,
     };
   }
@@ -449,11 +467,24 @@ export interface TestRequest {
   fields: Record<string, Cell>;
   /** «Probar paso»: only that step and what it lacks (AU-91). Absent: the whole draft (AU-90). */
   step?: string;
+  /**
+   * The answers to the test that waits (AU-203: in «Probar» the question is asked and answered in the test's panel),
+   * by the «Preguntar»'s step id, one per question in order, as the Bandeja's controls give them; null is «Sin
+   * respuesta». Given, the test that waits goes on with them instead of starting again.
+   */
+  answers?: Record<string, (TestGiven | null)[]>;
 }
+
+/** An answer of the test's panel, as the Bandeja's controls give one (runs.ts `AskGiven`). */
+export type TestGiven =
+  | { yes: boolean }
+  | { choice: number }
+  | { choices: number[] }
+  | { text: string };
 
 export interface TestAnswer {
   /** `invalid`: it did not run, and `problems` says why (AU-64); nothing kept changes. */
-  /** `waiting`: it reached a «Preguntar» (AU-203); P2 answers it in the test's panel. */
+  /** `waiting`: it reached a «Preguntar» (AU-203); its panel answers it (`TestRequest.answers`). */
   state: "done" | "failed" | "waiting" | "invalid";
   problems: Problem[];
   ms: number;
@@ -468,6 +499,72 @@ export interface TestAnswer {
   tests: Record<string, StepTestView>;
   /** The step that stopped it, when `failed`. */
   failedAt?: string;
+  /** The test's answer (AU-202): the last «Responder» that ran, plain, with its label. */
+  reply?: RunReply;
+}
+
+/**
+ * A test that waits for its panel's answer (AU-203), by automation: one each, the last test's, kept in memory and
+ * not in the store, since a test leaves nothing in the journal but its kept results (AU-90). A restart forgets it,
+ * and its answer is then `not-found`: «Probar» runs it again. At most `WAITING_TESTS` of them, the oldest dropped.
+ */
+interface WaitingTest {
+  input: TestInput;
+  execution: TestExecution;
+  request: TestRequest;
+}
+const waitingTests = new WeakMap<UserStore, Map<string, WaitingTest>>();
+const WAITING_TESTS = 20;
+function waitingOf(store: UserStore): Map<string, WaitingTest> {
+  let m = waitingTests.get(store);
+  if (!m) {
+    m = new Map();
+    waitingTests.set(store, m);
+  }
+  return m;
+}
+
+/** The value of a panel's answer for its question, or undefined when it does not fit (as the Bandeja's, runs.ts). */
+function givenValue(ask: AskRecord, i: number, given: unknown): Cell | undefined {
+  const g = (given ?? {}) as Record<string, unknown>;
+  const q = ask.questions[i];
+  if (!q) return undefined;
+  const option = (n: unknown) =>
+    Number.isInteger(n) && (n as number) >= 0 ? q.options?.[n as number]?.value : undefined;
+  const kind: AskAnswer = ask.answer;
+  let value: Cell | undefined;
+  if (kind === "yesNo" && typeof g.yes === "boolean") value = g.yes;
+  else if (kind === "one") value = option(g.choice);
+  else if (kind === "several" && Array.isArray(g.choices)) {
+    const values = g.choices.map(option);
+    value = values.every((x) => x !== undefined) ? (values as string[]) : undefined;
+  } else if (kind === "text" && typeof g.text === "string") value = g.text;
+  return value !== undefined && answerFits(q, kind, value) ? value : undefined;
+}
+
+/** The panel's answers as the engine takes them, each with his hand's label; null when one does not fit. */
+function testAnswers(
+  e: Execution,
+  given: NonNullable<TestRequest["answers"]>,
+  hand: Hand & { trust: Trust },
+): Record<string, (GivenAnswer | null)[]> | null {
+  const out: Record<string, (GivenAnswer | null)[]> = {};
+  for (const [step, list] of Object.entries(given)) {
+    const ask = e.steps[step]?.state === "waiting" ? e.steps[step]?.ask : undefined;
+    if (!ask || !Array.isArray(list) || list.length !== ask.questions.length) return null;
+    const answers: (GivenAnswer | null)[] = [];
+    for (const [i, g] of list.entries()) {
+      if (g === null) {
+        answers.push(null);
+        continue;
+      }
+      const value = givenValue(ask, i, g);
+      if (value === undefined) return null;
+      answers.push({ value, by: typedLabel(hand) });
+    }
+    out[step] = answers;
+  }
+  return out;
 }
 
 /** A step and every step an arrow path reaches it from: what «Probar paso» may take from its kept test. */
@@ -574,9 +671,12 @@ export async function testAutomation(
     !request.fields ||
     typeof request.fields !== "object" ||
     Array.isArray(request.fields) ||
-    (request.step !== undefined && typeof request.step !== "string")
+    (request.step !== undefined && typeof request.step !== "string") ||
+    (request.answers !== undefined &&
+      (!request.answers || typeof request.answers !== "object" || Array.isArray(request.answers)))
   )
     return BAD;
+  if (request.answers !== undefined) return answerTest(store, id, request.answers, hand, box);
   // A «Programada» tried by hand runs as at its hour (AU-195): `$run.startedBy` is `schedule`, and its hour, unless
   // the screen gave one, is now.
   const scheduled = a.steps.find((s) => s.id === request.trigger)?.type === "schedule";
@@ -605,33 +705,19 @@ export async function testAutomation(
   // «Fijar» (AU-93): a pinned step does not run; its pinned rows are its output.
   const pins = pinnedRecords(store, id, a);
 
-  const deps = runDeps(store, id, hand, box);
-  const real = deps.collections;
-  // The saved rows a write reads to say what it would leave (AU-168: part of the write the policy allowed).
-  const saved = new Map<string, Record<string, Cell>>();
-  const collections: Collections = {
-    ...real,
-    async get(collection, rowId) {
-      const r = await real.get(collection, rowId);
-      if (r) saved.set(rowId, r.json);
-      return r;
-    },
+  const input: TestInput = {
+    automation: a,
+    trigger: request.trigger,
+    fields: { json: fields, label: typedLabel(hand) },
+    startedBy: scheduled ? "schedule" : "user",
+    prints,
+    ...(request.step !== undefined ? { step: request.step, kept } : {}),
+    ...(pins.pins.size ? { pinned: pins.records } : {}),
   };
-  const started = hand.now;
-  let execution: Awaited<ReturnType<typeof runTest>>;
+  const { deps, saved } = testDeps(store, id, hand, box);
+  let execution: TestExecution;
   try {
-    execution = await runTest(
-      {
-        automation: a,
-        trigger: request.trigger,
-        fields: { json: fields, label: typedLabel(hand) },
-        startedBy: scheduled ? "schedule" : "user",
-        prints,
-        ...(request.step !== undefined ? { step: request.step, kept } : {}),
-        ...(pins.pins.size ? { pinned: pins.records } : {}),
-      },
-      { ...deps, collections },
-    );
+    execution = await runTest(input, deps);
   } catch (e) {
     if (e instanceof CannotRun)
       return {
@@ -645,11 +731,99 @@ export async function testAutomation(
       };
     throw e;
   }
+  // A new test leaves the one that waited (its panel's question goes with it).
+  waitingOf(store).delete(id);
+  // A pinned step's kept test is its pin: what the steps after it got, so their inputs read back what came in.
+  const pinnedKept = execution.pinned.flatMap((step) => {
+    const p = pins.pins.get(step);
+    return p ? [{ step, print: p.print, at: p.at, record: p.record, rows: p.rows }] : [];
+  });
+  return keptTest(store, id, { input, execution, request }, execution.ran, saved, hand, pinnedKept);
+}
 
+/** A test's deps: the run's, with the saved rows a write reads kept to say what it would leave (AU-168). */
+function testDeps(
+  store: UserStore,
+  id: string,
+  hand: Hand & { trust: Trust; zone: string },
+  box: Box,
+): { deps: RunDeps; saved: Map<string, Record<string, Cell>> } {
+  const deps = runDeps(store, id, hand, box);
+  const real = deps.collections;
+  const saved = new Map<string, Record<string, Cell>>();
+  const collections: Collections = {
+    ...real,
+    async get(collection, rowId) {
+      const r = await real.get(collection, rowId);
+      if (r) saved.set(rowId, r.json);
+      return r;
+    },
+  };
+  return { deps: { ...deps, collections }, saved };
+}
+
+/**
+ * The test that waits goes on with its panel's answers (AU-203): from what it kept, with the draft it started with,
+ * deciding only what waited. None waits (answered already, another test since, a restart): `not-found`. An answer
+ * that does not fit its question: `bad-request`, and it goes on waiting.
+ */
+async function answerTest(
+  store: UserStore,
+  id: string,
+  given: NonNullable<TestRequest["answers"]>,
+  hand: Hand & { trust: Trust; zone: string },
+  box: Box,
+): Promise<TestAnswer | ServiceError> {
+  const waiting = waitingOf(store);
+  const w = waiting.get(id);
+  if (!w || !open(store, id)) return NOT_FOUND;
+  const answers = testAnswers(w.execution, given, hand);
+  if (!answers) return BAD;
+  const { step: _step, kept: _kept, prints: _prints, pinned: _pinned, ...input } = w.input;
+  // What decides now: the steps the test left waiting or queued; the rest keep the test they had.
+  const now = w.execution.order.filter((step) => {
+    const st = w.execution.steps[step]?.state;
+    return st === "waiting" || st === "queued";
+  });
+  const { deps, saved } = testDeps(store, id, hand, box);
+  let resumed: Execution;
+  try {
+    resumed = await resume({ ...input, test: true }, deps, w.execution, answers);
+  } catch (e) {
+    if (e instanceof CannotRun) return BAD;
+    throw e;
+  }
+  waiting.delete(id);
+  const execution: TestExecution = {
+    ...resumed,
+    ran: w.execution.ran,
+    reused: w.execution.reused,
+    pinned: w.execution.pinned,
+  };
+  return keptTest(store, id, { ...w, execution }, now, saved, hand, []);
+}
+
+/**
+ * What a test keeps once it ran (AU-91, AU-99): each step it decided now as that step's last test, its pins, the
+ * whole «Probar» as a run marked as a test once it ended, and, while it waits, the test itself for its panel.
+ */
+function keptTest(
+  store: UserStore,
+  id: string,
+  w: WaitingTest,
+  decided: readonly string[],
+  saved: ReadonlyMap<string, Record<string, Cell>>,
+  hand: Hand & { trust: Trust; zone: string },
+  pinnedKept: Parameters<UserStore["journal"]["keepAutomationTests"]>[1],
+): TestAnswer {
+  const { execution, request, input } = w;
+  const a = input.automation;
+  const prints = input.prints;
+  const started = hand.now;
   const byId = new Map(a.steps.map((s) => [s.id, s]));
   store.journal.keepAutomationTests(
     id,
-    execution.ran.flatMap((step) => {
+    decided.flatMap((step) => {
       const record = execution.steps[step];
       const s = byId.get(step);
       if (!record || !s) return [];
@@ -682,18 +856,23 @@ export async function testAutomation(
       ];
     }),
   );
-  // A pinned step's kept test is its pin: what the steps after it got, so their inputs read back what came in.
-  const pinnedKept = execution.pinned.flatMap((step) => {
-    const p = pins.pins.get(step);
-    return p ? [{ step, print: p.print, at: p.at, record: p.record, rows: p.rows }] : [];
-  });
   if (pinnedKept.length) store.journal.keepAutomationTests(id, pinnedKept);
+  // A test that reaches a «Preguntar» waits (AU-203): its panel answers it, and it is kept as a run once it ends.
+  if (execution.state === "waiting") {
+    const waiting = waitingOf(store);
+    waiting.set(id, w);
+    for (const key of waiting.keys()) {
+      if (waiting.size <= WAITING_TESTS) break;
+      waiting.delete(key);
+    }
+  }
   const run =
-    request.step === undefined ? keepTestRun(store, id, a, execution, request, hand) : undefined;
+    request.step === undefined && execution.state !== "waiting"
+      ? keepTestRun(store, id, a, execution, request, hand)
+      : undefined;
   // Of the tests, the last 20 stay (AU-103).
   if (run) pruneRuns(store, id);
   return {
-    // A test that reaches a «Preguntar» waits (AU-203); its question is answered in the test's panel (P2).
     state: execution.state,
     problems: [],
     ms: execution.ms,
@@ -703,6 +882,7 @@ export async function testAutomation(
     ...(run ? { run } : {}),
     tests: views(keptTests(store, id), prints),
     ...(execution.error ? { failedAt: execution.error.step } : {}),
+    ...(execution.reply ? { reply: execution.reply } : {}),
   };
 }
 

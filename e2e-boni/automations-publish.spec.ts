@@ -464,10 +464,8 @@ test.describe("the header and «Publicar»", () => {
     });
     await openCanvas(page, PUBLISHED.name);
     await publishButton(page).click();
-    await expect(part(page, "Qué cambia respecto a la versión 1")).toContainText(
-      "Nada que publicar",
-    );
-    await expect(screen(page).getByRole("button", { name: "Nada que publicar" })).toBeDisabled();
+    await expect(part(page, "Qué cambia respecto a la versión 1")).toContainText("Sin cambios");
+    await expect(screen(page).getByRole("button", { name: "Sin cambios" })).toBeDisabled();
     await part(page, "Antes de publicar").getByRole("button", { name: "Combinar" }).click();
     await expect(screen(page)).toHaveCount(0);
     await expect(view(page)).toHaveAttribute("data-step", "s_01jcombinar");
@@ -636,7 +634,7 @@ test.describe("the header and «Publicar»", () => {
     // «Probar» goes.
     await page.locator(".auto-test-bar").getByRole("button", { name: "Probar" }).click();
     await page.locator(".auto-trial-box").getByRole("button", { name: "Probar" }).click();
-    await expect(page.locator(".auto-log-line")).toContainText("bien");
+    await expect(page.locator(".auto-log-line")).toContainText("completada");
     // «Ejecutar» is refused as «Publicar» is: its box stays, nothing runs.
     await more(page, "Ejecutar");
     await screen(page).getByLabel("Mínimo").pressSequentially("250", { delay: 60 });
@@ -785,11 +783,11 @@ test.describe("«Ejecutar»", () => {
       "true",
     );
     // Under way: the step it is in, and the steps it has run with their rows; then how it ended, in the list too.
-    await expect(runBar(page)).toContainText("En marcha: «");
+    await expect(runBar(page)).toContainText("En ejecución: «");
     await expect(runCanvas(page).locator(".auto-card")).toHaveCount(TESTED.steps.length);
-    await expect(runBar(page)).toContainText("Bien", { timeout: 15_000 });
-    await expect(runItems(page).nth(0)).toContainText("Bien", { timeout: 5_000 });
-    await expect(runBar(page)).toContainText("No hizo nada");
+    await expect(runBar(page)).toContainText("Completada", { timeout: 15_000 });
+    await expect(runItems(page).nth(0)).toContainText("Completada", { timeout: 5_000 });
+    await expect(runBar(page)).toContainText("Sin cambios");
     // Ended, it is asked no more.
     const asked = (await recorded(page, "__automations")).filter((x) =>
       x.startsWith("GET a_01jx8x0t2v4x6z8b0d2f4h6k8n/runs/r_"),
@@ -801,7 +799,7 @@ test.describe("«Ejecutar»", () => {
       ).length,
     ).toBe(asked);
   });
-  test("AU-97 · off, «Ejecutar» says «Está apagada» with «Encender»; with unpublished changes it says it runs the published version; while one runs it says so", async ({
+  test("AU-97 · off, «Ejecutar» says «Apagada» with «Encender»; with unpublished changes it says it runs the published version; while one runs it says so", async ({
     page,
   }) => {
     await openApp(page, "/?still", {
@@ -814,7 +812,7 @@ test.describe("«Ejecutar»", () => {
     await expect(toggle(page)).not.toBeChecked();
     await more(page, "Ejecutar");
     await expect(screen(page)).toHaveCount(0);
-    await expect(toast(page)).toContainText("Está apagada");
+    await expect(toast(page)).toContainText("Apagada");
     await toast(page).getByRole("button", { name: "Encender" }).click();
     await expect(toggle(page)).toBeChecked();
     // A change not published: the box says what runs.
@@ -824,7 +822,7 @@ test.describe("«Ejecutar»", () => {
     await expect(screen(page)).toContainText("Corre la versión 1, sin los cambios sin publicar");
     await screen(page).getByLabel("Mínimo").fill("300");
     await screen(page).getByRole("button", { name: "Ejecutar", exact: true }).click();
-    await expect(toast(page)).toContainText("Ya se está ejecutando");
+    await expect(toast(page)).toContainText("En ejecución");
   });
 });
 
@@ -942,11 +940,11 @@ test.describe("«Ejecuciones»", () => {
       "true",
     );
     await expect(runItems(page)).toHaveCount(5);
-    await expect(runItems(page).nth(0)).toContainText("Bien · 0,9 s");
-    await expect(runItems(page).nth(0)).toContainText("Iniciada por ti · versión 2");
+    await expect(runItems(page).nth(0)).toContainText("Completada · 0,9 s");
+    await expect(runItems(page).nth(0)).toContainText("Manual · versión 2");
     await expect(runItems(page).nth(1)).toContainText("Prueba del borrador");
     await expect(runItems(page).nth(2)).toContainText("Falló en «Modificar filas en Libros»");
-    await expect(runItems(page).nth(2)).toContainText("A su hora · versión 1");
+    await expect(runItems(page).nth(2)).toContainText("Programada · versión 1");
     await expect(runItems(page).nth(3)).toContainText("Interrumpida en «Si»");
     // The newest is the one shown: its line, then its canvas with each step's rows.
     await expect(runItems(page).nth(0)).toHaveAttribute("aria-current", "true");
@@ -1062,7 +1060,7 @@ test.describe("«Ejecuciones»", () => {
     await expect(runBar(page)).toContainText("reintento", { timeout: 10_000 });
     await expect(runItems(page).nth(0)).toHaveAttribute("aria-current", "true");
     // The one that wrote: «Deshacer y reintentar» first.
-    await runItems(page).filter({ hasText: "Bien · 0,9 s" }).first().click();
+    await runItems(page).filter({ hasText: "Completada · 0,9 s" }).first().click();
     await expect(runBar(page)).toContainText("con datos de fuera");
     await runBar(page).getByRole("button", { name: "Reintentar", exact: true }).click();
     await expect(screen(page)).toContainText(
@@ -1666,12 +1664,12 @@ test.describe("what a run tells and asks", () => {
   }) => {
     await openAsking(page);
     const c = runCardOf(page);
-    await expect(c.locator(".inbox-kind")).toHaveText("Lo que pregunta una automatización");
+    await expect(c.locator(".inbox-kind")).toHaveText("Propuesta de automatización");
     await expect(c.locator("h3")).toHaveText(
       "Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros",
     );
     await expect(c.locator(".run-proposal-line")).toHaveText(
-      "versión 2 · A su hora · Esperando en la Bandeja",
+      "versión 2 · Programada · Pendiente en la Bandeja",
     );
     // The first twenty of what it asked, each row with its before and its after, by the collection's field names.
     const rows = c.locator(".run-asked-row");
@@ -1707,7 +1705,7 @@ test.describe("what a run tells and asks", () => {
       "true",
     );
     await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
-      "Esperando en la Bandeja · Ver en la Bandeja",
+      "Pendiente en la Bandeja · Ver en la Bandeja",
     );
     // It opens on its own, beside the Bandeja that stayed open.
     await runBar(page).getByRole("button", { name: "Ver en la Bandeja" }).click();
@@ -1731,14 +1729,14 @@ test.describe("what a run tells and asks", () => {
     await expect(runBar(page)).toContainText("Deshecha hoy");
     expect(await recorded(page, "__autoUndo")).toEqual(["r_01jbien"]);
   });
-  test("AU-193 · when a row changed since, accepting saves nothing and the card says «Ya no vale · Ejecutar otra vez», which runs it again; its run says the same", async ({
+  test("AU-193 · when a row changed since, accepting saves nothing and the card says «Caducada · Ejecutar otra vez», which runs it again; its run says the same", async ({
     page,
   }) => {
     await openAsking(page, { accept: [{ __status: 400, error: "stale" }] });
     const c = runCardOf(page);
     await c.getByRole("button", { name: "Aceptar", exact: true }).click();
     await expect(c.locator(".run-proposal-line")).toHaveText(
-      "versión 2 · A su hora · Ya no vale: una fila cambió desde que lo propuso",
+      "versión 2 · Programada · Caducada: una fila cambió después",
     );
     await expect(c.getByRole("button", { name: "Aceptar", exact: true })).toHaveCount(0);
     await c.getByRole("button", { name: "Ejecutar otra vez" }).click();
@@ -1749,7 +1747,7 @@ test.describe("what a run tells and asks", () => {
     // The run that asked says its proposal is no longer valid, with the same way out.
     await runItems(page).nth(1).click();
     await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
-      "Ya no vale · Ejecutar otra vez",
+      "Caducada · Ejecutar otra vez",
     );
   });
   test("AU-193 · from a shared device the card is read and not accepted (decision 15): it says to do it from his own device, and the proposal keeps waiting", async ({
@@ -1763,10 +1761,10 @@ test.describe("what a run tells and asks", () => {
     await expect(c.locator(".run-asked-row")).toHaveCount(20);
     await c.getByRole("button", { name: "Aceptar", exact: true }).click();
     await expect(c.locator(".decide-error")).toHaveText("Solo desde un dispositivo personal.");
-    await expect(c.locator(".run-proposal-line")).toContainText("Esperando en la Bandeja");
+    await expect(c.locator(".run-proposal-line")).toContainText("Pendiente en la Bandeja");
     await c.getByRole("button", { name: "Ver la ejecución" }).click();
     await expect(runBar(page).locator(".auto-run-proposal")).toHaveText(
-      "Esperando en la Bandeja · Ver en la Bandeja",
+      "Pendiente en la Bandeja · Ver en la Bandeja",
     );
   });
   test("AU-102 · the notice of a run that failed alone says the automation, the step and the reason in the app's words, and pressing it opens that run in «Ejecuciones»", async ({
@@ -1833,7 +1831,7 @@ test.describe("what a run tells and asks", () => {
     await openCanvas(page, PUBLISHED.name);
     await head(page).getByRole("tab", { name: "Ejecuciones" }).click();
     await runItems(page).first().click();
-    await expect(runBar(page)).toContainText("A su hora");
+    await expect(runBar(page)).toContainText("Programada");
     await expect(runBar(page)).toContainText("Creó 1 fila en Libros");
     await expect(runBar(page).locator(".auto-run-notice")).toHaveText(`Avisó: ${text}`);
     const undo = runBar(page).getByRole("button", { name: "Deshacer lo que hizo" });

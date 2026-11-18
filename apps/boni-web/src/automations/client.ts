@@ -15,6 +15,7 @@ import type {
   Ability,
   AgentRecord,
   AiRecord,
+  AskRecord,
   Automation,
   AutomationDiff,
   Cell,
@@ -22,7 +23,9 @@ import type {
   ConsoleLine,
   KeptNames,
   Look,
+  NoticeRecord,
   Problem,
+  RunReply,
   StepError,
   StepFailure,
   StepState,
@@ -66,6 +69,13 @@ export interface StepTest {
   agent?: AgentRecord;
   /** What its calls to a model cost (AU-54): how many, the models that answered, how long. */
   ai?: AiRecord;
+  /**
+   * A «Preguntar»'s questions (AU-125, AU-203): while its test waits, what «Probar»'s panel asks; their texts are
+   * plain, with their labels, painted as text (A-01).
+   */
+  ask?: AskRecord;
+  /** «Avisaría…» (AU-201): what an «Avisar» would send; a test sends nothing. Plain text (A-01). */
+  notices?: NoticeRecord;
 }
 
 /** What a «Código»'s requests would save in a test (AU-181), as the server keeps it: the counts and the first rows. */
@@ -108,16 +118,31 @@ export interface TestRequest {
   fields: Record<string, Cell>;
   /** «Probar paso». Absent: «Probar». */
   step?: string;
+  /**
+   * The panel's answers to the test that waits (AU-203), by the «Preguntar»'s step id, one per question; null is
+   * «Sin respuesta». Given, the test that waits goes on.
+   */
+  answers?: Record<string, (TestGiven | null)[]>;
 }
 
+/** An answer of the test's panel, as the Bandeja's controls give one. */
+export type TestGiven =
+  | { yes: boolean }
+  | { choice: number }
+  | { choices: number[] }
+  | { text: string };
+
 export interface TestAnswer {
-  state: "done" | "failed" | "invalid";
+  /** `waiting`: it reached a «Preguntar»; its panel answers it (AU-203). */
+  state: "done" | "failed" | "waiting" | "invalid";
   problems: Problem[];
   ms: number;
   ran: string[];
   reused: string[];
   tests: Record<string, StepTest>;
   failedAt?: string;
+  /** The test's answer (AU-202): the last «Responder» that ran, plain, with its label (A-01). */
+  reply?: RunReply;
 }
 
 /** A row as ENTRADA and SALIDA paint it. Its values are data from anywhere: plain text, always (A-01). */
@@ -192,7 +217,7 @@ export interface Refused {
   refused: string;
   rev?: number;
   problems?: Problem[];
-  /** «Ya se está ejecutando»: the run in progress. */
+  /** «En ejecución»: the run in progress. */
   run?: string;
   /** `changed` (AU-18): the row that changed after the run, and its title. */
   row?: string;
@@ -253,6 +278,8 @@ export interface RunSummary {
   notice?: { kind: "failed" | "wrote"; text: string } | null;
   /** S4: when its steps and rows were let go (AU-103); its line stays. */
   pruned?: number | null;
+  /** While it waits (AU-203): the earliest limit of its questions, «Esperando respuesta · hasta…». */
+  until?: number | null;
 }
 
 /** A step's record in a run (AU-99): the engine's, with counts for its rows and its writes. */
@@ -445,6 +472,7 @@ export function runSummaryOf(x: unknown): RunSummary {
         ? { kind: o.notice.kind, text: o.notice.text }
         : null,
     pruned: num(o.pruned),
+    until: num(o.until),
   };
 }
 
@@ -486,7 +514,9 @@ export function testAnswerOf(x: unknown): TestAnswer {
   const o = isObj(x) ? x : {};
   const strings = (v: unknown) =>
     Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
-  const state = o.state === "done" || o.state === "failed" ? o.state : "invalid";
+  const state =
+    o.state === "done" || o.state === "failed" || o.state === "waiting" ? o.state : "invalid";
+  const reply = isObj(o.reply) ? o.reply : undefined;
   return {
     state,
     problems: Array.isArray(o.problems) ? (o.problems.filter(isObj) as unknown as Problem[]) : [],
@@ -495,6 +525,9 @@ export function testAnswerOf(x: unknown): TestAnswer {
     reused: strings(o.reused),
     tests: isObj(o.tests) ? (o.tests as Record<string, StepTest>) : {},
     ...(typeof o.failedAt === "string" ? { failedAt: o.failedAt } : {}),
+    ...(reply && typeof reply.text === "string" && typeof reply.step === "string"
+      ? { reply: reply as unknown as RunReply }
+      : {}),
   };
 }
 

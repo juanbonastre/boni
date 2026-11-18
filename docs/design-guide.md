@@ -286,6 +286,15 @@ setting may have one short line under it saying its effect, nothing more; a tool
 explaining goes in the docs, not on the screen. The last ones removed (2026-11-02): «Solo lectura: es lo que llegó» under a mail and «Boni nunca te pedirá una
 contraseña ni un código aquí» under a question.
 
+**A state, a label or a button says the established software term** (Juan, 2026-11-18, task 153: «No me gustan estas
+frases típicas de IA como "Ya no vale", usa algo como "Ejecución abortada" o algo similar»). A noun or a participle,
+never conversation: «Caducada», not «Ya no vale»; «Completada», not «Bien»; «En cola», not «En cola, detrás de otra»;
+«Manual» and «Programada», not «Iniciada por ti» and «A su hora»; «Sin cambios», not «No hizo nada»; «Decidido por un
+modelo», not «Lo decide la IA». **The same state has the same word everywhere**: a proposal or a question past its time
+or left by a change is «Caducada» on its card, on its run and in the toast; a waiting run he cancels is «Cancelada»; a
+run that ended well is «Completada» and a step «Completado»; a run that waits for his answer is «Esperando respuesta».
+A reason may follow the word after a colon («Caducada: una fila cambió después»), short and with no «tú».
+
 ## 6. Adapting it to other platforms
 - **Boni desktop (and later its Android app):** since 2026-10-17 the same architecture as this app (a React web UI in
   Electron, a WebView on Android), so it uses the same tokens, controls (buttons, pills, segmented options, menus, the
@@ -973,7 +982,7 @@ contraseña ni un código aquí» under a question.
   automation's name on the muted line under the prompt, and its control by «Respuesta»: «Sí» and «No» as two pills of
   the same weight (neither first, neither tinted), the options as pills, several ones as pills that stay pressed
   (`.on`, `aria-pressed`) with "Enviar", or the line to type in. Only a personal device answers it or puts it away;
-  past its limit, or once its run was cancelled, it says «Ya no vale». Its run's row says «Esperando tu respuesta»
+  past its limit, or once its run was cancelled, it says «Caducada». Its run's row says «Esperando respuesta»
   meanwhile (not in `--bad`), and «Cancelada · 0,4 s» when turning the automation off, deleting it or undoing the run
   ended it. The counts (top bar, sidebar, conversation) are proposals and questions together,
   and a new question opens the panel as a new proposal does. The **inbox** (Juan, 2026-10-22) is a panel on the right
@@ -992,8 +1001,8 @@ contraseña ni un código aquí» under a question.
   event's: the record linked to it), task 58; another entry at the same time is «Se solapa con X» in `--muted`,
   task 51). **The card is checked again each time it is seen** (task 73, D-57): its day by name and number, with
   «Hoy», «Mañana» or «Ayer» in front when it is one of those («Docencia · Hoy, jue, 29 oct, 12:00»), and one word
-  in the text's colour when something changed since the mail: «Ya hecho: Clase IPM, 17:00–18:00» (the same task,
-  already ticked), «Ya está en el calendario: …», or «Ya pasó» (its hour ended; a task without a time, its day).
+  in the text's colour when something changed since the mail: «Hecho: Clase IPM, 17:00–18:00» (the same task,
+  already ticked), «Ya está en el calendario: …», or «Pasado» (its hour ended; a task without a time, its day).
   The words are the state, never a sentence; nothing leaves the Bandeja by itself. «Aceptar» on a card whose word
   changed since it was drawn is not taken: «Ha cambiado» under the buttons, and the card read again shows its
   word; pressed again, it goes. The proposal's own page says the same line under its title. The mail's line ends
@@ -1049,7 +1058,7 @@ contraseña ni un código aquí» under a question.
   once; a decided card leaves and the toast says «Aceptada» / «Rechazada» with «Deshacer» for a while (Juan,
   2026-11-02): taking it back undoes the acceptance's run and the card returns, pending again (the next decision's
   toast replaces it); a failed one says why under its buttons in `--bad`
-  ("Ya no vale…" for a stale one, "Ya estaba decidida.") with "Quitar", and stays until taken out. **"Ya lo hice"**
+  ("Caducada…" for a stale one, "Ya decidida.") with "Quitar", and stays until taken out. **"Marcar como hecha"**
   (Juan, 2026-10-23), between Aceptar and Rechazar, only on a proposal to create something in a collection whose
   calendar has a task column: it is saved already done (struck through in the calendar), with the same spinner;
   the toast says "Apuntada como hecha". **"Boni la habría aceptado"**: a quiet muted mark with a small sparkle,
@@ -1182,14 +1191,14 @@ contraseña ni un código aquí» under a question.
   owed, then opens a 600 px modal titled «Publicar «nombre»»: «Será la versión 5.» («Será la versión 1 y quedará
   encendida.» the first time); «Qué cambia respecto a la versión 4», one line per change (a step added or changed is
   a link that closes the modal and opens it); «Antes de publicar», what stops it first in `--bad`, then what is worth
-  a look, each with its step as a link («Todo listo» with nothing); «Lo que podrá hacer», one line per collection and
+  a look, each with its step as a link («Sin problemas» with nothing); «Lo que podrá hacer», one line per collection and
   action («Crea filas en Tareas · las guarda · con datos de fuera»; «Nada» with no step that reads or writes). Opening
   it marks the empty required parameters on the cards, as a test that could not start. The button says «Publicar
-  versión 5», or «Nada que publicar» disabled when the draft is the version that runs; something that stops it
+  versión 5», or «Sin cambios» disabled when the draft is the version that runs; something that stops it
   disables it too. Published, the notice says «Publicada la versión 5» with «Ejecutar». **«Ejecutar»** runs the
   published version: with «Campos que pide», a modal with the same fields as «Probar» and «Ejecutar»; with changes
-  not published, the modal says «Corre la versión 4, sin los cambios sin publicar» first; off, the notice says «Está apagada» with
-  «Encender»; one in progress, «Ya se está ejecutando». **«Ajustes»** is a modal of the automation's limits: «Tiempo»
+  not published, the modal says «Corre la versión 4, sin los cambios sin publicar» first; off, the notice says «Apagada» with
+  «Encender»; one in progress, «En ejecución». **«Ajustes»** is a modal of the automation's limits: «Tiempo»
   (seconds) always, «Filas escritas» when a step writes, each a number with «Por defecto 1000 · máximo 20.000» under
   it; over its ceiling it says «Como mucho 20.000» in `--bad` and keeps the last value. A test that stopped at a limit
   says «Cambiar el límite» in «Registro», which opens «Ajustes» on that field. From a shared device «Publicar», the
@@ -1220,12 +1229,12 @@ contraseña ni un código aquí» under a question.
   publishing, and a ▶ in the list's row of a published automation, which opens it and asks its fields) goes to this
   tab with the run it started. On the left, 330 px, «Todas | Fallos | Pruebas» (`.segmented`) over the runs, the
   newest first and fifty at a time with «Ver más»: each a row of three lines, when («hoy, 09:12», «ayer, 19:44»,
-  «9 nov, 10:05»), how it ended in `--bad` when it failed («Bien · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
-  en «Si»», «En marcha: «Buscar»», «En cola, detrás de otra», «Esperando tu respuesta», «Cancelada · 0,4 s»), and who with which version, muted («Programada · versión
-  3 · reintento», «Prueba del borrador»; one started by its «Programada» is «A su hora · versión 3», and an hour it
-  missed is «No corrió: Boni estaba apagado a su hora», with neither «Reintentar» nor «Deshacer»). How long it took is said of every run that ended; «Bien» is the word of a
+  «9 nov, 10:05»), how it ended in `--bad` when it failed («Completada · 4,1 s», «Falló en «Filtrar» · 2,0 s», «Interrumpida
+  en «Si»», «En ejecución: «Buscar»», «En cola», «Esperando respuesta», «Cancelada · 0,4 s»), and who with which version, muted («Programada · versión
+  3 · reintento», «Prueba del borrador»; one started by its schedule is «Programada · versión 3», and an hour it
+  missed is «Omitida: Boni estaba apagado», with neither «Reintentar» nor «Deshacer»). How long it took is said of every run that ended; «Completada» is the word of a
   step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date
-  in full, its line («Bien · 0,9 s · Iniciada por ti · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
+  in full, its line («Completada · 0,9 s · Manual · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
   en Libros · con datos de fuera»; a collection gone is «una colección que ya no está»), why it failed in the app's
   words, «Deshecha hoy, 10:20» once undone, and what the run told, as the server wrote it and painted as plain text
   («Avisó: …»: a streak of failures, or a run that saved alone; decision 17: nothing pops up for what a «Programada»
@@ -1243,16 +1252,16 @@ contraseña ni un código aquí» under a question.
   run opens over it with «Todas las ejecuciones» to go back; there it has no «Abrir en el editor con estos datos» and
   no «Cambiar el límite» (AU-74). From a shared device undoing, retrying and pinning say «Solo desde un dispositivo
   personal.» and change nothing.
-  A run that asked (F14d P3b, AU-193) says where its proposal is in its bar, muted: «Esperando en la Bandeja · Ver en
-  la Bandeja» (which opens the proposal), «Propuesta aceptada», «Propuesta rechazada», or «Ya no vale · Ejecutar otra
+  A run that asked (F14d P3b, AU-193) says where its proposal is in its bar, muted: «Pendiente en la Bandeja · Ver en
+  la Bandeja» (which opens the proposal), «Propuesta aceptada», «Propuesta rechazada», or «Caducada · Ejecutar otra
   vez» (which runs it again, from a personal device). A notice of a run that failed alone opens that run here when
   pressed: in the app by the screen `run:<automation>:<run>`, on the desktop by the system notification (AU-102); a
   run that is not there opens nothing.
 - **The proposal of a run** (F14d P3b, `RunProposalCard.tsx`, from `InboxCards.tsx`; AU-193, AU-170). In the
   Bandeja, the same card as every proposal, painted by code from the server's `view.run`, every value as plain text
-  (HTML, Markdown or a link is read letter by letter): «Lo que pregunta una automatización» as its kind; its title
+  (HTML, Markdown or a link is read letter by letter): «Propuesta de automatización» as its kind; its title
   «Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros»; a muted line
-  «versión 2 · A su hora · Esperando en la Bandeja» («Ya no vale: una fila cambió desde que lo propuso» once stale);
+  «versión 2 · Programada · Pendiente en la Bandeja» («Caducada: una fila cambió después» once stale);
   then its first twenty rows, each ««Rayuela» en Libros», «Nueva fila en Libros» or «A la papelera: «Rayuela» de
   Libros» over its fields, «Título: antes → después», what came from outside marked «de fuera»; «Ver todo (128)» reads
   the rest fifty at a time. Its buttons: «Aceptar» (primary), «Rechazar» and «Ver la ejecución»; stale, «Ejecutar otra
@@ -1339,14 +1348,14 @@ contraseña ni un código aquí» under a question.
 - **«Probar»** (F14b E, `AutomationTest.tsx`, `AutomationRows.tsx`; AU-64, AU-67, AU-71 to AU-73, AU-83, AU-84, AU-90
   to AU-94): at the bottom centre of the canvas, one small bar on `--surface`: the button «Probar» and, beside it, the
   «Registro» folded in one line of 12 px `--muted` cut with an ellipsis: «Sin probar», then «Última prueba hace 2 min
-  · bien · 6 pasos · 4,1 s · no escribió nada · habría escrito 129 filas», or «… · falló en «Si»» and «2 problemas»
+  · completada · 6 pasos · 4,1 s · no escribió nada · habría escrito 129 filas», or «… · falló en «Si»» and «2 problemas»
   in `--bad`, underlined: a click selects that step (or the first with a problem). With several triggers «Probar»
   opens a menu, «Probar desde»; a trigger with fields asks them in a small box over the button, with those of the last
   test (or what was typed in its «Datos de prueba») filled in, and «Probar»; one with no fields starts at once. While
   it runs the button says «Probando…» and cannot be pressed, nor can any «Probar paso». A draft with problems is not
   tested: each step at fault has the `--bad` border and «Registro» says how many. After a test each arrow has a pill
   at its middle with what passed («128 filas», 10.5 px `--muted`), an output with no arrow its count beside its dot,
-  and «0 filas» or a stale count is dimmed with its arrow. Each card has a small pill at its bottom right, «Bien» in
+  and «0 filas» or a stale count is dimmed with its arrow. Each card has a small pill at its bottom right, «Completado» in
   `--good`, «Falló» in `--bad`, «Saltado» (no rows came to it) and «Parado» (the test stopped before it) in `--muted`;
   a failed card says why under its summary in `--bad`, two lines at most, whole in its tooltip. After «Probar» or
   «Probar paso» every required parameter left empty is marked, on its card too.
@@ -1354,7 +1363,7 @@ contraseña ni un código aquí» under a question.
   order it ran, its pill, its name, «128 → 3» and its seconds, and under it, muted, what it touched («Guardaría 3
   cambios», «Consola: 4 líneas»); a line opens its step. A run's «Ver cada paso» is the same, with «Guardó»,
   «Propuso» and what it read («Leyó 128 filas de Libros»), which a test of the editor does not give yet. In SALIDA's head, «Fijar» (the pin icon; not on the phone) pins the last test's
-  output that ended well: the card says «Salida fijada» (with «puede estar vieja» once the step changes), «Probar»
+  output that ended well: the card says «Salida fijada» (with «desactualizada» once the step changes), «Probar»
   gives that output without running it, and the same button, now «Soltar», lets it go.
   In the step's view, ENTRADA and SALIDA have a head with what they hold and «Ver como»: «Esquema» (each field with
   the first row's value cut to a line, a search over more than ten fields, a related row or a list unfolded one
@@ -1365,12 +1374,29 @@ contraseña ni un código aquí» under a question.
   plain text. ENTRADA says «De «Buscar filas en Libros» · 128 filas», lets an earlier step of the path be chosen
   in a small select, and «Combinar» has a tab per input («A (3)», «B (125)»); with nothing tested before it, «Prueba
   los pasos anteriores» with «Probar los anteriores». SALIDA has a tab per output («sí (3)», «no (125)»), its foot
-  «probado hace 5 min · 0,2 s»; untested «Sin probar» with «Probar paso», skipped «Saltado: no le llegaron filas»,
+  «probado hace 5 min · 0,2 s»; untested «Sin probar» with «Probar paso», skipped «Saltado: sin filas de entrada»,
   stopped «Parado: la prueba paró en «Si»», failed the reason with «Ir al parámetro» (it opens «Parámetros» with the
-  focus in it), and a step changed since its test says «puede estar vieja» with «Probar paso» above its rows. Moving
+  focus in it), and a step changed since its test says «desactualizada» with «Probar paso» above its rows. Moving
   a box or renaming a step ages nothing. A failed step's arrows and its outputs with no arrow have no count. Wherever
   a row's value is shown («Esquema», «Tabla», «Haría esto», a chip, a preview), a choice is its option's name, never
   its id; «JSON» shows the row as it is.
+- **«Preguntar», «Avisar» and «Responder»** (F15 P2, `AutomationPeople.tsx`; AU-125, AU-201, AU-202, AU-203): the
+  category «Preguntar o avisar» of «+». «Preguntar» shows «Pregunta», «Respuesta» («Sí o no», «Una opción», «Varias
+  opciones», «Texto») and «Días de espera»; «Opciones» only with «Una opción» or «Varias opciones», one input per
+  option («Opción 1»…) with «Borrar» beside it and «Añadir» below. «Se ejecuta» of «Preguntar» and «Avisar», and «Dónde» of «Avisar»
+  («Ordenador y móvil», «Solo ordenador», «Solo móvil») are behind «Añadir opción». A test that reaches a «Preguntar»
+  waits: «Registro» says «… · esperando respuesta», and the questions open in a 420 px box on `--surface` with
+  `--shadow` just above the bar (the bar's whole width on the phone), never in the Bandeja: the step's name with
+  «hasta 18 nov 2026, 09:12» in `--muted`, each question as plain text with its control («Sí» and «No» as buttons,
+  the pressed one in `--accent-soft`; radios; checkboxes; a text box), then «Enviar» (primary, pressable once every
+  question has an answer) and «Sin respuesta» (ghost). A test the server no longer has says «Prueba caducada» in a
+  toast. In SALIDA, under the head, the same small block as «Lo que hizo»: «Pregunta» with how it ended («Esperando
+  respuesta · hasta …», «Respondida», «Sin respuesta») and its questions; «Avisaría» (or «Avisó») with one line per
+  notice, «Archivados 3 · ordenador», the one that groups the rest «y 12 más · ordenador»; «Respuesta» with the
+  test's answer whole, wrapped. In «Ejecuciones» a run that waits says «Esperando respuesta · hasta …», not in
+  `--bad`. In the Bandeja an automation's question says under its prompt «De «Archivar leídos»» in `--muted`; its
+  buttons are what the server says this device may do (`may.answer`): without the right, only «Descartar». Every
+  text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
   sight. «{ }» closes every value's row, in one column: beside its control, with the same right edge, size and
@@ -1450,12 +1476,12 @@ contraseña ni un código aquí» under a question.
   of «No» is born «hasta 20». Each `<details>` «Límites de «Tareas»» has one section per action that is not «No», its
   name as a small heading: «Leer» with the three of reading, «Crear» with the fields, «Modificar» with «Solo estas
   filas» and the fields, «Eliminar» with «Solo estas filas», and each write with a number «Como mucho». The fields are a
-  list, one per row: the field's name and a select «No lo escribe / Lo decide la IA / Fijo», a «Fijo» followed by its
-  value painted by the field's type. The chip on the canvas and the sentence say «decide la IA» on what it may write
-  («Lee y crea · pregunta antes · decide la IA»; «…(como mucho 20), lo que decida la IA.»). In SALIDA, «Lo que hizo»
+  list, one per row: the field's name and a select «No lo escribe / Decidido por un modelo / Fijo», a «Fijo» followed by its
+  value painted by the field's type. The chip on the canvas and the sentence say «decidido por un modelo» on what it may write
+  («Lee y crea · pregunta antes · decidido por un modelo»; «…(como mucho 20): decidido por un modelo.»). In SALIDA, «Lo que hizo»
   above the answer: a small heading, its cost in `--muted` («2 rondas · 3 llamadas al modelo · claude-… · 3,6 s»),
   then each unit (with «Una vez por fila», «Fila 3» as a 13 px heading) with its lines as a list; at most 20 units,
-  then «y 4980 filas más». Every line is plain text. In «Publicar», «Lo que podrá hacer» adds «· decide la IA · como
+  then «y 4980 filas más». Every line is plain text. In «Publicar», «Lo que podrá hacer» adds «· decidido por un modelo · como
   mucho 20» to the line. On the phone everything is disabled and there is no «Conectar» (AU-74).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
@@ -1651,7 +1677,7 @@ contraseña ni un código aquí» under a question.
   and «Pruebas (n)», its tests' names; «Aplicar cambios» takes its result whole, and in the Bandeja its card is
   titled by the function's name and its summary («Banco · importar: 2 nuevos») with its numbers and its questions
   as rows by name («Función», «Resumen», «Nuevas», «Cambiadas», «Preguntas»), never JSON or a key; one that no longer
-  gives the same set says «Ya no vale» when accepted. Nothing is dragged, nothing of where things are is kept, no «Ordenar»: looking
+  gives the same set says «Caducada» when accepted. Nothing is dragged, nothing of where things are is kept, no «Ordenar»: looking
   never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

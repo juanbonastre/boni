@@ -1,5 +1,12 @@
 // What the panel «Añadir un paso» lists (docs/automatizaciones.md AU-69).
-import { AI_CATEGORY, CATALOGUE, CATEGORIES, isTrigger, specOf } from "@boni/automations";
+import {
+  AI_CATEGORY,
+  CATALOGUE,
+  CATEGORIES,
+  isTrigger,
+  PEOPLE_CATEGORY,
+  specOf,
+} from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import { PANEL_CATEGORIES, type PanelEntry, panelList, searchPanel } from "./adding.ts";
@@ -10,8 +17,11 @@ const say = (e: PanelEntry) => entryNames(t, e);
 
 describe("the panel «Añadir un paso»", () => {
   it("AU-69 · every category of the catalogue is a category of the panel or the triggers', and the catalogue has a step of each", () => {
-    // «Usar IA» (AU-50) has the «Agente», beside the catalogue as «Código» is.
-    expect([...PANEL_CATEGORIES, "trigger"].sort()).toEqual([...CATEGORIES, AI_CATEGORY].sort());
+    // «Usar IA» (AU-50) has the «Agente», and «Preguntar o avisar» the three that talk to Juan (AU-125, AU-201,
+    // AU-202), beside the catalogue as «Código» is.
+    expect([...PANEL_CATEGORIES, "trigger"].sort()).toEqual(
+      [...CATEGORIES, AI_CATEGORY, PEOPLE_CATEGORY].sort(),
+    );
     for (const category of CATEGORIES)
       expect(
         CATALOGUE.some((t) => t.category === category),
@@ -62,12 +72,13 @@ describe("the panel «Añadir un paso»", () => {
     const cats = new Set(searchPanel("a", "steps", say).map((e) => specOf(e.type)?.category));
     expect(cats.size).toBe(PANEL_CATEGORIES.length);
     expect(searchPanel("zzzz", "steps", say)).toEqual([]);
-    // Empty, it is the whole list, with «Código» beside the catalogue (AU-30); over the triggers when the panel
+    // Empty, it is the whole list, with «Código», «Agente» and the three of «Preguntar o avisar» beside the
+    // catalogue (AU-30); over the triggers when the panel
     // lists them.
     expect(searchPanel("", "steps", say)).toHaveLength(
       CATALOGUE.filter((s) => s.category !== "trigger").reduce(
         (n, s) => n + (s.type === "collection" ? s.actions.length : 1),
-        2,
+        5,
       ),
     );
     expect(searchPanel("código", "steps", say)).toEqual([{ type: "code" }]);
@@ -77,6 +88,12 @@ describe("the panel «Añadir un paso»", () => {
     expect(list.sections.find((s) => s.category === AI_CATEGORY)?.entries).toEqual([
       { type: "agent" },
     ]);
+    expect(list.sections.find((s) => s.category === PEOPLE_CATEGORY)?.entries).toEqual([
+      { type: "ask" },
+      { type: "notify" },
+      { type: "reply" },
+    ]);
+    expect(searchPanel("avisar", "steps", say)).toEqual([{ type: "notify" }]);
     expect(searchPanel("usuario", "empty", say)).toEqual([{ type: "manual" }]);
   });
 });

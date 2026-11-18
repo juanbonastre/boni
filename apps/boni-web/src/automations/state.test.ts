@@ -371,6 +371,33 @@ describe("after a test", () => {
   };
   const t = translator("es");
   const nameOf = (id: string) => three.automation.steps.find((s) => s.id === id)?.name ?? id;
+  it("AU-203 · a test that reached a «Preguntar» says it waits; answered, it says how the test ended", () => {
+    const ask = {
+      answer: "yesNo" as const,
+      mode: "all" as const,
+      questions: [
+        { text: "¿Sigo?", label: { integrity: "trusted", sensitivity: "private" } as never },
+      ],
+      until: 99_000,
+    };
+    const waiting = tested(
+      askTest(openedEditor(three), null),
+      {
+        ...done,
+        state: "waiting",
+        ran: ["s_inicio", "s_filtro"],
+        tests: { ...done.tests, s_filtro: stepTest({ state: "waiting", ask, out: {} }) },
+      },
+      40_000,
+    );
+    expect(logLine(waiting)).toEqual({ kind: "waiting", at: 40_000, step: "s_filtro" });
+    expect(logWords(t, "es", logLine(waiting), nameOf, 40_000)).toBe(
+      "Última prueba hace un momento · esperando respuesta",
+    );
+    // The answer goes on with the same test: its end is what the «Registro» says now.
+    const answered = tested(askTest(waiting, null), done, 50_000);
+    expect(logLine(answered)).toMatchObject({ kind: "tested", ok: true });
+  });
   it("AU-64 · «Registro» says untested, then the last test in one line (when, how it ended, how many steps, how long, that it wrote nothing) or the step it failed in; with problems it says how many and tests nothing", () => {
     const s = openedEditor(three);
     expect(logLine(s)).toEqual({ kind: "untested" });
@@ -391,7 +418,7 @@ describe("after a test", () => {
       wouldWrite: 0,
     });
     expect(logWords(t, "es", logLine(answered), nameOf, 10_000 + 2 * 60_000 + 5_000)).toBe(
-      "Última prueba hace 2 min · bien · 3 pasos · 4,1 s · no escribió nada",
+      "Última prueba hace 2 min · completada · 3 pasos · 4,1 s · no escribió nada",
     );
     // The fields it was tested with are what «Probar» offers next (AU-94).
     expect(answered.tested.s_inicio).toEqual({ mes: "marzo" });

@@ -44,6 +44,7 @@ import {
   ROWS_PAGE,
   type ServiceError,
   setDeleted,
+  type TestRequest,
   testAutomation,
   testRows,
   testSample,
@@ -74,6 +75,18 @@ function answer<T>(r: T | ServiceError): T {
   if (r && typeof r === "object" && "error" in r && Object.keys(r).length === 1)
     throw new ToolError((r as ServiceError).error);
   return r as T;
+}
+/**
+ * A waiting run says until when it waits (AU-203: «Esperando respuesta · hasta mañana a las 9:40»): the earliest
+ * limit of its questions, read from its wait by its id. Only the runs that wait, at most a page of them.
+ */
+function withUntil<R extends { id: string; state: string }>(
+  store: UserStore,
+  r: R,
+): R & { until?: number } {
+  if (r.state !== "waiting") return r;
+  const w = store.journal.automationWait(r.id);
+  return w ? { ...r, until: w.until } : r;
 }
 const textOf = (v: Val | undefined): string | undefined => {
   const x = v ? plain(v) : undefined;
@@ -146,18 +159,18 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       }
       if (part === "runs") {
         const before = textOf(a.before);
-        return leaf(
-          answer(
-            runsOf(s.store, automation, {
-              filter: textOf(a.filter) ?? "all",
-              ...(before ? { before } : {}),
-            }),
-          ) as never,
-          code,
+        const page = answer(
+          runsOf(s.store, automation, {
+            filter: textOf(a.filter) ?? "all",
+            ...(before ? { before } : {}),
+          }),
         );
+        return leaf({ ...page, runs: page.runs.map((r) => withUntil(s.store, r)) } as never, code);
       }
-      if (part === "run")
-        return leaf(answer(runView(s.store, automation, textOf(a.run) ?? "")) as never, code);
+      if (part === "run") {
+        const view = answer(runView(s.store, automation, textOf(a.run) ?? ""));
+        return leaf({ ...view, run: withUntil(s.store, view.run) } as never, code);
+      }
       if (part === "runRows") {
         const offset = a.offset ? plain(a.offset) : 0;
         if (typeof offset !== "number") throw new ToolError("bad-argument");
@@ -225,15 +238,22 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
         describe: "what that trigger asks, by field key",
       },
       step: { role: "option", describe: "«Probar paso»: only that step's id" },
+      answers: {
+        role: "definition",
+        describe:
+          "the answers to the test that waits, by «Preguntar» step id: what its panel gave (AU-203)",
+      },
     },
     async run(c, a) {
       const s = handOf(c.service);
       const fields = a.fields ? plain(a.fields) : null;
       const step = textOf(a.step);
+      const answers = a.answers ? plain(a.answers) : undefined;
       const request = {
         trigger: textOf(a.trigger) ?? "",
         fields: fields as Record<string, Cell>,
         ...(step !== undefined ? { step } : {}),
+        ...(answers !== undefined ? { answers: answers as TestRequest["answers"] } : {}),
       };
       // A hand that does not say its device's trust is not one `runAction` gave: nothing runs.
       if (!s.trust) throw new ToolError("not-available");
