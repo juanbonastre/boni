@@ -109,7 +109,18 @@ export interface RunLine {
   asked: RunCount[];
   /** «Con datos de fuera» (AU-182): something it saved without asking holds a value from outside. */
   outside: boolean;
+  /**
+   * «Decidido por un modelo» (AU-200, AU-204): an «Agente» of the run saved something without asking, by its
+   * record's lines (`applied`). Absent in a line kept before it existed.
+   */
+  byAgent?: boolean;
+  /** Its «Responder»'s reply (AU-202), plain and cut to `REPLY_LINE` characters. Absent when none ran. */
+  reply?: string;
+  /** A «Preguntar» of the run ended by «sin respuesta» (AU-125, AU-203): its line says so. */
+  noAnswer?: boolean;
 }
+/** How much of a run's reply its line carries (AU-202: «sus primeros 200 caracteres»). */
+export const REPLY_LINE = 200;
 export interface RunCount {
   collection: string;
   name: string | null;
@@ -250,8 +261,28 @@ const nameOfKey = (store: UserStore, key: string): string | null => {
   return t && !t.archived ? t.name : null;
 };
 
+/** The marks a run's own record gives its line (AU-202, AU-204, AU-125): nothing from a row, only code's words. */
+export function marksOf(e: Pick<Execution, "steps" | "reply"> | undefined): Partial<RunLine> {
+  if (!e) return {};
+  const steps = Object.values(e.steps ?? {});
+  const byAgent = steps.some((s) =>
+    s.agent?.units.some((u) => u.lines.some((l) => "state" in l && l.state === "applied")),
+  );
+  const noAnswer = steps.some((s) => s.ask?.ended === "noAnswer");
+  return {
+    ...(byAgent ? { byAgent } : {}),
+    ...(e.reply ? { reply: [...e.reply.text].slice(0, REPLY_LINE).join("") } : {}),
+    ...(noAnswer ? { noAnswer } : {}),
+  };
+}
+
 /** What a run did in one line (AU-99, AU-182): what it saved by the log, what it asked by its record. */
-export function lineOf(store: UserStore, run: string, asked: Execution["asked"]): RunLine {
+export function lineOf(
+  store: UserStore,
+  run: string,
+  asked: Execution["asked"],
+  e?: Pick<Execution, "steps" | "reply">,
+): RunLine {
   const w = store.journal.automationRunWrites(run);
   const writes: RunCount[] = w.counts.map((c) => {
     const col = collectionOf(store, c.type);
@@ -276,7 +307,7 @@ export function lineOf(store: UserStore, run: string, asked: Execution["asked"])
         n: 1,
       });
   }
-  return { writes, asked: [...byKey.values()], outside: w.outside };
+  return { writes, asked: [...byKey.values()], outside: w.outside, ...marksOf(e) };
 }
 
 /** Why a run for real cannot start now, before anything is kept: the same order as `runPublished`'s, and one at a time. */
@@ -527,7 +558,7 @@ function wait(
 ): void {
   store.journal.waitAutomationRun(run, {
     ms,
-    line: JSON.stringify(lineOf(store, run, e.asked)),
+    line: JSON.stringify(lineOf(store, run, e.asked, e)),
     automation: id,
     until: untilOf(e),
     execution: JSON.stringify(e),
@@ -555,7 +586,7 @@ function finish(
     ms,
     step: result.error?.step ?? null,
     error: result.error ? JSON.stringify(result.error) : null,
-    line: JSON.stringify(lineOf(store, run, result.asked)),
+    line: JSON.stringify(lineOf(store, run, result.asked, result)),
   });
   // What it saved with «Sí» is one decision of each cell, judged later (AU-207).
   recordRun(store, run, result);

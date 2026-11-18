@@ -34,7 +34,7 @@ import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { convertFlows, copyBeforeRuns } from "./automations/convert.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
-import { learnAnswer } from "./automations/learning.ts";
+import { learnAnswer, learningNotices } from "./automations/learning.ts";
 import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
 import {
   type AskGiven,
@@ -1519,6 +1519,12 @@ async function answerAgent(
               mayAnswer: place ? mayAnswer(place, who.trust) : true,
             };
           }),
+        // The pauses and the suggestions that wait (AU-209, AU-210), with no model: the app words them, and only a
+        // personal device lifts a pause or says «No» (decision 13), which the server holds again on the touch.
+        learning: learningNotices(store).map((n) => ({
+          ...n,
+          mayDecide: who.trust === "personal",
+        })),
       });
     }
     case "POST /api/agent/requests/:id/answer": {

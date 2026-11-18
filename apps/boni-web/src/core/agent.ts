@@ -274,6 +274,8 @@ export const ACCEPT_RUN = "automations.accept_run";
 /** One change a run asked (AU-193), as the server's `AskedView`: the values it would save, by their field's key. */
 export interface AskedRow {
   step: string;
+  /** The step is an «Agente» in the version that ran (the server reads it there): an AI chose this change (AU-42, AU-200). */
+  byAgent: boolean;
   action: "create" | "update" | "trash";
   /** The collection's key, and its name when the run asked. */
   collection: string;
@@ -324,6 +326,7 @@ export function parseAskedRow(v: unknown): AskedRow | null {
     : [];
   return {
     step: str(v.step, 80) ?? "",
+    byAgent: v.byAgent === true,
     action,
     collection: str(v.collection, 80) ?? "",
     name: str(v.name, 80),
@@ -970,6 +973,68 @@ export type RequestAnswer =
   | { text: string }
   | { yes: boolean }
   | { choices: number[] };
+/** A cell his hand names (AU-209, AU-210): the server works out its print from the published version. */
+export interface CellName {
+  step: string;
+  collection: string;
+  action: "create" | "update" | "remove";
+}
+
+const CELL_ACTIONS = new Set(["create", "update", "remove"]);
+/** The step, collection and action of a cell from the wire, or null. */
+export function cellNameOf(x: unknown): CellName | null {
+  if (!x || typeof x !== "object") return null;
+  const o = x as Record<string, unknown>;
+  if (typeof o.step !== "string" || typeof o.collection !== "string") return null;
+  if (typeof o.action !== "string" || !CELL_ACTIONS.has(o.action)) return null;
+  return {
+    step: o.step.slice(0, 80),
+    collection: o.collection.slice(0, 80),
+    action: o.action as CellName["action"],
+  };
+}
+/**
+ * A pause or a suggestion of an automation's cell waiting in the Bandeja (AU-209, AU-210): the app words it from
+ * these fields; the names are his, painted as plain text. `mayDecide` is the server's word for this device.
+ */
+export interface LearningCard extends CellName {
+  kind: "paused" | "suggested";
+  automation: string;
+  name: string;
+  stepName: string;
+  collectionName: string;
+  why: "inARow" | "share" | null;
+  decided: number;
+  right: number;
+  at: number;
+  mayDecide: boolean;
+}
+const plainName = (v: unknown) => (typeof v === "string" ? v.slice(0, 200) : "");
+const counted = (v: unknown) =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0 ? Math.min(v, 1_000) : 0;
+export function learningCardOf(x: unknown): LearningCard[] {
+  const cell = cellNameOf(x);
+  if (!cell || !isObj(x)) return [];
+  if (x.kind !== "paused" && x.kind !== "suggested") return [];
+  const automation = str(x.automation, 80);
+  if (!automation) return [];
+  return [
+    {
+      ...cell,
+      kind: x.kind,
+      automation,
+      name: plainName(x.name),
+      stepName: plainName(x.stepName),
+      collectionName: plainName(x.collectionName),
+      why: x.why === "inARow" || x.why === "share" ? x.why : null,
+      decided: counted(x.decided),
+      right: counted(x.right),
+      at: typeof x.at === "number" ? x.at : 0,
+      mayDecide: x.mayDecide === true,
+    },
+  ];
+}
+
 /**
  * A question from background work waiting in the panel (Juan, 2026-10-24): what it asks, until when, and where it
  * came from (the mail being read; outside text, shown only as text).
@@ -3170,8 +3235,19 @@ export class AgentApi {
       run ? { run } : {},
     ));
   async requests(): Promise<InboxRequest[]> {
+    return (await this.asks()).requests;
+  }
+  /** `GET requests`: the questions that wait, and the pauses and suggestions of the automations (AU-209, AU-210). */
+  async asks(): Promise<{ requests: InboxRequest[]; learning: LearningCard[] }> {
     const b = await this.call("GET", "requests");
     const list = isObj(b) && Array.isArray(b.requests) ? b.requests : [];
+    const learning = isObj(b) && Array.isArray(b.learning) ? b.learning : [];
+    return {
+      requests: this.requestsOf(list),
+      learning: learning.slice(0, 200).flatMap(learningCardOf),
+    };
+  }
+  private requestsOf(list: unknown[]): InboxRequest[] {
     return list
       .filter(isObj)
       .slice(0, 200)

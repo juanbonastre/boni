@@ -118,6 +118,11 @@ export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
     undo: "nothing undoes an undo of a run: run it again (AU-18, no «Rehacer»)",
     control: "«Deshacer lo que hizo» in a run of «Ejecuciones»",
   },
+  "automations.learn": {
+    effect: "touch",
+    undo: "a pause comes back by the next failures; a «No» stays while the step stays the same (AU-209)",
+    control: "«Quitar pausa» and «No» in the Bandeja's card of a pause or a suggestion",
+  },
   "automations.pin": {
     effect: "touch",
     undo: "the same button again: it releases the pin",
@@ -142,6 +147,8 @@ export const RUN_ROUTES: Readonly<Record<string, { action: string; runs: string 
     action: "automations.pin",
     runs: "pinFromRun",
   },
+  // F15 P2 (learning.ts): «Quitar pausa» and «No» to a suggestion (AU-209, AU-210).
+  "POST /api/agent/automations/:id/learning": { action: "automations.learn", runs: "unpause" },
 };
 
 /**
@@ -194,4 +201,6 @@ export const AUTOMATION_ROUTES: Readonly<Record<string, { action: string; runs: 
     action: "automations.read",
     runs: "runAsked",
   },
+  // F15 P2 (learning.ts): the cells of the published version with their counts, pauses and suggestions (AU-208).
+  "GET /api/agent/automations/:id/learning": { action: "automations.read", runs: "learningOf" },
 };

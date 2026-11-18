@@ -121,7 +121,12 @@ export interface CheckLine extends Line {
 export function checkLines(
   t: T,
   view: {
-    blocks: readonly { code: string; step?: string; detail?: Record<string, string | number> }[];
+    blocks: readonly {
+      code: string;
+      step?: string;
+      param?: string;
+      detail?: Record<string, string | number>;
+    }[];
     looks: readonly Look[];
   },
   locale: string,

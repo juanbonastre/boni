@@ -19,11 +19,13 @@ import type {
 import { ACTION_ROWS_MAX, AGENT_TYPE, CODE_LIMITS, MAX_CONNECTIONS } from "@boni/automations";
 import type { FilterItem } from "@boni/views";
 import type { ReactNode } from "react";
+import type { CellCount } from "../automations/client.ts";
 import {
   actionWord,
   columnWord,
   connectionRows,
   connectionsSentence,
+  learnedWords,
   limitsOf,
   type WriteCell,
   writeLimitsOf,
@@ -83,6 +85,7 @@ export function ConnectionsTable({
   disconnect,
   setLimits,
   agent,
+  counts = [],
 }: {
   t: T;
   step: Step;
@@ -102,6 +105,8 @@ export function ConnectionsTable({
   ) => void;
   /** Given for an «Agente». */
   agent?: AgentConnections;
+  /** The published cells' counts of this step (AU-208): said under the cell its mode still matches. */
+  counts?: readonly CellCount[];
 }) {
   const connections = step.connections ?? [];
   const isAgent = step.type === AGENT_TYPE && agent !== undefined;
@@ -165,11 +170,20 @@ export function ConnectionsTable({
                     )}
                     {r.cells.map((c) => {
                       const label = `${columnWord(t, c.action)} · ${r.name}`;
-                      const said = isAgent
-                        ? c.limits
-                        : c.cell !== false || c.used
-                          ? [t(c.used ? "auto.conn.used" : "auto.conn.unused"), ...c.limits]
-                          : [];
+                      const said = [
+                        ...learnedWords(
+                          t,
+                          c.cell,
+                          counts.find(
+                            (x) => x.collection === r.collection && x.action === c.action,
+                          ),
+                        ),
+                        ...(isAgent
+                          ? c.limits
+                          : c.cell !== false || c.used
+                            ? [t(c.used ? "auto.conn.used" : "auto.conn.unused"), ...c.limits]
+                            : []),
+                      ];
                       return (
                         <td
                           key={c.action}

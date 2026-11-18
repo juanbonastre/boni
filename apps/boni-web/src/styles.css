@@ -13739,6 +13739,10 @@ button.auto-log-line {
 .auto-run-why {
   color: var(--bad);
 }
+.auto-run-reply {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .auto-run-do {
   display: flex;
   flex-wrap: wrap;
@@ -13886,6 +13890,10 @@ button.auto-log-line {
   border-radius: 999px;
   color: var(--muted);
   font-size: 11px;
+}
+.run-asked-agent {
+  font-weight: 400;
+  color: var(--muted);
 }
 .run-asked-all {
   align-self: flex-start;

@@ -224,7 +224,7 @@ test.describe("the «Agente» step (F15)", () => {
     const model = param(page, "model").getByRole("combobox", { name: "Modelo" });
     await expect(model).toHaveValue("anthropic:claude-ejemplo-viejo");
     await expect(model.locator("option:checked")).toHaveText(
-      "anthropic:claude-ejemplo-viejo · ya no está en la lista",
+      "anthropic:claude-ejemplo-viejo · no disponible",
     );
   });
 });
@@ -900,6 +900,34 @@ test.describe("the steps that talk to him (F15, P2)", () => {
       .toBe(true);
   });
 
+  test("AU-201 · AU-125 · «Se ejecuta» and «Dónde» of an «Avisar» are behind «Añadir opción»: «Una vez con todas las filas» and «Ordenador y móvil» when born, «Una vez por fila» and «Solo móvil» saved once chosen", async ({
+    page,
+  }) => {
+    const a = archiving("a_01jx8x0t2v4x6z8b0d2f4h6p01", { steps: {} });
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE() });
+    await openCanvas(page, "Archivar leídos", 4);
+    await openStep(page, NOTIFY_ID);
+    await expect(param(page, "mode")).toHaveCount(0);
+    await expect(param(page, "where")).toHaveCount(0);
+    const add = view(page).getByRole("button", { name: "Añadir opción" });
+    await add.click();
+    await page.getByRole("menuitemradio", { name: "Se ejecuta" }).click();
+    const mode = param(page, "mode").getByRole("combobox");
+    await expect(mode.locator("option:checked")).toHaveText("Una vez con todas las filas");
+    await mode.selectOption({ label: "Una vez por fila" });
+    await add.click();
+    await page.getByRole("menuitemradio", { name: "Dónde" }).click();
+    const where = param(page, "where").getByRole("combobox");
+    await expect(where.locator("option:checked")).toHaveText("Ordenador y móvil");
+    await where.selectOption({ label: "Solo móvil" });
+    await expect
+      .poll(async () => {
+        const last = (await drafts(page, a.id)).at(-1);
+        return last?.steps.find((x) => x.id === NOTIFY_ID)?.params;
+      })
+      .toMatchObject({ mode: "perRow", where: "phone" });
+  });
+
   test("AU-203 · a run that waits for an answer says until when in «Ejecuciones», at the device's zone, and is not a failure", async ({
     page,
   }) => {
@@ -930,5 +958,154 @@ test.describe("the steps that talk to him (F15, P2)", () => {
 });
 
 test.describe("the AI steps of an automation (F15, P2)", () => {
-  test.fixme("AU-208 · the count of accepted proposals shows under the cell and on the proposal's card, and not before 5 decisions", async () => {});
+  const EVENTOS = {
+    collection: "eventos",
+    read: {},
+    create: { mode: "yes", limit: 20 },
+    update: false,
+    remove: false,
+  };
+  test("AU-208 · the count of his answers shows under the cell from 5 decisions on, «Sí · en pausa» while paused, and none under a mode the draft changed", async ({
+    page,
+  }) => {
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6r08";
+    await openAgent(page, {
+      ...ordering(id, [TAREAS({ update: { mode: "ask", limit: 20 } }), EVENTOS]),
+      learning: [
+        {
+          step: AGENT_ID,
+          collection: "tareas",
+          action: "create",
+          mode: "ask",
+          decided: 20,
+          right: 18,
+        },
+        // Published as «Sí», the draft has it at «Preguntar»: another count.
+        {
+          step: AGENT_ID,
+          collection: "tareas",
+          action: "update",
+          mode: "yes",
+          decided: 9,
+          right: 9,
+        },
+        {
+          step: AGENT_ID,
+          collection: "eventos",
+          action: "create",
+          mode: "yes",
+          decided: 3,
+          right: 0,
+          paused: true,
+        },
+      ],
+    });
+    await expect(cellOf(page, "tareas", "create").locator(".auto-conn-use")).toContainText(
+      "18 de 20 aceptadas",
+    );
+    await expect(cellOf(page, "tareas", "update")).not.toContainText("sin deshacer");
+    const paused = cellOf(page, "eventos", "create");
+    await expect(paused.locator(".auto-conn-use")).toContainText("Sí · en pausa");
+    // Fewer than 5 decisions: no count.
+    await expect(paused).not.toContainText("de 3");
+  });
+
+  /** A pause and a suggestion as `GET requests` gives them (AU-209, AU-210). */
+  const LEARNING = (mayDecide: boolean) => [
+    {
+      kind: "suggested",
+      automation: "a_01jx8x0t2v4x6z8b0d2f4h6r09",
+      name: "Ordenar tareas",
+      step: AGENT_ID,
+      stepName: "Analista",
+      collection: "tareas",
+      collectionName: "Tareas",
+      action: "create",
+      why: null,
+      decided: 20,
+      right: 19,
+      at: Date.now() - HOUR,
+      mayDecide,
+    },
+    {
+      kind: "paused",
+      automation: "a_01jx8x0t2v4x6z8b0d2f4h6r09",
+      name: "Ordenar tareas",
+      step: AGENT_ID,
+      stepName: "Analista",
+      collection: "eventos",
+      collectionName: "Eventos",
+      action: "create",
+      why: "inARow",
+      decided: 3,
+      right: 0,
+      at: Date.now() - 2 * HOUR,
+      mayDecide,
+    },
+  ];
+  const openInbox = async (page: Page) => {
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
+    return page.locator(".inbox-panel .learning-card");
+  };
+
+  test("AU-209 · AU-210 · the Bandeja's cards of a suggestion and a pause: «No» and «Quitar pausa» name the cell and never a «Sí», and «Abrir» opens the automation", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [ordering("a_01jx8x0t2v4x6z8b0d2f4h6r09", [TAREAS(), EVENTOS]) as never],
+      agent: {
+        ...AGENT(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], learning: LEARNING(true) }],
+      },
+      agenda: true,
+    });
+    let cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    await expect(cards.first().locator(".inbox-kind")).toHaveText("Sugerencia");
+    await expect(cards.first().locator("h3")).toHaveText("Ordenar tareas: Analista en Tareas");
+    await expect(cards.first()).toContainText("19 de 20 aceptadas");
+    await expect(cards.nth(1).locator(".inbox-kind")).toHaveText("En pausa");
+    await expect(cards.nth(1)).toContainText("3 seguidas deshechas, rechazadas o corregidas");
+    // «Abrir» opens the automation; the cards wait in the Bandeja.
+    await cards.nth(1).getByRole("button", { name: "Abrir" }).click();
+    await expect(page.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(
+      "Ordenar tareas",
+    );
+    if (!(await cards.first().isVisible())) cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    await cards.first().getByRole("button", { name: "No", exact: true }).click();
+    await expect(cards).toHaveCount(1);
+    await cards.first().getByRole("button", { name: "Quitar pausa" }).click();
+    await expect(cards).toHaveCount(0);
+    const asked = await page.evaluate(() => (window as { __autoLearn?: string[] }).__autoLearn);
+    expect(asked?.map((x) => JSON.parse(x))).toEqual([
+      { do: "decline", step: AGENT_ID, collection: "tareas", action: "create" },
+      { do: "unpause", step: AGENT_ID, collection: "eventos", action: "create" },
+    ]);
+    // What the screen sends names the cell: no «Sí», no print, nothing the server would trust.
+    expect(JSON.stringify(asked)).not.toMatch(/yes|print|byAgent|reach/);
+  });
+
+  test("AU-209 · AU-210 · on a shared device the cards are read-only: «Solo desde un dispositivo personal», no «Abrir», «No» or «Quitar pausa»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      sharedDevice: true,
+      agent: {
+        ...BEFORE(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], learning: LEARNING(false) }],
+      },
+    });
+    const cards = await openInbox(page);
+    await expect(cards).toHaveCount(2);
+    for (const i of [0, 1]) {
+      await expect(cards.nth(i)).toContainText("Solo desde un dispositivo personal");
+      await expect(cards.nth(i).getByRole("button")).toHaveCount(0);
+    }
+  });
 });

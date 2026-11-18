@@ -79,6 +79,8 @@ export function howWords(
     case "running":
       return at ? t("auto.run.how.runningAt", { step: at }) : t("auto.run.how.running");
     case "done":
+      // A «Preguntar» that ended by «sin respuesta» says so (AU-125, AU-203), never only «Completada».
+      if (!r.test && r.line?.noAnswer) return `${t("auto.run.how.noAnswer")}${secs}`;
       return `${t(r.test ? "auto.run.how.test" : "auto.run.how.done")}${secs}`;
     case "interrupted":
       return `${at ? t("auto.run.how.interruptedAt", { step: at }) : t("auto.run.how.interrupted")}${secs}`;
@@ -142,13 +144,16 @@ export function didWords(
     ...(waiting ? [] : (line?.asked ?? [])).map((c) => countWords(t, lang, c, true, names)),
   ];
   if (!parts.length) return waiting ? null : t("auto.run.did.nothing");
+  // What an «Agente» saved without asking, an AI chose (AU-200, AU-204): said in the same line, before «con datos de fuera».
+  if (line?.byAgent && line.writes.length) parts.push(t("auto.conn.byAgent"));
   if (line?.outside) parts.push(t("auto.run.did.outside"));
   return parts.join(" · ");
 }
 
 /** Why it failed, in words (A-34), as the failure says it in the editor. */
 export function failureWords(t: T, lang: Lang, r: RunSummary): string | null {
-  const f = r.error?.failure;
+  // An AI step says which of its failures (AU-59), not its general `other`.
+  const f = r.error?.ai ?? r.error?.failure;
   if (!f || typeof f.code !== "string") return null;
   return said(t, "failure", f as never, localeOf(lang));
 }

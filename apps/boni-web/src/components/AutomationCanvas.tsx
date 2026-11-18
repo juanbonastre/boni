@@ -937,7 +937,7 @@ function Canvas({
     return () => cancelAnimationFrame(frame);
   }, [count]);
 
-  // On the phone nothing is added (AU-74): no panel, not even the empty canvas's «¿Cómo empieza?».
+  // On the phone nothing is added (AU-74): no panel, not even the empty canvas's «Disparador».
   const panelOpen = !still && (empty || state.adding !== null);
   const menuStep = menu ? state.draft.steps.find((s) => s.id === menu.step) : undefined;
   return (
@@ -1207,7 +1207,7 @@ function Canvas({
 }
 
 /**
- * «Añadir un paso» (AU-69): its search on top; on an empty canvas «¿Cómo empieza?» and the triggers; then the
+ * «Añadir un paso» (AU-69): its search on top; on an empty canvas «Disparador» and the triggers; then the
  * categories by what one wants to do, and «Añadir otro disparador» last. `first`: the step chosen makes the
  * automation (`automations.create`).
  */

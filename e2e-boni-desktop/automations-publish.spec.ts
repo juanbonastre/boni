@@ -657,9 +657,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await runBar(w).getByRole("button", { name: "Ver en la Bandeja" }).click();
     const card = cardOf(w, "Copiar lo del correo");
     await expect(card).toHaveCount(1);
-    await expect(card.locator("h3")).toHaveText(
-      "Copiar lo del correo quiere crear 3 filas en Tareas",
-    );
+    await expect(card.locator("h3")).toHaveText("Copiar lo del correo: crear 3 filas en Tareas");
     await expect(card.locator(".run-proposal-line")).toHaveText(
       "versión 1 · Programada · Pendiente en la Bandeja",
     );
@@ -668,7 +666,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await card.getByRole("button", { name: "Aceptar", exact: true }).click();
     await expect(card).toHaveCount(0, { timeout: 30_000 });
     const toast = w.locator(".toast");
-    await expect(toast).toContainText("Guardado lo que propuso Copiar lo del correo");
+    await expect(toast).toContainText("Propuesta aceptada: Copiar lo del correo");
     await expect(toast.getByRole("button", { name: "Deshacer" })).toHaveCount(0);
     expect(await tareas(w)).toBe((before as number) + 3);
     // Its run says so.
@@ -745,7 +743,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     await runBar(w).getByRole("button", { name: "Ver en la Bandeja" }).click();
     const card = cardOf(w, "Tirar preguntando");
     await expect(card.locator("h3")).toHaveText(
-      "Tirar preguntando quiere mandar a la papelera 4 filas de Tareas",
+      "Tirar preguntando: mandar a la papelera 4 filas de Tareas",
     );
     await expect(card.locator(".run-asked-row")).toHaveCount(4);
     // Rejected, nothing goes, and its run says so.

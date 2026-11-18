@@ -20,7 +20,7 @@ import {
  * (words.ts). F14b's three: «Leer o escribir en una colección» (`data`), «Transformar filas» (`transform`) and
  * «Decidir el camino» (`logic`); and F15's «Usar IA» (`ai`, the «Agente», AU-50) and «Preguntar o avisar» (`people`:
  * «Preguntar», «Avisar» and «Responder», AU-125, AU-201, AU-202). The triggers (`trigger`) are no
- * category of the list: they are what an empty canvas asks («¿Cómo empieza?») and what «Añadir otro disparador» opens.
+ * category of the list: they are what an empty canvas asks («Disparador») and what «Añadir otro disparador» opens.
  */
 export const PANEL_CATEGORIES = [
   "data",

@@ -48,6 +48,7 @@ import { Cell } from "./DatabaseBlock.tsx";
 import { triggerText } from "./FlowEditor.tsx";
 import { FlowPreview } from "./FlowPreview.tsx";
 import { type OptionsLoader, SearchList } from "./FormView.tsx";
+import { LearningCard } from "./LearningCard.tsx";
 import { GmailMark, KeptMail } from "./MailIcons.tsx";
 import { MenuRow, PointMenu } from "./Popover.tsx";
 import { RunProposalCard } from "./RunProposalCard.tsx";
@@ -64,6 +65,7 @@ export function InboxPanel({ under = false }: { under?: boolean }) {
   const t = useStore((s) => s.t);
   const open = useStore((s) => s.inboxOpen);
   const queue = useInboxQueue();
+  const learning = useStore((s) => s.cellNotices);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -85,7 +87,11 @@ export function InboxPanel({ under = false }: { under?: boolean }) {
       style={under ? { display: "none" } : undefined}
     >
       <header className="panel-head">
-        <h2>{queue.length ? t("inbox.titleN", { n: queue.length }) : t("inbox.title")}</h2>
+        <h2>
+          {queue.length + learning.length
+            ? t("inbox.titleN", { n: queue.length + learning.length })
+            : t("inbox.title")}
+        </h2>
         <button
           type="button"
           className="icon-btn"
@@ -97,14 +103,27 @@ export function InboxPanel({ under = false }: { under?: boolean }) {
         </button>
       </header>
       <div className="panel-body inbox-list">
-        {queue.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
+        {queue.length + learning.length === 0 && (
+          <p className="muted center-note">{t("inbox.empty")}</p>
+        )}
         {queue.map((x) =>
           "p" in x ? <ProposalCard key={x.p.id} p={x.p} /> : <RequestCard key={x.r.id} r={x.r} />,
         )}
+        {learning.map((c) => (
+          <LearningCard key={learningKey(c)} c={c} />
+        ))}
       </div>
     </aside>
   );
 }
+
+/** One card of a cell's pause or suggestion, by the cell it names. */
+export const learningKey = (c: {
+  automation: string;
+  step: string;
+  collection: string;
+  action: string;
+}) => `${c.automation}\u0000${c.step}\u0000${c.collection}\u0000${c.action}`;
 
 /**
  * One queue in the order things arrived (Juan, 2026-10-24, option A): proposals and questions mixed, each card
@@ -119,7 +138,7 @@ export function useInboxQueue(): ({ p: Proposal } | { r: InboxRequest })[] {
 /** The top bar's way into the inbox: its count, the panel open or closed. */
 export function InboxButton() {
   const t = useStore((s) => s.t);
-  const n = useStore((s) => s.inbox.length + s.requests.length);
+  const n = useStore((s) => s.inbox.length + s.requests.length + s.cellNotices.length);
   const open = useStore((s) => s.inboxOpen);
   useEffect(() => {
     void loadInbox();

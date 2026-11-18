@@ -450,6 +450,8 @@ function RunDetail({
             {did ? ` · ${did}` : ""}
           </span>
           {why && <span className="auto-run-why">{why}</span>}
+          {/* Its «Responder»'s reply (AU-202): its first 200 characters, painted as plain text. */}
+          {r.line?.reply && <span className="auto-run-reply">{r.line.reply}</span>}
           {/* What it told when it ended (AU-102, AU-167): the server's words, painted as text. */}
           {r.notice && (
             <span className="auto-run-notice">{t("auto.run.notice", { text: r.notice.text })}</span>

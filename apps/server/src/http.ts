@@ -563,6 +563,19 @@ export function makeApp(opts: ServerOptions): App {
             ...(b.undo !== undefined ? { undo: b.undo } : {}),
           });
         }
+        // «Quitar pausa» and «No» to a suggestion (AU-209, AU-210): from a personal device only (decision 13).
+        case "POST /api/agent/automations/:id/learning": {
+          const b = await bodyOf(req);
+          return automation("automations.learn", {
+            id,
+            do: b.do,
+            step: b.step,
+            collection: b.collection,
+            action: b.action,
+          });
+        }
+        case "GET /api/agent/automations/:id/learning":
+          return automation("automations.read", { id, part: "learning" });
         case "POST /api/agent/automations/:id/runs/:run/undo":
           return automation("automations.undo_run", { id, run: params.run ?? "" });
         case "PUT /api/agent/automations/:id/pins/:step":

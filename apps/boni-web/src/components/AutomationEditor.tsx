@@ -3,7 +3,7 @@
  * header (back, the name edited there, «Guardado» and «⋯» with Duplicar and Eliminar) over the canvas's place. The
  * draft saves itself a moment after each change and on leaving, one request at a time, again after a failure
  * (automations/state.ts says what is owed; automations/client.ts asks the server). «Nueva» opens it with nothing
- * saved: the automation is made by its first step, which the empty canvas asks for («¿Cómo empieza?»). The canvas
+ * saved: the automation is made by its first step, which the empty canvas asks for («Disparador»). The canvas
  * (AutomationCanvas.tsx, C2) changes the state; the boxes that moved go to the server after the draft, by their own
  * route (AU-05). «Probar» and the step's view come later (docs/automatizaciones.md §8). P1 of F14d adds what the
  * header says of the version that runs, the switch «Encendida», «Publicar» with its screen, «⋯ → Ejecutar» and

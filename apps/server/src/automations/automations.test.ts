@@ -59,6 +59,7 @@ import { seed } from "../seed.test-util.ts";
 import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
+import * as learning from "./learning.ts";
 import { ACTS, actOf, argsOf, automationPolicy, consentIn, runPolicy } from "./policy.ts";
 import * as publishing from "./publish.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES, NO_MCP_YET } from "./routes.ts";
@@ -92,7 +93,8 @@ describe("the contract of the routes (it holds today)", () => {
       const fn =
         (service as Record<string, unknown>)[runs] ??
         (publishing as Record<string, unknown>)[runs] ??
-        (running as Record<string, unknown>)[runs];
+        (running as Record<string, unknown>)[runs] ??
+        (learning as Record<string, unknown>)[runs];
       expect(typeof fn, route).toBe("function");
       // A GET never runs an action that changes something.
       if (route.startsWith("GET ")) expect(AUTOMATION_ACTIONS[action]?.effect, route).toBe("read");

@@ -395,7 +395,7 @@ export function judgeDue(store: UserStore, now: number): boolean {
 
 /** A cell's last judged results, newest last (true = right), by its area's index; taken after `after`. */
 function resultsOf(store: UserStore, area: string, after = 0): boolean[] {
-  return store.journal.judgedDecisions(area, LAST, after).map((d) => d.result === "right");
+  return store.journal.judgedResults(area, LAST, after).map((r) => r === "right");
 }
 
 /** The cell as the version published now has it, when it is the same step (by its print); else null. */
@@ -578,8 +578,105 @@ export function declineSuggestion(
   if (hand.trust !== "personal") return { refused: "not-personal" };
   const area = cellArea(key);
   const state = stateOf(store);
-  if (!state[area]?.suggested) return { refused: "nothing" };
+  if (!state[area]?.suggested || state[area]?.declined) return { refused: "nothing" };
   state[area] = { ...(state[area] as CellState), declined: hand.now };
   saveState(store, state);
   return null;
+}
+
+/**
+ * The cell his hand names on the screen (AU-209, AU-210): the screen sends the step, the collection and the action,
+ * and the print is the published version's, worked out here; null when that version has no such cell.
+ */
+export function learningKey(
+  store: UserStore,
+  automation: string,
+  cell: { step: string; collection: string; action: string },
+): CellKey | null {
+  const { step, collection, action } = cell;
+  if (action !== "create" && action !== "update" && action !== "remove") return null;
+  const pub = publishedOf(store, automation);
+  if (!pub || !stepCell(pub.automation, step, collection, action)) return null;
+  return { automation, step, collection, action, print: cellPrint(pub.automation, step, sha256) };
+}
+
+/** A pause or a suggestion waiting in the Bandeja (AU-209, AU-210): the app words it, from these fields. */
+export interface LearningNotice extends Omit<CellKey, "print"> {
+  kind: "paused" | "suggested";
+  /** The names the published version and his collections give: his own text, painted as plain text. */
+  name: string;
+  stepName: string;
+  collectionName: string;
+  /** A pause's reason; null for a suggestion. */
+  why: "inARow" | "share" | null;
+  /** The judged decisions it counts (after the last «Quitar pausa», for a pause) and how many were right. */
+  decided: number;
+  right: number;
+  at: number;
+}
+
+/**
+ * The pauses and the suggestions that still wait (AU-209, AU-210): a pause while the published cell is still «Sí»
+ * for the same step, a suggestion not answered «No» while it is still «Preguntar». Once he publishes the cell
+ * changed (his «Sí», from a personal device), lifts the pause or says «No», it is not listed. The newest first.
+ * One version read per automation that has one, whatever its cells.
+ */
+type Kept = { n: number; a: Automation; print: (step: string) => string };
+/**
+ * A published version never changes: its document read and its steps' prints are kept per store, by automation and
+ * version, for the Bandeja's list, which asks again every time it looks (A-15). Read only, never handed out.
+ */
+const keptVersions = new WeakMap<UserStore, Map<string, Kept>>();
+
+export function learningNotices(store: UserStore): LearningNotice[] {
+  let kept = keptVersions.get(store);
+  if (!kept) {
+    kept = new Map();
+    keptVersions.set(store, kept);
+  }
+  const versions = kept;
+  const pubOf = (id: string): Kept | null => {
+    const row = store.journal.automation(id);
+    if (!row || row.deleted || row.published === null) return null;
+    const was = versions.get(id);
+    if (was?.n === row.published) return was;
+    try {
+      const pub = publishedOf(store, id);
+      if (!pub) return null;
+      const now = { n: pub.n, a: pub.automation, print: printer(pub.automation) };
+      versions.set(id, now);
+      return now;
+    } catch {
+      // a version that does not read is not listed
+      return null;
+    }
+  };
+  // The collections' names once for the list, not once per notice.
+  const types = Object.values(store.schema().types);
+  const nameOf = (key: string) => types.find((t) => t.key === key)?.name ?? key;
+  const out: LearningNotice[] = [];
+  for (const [area, s] of Object.entries(stateOf(store))) {
+    const kind = s.paused ? "paused" : s.suggested && !s.declined ? "suggested" : null;
+    if (!kind) continue;
+    const pub = pubOf(s.automation);
+    const cell = pub && stepCell(pub.a, s.step, s.collection, s.action);
+    if (!pub || !cell || pub.print(s.step) !== s.print) continue;
+    if (cell.mode !== (kind === "paused" ? "yes" : "ask")) continue;
+    const results = resultsOf(store, area, kind === "paused" ? (s.lifted ?? 0) : 0);
+    out.push({
+      kind,
+      automation: s.automation,
+      step: s.step,
+      collection: s.collection,
+      action: s.action,
+      name: pub.a.name,
+      stepName: stepName(pub.a, s.step),
+      collectionName: nameOf(s.collection),
+      why: s.paused?.why ?? null,
+      decided: results.length,
+      right: results.filter(Boolean).length,
+      at: s.paused?.at ?? s.suggested ?? 0,
+    });
+  }
+  return out.sort((x, y) => y.at - x.at);
 }
