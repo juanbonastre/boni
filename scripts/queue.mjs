@@ -247,18 +247,13 @@ function holder(screen, waitedSince, cmd) {
 /** Waits in line until this run's ticket is first, saying its place when it changes, then waits on the lock. */
 async function queue(lock, screen, cmd) {
   const dir = ticketDir(lock);
-  let mine;
-  try {
-    mine = takeTicket(dir, cmd);
-  } catch (e) {
-    // No line to stand in: the lock alone still keeps two runs apart, as before T-09.
-    console.error(`queue: no ticket (${e.message}); waiting on the lock alone`);
-    return lockOnly(lock, screen, cmd, { ...process.env });
-  }
-  const path = join(dir, mine);
+  // The handlers come before the ticket (task 152): a process with no listener for a signal dies of it at once, so a
+  // Ctrl+C landing just after the ticket was written left it in the line. With a listener, Node runs it on the event
+  // loop, after this synchronous code has set `path`.
+  let path = null;
   const leave = () => {
     try {
-      unlinkSync(path);
+      if (path) unlinkSync(path);
     } catch {}
   };
   process.on("exit", leave);
@@ -267,6 +262,15 @@ async function queue(lock, screen, cmd) {
       leave();
       process.kill(process.pid, sig);
     });
+  let mine;
+  try {
+    mine = takeTicket(dir, cmd);
+  } catch (e) {
+    // No line to stand in: the lock alone still keeps two runs apart, as before T-09.
+    console.error(`queue: no ticket (${e.message}); waiting on the lock alone`);
+    return lockOnly(lock, screen, cmd, { ...process.env });
+  }
+  path = join(dir, mine);
   const env = {
     ...process.env,
     [TICKET]: path,

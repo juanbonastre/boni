@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, afterEach, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { lockPath, machineLoad, screenEnv, ticketDir } from "./queue.mjs";
 
@@ -55,7 +55,10 @@ function start(cwd, code, opts = {}) {
   return startCmd(cwd, [process.execPath, QUEUE, "--", process.execPath, "-e", code], opts);
 }
 
-/** Starts `cmd` in `cwd`; resolves with its output and when it ended. */
+/** Every run a test started, so that one left running when a test fails can be ended after it. */
+const started = new Set();
+
+/** Starts `cmd` in `cwd`; resolves with its output, how it ended and when. */
 function startCmd(cwd, cmd, opts = {}) {
   const child = spawn(cmd[0], cmd.slice(1), {
     cwd,
@@ -66,10 +69,40 @@ function startCmd(cwd, cmd, opts = {}) {
   child.stdout.on("data", (d) => (out += d));
   child.stderr.on("data", (d) => (out += d));
   const done = new Promise((resolve) =>
-    child.on("exit", (status) => resolve({ status, out, at: Date.now() })),
+    child.on("exit", (status, signal) => resolve({ status, signal, out, at: Date.now() })),
   );
-  return { child, done };
+  const r = { child, done };
+  started.add(r);
+  return r;
 }
+
+/** The processes below `pid` (the queue's flock, its --held run, the command), from /proc. */
+function descendants(pid) {
+  const kids = new Map();
+  for (const d of readdirSync("/proc").filter((d) => /^\d+$/.test(d)))
+    try {
+      const stat = readFileSync(`/proc/${d}/stat`, "utf8");
+      const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+      kids.set(ppid, [...(kids.get(ppid) ?? []), Number(d)]);
+    } catch {}
+  const out = [pid];
+  for (let i = 0; i < out.length; i++) out.push(...(kids.get(out[i]) ?? []));
+  return out.slice(1);
+}
+
+// A test that fails before it releases its holder (a `go` never written) would leave that holder running, and the
+// pipes it and its children hold to this process keep node:test waiting forever: that hung CI's `check` for hours
+// (task 152). So whatever a test leaves running ends with it, children first gathered, then killed.
+afterEach(async () => {
+  const left = [...started].filter((r) => r.child.exitCode === null && r.child.signalCode === null);
+  started.clear();
+  const pids = left.flatMap((r) => [r.child.pid, ...descendants(r.child.pid)]);
+  for (const p of pids)
+    try {
+      process.kill(p, "SIGKILL");
+    } catch {}
+  await Promise.all(left.map((r) => r.done));
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -256,6 +289,49 @@ test("Ctrl+C on a run in line takes it out of the line", async () => {
   await inLine(0);
   writeFileSync(go, "");
   await h.done;
+});
+
+test("Ctrl+C the moment a run's ticket is written still takes it out of the line (task 152)", async () => {
+  const lock = lockPath(main);
+  rmSync(lock, { force: true });
+  const go = file("go");
+  const order = file("order");
+  const h = start(main, until(go));
+  await held(lock);
+  // The narrowest window, every time: the SIGINT is sent from inside the rename that writes the run's ticket. A run
+  // that listened for it only after taking its ticket died of it there and left the ticket in the line (CI, PR 514).
+  const pre = `${file("sigint-on-ticket")}.cjs`;
+  writeFileSync(
+    pre,
+    `const fs = require("node:fs");
+const rename = fs.renameSync;
+fs.renameSync = (from, to) => {
+  rename(from, to);
+  if (String(to).includes("boni-queue.d") && String(to).endsWith(".json")) process.kill(process.pid, "SIGINT");
+};
+require("node:module").syncBuiltinESMExports();
+`,
+  );
+  const w = startCmd(other, [
+    process.execPath,
+    "--require",
+    pre,
+    QUEUE,
+    "--",
+    process.execPath,
+    "-e",
+    mark(order, "W"),
+  ]);
+  const r = await w.done;
+  assert.equal(r.signal, "SIGINT", r.out);
+  const mine = `-${String(w.child.pid).padStart(10, "0")}.json`;
+  const left = readdirSync(ticketDir(lock)).filter((n) => n.endsWith(mine));
+  assert.deepEqual(left, [], "the run's ticket was left in the line");
+  writeFileSync(go, "");
+  await h.done;
+  // Its flock, already waiting on the lock, gives the turn away: a last run waits for the queue to be free.
+  await start(main, "").done;
+  assert.equal(existsSync(order), false, "the run ran after its Ctrl+C");
 });
 
 test("a stale ticket left by a crash (its pid is gone, or the file is unreadable) is skipped and deleted", async () => {
