@@ -44,10 +44,12 @@ import {
 import { parseNumber } from "../core/answers.ts";
 import { focusAtEnd } from "../core/caret.ts";
 import { deviceZone, today } from "../core/clock.ts";
+import { modelOptions } from "../core/modelChoices.ts";
 import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
 import { filterOf, litKeys, litNames } from "../core/screenReplies.ts";
 import { percent } from "../core/uploads.ts";
+import { phoneLayout } from "../host.ts";
 import { catText, type T } from "../i18n.ts";
 import {
   addFieldOption,
@@ -76,8 +78,8 @@ import {
   lightKeys,
   loadConversations,
   loadInbox,
+  loadModelChoices,
   loadPageChat,
-  loadPlanners,
   loadRunDetail,
   newConversation,
   type Outgoing,
@@ -141,7 +143,7 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     void loadInbox();
     void loadConversations();
-    void loadPlanners();
+    void loadModelChoices("agent");
   }, []);
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
@@ -768,18 +770,26 @@ function ChatMode() {
   );
 }
 
-/** The model this conversation plans with (3.5): the account's, or one Juan evaluated for it in «Modelos». */
+/**
+ * The model this conversation plans with (AU-242): «El de la cuenta» and the models that answer as «Agente», no tags
+ * (in the chat a model is chosen). It ends in «Añadir modelo», which opens Ajustes → Modelos, only where «Modelos» can
+ * be changed: a personal device that is not the phone (AU-243).
+ */
 function ModelChip() {
   const t = useStore((s) => s.t);
-  const planners = useStore((s) => s.planners);
+  const choices = useStore((s) => s.modelChoices.agent);
   const chosen = useStore(
     (s) => s.conversations?.find((c) => c.id === s.conversationId)?.model ?? "",
   );
   const busy = useStore((s) => s.chatBusy);
   const [open, setOpen] = useState(false);
-  const current = planners.find((p) => (chosen ? p.id === chosen : p.current));
-  if (!planners.length) return null;
-  const short = (m: string) => m.replace(/^[a-z-]+\//, "");
+  if (!choices) return null;
+  const o = modelOptions(choices, chosen, { tags: false });
+  // The account's, when the conversation chose nothing or chose what is no longer offered.
+  const current = o.models.find((m) => m.value === chosen);
+  const own = o.account;
+  if (!own && !o.models.length) return null;
+  const more = choices.personal && !phoneLayout();
   return (
     <div className="chat-model">
       <button
@@ -790,37 +800,51 @@ function ModelChip() {
         title={t("chat.model")}
         onClick={() => setOpen(!open)}
       >
-        {current ? short(current.model) : t("chat.model")}
+        {current ? current.name : (own ?? t("chat.model"))}
         <ChevronDown size={12} strokeWidth={1.8} />
       </button>
       {open && (
         <div className="chat-model-menu" role="menu">
-          {planners.map((p) => (
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={!current}
+            onClick={() => {
+              void chooseModel("");
+              setOpen(false);
+            }}
+          >
+            <span>{own ?? t("models.noModel")}</span>
+            <span className="muted small">{t("chat.modelAccount")}</span>
+            {!current && <Check size={13} strokeWidth={2} />}
+          </button>
+          {o.models.map((m) => (
             <button
-              key={p.id}
+              key={m.value}
               type="button"
               role="menuitemradio"
-              aria-checked={p === current}
+              aria-checked={m === current}
               onClick={() => {
-                void chooseModel(p.current ? "" : p.id);
+                void chooseModel(m.value);
                 setOpen(false);
               }}
             >
-              <span>{short(p.model)}</span>
-              {p.current && <span className="muted small">{t("chat.modelAccount")}</span>}
-              {p === current && <Check size={13} strokeWidth={2} />}
+              <span>{m.name}</span>
+              {m === current && <Check size={13} strokeWidth={2} />}
             </button>
           ))}
-          <button
-            type="button"
-            className="chat-model-more"
-            onClick={() => {
-              setOpen(false);
-              openSettings(true, "models");
-            }}
-          >
-            {t("chat.modelMore")}
-          </button>
+          {more && (
+            <button
+              type="button"
+              className="chat-model-more"
+              onClick={() => {
+                setOpen(false);
+                openSettings(true, "models");
+              }}
+            >
+              {t("chat.modelMore")}
+            </button>
+          )}
         </div>
       )}
     </div>

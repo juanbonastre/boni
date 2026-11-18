@@ -2,7 +2,7 @@ import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
 import { ALL_DONE, arrow, step, TESTED, testOf, withRuns } from "./automation-data.ts";
-import { openApp } from "./fixtures.ts";
+import { openApp, recorded } from "./fixtures.ts";
 
 /**
  * The AI steps in the editor (docs/automatizaciones.md §5.5, §5.6, §5.10 and §5.15, phase F15): the «Agente» view
@@ -10,8 +10,8 @@ import { openApp } from "./fixtures.ts";
  * cell (AU-50, AU-54, AU-125, AU-200, AU-208).
  *
  * Over the mocked server of fixtures.ts, as automations-code.spec.ts: collections whose keys and names are shaped like
- * the user's («Tareas» and «Eventos» of the agenda, «Documentos» private), the account's models as
- * `GET api/agent/planners` gives them (invented names), and what a test of the step answers as the engine records it
+ * the user's («Tareas» and «Eventos» of the agenda, «Documentos» private), «Modelo»'s choices as
+ * `GET api/agent/models/choices` gives them (invented names), and what a test of the step answers as the engine records it
  * (`StepRecord.agent` and `ai`). No model is called: the step's test is the server's answer, given. AU-125 and AU-208
  * are P2's.
  */
@@ -26,33 +26,37 @@ const BEFORE = () => ({
   "POST api/agent/flows/check": [FLOW_CHECK],
   "PUT api/agent/flows/:id/enabled": [{ ...FLOW_DETAIL, enabled: false }],
 });
-/** The account's models for its use «Agente» (`modelChoices`): its own first, then two evaluated for it. */
-const PLANNERS = {
-  planners: [
-    {
-      id: "anthropic:claude-ejemplo-grande",
-      model: "claude-ejemplo-grande",
-      connection: "anthropic",
-      privacy: "provider",
-      current: true,
-    },
-    {
-      id: "anthropic:claude-ejemplo-rapido",
-      model: "claude-ejemplo-rapido",
-      connection: "anthropic",
-      privacy: "provider",
-      current: false,
-    },
-    {
-      id: "openrouter:ejemplo/modelo-abierto:zdr",
-      model: "ejemplo/modelo-abierto",
-      connection: "openrouter",
-      privacy: "zdr",
-      current: false,
-    },
+/**
+ * «Modelo»'s choices for an «Agente» (`GET api/agent/models/choices?kind=agent`, §5.16): the account's, his tags each
+ * with the model it would take (one without a model, one expired), then the models offered for its kind.
+ */
+const GRANDE = "anthropic:claude-ejemplo-grande";
+const RAPIDO = "anthropic:claude-ejemplo-rapido";
+const ABIERTO = "openrouter:ejemplo/modelo-abierto:zdr";
+const choiceOf = (id: string, model: string, connection: string, zdr = false) => ({
+  id,
+  model,
+  connection,
+  zdr,
+  privacy: zdr ? "keeps-nothing" : "deletes-in-30-days",
+  server: false,
+});
+const CHOICES = {
+  kind: "agent",
+  account: { value: null, answers: GRANDE },
+  tags: [
+    { id: "tag:rapido0000000001", name: "Rápido", answers: RAPIDO, state: "ok" },
+    { id: "tag:vacia000000000001", name: "Para revisar", answers: null, state: "no-model" },
+    { id: "tag:vieja000000000001", name: "De antes", answers: GRANDE, state: "expired" },
   ],
+  models: [
+    choiceOf(GRANDE, "claude-ejemplo-grande", "anthropic"),
+    choiceOf(RAPIDO, "claude-ejemplo-rapido", "anthropic"),
+    choiceOf(ABIERTO, "ejemplo/modelo-abierto", "openrouter", true),
+  ],
+  personal: true,
 };
-const AGENT = () => ({ ...BEFORE(), "GET api/agent/planners": [PLANNERS] });
+const AGENT = () => ({ ...BEFORE(), "GET api/agent/models/choices": [CHOICES] });
 const FIVE_MIN = 5 * 60_000;
 const AGENT_ID = "s_01janalista";
 /** «Tareas» read and its creations asked, «Como mucho 20» as a hand takes it out of «No» (AU-196). */
@@ -154,7 +158,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("the «Agente» step (F15)", () => {
-  test("AU-50 · AU-199 · an «Agente» shows its six things in order and no key, temperature or token setting; «Modelo» offers the account's by its model and the ones evaluated for its use, keeps the choice's id and «El de la cuenta» keeps none", async ({
+  test("AU-50 · AU-199 · AU-238 · an «Agente» shows its six things in order and no key, temperature or token setting; «Modelo» keeps the choice's id and «El de la cuenta» keeps none", async ({
     page,
   }) => {
     const a = ordering("a_01jx8x0t2v4x6z8b0d2f4h6a01");
@@ -171,12 +175,10 @@ test.describe("the «Agente» step (F15)", () => {
     // Nothing of a model's settings: the step keeps a choice, never a key, a route or a setting (AU-199).
     await expect(view(page)).not.toContainText(/clave|temperatura|token/i);
     const model = param(page, "model").getByRole("combobox", { name: "Modelo" });
-    await expect(model.locator("option")).toHaveText([
-      "El de la cuenta · claude-ejemplo-grande",
-      "claude-ejemplo-rapido",
-      "modelo-abierto",
-    ]);
     await expect(model).toHaveValue("");
+    await expect(model.locator("option:checked")).toHaveText(
+      "El de la cuenta · claude-ejemplo-grande",
+    );
     await model.selectOption("anthropic:claude-ejemplo-rapido");
     await expect
       .poll(async () => (await lastAgent(page, a.id))?.params.model)
@@ -214,7 +216,41 @@ test.describe("the «Agente» step (F15)", () => {
     await expect.poll(async () => (await lastAgent(page, a.id))?.params.retries).toBe(2);
   });
 
-  test("AU-199 · a «Modelo» no longer offered says so in its own list, and the account's own is named again when it is chosen by its id", async ({
+  test("AU-238 · AU-241 · «Modelo» offers «El de la cuenta», the tags and the models of the step's kind, each tag with the model that would answer; a tag without a model or expired cannot be chosen", async ({
+    page,
+  }) => {
+    const a = ordering("a_01jx8x0t2v4x6z8b0d2f4h6a03");
+    await openAgent(page, a);
+    const model = param(page, "model").getByRole("combobox", { name: "Modelo" });
+    await expect(model.locator("option")).toHaveText([
+      "El de la cuenta · claude-ejemplo-grande",
+      "Rápido · claude-ejemplo-rapido",
+      "Para revisar · Sin modelo",
+      "De antes · Caducada",
+      "claude-ejemplo-grande",
+      "claude-ejemplo-rapido",
+      "modelo-abierto",
+    ]);
+    await expect(model.locator("optgroup")).toHaveCount(2);
+    expect(
+      await model.locator("optgroup").evaluateAll((g) => g.map((x) => x.getAttribute("label"))),
+    ).toEqual(["Etiquetas", "Modelos"]);
+    // «Sin modelo» and «Caducada» are there to read, never to choose (AU-241).
+    await expect(model.locator('option[value="tag:vacia000000000001"]')).toBeDisabled();
+    await expect(model.locator('option[value="tag:vieja000000000001"]')).toBeDisabled();
+    // A tag is kept by its id, never by the model it takes now (AU-237).
+    await model.selectOption("tag:rapido0000000001");
+    await expect
+      .poll(async () => (await lastAgent(page, a.id))?.params.model)
+      .toBe("tag:rapido0000000001");
+    // The choices of its kind of call, asked once when the step opened.
+    const asked = (await recorded(page)).requests.filter((r) =>
+      r.startsWith("GET api/agent/models/choices"),
+    );
+    expect(asked).toEqual(["GET api/agent/models/choices?kind=agent"]);
+  });
+
+  test("AU-199 · AU-238 · a «Modelo» no longer offered says so in its own list", async ({
     page,
   }) => {
     const a = ordering("a_01jx8x0t2v4x6z8b0d2f4h6a02", [TAREAS()], {
@@ -224,7 +260,7 @@ test.describe("the «Agente» step (F15)", () => {
     const model = param(page, "model").getByRole("combobox", { name: "Modelo" });
     await expect(model).toHaveValue("anthropic:claude-ejemplo-viejo");
     await expect(model.locator("option:checked")).toHaveText(
-      "anthropic:claude-ejemplo-viejo · no disponible",
+      "claude-ejemplo-viejo · no disponible",
     );
   });
 });
