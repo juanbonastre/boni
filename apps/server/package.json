@@ -8,7 +8,8 @@
     "start": "node src/main.ts",
     "cli": "node src/cli.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:timed": "BONI_TESTS=timed vitest run"
   },
   "engines": {
     "node": ">=24"
