@@ -3,6 +3,7 @@ import { AnthropicProvider, JevProvider, OpenAIProvider } from "@boni/agent";
 import { startCheckpoints } from "@boni/store";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
+import { wireAutomationModels } from "./automations/ai.ts";
 import { AutomationScheduler } from "./automations/scheduler.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
@@ -182,6 +183,11 @@ agent.providersFor = (account) => models.providers(account);
 agent.overBudget = (account, asking) => models.overBudget(account, asking);
 agent.plannerChoices = (account) => models.plannerChoices(account);
 agent.plannerFor = (account, id) => models.plannerProvider(account, id);
+// The AI steps of automations (docs/automatizaciones.md §7, AU-199): the same «Modelos», by the account a store is of.
+wireAutomationModels({
+  models,
+  accountOf: (store) => agent.accountOf(store),
+});
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent, feeds });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;

@@ -2247,9 +2247,9 @@ class Run {
     const run = this;
     return {
       shape: (c) => g.shape(c),
-      find: (q, v) => g.find(q, v),
+      find: (q, v, f) => g.find(q, v, f),
       get: (c, id) => g.get(c, id),
-      aggregate: (q, v) => g.aggregate(q, v),
+      aggregate: (q, v, f) => g.aggregate(q, v, f),
       async write(change, values) {
         // Every change counts against «rows written», saved, tested or proposed, before the policy is asked (AU-17).
         run.reserve(1);

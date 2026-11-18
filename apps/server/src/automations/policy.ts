@@ -24,9 +24,20 @@
  * (P11) counts over the whole run of an origin it applies to (not `automation`: its cap is the run's own, AU-17).
  * A decision is passed on as it is: this module never turns a «no» into a «sí», and adds no rule.
  */
-import { decide, type Origin, type ToolDef, type Val } from "@boni/agent";
 import {
+  decide,
+  type Origin,
+  type PolicyRequest,
+  type ReachAction,
+  type ReachLimits,
+  type StepReach,
+  type ToolDef,
+  type Val,
+} from "@boni/agent";
+import {
+  AGENT_TYPE,
   type Automation,
+  type Connection,
   consentOf,
   type Decision,
   type Labelled,
@@ -165,14 +176,95 @@ export function consentIn(doc: Automation | undefined): (call: PolicyCall) => bo
   };
 }
 
+/** What P29 reads of the store besides the stored version (AU-166, AU-205): as the store is now. */
+export interface ReachStore {
+  /** Whether no model may read the collection (its level for models is not `visible`, AU-166). */
+  privateTo(collection: string): boolean;
+  /** Its fields' types by key, for the filters. */
+  types(collection: string): Readonly<Record<string, string>>;
+  /** The run's civil day in the person's zone. */
+  today(): string;
+}
+
+type Reached = Pick<PolicyRequest, "byAgent" | "reach">;
+const REACH_ACTS: Readonly<Record<keyof typeof ACTS, ReachAction>> = {
+  query: "read",
+  get: "read",
+  create: "create",
+  update: "update",
+  trash: "remove",
+};
+
+/** A stored connection's cells as P29 reads them: each action «No» or its limits, a fixed value by its key only. */
+export function cellsOf(c: Connection): Record<ReachAction, false | ReachLimits> {
+  const limits = (o: {
+    where?: ReachLimits["where"];
+    fields?: readonly string[];
+    fixed?: Record<string, unknown>;
+    limit?: number;
+  }): ReachLimits => ({
+    ...(o.where ? { where: o.where } : {}),
+    ...(o.fields ? { fields: o.fields } : {}),
+    ...(o.fixed ? { fixed: Object.keys(o.fixed) } : {}),
+    ...(o.limit !== undefined ? { limit: o.limit } : {}),
+  });
+  return {
+    read: c.read && limits(c.read),
+    create: c.create && limits(c.create),
+    update: c.update && limits(c.update),
+    remove: c.remove && limits(c.remove),
+  };
+}
+
+/**
+ * What an AI step's call carries to P29 (AU-204, AU-205), read from `doc` as the server keeps it and from the run:
+ * whether an «Agente» chose it (`byAgent`: the stored step's type) and its reach (the stored step's connection with
+ * that collection, the row it touches, the fields a read names, what the step has written with that action). Nothing
+ * of it comes from a model, the box, a request or a browser. A call another automation's or version's, or of a step
+ * `doc` does not have, is one the server cannot read a connection for: if the engine says it is an «Agente»'s, it
+ * goes with no reach, and P29 denies it (`no-reach`). It can only refuse more.
+ */
+export function reachIn(
+  doc: Automation | undefined,
+  from: ReachStore,
+): (call: PolicyCall) => Reached {
+  const steps = new Map((doc?.steps ?? []).map((s) => [s.id, s]));
+  return (call) => {
+    const mine =
+      doc && call.automation.id === doc.id && call.automation.version === doc.version
+        ? steps.get(call.step)
+        : undefined;
+    const byAgent = mine ? mine.type === AGENT_TYPE : call.type === AGENT_TYPE;
+    if (!byAgent) return {};
+    if (!mine) return { byAgent: true };
+    const action = REACH_ACTS[actOf(call)];
+    const connection = (mine.connections ?? []).find((c) => c.collection === call.collection);
+    const reach: StepReach = {
+      collection: call.collection,
+      action,
+      private: from.privateTo(call.collection),
+      cells: connection ? cellsOf(connection) : null,
+      ...(action === "read"
+        ? { fields: call.fields ?? [] }
+        : { row: call.row === undefined ? null : call.row }),
+      types: from.types(call.collection),
+      today: from.today(),
+      written: call.written ?? 0,
+    };
+    return { byAgent: true, reach };
+  };
+}
+
 /**
  * The policy of one run from `origin`: make one per run, never share it between two (its counter is the run's).
- * `yes`: what the server read of the «Sí» for each write (`consentIn`); none without it.
+ * `yes`: what the server read of the «Sí» for each write (`consentIn`); none without it. `reached`: what an AI step's
+ * call carries to P29 (`reachIn`).
  */
 export function runPolicy(
   origin: Origin,
   own: Label,
   yes: (call: PolicyCall) => boolean = () => false,
+  reached: (call: PolicyCall) => Reached = () => ({}),
 ): Policy & { count: RunCount } {
   const count: RunCount = { writes: 0, sensitiveReads: 0 };
   return {
@@ -187,6 +279,7 @@ export function runPolicy(
           dry: call.test,
           ...(call.rows !== undefined ? { rows: call.rows } : {}),
           yes: yes(call),
+          ...reached(call),
         },
         origin,
         count,
@@ -205,6 +298,7 @@ export function runPolicy(
 export function automationPolicy(
   doc: Automation | undefined,
   own: Label,
+  from?: ReachStore,
 ): Policy & { count: RunCount } {
-  return runPolicy(AUTOMATION, own, consentIn(doc));
+  return runPolicy(AUTOMATION, own, consentIn(doc), from ? reachIn(doc, from) : undefined);
 }

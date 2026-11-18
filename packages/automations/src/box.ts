@@ -18,6 +18,7 @@ import {
   asRead,
   type Connection,
   cutRead,
+  fieldsAsked,
   type NarrowedAsk,
   narrow,
   type ReadAsk,
@@ -550,7 +551,7 @@ export class Reader {
     try {
       const ask = this.ask(asked);
       const narrowed = narrow(ask, this.input.connections);
-      const r = await this.make(narrowed, asked, label);
+      const r = await this.make(narrowed, asked, label, fieldsAsked(ask));
       record = { collection: ask.collection, op: ask.op, rows: r.rows, bytes: r.bytes, ms: 0 };
       made = {
         value: r.value,
@@ -638,6 +639,7 @@ export class Reader {
     ask: NarrowedAsk,
     asked: CodeRead,
     label: Label,
+    fields: readonly string[] = [],
   ): Promise<{ value: Cell; label?: Label; each?: RowLabels[]; rows: number; bytes: number }> {
     const values: Labelled = {};
     const judged = (value: Cell) => ({ value, label, derived: true });
@@ -660,6 +662,7 @@ export class Reader {
           related: false,
         },
         values,
+        fields,
       );
       const rows = cutRead(found, ask);
       const value: Cell[] = [];
@@ -717,6 +720,7 @@ export class Reader {
         ...(ask.field === undefined ? {} : { field: ask.field }),
       },
       values,
+      fields,
     );
     const value = result?.value ?? (ask.op === "count" ? 0 : null);
     return {

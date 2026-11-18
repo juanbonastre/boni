@@ -570,23 +570,25 @@ export class AccountModels {
   }
 
   /**
-   * The planners a conversation may use (docs/conversacion.md 3.5): the role's own, and every other model evaluated
-   * for it lately whose key is there. The same gate as the role: a model plans only after its evaluation.
+   * The models a use may run on (AU-199): the role's own («El de la cuenta», `current`), and every other model
+   * evaluated for it lately whose key is there. The same gate as the role: a model takes a use only after its
+   * evaluation. A conversation's planners are the case `planner` (`plannerChoices`); an automation's «Agente» reads
+   * the same list, and its four readers the one of `reader`.
    */
-  plannerChoices(account: number): PlannerChoice[] {
+  modelChoices(account: number, role: "planner" | "reader"): PlannerChoice[] {
     const out: PlannerChoice[] = [];
-    const role = this.roles(account).find((r) => r.role === "planner");
-    if (role)
+    const own = this.roles(account).find((r) => r.role === role);
+    if (own)
       out.push({
-        id: choiceId(role),
-        connection: role.connection,
-        model: role.model,
-        zdr: role.zdr,
-        privacy: role.privacy,
+        id: choiceId(own),
+        connection: own.connection,
+        model: own.model,
+        zdr: own.zdr,
+        privacy: own.privacy,
         current: true,
       });
     for (const e of this.evaluations(account)) {
-      if (e.role !== "planner" || !this.evaluated(account, e)) continue;
+      if (e.role !== role || !this.evaluated(account, e)) continue;
       if (!this.keyFor(account, e.connection)) continue;
       const id = choiceId(e);
       if (out.some((x) => x.id === id)) continue;
@@ -600,6 +602,40 @@ export class AccountModels {
       });
     }
     return out;
+  }
+
+  /** The planners a conversation may use (docs/conversacion.md 3.5): `modelChoices` of the use «Agente». */
+  plannerChoices(account: number): PlannerChoice[] {
+    return this.modelChoices(account, "planner");
+  }
+
+  /**
+   * The provider an automation's AI step runs on (AU-199): `id` null is «El de la cuenta», the role's own as it runs
+   * now; an id is the choice the published version kept, which keeps its model while its key is there, even once
+   * its evaluation is old (publishing again asks for a current one). Why not, as a key the step fails with:
+   * `no-model` (the role has none, or the id names no model), `no-key` (its key is gone).
+   */
+  stepProvider(
+    account: number,
+    role: "planner" | "reader",
+    id: string | null,
+  ): { provider: ModelProvider; model: string } | { refused: "no-model" | "no-key" } {
+    const own = this.roles(account).find((r) => r.role === role);
+    const c = id === null ? own : parseChoice(id);
+    if (!c) return { refused: "no-model" };
+    const key = this.keyFor(account, c.connection);
+    if (!key) return { refused: "no-key" };
+    try {
+      return {
+        provider: (this.o.makeProvider ?? provider)(
+          { role, connection: c.connection, model: c.model, zdr: c.zdr },
+          key,
+        ),
+        model: c.model,
+      };
+    } catch {
+      return { refused: "no-model" };
+    }
   }
 
   /** A planner for a conversation, by its choice's id; null when it is not one of `plannerChoices`. */
@@ -654,6 +690,16 @@ export interface PlannerChoice {
 }
 const choiceId = (c: { connection: Connection; model: string; zdr: boolean }) =>
   `${c.connection}:${c.model}${c.zdr ? ":zdr" : ""}`;
+/** A choice's id read back (`choiceId`): its connection, model and route; null when it is not one. */
+function parseChoice(id: string): { connection: Connection; model: string; zdr: boolean } | null {
+  const at = id.indexOf(":");
+  if (at <= 0) return null;
+  const connection = id.slice(0, at) as Connection;
+  if (!CONNECTIONS.includes(connection)) return null;
+  const zdr = id.endsWith(":zdr");
+  const model = id.slice(at + 1, zdr ? -":zdr".length : undefined);
+  return model ? { connection, model, zdr } : null;
+}
 
 /** One role's provider from its choice and key. */
 function provider(
