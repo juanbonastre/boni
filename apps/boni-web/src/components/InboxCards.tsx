@@ -1,8 +1,8 @@
 import { markdownToBlocks } from "@boni/views";
 import {
+  BellRing,
   ChevronDown,
   ChevronRight,
-  BellRing,
   HelpCircle,
   Inbox,
   Mail,

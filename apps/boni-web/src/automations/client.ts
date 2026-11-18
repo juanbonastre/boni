@@ -812,11 +812,11 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
       return isRefused(r) ? r : { pins: pinsOf(isObj(r) ? r.pins : null) };
     },
     answerRun: async (id, run, at, answer) => {
-      const r = await api.automations(
-        "POST",
-        path(id, `/runs/${encodeURIComponent(run)}/answer`),
-        { step: at.step, i: at.i, ...(answer ? { answer } : {}) },
-      );
+      const r = await api.automations("POST", path(id, `/runs/${encodeURIComponent(run)}/answer`), {
+        step: at.step,
+        i: at.i,
+        ...(answer ? { answer } : {}),
+      });
       if (isRefused(r)) return r;
       return isObj(r) && r.gone === true
         ? { gone: true }

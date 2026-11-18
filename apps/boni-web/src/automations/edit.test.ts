@@ -527,6 +527,12 @@ describe("a step's parameters and its name", () => {
     // The same action again, or one that is not «Avisar» nor «Preguntar», is no change; a name Juan wrote stays.
     expect(changeAction(draft, "s_p", "ask", names)).toEqual({ draft, dropped: [] });
     expect(changeAction(draft, "s_p", "reply", names)).toEqual({ draft, dropped: [] });
+    // «Por dónde» never written is kept as he saw it: an «Avisar» born with the notification asks by it alone.
+    const bare = automation([step("s_a", "notify", "Avisar", { text: "Hecho" })]);
+    expect(changeAction(bare, "s_a", "ask", names).draft.steps[0]?.params).toEqual({
+      question: "Hecho",
+      via: ["notification"],
+    });
     const mine = rename(draft, "s_p", "Confirmar el gasto");
     expect(changeAction(mine, "s_p", "notify", names).draft.steps[0]?.name).toBe(
       "Confirmar el gasto",

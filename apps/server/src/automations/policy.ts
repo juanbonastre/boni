@@ -129,7 +129,10 @@ export const NOTICE: ToolDef = {
   args: {
     text: { role: "content", required: true, describe: "the text" },
     where: { role: "value", describe: "which of his own devices" },
-    via: { role: "value", describe: "by which of his own surfaces: the notification, the Bandeja or both" },
+    via: {
+      role: "value",
+      describe: "by which of his own surfaces: the notification, the Bandeja or both",
+    },
   },
 };
 

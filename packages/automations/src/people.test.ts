@@ -138,13 +138,7 @@ describe("the people steps (F15)", () => {
         .filter((p) => p.place === "shown")
         .map((p) => p.key);
     expect(shown({ answer: "yesNo" })).toEqual(["question", "via", "answer", "waitDays"]);
-    expect(shown({ answer: "one" })).toEqual([
-      "question",
-      "via",
-      "answer",
-      "options",
-      "waitDays",
-    ]);
+    expect(shown({ answer: "one" })).toEqual(["question", "via", "answer", "options", "waitDays"]);
     expect(paramsOf(step({})).find((p) => p.key === "mode")?.place).toBe("option");
     expect(paramsOf(step({})).find((p) => p.key === "waitDays")?.default).toBe(1);
     expect(outputsOf(step({}))).toEqual([MAIN, NO_ANSWER]);

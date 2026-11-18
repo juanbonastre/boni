@@ -1235,7 +1235,6 @@ async function serveConversations(
   }
 }
 
-
 /**
  * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from any device
  * signed in to the account unless its step asks for a personal one (`mayAnswer`, decision 26 of
@@ -1557,8 +1556,7 @@ async function answerAgent(
       if (r && noticePlace(r.view)) {
         if (!mayDismissNotice(who.trust)) return send(res, 403, { error: "personal-device-only" });
         const dismissed = r.status === "pending";
-        if (dismissed)
-          host.store(who.account).journal.setRequest(r.id, "dismissed", Date.now());
+        if (dismissed) host.store(who.account).journal.setRequest(r.id, "dismissed", Date.now());
         host.emit(who.account, "requests", {});
         return send(res, 200, { dismissed });
       }

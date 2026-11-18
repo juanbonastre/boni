@@ -12,9 +12,9 @@
  */
 import {
   ACTION,
+  type Arrow,
   ASK_PARAMS,
   ASK_TYPE,
-  type Arrow,
   type Automation,
   actionOf,
   allowing,
@@ -36,6 +36,7 @@ import {
   type Step,
   type StepSettings,
   specOf,
+  VIA_BORN,
   type WriteAction,
   type WriteMode,
   wouldCycle,
@@ -608,6 +609,9 @@ function changePeople(
     if (to) params[to] = value;
     else if (!isEmpty(value)) gone.add(key);
   }
+  // «Por dónde» as he saw it: one never written reads its type's born value, which the other type's differs from.
+  if (!(NOTIFY_PARAMS.via in params))
+    params[NOTIFY_PARAMS.via] = [...VIA_BORN[before.type === ASK_TYPE ? "ask" : "notify"]];
   const shown = rowsOf(before).map((r) => r.param.key);
   const dropped = [
     ...shown.filter((k) => gone.has(k)),

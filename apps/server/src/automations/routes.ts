@@ -126,7 +126,8 @@ export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   "automations.answer": {
     effect: "touch",
     undo: "nothing: an answer given goes on with its run, as its card's in the Bandeja (AU-203)",
-    control: "the question's controls in a waiting run of «Ejecuciones», where its notification opens (AU-247)",
+    control:
+      "the question's controls in a waiting run of «Ejecuciones», where its notification opens (AU-247)",
   },
   "automations.pin": {
     effect: "touch",

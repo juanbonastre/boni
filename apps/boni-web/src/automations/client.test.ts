@@ -178,7 +178,9 @@ describe("«Ejecuciones» asked of the server", () => {
     } as never);
     const id = "a_01jx8x0t2v4x6z8b0d2f4h6k9p";
     const run = "r_01jx8x0t2v4x6z8b0d2f4h6k9q";
-    expect(await client.answerRun(id, run, { step: "s_01jpreguntar", i: 2 }, true)).toEqual({
+    expect(
+      await client.answerRun(id, run, { step: "s_01jpreguntar", i: 2 }, { yes: true }),
+    ).toEqual({
       run,
     });
     expect(await client.answerRun(id, run, { step: "s_01jpreguntar", i: 0 }, null)).toEqual({
@@ -189,7 +191,7 @@ describe("«Ejecuciones» asked of the server", () => {
       `POST api/agent/automations/${id}/runs/${run}/answer`,
     ]);
     expect(asked.map((a) => a.body)).toEqual([
-      { step: "s_01jpreguntar", i: 2, answer: true },
+      { step: "s_01jpreguntar", i: 2, answer: { yes: true } },
       { step: "s_01jpreguntar", i: 0 },
     ]);
     for (const a of asked) expect(allowed(a.path.split(" ")[1] as string), a.path).toBe(true);

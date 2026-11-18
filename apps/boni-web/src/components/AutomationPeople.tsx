@@ -183,7 +183,9 @@ export function RunQuestions({
                       t={t}
                       ask={ask}
                       options={q.options}
-                      label={ask.questions.length > 1 ? t("auto.ask.questionN", { n: i + 1 }) : q.text}
+                      label={
+                        ask.questions.length > 1 ? t("auto.ask.questionN", { n: i + 1 }) : q.text
+                      }
                       given={given[at]}
                       set={(g) => setGiven((was) => ({ ...was, [at]: g }))}
                     />
