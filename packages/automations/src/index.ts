@@ -1,4 +1,5 @@
-export type { AgentCall, AgentReply } from "./agent.ts";
+export type { AgentCall, AgentLine, AgentRecord, AgentReply, AgentUnit } from "./agent.ts";
+export { AGENT_PARAMS } from "./agent.ts";
 export * from "./ai.ts";
 export * from "./box.ts";
 export * from "./catalogue.ts";

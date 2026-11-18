@@ -103,6 +103,10 @@ export interface StepTestView {
   console?: KeptRecord["console"];
   /** «Haría esto» of a «Código» (AU-181): what its requests would save, of which nothing was saved. */
   would?: CodeWould;
+  /** An «Agente»'s «Lo que hizo» (AU-54, F15 P1): its units, rounds and lines, written by code, never by the model. */
+  agent?: KeptRecord["agent"];
+  /** What its calls to a model cost (AU-54): how many, which models answered, how long, how many texts were cut. */
+  ai?: KeptRecord["ai"];
 }
 
 /**
@@ -334,6 +338,8 @@ function views(
       ...(k.error ? { error: k.error } : {}),
       ...(k.console ? { console: k.console } : {}),
       ...(k.would ? { would: k.would } : {}),
+      ...(k.agent ? { agent: k.agent } : {}),
+      ...(k.ai ? { ai: k.ai } : {}),
       stale: prints[step] !== undefined && prints[step] !== t.print,
     };
   }

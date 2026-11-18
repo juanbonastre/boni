@@ -1432,6 +1432,25 @@ contraseña ni un código aquí» under a question.
   Gastos»), «Al ejecutarse, preguntaría antes de guardar» when it would ask, then the first 100 rows as «Haría esto»
   shows them and «y 2900 filas más». On the phone the selects are disabled and there is no «Permitir» or
   «Desconectar» (AU-74).
+- **«Agente»** (F15 P1, `AutomationStepView.tsx`, `AutomationConnections.tsx`, `automations/connections.ts`; AU-41,
+  AU-48, AU-50, AU-52, AU-54, AU-166, AU-196, AU-199, AU-200): in «Añadir paso» under «Usar IA» with the `Bot` icon.
+  Its view shows six rows in this order: «Instrucciones», «Modelo», «Conexiones», «Lecturas», «Respuesta», «Se
+  ejecuta»; «Las hace este código» adds «Código» under «Lecturas», a plain monospace text box for now. Nothing about
+  a model's keys or settings. «Modelo» is a select: first «El de la cuenta · claude-…» (the account's model for the
+  use, by its name without the provider), then the models evaluated for it; a choice no longer offered reads «… · ya
+  no está en la lista». «Conexiones» is the «Código»'s table with «Leer» a select «No / Sí», each cell's limits under
+  its select in 12 px `--muted` («hasta 20», «1 campo · hasta 5»), and «Conectar» (ghost, small, a menu of the
+  collections a model may read and the step does not hold: never a private one) under the table. A write cell taken out
+  of «No» is born «hasta 20». Each `<details>` «Límites de «Tareas»» has one section per action that is not «No», its
+  name as a small heading: «Leer» with the three of reading, «Crear» with the fields, «Modificar» with «Solo estas
+  filas» and the fields, «Eliminar» with «Solo estas filas», and each write with a number «Como mucho». The fields are a
+  list, one per row: the field's name and a select «No lo escribe / Lo decide la IA / Fijo», a «Fijo» followed by its
+  value painted by the field's type. The chip on the canvas and the sentence say «decide la IA» on what it may write
+  («Lee y crea · pregunta antes · decide la IA»; «…(como mucho 20), lo que decida la IA.»). In SALIDA, «Lo que hizo»
+  above the answer: a small heading, its cost in `--muted` («2 rondas · 3 llamadas al modelo · claude-… · 3,6 s»),
+  then each unit (with «Una vez por fila», «Fila 3» as a 13 px heading) with its lines as a list; at most 20 units,
+  then «y 4980 filas más». Every line is plain text. In «Publicar», «Lo que podrá hacer» adds «· decide la IA · como
+  mucho 20» to the line. On the phone everything is disabled and there is no «Conectar» (AU-74).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

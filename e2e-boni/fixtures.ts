@@ -32,6 +32,10 @@ export interface AutoTestSpec {
   console?: { lines: Record<string, unknown>[]; dropped: number };
   /** «Haría esto» of a «Código» (AU-181): what its requests would save, as the server keeps it (`CodeWould`). */
   would?: Record<string, unknown>;
+  /** «Lo que hizo» of an «Agente» (AU-54), as the server keeps it with the step's test (`AgentRecord`). */
+  agent?: Record<string, unknown>;
+  /** What its calls to a model cost (AU-54, `AiRecord`). */
+  ai?: Record<string, unknown>;
 }
 
 /**
@@ -1090,6 +1094,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         ...(spec.error ? { error: spec.error } : {}),
         ...(spec.console ? { console: spec.console } : {}),
         ...(spec.would ? { would: spec.would } : {}),
+        ...(spec.agent ? { agent: spec.agent } : {}),
+        ...(spec.ai ? { ai: spec.ai } : {}),
         stale: false,
       });
       const stepsBefore = (a: AutoHere, step: string) => {

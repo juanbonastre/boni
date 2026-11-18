@@ -44,7 +44,7 @@ import {
   ZONE,
 } from "./run.test-util.ts";
 import { runView, undoAutomationRun } from "./runs.ts";
-import { testAutomation } from "./service.ts";
+import { automationView, testAutomation } from "./service.ts";
 
 const files = folder("ia");
 const closing: (() => void)[] = [];
@@ -558,6 +558,33 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     );
     // Whose step it is comes from the version that ran, not from the change: the same proposal read again says so.
     expect(ok(runView(t.s, a.id, r.id)).proposal).toEqual({ id: r.proposal, status: "pending" });
+  });
+
+  it("AU-54 · «Probar» of an «Agente» keeps «Lo que hizo» with the step's test, and the editor reads it again: its rounds, its lines as the engine wrote them (a write `tested`), and the calls with the model that answered", async () => {
+    const t = server();
+    orders(t.s, 3000);
+    t.answers.plan = (_, n) =>
+      n === 1
+        ? plan(FIND("s1", "pedido", {}), CREATE("s2", "pedido", "nota", "de la prueba"))
+        : plan(answer("s1"));
+    const a = made(t.s, [START, AGENT([conn("pedido", { create: { ...ASK, fields: ["nota"] } })])]);
+    const tested = ok(
+      await testAutomation(t.s, a.id, { trigger: a.step("Inicio"), fields: { nota: "x" } }, JUAN),
+    );
+    const view = tested.tests[a.step("Analista")];
+    expect(view?.agent?.units).toHaveLength(1);
+    const [unit] = view?.agent?.units ?? [];
+    expect(unit?.rounds).toBe(2);
+    expect(unit?.lines.map((l) => l.op)).toEqual(["find", "create"]);
+    expect(unit?.lines[1]).toEqual({ op: "create", collection: "pedido", state: "tested" });
+    expect(view?.ai).toMatchObject({ calls: 2, models: ["claude-opus-5-5"] });
+    // Nothing of a row and nothing the model wrote: only keys, counts and states.
+    expect(JSON.stringify(view?.agent)).not.toContain("de la prueba");
+    // Opened again, the editor reads the same.
+    const opened = automationView(t.s, a.id);
+    if ("error" in opened) throw new Error(opened.error);
+    expect(opened.tests[a.step("Analista")]?.agent).toEqual(view?.agent);
+    expect(opened.tests[a.step("Analista")]?.ai).toEqual(view?.ai);
   });
 });
 

@@ -516,6 +516,27 @@ describe("what JavaScript's problems and failures say", () => {
       ),
     ).toBe("Pidió crear filas en «Pedidos», y el código guardado no lo hace: no se guardó nada");
   });
+  it("AU-166 AU-196 · a private collection connected to an «Agente» says which and to take it out, and a request over «Como mucho» says both numbers, in both languages", () => {
+    const c = "c_01kx3m9q2a7v";
+    const privateOne = {
+      code: "connection.notAllowed",
+      detail: { collection: c, why: "private" },
+    };
+    expect(said(es, "problem", privateOne, "es-ES", names)).toBe(
+      "Pedidos es privada: quítala de este paso",
+    );
+    expect(said(en, "problem", privateOne, "en-GB", names)).not.toContain("auto.");
+    const many = {
+      code: "code.write.notAllowed",
+      detail: { why: "many", collection: c, action: "remove", max: 20, got: 240 },
+    };
+    expect(said(es, "failure", many, "es-ES", names)).toBe(
+      "Quiso eliminar 240 filas en Pedidos · como mucho 20",
+    );
+    expect(said(en, "failure", many, "en-GB", names)).toBe(
+      "It wanted to delete 240 rows in Pedidos · at most 20",
+    );
+  });
   it("AU-23 AU-33 · a value said in a sentence is said as it is: a `{row}` in a code's message or in a cell is never filled in", () => {
     const es = translator("es");
     expect(es("auto.preview", { value: "{row} y {of}", row: 2, of: 3 })).toBe(

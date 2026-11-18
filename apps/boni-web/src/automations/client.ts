@@ -13,6 +13,8 @@
  */
 import type {
   Ability,
+  AgentRecord,
+  AiRecord,
   Automation,
   AutomationDiff,
   Cell,
@@ -57,6 +59,13 @@ export interface StepTest {
   console?: { lines: ConsoleLine[]; dropped: number };
   /** «Haría esto» of a «Código» (AU-181): its values are the code's, painted as plain text (A-01). */
   would?: CodeWould;
+  /**
+   * «Lo que hizo» of an «Agente» (AU-54): its units, rounds and lines, written by the engine with what it ran, never
+   * by the model; painted as plain text.
+   */
+  agent?: AgentRecord;
+  /** What its calls to a model cost (AU-54): how many, the models that answered, how long. */
+  ai?: AiRecord;
 }
 
 /** What a «Código»'s requests would save in a test (AU-181), as the server keeps it: the counts and the first rows. */
