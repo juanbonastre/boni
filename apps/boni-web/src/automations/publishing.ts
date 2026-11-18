@@ -13,6 +13,7 @@ import {
   abilities,
   diffAutomations,
   isSame,
+  type KeptNames,
   type Look,
   limitsOf,
   RUN_LIMIT_KEYS,
@@ -30,6 +31,8 @@ export interface Published {
   enabled: boolean;
   /** The document of the version that runs; null while it is being read, or never published. */
   doc: Automation | null;
+  /** The names that version's code cites collections by, with their keys (AU-192): the draft is checked against them. */
+  names?: KeptNames;
 }
 
 /**

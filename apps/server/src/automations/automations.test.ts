@@ -44,6 +44,7 @@ import { Feeds } from "../feeds.ts";
 import { flowMap } from "../flowMap.ts";
 import {
   deleteAutomationRow,
+  deletedAutomationRows,
   flowsCollection,
   SYS_FLOWS,
   updateFlowRow,
@@ -829,6 +830,37 @@ describe("where an automation lives", () => {
     deleteAutomationRow(store, `${F.automation}${id}`, false);
     expect(store.journal.automation(id)?.deleted).toBe(false);
     expect(() => deleteAutomationRow(store, `${F.automation}a_nadie`, true)).toThrow(DataError);
+  });
+
+  it("AU-191 · «Eliminadas» are the deleted automations as rows of the same collection, each with its name and «Apagada» (or «Sin publicar»); restored, it leaves them for the list; 200 of them are read within their time, no draft parsed (A-15)", () => {
+    const { id } = made();
+    const other = made();
+    const name = ok(automationView(store, id)).automation.name;
+    setDeleted(store, id, true);
+    const rows = deletedAutomationRows(store);
+    expect(rows.map((r) => r.id)).toEqual([`${F.automation}${id}`]);
+    expect(rows[0]?.values[F.state]).toBe(F.unpublished);
+    expect(rows[0]?.values[F.title]).toBe(name);
+    expect(listed().rows.map((r) => r.id)).toEqual([`${F.automation}${other.id}`]);
+    setDeleted(store, id, false);
+    expect(deletedAutomationRows(store)).toEqual([]);
+    expect(listed().rows).toHaveLength(2);
+    // Volume: 200 deleted ones.
+    const one = reviewing().doc;
+    for (let i = 0; i < 200; i++) {
+      const a = ok(createAutomation(store, { ...one, name: `Eliminada ${i}` }, HAND));
+      setDeleted(store, a.id, true);
+    }
+    const read = vi.spyOn(store.journal, "automationDraft");
+    deletedAutomationRows(store);
+    const start = cpu();
+    const many = deletedAutomationRows(store);
+    const ms = cpu() - start;
+    timing("«Eliminadas» with 200 deleted automations (CPU)", ms);
+    expect(many).toHaveLength(200);
+    expect(read).not.toHaveBeenCalled();
+    under(ms, 100, "cpu", "«Eliminadas» with 200 deleted automations");
+    read.mockRestore();
   });
 });
 

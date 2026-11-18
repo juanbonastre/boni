@@ -231,6 +231,27 @@ export function deleteAutomationRow(store: UserStore, row: string, deleted: bool
   store.journal.setAutomationDeleted(id, deleted);
 }
 
+/**
+ * «Eliminadas» (AU-191): the deleted automations as rows of this same collection, the last saved first, each with its
+ * name and the «Estado» it comes back with (deleting turned it off: «Apagada», or «Sin publicar» if it never was).
+ * The collection's `GET …/rows?deleted=1` reads them; «Recuperar» is the automation's own `restore`. Made from the
+ * store's rows, never a draft parsed: 200 of them are one query (A-15).
+ */
+export function deletedAutomationRows(store: UserStore): Entity[] {
+  return store.journal.deletedAutomations().map((a, i) => ({
+    id: F.automation + a.id,
+    type: SYS_FLOWS,
+    values: {
+      [F.title]: a.name,
+      [F.state]: a.published === null ? F.unpublished : F.off,
+      [F.by]: F.user,
+    },
+    created: i,
+    updated: a.updated,
+    version: 0,
+  }));
+}
+
 /** The flow a row of «Flujos» is, or not-found. */
 function flowOf(store: UserStore, row: string): FlowRow {
   const id = flowRowTarget(row);

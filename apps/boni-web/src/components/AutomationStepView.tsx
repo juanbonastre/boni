@@ -64,6 +64,7 @@ import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
 import { ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
 import {
+  KeptContext,
   StepInput,
   StepOutput,
   setTrial,
@@ -777,6 +778,8 @@ export function AutomationStepView({
     },
     [],
   );
+  /** The names the version that runs kept (AU-192), for a «Código»'s context. */
+  const kept = useContext(KeptContext);
   if (!step) return null;
 
   const collections = types ?? [];
@@ -897,10 +900,15 @@ export function AutomationStepView({
         ?.focus();
     });
   };
-  // A «Código» reads its source with the server's own context (AU-36): what it marks is what validation says.
+  // A «Código» reads its source with the server's own context (AU-36): what it marks is what validation says, with
+  // the names the version that runs kept (AU-192).
   const codeContext = isCode(step)
-    ? codeContextOf(collections, state.draft, state.tests, (id) =>
-        fieldsOut(state.draft, id, fieldsOf),
+    ? codeContextOf(
+        collections,
+        state.draft,
+        state.tests,
+        (id) => fieldsOut(state.draft, id, fieldsOf),
+        kept,
       )
     : null;
   const blocked = codeContext ? codeBlocked(step, state.draft, codeContext) : null;

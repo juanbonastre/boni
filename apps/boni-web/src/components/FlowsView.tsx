@@ -22,6 +22,7 @@ import {
   useStore,
   useViews,
 } from "../store.ts";
+import { DeletedMenu } from "./AutomationDeleted.tsx";
 import { AutomationPage } from "./AutomationEditor.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { draftKept, FlowEditor } from "./FlowEditor.tsx";
@@ -53,7 +54,11 @@ function FlowsCollection() {
   return (
     <div className="content page-doc full is-collection flows-page">
       <div className="doc">
-        <h1 className="cols-title">{t("nav.flows")}</h1>
+        <div className="flows-head">
+          <h1 className="cols-title">{t("nav.flows")}</h1>
+          {/* «⋯ → Eliminadas» (AU-191): not on the phone, where the list is looked at. */}
+          {!phoneLayout() && <DeletedMenu />}
+        </div>
         <DatabaseBlock
           source={FLOWS}
           view={views.view}
