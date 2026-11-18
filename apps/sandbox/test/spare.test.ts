@@ -8,6 +8,7 @@ import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Worker } from "node:worker_threads";
+import { clock } from "@boni/pace";
 import type { EvalRequest, RunRequest, WireRead } from "@boni/sandbox";
 import { afterAll, describe, expect, it } from "vitest";
 import { readKey } from "../src/evaluate.ts";
@@ -278,24 +279,55 @@ describe("a spare worker (task 138, A-08)", () => {
   }, 60_000);
 
   it("A-08 · every limit counts from the call's start, never from when its spare started: after a spare waited longer than a call's time, a call within its time is answered, and one past it is the worker's own `timeout` at its time", async () => {
-    const b = await watched("desde-la-llamada", { grace: 100 });
+    // The box's own grace (3 s): the worker's answer, which only the worker can give (it has `steps`), wins over the
+    // door's by far however loaded the machine. With a grace of 100 ms the two raced: under two busy threads per core
+    // the worker's `timeout` came 343 to 412 ms after the call was sent, against the door's 400 (task 146). The
+    // door's own timer is the next test's.
+    const b = await watched("desde-la-llamada");
     try {
+      // A quick call (about 25 ms on a free machine, past 300 at times under load: task 146) given a call's default
+      // time, after its spare waited longer than that: a clock counted from the spare's start would cut it at once.
       await b.ready();
-      await sleep(800);
+      await sleep(1_500);
       const quick = await b.ask(
         evalRequest("code", ["let s = 0; for (let i = 0; i < 1e5; i++) s += i; return s"], [], {
-          limits: { ms: 300 },
+          limits: { ms: 1_000 },
         }),
       );
       expect(quick).toMatchObject({ ok: true, evaluations: [{ values: [4999950000] }] });
       await b.ready();
       await sleep(800);
       const late = await b.ask(KINDS[3]!.req);
-      // The worker's own answer (with its steps), at its own time: not the door's, counted from the spare's start.
+      // The worker's own answer (with its steps), at its own time: not counted from the spare's start, 800 ms before.
       expect(late).toMatchObject({ ok: false, error: "timeout" });
       expect(typeof late.steps).toBe("number");
       expect(late.ms).toBeGreaterThanOrEqual(300);
       expect(late.ms).toBeLessThan(800);
+      expect(b.of("own")).toEqual([]);
+    } finally {
+      await b.box.close();
+    }
+  }, 60_000);
+
+  it("A-08 · the door's own time counts from when it gives the call, never from when its spare started: a spare that took its call and never answers is ended by the door at the call's time and its grace, not before", async () => {
+    // A spare that waited 800 ms, more than the call's time and its grace (400): a timer counted from the spare's
+    // start would answer at once. Load only makes the door later, never earlier, so only a lower bound is checked.
+    const b = await watched("la-puerta-desde-la-llamada", {
+      grace: 100,
+      spareScript: new URL("./spares/hangs.ts", import.meta.url),
+    });
+    try {
+      await b.ready();
+      await sleep(800);
+      const sent = clock();
+      const ended = await b.ask(KINDS[3]!.req);
+      const after = clock() - sent;
+      // The door's answer: only the worker counts steps.
+      expect(ended).toMatchObject({ ok: false, error: "timeout" });
+      expect(ended.steps).toBeUndefined();
+      // 300 ms and 100 of grace, less 1: the event loop's clock counts whole milliseconds.
+      expect(after).toBeGreaterThanOrEqual(399);
+      expect(b.of("given")).toHaveLength(1);
       expect(b.of("own")).toEqual([]);
     } finally {
       await b.box.close();
