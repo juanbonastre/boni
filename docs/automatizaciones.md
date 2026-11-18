@@ -498,7 +498,7 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   ven en la tarjeta del paso en el lienzo, y los de la vista previa debajo de la expresión.
   Hecho en P2: en un «Código», cada problema con sitio se marca en él en su editor, y los demás se dicen debajo
   (AU-36; las pruebas de AU-36 en `code.test.ts` y en `e2e-boni/automations-code.spec.ts`).
-- **AU-25** (F14c, en parte) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
+- **AU-25** (F14c, hecho) · Los campos se citan por su clave (`$json.importe`); la entrada, el autocompletado y
   las fichas enseñan su nombre («Importe»). Una clave solo se ve donde se escribe código (excepción a I-08): en una
   expresión, en un «Código» y, en la vista de un paso «Código», al lado del nombre de cada campo de su entrada, que
   es donde hace falta para citarlo. Un campo que nace en un «Código» o en una expresión no tiene más nombre que el
@@ -515,8 +515,14 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en P2: en la vista de un «Código», cada campo de su ENTRADA lleva su clave al lado del nombre («Importe ·
   importe»); el autocompletado del editor es `completions` (tras `$json.`, `$input.first().` y
   `$('Paso').first().`, probado en E2) y escribe la clave enseñando el nombre; en la app lo prueba
-  `$input.first().` (`e2e-boni/automations-code.spec.ts`). Falta, en la tarea 139 de la cola: arrastrar un campo a
-  JavaScript escribe su clave, y ningún otro sitio enseña una.
+  `$input.first().` (`e2e-boni/automations-code.spec.ts`).
+  Hecho en la tarea 139: un campo de la ENTRADA arrastrado al editor de un «Código» se escribe por su clave donde se
+  suelta, con una marca que enseña dónde irá: `$json.importe` (o `$('Paso').item.importe` si es de un paso anterior)
+  en «Una vez por fila», `$input.first().importe` (o `$('Paso').first().importe`) en «Una vez para todas», y la
+  clave sola justo detrás de un punto (`codeCitation`, `cite.ts`). El arrastre lleva qué campo es, nunca un texto
+  que el editor pegaría tal cual; un editor de solo lectura no lo admite. En la app lo prueban
+  `automations-code.spec.ts` (arrastrar escribe la clave donde se suelta, en los dos modos y tras un punto) y
+  `cite.test.ts`. Ningún otro sitio enseña una clave.
 - **AU-26** (F14a, hecho) · Lo que da forma al paso no puede ser una expresión: la colección, la acción, el modo.
   Se lee en el lienzo y el mapa lo sabe antes de ejecutar (D-48).
 - **AU-27** (F14c, hecho) · La vista previa y la ejecución usan el mismo motor de JavaScript, la caja: lo que
@@ -1676,7 +1682,7 @@ que un paso espere a Juan.
   cuando es de uno, y la pantalla lo dice con `i18n.ts`; la frase en inglés del motor es para el registro y no se
   enseña. Los estados y lo que dice cada uno: la lista vacía, lo de cualquier colección, con «Nueva»; el lienzo
   vacío, «Disparador»; ENTRADA sin datos, «Sin datos de entrada» con su botón; SALIDA sin probar, «Sin
-  probar» con «Probar paso»; una salida vieja, «puede estar vieja» con «Probar paso»; un fallo, el motivo con «Ir al
+  probar» con «Probar paso»; una salida vieja, «desactualizada» con «Probar paso»; un fallo, el motivo con «Ir al
   parámetro»; un buscador sin resultados, «Nada con «…»»; un borrador que no se guardó, «Sin guardar · Reintentar».
   Hecho en E: todos.
 - **AU-85** (F14b, hecho) · Una palabra por acción: una prueba comprueba que cada acción («Probar paso», «Añadir
@@ -1717,7 +1723,7 @@ que un paso espere a Juan.
   colección sean otros tampoco: la salida dice cuándo se probó (AU-72). «Probar paso» siempre vuelve a ejecutar ese
   paso. De cada automatización se guarda la última prueba de cada paso; se guarda en el servidor, así que se ve igual
   en otro dispositivo.
-- **AU-92** (F14b, hecho) · La salida de un paso que cambió después de probar se marca «puede estar vieja».
+- **AU-92** (F14b, hecho) · La salida de un paso que cambió después de probar se marca «desactualizada».
   En la F14b se lee en la cabecera de SALIDA y, en el lienzo, la cuenta de sus flechas queda atenuada. Lo dice el
   servidor al guardar cada cambio del borrador.
   Hecho en E: la marca en SALIDA con «Probar paso», las cuentas atenuadas del paso y de lo que cuelga de él, y nada
@@ -1740,8 +1746,10 @@ que un paso espere a Juan.
   prueba lo dice en `pinned`; una ejecución de verdad lo corre. «Duplicar» no copia lo fijado. Falta: el botón, la
   tarjeta y el recuerdo en «Publicar» (pantalla, P1).
   Hecho en P2: «Fijar» en la cabecera de SALIDA (no en el teléfono), que fija y, pulsado, es «Soltar»; un paso que
-  falló o sin probar no lo tiene (no se puede pulsar porque no está). La tarjeta dice «Salida fijada» (y «puede estar vieja»), «Probar» la da sin
+  falló o sin probar no lo tiene (no se puede pulsar porque no está). La tarjeta dice «Salida fijada» (y «desactualizada»), «Probar» la da sin
   correrlo, y «Publicar» lo recuerda («salida fijada»: `publishView` lee los fijados, que S1 dejaba vacíos).
+  Hecho en la tarea 149: en el navegador, un paso fijado cuyo parámetro cambia dice «Salida fijada ·
+  desactualizada» y sigue fijado (`automations-publish.spec.ts`, «AU-93 · a pinned output whose step changed»).
 - **AU-94** (F14b, hecho) · Un disparador se prueba con datos: «Disparado por el usuario» pide sus campos; los de
   colección o de correo, cuando lleguen (F16, F18), dejan elegir una fila reciente («Probar con…», como hoy).
   En la F14b los campos se piden en el cuadro de «Probar» (AU-64) y en la columna ENTRADA del disparador (AU-70); un
@@ -1932,7 +1940,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   no guardó nada; si no, un cuadro dice la versión («Correrá la versión 2, no la 1.») y lo que guardó, con «Deshacer
   y reintentar» primero cuando se puede deshacer. «Abrir en el editor con estos datos» fija la salida del disparador
   y abre el editor en él. Una prueba solo tiene este último; en el teléfono no está (AU-74).
-- **AU-101** (F14d, en parte) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
+- **AU-101** (F14d, hecho) · El «Registro» del editor, desplegado, enseña la última prueba como un árbol: una
   línea por paso y, dentro de un paso de IA, sus lecturas y escrituras.
   En la F14d: es un solo componente para el «Registro» del editor y para una ejecución de «Ejecuciones», sobre el
   mismo registro: una línea por paso en el orden en que corrió, con su estado, las filas que entraron y salieron y
@@ -1942,8 +1950,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en P2: «Ver cada paso» (`LogTree` en `AutomationTest.tsx`) en el «Registro» y en la barra de una ejecución:
   una línea por paso en el orden en que corrió, con su estado, «128 → 3» y su tiempo, y debajo sus lecturas, su
   «Consola» y lo que guardó, propuso o guardaría, como texto; tocar una línea abre su paso. Dentro de un paso de IA
-  es de la F15. Falta: las lecturas en el árbol del «Registro» del editor, porque la prueba de un paso no las da
-  (`StepTestView` no tiene `reads`; es del servidor). En una ejecución sí están.
+  es de la F15.
+  Hecho en la tarea 150: la prueba de un paso da sus lecturas (`StepTestView.reads`: la colección y cuántas filas,
+  nunca las filas), así que el árbol del «Registro» del editor dice «Leyó 128 filas de Libros» como el de una
+  ejecución; y un «Código» que escribió en su «Consola» la enseña entera dentro de su línea (las mismas líneas que
+  la vista del paso, con «línea 3 · fila 2» y «y 340 líneas más»), como texto. Lo prueban `box.test.ts` (las
+  lecturas de la prueba son las que guardó la ejecución), `runs.test.ts` y `automations-code.spec.ts` (AU-101).
 - **AU-102** (F14d, en parte) · Una ejecución que falla en segundo plano avisa una vez, con el paso y el motivo en
   palabras, y el aviso lleva a ella.
   En la F14d: «en segundo plano» es la que empezó sola (AU-195); una que inició su mano falla en su pantalla, sin
@@ -2014,7 +2026,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   corre otra vez (`e2e-boni-desktop/automations-publish.spec.ts`, AU-190). La parada se deja en el almacén como la
   deja un servidor que se apaga, porque ningún paso dura lo bastante para pararlo a mano; `runs.test.ts` para la
   caja de verdad a medias.
-- **AU-191** (F14d, en parte) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
+- **AU-191** (F14d, hecho) · Una automatización eliminada se recupera. «Eliminar» (AU-62) la apaga y la quita
   de la lista, y guarda su borrador, sus versiones y sus ejecuciones. Además del «Deshacer» de su aviso, que se va,
   la lista tiene «Eliminadas» (en su «⋯»): cada una con «Recuperar», que la devuelve apagada, con todo lo suyo. Una
   eliminada no corre nunca, la inicie quien la inicie, ni entra en el mapa. Borrarla del todo no está en la F14d.
@@ -2026,8 +2038,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en P3b: «Eliminadas» en la app (`AutomationDeleted.tsx`): el «⋯» de la lista, junto a su título (no en el
   móvil), abre las eliminadas, leídas de la misma colección que la lista (`GET …/t_sys_flujos/rows?deleted=1`,
   `deletedAutomationRows`, sin leer ningún borrador), cada una con «Recuperar» (la ruta `restore`), que la devuelve a
-  la lista «Apagada»; desde un dispositivo compartido lo niega. Falta: una prueba de que el programador no la corre a
-  su hora y de que el mapa no la pinta (sus consultas ya piden `deleted = 0`).
+  la lista «Apagada»; desde un dispositivo compartido lo niega.
+  Hecho en la tarea 149: una eliminada no corre a su hora aunque su interruptor siga encendido, y recuperada vuelve
+  a correr solo cuando se enciende (`scheduler.test.ts`); el mapa no la pinta, ni su nodo ni sus flechas, y
+  recuperada vuelve a pintarla (`publish.test.ts`).
 - **AU-192** (F14d, hecho) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
   conexión guardan la clave de la colección; un «Código» la cita por su nombre (`$col('Gastos')`). Cada versión
   guarda, al publicarse, el nombre con que su código cita cada colección conectada y la clave que era. Al
@@ -3462,7 +3476,9 @@ explica nada dentro de la app: son nombres y valores.
   without a model says where it is used before it is done») y `apps/server/src/automations/ai.test.ts` («AU-241 ·
   a tag without a usable model is a problem of its step at publish and «no-model» in a published run»); en
   pantalla, la pregunta y el apagado en `e2e-boni/models.spec.ts` y `e2e-boni/automations-ai.spec.ts` (las de
-  AU-241).
+  AU-241). La pregunta dice una línea por etiqueta con cuántas automatizaciones la usan, de las cuentas de la lista
+  (`tags[].uses`): «Barato se queda sin modelo. La usan 2 automatizaciones.»; una que no usa ninguna dice solo que
+  se queda sin modelo.
 - **AU-242** (FM, hecho) · El chat elige un modelo cargado. El chip de la barra lista «El de la cuenta» y los
   modelos que valen para «Agente» (AU-235), y termina en «Añadir modelo», que abre Ajustes → Modelos (solo desde
   un dispositivo personal; en los demás no sale). Sin etiquetas: en el chat se elige un modelo. Una conversación
@@ -3473,7 +3489,11 @@ explica nada dentro de la app: son nombres y valores.
   that answer as an agent, and one whose model is gone answers with the account's») y `e2e-boni/models.spec.ts`
   («AU-242 AU-243 · the chat's chip ends in «Añadir modelo» only on a personal device» y la de un dispositivo
   compartido). El chip pide `GET /api/agent/models/choices?kind=agent`; `GET /api/agent/planners` se queda para la
-  versión de escritorio anterior.
+  versión de escritorio anterior. Lo que ofrecen el chip y el «Modelo» de un paso abierto se vuelve a pedir cuando
+  cambia lo que ofrecerían en Ajustes → Modelos (un modelo añadido, quitado, etiquetado o evaluado, una fila «De la
+  cuenta») y al cerrarla, sin desmontar el chat ni el paso, y nunca por la consulta de cada pocos segundos de una
+  evaluación (`reloadModelChoices`; lo prueba `models.spec.ts`, «AU-242 · what the chat's chip offers is read
+  again»).
 - **AU-243** (FM, en parte) · Un modelo no elige modelo. Qué modelo recibe un texto es decir adónde va ese texto y
   cuánto cuesta, así que lo pone la mano de Juan, como un «Sí» (AU-187). En un borrador que proponen el asistente,
   el MCP o «Pedir a Boni» (AU-140, AU-141, AU-144), un paso nuevo, o uno cuyo «Modelo» no es el que Juan le había
@@ -3568,7 +3588,7 @@ modelo no hay cifra, como hoy; después, lo que costó la última queda junto a 
 | PR | Qué | Antes de | Estado |
 |---|---|---|---|
 | **M1** Servidor y núcleo | La lista, las etiquetas, «De la cuenta», la evaluación del modelo (`evalModel` y la puerta de AU-235), `resolveModel`, la migración (AU-244), la ruta de opciones con `planners` como su caso, el valor `tag:` en el catálogo y en `aiProblems`, `modelRefOf` (AU-245), el mapa, y las rutas por uso de hoy contestando igual. Sin pantalla: en la app no cambia nada | La conversión de la F16 (su S1), que llama a `modelRefOf` y cuyo informe en seco compara modelos | en main (#521) |
-| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega | en curso: su PR, a falta de la revisión de conformidad; las rutas por uso y `planners` se quedan (la versión de escritorio anterior las pide) |
+| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega | en main (#530, con su revisión de conformidad; sus dos hallazgos medios, la cuenta de automatizaciones en la pregunta de AU-241 y las opciones que se quedaban viejas en el chip y en «Modelo», en el PR de las tareas 139, 149 y 150); las rutas por uso y `planners` se quedan (la versión de escritorio anterior las pide) |
 
 M1 no toca lo que construye ahora la F16 (su parte pura no escribe modelos) y puede ir en paralelo con ella. M2 toca
 el mismo panel del paso que las pantallas de la F15: va después de ellas, no a la vez. Si M1 se desplegara antes que
@@ -3931,7 +3951,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Hecho en E1: las dos, y ninguna más (`byAutomation` y `byReach` en `packages/agent/src/policy.ts`), con su tabla en
   `docs/nucleo.md` §7.5. Una llamada que cumple su conexión sale de `decide` igual que sin ella, en cada acto de una
   colección, cada etiqueta y cada celda: P29 solo niega. Enviar y lo de lo que Boni sabe de Juan no los toca.
-- **AU-186** (F14d, en parte) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
+- **AU-186** (F14d, hecho) · Lo que no pregunta. Una escritura (crear, modificar o eliminar) se guarda sin
   preguntar si cumple dos cosas. Viene de un paso «Código», «Colección» o «Agente» de una versión publicada
   (AU-95). Y lleva el «Sí» de la mano de Juan para esa colección y esa acción (AU-188). Vale también para lo que
   viene de fuera, en sus valores o en su camino (AU-164, AU-169), y la inicie su mano o empiece sola (decisión 11
@@ -3972,9 +3992,11 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Hecho en P3b: en la app de escritorio sobre el servidor real, un «Eliminar filas» publicado con «Sí» manda sus
   filas a la papelera a su hora sin propuesta, y deshacer la ejecución las devuelve; con «Preguntar», la misma
   ejecución deja una propuesta, y rechazada no se tira nada (`e2e-boni-desktop/automations-publish.spec.ts`, AU-186
-  AU-187). Las palabras «sin preguntar» llegaron en P1 (AU-189). Falta, de la revisión de la fase (P3b-2): que el acto
-  de tirar a la papelera deje de llevar `alwaysConfirm` fijo (`apps/server/src/automations/policy.ts`). Se porta
-  como dice la regla, porque `decide` solo lo levanta con el «Sí», pero su forma no es la del diseño.
+  AU-187). Las palabras «sin preguntar» llegaron en P1 (AU-189).
+  Hecho en la tarea 149: el acto de tirar a la papelera (`ACTS.trash`) ya no lleva `alwaysConfirm` fijo; `actTool`
+  le pone la confirmación de P5 solo cuando la llamada no trae el «Sí» que el servidor leyó, y P29 reconoce una
+  papelera por su deshacer (`undo: ["trash"]`), no por esa marca. Las decisiones no cambian: sin «Sí», P5 confirma;
+  con él, P28 guarda (`automations.test.ts`, AU-186 y AU-195).
   El coste de la decisión, como se le dijo a Juan, en dos casos. Los ve una vez, en «Publicar» (AU-182), y no en
   cada ejecución.
 
@@ -4522,7 +4544,7 @@ un punto «hecho» o «en parte» sin una prueba que corra con su número en el 
 | **F14a** El motor | El formato, la validación, el motor de filas, las citas sencillas, el disparador «Disparado por el usuario» y los pasos de Datos, Transformar y Lógica, con sus pruebas. Sin pantalla | Nada en la app. Una automatización con solo esos pasos («Disparado por el usuario» → «Buscar gastos» → «Agrupar» por categoría → «Si» → «Crear una fila») corre en una prueba con 3.000 filas, dos veces igual, con sus tiempos medidos | en main |
 | **F14b** El lienzo | La sección «Automatizaciones», el lienzo, añadir un paso, la vista del paso, citar un campo arrastrándolo, «Probar» y «Probar paso», el borrador que se guarda solo, el sitio de las cajas | Crea «Buscar gastos» → «Filtrar» → «Si» arrastrando, abre cada paso, ve lo que entra y sale, y ningún paso le enseña más de siete cosas. Aún no se publica nada: sus flujos de hoy siguen corriendo como están | en main |
 | **F14c** JavaScript | JavaScript en las expresiones, «Código», conexiones con sus límites, «Consola»; el código que guarda por su conexión, con su análisis (Juan, 2026-11-16) | Escribe el código del §5.4, lo prueba y ve su `console.log`; citar una colección sin conectar le dice cómo arreglarlo; un código que guarda lo dice en su tarjeta y en su conexión, «Probar» enseña lo que guardaría, y sin permiso le dice cómo arreglarlo | en main |
-| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189). Desde su diseño (tarea 128): quién inicia una ejecución y con qué origen (AU-195), la propuesta de una ejecución (AU-193), el interruptor (AU-194), una eliminada se recupera (AU-191), una interrumpida no se repite sola (AU-190) y cambiar el nombre de una colección no rompe lo publicado (AU-192). Desde la decisión 11 (2026-11-16): quién la inicia no cambia lo que guarda, y con «Sí» guarda también lo que viene de fuera, con su etiqueta (AU-186, AU-167, AU-195, AU-170) Salvo, en la cola (la revisión de la fase, P3b-2): con el límite subido, 3.000 filas en una transacción y su deshacer (AU-17, AU-18, tarea 137); las lecturas y la «Consola» de un «Código» en el árbol del «Registro» (AU-101); que el aviso del teléfono abra su ejecución (AU-102); la prueba de que una eliminada no corre a su hora ni entra en el mapa (AU-191); `alwaysConfirm` del acto de tirar (AU-186) | en main |
+| **F14d** Publicar | Publicar y versiones, encender y «Ejecutar», «Ejecuciones», «Fijar», «Programada», los ajustes y topes de la automatización, la regla de segundo plano para lo que no es de modelo | Publica una programada que crea una fila cada mañana, la ve en «Ejecuciones» y la deshace desde ahí. Desde la F14c: «Publicar» dice lo que cada «Código» puede cambiar antes de que corra solo, y lo que pide con «Preguntar» llega a la Bandeja como una propuesta (AU-174, AU-182). Desde el 2026-11-16: lo que no pregunta (AU-186, que cambia la fila P5 para una automatización), «Eliminar filas» con «Sí» (AU-187), un «Sí» solo de su mano (AU-188) y «sin preguntar» en «Lo que podrá hacer» (AU-189). Desde su diseño (tarea 128): quién inicia una ejecución y con qué origen (AU-195), la propuesta de una ejecución (AU-193), el interruptor (AU-194), una eliminada se recupera (AU-191), una interrumpida no se repite sola (AU-190) y cambiar el nombre de una colección no rompe lo publicado (AU-192). Desde la decisión 11 (2026-11-16): quién la inicia no cambia lo que guarda, y con «Sí» guarda también lo que viene de fuera, con su etiqueta (AU-186, AU-167, AU-195, AU-170) Salvo, en la cola (la revisión de la fase, P3b-2): con el límite subido, 3.000 filas en una transacción y su deshacer (AU-17, AU-18, tarea 137); que el aviso del teléfono abra su ejecución (AU-102) | en main |
 | **F15** La IA | «Agente» con conexiones y límites, los otros pasos de IA, «Preguntar», «Avisar», «Responder» | Monta el «Analista» del ejemplo: lee Gastos y Categorías, propone una nota; quitarle «Leer» de Gastos hace que diga que no puede; ve cada lectura en el registro. Desde la F14c: el código dentro de un paso de IA («Las hace este código», «Herramientas de código»: AU-51, AU-58) tiene los mismos permisos y el mismo análisis que un «Código» (AU-176, AU-183); los límites de cada acción (AU-48) valen para los dos. Desde el 2026-11-16: la tabla del «Agente» es la de «Código», y eliminar también puede ser «Sí» (AU-41, AU-186); Juan lo limita con las celdas, los límites de la conexión y los de cada acción. La F15 abre con el diseño de lo que Boni aprende de sus respuestas, fuera de las automatizaciones (decisión 10 del §10). Desde su diseño (tarea 129): lo que guarda un paso de IA es la tabla de AU-204, y un «Agente» con «Sí» guarda también lo que modifica o elimina con algo de fuera, dentro de su conexión y de «Como mucho» (decisión 16); la conexión de un paso de IA la comprueba también la política (AU-205), con la prueba de la tarea 144; las llamadas a modelos se cuentan (AU-206); un «Preguntar» espera en la Bandeja sin parar las ejecuciones siguientes (AU-203); y lo que Boni aprende es el §5.15: cuenta, sugiere y vuelve a preguntar, y nunca pone un «Sí» | en curso |
 | **F16** Lo de antes | Sus flujos y los de Boni convertidos; el chat de página como automatización; el editor y el motor viejos, fuera; el MCP | «Leer correo» abre en el lienzo nuevo con sus piezas y sigue leyendo el correo igual; no queda ningún «formato anterior». Desde su diseño (tarea 130): cada cosa del lenguaje de planes tiene su paso (AU-223) y convertida hace lo mismo (AU-224); la conversión pasa una vez, se ve en un aviso con «Lo que cambia» y se vuelve atrás por automatización mientras el motor de antes existe (AU-225); lo que escribía un flujo nace en «Preguntar» (AU-230, decisión 13); las cuatro de Boni son automatizaciones «De: Boni» con sus piezas como pasos (AU-127, AU-221); el correo se rehace como una automatización que se lee y se cambia paso a paso (§5.17, AU-249 a AU-255); el turno corre en el motor nuevo con las mismas decisiones (AU-143); el motor y el editor de antes se quitan los últimos (AU-228, AU-152); y el revisor que necesita un modelo entra aquí (AU-211) | en curso |
 | **F17** Páginas | Nombres de bloques, eventos, quién puede iniciarla («Páginas»), pasos de «Página», bloques con datos de una automatización, el menú de fila | En una página, un botón «Calcular» toma el mes y la categoría de dos controles y pinta una gráfica con lo que calcula una automatización; otro, «Explicar», se los pasa a un «Agente» y su respuesta sale en un texto de la página | pendiente |

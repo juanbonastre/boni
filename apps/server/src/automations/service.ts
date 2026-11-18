@@ -117,6 +117,11 @@ export interface StepTestView {
   stale: boolean;
   /** «Consola» (AU-33): what its JavaScript wrote, the code's own text, for the app to paint as plain text. */
   console?: KeptRecord["console"];
+  /**
+   * What its JavaScript read through its connections (AU-101, AU-161): which collection and how many rows, never the
+   * rows, as a run's record says it, so the «Registro» of the editor shows them as a run's does.
+   */
+  reads?: { collection: string; rows: number }[];
   /** «Haría esto» of a «Código» (AU-181): what its requests would save, of which nothing was saved. */
   would?: CodeWould;
   /** An «Agente»'s «Lo que hizo» (AU-54, F15 P1): its units, rounds and lines, written by code, never by the model. */
@@ -379,6 +384,9 @@ function views(
       wouldAsk: k.asked ?? 0,
       ...(k.error ? { error: k.error } : {}),
       ...(k.console ? { console: k.console } : {}),
+      ...(k.reads?.length
+        ? { reads: k.reads.map((r) => ({ collection: r.collection, rows: r.rows })) }
+        : {}),
       ...(k.would ? { would: k.would } : {}),
       ...(k.agent ? { agent: k.agent } : {}),
       ...(k.ai ? { ai: k.ai } : {}),

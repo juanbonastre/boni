@@ -2377,6 +2377,16 @@ export async function loadModelChoices(kind: ModelKind) {
     // An older server, or none: what was there stays; without any, «Modelo» offers «El de la cuenta» alone.
   }
 }
+/**
+ * Reads again the choices of every kind already read (the chat's chip, an open step's «Modelo», a row «De la
+ * cuenta»), so a model added, removed or tagged in «Modelos» is offered without remounting what shows them.
+ * «Modelos» calls it when its list changes and when it closes; a kind never read stays unread.
+ */
+export async function reloadModelChoices() {
+  await Promise.all(
+    (Object.keys(get().modelChoices) as ModelKind[]).map((kind) => loadModelChoices(kind)),
+  );
+}
 /** A conversation of the list, its turns as the server keeps them. */
 export async function openConversation(id: string) {
   if (get().chatBusy) return;

@@ -1,8 +1,8 @@
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModelsList, ModelsView as View } from "../core/agent.ts";
 import { phoneLayout } from "../host.ts";
-import { agentApi, errorText, useStore } from "../store.ts";
+import { agentApi, errorText, reloadModelChoices, useStore } from "../store.ts";
 import { Kpi } from "./Dash.tsx";
 import { AccountRows, AddPanel, Budget, Connections, ModelPanel, ModelRows } from "./Models.tsx";
 
@@ -43,6 +43,23 @@ export function ModelsSettings() {
   useEffect(() => {
     void load();
   }, []);
+  // What the chat's chip and a step's «Modelo» offer is read again when what they offer changes here (a model added,
+  // removed, tagged or evaluated, a row «De la cuenta») and when «Modelos» closes; never on the evaluation's polling
+  // alone, which gives the same list every few seconds.
+  const offered = list
+    ? JSON.stringify([
+        list.models.map((m) => [m.id, m.kinds, m.tags.map((g) => g.id), m.key, m.evaluation]),
+        list.tags.map((g) => [g.id, g.name]),
+        list.account.map((r) => [r.kind, r.value, r.answers]),
+      ])
+    : null;
+  const seen = useRef<string | null>(null);
+  useEffect(() => {
+    if (offered === null) return;
+    if (seen.current !== null && seen.current !== offered) void reloadModelChoices();
+    seen.current = offered;
+  }, [offered]);
+  useEffect(() => () => void reloadModelChoices(), []);
   // While an evaluation runs, look again every few seconds.
   useEffect(() => {
     if (!list?.evaluating) return;
@@ -144,6 +161,7 @@ export function ModelsSettings() {
         <Connections
           t={t}
           view={view}
+          tags={list.tags}
           open={keys}
           readOnly={readOnly}
           onToggle={() => setKeys(!keys)}

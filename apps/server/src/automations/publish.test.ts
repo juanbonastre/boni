@@ -862,6 +862,21 @@ describe("the map (F14d)", () => {
     expect(nodeOf(mapOf(), a.id)).toMatchObject({ on: false });
   });
 
+  it("AU-191 · a deleted automation is not drawn on the map, neither its node nor its arrows, even with its switch forced on; recovered, it is drawn again", async () => {
+    const a = made(writes("una"));
+    published(a.id);
+    expect(nodeOf(mapOf(), a.id)).toMatchObject({ kind: "automation", on: true });
+    expect(setDeleted(store, a.id, true)).toEqual({ ok: true });
+    // Its switch on again by hand in the store: only its being deleted keeps it out.
+    store.journal.setAutomationEnabled(a.id, true);
+    expect(store.journal.automation(a.id)).toMatchObject({ deleted: true, enabled: true });
+    expect(nodeOf(mapOf(), a.id)).toBeUndefined();
+    expect(edgesOf(mapOf(), a.id)).toEqual([]);
+    expect(setDeleted(store, a.id, false)).toEqual({ ok: true });
+    expect(nodeOf(mapOf(), a.id)).toMatchObject({ kind: "automation" });
+    expect(edgesOf(mapOf(), a.id)).toEqual([`auto:${a.id} writes col:${PEDIDO}`]);
+  });
+
   it("AU-47 · the map counts an automation's runs by the index, never reading them, and a test does not count", async () => {
     const a = made(writes("una"));
     published(a.id);

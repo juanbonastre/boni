@@ -311,7 +311,7 @@ test("AU-233 AU-241 · «Quitar» a model or a key in use asks first and says wh
   const ask = panel.locator(".models-ask");
   await expect(ask.locator(".models-line")).toHaveText([
     "Se usa en «De la cuenta · Lectura» y 3 automatizaciones.",
-    "Barato se queda sin modelo.",
+    "Barato se queda sin modelo. La usan 2 automatizaciones.",
   ]);
   await page.screenshot({ path: `${SHOTS}/models-remove.png` });
   await ask.getByRole("button", { name: "Quitar" }).click();
@@ -324,7 +324,7 @@ test("AU-233 AU-241 · «Quitar» a model or a key in use asks first and says wh
   await openrouter.getByRole("button", { name: "Quitar tu clave" }).click();
   await expect(openrouter.locator(".models-ask .models-line")).toHaveText([
     "deepseek-v4.1-flash: se usa en «De la cuenta · Lectura» y 3 automatizaciones.",
-    "Barato se queda sin modelo.",
+    "Barato se queda sin modelo. La usan 2 automatizaciones.",
   ]);
   await openrouter.locator(".models-ask").getByRole("button", { name: "Quitar tu clave" }).click();
   await expect(openrouter).toContainText("OpenRouter · Clave del servidor");
@@ -477,7 +477,7 @@ test("AU-237 AU-241 · a tag is put on a model by its name, new or one that exis
   await rows(page).first().locator(".models-item-main").click();
   await tags.getByRole("button", { name: "Quitar la etiqueta Barato" }).click();
   await expect(tags.locator(".models-ask .models-line")).toHaveText([
-    "Barato se queda sin modelo.",
+    "Barato se queda sin modelo. La usan 2 automatizaciones.",
   ]);
   await tags.locator(".models-ask").getByRole("button", { name: "Guardar" }).click();
   await expect(tags.locator(".models-tag")).toHaveCount(0);
@@ -549,6 +549,86 @@ test("AU-242 AU-243 · the chat's chip ends in «Añadir modelo» only on a pers
   expect(await requests(page, "GET api/agent/models/choices")).toEqual([
     "GET api/agent/models/choices?kind=agent",
   ]);
+});
+
+test("AU-242 · what the chat's chip offers is read again when «Modelos» changes and when it closes, never on its polling: a model added and one evaluated are offered with the chat left open", async ({
+  page,
+}) => {
+  const added = {
+    ...MODELS_LIST,
+    models: [
+      ...MODELS_LIST.models.slice(0, 2),
+      {
+        ...(MODELS_LIST.models[1] as object),
+        id: "openrouter:anthropic/claude-opus-5.5:zdr",
+        model: "anthropic/claude-opus-5.5",
+      },
+      ...MODELS_LIST.models.slice(2),
+    ],
+  };
+  const mark = {
+    right: 21,
+    total: 24,
+    at: Date.UTC(2026, 10, 18, 9),
+    partial: false,
+    expired: false,
+  };
+  const evaluated = {
+    ...added,
+    models: added.models.map((m) => (m.id === GLM_ID ? { ...m, evaluation: mark, cost: 0.02 } : m)),
+  };
+  // Added, a model is «Sin evaluar» and offered nowhere (AU-233); evaluated, the server offers it.
+  const glm = {
+    id: GLM_ID,
+    connection: "openrouter",
+    model: "z-ai/glm-5.2",
+    zdr: true,
+    privacy: "keeps-nothing",
+    server: false,
+  };
+  const offering = { ...CHOICES_AGENT, models: [...CHOICES_AGENT.models, glm] };
+  await openApp(page, "/?still", {
+    agent: {
+      ...LISTED(),
+      "GET api/agent/models/list": [MODELS_LIST, evaluated],
+      "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
+      "POST api/agent/models/list": [added],
+      "POST api/agent/models/list/evaluate": [{ ...added, evaluating: GLM_ID }],
+      "GET api/agent/models/choices": [CHOICES_AGENT, CHOICES_AGENT, offering],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const chip = page.locator(".chat-model-btn");
+  await chip.click();
+  const menu = page.locator(".chat-model-menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(3);
+  await menu.getByRole("button", { name: "Añadir modelo" }).click();
+  const panel = page.locator(".models-panel");
+  await page.getByRole("button", { name: "Añadir modelo" }).click();
+  await panel.getByRole("textbox", { name: "Buscar un modelo" }).pressSequentially("opus");
+  await panel.getByRole("button", { name: /^Anthropic: Claude Opus 5\.5/ }).click();
+  await panel.locator(".models-compare").getByRole("button", { name: "Añadir" }).click();
+  await expect(panel.locator("h2")).toHaveText("claude-opus-5.5");
+  const asked = () => requests(page, "GET api/agent/models/choices");
+  await expect.poll(asked).toHaveLength(2);
+  await page.keyboard.press("Escape");
+  await rows(page).nth(1).locator(".models-item-main").click();
+  const evaluation = panel.getByRole("region", { name: "Evaluación" });
+  await evaluation.getByRole("button", { name: "Evaluar" }).click();
+  await expect(evaluation.locator(".models-mark")).toHaveText("21 de 24", { timeout: 12_000 });
+  await expect.poll(asked).toHaveLength(3);
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".modal")).toHaveCount(0);
+  // The chat never closed: its chip offers the evaluated model, read once more as «Modelos» closed.
+  await chip.click();
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    /^claude-opus-5-5\s*el de tu cuenta/,
+    "deepseek-v4.1-flash",
+    "claude-opus-5-5",
+    "glm-5.2",
+  ]);
+  expect(await asked()).toEqual(Array(4).fill("GET api/agent/models/choices?kind=agent"));
 });
 
 test("AU-242 AU-243 · on a shared device the chip has no «Añadir modelo» and «Modelos» only reads", async ({

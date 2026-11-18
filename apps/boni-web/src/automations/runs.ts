@@ -4,8 +4,9 @@
  * the editor and for a run; and the list of runs kept as pages arrive and as the first page is asked again. Pure: it
  * knows neither React nor the server.
  */
-import { type Automation, executionOrder, isTrigger } from "@boni/automations";
+import { type Automation, type ConsoleLine, executionOrder, isTrigger } from "@boni/automations";
 import type { RunStep, RunSummary, RunView, StepTest } from "./client.ts";
+import { consoleOf } from "./code.ts";
 import { type EditorState, emptyEditor } from "./state.ts";
 
 /** A step's record in a run as the canvas and the step's view read a test's (AU-99). */
@@ -66,7 +67,8 @@ export interface TreeLine {
   saved: number;
   asked: number;
   would: number;
-  console: number;
+  /** Its «Consola» whole (AU-101), the code's own text for the tree to paint as plain text; `dropped` counts the rest. */
+  console: { lines: ConsoleLine[]; dropped: number };
   pinned: boolean;
 }
 
@@ -129,7 +131,7 @@ export function treeLines(
         saved: r.writes?.saved ?? 0,
         asked: r.writes?.asked ?? 0,
         would: r.writes?.would ?? r.wouldWrite ?? 0,
-        console: r.console ? r.console.lines.length + r.console.dropped : 0,
+        console: consoleOf(r),
         pinned: !!opts.pins && id in opts.pins,
       },
     ];

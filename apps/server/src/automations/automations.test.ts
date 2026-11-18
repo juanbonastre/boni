@@ -15,9 +15,11 @@ import {
   fakePlanner,
   leaf,
   type Origin,
+  type StepReach,
   ToolRegistry,
 } from "@boni/agent";
 import {
+  AGENT_TYPE,
   AUTOMATION_LIMITS,
   type Automation,
   bornParams,
@@ -60,7 +62,16 @@ import { systemCollections } from "../systemCollections.ts";
 import { storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import * as learning from "./learning.ts";
-import { ACTS, actOf, argsOf, automationPolicy, consentIn, runPolicy } from "./policy.ts";
+import {
+  ACTS,
+  AUTOMATION,
+  actOf,
+  actTool,
+  argsOf,
+  automationPolicy,
+  consentIn,
+  runPolicy,
+} from "./policy.ts";
 import * as publishing from "./publish.ts";
 import { AUTOMATION_ACTIONS, AUTOMATION_ROUTES, NO_MCP_YET } from "./routes.ts";
 import * as running from "./runs.ts";
@@ -1061,7 +1072,9 @@ describe("the real Collections and the real Policy", () => {
       if (!listed) throw new Error(`no action ${tool.name}`);
       expect(tool.effect, act).toBe(listed.effect);
       expect(tool.area, act).toBe(listed.area);
-      expect(tool.alwaysConfirm ?? false, act).toBe(listed.alwaysConfirm ?? false);
+      expect(actTool(act as keyof typeof ACTS, false).alwaysConfirm ?? false, act).toBe(
+        listed.alwaysConfirm ?? false,
+      );
       expect(tool.undo ?? [], act).toEqual(listed.undo ?? []);
       for (const [arg, spec] of Object.entries(tool.args))
         expect(listed.args[arg]?.role, `${act}.${arg}`).toBe(spec.role);
@@ -1343,6 +1356,55 @@ describe("the real Collections and the real Policy", () => {
         act,
       ).toBe(real);
       expect(say(runPolicy(accepted, own).decide({ ...calls[act], test: false })), act).toBe(acc);
+    }
+  });
+
+  it("AU-186 · the trash act carries no fixed confirmation: without the version's «Sí» it is asked about (P5), with it it goes (P28), and an «Agente»'s trash with the «Sí» is still a trash for P29", () => {
+    const own = automationLabel("a_ejemplo");
+    expect(ACTS.trash.alwaysConfirm).toBeUndefined();
+    expect(actTool("trash", true).alwaysConfirm).toBeUndefined();
+    expect(actTool("trash", false).alwaysConfirm).toBe(true);
+    for (const act of Object.keys(ACTS) as (keyof typeof ACTS)[])
+      if (act !== "trash") expect(actTool(act, false), act).toBe(ACTS[act]);
+    const trash: PolicyCall = {
+      automation: { id: "a_ejemplo", version: 0 },
+      step: "s_ejemplo",
+      type: "collection",
+      action: "trash",
+      effect: "write",
+      destroys: true,
+      collection: "gasto",
+      rows: 1,
+      values: {},
+      control: null,
+      test: false,
+    };
+    const say = (d: { kind: string; rule: string }) => `${d.kind} ${d.rule}`;
+    expect(say(runPolicy(AUTOMATION, own).decide(trash))).toBe("confirm P5");
+    expect(say(runPolicy(AUTOMATION, own, () => true).decide(trash))).toBe("allow P28");
+    // An «Agente»'s trash whose connection removes: with the «Sí» its tool has no P5 mark, and P29 still reads it as
+    // the trash the server put (its Undo is the trash), never «not-the-action».
+    const reach: StepReach = {
+      collection: "gasto",
+      action: "remove",
+      private: false,
+      cells: { read: {}, create: false, update: false, remove: {} },
+      row: { concepto: "café" },
+      types: { concepto: "text" },
+      today: "2026-11-18",
+      written: 0,
+    };
+    const agent = { ...trash, type: AGENT_TYPE };
+    for (const said of [true, false]) {
+      const d = runPolicy(
+        AUTOMATION,
+        own,
+        () => said,
+        () => ({ byAgent: true, reach }),
+      ).decide(agent);
+      expect(d.kind === "deny" && "reason" in d ? d.reason : d.kind, String(said)).not.toBe(
+        "not-the-action",
+      );
     }
   });
 

@@ -46,14 +46,18 @@ export function Modal({
   className?: string;
 }) {
   const t = useStore((s) => s.t);
+  // Esc closes it and nothing else: taken before the app's own Esc, which would leave the editor or go back a page
+  // (App.tsx `useShortcuts` listens on the window, before a listener of the window's in the bubble). A popover open
+  // inside it closes first, on its own.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
+      if ((e.target as Element | null)?.closest?.(".pop-box")) return;
       e.preventDefault();
       onClose();
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
   }, [onClose]);
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -347,7 +351,7 @@ export function RunScreen({
       <div className="modal-body auto-run">
         {changes && <p className="auto-run-version">{t("auto.run.version", { n: version })}</p>}
         {triggers.length > 1 && (
-          <div className="auto-run-from" role="radiogroup" aria-label={t("auto.test.from")}>
+          <div className="auto-run-from" role="radiogroup" aria-label={t("auto.run.from")}>
             {triggers.map((s) => (
               <label key={s.id} className="toggle-row">
                 <input

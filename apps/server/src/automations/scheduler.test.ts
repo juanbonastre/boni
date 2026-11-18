@@ -51,7 +51,7 @@ import {
   startScheduledRun,
   undoAutomationRun,
 } from "./runs.ts";
-import { testAutomation } from "./service.ts";
+import { setDeleted, testAutomation } from "./service.ts";
 
 const files = folder("programada");
 afterAll(files.done);
@@ -125,6 +125,27 @@ describe("«Programada» (F14d)", () => {
     expect(notes(s).filter((n) => n === "a su hora")).toHaveLength(1);
     await t.at(at(11, 1));
     expect(slots(s, a.id)).toEqual([at(10), at(11)]);
+  });
+
+  it("AU-191 · a deleted «Programada» does not run at its hour, even with its switch forced on, and recovered it runs again only once turned on", async () => {
+    const s = files.store();
+    const a = made(s, [SCHEDULE(), CREATE("eliminada")], { at: at(9, 20) });
+    ok(a.publish());
+    expect(setDeleted(s, a.id, true)).toEqual({ ok: true });
+    // Its switch on again by hand in the store: only its being deleted keeps it from its hour.
+    s.journal.setAutomationEnabled(a.id, true, at(9, 30));
+    const t = scheduler(s);
+    await t.at(at(10, 5));
+    await t.at(at(11, 5));
+    expect(notes(s)).not.toContain("eliminada");
+    // «Recuperar» gives it back off: still no hour runs until it is turned on.
+    expect(setDeleted(s, a.id, false)).toEqual({ ok: true });
+    ok(setEnabled(s, a.id, false, { ...JUAN, now: at(11, 10) }));
+    await t.at(at(12, 5));
+    expect(slots(s, a.id)).toEqual([]);
+    ok(setEnabled(s, a.id, true, { ...JUAN, now: at(12, 10) }));
+    await t.at(at(13, 5));
+    expect(slots(s, a.id)).toEqual([at(13)]);
   });
 
   it("AU-114 · the trigger gives one row with the hour that was due, not the hour it ran at", async () => {

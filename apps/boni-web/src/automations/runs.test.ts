@@ -123,6 +123,32 @@ describe("the «Registro» tree (AU-101)", () => {
     };
     expect(treeLines(doc, tested)[0]?.would).toBe(7);
   });
+  it("AU-101 · a «Código»'s line carries what it read and its «Consola» whole, from a test as from a run; a console line not of its shape is left out", () => {
+    const wrote = {
+      lines: [
+        { level: "log" as const, text: "fila <b>uno</b>", line: 3 },
+        { level: "warn" as const, text: "fila dos", line: 3, row: 1 },
+      ],
+      dropped: 40,
+    };
+    const tested = {
+      s_01jinicio: { state: "done" as const, in: {}, out: { main: 1 }, ms: 3 },
+      s_01jbuscar: {
+        state: "done" as const,
+        in: { main: 1 },
+        out: { main: 2 },
+        ms: 30,
+        reads: [{ collection: "c_facturas", rows: 12 }],
+        console: { lines: [...wrote.lines, { text: 7 }], dropped: 40 },
+      },
+    };
+    const [, code] = treeLines(doc, tested);
+    expect(code?.reads).toEqual([{ collection: "c_facturas", rows: 12 }]);
+    expect(code?.console).toEqual(wrote);
+    const ran = treeLines(doc, { ...view().steps, s_01jbuscar: step({ console: wrote }) });
+    expect(ran.find((l) => l.step === "s_01jbuscar")?.console).toEqual(wrote);
+    expect(ran[0]?.console).toEqual({ lines: [], dropped: 0 });
+  });
 });
 
 describe("the list as its first page is asked again", () => {

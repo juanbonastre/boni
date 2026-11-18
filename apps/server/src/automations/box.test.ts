@@ -821,6 +821,26 @@ describe("what «Código» did, kept with the test", () => {
     expect(said.join("\n")).not.toMatch(/contando filas de ejemplo|falla de ejemplo/);
   }, 30_000);
 
+  it("AU-101 · what a «Código» read through its connection is given with its step's test, which collection and how many rows and never the rows, as a run keeps it, so the editor's «Registro» shows it", async () => {
+    orders(10);
+    const a = chain([
+      START(),
+      code("return [{ n: $col('Pedido').find().length }]", "all", [reads("pedido")]),
+    ]);
+    const t = await tested(a.id, { trigger: a.step("Inicio"), fields: {} });
+    expect(t.state, JSON.stringify(keptOf(a.id, a.step("Código")).error)).toBe("done");
+    const k = keptOf(a.id, a.step("Código"));
+    expect(k.reads?.length).toBeGreaterThan(0);
+    const given = t.tests[a.step("Código")]?.reads;
+    expect(given).toEqual(
+      (k.reads as { collection: string; rows: number }[] | undefined)?.map((r) => ({
+        collection: r.collection,
+        rows: r.rows,
+      })),
+    );
+    expect(given?.reduce((n, r) => n + r.rows, 0)).toBe(10);
+  }, 30_000);
+
   it("AU-27 · the value under an expression and the value the test gave its row are the same over the real box, for a table of expressions with dates in the user's zone on the days it changes its hour", async () => {
     // The days Madrid changes its hour in 2026, and the ones around them, at the hours that move.
     const days = [
