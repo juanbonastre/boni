@@ -22,6 +22,7 @@ import {
 } from "@boni/identity";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
+import { conversionReport, wireDryConversion } from "./automations/convert.ts";
 import { diagnose } from "./diagnose.ts";
 import { embedCounts, embedDoubts } from "./embeds.ts";
 import { checkConciliacion } from "./money/check.ts";
@@ -72,6 +73,9 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts conciliacion-check <name> [--month YYYY-MM] [--detalle]
  *       on a copy of the account (never on it), the reconciliation's functions against `finanzas_import` and
  *       `finanzas_close` (src/money/check.ts): counts and field names only, the titles of what differs with --detalle
+ *   node src/cli.ts conversion-check <name>          on a copy of the account (never on it), what the conversion of
+ *       its flows to automations would do (src/automations/convert.ts, F16): counts, step types, «Lo que cambia» and
+ *       why a flow stays, each flow by its order; never a name, a text or a value of the account's
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -428,9 +432,34 @@ try {
       store.close();
       for (const f of [copy, `${copy}-wal`, `${copy}-shm`]) rmSync(f, { force: true });
     }
+  } else if (cmd === "conversion-check") {
+    const [name] = args;
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user) throw new Error("Usage: conversion-check <name>");
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    // On a copy: the conversion writes, and the apps go on writing to the account meanwhile.
+    const base = join(dirname(paths.system), "users", `${user.id}`);
+    const copy = `${base}.conversion.db`;
+    rmSync(copy, { force: true });
+    const live = openUserStore(`${base}.db`);
+    try {
+      live.copyTo(copy);
+    } finally {
+      live.close();
+    }
+    const store = openUserStore(copy);
+    // Boni's code and «Modelos» as the server wires them, with no agent and no key (convert.ts).
+    const unwire = wireDryConversion(user.id);
+    try {
+      console.log(JSON.stringify(conversionReport(store, Date.now()), null, 2));
+    } finally {
+      unwire();
+      store.close();
+      for (const f of [copy, `${copy}-wal`, `${copy}-shm`]) rmSync(f, { force: true });
+    }
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas] | sandbox-check | conciliacion-check <name> [--month YYYY-MM] [--detalle]",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas] | sandbox-check | conciliacion-check <name> [--month YYYY-MM] [--detalle] | conversion-check <name>",
     );
   }
 } catch (e) {

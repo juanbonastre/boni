@@ -2026,6 +2026,63 @@ describe("a flow run from a turn (flows.run, docs/flujos.md F4)", () => {
     expect(child?.id).not.toBe(res.run);
   });
 
+  it("AU-225 · a converted flow is started as its automation: the hook gets what was typed, the flow of before does not run, and a value of a model or from outside is not passed as typed", async () => {
+    env = makeEnv();
+    save({ id: "cuenta", trigger: { manual: true, inputs: [{ name: "titulo" }] } });
+    env.store.journal.adoptFlow({
+      id: "cuenta",
+      by: "user",
+      created: 0,
+      at: 1,
+      draft: { name: "Cuenta de tareas", trigger: "manual", doc: "{}", device: null, updated: 1 },
+      versions: [{ flow: 1, doc: "{}", hash: "h", at: 0, by: "user", names: "{}" }],
+      enabled: true,
+      schedule: null,
+      since: 0,
+      skipped: 0,
+      changes: [],
+    });
+    const started: { id: string; fields: unknown; trust: string }[] = [];
+    const runAutomation = async (id: string, fields: unknown, origin: { trust: string }) => {
+      started.push({ id, fields, trust: origin.trust });
+      return { run: "ar_ejemplo", status: "queued", error: null };
+    };
+    const runIt = (titulo: unknown) => ({
+      version: 1,
+      steps: [
+        {
+          id: "f",
+          op: "call",
+          tool: "flows.run",
+          args: { flow: lit("cuenta"), inputs: { fn: "obj", args: [lit("titulo"), titulo] } },
+        },
+      ],
+    });
+    // The planner still sees it among the flows it may run, though `flows()` no longer lists it.
+    const planner = fakePlanner([runIt(lit("hoy"))]);
+    const agent = env.agent(planner, undefined, { runAutomation });
+    const res = await agent.turn({ text: "ejecuta la cuenta de tareas", origin: PERSONAL });
+    expect(JSON.stringify(planner.requests[0])).toContain('"id":"cuenta"');
+    const pending = res.pending as { id: string };
+    // The planner's literal is a model's: never passed on as what he typed (the new trigger labels it as his).
+    const refused = await agent.confirm(res.run, pending.id, "personal");
+    expect(refused.error).toBe("tool-flow-input-outside");
+    expect(started).toEqual([]);
+    // A page's button is its writer's: its literals are his, and they are passed on as typed.
+    const own = env.agent(fakePlanner([]), undefined, { runAutomation });
+    const mine = label("user", "personal", [{ kind: "user-edit", id: "page:ejemplo" }]);
+    let r = await own.turn({
+      text: "«Cuenta de tareas»",
+      origin: PERSONAL,
+      button: { plan: runIt(lit("hoy")), bind: {}, lit: mine },
+    });
+    if (r.pending) r = await own.confirm(r.run, (r.pending as { id: string }).id, "personal");
+    expect(r.error).toBeNull();
+    expect(started).toEqual([{ id: "cuenta", fields: { titulo: "hoy" }, trust: "personal" }]);
+    // Only its automation ran: no run of the flow of before.
+    expect(env.store.journal.runs(20).filter((r) => r.flow === "cuenta")).toEqual([]);
+  });
+
   it("is refused for a flow a record starts, one that is off, and inside a flow; never from background work", async () => {
     env = makeEnv();
     save({ id: "correo", trigger: { created: "correo" } });

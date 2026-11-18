@@ -118,6 +118,8 @@ export interface AutomationRunRow {
   doc: string | null;
   /** When «Deshacer lo que hizo» undid it (AU-18). */
   undone: number | null;
+  /** «De antes» (AU-227): a run of the flow it was converted from, copied as a summary, with its id. */
+  before: boolean;
   /** JSON of what it told, once it ended (AU-102, AU-167): `{ kind, text }`; null when it told nothing. */
   notice: string | null;
   /** When its steps and rows were let go (AU-103); its row stays. Null while it is whole. */
@@ -183,6 +185,7 @@ export interface AutomationRunsJournal {
       | "error"
       | "line"
       | "undone"
+      | "before"
       | "slot"
       | "proposal"
       | "notice"
@@ -440,6 +443,7 @@ const runOf = (r: Record<string, unknown>): AutomationRunRow => ({
   undone: num(r.undone),
   notice: text(r.notice),
   pruned: num(r.pruned),
+  before: Number(r.before) === 1,
 });
 
 /** The journal's part for runs and pins, over the user's database. */

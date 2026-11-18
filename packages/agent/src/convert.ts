@@ -99,6 +99,11 @@ export const CHANGES = [
   "asksNow",
   /** «Los textos de más de 4.000 caracteres se recortan» (AU-57). */
   "textsCut",
+  /**
+   * «Antes elegía la Decisora; ahora clasifica el modelo lector» (AU-224, task 130 S1): a flow's `classify` was
+   * answered by the account's decider, asked twice with its options in both orders; «Clasificar» asks the reader once.
+   */
+  "readerClassifies",
   /** «Lo que escribe una ejecución se deshace entero» (AU-18). */
   "undoWhole",
   /** «Sus límites son los de una automatización» (AU-17). */
@@ -366,6 +371,8 @@ class Translator {
   private mailTrigger = false;
   private writes = false;
   private readers = false;
+  /** A `classify` became «Clasificar» (not the «Decisora» of «Leer correo»). */
+  private classifies = false;
   /** What the step being translated is inside: its plan step, and whether it walks a list (`$item`, `$zip`). */
   private current: { id: string; each: boolean; zip: Out | null } = {
     id: "",
@@ -391,7 +398,7 @@ class Translator {
         arrows: this.arrows.length,
         missed: this.untranslated.length,
       };
-      const flags = { writes: this.writes, readers: this.readers };
+      const flags = { writes: this.writes, readers: this.readers, classifies: this.classifies };
       try {
         const r = this.planStep(s as Step | AgentStep, tail, one);
         tail = r.tail;
@@ -402,6 +409,7 @@ class Translator {
         this.untranslated.length = at.missed;
         this.writes = flags.writes;
         this.readers = flags.readers;
+        this.classifies = flags.classifies;
         const o = s && typeof s === "object" ? (s as { id?: unknown; op?: unknown }) : {};
         this.miss(
           `op:${typeof o.op === "string" ? o.op : "?"}`,
@@ -423,6 +431,7 @@ class Translator {
     const manual = this.input.from === "flow" && isManual(this.input.trigger);
     if (manual && this.writes) changes.add("asksNow");
     if (this.readers) changes.add("textsCut");
+    if (this.classifies) changes.add("readerClassifies");
     if (this.writes) changes.add("undoWhole");
     if (this.input.from === "flow") changes.add("automationLimits");
     return {
@@ -980,6 +989,7 @@ class Translator {
       }
       case "classify": {
         lost(["question", "ask", "given"]);
+        this.classifies = true;
         const step = this.main(
           s,
           "classify",
