@@ -21,15 +21,19 @@
 import { codeLabel, type Trust } from "@boni/agent";
 import {
   type Ability,
+  AGENT_TYPE,
   type Automation,
   type AutomationDiff,
   abilities,
   type Box,
+  blocking,
   CannotRun,
   type Cell,
   type CodeContext,
+  type CodeProblem,
   diffAutomations,
   type Execution,
+  isReaderType,
   type KeptNames,
   keptNames,
   type Look,
@@ -43,8 +47,9 @@ import {
 } from "@boni/automations";
 import type { AutomationVersionInfo, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
+import { modelsOf } from "./ai.ts";
 import { sandboxBox } from "./box.ts";
-import { collectionNamed, storeCollections } from "./collections.ts";
+import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { scheduleColumn } from "./scheduler.ts";
 import {
   automationLabel,
@@ -106,7 +111,50 @@ function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
     collectionNamed: collectionNamed(store),
     collectionName: (key) => keys.nameOf(key),
     keptKey: (step, name) => kept[step]?.[name],
+    // The AI steps are step types where a model can be called (AU-57, AU-199): a server with «Modelos».
+    ...(modelsOf(store) ? { ai: true } : {}),
   };
+}
+
+/**
+ * What stops publishing an AI step that only the server can tell (AU-166, AU-199): a «Modelo» that is no longer one of
+ * the choices for the step's use (`param.value` on `model`; a version already published keeps its own while its key
+ * exists, PR 490 choice 6), and a collection no model may read connected to an «Agente» (`connection.notAllowed`
+ * with `why: "private"`, on `connections`). Both are errors of the step; `blocking` keeps those a trigger reaches.
+ */
+export function aiProblems(store: UserStore, a: Automation): Problem[] {
+  const m = modelsOf(store);
+  if (!m) return [];
+  const out: (Problem | CodeProblem)[] = [];
+  const reach = reachStore(store, "UTC");
+  const choices = { reader: new Set<string>(), planner: new Set<string>() };
+  let read = false;
+  for (const step of [...a.steps].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))) {
+    const agent = step.type === AGENT_TYPE;
+    if (!agent && !isReaderType(step.type)) continue;
+    const model = step.params.model;
+    if (typeof model === "string" && model !== "") {
+      if (!read) {
+        for (const c of m.models.modelChoices(m.account, "reader")) choices.reader.add(c.id);
+        for (const c of m.models.modelChoices(m.account, "planner")) choices.planner.add(c.id);
+        read = true;
+      }
+      if (!choices[agent ? "planner" : "reader"].has(model))
+        out.push({ code: "param.value", severity: "error", step: step.id, param: "model" });
+    }
+    if (agent)
+      for (const c of step.connections ?? [])
+        if (reach.privateTo(c.collection))
+          out.push({
+            code: "connection.notAllowed",
+            severity: "error",
+            step: step.id,
+            param: "connections",
+            detail: { collection: c.collection, why: "private" },
+          });
+  }
+  // A code problem goes in the same list as `publishChecks`'s own (it casts them the same way).
+  return out as Problem[];
 }
 
 /**
@@ -180,6 +228,7 @@ export function publishView(
     // A pinned output is worth a look (AU-93): a real run does not use it.
     pinned: store.journal.automationPins(id).map((p) => p.step),
   });
+  checks.blocks.push(...blocking(a, aiProblems(store, a)));
   const outside = outsideOf(store, a);
   return {
     rev: subject.rev,
@@ -219,7 +268,10 @@ export function publish(
   const a = subject.automation;
   const running = publishedOf(store, id);
   if (running && running.hash === docHash(a)) return { refused: "unchanged" };
-  const { blocks } = publishChecks(a, contextOf(store, id, running?.names ?? {}));
+  const blocks = [
+    ...publishChecks(a, contextOf(store, id, running?.names ?? {})).blocks,
+    ...blocking(a, aiProblems(store, a)),
+  ];
   if (blocks.length) return { refused: "blocked", problems: blocks };
   const n = (store.journal.automationVersions(id)[0]?.n ?? 0) + 1;
   const done = store.journal.publishAutomation(

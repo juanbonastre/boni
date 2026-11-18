@@ -251,6 +251,12 @@ export class AgentHost {
     return this.providersFor?.(account) ?? this.o.providers;
   }
 
+  /** The account an open store is of (the AI steps of automations spend its «Modelos»); null for any other. */
+  accountOf(store: UserStore): number | null {
+    for (const [account, s] of this.stores) if (s === store) return account;
+    return null;
+  }
+
   store(account: number): UserStore {
     let s = this.stores.get(account);
     if (!s) {

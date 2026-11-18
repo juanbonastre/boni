@@ -25,7 +25,14 @@ import {
   type ToolRegistry,
   type Val,
 } from "@boni/agent";
-import { type Asked, type Cell, type Labelled, StepFault } from "@boni/automations";
+import {
+  AGENT_TYPE,
+  type Asked,
+  type Cell,
+  type Labelled,
+  parseAutomation,
+  StepFault,
+} from "@boni/automations";
 import { StoreError, type UserStore } from "@boni/store";
 import { storeCollections } from "./collections.ts";
 import { ASKED_STEP } from "./record.ts";
@@ -39,6 +46,11 @@ export const PROPOSAL_FIRST = 20;
 /** One change a run asked, as the inbox shows it: never its labels' text, only where each value came from. */
 export interface AskedView {
   step: string;
+  /**
+   * The step that asks is an «Agente» in the version that ran: what it changes an AI chose («lo decidió la IA», AU-42,
+   * AU-200). Read from that version as kept, never from the change.
+   */
+  byAgent: boolean;
   /** `confirm`: a removal; `propose`: a create or a change. */
   kind: Asked["kind"];
   action: "create" | "update" | "trash";
@@ -92,12 +104,30 @@ function nowOf(store: UserStore, id: string, key: string): Cell | undefined {
   return f && e ? ((e.entity.values[f.id] ?? null) as Cell) : undefined;
 }
 
-function viewOf(store: UserStore, a: Asked): AskedView {
+/** The «Agente» steps of the version a run ran, as kept (a test's draft is kept in its run). */
+function agentStepsOf(store: UserStore, run: string): ReadonlySet<string> {
+  const r = store.journal.automationRun(run);
+  const kept = r?.version != null ? store.journal.automationVersion(r.automation, r.version) : null;
+  const doc = kept?.doc ?? r?.doc ?? null;
+  if (!doc) return new Set();
+  try {
+    return new Set(
+      parseAutomation(JSON.parse(doc))
+        .steps.filter((s) => s.type === AGENT_TYPE)
+        .map((s) => s.id),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function viewOf(store: UserStore, a: Asked, agents: ReadonlySet<string>): AskedView {
   const collection = collectionOf(store, a);
   const fields = a.change.kind === "trash" ? {} : a.change.fields;
   const row = a.change.kind === "update" ? a.change.row.id : null;
   return {
     step: a.step,
+    byAgent: agents.has(a.step),
     kind: a.kind,
     action: actionOf(a),
     collection,
@@ -144,7 +174,11 @@ export function askedOf(
   if (!r) return null;
   const step = store.journal.automationRunSteps(run).find((s) => s.step === ASKED_STEP);
   const total = step ? (JSON.parse(step.record) as { asked: number }).asked : 0;
-  return { asked: askedRows(store, run, offset, 50).map((a) => viewOf(store, a)), total };
+  const agents = agentStepsOf(store, run);
+  return {
+    asked: askedRows(store, run, offset, 50).map((a) => viewOf(store, a, agents)),
+    total,
+  };
 }
 
 /**
@@ -179,6 +213,7 @@ export function proposeRun(
     counts.set(k, c);
   }
   const code = codeLabel("automations");
+  const agents = agentStepsOf(store, run);
   const view: RunProposalView = {
     tool: ACCEPT_RUN,
     title: "Guardar lo que propuso una automatización",
@@ -191,7 +226,7 @@ export function proposeRun(
       startedBy: r?.startedBy ?? "user",
       count: asked.length,
       counts: [...counts.values()],
-      first: asked.slice(0, PROPOSAL_FIRST).map((a) => viewOf(store, a)),
+      first: asked.slice(0, PROPOSAL_FIRST).map((a) => viewOf(store, a, agents)),
     },
   };
   const sources = new Set<string>();
