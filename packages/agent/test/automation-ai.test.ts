@@ -644,3 +644,55 @@ describe("the policy for an automation's AI steps (F15)", () => {
     under(clock() - t, 250, "clock", "P29 over 3,000 rows");
   });
 });
+
+describe("«Reintentar si el modelo falla» in an «Agente»'s rounds (decision 28 of docs/automatizaciones.md §10)", () => {
+  const ANSWER = {
+    version: 1,
+    steps: [{ id: "s1", op: "call", tool: "answer", args: { texto: { lit: "Listo" } } }],
+  };
+  it("AU-206 · a round's call is asked again only after a `transient` refusal, at most `retries` times, each retry announced to the engine first; any other refusal ends the step", async () => {
+    const retried: number[] = [];
+    let calls = 0;
+    const replies: ({ plan: unknown; model: string } | { refused: string; transient?: true })[] = [
+      { refused: "timeout", transient: true },
+      { refused: "model-server-error", transient: true },
+      { plan: ANSWER, model: "ejemplo-modelo" },
+    ];
+    const asked: unknown[] = [];
+    const got = await runRounds(
+      agentCall({
+        modelCall: () => void calls++,
+        retries: 2,
+        retry: async (n) => void retried.push(n),
+      }),
+      async (r) => {
+        asked.push(r);
+        return replies.shift() ?? { refused: "nothing-left" };
+      },
+    );
+    expect(got).toMatchObject({ rounds: 1, answer: { texto: { json: "Listo" } } });
+    expect(retried).toEqual([1, 2]);
+    // The first call counted by `modelCall`, each retry by the engine's `retry`; the same request each time.
+    expect(calls).toBe(1);
+    expect(asked).toHaveLength(3);
+    expect(asked[2]).toEqual(asked[0]);
+    // Born at none (no `retries`), or a refusal that is not transient: one call, and the step ends with it.
+    for (const [more, reply] of [
+      [{}, { refused: "timeout", transient: true }],
+      [{ retries: 2 }, { refused: "budget" }],
+    ] as const) {
+      retried.length = 0;
+      let n = 0;
+      const once = await runRounds(
+        agentCall({ ...more, retry: async (i) => void retried.push(i) }),
+        async () => {
+          n++;
+          return reply;
+        },
+      );
+      expect(once).toMatchObject({ refused: reply.refused });
+      expect(n).toBe(1);
+      expect(retried).toEqual([]);
+    }
+  });
+});

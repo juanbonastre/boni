@@ -97,6 +97,13 @@ export interface AgentCall {
   written: Label;
   /** Before every call to the model, retries included (AU-206): throws to stop the run. */
   modelCall(): void;
+  /**
+   * «Reintentar si el modelo falla» (packages/automations `AI_RETRY`): how many times a call is asked again after the
+   * planner says it timed out or the provider failed on its side (`transient`); absent or 0, never.
+   */
+  retries?: number;
+  /** Before retry `n`: waits, then counts the call and checks the run's time; throws to stop the run. */
+  retry?(n: number): Promise<void>;
   /** After every answer of the model: which one answered and how long it took (AU-54). */
   called(model: string | undefined, ms: number): void;
   now(): number;
@@ -126,10 +133,15 @@ export interface AgentRequest {
   again?: { fault: "plan" | "reply"; errors: string[] };
 }
 
-/** How the server's port (S1) or a test's script answers: a plan, as the model wrote it, or why there is none. */
+/**
+ * How the server's port (S1) or a test's script answers: a plan, as the model wrote it, or why there is none.
+ * `transient`: the call timed out or the provider failed on its side (a 5xx), the only refusal a retry follows.
+ */
 export type Planner = (
   request: AgentRequest,
-) => Promise<{ plan: unknown; model: string } | { refused: string; model?: string }>;
+) => Promise<
+  { plan: unknown; model: string } | { refused: string; model?: string; transient?: true }
+>;
 
 /** What the view of a round left out: at a path, how many of how many. */
 export interface Seen {
@@ -340,12 +352,25 @@ class Rounds {
     };
   }
 
-  /** One call to the model, counted first (AU-206). */
+  /**
+   * One call to the model, counted first (AU-206), and asked again up to `retries` times after a `transient` refusal,
+   * each retry waited, counted and timed by the engine first (`retry`).
+   */
   async ask(again?: AgentRequest["again"]) {
     this.call.modelCall();
-    const start = this.call.now();
-    const got = await this.planner(this.request(again));
-    this.call.called(got.model, this.call.now() - start);
+    const request = this.request(again);
+    const once = async () => {
+      const start = this.call.now();
+      const got = await this.planner(request);
+      this.call.called(got.model, this.call.now() - start);
+      return got;
+    };
+    let got = await once();
+    const retries = this.call.retries ?? 0;
+    for (let n = 1; "refused" in got && got.transient && this.call.retry && n <= retries; n++) {
+      await this.call.retry(n);
+      got = await once();
+    }
     return got;
   }
 

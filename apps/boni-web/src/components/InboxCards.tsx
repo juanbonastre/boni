@@ -696,8 +696,9 @@ export function RequestCard({ r }: { r: InboxRequest }) {
   // Whole days left, rounded (a new question says 7; less than half a day, "hoy").
   const days = Math.round((r.expires - Date.now()) / DAY_MS);
   const about = r.about;
-  // What this device may do is the server's word, never a rule of this screen (task 153).
-  const answers = r.may?.answer !== false;
+  // What this device may do is the server's word, never a rule of this screen (decision 26): a card it may not
+  // answer is read-only, with the reason, since putting it away follows the same rule.
+  const answers = r.mayAnswer !== false;
   return (
     <section
       className="card inbox-card request-card"
@@ -735,7 +736,9 @@ export function RequestCard({ r }: { r: InboxRequest }) {
             : t("inbox.run.unnamed")}
         </p>
       )}
-      {!answers ? null : r.ask.control === "yesno" ? (
+      {!answers ? (
+        <p className="inbox-source muted">{t("inbox.ask.personalOnly")}</p>
+      ) : r.ask.control === "yesno" ? (
         // An automation's «Sí o no» (AU-125): the words are the app's, neither is the first.
         <div className="ask-options even">
           {([true, false] as const).map((yes) => (
@@ -818,26 +821,28 @@ export function RequestCard({ r }: { r: InboxRequest }) {
           </button>
         </form>
       )}
-      <div className="inbox-actions">
-        {busy === "accept" && r.ask.control === "choice" && (
-          <span className="muted small" role="status">
-            {t("inbox.answering")}
-          </span>
-        )}
-        <span className="spacer" />
-        <button
-          type="button"
-          className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
-          disabled={off}
-          title={t("inbox.putAwayHelp")}
-          aria-busy={busy === "reject"}
-          aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
-          onClick={() => void dismissRequest(r.id)}
-        >
-          <span className="decide-label">{t("inbox.putAway")}</span>
-          {busy === "reject" && <span className="spinner" aria-hidden="true" />}
-        </button>
-      </div>
+      {answers && (
+        <div className="inbox-actions">
+          {busy === "accept" && r.ask.control === "choice" && (
+            <span className="muted small" role="status">
+              {t("inbox.answering")}
+            </span>
+          )}
+          <span className="spacer" />
+          <button
+            type="button"
+            className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
+            disabled={off}
+            title={t("inbox.putAwayHelp")}
+            aria-busy={busy === "reject"}
+            aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
+            onClick={() => void dismissRequest(r.id)}
+          >
+            <span className="decide-label">{t("inbox.putAway")}</span>
+            {busy === "reject" && <span className="spinner" aria-hidden="true" />}
+          </button>
+        </div>
+      )}
       {failed && (
         <p className="decide-error" role="alert">
           <span>{failed.text}</span>

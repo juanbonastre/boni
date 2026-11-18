@@ -8,7 +8,7 @@
 // what is allowed (A-01): every read goes through the step's connection and the policy, and every write is checked
 // against the connection as saved now and decided again, with the rest of the step's, when the step ends.
 import { join, type Label, type Labeled, plannerMaySee } from "@boni/entities";
-import { AiFault, type ReaderField } from "./ai.ts";
+import { AiFault, RETRY_PARAM, type ReaderField } from "./ai.ts";
 import type { CodeRead, Reader } from "./box.ts";
 import { CodeFault } from "./code.ts";
 import type { Connection } from "./connections.ts";
@@ -32,6 +32,8 @@ export const AGENT_PARAMS = {
   code: "code",
   /** «Herramientas de código» (AU-58), behind «Añadir opción». */
   tools: "tools",
+  /** «Reintentar si el modelo falla» (`AI_RETRY`, decision 28 of §10), behind «Añadir opción», as in the readers. */
+  retries: RETRY_PARAM,
 } as const;
 /** «Lecturas» (AU-51): «Las decide la IA» or «Las hace este código». */
 export const AGENT_READS = ["ai", "code"] as const;
@@ -177,6 +179,13 @@ export interface AgentCall {
   written: Label;
   /** Before every call to the model, retries included (AU-206): throws to stop the run. */
   modelCall(): void;
+  /**
+   * «Reintentar si el modelo falla» (`AI_RETRY`): how many times a round's call is asked again after a `transient`
+   * refusal.
+   */
+  retries: number;
+  /** Before retry `n` of a round's call: waits, counts the call and checks the run's time; throws to stop the run. */
+  retry(n: number): Promise<void>;
   /** After every answer of the model: which one answered and how long it took (AU-54). */
   called(model: string | undefined, ms: number): void;
   now(): number;

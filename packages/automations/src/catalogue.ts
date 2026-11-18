@@ -18,10 +18,12 @@ import {
   AGENT_TOOLS,
 } from "./agent.ts";
 import {
+  AI_RETRY,
   EXTRACT_FIELDS_MAX,
   EXTRACT_TYPES,
   isReaderType,
   READER_PARAMS,
+  RETRY_PARAM,
   type ReaderType,
 } from "./ai.ts";
 import {
@@ -1007,6 +1009,18 @@ const MODEL: ParamSpec = {
   place: "shown",
   shape: true,
 };
+/**
+ * «Reintentar si el modelo falla» (`AI_RETRY`, decision 28 of §10), behind «Añadir opción» in the five AI steps: a
+ * whole number of retries from 0 (born: none) to `AI_RETRY.max`, after a timeout or a provider's 5xx only.
+ */
+const RETRIES: ParamSpec = {
+  key: RETRY_PARAM,
+  control: "value",
+  of: "number",
+  place: "option",
+  shape: true,
+  default: AI_RETRY.born,
+};
 const reader = (type: ReaderType, params: readonly ParamSpec[]): StepTypeSpec => ({
   type,
   category: AI_CATEGORY,
@@ -1043,12 +1057,14 @@ const READER_STEPS: Readonly<Record<ReaderType, StepTypeSpec>> = {
       ],
     },
     MODEL,
+    RETRIES,
   ]),
   classify: reader("classify", [
     TEXT,
     // Fixed, or an expression that gives the list: the reader answers one of them or nothing.
     { key: P.options, control: "value", of: "any", place: "shown", required: true },
     MODEL,
+    RETRIES,
   ]),
   summarize: reader("summarize", [
     TEXT,
@@ -1061,12 +1077,14 @@ const READER_STEPS: Readonly<Record<ReaderType, StepTypeSpec>> = {
       shape: true,
       default: "short",
     },
+    RETRIES,
   ]),
   write: reader("write", [
     { key: P.instructions, control: "value", of: "text", place: "shown", required: true },
     // «Texto (puede faltar)»: instructions alone write a text from nothing (AU-57).
     { key: P.text, control: "value", of: "text", place: "shown" },
     MODEL,
+    RETRIES,
   ]),
 };
 /**
@@ -1159,6 +1177,7 @@ const AGENT_STEP: StepTypeSpec = {
             { key: "code", control: "value", of: "text", place: "shown", required: true },
           ],
         },
+        RETRIES,
       ],
     },
   ],
@@ -1217,6 +1236,8 @@ const ASK_ACTION: ActionSpec = {
       default: ASK_LIMITS.waitDays.born,
     },
     PEOPLE_MODE,
+    // «Solo desde un dispositivo personal» (decision 26 of §10): off when born, any device of the account answers.
+    { key: ASK_PARAMS.personal, control: "toggle", place: "option", shape: true, default: false },
   ],
 };
 const ASK_STEP: StepTypeSpec = {

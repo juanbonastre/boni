@@ -16,7 +16,7 @@
  */
 
 import { EventEmitter } from "node:events";
-import type { Painted } from "@boni/agent";
+import type { Painted, Trust } from "@boni/agent";
 import {
   type AskAnswer,
   type AskRecord,
@@ -104,7 +104,17 @@ export interface AskPlace {
   /** The question's place among the step's (`AskRecord.questions`). */
   i: number;
   answer: AskAnswer;
+  /** «Solo desde un dispositivo personal» was on in its step (`AskRecord.personal`, decision 26 of §10). */
+  personal?: true;
 }
+
+/**
+ * Whether a device of this trust answers this card (decision 26 of docs/automatizaciones.md §10): any device signed in
+ * to the account, personal or shared, unless its step asks for a personal one. A speaker (`ambient`) never does: it
+ * speaks, never confirms. The list of cards says it per card (`mayAnswer`), so the screen keeps no rule of its own.
+ */
+export const mayAnswer = (place: AskPlace, trust: Trust): boolean =>
+  trust === "personal" || (trust === "shared" && !place.personal);
 
 /** The card's id: one per question of a run, the same however often the run waits again. */
 export const askCardId = (run: string, step: string, i: number): string => `${run}~${step}~${i}`;
@@ -168,7 +178,14 @@ export function addAskCards(
           control: CONTROLS[ask.answer],
           prompt: painted(q.text, q.label),
           options: (q.options ?? []).map((o) => painted(o.value, o.label)),
-          automation: { automation: id, run, step, i, answer: ask.answer } satisfies AskPlace,
+          automation: {
+            automation: id,
+            run,
+            step,
+            i,
+            answer: ask.answer,
+            ...(ask.personal ? { personal: true as const } : {}),
+          } satisfies AskPlace,
         },
         created: now,
         expires: ask.until,
@@ -179,11 +196,14 @@ export function addAskCards(
   return added;
 }
 
-/** A run's cards still in the Bandeja, ended as `status`: the run was cancelled, or a limit passed. */
+/**
+ * A run's cards still in the Bandeja, ended as `status`: `cancelled` when Juan cancelled the run (decision 27 of §10),
+ * `expired` when a limit passed or the run stopped waiting for them, `dismissed` when its step had its answers.
+ */
 export function endAskCards(
   store: UserStore,
   run: string,
-  status: "expired" | "dismissed",
+  status: "expired" | "dismissed" | "cancelled",
   now: number,
   only?: (place: AskPlace) => boolean,
 ): void {

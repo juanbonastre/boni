@@ -2562,7 +2562,8 @@ function decideFailed(id: string, code: string | { text: string }) {
     code === "stale" ||
     code === "no-such-proposal" ||
     code === "nothing-pending" ||
-    code === "run-expired";
+    code === "run-expired" ||
+    code === "run-cancelled";
   const text =
     typeof code !== "string"
       ? code.text
@@ -2572,11 +2573,13 @@ function decideFailed(id: string, code: string | { text: string }) {
           ? t("inbox.alreadyDecided")
           : code === "run-expired"
             ? t("inbox.requestExpired")
-            : code === "nothing-pending"
-              ? t("inbox.requestGone")
-              : SHARED_REFUSALS.has(code)
-                ? t("mail.error.personal-device-only")
-                : agentErrorText(t, code);
+            : code === "run-cancelled"
+              ? t("inbox.requestCancelled")
+              : code === "nothing-pending"
+                ? t("inbox.requestGone")
+                : SHARED_REFUSALS.has(code)
+                  ? t("mail.error.personal-device-only")
+                  : agentErrorText(t, code);
   set((s) => ({
     decideErrors: {
       ...s.decideErrors,

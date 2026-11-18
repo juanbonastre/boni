@@ -986,11 +986,11 @@ export interface InboxRequest {
   /** An automation's «Preguntar» (AU-125): the automation that asks, as the version that ran names it. */
   automation?: { id: string; name: string };
   /**
-   * What this device may do with the card, as the server says it (task 153: any signed-in device answers unless
-   * the step asks for a personal one). Absent from a server that does not say: the card answers, and the server
-   * decides when it is sent.
+   * Whether this device answers or puts away the card, as the server says it (`mayAnswer`, decision 26 of
+   * docs/automatizaciones.md §10: any device of the account, unless the step asks for a personal one). Absent from a
+   * server that does not say: the card answers, and the server decides when it is sent.
    */
-  may?: { answer: boolean };
+  mayAnswer?: boolean;
 }
 
 /** «Modelos» (Juan, 2026-10-24): which model does each role, what it spends, how it treats the data. */
@@ -3202,9 +3202,7 @@ export class AgentApi {
                   },
                 }
               : {}),
-            ...(isObj(r.may) && typeof r.may.answer === "boolean"
-              ? { may: { answer: r.may.answer } }
-              : {}),
+            ...(typeof r.mayAnswer === "boolean" ? { mayAnswer: r.mayAnswer } : {}),
           },
         ];
       });

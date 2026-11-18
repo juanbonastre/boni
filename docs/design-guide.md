@@ -1395,7 +1395,10 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   notice, «Archivados 3 · ordenador», the one that groups the rest «y 12 más · ordenador»; «Respuesta» with the
   test's answer whole, wrapped. In «Ejecuciones» a run that waits says «Esperando respuesta · hasta …», not in
   `--bad`. In the Bandeja an automation's question says under its prompt «De «Archivar leídos»» in `--muted`; its
-  buttons are what the server says this device may do (`may.answer`): without the right, only «Descartar». Every
+  buttons are what the server says this device may do (`mayAnswer`): without the right, neither its controls nor
+  «Descartar», and «Solo desde un dispositivo personal» in `--muted` in their place; a card of a cancelled run says
+  «Pregunta cancelada» when answered, an expired one «Pregunta caducada». «Solo desde un dispositivo personal» of
+  «Preguntar» and «Reintentar si el modelo falla» of «Agente» (0 when born, 1 or 2) are behind «Añadir opción». Every
   text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in

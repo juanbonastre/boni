@@ -20,13 +20,18 @@ export const PEOPLE_TYPES = [ASK_TYPE, NOTIFY_TYPE, REPLY_TYPE] as const;
 export const isPeopleType = (type: string): boolean =>
   (PEOPLE_TYPES as readonly string[]).includes(type);
 
-/** «Preguntar»'s parameters by key (catalogue.ts paints them): the three of AU-125, «Una vez por fila» behind an option. */
+/**
+ * «Preguntar»'s parameters by key (catalogue.ts paints them): the three of AU-125; behind «Añadir opción» «Una vez por
+ * fila» and «Solo desde un dispositivo personal» (`personal`, decision 26 of §10: off when born, any device signed in
+ * to the account answers).
+ */
 export const ASK_PARAMS = {
   question: "question",
   answer: "answer",
   options: "options",
   waitDays: "waitDays",
   mode: "mode",
+  personal: "personal",
 } as const;
 /** «Respuesta» (AU-125): the controls the Bandeja already has (`FLOW_ASKS`: a choice or a text). */
 export const ASK_ANSWERS = ["yesNo", "one", "several", "text"] as const;
@@ -97,14 +102,20 @@ export interface AskRecord {
   questions: AskQuestion[];
   /** Epoch ms: past it, the question has no answer (AU-203). */
   until: number;
+  /**
+   * «Solo desde un dispositivo personal» was on in the step as it ran (decision 26 of §10): only a personal device
+   * answers its cards. Absent, any device signed in to the account does.
+   */
+  personal?: true;
   /** How it ended, once it did: answered, or left by «sin respuesta». Absent while it waits. */
   ended?: "answered" | "noAnswer";
 }
 
 /**
- * An answer as the one who answers gives it (AU-203): a tap on a personal device, as accepting a proposal is. `by`
- * is the label of that hand; an answer he writes carries it, and one he chooses carries the option's (AU-125).
- * Null: that question had no answer, and its row leaves by «sin respuesta».
+ * An answer as the one who answers gives it (AU-203): a tap on a device signed in to the account (decision 26 of §10).
+ * `by` is the label of that hand, which the server gives by the device's trust; an answer he writes carries it, and
+ * one he chooses carries the option's (AU-125). Null: that question had no answer, and its row leaves by «sin
+ * respuesta».
  */
 export interface GivenAnswer {
   value: Cell;

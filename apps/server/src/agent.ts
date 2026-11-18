@@ -39,7 +39,7 @@ import {
   onRunEvent,
   tellLearned,
 } from "./automations/runs.ts";
-import { askPlace, noticeText, onPeople } from "./automations/waits.ts";
+import { askPlace, mayAnswer, noticeText, onPeople } from "./automations/waits.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
@@ -1156,9 +1156,11 @@ function askGiven(b: Record<string, unknown> | null): AskGiven | null {
 }
 
 /**
- * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from a personal
- * device only, as accepting a proposal (decision 13). A card that no longer counts answers as the agent's would, so
- * the card says «Pregunta caducada» (`run-expired`); one answered goes on in its run's turn, in the background.
+ * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from any device
+ * signed in to the account unless its step asks for a personal one (`mayAnswer`, decision 26 of
+ * docs/automatizaciones.md §10); refused, `personal-device-only`. A card that no longer counts answers as the agent's
+ * would (`run-expired`), or `run-cancelled` when Juan cancelled its run (decision 27); one answered goes on in its
+ * run's turn, in the background.
  */
 function askAnswered(
   host: AgentHost,
@@ -1167,7 +1169,6 @@ function askAnswered(
   given: AskGiven | null,
   res: ServerResponse,
 ) {
-  if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
   const store = host.store(who.account);
   const r = answerAsk(store, id, given, {
     device: who.device,
@@ -1180,7 +1181,7 @@ function askAnswered(
   host.emit(who.account, "requests", {});
   const turn = { status: "done", replies: [], proposals: [], notices: [] };
   return "gone" in r
-    ? send(res, 200, { run: null, ...turn, error: "run-expired" })
+    ? send(res, 200, { run: null, ...turn, error: r.cancelled ? "run-cancelled" : "run-expired" })
     : send(res, 200, { run: r.run, ...turn, ...(given === null ? { dismissed: true } : {}) });
 }
 
@@ -1406,7 +1407,6 @@ async function answerAgent(
           .requests()
           .filter((r) => !off || askPlace(r.view))
           .map((r) => {
-            const place = askPlace(r.view);
             // Where it comes from (the mail that was being read), as the Registro says it.
             let about: RunInfo["what"] | null = null;
             let open: { type: string; id: string } | null = null;
@@ -1419,6 +1419,9 @@ async function answerAgent(
             } catch {
               // the question shows without where it came from
             }
+            // Whether this device answers it (decision 26 of §10): the screen reads it, it keeps no rule of its own.
+            // The agent's own questions take any device's answer, as they did.
+            const place = askPlace(r.view);
             return {
               id: r.id,
               run: r.run,
@@ -1430,6 +1433,7 @@ async function answerAgent(
               ...(place
                 ? { automation: { id: place.automation, name: askerOf(r.run, place.automation) } }
                 : {}),
+              mayAnswer: place ? mayAnswer(place, who.trust) : true,
             };
           }),
       });

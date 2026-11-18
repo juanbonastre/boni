@@ -197,6 +197,23 @@ test.describe("the «Agente» step (F15)", () => {
       .poll(async () => (await lastAgent(page, a.id))?.params)
       .toMatchObject({ reads: "ai", code: "return $col('Tareas').find({ hecha: false });" });
   });
+  test("AU-50 · «Reintentar si el modelo falla» of an «Agente» is behind «Añadir opción», 0 when born, and keeps the number typed", async ({
+    page,
+  }) => {
+    const a = ordering("a_01jx8x0t2v4x6z8b0d2f4h6a07");
+    await openAgent(page, a);
+    await expect(param(page, "retries")).toHaveCount(0);
+    expect((await lastAgent(page, a.id))?.params.retries).toBeUndefined();
+    await view(page).getByRole("button", { name: "Añadir opción" }).click();
+    await page.getByRole("menuitemradio", { name: "Reintentar si el modelo falla" }).click();
+    const retries = param(page, "retries").getByRole("spinbutton");
+    await expect(retries).toBeVisible();
+    await retries.click();
+    await page.keyboard.press("Control+a");
+    await retries.pressSequentially("2", { delay: 120 });
+    await expect.poll(async () => (await lastAgent(page, a.id))?.params.retries).toBe(2);
+  });
+
   test("AU-199 · a «Modelo» no longer offered says so in its own list, and the account's own is named again when it is chosen by its id", async ({
     page,
   }) => {
@@ -615,7 +632,7 @@ const automationAsk = (
 const ANSWER_DONE = { run: "r_x", status: "done", replies: [], proposals: [], notices: [] };
 
 test.describe("the steps that talk to him (F15, P2)", () => {
-  test("AU-125 · a «Preguntar» of a run waits as a card in the Bandeja that names its automation, painted as plain text; «Sí o no» and «Varias opciones» send their answer; a device the server says may not answer gets no buttons", async ({
+  test("AU-125 · a «Preguntar» of a run waits as a card in the Bandeja that names its automation, painted as plain text; «Sí o no» and «Varias opciones» send their answer; a device the server says may not answer (`mayAnswer`) gets neither its controls nor «Descartar», and the reason", async ({
     page,
   }) => {
     await openApp(page, "/?still", {
@@ -631,7 +648,7 @@ test.describe("the steps that talk to him (F15, P2)", () => {
                 "Ficciones",
                 "Pedro Páramo",
               ]),
-              automationAsk("q_01jcompartido", "yesno", "¿Sigo?", { may: { answer: false } }),
+              automationAsk("q_01jcompartido", "yesno", "¿Sigo?", { mayAnswer: false }),
             ],
           },
         ],
@@ -660,12 +677,12 @@ test.describe("the steps that talk to him (F15, P2)", () => {
     await several.getByRole("button", { name: "Pedro Páramo" }).click();
     await several.getByRole("button", { name: "Enviar" }).click();
     await expect(cards).toHaveCount(1);
-    // The server says this device may not answer: no «Sí» or «No» here, only «Descartar».
+    // The server says this device may not answer (decision 26: its step asks for a personal one): read-only, with the
+    // reason, since putting it away follows the same rule.
     const shared = cards.first();
     await expect(shared.locator(".request-prompt")).toHaveText("¿Sigo?");
-    await expect(shared.getByRole("button", { name: "Sí", exact: true })).toHaveCount(0);
-    await expect(shared.getByRole("button", { name: "No", exact: true })).toHaveCount(0);
-    await expect(shared.getByRole("button", { name: "Descartar" })).toBeVisible();
+    await expect(shared).toContainText("Solo desde un dispositivo personal");
+    await expect(shared.getByRole("button")).toHaveCount(0);
     const sent = await page.evaluate(() =>
       ((window as unknown as { __requests?: string[] }).__requests ?? []).filter((r) =>
         r.startsWith("POST api/agent/requests/"),
@@ -827,6 +844,60 @@ test.describe("the steps that talk to him (F15, P2)", () => {
         return last?.steps.find((x) => x.id === ASK_ID)?.params.options;
       })
       .toEqual(["Pendiente"]);
+  });
+
+  test("AU-203 · a card of a cancelled run says «Pregunta cancelada» when answered, an expired one «Pregunta caducada», and either leaves the list", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      agent: {
+        ...BEFORE(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [
+          {
+            requests: [
+              automationAsk("q_01jcancelada", "yesno", "¿Archivo este?", { mayAnswer: true }),
+              automationAsk("q_01jcaducada", "yesno", "¿Y este otro?", { mayAnswer: true }),
+            ],
+          },
+        ],
+        "POST api/agent/requests/:id/answer": [
+          { ...ANSWER_DONE, run: null, error: "run-cancelled" },
+          { ...ANSWER_DONE, run: null, error: "run-expired" },
+        ],
+      },
+    });
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
+    const cards = page.locator(".inbox-panel .request-card");
+    await expect(cards).toHaveCount(2);
+    await cards.first().getByRole("button", { name: "Sí", exact: true }).click();
+    await expect(cards.first().getByRole("alert")).toContainText("Pregunta cancelada");
+    await cards.nth(1).getByRole("button", { name: "No", exact: true }).click();
+    await expect(cards.nth(1).getByRole("alert")).toContainText("Pregunta caducada");
+    await cards.first().getByRole("button", { name: "Quitar" }).click();
+    await expect(cards).toHaveCount(1);
+  });
+
+  test("AU-125 · «Solo desde un dispositivo personal» of a «Preguntar» is behind «Añadir opción», off when born, and on once added", async ({
+    page,
+  }) => {
+    const a = archiving("a_01jx8x0t2v4x6z8b0d2f4h6p01", { steps: {} });
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE() });
+    await openCanvas(page, "Archivar leídos", 4);
+    await openStep(page, ASK_ID);
+    await expect(param(page, "personal")).toHaveCount(0);
+    await view(page).getByRole("button", { name: "Añadir opción" }).click();
+    await page.getByRole("menuitemradio", { name: "Solo desde un dispositivo personal" }).click();
+    await expect(param(page, "personal").getByRole("checkbox")).toBeChecked();
+    await expect
+      .poll(async () => {
+        const last = (await drafts(page, a.id)).at(-1);
+        return last?.steps.find((x) => x.id === ASK_ID)?.params.personal;
+      })
+      .toBe(true);
   });
 
   test("AU-203 · a run that waits for an answer says until when in «Ejecuciones», at the device's zone, and is not a failure", async ({
