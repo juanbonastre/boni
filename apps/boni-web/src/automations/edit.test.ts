@@ -488,4 +488,54 @@ describe("a step's parameters and its name", () => {
     expect(after.steps[0]?.params.count).toBe(7);
     expect(after.steps[1]).toBe(two.steps[1]);
   });
+  it("AU-248 · «Acción» switches «Avisar» and «Preguntar» as in «Colección»: the text and «Por dónde» (with «Dónde» and «Una vez por fila») are kept, the rest goes named in the panel's order, the automatic name follows, and «sin respuesta»'s arrows go with the output", () => {
+    const via = ["notification", "inbox"];
+    const ask = step("s_p", "ask", "Preguntar", {
+      question: "¿Apunto este gasto?",
+      via,
+      where: "phone",
+      answer: "one",
+      options: ["Sí", "Más tarde"],
+      waitDays: 3,
+      personal: true,
+    });
+    const after = step("s_fin", "filter", "Filtrar");
+    const draft = automation(
+      [ask, after],
+      [arrow("s_p", "s_fin"), arrow("s_p", "s_fin", "noAnswer")],
+    );
+    const told = changeAction(draft, "s_p", "notify", names);
+    expect(told.draft.steps[0]?.type).toBe("notify");
+    expect(told.draft.steps[0]?.params).toEqual({
+      text: "¿Apunto este gasto?",
+      via,
+      where: "phone",
+    });
+    expect(told.dropped).toEqual(["answer", "options", "waitDays", "personal"]);
+    expect(told.draft.steps[0]?.name).toBe("Avisar");
+    expect(told.draft.arrows).toEqual([arrow("s_p", "s_fin")]);
+    // And back: the text is the question again, and what was not shared is born again (nothing is invented).
+    const asked = changeAction(told.draft, "s_p", "ask", names);
+    expect(asked.draft.steps[0]?.type).toBe("ask");
+    expect(asked.draft.steps[0]?.params).toEqual({
+      question: "¿Apunto este gasto?",
+      via,
+      where: "phone",
+    });
+    expect(asked.dropped).toEqual([]);
+    expect(asked.draft.steps[0]?.name).toBe("Preguntar");
+    // The same action again, or one that is not «Avisar» nor «Preguntar», is no change; a name Juan wrote stays.
+    expect(changeAction(draft, "s_p", "ask", names)).toEqual({ draft, dropped: [] });
+    expect(changeAction(draft, "s_p", "reply", names)).toEqual({ draft, dropped: [] });
+    // «Por dónde» never written is kept as he saw it: an «Avisar» born with the notification asks by it alone.
+    const bare = automation([step("s_a", "notify", "Avisar", { text: "Hecho" })]);
+    expect(changeAction(bare, "s_a", "ask", names).draft.steps[0]?.params).toEqual({
+      question: "Hecho",
+      via: ["notification"],
+    });
+    const mine = rename(draft, "s_p", "Confirmar el gasto");
+    expect(changeAction(mine, "s_p", "notify", names).draft.steps[0]?.name).toBe(
+      "Confirmar el gasto",
+    );
+  });
 });

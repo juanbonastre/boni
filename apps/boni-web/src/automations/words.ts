@@ -230,6 +230,12 @@ export function summaryWords(
       case "picker":
         return p.of === "collection" && typeof v === "string" ? (collections[v] ?? v) : String(v);
       case "choice":
+        // «Por dónde» (AU-246): each one chosen by its word, in the list's order («Notificación, Bandeja»).
+        if (Array.isArray(v) && Array.isArray(p.options))
+          return v
+            .filter((x): x is string => typeof x === "string")
+            .map((x) => t(KEY.choice(step.type, p.key, x)))
+            .join(", ");
         return typeof v === "string" && Array.isArray(p.options)
           ? t(KEY.choice(step.type, p.key, v))
           : String(v);

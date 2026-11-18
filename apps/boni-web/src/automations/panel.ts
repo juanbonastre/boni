@@ -7,6 +7,7 @@
 import {
   ACTION,
   type AiFailure,
+  ASK_TYPE,
   type Automation,
   actionOf,
   type CodeFailure,
@@ -14,6 +15,7 @@ import {
   isExpr,
   isTrigger,
   MAIN,
+  NOTIFY_TYPE,
   type ParamSpec,
   type ParamValue,
   type PeopleFailure,
@@ -51,10 +53,33 @@ export function rowsOf(step: Step): PanelRow[] {
     value: step.params[param.key],
     added,
   });
+  const people = peopleAction(step);
   return [
+    ...(people ? [{ param: people, value: step.type, added: false }] : []),
     ...all.filter((p) => p.place === "shown").map((p) => row(p, false)),
     ...all.filter((p) => p.place === "option" && p.key in step.params).map((p) => row(p, true)),
   ];
+}
+
+/**
+ * «Avisar» and «Preguntar» are one step with «Acción» (AU-248, decision 29 of §10), as «Colección» is: the engine
+ * keeps its two types, and the panel's first row switches between them (`changeAction` of edit.ts). The other way
+ * was one type with an action parameter, which every saved step and run would have had to be migrated to.
+ */
+export const PEOPLE_ACTIONS = [NOTIFY_TYPE, ASK_TYPE] as const;
+
+/** The «Acción» row of a step that talks to Juan, its value the step's type; null for any other step. */
+export function peopleAction(step: Step): ParamSpec | null {
+  if (!(PEOPLE_ACTIONS as readonly string[]).includes(step.type)) return null;
+  return {
+    key: ACTION,
+    control: "choice",
+    options: PEOPLE_ACTIONS,
+    place: "shown",
+    required: true,
+    shape: true,
+    default: step.type,
+  };
 }
 
 /** What «Añadir opción» lists (AU-76): the action's options not added yet; empty hides the button. */

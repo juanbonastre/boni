@@ -256,6 +256,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
     },
   ],
   "automations.pin": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
+  "automations.answer": [
+    {
+      file: "apps/server/src/automations/ai.test.ts",
+      test: "AU-247 · a «Preguntar»'s question lives in its run: one notification per run of the step that opens it, a card only with «Bandeja», and answered from the run by any device of the account, never a speaker, its card ending with it",
+    },
+  ],
   "automations.accept_run": [
     {
       file: "apps/server/src/automations/proposal.test.ts",

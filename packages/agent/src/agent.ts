@@ -354,7 +354,7 @@ export interface AskView {
 export type Pending = AskView | { kind: "confirm"; id: string; view: ConfirmView };
 /**
  * Juan's answer to a question (§3.4): its control's own (a choice, several, words, a number, a civil day, a file of his,
- * yes or no, «Guardar» or «Ahora no»), or a free way out: `words` («Otra cosa…»), `record` and `option` (a row or a
+ * yes or no, «Guardar» or «Descartar»), or a free way out: `words` («Otra…»), `record` and `option` (a row or a
  * category he picked or made with «Nueva…»).
  */
 export type AskAnswer =
@@ -3182,7 +3182,7 @@ export class Agent {
   /**
    * A rehearsal (§3.4): the rest of the plan runs dry, as «Probar» does (readers and tools that only read run; what
    * would be written is kept with its card's rows, a later question ends the pass), and the card shows it with
-   * «Guardar», «Revisar» and «Ahora no». With nothing to write it does not ask. A step the policy refuses stops the
+   * «Guardar», «Revisar» and «Descartar». With nothing to write it does not ask. A step the policy refuses stops the
    * run now, as it would after «Guardar».
    */
   private async rehearse(
@@ -3458,7 +3458,7 @@ export class Agent {
   /**
    * Juan's answer to an `ask`: what he types, picks, counts or dates is his; an option he picks keeps the option's
    * label (A2). In a turn of the conversation each kind has its free way out (docs/conversacion.md §3.4, rule 2): `words`,
-   * «Otra cosa…» (the question ends there and what he wrote is his next turn, where the planner reads it), on all but
+   * «Otra…» (the question ends there and what he wrote is his next turn, where the planner reads it), on all but
    * yes or no and the rehearsal; `record` and `option`, a row or a category he picked or made with «Nueva…» (his own
    * write, through the store's log), on a choice among rows or a property's options. Answered, the question stays in
    * the turn as text, with its answer (rule 3). An old card is checked first (rule 3a): when what it read changed
@@ -3519,7 +3519,7 @@ export class Agent {
     if (free && background) return wrong();
     if ("words" in a) {
       if (control === "yesno" || control === "rehearsal") return wrong();
-      // «Otra cosa…»: the question as text with its options, for the planner of the next turn to read his words by.
+      // «Otra…»: the question as text with its options, for the planner of the next turn to read his words by.
       if (prompt)
         this.reply(st, "asked", {
           prompt,
@@ -3582,7 +3582,7 @@ export class Agent {
       this.reply(st, "asked", { prompt, answer: v, control: leaf(control, codeLabel("ask")) });
     st.pending = null;
     if ("save" in a && !a.save) {
-      // «Ahora no»: nothing of it is done.
+      // «Descartar»: nothing of it is done.
       st.reused = undefined;
       return this.finish(st, "stopped", "not-saved");
     }

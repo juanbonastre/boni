@@ -626,7 +626,17 @@ class StepCheck {
         if (typeof v !== "boolean") this.problem("param.value", path);
         return;
       case "choice":
-        if (typeof v !== "string") this.problem("param.value", path);
+        if (p.many) {
+          // «Por dónde» (AU-246): distinct entries of its closed list, at least one; fields never.
+          const opts = "of" in p.options ? [] : p.options;
+          if (!Array.isArray(v)) this.problem("param.value", path);
+          else if (!v.length) this.problem("param.required", path);
+          else if (
+            new Set(v).size !== v.length ||
+            !v.every((x) => typeof x === "string" && opts.includes(x))
+          )
+            this.problem("param.value", path);
+        } else if (typeof v !== "string") this.problem("param.value", path);
         else if ("of" in p.options) this.field(p.options.of === "collection", v, path);
         else if (!p.options.includes(v)) this.problem("param.value", path);
         return;

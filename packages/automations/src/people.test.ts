@@ -22,6 +22,7 @@ import { ACTION, type Automation, MAIN } from "./format.ts";
 import {
   ANSWER_FIELD,
   ASK_TYPE,
+  askNotice,
   DAY_MS,
   NO_ANSWER,
   NOTIFY_TYPE,
@@ -29,6 +30,7 @@ import {
   type Notice,
   type PeoplePort,
   REPLY_TYPE,
+  VIA_BORN,
 } from "./people.ts";
 import type { Row } from "./rows.ts";
 import { clock, deps, OUTSIDE, OWN, store } from "./run.test-util.ts";
@@ -135,8 +137,8 @@ describe("the people steps (F15)", () => {
       paramsOf(step(params))
         .filter((p) => p.place === "shown")
         .map((p) => p.key);
-    expect(shown({ answer: "yesNo" })).toEqual(["question", "answer", "waitDays"]);
-    expect(shown({ answer: "one" })).toEqual(["question", "answer", "options", "waitDays"]);
+    expect(shown({ answer: "yesNo" })).toEqual(["question", "via", "answer", "waitDays"]);
+    expect(shown({ answer: "one" })).toEqual(["question", "via", "answer", "options", "waitDays"]);
     expect(paramsOf(step({})).find((p) => p.key === "mode")?.place).toBe("option");
     expect(paramsOf(step({})).find((p) => p.key === "waitDays")?.default).toBe(1);
     expect(outputsOf(step({}))).toEqual([MAIN, NO_ANSWER]);
@@ -222,7 +224,7 @@ describe("the people steps (F15)", () => {
     });
     expect(port.asked).toBe(0);
 
-    // 20 runs already waiting: the next fails in that step («Ya hay 20 preguntas sin responder»); a test waits in
+    // 20 runs already waiting: the next fails in that step («Límite de ejecuciones en espera alcanzado (20)»); a test waits in
     // no Bandeja, so it does not count them.
     const full = await go(once.automation, { people: recorder(20), collections: db(1) });
     expect(rec(full, once.id).error?.people?.code).toBe("ask.waiting");
@@ -345,7 +347,7 @@ describe("the people steps (F15)", () => {
   it("AU-201 · «Avisar» has no recipient parameter; one notice per run, and «Una vez por fila» sends 5 and then one that groups the rest", async () => {
     // No parameter names to whom: a text, its mode, and «Dónde», a closed list of his own devices fixed in the step.
     const keys = (type: string) => specOf(type)?.actions.flatMap((a) => a.params.map((p) => p.key));
-    expect(keys(NOTIFY_TYPE)).toEqual(["text", "mode", "where"]);
+    expect(keys(NOTIFY_TYPE)).toEqual(["text", "via", "mode", "where"]);
     expect(keys(REPLY_TYPE)).toEqual(["text"]);
     const where = specOf(NOTIFY_TYPE)?.actions[0]?.params.find((p) => p.key === "where");
     expect(where).toMatchObject({
@@ -398,6 +400,7 @@ describe("the people steps (F15)", () => {
         text: "Hay tareas",
         label: OWN,
         where: "phone",
+        via: ["notification"],
       },
     ]);
     expect(jsonOf(e, one.after)).toHaveLength(3);
@@ -440,6 +443,7 @@ describe("the people steps (F15)", () => {
       "label",
       "step",
       "text",
+      "via",
       "where",
     ]);
   });
@@ -462,6 +466,7 @@ describe("the people steps (F15)", () => {
           text: "Revisa las tareas",
           label: OWN,
           where: "desktop",
+          via: ["notification"],
         },
       ],
     });
@@ -731,5 +736,101 @@ describe("the people steps (F15)", () => {
       step: m.id("Otra"),
       failure: { code: "run.limit", detail: { limit: "modelCalls", max: 1, got: 2 } },
     });
+  });
+
+  it("AU-246 · «Por dónde» is fixed in the step, from «Notificación» and «Bandeja», one or both: «Avisar» is born with the notification, «Preguntar» with both, and the run keeps it", async () => {
+    expect(VIA_BORN).toEqual({ notify: ["notification"], ask: ["notification", "inbox"] });
+    const via = (type: string) =>
+      paramsOf({ id: "s_p", name: "Paso", type, params: {} } as never).find((p) => p.key === "via");
+    for (const [type, born] of [
+      [NOTIFY_TYPE, ["notification"]],
+      [ASK_TYPE, ["notification", "inbox"]],
+    ] as const)
+      expect(via(type)).toMatchObject({
+        control: "choice",
+        options: ["notification", "inbox"],
+        many: true,
+        place: "shown",
+        shape: true,
+        default: born,
+      });
+    // «Dónde» stays behind «Añadir opción» in both actions.
+    for (const type of [NOTIFY_TYPE, ASK_TYPE])
+      expect(
+        paramsOf({ id: "s_p", name: "Paso", type, params: {} } as never).find(
+          (p) => p.key === "where",
+        )?.place,
+      ).toBe("option");
+
+    // Never an expression, never empty, only its two values, each once: nothing from outside chooses a surface.
+    const telling = (params: Record<string, unknown>) =>
+      sketch(171)
+        .step("Inicio", "manual", INICIO)
+        .step("Avisar", NOTIFY_TYPE, { text: "Revisa las tareas", ...params } as never)
+        .arrow("Inicio", "Avisar")
+        .build();
+    const problems = (params: Record<string, unknown>) =>
+      validate(telling(params), { collection: () => undefined, people: true }).map(
+        (p) => `${p.code}:${p.param}`,
+      );
+    expect(problems({ via: ["inbox"] })).toEqual([]);
+    expect(problems({ via: ["notification", "inbox"] })).toEqual([]);
+    for (const [v, problem] of [
+      [{ expr: "{{ $('Inicio').first().a }}" }, "param.shape:via"],
+      [[], "param.required:via"],
+      [["inbox", "inbox"], "param.value:via"],
+      [["ejemplo.otro@example.com"], "param.value:via"],
+      ["inbox", "param.value:via"],
+    ] as const)
+      expect(problems({ via: v })).toContain(problem);
+
+    // The notice and the question carry it as the step ran; a step saved before it reads its born value.
+    const port = recorder();
+    await go(telling({ via: ["inbox"] }), { people: port });
+    await go(telling({}), { people: port });
+    expect(port.sent.map((n) => n.via)).toEqual([["inbox"], ["notification"]]);
+    const kept = await go(asking({ via: ["inbox"], where: "desktop" }).automation, {
+      people: recorder(),
+      collections: db(1),
+    });
+    const ask = Object.values(kept.steps).find((r) => r.ask)?.ask;
+    expect(ask).toMatchObject({ via: ["inbox"], where: "desktop" });
+    const born = await go(asking().automation, { people: recorder(), collections: db(1) });
+    const bornAsk = Object.values(born.steps).find((r) => r.ask)?.ask;
+    expect(bornAsk?.via).toEqual(["notification", "inbox"]);
+    expect(bornAsk && "where" in bornAsk).toBe(false);
+  });
+
+  it("AU-247 · a question's notification is one per run of the step: the question itself, cut and with its label, or the count when there are several; none without «Notificación»", async () => {
+    const one = {
+      answer: "yesNo",
+      mode: "all",
+      until: 1,
+      questions: [{ text: `¿${"x".repeat(400)}?`, label: OUTSIDE }],
+    } as never as Parameters<typeof askNotice>[2];
+    const n = askNotice("a_1", "s_1", one, OWN);
+    expect(n).toMatchObject({ automation: "a_1", step: "s_1", label: OUTSIDE, where: "all" });
+    expect(n?.via).toEqual(["notification"]);
+    expect(n?.text.length).toBeLessThan(400);
+    expect(n && "questions" in n).toBe(false);
+    const three = {
+      ...one,
+      mode: "perRow",
+      where: "phone",
+      questions: [1, 2, 3].map((i) => ({ text: `¿Fila ${i}?`, label: OUTSIDE })),
+    } as never as Parameters<typeof askNotice>[2];
+    // Several questions: nothing of theirs, only how many, with the automation's own label.
+    expect(askNotice("a_1", "s_1", three, OWN)).toEqual({
+      automation: "a_1",
+      step: "s_1",
+      text: "",
+      label: OWN,
+      where: "phone",
+      via: ["notification"],
+      questions: 3,
+    });
+    expect(askNotice("a_1", "s_1", { ...one, via: ["inbox"] }, OWN)).toBeNull();
+    // A question kept before «Por dónde» was born with both.
+    expect(askNotice("a_1", "s_1", { ...one, via: undefined }, OWN)).not.toBeNull();
   });
 });
