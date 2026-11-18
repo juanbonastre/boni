@@ -981,8 +981,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   says so on the card with "Quitar". **An automation's «Preguntar»** (F15 S2, AU-125, AU-203) is the same card: the
   automation's name on the muted line under the prompt, and its control by «Respuesta»: «Sí» and «No» as two pills of
   the same weight (neither first, neither tinted), the options as pills, several ones as pills that stay pressed
-  (`.on`, `aria-pressed`) with "Enviar", or the line to type in. Only a personal device answers it or puts it away;
-  past its limit, or once its run was cancelled, it says «Caducada». Its run's row says «Esperando respuesta»
+  (`.on`, `aria-pressed`) with "Enviar", or the line to type in. Who answers it or puts it away is what the server
+  says (`mayAnswer`, decision 26, below in F15 P2); past its limit it says «Pregunta caducada», and once its run was
+  cancelled «Pregunta cancelada» (decision 27). Its run's row says «Esperando respuesta»
   meanwhile (not in `--bad`), and «Cancelada · 0,4 s» when turning the automation off, deleting it or undoing the run
   ended it. The counts (top bar, sidebar, conversation) are proposals and questions together,
   and a new question opens the panel as a new proposal does. The **inbox** (Juan, 2026-10-22) is a panel on the right
