@@ -1845,7 +1845,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Los avisos pequeños son el evento `run` del SSE: estado, paso y filas por salida, nunca las filas.
   Hecho en P1, sobre el servidor simulado con la forma de la ruta de S2: «Ejecutar» en «⋯» de la cabecera, en el
   aviso de publicar y, en el teléfono, en un botón de la cabecera (AU-74); con «Campos que pide», el cuadro de «Probar»; con cambios sin publicar, «Corre la versión N, sin
-  los cambios sin publicar»; apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
+  los cambios sin publicar» (desde la parte C de P2, «Versión publicada: N»); apagada, «Está apagada» con «Encender»; otra en curso, «Ya se está ejecutando». Falta: registrar
   `automations.run` y su ruta (`withRunActions`, `RUN_ROUTES`) con `data-boni-action` en los controles, «Ejecutar» en la fila
   de la lista, llevar a «Ejecuciones» y verla avanzar (P2).
   Hecho en P2: `withRunActions` y `RUN_ROUTES` registrados, con `data-boni-action` en cada control; «Ejecutar» en
@@ -2458,7 +2458,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   respuesta · hasta mañana a las 9:40»), con su pregunta en la ejecución y por donde diga su «Por dónde» (AU-246,
   AU-247: una notificación, una tarjeta en la Bandeja o las dos). Mientras espera:
   - Suelta su turno: las ejecuciones siguientes de esa automatización corren, y como mucho 20 esperan a la vez por
-    automatización (la siguiente falla en ese paso: «Ya hay 20 preguntas sin responder»).
+    automatización (la siguiente falla en ese paso: «Límite de ejecuciones en espera alcanzado (20)», palabras de la parte C de P2).
   - Guarda lo que necesita para seguir: las salidas de sus pasos hechos, con sus etiquetas, hasta 2 MB (razonado y
     no medido); si no cabe, el paso falla sin preguntar y lo dice. Van en el almacén del usuario, con las tablas de
     la ejecución (D-02), y se podan con ella.

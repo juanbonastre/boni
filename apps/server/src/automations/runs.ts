@@ -890,7 +890,15 @@ export function runAsks(store: UserStore, run: string, trust: Trust): RunAsk[] {
   const w = store.journal.automationWait(run);
   if (!w) return [];
   const answers = keptAnswers(w.answers);
-  return waitingAsks(JSON.parse(w.execution) as Execution).map(([step, ask]) => ({
+  // Branches reach their «Preguntar» in either order; the view keeps the document's, so it does not reshuffle.
+  const r = store.journal.automationRun(run);
+  const doc = r ? docOf(store, r) : null;
+  const at = new Map((doc?.steps ?? []).map((s, i) => [s.id, i]));
+  const place = (step: string) => at.get(step) ?? Number.MAX_SAFE_INTEGER;
+  const waiting = waitingAsks(JSON.parse(w.execution) as Execution).sort(
+    ([a], [b]) => place(a) - place(b),
+  );
+  return waiting.map(([step, ask]) => ({
     step,
     answer: ask.answer,
     until: ask.until,
