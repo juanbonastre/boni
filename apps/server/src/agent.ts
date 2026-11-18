@@ -31,7 +31,8 @@ import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
 import type { RunsService } from "./automations/proposal.ts";
-import { interruptRuns, onRunEvent } from "./automations/runs.ts";
+import { type AskGiven, answerAsk, interruptRuns, onRunEvent } from "./automations/runs.ts";
+import { askPlace, noticeText, onPeople } from "./automations/waits.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
@@ -274,6 +275,21 @@ export class AgentHost {
       onRunEvent(s, (e) => {
         if (e.notice?.kind === "failed")
           this.notify(account, e.notice.text, "own", { automation: e.automation, run: e.run });
+      });
+      // A run's «Avisar» goes where its «Dónde» says, among his own devices (AU-201): the app's stream (the desktop
+      // app and any app open), the phone, or both; a «Preguntar» refreshes the Bandeja (AU-203; automations/waits.ts).
+      onPeople(s, (e) => {
+        if (e.kind === "asked") return this.emit(account, "requests", {});
+        const n = e.notice;
+        const text = noticeText(n);
+        const about = e.run ? { automation: e.automation, run: e.run } : undefined;
+        if (n.where !== "phone")
+          this.emit(account, "notify", {
+            text,
+            integrity: n.label.integrity,
+            ...(about ? { about } : {}),
+          });
+        if (n.where !== "desktop") this.pushNotice?.(account, text);
       });
       // A run of an automation still marked as running when its store is first opened was cut by a restart: it is
       // closed as interrupted and never run again (AU-190, decision 12). No run of this process can be in it yet.
@@ -1082,6 +1098,46 @@ async function serveConversations(
   }
 }
 
+/** What a card of an automation's «Preguntar» was answered with, as the Bandeja sends it; null when it is none. */
+function askGiven(b: Record<string, unknown> | null): AskGiven | null {
+  if (!b) return null;
+  if (typeof b.yes === "boolean") return { yes: b.yes };
+  if (Number.isInteger(b.choice)) return { choice: b.choice as number };
+  if (Array.isArray(b.choices) && b.choices.length <= 100 && b.choices.every(Number.isInteger))
+    return { choices: b.choices as number[] };
+  if (str(b.text, 500)) return { text: b.text as string };
+  return null;
+}
+
+/**
+ * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from a personal
+ * device only, as accepting a proposal (decision 13). A card that no longer counts answers as the agent's would, so
+ * the card says «Ya no vale» (`run-expired`); one answered goes on in its run's turn, in the background.
+ */
+function askAnswered(
+  host: AgentHost,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+  id: string,
+  given: AskGiven | null,
+  res: ServerResponse,
+) {
+  if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+  const store = host.store(who.account);
+  const r = answerAsk(store, id, given, {
+    device: who.device,
+    now: Date.now(),
+    trust: who.trust,
+    zone: host.tz,
+  });
+  if ("error" in r) return send(res, r.error === "not-found" ? 404 : 400, { error: r.error });
+  if ("refused" in r) return send(res, 403, { error: "personal-device-only" });
+  host.emit(who.account, "requests", {});
+  const turn = { status: "done", replies: [], proposals: [], notices: [] };
+  return "gone" in r
+    ? send(res, 200, { run: null, ...turn, error: "run-expired" })
+    : send(res, 200, { run: r.run, ...turn, ...(given === null ? { dismissed: true } : {}) });
+}
+
 async function answerAgent(
   host: AgentHost,
   req: IncomingMessage,
@@ -1300,6 +1356,8 @@ async function answerAgent(
       const r = host.store(who.account).journal.request(params.id ?? "");
       if (!r) return send(res, 404, { error: "not-found" });
       const b = await bodyOf(req);
+      // An automation's «Preguntar» (AU-125, AU-203): its answer goes to its run, not to the agent.
+      if (askPlace(r.view)) return askAnswered(host, who, r.id, askGiven(b), res);
       const answer =
         typeof b.choice === "number" && Number.isInteger(b.choice)
           ? { choice: b.choice }
@@ -1309,8 +1367,11 @@ async function answerAgent(
       if (!answer) return bad();
       return send(res, 200, after(await agent.answer(r.run, r.id, answer, { trust: who.trust })));
     }
-    case "POST /api/agent/requests/:id/dismiss":
+    case "POST /api/agent/requests/:id/dismiss": {
+      const r = host.store(who.account).journal.request(params.id ?? "");
+      if (r && askPlace(r.view)) return askAnswered(host, who, r.id, null, res);
       return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
+    }
     case "POST /api/agent/proposals/:id/accept": {
       // `seen`: the state word the card showed (task 73), checked again before acting.
       const b = ((await bodyOf(req)) ?? {}) as { edits?: unknown; seen?: unknown };

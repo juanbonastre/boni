@@ -28,7 +28,6 @@ import {
   type Cell,
   CODE_LIMITS,
   type Collections,
-  endedState,
   executionOrder,
   FormatError,
   inputsOf,
@@ -70,6 +69,8 @@ import { serverDates } from "./dates.ts";
 import { pruneRuns } from "./keep.ts";
 import { automationPolicy } from "./policy.ts";
 import { keepTestRun, type PinView, pinnedRecords, pinsView } from "./record.ts";
+import { cancelWaits } from "./runs.ts";
+import { peoplePort } from "./waits.ts";
 
 /** The largest draft kept, in characters of its JSON: as a flow's draft. */
 export const DRAFT_MAX = 200_000;
@@ -430,6 +431,8 @@ export function setDeleted(
 ): { ok: true } | ServiceError {
   if (!store.journal.automation(id)) return NOT_FOUND;
   store.journal.setAutomationDeleted(id, deleted);
+  // What waited for an answer is cancelled, and stays so if it comes back (AU-203).
+  if (deleted) cancelWaits(store, id);
   return { ok: true };
 }
 
@@ -444,7 +447,8 @@ export interface TestRequest {
 
 export interface TestAnswer {
   /** `invalid`: it did not run, and `problems` says why (AU-64); nothing kept changes. */
-  state: "done" | "failed" | "invalid";
+  /** `waiting`: it reached a «Preguntar» (AU-203); P2 answers it in the test's panel. */
+  state: "done" | "failed" | "waiting" | "invalid";
   problems: Problem[];
   ms: number;
   /** The steps that ran now and the ones taken from their kept test, in order. */
@@ -496,8 +500,8 @@ const writes = (step: Step) => actionOf(step)?.effect === "write";
  * test says what it would save and what it would ask. His clock and zone, the box and the collections by name. A
  * run for real gives its id, and every operation it saves carries it in the log, so `undoRun` takes back all the
  * run saved, each step's change whole (AU-174, AU-185). Make one per run: the policy's counter is the run's.
- * The only caller with a `run` is `runPublished` (publish.ts), which reads the document it runs from the same
- * version.
+ * The callers with a `run` are `runPublished` (publish.ts), which reads the document it runs from the same
+ * version, and `carryOn` (runs.ts), which gives the version a waiting run started with (`kept`).
  */
 export function runDeps(
   store: UserStore,
@@ -505,9 +509,11 @@ export function runDeps(
   hand: Hand & { trust: Trust; zone: string },
   box: Box = sandboxBox(),
   run?: string,
+  kept?: { automation: Automation; names: KeptNames },
 ): RunDeps & { policy: ReturnType<typeof automationPolicy> } {
   const own = automationLabel(id);
-  const version = run ? publishedOf(store, id) : null;
+  // A run that goes on after a wait runs the version it started with, its «Sí» lowered (runs.ts `carryOn`).
+  const version = run ? (kept ?? publishedOf(store, id)) : null;
   const doc = run ? version?.automation : open(store, id)?.automation;
   if (run && !doc)
     throw new Error(`automation ${id} has no published version: nothing runs for real`);
@@ -524,6 +530,8 @@ export function runDeps(
   return {
     policy: automationPolicy(doc, own, reachStore(store, hand.zone)),
     ...(ai ? { ai } : {}),
+    // «Avisar» and «Preguntar» (AU-201, AU-203): a test's never notifies, and its waits are not counted.
+    people: peoplePort(store, id, own, run ?? null),
     collections: storeCollections(store, {
       actor: "user",
       device: hand.device,
@@ -679,7 +687,8 @@ export async function testAutomation(
   // Of the tests, the last 20 stay (AU-103).
   if (run) pruneRuns(store, id);
   return {
-    state: endedState(execution),
+    // A test that reaches a «Preguntar» waits (AU-203); its question is answered in the test's panel (P2).
+    state: execution.state,
     problems: [],
     ms: execution.ms,
     ran: execution.ran,

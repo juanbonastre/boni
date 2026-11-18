@@ -50,6 +50,7 @@ import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
+import { cancelWaits } from "./runs.ts";
 import { scheduleColumn } from "./scheduler.ts";
 import {
   automationLabel,
@@ -113,6 +114,9 @@ function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
     keptKey: (step, name) => kept[step]?.[name],
     // The AI steps are step types where a model can be called (AU-57, AU-199): a server with «Modelos».
     ...(modelsOf(store) ? { ai: true } : {}),
+    // «Preguntar», «Avisar» and «Responder» are step types: the server asks and tells through its port (AU-203,
+    // waits.ts `peoplePort`), with or without models.
+    people: true,
   };
 }
 
@@ -344,6 +348,8 @@ export function setEnabled(
   if (typeof enabled !== "boolean") return BAD;
   if (row.published === null) return { refused: "unpublished" };
   store.journal.setAutomationEnabled(id, enabled, hand.now);
+  // Turned off, what waited for an answer is cancelled (AU-203): turning it on again starts nothing.
+  if (!enabled) cancelWaits(store, id, hand.now);
   return { enabled };
 }
 

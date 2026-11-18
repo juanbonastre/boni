@@ -687,6 +687,8 @@ export function RequestCard({ r }: { r: InboxRequest }) {
   const busy = useStore((s) => s.deciding[r.id]);
   const failed = useStore((s) => s.decideErrors[r.id]);
   const [text, setText] = useState("");
+  // «Varias opciones» (an automation's «Preguntar», AU-125): the options ticked so far, by their number.
+  const [ticked, setTicked] = useState<number[]>([]);
   const off = !!busy || !!failed?.gone;
   // Whole days left, rounded (a new question says 7; less than half a day, "hoy").
   const days = Math.round((r.expires - Date.now()) / DAY_MS);
@@ -719,7 +721,48 @@ export function RequestCard({ r }: { r: InboxRequest }) {
         </p>
       )}
       {about?.kind === "review" && <p className="inbox-source muted">{t("inbox.fromReview")}</p>}
-      {r.ask.control === "choice" ? (
+      {about?.kind === "flow" && <p className="inbox-source muted">{about.flow}</p>}
+      {r.ask.control === "yesno" ? (
+        // An automation's «Sí o no» (AU-125): the words are the app's, neither is the first.
+        <div className="ask-options even">
+          {([true, false] as const).map((yes) => (
+            <button
+              key={String(yes)}
+              type="button"
+              className={`pill${busy === "accept" ? " busy" : ""}`}
+              disabled={off}
+              onClick={() => void answerRequest(r.id, { yes })}
+            >
+              {t(yes ? "ask.yes" : "ask.no")}
+            </button>
+          ))}
+        </div>
+      ) : r.ask.control === "several" ? (
+        <div className="ask-options">
+          {r.ask.options.map((o, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`pill${ticked.includes(i) ? " on" : ""}`}
+              aria-pressed={ticked.includes(i)}
+              disabled={off}
+              onClick={() =>
+                setTicked((l) => (l.includes(i) ? l.filter((x) => x !== i) : [...l, i]))
+              }
+            >
+              <ValueText p={o} />
+            </button>
+          ))}
+          <button
+            type="button"
+            className={`btn primary decide-btn${busy === "accept" ? " busy" : ""}`}
+            disabled={off}
+            onClick={() => void answerRequest(r.id, { choices: [...ticked].sort((a, b) => a - b) })}
+          >
+            <span className="decide-label">{t("inbox.send")}</span>
+          </button>
+        </div>
+      ) : r.ask.control === "choice" ? (
         <div className="ask-options">
           {r.ask.options.map((o, i) => (
             <button

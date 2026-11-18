@@ -871,6 +871,15 @@ export function parseAsk(p: unknown): AskPending | null {
 }
 
 /**
+ * What a question's card in the Bandeja answers: a choice, words, and, for an automation's «Preguntar» (AU-125), «Sí o
+ * no» and «Varias opciones».
+ */
+export type RequestAnswer =
+  | { choice: number }
+  | { text: string }
+  | { yes: boolean }
+  | { choices: number[] };
+/**
  * A question from background work waiting in the panel (Juan, 2026-10-24): what it asks, until when, and where it
  * came from (the mail being read; outside text, shown only as text).
  */
@@ -3071,7 +3080,7 @@ export class AgentApi {
         ];
       });
   }
-  answerRequest = async (id: string, a: { choice: number } | { text: string }) =>
+  answerRequest = async (id: string, a: RequestAnswer) =>
     parseTurn(await this.call("POST", `requests/${encodeURIComponent(id)}/answer`, a));
   models = async () => parseModels(await this.call("GET", "models"));
   /** Boni's map with its numbers of the last `days` (docs/sistema.md §4.4, F8). */

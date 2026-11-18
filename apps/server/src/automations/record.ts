@@ -12,7 +12,6 @@ import {
   type Automation,
   type Cell,
   type Execution,
-  endedState,
   isTrigger,
   outputsOf,
   type Row,
@@ -156,7 +155,7 @@ export function keepTestRun(
     if (record) keepStep(store, run, n, step, record);
   });
   store.journal.endAutomationRun(run, {
-    state: endedState(e),
+    state: e.state,
     ended: e.started + e.ms,
     ms: e.ms,
     step: e.error?.step ?? null,

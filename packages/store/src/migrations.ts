@@ -1,6 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { chainExisting } from "./audit.ts";
-import { AUTOMATION_RUNS_MIGRATION, automationRunsKeepMigration } from "./automationRuns.ts";
+import {
+  AUTOMATION_RUN_WAITS_MIGRATION,
+  AUTOMATION_RUNS_MIGRATION,
+  automationRunsKeepMigration,
+} from "./automationRuns.ts";
 import {
   AUTOMATIONS_MIGRATION,
   automationsScheduleMigration,
@@ -401,6 +405,9 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
    DELETE FROM fts_rows;
    INSERT INTO fts_rows (entity, rid) SELECT entity, max(rowid) FROM entities_fts GROUP BY entity;
    DELETE FROM entities_fts WHERE rowid NOT IN (SELECT rid FROM fts_rows);`,
+  // 32: what a run that waits for Juan's answer keeps to go on (F15 S2, AU-203): its execution, its limit, its
+  // answers so far (automationRuns.ts).
+  AUTOMATION_RUN_WAITS_MIGRATION,
 ];
 
 export function migrate(db: DatabaseSync): void {

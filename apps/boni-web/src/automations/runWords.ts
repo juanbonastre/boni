@@ -51,8 +51,12 @@ export function fullWhen(lang: Lang, zone: string, at: number): string {
 
 /** Whether it has ended: only then is it undone, retried or said with its time. */
 export const ended = (r: RunSummary) => r.state !== "queued" && r.state !== "running";
-/** Whether it went badly: a failure, an interruption, an hour it missed, or a state this app does not know. */
-export const bad = (r: RunSummary) => r.state !== "done" && ended(r);
+/**
+ * Whether it went badly: a failure, an interruption, an hour it missed, or a state this app does not know. One that
+ * waits for his answer, or that he cancelled, did not (AU-203).
+ */
+export const bad = (r: RunSummary) =>
+  r.state !== "done" && r.state !== "waiting" && r.state !== "cancelled" && ended(r);
 
 /**
  * How it ended, in a few words (the list's second line, the bar's start): «Bien · 4,1 s», «Falló en «Analista» · 2,0 s»,
@@ -79,6 +83,10 @@ export function howWords(
       return `${at ? t("auto.run.how.interruptedAt", { step: at }) : t("auto.run.how.interrupted")}${secs}`;
     case "missed":
       return t("auto.run.how.missed");
+    case "waiting":
+      return t("auto.run.how.waiting");
+    case "cancelled":
+      return `${t("auto.run.how.cancelled")}${secs}`;
     default:
       // "failed", and a state a newer server may give: said as a failure, never as nothing.
       return `${at ? t("auto.run.how.failedAt", { step: at }) : t("auto.run.how.failed")}${secs}`;
