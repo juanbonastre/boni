@@ -1652,12 +1652,14 @@ test.describe("adding a step", () => {
     await expect(view(page)).toBeVisible();
     await press(page, "Escape");
     await expect(view(page)).toHaveCount(0);
-    // Then: the three categories, said by what one wants to do, each step in one; «Añadir otro disparador» last.
+    // Then: the categories built so far (F14b's three and F15's «Usar IA»), said by what one wants to do, each step
+    // in one; «Añadir otro disparador» last.
     await page.locator(".auto-add-top").click();
     await expect(p.locator("h3")).toHaveText([
       "Leer o escribir en una colección",
       "Transformar filas",
       "Decidir el camino",
+      "Usar IA",
     ]);
     const all = await p.locator(".auto-start-row").allTextContents();
     expect(new Set(all).size).toBe(all.length);

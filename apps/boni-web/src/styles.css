@@ -13292,6 +13292,86 @@ button.auto-log-line {
   font-size: 12.5px;
   color: var(--text-2, var(--muted));
 }
+/* An «Agente»'s connections (AU-52, AU-196): «Conectar», then per action its filter, fields and «Como mucho». */
+.auto-conn-connect {
+  margin-top: 6px;
+}
+.auto-conn-action {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+}
+.auto-conn-action-name {
+  font-weight: 600;
+}
+.auto-conn-write-fields {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.auto-conn-write-field {
+  display: grid;
+  grid-template-columns: minmax(6em, 1fr) auto minmax(0, 2fr);
+  align-items: center;
+  gap: 6px;
+}
+.auto-conn-write-field-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .auto-conn-write-field {
+    grid-template-columns: 1fr auto;
+  }
+  .auto-conn-write-field > :nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+.auto-agent-code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  min-height: 8em;
+}
+/* «Lo que hizo» of an «Agente» (AU-54): its cost, then what each unit read, asked and saved, as plain text. */
+.auto-did {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  font-size: 12.5px;
+}
+.auto-did-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.auto-did-head {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+.auto-did-unit-title {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.auto-did-lines {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  max-height: 240px;
+  overflow: auto;
+}
+.auto-did-lines li {
+  overflow-wrap: anywhere;
+}
+.auto-did-more {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
 /* «Haría esto» of a «Código» (AU-181): what its requests would save, folded above «Consola». */
 .auto-would-code {
   margin-top: 10px;

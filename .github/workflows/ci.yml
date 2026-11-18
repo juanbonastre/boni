@@ -7,6 +7,9 @@ on:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    # About four times its slowest green run (25 runs to 2026-11-18: 2 min 22 s to 3 min 43 s), so a hang fails in
+    # minutes instead of holding a pull request for hours (task 152: a hung queue test held one for 85 minutes).
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

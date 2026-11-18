@@ -9,6 +9,8 @@
  */
 import {
   ACTION,
+  AGENT_PARAMS,
+  AGENT_TYPE,
   type Automation,
   CODE_PARAMS,
   type Control,
@@ -27,6 +29,7 @@ import { createContext, type ReactNode, useContext, useEffect, useRef, useState 
 import { citedName } from "../automations/cite.ts";
 import type { Sample } from "../automations/client.ts";
 import { codeBlocked, codeContextOf, isCode } from "../automations/code.ts";
+import { agentConnectable, type AgentDid as Did, didLines } from "../automations/connections.ts";
 import {
   allowAction,
   changeAction,
@@ -35,9 +38,13 @@ import {
   removeOption,
   rename,
   setCell,
+  setFixedValue,
   setParam,
+  setRead,
   setReadLimits,
   setSetting,
+  setWriteField,
+  setWriteLimits,
 } from "../automations/edit.ts";
 import {
   type ConditionField,
@@ -57,11 +64,11 @@ import {
 } from "../automations/panel.ts";
 import { change, type EditorState, undo } from "../automations/state.ts";
 import { DO, entryWords, KEY, labelWord, type Namer, summaryWords } from "../automations/words.ts";
-import type { DataType as AppType, DataField } from "../core/agent.ts";
+import type { DataType as AppType, DataField, Planner } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
-import { useStore } from "../store.ts";
+import { loadPlanners, useStore } from "../store.ts";
 import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
-import { ConnectionsTable } from "./AutomationConnections.tsx";
+import { type AgentConnections, ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
 import {
   KeptContext,
@@ -471,6 +478,111 @@ function FieldValue({
   );
 }
 
+/** A fixed value under an «Agente»'s «Crear» or «Modificar» (AU-52): the field's own control, a plain value in P1. */
+function ConnFixedValue({
+  field,
+  value,
+  label,
+  set,
+  typing,
+}: {
+  field: ConditionField;
+  value: ParamValue | undefined;
+  label: string;
+  set: (x: ParamValue, typing?: string) => void;
+  typing: (entered: number) => string;
+}) {
+  const run = useRef(0);
+  return (
+    <FixedFieldValue
+      field={field}
+      value={value}
+      set={set}
+      label={label}
+      typing={typing}
+      run={run}
+    />
+  );
+}
+
+/** A model's name as «Modelos» shows it, without its provider: the server's text, painted as plain text. */
+const modelName = (model: string) => model.replace(/^[a-z0-9-]+\//i, "");
+
+/**
+ * «Modelo» of an «Agente» (AU-199): «El de la cuenta» or one of the account's choices for its use; the step keeps the
+ * choice's id, never a key or a setting. «El de la cuenta» names the account's (`current`), which follows the account
+ * when it changes; the others are the models evaluated for it. A stored id no longer offered says so, and publishing
+ * stops on it.
+ */
+function ModelChoice({
+  t,
+  value,
+  label,
+  planners,
+  set,
+}: {
+  t: T;
+  value: ParamValue | undefined;
+  label: string;
+  planners: readonly Planner[];
+  set: (id: string) => void;
+}) {
+  const id = typeof value === "string" ? value : "";
+  const gone = id !== "" && !planners.some((p) => p.id === id);
+  const own = planners.find((p) => p.current);
+  return (
+    <select
+      className="input auto-agent-model"
+      aria-label={label}
+      value={id}
+      data-boni-action="automations.edit"
+      onChange={(e) => set(e.target.value)}
+    >
+      <option value="">
+        {own
+          ? t("auto.agent.model.accountIs", { model: modelName(own.model) })
+          : t("auto.agent.model.account")}
+      </option>
+      {planners
+        .filter((p) => !p.current || p.id === id)
+        .map((p) => (
+          <option key={p.id} value={p.id}>
+            {modelName(p.model)}
+          </option>
+        ))}
+      {gone && <option value={id}>{t("auto.agent.model.gone", { model: id })}</option>}
+    </select>
+  );
+}
+
+/**
+ * «Lo que hizo» of an «Agente» (AU-54), above its answer: its cost, then each unit's lines. Every line is the code's,
+ * from what the engine ran, painted as plain text (A-01).
+ */
+function AgentDidBox({ t, did, locale }: { t: T; did: Did; locale: string }) {
+  return (
+    <section className="auto-did" aria-label={t("auto.did.title")}>
+      <h4 className="auto-did-title">{t("auto.did.title")}</h4>
+      <p className="auto-did-head">{did.head}</p>
+      {did.units.map((u, i) => (
+        <div key={i} className="auto-did-unit">
+          {u.title && <h5 className="auto-did-unit-title">{u.title}</h5>}
+          <ul className="auto-did-lines">
+            {u.lines.map((l, k) => (
+              <li key={k}>{l}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {did.more > 0 && (
+        <p className="auto-did-more">
+          {t("auto.would.code.more", { n: did.more.toLocaleString(locale) })}
+        </p>
+      )}
+    </section>
+  );
+}
+
 /** The fixed value of a field by its type: a box to tick, an option, a row, a number, a date or text. */
 function FixedFieldValue({
   field,
@@ -780,6 +892,12 @@ export function AutomationStepView({
   );
   /** The names the version that runs kept (AU-192), for a «Código»'s context. */
   const kept = useContext(KeptContext);
+  // «Modelo» of an «Agente» (AU-199): the account's choices for its use, asked when one opens, never on a key.
+  const planners = useStore((s) => s.planners);
+  const agentOpen = step?.type === AGENT_TYPE;
+  useEffect(() => {
+    if (agentOpen) loadPlanners();
+  }, [agentOpen, stepId]);
   if (!step) return null;
 
   const collections = types ?? [];
@@ -912,6 +1030,52 @@ export function AutomationStepView({
       )
     : null;
   const blocked = codeContext ? codeBlocked(step, state.draft, codeContext) : null;
+  // An «Agente»'s connections read collections by the same context (AU-41); it cites none by name in a source.
+  const isAgent = step.type === AGENT_TYPE;
+  const agentContext = isAgent
+    ? codeContextOf(
+        collections,
+        state.draft,
+        state.tests,
+        (id) => fieldsOut(state.draft, id, fieldsOf),
+        kept,
+      )
+    : null;
+  const tableContext = codeContext ?? agentContext;
+  const connected = new Set((step.connections ?? []).map((c) => c.collection));
+  const agent: AgentConnections | undefined = isAgent
+    ? {
+        connectable: agentConnectable(collections, connected),
+        connect: (key) => edit((d) => connectCollection(d, step.id, key)),
+        setRead: (key, on) => edit((d) => setRead(d, step.id, key, on)),
+        setWriteLimits: (key, action, limits) =>
+          edit((d) => setWriteLimits(d, step.id, key, action, limits)),
+        setWriteField: (key, action, keys, field, fill) =>
+          edit((d) => setWriteField(d, step.id, key, action, keys, field, fill)),
+        fixedValue: (key, action, field, value) => (
+          <ConnFixedValue
+            field={field}
+            value={value}
+            label={field.name}
+            typing={(n) => view.typing(`connections.${key}.${action}.${field.key}`, n)}
+            set={(x, typing) =>
+              edit((d) => setFixedValue(d, step.id, key, action, field.key, x), typing)
+            }
+          />
+        ),
+      }
+    : undefined;
+  const agentTest = state.tests[step.id];
+  const did =
+    isAgent && agentTest
+      ? didLines(
+          t,
+          agentTest,
+          step,
+          cite.locale,
+          (key) => agentContext?.collectionName?.(key) ?? key,
+        )
+      : null;
   const lastTest = state.tests[step.id];
   const codeFailure =
     lastTest?.state === "failed" && !lastTest.stale ? lastTest.error?.why : undefined;
@@ -963,6 +1127,7 @@ export function AutomationStepView({
           ))}
         </ul>
       )}
+      {did && <AgentDidBox t={t} did={did} locale={cite.locale} />}
       <StepOutput
         key={step.id}
         state={state}
@@ -986,6 +1151,26 @@ export function AutomationStepView({
     </section>
   );
 
+  const table = tableContext && (
+    <ConnectionsTable
+      key="connections"
+      t={t}
+      step={step}
+      context={tableContext}
+      locale={cite.locale}
+      readOnly={still}
+      fieldsOf={fieldsOf}
+      filterEditor={(fields, items, set) => (
+        <FilterItemsEditor type={asType(fields)} items={items} onChange={(next) => set(next)} />
+      )}
+      setCell={(key, action, cell) => edit((d) => setCell(d, step.id, key, action, cell))}
+      allow={(key, action) => edit((d) => allowAction(d, step.id, key, action))}
+      disconnect={(key) => edit((d) => disconnectCollection(d, step.id, key))}
+      setLimits={(key, limits) => edit((d) => setReadLimits(d, step.id, key, limits))}
+      {...(agent ? { agent } : {})}
+    />
+  );
+
   const params = (
     <div className="auto-view-rows" role="tabpanel" aria-label={t("auto.view.params")}>
       {/* On the phone the parameters are read, never changed (AU-74): every control inside is disabled. */}
@@ -998,12 +1183,46 @@ export function AutomationStepView({
             </button>
           </div>
         )}
-        {rowsOf(step).map((row) => {
+        {rowsOf(step).flatMap((row) => {
           const { param } = row;
-          const Painted = PARAM_CONTROLS[row.param.control];
+          // «Agente» (AU-50, AU-51): its code is read only with «Las hace este código», and kept when it is not.
+          if (
+            isAgent &&
+            param.key === AGENT_PARAMS.code &&
+            step.params[AGENT_PARAMS.reads] !== "code"
+          )
+            return [];
+          const Painted: Painter =
+            isAgent && param.key === AGENT_PARAMS.model
+              ? (p) => (
+                  <ModelChoice
+                    t={t}
+                    value={p.value}
+                    label={p.label}
+                    planners={planners}
+                    set={(id) =>
+                      edit((d) =>
+                        id === ""
+                          ? removeOption(d, step.id, param.key)
+                          : setParam(d, step.id, param.key, id, names),
+                      )
+                    }
+                  />
+                )
+              : isAgent && param.key === AGENT_PARAMS.code
+                ? (p) => (
+                    <textarea
+                      className="input auto-input auto-agent-code"
+                      aria-label={p.label}
+                      spellCheck={false}
+                      value={typeof p.value === "string" ? p.value : ""}
+                      onChange={(e) => p.set(e.target.value, `${step.id}.${param.key}`)}
+                    />
+                  )
+                : PARAM_CONTROLS[row.param.control];
           const name = paramName(param.key);
           const isMarked = marked.has(param.key);
-          return (
+          const shown = (
             <div
               key={param.key}
               className={`auto-param${isMarked ? " marked" : ""}`}
@@ -1043,6 +1262,8 @@ export function AutomationStepView({
               )}
             </div>
           );
+          // Its connections after «Modelo», in AU-50's order.
+          return isAgent && param.key === AGENT_PARAMS.model ? [shown, table] : [shown];
         })}
         {codeContext && (
           <CodeParams
@@ -1061,27 +1282,7 @@ export function AutomationStepView({
             {...(codeFailure ? { failure: codeFailure } : {})}
           />
         )}
-        {codeContext && (
-          <ConnectionsTable
-            t={t}
-            step={step}
-            context={codeContext}
-            locale={cite.locale}
-            readOnly={still}
-            fieldsOf={fieldsOf}
-            filterEditor={(fields, items, set) => (
-              <FilterItemsEditor
-                type={asType(fields)}
-                items={items}
-                onChange={(next) => set(next)}
-              />
-            )}
-            setCell={(key, action, cell) => edit((d) => setCell(d, step.id, key, action, cell))}
-            allow={(key, action) => edit((d) => allowAction(d, step.id, key, action))}
-            disconnect={(key) => edit((d) => disconnectCollection(d, step.id, key))}
-            setLimits={(key, limits) => edit((d) => setReadLimits(d, step.id, key, limits))}
-          />
-        )}
+        {codeContext && table}
         {options.length > 0 && (
           <PopButton
             label={t(DO.addOption)}

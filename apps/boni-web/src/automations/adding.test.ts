@@ -1,5 +1,5 @@
 // What the panel «Añadir un paso» lists (docs/automatizaciones.md AU-69).
-import { CATALOGUE, CATEGORIES, isTrigger } from "@boni/automations";
+import { AI_CATEGORY, CATALOGUE, CATEGORIES, isTrigger, specOf } from "@boni/automations";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import { PANEL_CATEGORIES, type PanelEntry, panelList, searchPanel } from "./adding.ts";
@@ -10,7 +10,8 @@ const say = (e: PanelEntry) => entryNames(t, e);
 
 describe("the panel «Añadir un paso»", () => {
   it("AU-69 · every category of the catalogue is a category of the panel or the triggers', and the catalogue has a step of each", () => {
-    expect([...PANEL_CATEGORIES, "trigger"].sort()).toEqual([...CATEGORIES].sort());
+    // «Usar IA» (AU-50) has the «Agente», beside the catalogue as «Código» is.
+    expect([...PANEL_CATEGORIES, "trigger"].sort()).toEqual([...CATEGORIES, AI_CATEGORY].sort());
     for (const category of CATEGORIES)
       expect(
         CATALOGUE.some((t) => t.category === category),
@@ -58,9 +59,7 @@ describe("the panel «Añadir un paso»", () => {
       CATALOGUE.find((s) => s.type === "collection")?.actions.length ?? 0,
     );
     // In every category at once, and nothing for a word no name has.
-    const cats = new Set(
-      searchPanel("a", "steps", say).map((e) => CATALOGUE.find((s) => s.type === e.type)?.category),
-    );
+    const cats = new Set(searchPanel("a", "steps", say).map((e) => specOf(e.type)?.category));
     expect(cats.size).toBe(PANEL_CATEGORIES.length);
     expect(searchPanel("zzzz", "steps", say)).toEqual([]);
     // Empty, it is the whole list, with «Código» beside the catalogue (AU-30); over the triggers when the panel
@@ -68,10 +67,16 @@ describe("the panel «Añadir un paso»", () => {
     expect(searchPanel("", "steps", say)).toHaveLength(
       CATALOGUE.filter((s) => s.category !== "trigger").reduce(
         (n, s) => n + (s.type === "collection" ? s.actions.length : 1),
-        1,
+        2,
       ),
     );
     expect(searchPanel("código", "steps", say)).toEqual([{ type: "code" }]);
+    expect(searchPanel("agente", "steps", say)).toEqual([{ type: "agent" }]);
+    const list = panelList("steps");
+    if (list.kind !== "steps") throw new Error("steps");
+    expect(list.sections.find((s) => s.category === AI_CATEGORY)?.entries).toEqual([
+      { type: "agent" },
+    ]);
     expect(searchPanel("usuario", "empty", say)).toEqual([{ type: "manual" }]);
   });
 });

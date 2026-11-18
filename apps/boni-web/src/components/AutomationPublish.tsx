@@ -117,7 +117,9 @@ export function PublishScreen({
   const changes = view.diff ? diffLines(t, view.diff, nameOf, locale) : [];
   const checks = checkLines(t, view, locale, (k) => collections[k]);
   const blocked = checks.some((c) => c.block);
-  const can = view.abilities.map((a) => abilityLine(t, a, (k) => collections[k] ?? k));
+  const can = view.abilities.map((a) =>
+    abilityLine(t, a, (k) => collections[k] ?? k, draft, locale),
+  );
   const stepLink = (step: string | undefined) =>
     step && has(step) ? (
       <button type="button" className="link-btn auto-pub-step" onClick={() => onStep(step)}>
