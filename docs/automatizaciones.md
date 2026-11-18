@@ -3243,7 +3243,7 @@ en sus grupos con la cuenta de cada uno: «Agente · 14 de 15», «Lectura · 8 
 filas «De la cuenta», cuántas automatizaciones y cuántas conversaciones); su gasto del mes; y «Quitar». Nada de esto
 explica nada dentro de la app: son nombres y valores.
 
-- **AU-232** (FM, en parte) · «Modelos» es una lista de modelos cargados, sin usos. Cada fila: el nombre, la
+- **AU-232** (FM, hecho) · «Modelos» es una lista de modelos cargados, sin usos. Cada fila: el nombre, la
   conexión, la píldora de privacidad de su ruta (la de hoy), sus etiquetas, el resultado de su evaluación y el
   gasto del mes. El mismo modelo por dos conexiones o dos rutas son dos filas. El orden es de Juan (arrastrar, o
   «Subir» y «Bajar» en el menú de la fila) y solo sirve para una cosa: decir cuál gana en una etiqueta (AU-239). Un
@@ -3253,10 +3253,13 @@ explica nada dentro de la app: son nombres y valores.
   (AU-243). La lista se pide una vez al abrir la página, con el gasto ya sumado por modelo: con 30 modelos y un año
   del diario de llamadas responde en su tiempo (A-15). Las pruebas: `apps/server/src/models.test.ts` («AU-232 · the
   list gives every loaded model once, in the person's order, with its tags, its evaluation and the month's cost»)
-  y `e2e-boni/models.spec.ts` («AU-232 · «Modelos» is one list and no use is named in it», también a ancho de
-  teléfono).
-  Falta (M2): la pantalla, su prueba de `e2e-boni/models.spec.ts` y el arrastre; el servidor da la lista entera en una petición (`GET /api/agent/models/list`).
-- **AU-233** (FM, en parte) · Añadir y quitar. «Añadir modelo» abre el buscador de hoy (la conexión y su catálogo,
+  y `e2e-boni/models.spec.ts` («AU-232 · «Modelos» is one list and no use is named in it», «AU-232 AU-243 ·
+  «Modelos» at a phone's width, where it only reads» y «AU-232 · the order is his: a row dragged, or «Subir» and
+  «Bajar»»); su tiempo con 30 modelos, 20 etiquetas y 200 pasos, en `apps/server/src/models.test.ts` («AU-232
+  AU-238 · with 30 models, 20 tags and 200 steps naming them, the list and each kind's choices answer in their
+  time») y `apps/boni-web/src/core/modelChoices.test.ts`. En M2: la pantalla, una petición al abrirla
+  (`GET /api/agent/models/list`).
+- **AU-233** (FM, hecho) · Añadir y quitar. «Añadir modelo» abre el buscador de hoy (la conexión y su catálogo,
   con la ruta sin retención cuando la hay); pide la clave de esa conexión en «Claves» si falta, con el aviso de hoy.
   El modelo entra «Sin evaluar» y no se puede elegir en ningún sitio hasta tener su evaluación (AU-235). «Quitar»
   pregunta antes cuando el modelo se usa, y dice dónde: «Se usa en 2 automatizaciones y en «De la cuenta ·
@@ -3267,9 +3270,9 @@ explica nada dentro de la app: son nombres y valores.
   si el servidor no trae ninguno, y la pregunta lo dice. Quitar una clave en «Claves» pregunta lo mismo por los
   modelos de su conexión. Las pruebas: `apps/server/src/models.test.ts` («AU-233 · removing a model in use says
   where it is used, keeps its evaluation and leaves every reference answering «no-model»») y
-  `e2e-boni/models.spec.ts` («AU-233 · a model added is «Sin evaluar» and is offered nowhere»).
-  Falta (M2): el buscador y la pregunta en pantalla; el servidor ya pregunta antes (`409` con dónde se usa) y quitar una clave lo dice con `dry`.
-- **AU-234** (FM, en parte) · Una evaluación por modelo (Juan, 2026-11-18, decisión 25). «Evaluar» en un modelo
+  `e2e-boni/models.spec.ts` («AU-233 · a model added is «Sin evaluar» and is offered nowhere» y «AU-233 AU-241 ·
+  «Quitar» a model or a key in use asks first and says where it is used»).
+- **AU-234** (FM, hecho) · Una evaluación por modelo (Juan, 2026-11-18, decisión 25). «Evaluar» en un modelo
   corre, de una vez, todos los casos que ese modelo puede contestar y da un resultado: «22 de 24». No se elige qué
   evaluar. Los casos son los inventados de hoy y no se escribe ninguno nuevo: para un modelo que contesta como
   «Agente» y como «Lectura» (todos menos los de decisión), los 15 de `evalPlanner` y los 9 de `evalReader`; para un
@@ -3288,8 +3291,8 @@ explica nada dentro de la app: son nombres y valores.
   Vale 30 días (`EVAL_DAYS`); pasada, dice «Caducada» junto a su resultado. Lo que cuesta, comparado con hoy, está
   debajo de estas reglas. Las pruebas: `apps/server/src/models.test.ts` («AU-234 · one evaluation of a model runs
   every case it can answer once and keeps one result with its parts, and one older than its days is marked
-  expired», con el reloj de `@boni/pace` y un modelo de guion, sin modelo real).
-  Falta (M2): «Ver los casos» en pantalla; el servidor guarda los casos de cada parte (`GET /api/agent/models/evaluation`).
+  expired», con el reloj de `@boni/pace` y un modelo de guion, sin modelo real) y `e2e-boni/models.spec.ts`
+  («AU-234 · «Evaluar» evaluates that model alone», con «Ver los casos» por partes).
 - **AU-235** (FM, hecho) · «Evaluado» es tener esa evaluación, vigente: la puerta ya no nombra un uso. Un
   modelo se puede elegir (en el chat, en un «Agente», en un lector, en una fila «De la cuenta») solo con su clave
   puesta y su evaluación vigente, y para las clases de llamada cuyos casos están en ella. Uno evaluado vale a la
@@ -3304,7 +3307,7 @@ explica nada dentro de la app: son nombres y valores.
   current evaluation, for the kinds of call its evaluation has cases of, whatever its result») y
   `apps/server/src/automations/ai.test.ts` («AU-235 · a published step keeps its model when its evaluation
   expires»).
-- **AU-236** (FM, en parte) · «De la cuenta» son tres filas, una por clase de llamada: «Agente», «Lectura» y
+- **AU-236** (FM, hecho) · «De la cuenta» son tres filas, una por clase de llamada: «Agente», «Lectura» y
   «Decisión». Cada una es un modelo o una etiqueta, se cambia con «Cambiar» entre los que valen para su clase
   (AU-235) y es lo que usan un paso o una conversación con «El de la cuenta», resuelta en cada ejecución (AU-239).
   Un paso con «El de la cuenta» se publica siempre que su fila tenga modelo, como hoy.
@@ -3314,18 +3317,17 @@ explica nada dentro de la app: son nombres y valores.
   las automatizaciones y conversaciones que no eligieron, y «Cambiar» lo dice con su cuenta («La usan 6
   automatizaciones») antes de guardar. Que estas filas existan lo decidió Juan (decisión 22). Las pruebas:
   `apps/server/src/models.test.ts` («AU-236 · a step and a conversation that chose nothing use the account's row
-  of their kind, read at each run»).
-  Falta (M2): «Cambiar» con su cuenta en pantalla; el servidor da cuántas automatizaciones usan cada fila.
-- **AU-237** (FM, en parte) · Una etiqueta es un nombre de Juan sobre modelos. La pone y la quita él en «Modelos»,
+  of their kind, read at each run») y `e2e-boni/models.spec.ts` («AU-236 · «Cambiar» a row «De la cuenta»»).
+- **AU-237** (FM, hecho) · Una etiqueta es un nombre de Juan sobre modelos. La pone y la quita él en «Modelos»,
   en el modelo («Etiquetas» → escribir un nombre nuevo o elegir uno que ya existe); un modelo lleva las que él
   quiera y una etiqueta, los modelos que él quiera. Tiene un identificador por debajo: cambiarle el nombre no rompe
   los pasos que la usan. Hasta 20 etiquetas, de 24 caracteres como mucho, con nombres distintos entre sí. Boni no
   trae ninguna, el código no nombra ninguna y la migración no crea ninguna (D-14): «Barato» significa lo que él
   decida. Una etiqueta sin modelos desaparece sola si nadie la usa; si un paso o una fila «De la cuenta» la usan,
   se queda y dice «Sin modelo» (AU-241). Las pruebas: `apps/server/src/models.test.ts` («AU-237 · a tag renamed
-  keeps every step that names it, and no tag exists that the person did not write»).
-  Falta (M2): poner y quitar etiquetas en pantalla.
-- **AU-238** (FM, en parte) · El «Modelo» de un paso de IA es un desplegable cerrado con tres partes: «El de la
+  keeps every step that names it, and no tag exists that the person did not write») y `e2e-boni/models.spec.ts`
+  («AU-237 AU-241 · a tag is put on a model by its name»).
+- **AU-238** (FM, hecho) · El «Modelo» de un paso de IA es un desplegable cerrado con tres partes: «El de la
   cuenta» (por defecto; no guarda nada), las etiquetas y los modelos que valen para la clase del paso. Cada
   etiqueta, y «El de la cuenta», dicen al lado el modelo que contestaría hoy: «Barato · m-ejemplo-rápido». Una
   etiqueta vale cuando ese modelo, el que contestaría (AU-239), vale (AU-235): elegirla no da más que elegirlo a
@@ -3336,11 +3338,12 @@ explica nada dentro de la app: son nombres y valores.
   enseñan «Modelo»; uno que ya no está se sigue diciendo en la propia lista, como hoy. La lista la da una
   ruta por clase de llamada (`GET /api/agent/models/choices?kind=…`, en `routes.ts`, solo en la red privada, A-03);
   `GET /api/agent/planners` se queda como su caso «Agente» mientras haya una versión de escritorio que la pida. Las
-  pruebas: `e2e-boni/automations-ai.spec.ts` («AU-238 · «Modelo» offers «El de la cuenta», the tags and the models
-  of the step's kind, each tag with the model that would answer», junto a las de AU-199 de ese archivo) y
-  `packages/automations/src/catalogue.test.ts` («AU-238 · «Modelo» takes nothing, a model's id or a tag, and
-  nothing else»).
-  Falta (M2): el desplegable y su prueba de `e2e-boni/automations-ai.spec.ts`; el catálogo, `aiProblems` y la ruta de opciones ya lo saben.
+  pruebas: `e2e-boni/automations-ai.spec.ts` («AU-238 · AU-241 · «Modelo» offers «El de la cuenta», the tags and
+  the models of the step's kind, each tag with the model that would answer», junto a las de AU-199 de ese
+  archivo), `apps/boni-web/src/core/modelChoices.test.ts` (sus opciones, y su tiempo con 60 modelos, 20 etiquetas y
+  200 pasos) y `packages/automations/src/catalogue.test.ts` («AU-238 · «Modelo» takes nothing, a model's id or a
+  tag, and nothing else»). El desplegable es el mismo en el «Agente» y en los lectores: lo pide cada paso por su
+  clase (`callKindOf`).
 - **AU-239** (FM, hecho) · Qué modelo contesta lo dice una sola función (`resolveModel(cuenta, clase, valor)`
   en `models.ts`, delante de `stepProvider`), para el chat, los pasos, las piezas y «De la cuenta». Con un modelo:
   ese. Con nada: la fila «De la cuenta» de la clase. Con una etiqueta: el primero, en el orden de la lista de
@@ -3365,7 +3368,7 @@ explica nada dentro de la app: son nombres y valores.
   siendo la lista cerrada de AU-197, que no cambia con el modelo ni con la etiqueta. Las pruebas:
   `apps/server/src/automations/ai.test.ts` («AU-240 · the same call gets the same decision whether its model came
   from a tag, from the account or by its id, and a denial tries no other model»).
-- **AU-241** (FM, en parte) · Sin modelo. Una etiqueta o una fila «De la cuenta» sin ningún modelo con clave y
+- **AU-241** (FM, hecho) · Sin modelo. Una etiqueta o una fila «De la cuenta» sin ningún modelo con clave y
   evaluado que conteste esa clase de llamada (AU-235) dice «Sin modelo»: en el desplegable del paso sale apagada;
   al publicar, el paso tiene el problema de hoy («Elige otro modelo en «Clasificar»», AU-199) y no se publica,
   igual que con una etiqueta cuyo modelo tiene la evaluación caducada (AU-238); en una versión ya publicada, el
@@ -3375,9 +3378,10 @@ explica nada dentro de la app: son nombres y valores.
   etiqueta al último modelo que vale, quitar ese modelo o quitar su clave («Barato se queda sin modelo. La usan 3
   automatizaciones»). Las pruebas: `apps/server/src/models.test.ts` («AU-241 · what would leave a tag in use
   without a model says where it is used before it is done») y `apps/server/src/automations/ai.test.ts` («AU-241 ·
-  a tag without a usable model is a problem of its step at publish and «no-model» in a published run»).
-  Falta (M2): los textos de la pregunta y el apagado en pantalla; el servidor ya pregunta y el paso falla con `no-model`.
-- **AU-242** (FM, en parte) · El chat elige un modelo cargado. El chip de la barra lista «El de la cuenta» y los
+  a tag without a usable model is a problem of its step at publish and «no-model» in a published run»); en
+  pantalla, la pregunta y el apagado en `e2e-boni/models.spec.ts` y `e2e-boni/automations-ai.spec.ts` (las de
+  AU-241).
+- **AU-242** (FM, hecho) · El chat elige un modelo cargado. El chip de la barra lista «El de la cuenta» y los
   modelos que valen para «Agente» (AU-235), y termina en «Añadir modelo», que abre Ajustes → Modelos (solo desde
   un dispositivo personal; en los demás no sale). Sin etiquetas: en el chat se elige un modelo. Una conversación
   nueva nace con «El de la cuenta» y guarda el id del modelo solo si él lo cambia (`conversations.model`, como
@@ -3385,8 +3389,9 @@ explica nada dentro de la app: son nombres y valores.
   (decisión 19) y su modelo es el «Modelo» de su «Agente» (AU-238). Las pruebas:
   `apps/server/src/models.test.ts` («AU-242 · a conversation is offered the account's and the evaluated models
   that answer as an agent, and one whose model is gone answers with the account's») y `e2e-boni/models.spec.ts`
-  («AU-242 · the chat's chip ends in «Añadir modelo» only on a personal device»).
-  Falta (M2): el chip con «Añadir modelo» y su prueba; `GET /api/agent/planners` ya es el caso «Agente» de la puerta.
+  («AU-242 AU-243 · the chat's chip ends in «Añadir modelo» only on a personal device» y la de un dispositivo
+  compartido). El chip pide `GET /api/agent/models/choices?kind=agent`; `GET /api/agent/planners` se queda para la
+  versión de escritorio anterior.
 - **AU-243** (FM, en parte) · Un modelo no elige modelo. Qué modelo recibe un texto es decir adónde va ese texto y
   cuánto cuesta, así que lo pone la mano de Juan, como un «Sí» (AU-187). En un borrador que proponen el asistente,
   el MCP o «Pedir a Boni» (AU-140, AU-141, AU-144), un paso nuevo, o uno cuyo «Modelo» no es el que Juan le había
@@ -3395,6 +3400,8 @@ explica nada dentro de la app: son nombres y valores.
   es una colección que una conexión pueda abrir. Las pruebas: `apps/server/src/automations/ai.test.ts` («AU-243 ·
   a proposed draft carries no model its author chose, and no action writes models, tags, order or the account's
   rows»).
+  En M2, en pantalla: «Modelos» solo se lee en un dispositivo compartido y en el teléfono (`e2e-boni/models.spec.ts`,
+  las de AU-243).
   Falta: que las propuestas de AU-140, AU-141 y AU-144, cuando lleguen, pasen su documento por `keepOwnModels` (`packages/automations/src/ai.ts`), que ya está; ninguna ruta de «Modelos» es una acción (`JUAN_ONLY`).
 - **AU-244** (FM, hecho) · El cambio no pierde nada. Al abrir el almacén, una vez, por código y sin modelo, la
   cuenta pasa a la forma nueva; repetirlo no cambia nada. La lista de modelos: el de cada uso de hoy, cada modelo
@@ -3476,10 +3483,10 @@ modelo no hay cifra, como hoy; después, lo que costó la última queda junto a 
 
 **El plan de construcción: dos PR**, cada uno revisable entero, y una revisión de conformidad al final.
 
-| PR | Qué | Antes de |
-|---|---|---|
-| **M1** Servidor y núcleo | La lista, las etiquetas, «De la cuenta», la evaluación del modelo (`evalModel` y la puerta de AU-235), `resolveModel`, la migración (AU-244), la ruta de opciones con `planners` como su caso, el valor `tag:` en el catálogo y en `aiProblems`, `modelRefOf` (AU-245), el mapa, y las rutas por uso de hoy contestando igual. Sin pantalla: en la app no cambia nada | La conversión de la F16 (su S1), que llama a `modelRefOf` y cuyo informe en seco compara modelos |
-| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega |
+| PR | Qué | Antes de | Estado |
+|---|---|---|---|
+| **M1** Servidor y núcleo | La lista, las etiquetas, «De la cuenta», la evaluación del modelo (`evalModel` y la puerta de AU-235), `resolveModel`, la migración (AU-244), la ruta de opciones con `planners` como su caso, el valor `tag:` en el catálogo y en `aiProblems`, `modelRefOf` (AU-245), el mapa, y las rutas por uso de hoy contestando igual. Sin pantalla: en la app no cambia nada | La conversión de la F16 (su S1), que llama a `modelRefOf` y cuyo informe en seco compara modelos | en main (#521) |
+| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega | en curso: su PR, a falta de la revisión de conformidad; las rutas por uso y `planners` se quedan (la versión de escritorio anterior las pide) |
 
 M1 no toca lo que construye ahora la F16 (su parte pura no escribe modelos) y puede ir en paralelo con ella. M2 toca
 el mismo panel del paso que las pantallas de la F15: va después de ellas, no a la vez. Si M1 se desplegara antes que
