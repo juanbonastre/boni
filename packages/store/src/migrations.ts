@@ -408,6 +408,9 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 32: what a run that waits for Juan's answer keeps to go on (F15 S2, AU-203): its execution, its limit, its
   // answers so far (automationRuns.ts).
   AUTOMATION_RUN_WAITS_MIGRATION,
+  // 33: the decisions of a few days, by when they were taken (F15 S3, AU-207): once a day the server judges what a
+  // run saved in the last 7 days by what Juan's hand did since, reading only those, never an area whole.
+  `CREATE INDEX IF NOT EXISTS decisions_at ON decisions(at);`,
 ];
 
 export function migrate(db: DatabaseSync): void {

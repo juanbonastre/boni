@@ -286,10 +286,22 @@ export interface Journal extends AutomationsJournal, AutomationRunsJournal {
   addDecision(d: Omit<DecisionRow, "result" | "resultAt">): void;
   /** What came of a decision, once Juan decided (the first result stays). */
   setDecisionResult(id: string, result: "right" | "wrong", at: number): void;
+  /**
+   * What came of it, again: where the last of Juan's acts is what counts (AU-207: a proposal accepted and then
+   * undone or corrected is one decision, wrong). Only `right` to `wrong`, or a first result: never back to `right`.
+   */
+  reviseDecision(id: string, result: "wrong", at: number): void;
+  /** The decisions of the areas that start with `prefix`, taken from `since` on, oldest first (by `decisions_at`). */
+  decisionsSince(prefix: string, since: number): DecisionRow[];
   /** A run's decisions, oldest first (to link what Juan decided of its proposal). */
   decisionsOf(run: string): DecisionRow[];
   /** An area's last decisions, newest last (the Registro's counts; an area's thresholds and «Solo»). */
   decisions(area: string, limit?: number): DecisionRow[];
+  /**
+   * An area's last judged decisions (a result given), taken after `after`, newest last: what a count reads when
+   * many of the newest still wait for theirs (an hourly «Sí» judged 7 days later, AU-207), by `decisions_area`.
+   */
+  judgedDecisions(area: string, limit: number, after?: number): DecisionRow[];
   /** The areas with any decision, by name. */
   decisionAreas(): string[];
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
@@ -433,6 +445,20 @@ export function openJournal(db: DatabaseSync): Journal {
       void db
         .prepare("UPDATE decisions SET result = ?, result_at = ? WHERE id = ? AND result IS NULL")
         .run(result, at, id),
+    reviseDecision: (id, result, at) =>
+      void db
+        .prepare(
+          "UPDATE decisions SET result = ?, result_at = ? WHERE id = ? AND (result IS NULL OR result = 'right')",
+        )
+        .run(result, at, id),
+    decisionsSince: (prefix, since) =>
+      (
+        db
+          .prepare(
+            "SELECT * FROM decisions WHERE at >= ? AND substr(area, 1, ?) = ? ORDER BY at, rowid",
+          )
+          .all(since, prefix.length, prefix) as Record<string, unknown>[]
+      ).map(decisionOf),
     decisionsOf: (run) =>
       (
         db.prepare("SELECT * FROM decisions WHERE run = ? ORDER BY at, rowid").all(run) as Record<
@@ -451,6 +477,14 @@ export function openJournal(db: DatabaseSync): Journal {
             "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
           )
           .all(area, limit) as Record<string, unknown>[]
+      ).map(decisionOf),
+    judgedDecisions: (area, limit, after = 0) =>
+      (
+        db
+          .prepare(
+            "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? AND at > ? AND result IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
+          )
+          .all(area, after, limit) as Record<string, unknown>[]
       ).map(decisionOf),
     startRun: (r) =>
       void db

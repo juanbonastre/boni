@@ -14,12 +14,16 @@
  *
  * Each tick also goes on with the runs whose wait for an answer passed its limit (AU-203: «sin respuesta»), in the
  * account's lane: a restart loses none, since the limit is kept with the wait in the store.
+ *
+ * And once a day for each account, the look at the operation log of what Boni learns (learning.ts, AU-207): what his
+ * hand corrected of what the runs saved, and what stayed 7 days.
  */
 
 import { type Automation, type Box, SCHEDULE_DAYS, SCHEDULE_EVERY } from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import { graceOf, lastSlot, type Schedule } from "../flowScheduler.ts";
-import { expireWaits, missRun, startScheduledRun } from "./runs.ts";
+import { judgeCells, judgeDue } from "./learning.ts";
+import { expireWaits, missRun, startScheduledRun, tellLearned } from "./runs.ts";
 
 /** One schedule trigger of a version and its rules, as the column keeps them. */
 export interface ScheduleEntry {
@@ -96,6 +100,11 @@ export interface AutomationSchedulerOptions {
   log?: (line: string) => void;
   /** Where a «Código» runs; the sandbox when not given (tests give their own). */
   box?: Box;
+  /**
+   * The names of the account's personal devices: only his hand on one of them corrects what a run saved (AU-207).
+   * Without it, the day's look of learning.ts is not made.
+   */
+  personal?: (account: number) => ReadonlySet<string>;
 }
 
 const parse = (text: string): ScheduleEntry[] => {
@@ -136,6 +145,13 @@ export class AutomationScheduler {
         this.started.add(job);
         out.push(job);
       }
+      if (this.o.personal && judgeDue(store, now))
+        try {
+          const judged = judgeCells(store, now, this.o.personal(account));
+          tellLearned(store, judged.notices);
+        } catch (e) {
+          this.o.log?.(`automations ${account}: learning not judged: ${String(e).slice(0, 80)}`);
+        }
       for (const a of store.journal.scheduledAutomations()) {
         if (a.busy) continue;
         const due = dueHour(parse(a.schedule), a.since, a.last, now, tz);

@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { AnthropicProvider, JevProvider, OpenAIProvider } from "@boni/agent";
+import { devicesOf } from "@boni/identity";
 import { startCheckpoints } from "@boni/store";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
@@ -216,6 +217,17 @@ const automationScheduler = new AutomationScheduler({
   store: (account) => agent.store(account),
   zone: () => tz,
   log: (line) => console.log(line),
+  // His personal devices, by name as the operation log keeps them (automations/learning.ts, AU-207).
+  personal: (account) => {
+    const user = listUsers(db).find((u) => u.id === account);
+    return new Set(
+      user
+        ? devicesOf(db, user.name)
+            .filter((d) => d.trust === "personal")
+            .map((d) => d.name)
+        : [],
+    );
+  },
 });
 automationScheduler.start();
 // A run of an automation cut by the last stop is «Interrumpida» (decision 12): opening each account's store marks

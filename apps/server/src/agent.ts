@@ -30,8 +30,15 @@ import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
+import { learnAnswer } from "./automations/learning.ts";
 import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
-import { type AskGiven, answerAsk, interruptRuns, onRunEvent } from "./automations/runs.ts";
+import {
+  type AskGiven,
+  answerAsk,
+  interruptRuns,
+  onRunEvent,
+  tellLearned,
+} from "./automations/runs.ts";
 import { askPlace, noticeText, onPeople } from "./automations/waits.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
@@ -1194,6 +1201,12 @@ async function answerAgent(
     if (r.proposals.length) host.emit(who.account, "proposals", { n: r.proposals.length });
     return r;
   };
+  /** What Boni learns of his answer to a run's proposal (automations/learning.ts): his hand, by his device's trust. */
+  const learned = (proposal: string) => {
+    if (!host.hasData) return;
+    const store = host.store(who.account);
+    tellLearned(store, learnAnswer(store, proposal, who.trust, Date.now()));
+  };
   switch (route) {
     case "POST /api/agent/press": {
       // A page's button (D-60): what it runs and passes is read from the saved page.
@@ -1432,12 +1445,15 @@ async function answerAgent(
         return r.error === "changed"
           ? send(res, 409, { error: r.error, state: r.state ?? null })
           : send(res, 400, { error: r.error });
+      // His «Aceptar» of a run's proposal, on a personal device, is one decision of each cell it asked (AU-207).
+      learned(params.id ?? "");
       return send(res, 200, after(r.done));
     }
     case "POST /api/agent/proposals/:id/reject":
       if (off && !isRunProposal(host.store(who.account).journal.proposal(params.id ?? "")))
         return agentOff();
       agent.rejectProposal(params.id ?? "");
+      learned(params.id ?? "");
       return send(res, 200, {});
     case "POST /api/agent/proposals/:id/restore": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });

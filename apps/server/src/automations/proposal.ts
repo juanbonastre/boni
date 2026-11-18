@@ -164,6 +164,28 @@ function askedRows(store: UserStore, run: string, offset = 0, limit?: number): A
     .map((x) => (typeof x === "string" ? JSON.parse(x) : x) as Asked);
 }
 
+/**
+ * The cells a run's proposal asks for (AU-207): each step, collection and action once, whatever the rows; a removal
+ * is the cell's `remove`. What Juan answers of the proposal is one decision of each.
+ */
+export function askedCells(
+  store: UserStore,
+  run: string,
+): { step: string; collection: string; action: "create" | "update" | "remove" }[] {
+  const seen = new Map<
+    string,
+    { step: string; collection: string; action: "create" | "update" | "remove" }
+  >();
+  for (const a of askedRows(store, run)) {
+    const collection = collectionOf(store, a);
+    const act = actionOf(a);
+    const action = act === "trash" ? "remove" : act;
+    const k = `${a.step}\u0000${collection}\u0000${action}`;
+    if (collection && !seen.has(k)) seen.set(k, { step: a.step, collection, action });
+  }
+  return [...seen.values()];
+}
+
 /** A page of what a run asked (the proposal's «Ver todo»): 50 from `offset`, and how many there are. */
 export function askedOf(
   store: UserStore,
