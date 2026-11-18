@@ -165,7 +165,7 @@ describe("the reader steps (F15)", () => {
     // Every call spends the use «Lector» with the step's «Modelo» or «El de la cuenta» (null), and the record says
     // which model answered.
     for (const [type, params] of [
-      ["extract", { text: cite(body), fields: fields(2), model: "lector-b" }],
+      ["extract", { text: cite(body), fields: fields(2), model: "openrouter:lector-b" }],
       ["classify", { text: cite(body), options: OPTIONS }],
       ["summarize", { text: cite(body) }],
       ["write", { instructions: "Escribe una línea amable", text: cite(body) }],
@@ -177,7 +177,7 @@ describe("the reader steps (F15)", () => {
       expect(ai.calls.length).toBeGreaterThan(0);
       for (const c of ai.calls) {
         expect(c.use).toBe("reader");
-        expect(c.model).toBe(type === "extract" ? "lector-b" : null);
+        expect(c.model).toBe(type === "extract" ? "openrouter:lector-b" : null);
       }
       expect(e.steps[r.reader]?.ai).toMatchObject({
         calls: ai.calls.length,

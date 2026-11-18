@@ -1,24 +1,49 @@
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   AnthropicProvider,
   CONNECTIONS,
   type Connection,
+  choiceId,
   codeLabel,
   DEFAULT_MODELS,
+  EMPTY_LIST,
+  EVAL_DAYS,
+  type EvalParts,
+  evaluatedFor,
+  firstOfTag,
+  gateOpen,
   JevProvider,
+  KIND_OF_ROLE,
+  KINDS,
+  type Kind,
+  kindsOf,
   leaf,
+  listConversations,
+  listErrors,
+  MODELS_MAX,
   type ModelProvider,
+  type ModelRoute,
   type ModelsConfig,
+  type ModelsList,
+  markOf,
   modelsErrors,
   OpenAIProvider,
   type Privacy,
+  parseChoice,
   privacyOf,
+  ROLE_OF_KIND,
   ROLES,
   type Role,
   type RoleChoice,
+  TAG_NAME_MAX,
+  TAG_REF,
+  TAGS_MAX,
+  tagOfRef,
   type Val,
 } from "@boni/agent";
-import { type EvalResult, evalRole } from "@boni/agent/evals";
+import { type EvalResult, evalModel, evalRole } from "@boni/agent/evals";
+import { AGENT_TYPE, isBoniType, isReaderType } from "@boni/automations";
 import { wrappedKeysIn } from "@boni/identity";
 import { fetchText } from "@boni/net";
 import {
@@ -51,8 +76,9 @@ const CONFIG = "models/config";
 const KEYS = "models/keys";
 const WARNED = "models/warned";
 const EVALS = "models/evals";
-/** How recent an evaluation must be for its model to take a role. */
-const EVAL_DAYS = 30;
+/** «Modelos» without uses (§5.16): the list, its tags and «De la cuenta» (AU-232), and each model's evaluation. */
+const LIST = "models/list";
+const MARKS = "models/evaluation";
 
 /**
  * Boni's «Aviso del presupuesto» (docs/sistema.md §4.2, D-53): what `overBudget` did by itself when the month's
@@ -115,6 +141,14 @@ const same = (
   c: Pick<Evaluation, "role" | "connection" | "model" | "zdr">,
 ) => e.role === c.role && e.connection === c.connection && e.model === c.model && e.zdr === c.zdr;
 
+/**
+ * A model's last evaluation (AU-234): one part per kind of call it answers, each with its cases and its own date.
+ * A new evaluation gives every part one date; those carried from the uses of before keep theirs (AU-244).
+ */
+export interface ModelEvaluation {
+  parts: Partial<Record<Kind, EvalResult & { at: number }>>;
+}
+
 export interface ModelsOptions {
   db: Db;
   key: SecretKey;
@@ -154,6 +188,8 @@ export class AccountModels {
   private cached: { at: number; models: CatalogueModel[] } | null = null;
   /** The evaluation running for each account (one at a time). */
   private running = new Map<number, Pick<Evaluation, "role" | "connection" | "model" | "zdr">>();
+  /** The model being evaluated for each account (`evaluateModel`), by its id. */
+  private runningModel = new Map<number, string>();
   /** What goes on in the background: the evaluations, and a run of «Aviso del presupuesto». */
   private jobs = new Set<Promise<void>>();
   /** The month each account passed the warning with «Aviso del presupuesto» off (said once in the log). */
@@ -249,42 +285,46 @@ export class AccountModels {
   }
 
   /**
-   * The providers of an account that chose something of its own (models or keys); null: the server's, unchanged.
-   * Built once per configuration, so the agent keeps the same objects until it changes.
+   * The providers of an account that chose something of its own (models, keys, rows or tags); null: the server's,
+   * unchanged. The agent, the reader and the decider are «De la cuenta»'s rows as they answer now (AU-236); the
+   * reviewer is still its use's, for the engine of before until the conversion (AU-244). Built once per what
+   * answers, so the agent keeps the same objects until it changes.
    */
   providers(account: number): Providers | null {
     const own = this.keys(account);
     const c = this.config(account);
-    if (!Object.keys(c.roles).length && !Object.keys(own).length) return null;
-    const views = this.roles(account);
+    const l = this.list(account);
+    if (
+      !Object.keys(c.roles).length &&
+      !Object.keys(own).length &&
+      KINDS.every((k) => l.account[k] === null)
+    )
+      return null;
+    const answers = KINDS.map((k) => {
+      const r = this.resolveModel(account, k, null);
+      return "refused" in r ? null : r;
+    });
+    const reviewer = this.roles(account).find((v) => v.role === "reviewer");
     const sig = JSON.stringify([
-      views,
+      answers.map((a) => a?.id ?? null),
+      reviewer ?? null,
       Object.keys(own).sort(),
       Object.values(own).map((k) => k.length),
     ]);
     const had = this.built.get(account);
     if (had?.sig === sig) return had.providers;
-    const byRole = new Map<Role, ModelProvider>();
-    for (const v of views) {
-      const key = this.keyFor(account, v.connection);
-      if (!key) continue;
-      try {
-        byRole.set(v.role, (this.o.makeProvider ?? provider)(v, key));
-      } catch {
-        // a role whose provider cannot be made runs as the server's default below
-      }
-    }
-    const planner = byRole.get("planner");
-    const reader = byRole.get("reader");
+    const [agent, reading, decision] = KINDS.map((k, i) => {
+      const a = answers[i];
+      return a ? this.make(account, k, a.route) : null;
+    });
+    const review = reviewer ? this.make(account, "reading", reviewer) : null;
     const providers: Providers | null =
-      planner && reader
+      agent && reading
         ? {
-            planner,
-            reader,
-            ...(byRole.get("decider") ? { decider: byRole.get("decider") as ModelProvider } : {}),
-            ...(byRole.get("reviewer")
-              ? { reviewer: byRole.get("reviewer") as ModelProvider }
-              : {}),
+            planner: agent,
+            reader: reading,
+            ...(decision ? { decider: decision } : {}),
+            ...(review ? { reviewer: review } : {}),
           }
         : null;
     this.built.set(account, { sig, providers });
@@ -550,6 +590,14 @@ export class AccountModels {
             ...this.evaluations(account).filter((x) => !same(x, c)),
           ];
           this.o.host.store(account).setSetting(EVALS, JSON.stringify(kept.slice(0, 20)));
+          // The desktop of before evaluates by use: its result is that model's part of its kind (AU-244).
+          const id = choiceId(c);
+          const marks = this.marks(account);
+          marks[id] = {
+            parts: { ...(marks[id]?.parts ?? {}), [KIND_OF_ROLE[role]]: { ...r, at: this.now() } },
+          };
+          this.o.host.store(account).setSetting(MARKS, JSON.stringify(marks));
+          this.built.delete(account);
         }
       } catch (e) {
         console.error(`models ${account}: evaluation failed (${(e as Error).message})`);
@@ -570,87 +618,694 @@ export class AccountModels {
   }
 
   /**
-   * The models a use may run on (AU-199): the role's own («El de la cuenta», `current`), and every other model
-   * evaluated for it lately whose key is there. The same gate as the role: a model takes a use only after its
-   * evaluation. A conversation's planners are the case `planner` (`plannerChoices`); an automation's «Agente» reads
-   * the same list, and its four readers the one of `reader`.
+   * The models a conversation may plan with (AU-242): «El de la cuenta» (`current`, the row «Agente» as it answers)
+   * and every loaded model the gate offers for «Agente» (AU-235). No tags: in the chat a model is chosen.
    */
-  modelChoices(account: number, role: "planner" | "reader"): PlannerChoice[] {
+  plannerChoices(account: number): PlannerChoice[] {
     const out: PlannerChoice[] = [];
-    const own = this.roles(account).find((r) => r.role === role);
-    if (own)
-      out.push({
-        id: choiceId(own),
-        connection: own.connection,
-        model: own.model,
-        zdr: own.zdr,
-        privacy: own.privacy,
-        current: true,
-      });
-    for (const e of this.evaluations(account)) {
-      if (e.role !== role || !this.evaluated(account, e)) continue;
-      if (!this.keyFor(account, e.connection)) continue;
-      const id = choiceId(e);
-      if (out.some((x) => x.id === id)) continue;
-      out.push({
-        id,
-        connection: e.connection,
-        model: e.model,
-        zdr: e.zdr,
-        privacy: privacyOf(e),
-        current: false,
-      });
-    }
+    const own = this.resolveModel(account, "agent", null);
+    if (!("refused" in own))
+      out.push({ id: own.id, ...own.route, privacy: privacyOf(own.route), current: true });
+    for (const m of this.choices(account, "agent").models)
+      if (!out.some((x) => x.id === m.id))
+        out.push({
+          id: m.id,
+          connection: m.connection,
+          model: m.model,
+          zdr: m.zdr,
+          privacy: m.privacy,
+          current: false,
+        });
     return out;
   }
 
-  /** The planners a conversation may use (docs/conversacion.md 3.5): `modelChoices` of the use «Agente». */
-  plannerChoices(account: number): PlannerChoice[] {
-    return this.modelChoices(account, "planner");
-  }
-
   /**
-   * The provider an automation's AI step runs on (AU-199): `id` null is «El de la cuenta», the role's own as it runs
-   * now; an id is the choice the published version kept, which keeps its model while its key is there, even once
-   * its evaluation is old (publishing again asks for a current one). Why not, as a key the step fails with:
-   * `no-model` (the role has none, or the id names no model), `no-key` (its key is gone).
+   * The provider an AI step's call runs on (AU-199, AU-239): its «Modelo» resolved (`resolveModel`: a model's id,
+   * a tag, or nothing for «El de la cuenta»), which keeps its model while its key is there, even once its evaluation
+   * is old (AU-235). Why not, as a key the step fails with: `no-model` (nothing answers, or the id is no longer
+   * loaded), `no-key` (its key is gone). `tag` is the name of the tag it came by, which «Lo que hizo» says beside it.
    */
   stepProvider(
     account: number,
-    role: "planner" | "reader",
-    id: string | null,
-  ): { provider: ModelProvider; model: string } | { refused: "no-model" | "no-key" } {
-    const own = this.roles(account).find((r) => r.role === role);
-    const c = id === null ? own : parseChoice(id);
-    if (!c) return { refused: "no-model" };
-    const key = this.keyFor(account, c.connection);
-    if (!key) return { refused: "no-key" };
-    try {
-      return {
-        provider: (this.o.makeProvider ?? provider)(
-          { role, connection: c.connection, model: c.model, zdr: c.zdr },
-          key,
-        ),
-        model: c.model,
-      };
-    } catch {
-      return { refused: "no-model" };
-    }
+    kind: Kind,
+    value: string | null,
+  ):
+    | { provider: ModelProvider; model: string; tag: string | null }
+    | { refused: "no-model" | "no-key" } {
+    const r = this.resolveModel(account, kind, value);
+    if ("refused" in r) return r;
+    if (!this.keyFor(account, r.route.connection)) return { refused: "no-key" };
+    const p = this.make(account, kind, r.route);
+    if (!p) return { refused: "no-model" };
+    return {
+      provider: p,
+      model: r.route.model,
+      tag: r.tag?.name ?? null,
+    };
   }
 
   /** A planner for a conversation, by its choice's id; null when it is not one of `plannerChoices`. */
   plannerProvider(account: number, id: string): ModelProvider | null {
     const c = this.plannerChoices(account).find((x) => x.id === id && !x.current);
-    const key = c ? this.keyFor(account, c.connection) : null;
-    if (!c || !key) return null;
+    return c ? this.make(account, "agent", c) : null;
+  }
+
+  // -------------------------------------------------------------- «Modelos» without uses (docs/automatizaciones.md §5.16)
+
+  /**
+   * The account's list (AU-232): its loaded models in its order, its tags and «De la cuenta». The first time a store
+   * is asked, the uses of before become it (AU-244, `migrate`); a list that does not read back is the empty one.
+   */
+  list(account: number): ModelsList {
+    const store = this.o.host.store(account);
+    let v = store.setting(LIST);
+    if (v === null) {
+      this.migrate(account);
+      v = store.setting(LIST);
+    }
     try {
-      return (this.o.makeProvider ?? provider)(
-        { role: "planner", connection: c.connection, model: c.model, zdr: c.zdr },
-        key,
-      );
+      const l = JSON.parse(v ?? "") as ModelsList;
+      return listErrors(l).length ? structuredClone(EMPTY_LIST) : l;
+    } catch {
+      return structuredClone(EMPTY_LIST);
+    }
+  }
+
+  private saveList(account: number, l: ModelsList): string[] {
+    // A tag with no models goes by itself when nothing uses it (AU-237).
+    const used = this.usesOf(account);
+    l.tags = l.tags.filter(
+      (t) =>
+        l.models.some((m) => m.tags.includes(t.id)) ||
+        KINDS.some((k) => l.account[k] === `${TAG_REF}${t.id}`) ||
+        (used.byValue.get(`${TAG_REF}${t.id}`)?.automations.size ?? 0) > 0,
+    );
+    const errors = listErrors(l);
+    if (errors.length) return errors;
+    this.o.host.store(account).setSetting(LIST, JSON.stringify(l));
+    this.built.delete(account);
+    return [];
+  }
+
+  /** Each model's last evaluation (AU-234), by its id: removed models keep theirs (AU-233). */
+  marks(account: number): Record<string, ModelEvaluation> {
+    const v = this.o.host.store(account).setting(MARKS);
+    try {
+      return v ? (JSON.parse(v) as Record<string, ModelEvaluation>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private partsOf(account: number, id: string): EvalParts {
+    const e = this.marks(account)[id];
+    const out: EvalParts = {};
+    for (const k of KINDS) {
+      const p = e?.parts[k];
+      if (p) out[k] = { right: p.right, total: p.total, at: p.at };
+    }
+    return out;
+  }
+
+  /** The kinds of call the server brings this model for (its environment): valid there with no evaluation (AU-235). */
+  private serverKinds(id: string): Kind[] {
+    return KINDS.filter((k) => {
+      const d = this.o.defaults[ROLE_OF_KIND[k]];
+      return !!d && choiceId({ ...d, zdr: !!d.zdr }) === id;
+    });
+  }
+
+  /** The server's model of a kind, by its id; null when it brings none. */
+  private serverModel(kind: Kind): string | null {
+    const d = this.o.defaults[ROLE_OF_KIND[kind]];
+    return d ? choiceId({ ...d, zdr: !!d.zdr }) : null;
+  }
+
+  /** The models «Modelos» lists: the account's in its order, then the server's it has not placed («Del servidor»). */
+  private loaded(account: number, l = this.list(account)): { id: string; tags: string[] }[] {
+    const out = [...l.models];
+    for (const k of KINDS) {
+      const s = this.serverModel(k);
+      if (s && !out.some((m) => m.id === s)) out.push({ id: s, tags: [] });
+    }
+    return out;
+  }
+
+  /**
+   * What a tag may take for a kind (AU-239): a loaded model with its key, that answers that kind, evaluated for it
+   * (current or expired) or the server's for it. Never one never evaluated.
+   */
+  private usable(account: number, id: string, kind: Kind): boolean {
+    const r = parseChoice(id);
+    if (!r || !kindsOf(r).includes(kind) || !this.keyFor(account, r.connection)) return false;
+    return this.serverKinds(id).includes(kind) || evaluatedFor(this.partsOf(account, id), kind);
+  }
+
+  /**
+   * The gate (AU-235): a model may be chosen now for a kind with its key and a current evaluation with that kind's
+   * cases, or as the server's model of that kind, or as the account's row of that kind (chosen before, it stays
+   * when its evaluation expires). The result is never read.
+   */
+  offered(account: number, id: string, kind: Kind): boolean {
+    const r = parseChoice(id);
+    if (!r || !kindsOf(r).includes(kind) || !this.keyFor(account, r.connection)) return false;
+    // What is already chosen keeps its place when its evaluation expires (AU-235): the row of its kind.
+    return (
+      this.serverKinds(id).includes(kind) ||
+      this.list(account).account[kind] === id ||
+      gateOpen(this.partsOf(account, id), kind, this.now())
+    );
+  }
+
+  /**
+   * Which model answers (AU-239), for the chat, the steps, the pieces and «De la cuenta»: a model's id gives that
+   * model, while it is loaded; nothing gives the account's row of the kind (its model, or its tag resolved; the
+   * server's when it has none, or when its model lost its key, as before); a tag gives the first of its models in
+   * the list's order that it may take (`usable`). The person's acts only change the answer: never the clock. It asks
+   * no policy: what the call may do is the policy's, for the model that makes it (AU-240).
+   */
+  resolveModel(
+    account: number,
+    kind: Kind,
+    value: string | null,
+  ):
+    | { id: string; route: ModelRoute; tag?: { id: string; name: string } }
+    | { refused: "no-model" } {
+    const l = this.list(account);
+    const none = { refused: "no-model" as const };
+    const byValue = (v: string, fromRow: boolean) => {
+      const tag = tagOfRef(v);
+      if (tag) {
+        const t = l.tags.find((x) => x.id === tag);
+        const id = t ? firstOfTag(l, tag, (m) => this.usable(account, m, kind)) : null;
+        const route = id ? parseChoice(id) : null;
+        return t && id && route ? { id, route, tag: { id: t.id, name: t.name } } : none;
+      }
+      const route = parseChoice(v);
+      if (!route || !this.loaded(account, l).some((m) => m.id === v)) return none;
+      // «El de la cuenta» whose key is gone runs as the server's, as the use did (`roles`).
+      if (fromRow && !this.keyFor(account, route.connection)) {
+        const s = this.serverModel(kind);
+        const sr = s ? parseChoice(s) : null;
+        return s && sr ? { id: s, route: sr } : none;
+      }
+      return { id: v, route };
+    };
+    if (value) return byValue(value, false);
+    const row = l.account[kind];
+    if (row) return byValue(row, true);
+    const s = this.serverModel(kind);
+    const route = s ? parseChoice(s) : null;
+    return s && route ? { id: s, route } : none;
+  }
+
+  /**
+   * What a step's «Modelo» or a row «De la cuenta» may choose for a kind (AU-238): «El de la cuenta» with the model
+   * that would answer, every tag with the model it would take now and why not when none («Sin modelo», «Caducada»),
+   * and the models the gate offers.
+   */
+  choices(account: number, kind: Kind) {
+    const l = this.list(account);
+    const own = this.resolveModel(account, kind, null);
+    const modelOf = (id: string) => {
+      const r = parseChoice(id) as ModelRoute;
+      return {
+        id,
+        connection: r.connection,
+        model: r.model,
+        zdr: r.zdr,
+        privacy: privacyOf(r),
+        server: this.serverKinds(id).length > 0 && !l.models.some((m) => m.id === id),
+      };
+    };
+    return {
+      kind,
+      account: { value: l.account[kind], answers: "refused" in own ? null : own.id },
+      tags: l.tags.map((t) => {
+        const r = this.resolveModel(account, kind, `${TAG_REF}${t.id}`);
+        const answers = "refused" in r ? null : r.id;
+        return {
+          id: `${TAG_REF}${t.id}`,
+          name: t.name,
+          answers,
+          state: !answers
+            ? ("no-model" as const)
+            : this.offered(account, answers, kind)
+              ? ("ok" as const)
+              : ("expired" as const),
+        };
+      }),
+      models: this.loaded(account, l)
+        .filter((m) => this.offered(account, m.id, kind))
+        .map((m) => modelOf(m.id)),
+    };
+  }
+
+  /** The provider a kind of call is made with, for a model; null when it cannot be made. */
+  private make(account: number, kind: Kind, r: ModelRoute): ModelProvider | null {
+    const key = this.keyFor(account, r.connection);
+    if (!key) return null;
+    try {
+      return (this.o.makeProvider ?? provider)({ role: ROLE_OF_KIND[kind], ...r }, key);
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Where each model, tag and row is used (AU-233, AU-236, AU-241): the automations whose draft or published version
+   * names it in a step's «Modelo», the conversations that chose it, and how many AI steps of each kind choose nothing
+   * («El de la cuenta»). One pass over the automations' documents.
+   */
+  usesOf(account: number): {
+    byValue: Map<string, { automations: Set<string>; conversations: number }>;
+    byKind: Record<Kind, Set<string>>;
+  } {
+    const store = this.o.host.store(account);
+    const byValue = new Map<string, { automations: Set<string>; conversations: number }>();
+    const byKind: Record<Kind, Set<string>> = {
+      agent: new Set(),
+      reading: new Set(),
+      decision: new Set(),
+    };
+    const at = (v: string) => {
+      const had = byValue.get(v);
+      if (had) return had;
+      const u = { automations: new Set<string>(), conversations: 0 };
+      byValue.set(v, u);
+      return u;
+    };
+    for (const { automation, kind, model } of stepModels(store)) {
+      if (model) at(model).automations.add(automation);
+      else byKind[kind].add(automation);
+    }
+    for (const c of listConversations(store)) if (c.model) at(c.model).conversations++;
+    return { byValue, byKind };
+  }
+
+  /**
+   * Where a model or a tag is used, as «Quitar» and the tags say it before doing it (AU-233, AU-241): its rows
+   * «De la cuenta», the automations and the conversations; and the tags in use a change would leave «Sin modelo».
+   */
+  private whereUsed(
+    account: number,
+    value: string,
+    after: ModelsList,
+  ): { rows: Kind[]; automations: number; conversations: number; tagsLeft: string[] } {
+    const l = this.list(account);
+    const uses = this.usesOf(account);
+    const u = uses.byValue.get(value);
+    const tagsLeft = l.tags.flatMap((t) => {
+      const ref = `${TAG_REF}${t.id}`;
+      const inUse =
+        (uses.byValue.get(ref)?.automations.size ?? 0) > 0 ||
+        KINDS.some((k) => l.account[k] === ref);
+      const left = KINDS.some(
+        (k) =>
+          firstOfTag(l, t.id, (m) => this.usable(account, m, k)) !== null &&
+          firstOfTag(after, t.id, (m) => this.usable(account, m, k)) === null,
+      );
+      return inUse && left ? [t.name] : [];
+    });
+    return {
+      rows: KINDS.filter((k) => l.account[k] === value),
+      automations: u?.automations.size ?? 0,
+      conversations: u?.conversations ?? 0,
+      tagsLeft,
+    };
+  }
+
+  /**
+   * Loads a model (AU-233): at the end of the list, «Sin evaluar» (offered nowhere until its evaluation), at most
+   * `MODELS_MAX`. One loaded before and removed gets its evaluation back.
+   */
+  addModel(account: number, r: ModelRoute): "added" | "exists" | "full" | "invalid" {
+    if (modelsErrors({ ...DEFAULT_MODELS, roles: { reader: r } }).length) return "invalid";
+    const id = choiceId(r);
+    const l = this.list(account);
+    if (l.models.some((m) => m.id === id)) return "exists";
+    if (l.models.length >= MODELS_MAX) return "full";
+    l.models.push({ id, tags: [] });
+    return this.saveList(account, l).length ? "invalid" : "added";
+  }
+
+  /**
+   * Removes a model (AU-233): asked first (`confirm`) when it is used, saying where. Its evaluation and its spending
+   * stay; a row «De la cuenta» that had it goes back to the server's (or «Sin modelo»); a step or a conversation that
+   * named it answers `no-model` / the account's, as `resolveModel` says. A server's model is not removed.
+   */
+  removeModel(
+    account: number,
+    id: string,
+    confirm: boolean,
+  ):
+    | { done: true }
+    | { error: "not-found" | "server" }
+    | { error: "in-use"; where: ReturnType<AccountModels["whereUsed"]> } {
+    const l = this.list(account);
+    if (!l.models.some((m) => m.id === id))
+      return { error: this.serverKinds(id).length ? "server" : "not-found" };
+    const after: ModelsList = structuredClone(l);
+    after.models = after.models.filter((m) => m.id !== id);
+    for (const k of KINDS) if (after.account[k] === id) after.account[k] = null;
+    const where = this.whereUsed(account, id, after);
+    if (
+      !confirm &&
+      (where.rows.length || where.automations || where.conversations || where.tagsLeft.length)
+    )
+      return { error: "in-use", where };
+    this.saveList(account, after);
+    return { done: true };
+  }
+
+  /** The list in a new order (AU-232): the same models, each once; the order only says who wins in a tag. */
+  orderModels(account: number, ids: string[]): boolean {
+    const l = this.list(account);
+    if (ids.length !== l.models.length || new Set(ids).size !== ids.length) return false;
+    const by = new Map(l.models.map((m) => [m.id, m]));
+    if (!ids.every((id) => by.has(id))) return false;
+    l.models = ids.map((id) => by.get(id) as ModelsList["models"][number]);
+    return !this.saveList(account, l).length;
+  }
+
+  /** A new tag (AU-237): a name of the person's, distinct, under an id of its own; null when it cannot be. */
+  addTag(account: number, name: string): { id: string } | { error: "invalid" | "full" } {
+    const l = this.list(account);
+    const n = name.trim();
+    if (!n || n.length > TAG_NAME_MAX) return { error: "invalid" };
+    if (l.tags.length >= TAGS_MAX) return { error: "full" };
+    const id = randomBytes(8).toString("hex");
+    l.tags.push({ id, name: n });
+    // A tag is kept by its models or its uses: a new one holds until the call that gives it a model.
+    const errors = listErrors(l);
+    if (errors.length) return { error: "invalid" };
+    this.o.host.store(account).setSetting(LIST, JSON.stringify(l));
+    return { id: `${TAG_REF}${id}` };
+  }
+
+  /** A tag renamed (AU-237): its id stays, so every step and row that names it keeps it. */
+  renameTag(account: number, ref: string, name: string): "done" | "not-found" | "invalid" {
+    const l = this.list(account);
+    const t = l.tags.find((x) => `${TAG_REF}${x.id}` === ref);
+    if (!t) return "not-found";
+    t.name = name.trim();
+    return this.saveList(account, l).length ? "invalid" : "done";
+  }
+
+  /**
+   * A model's tags (AU-237), asked first (`confirm`) when the change would leave a tag in use «Sin modelo» (AU-241).
+   */
+  tagModel(
+    account: number,
+    id: string,
+    refs: string[],
+    confirm: boolean,
+  ):
+    | { done: true }
+    | { error: "not-found" | "invalid" }
+    | { error: "in-use"; where: ReturnType<AccountModels["whereUsed"]> } {
+    const l = this.list(account);
+    const m = l.models.find((x) => x.id === id);
+    if (!m) return { error: "not-found" };
+    const tags = refs.map(tagOfRef);
+    if (tags.some((t) => !t || !l.tags.some((x) => x.id === t))) return { error: "invalid" };
+    const after: ModelsList = structuredClone(l);
+    (after.models.find((x) => x.id === id) as ModelsList["models"][number]).tags = [
+      ...new Set(tags as string[]),
+    ];
+    const where = this.whereUsed(account, id, after);
+    if (!confirm && where.tagsLeft.length)
+      return { error: "in-use", where: { ...where, rows: [], automations: 0, conversations: 0 } };
+    return this.saveList(account, after).length ? { error: "invalid" } : { done: true };
+  }
+
+  /**
+   * A row «De la cuenta» (AU-236): a model or a tag among those its kind may choose (AU-235), or nothing (the server's).
+   * What answers changes from the next run of everything that chose nothing; the route says how many before.
+   */
+  setAccountRow(account: number, kind: Kind, value: string | null): "done" | "not-offered" {
+    const l = this.list(account);
+    if (value !== null) {
+      const tag = tagOfRef(value);
+      const ok = tag
+        ? (() => {
+            const r = this.resolveModel(account, kind, value);
+            return !("refused" in r) && this.offered(account, r.id, kind);
+          })()
+        : this.offered(account, value, kind) && this.loaded(account, l).some((m) => m.id === value);
+      if (!ok) return "not-offered";
+    }
+    l.account[kind] = value;
+    return this.saveList(account, l).length ? "not-offered" : "done";
+  }
+
+  /**
+   * Where the models of a connection are used, as removing its key asks first (AU-233, AU-241): each of them loaded,
+   * with where it is used and the tags in use it would leave «Sin modelo». Changes nothing.
+   */
+  keyUses(account: number, connection: Connection) {
+    const l = this.list(account);
+    const after: ModelsList = structuredClone(l);
+    after.models = after.models.filter((m) => parseChoice(m.id)?.connection !== connection);
+    return l.models
+      .filter((m) => parseChoice(m.id)?.connection === connection)
+      .map((m) => ({ id: m.id, ...this.whereUsed(account, m.id, after) }))
+      .filter((w) => w.rows.length || w.automations || w.conversations || w.tagsLeft.length);
+  }
+
+  /** A row «Decisión» exists (AU-236): a decision model loaded with its evaluation, or the server's. */
+  private hasDecision(account: number): boolean {
+    return (
+      !!this.serverModel("decision") ||
+      this.list(account).models.some((m) => this.offered(account, m.id, "decision"))
+    );
+  }
+
+  /**
+   * Evaluates one model (AU-234), in the background: every case it can answer, once (`evalModel`, its kinds by what
+   * it is). The result replaces its last one with every part on one date; one that does not finish keeps nothing.
+   * What it costs goes in the journal like any model call. One at a time per account.
+   */
+  evaluateModel(account: number, id: string): "started" | "busy" | "no-key" | "not-found" {
+    if (this.running.has(account) || this.runningModel.has(account)) return "busy";
+    const r = parseChoice(id);
+    if (!r || !this.loaded(account).some((m) => m.id === id)) return "not-found";
+    if (!this.keyFor(account, r.connection)) return "no-key";
+    const kinds = kindsOf(r);
+    this.runningModel.set(account, id);
+    const job = (async () => {
+      try {
+        const res = await evalModel((k) => {
+          const p = this.make(account, k, r);
+          if (!p) throw new Error(`${r.connection} cannot make this model`);
+          return p;
+        }, kinds);
+        const at = this.now();
+        this.o.host.store(account).journal.modelCall({
+          run: `eval:${at}`,
+          role: "eval-model",
+          provider: r.connection,
+          model: r.model,
+          promptHash: "eval",
+          request: { evaluation: kinds },
+          response: { right: res.right, total: res.total },
+          usage: { input: res.tokens, output: 0, cost: res.cost },
+          at,
+        });
+        const parts: ModelEvaluation["parts"] = {};
+        for (const k of kinds) {
+          const p = res.parts[k];
+          if (p) parts[k] = { ...p, at };
+        }
+        this.o.host
+          .store(account)
+          .setSetting(MARKS, JSON.stringify({ ...this.marks(account), [id]: { parts } }));
+      } catch (e) {
+        console.error(`models ${account}: evaluation failed (${(e as Error).message})`);
+      } finally {
+        this.runningModel.delete(account);
+        this.spent.delete(account);
+        this.built.delete(account);
+        this.o.host.emit(account, "models", {});
+      }
+    })();
+    this.jobs.add(job);
+    void job.finally(() => this.jobs.delete(job));
+    return "started";
+  }
+
+  /**
+   * What «Modelos» reads (AU-232), asked once: each loaded model with its tags, its evaluation (summed, «Parcial»,
+   * «Caducada») and the month's spending already summed per model; the tags; «De la cuenta» with what answers each
+   * row and where it is used.
+   */
+  listView(account: number) {
+    const l = this.list(account);
+    const now = this.now();
+    const marks = this.marks(account);
+    const uses = this.usesOf(account);
+    const eur = new Map<string, number>();
+    for (const r of this.spending(account).rows) {
+      const k = `${r.provider}:${r.model}`;
+      eur.set(k, (eur.get(k) ?? 0) + r.eur);
+    }
+    const tagName = new Map(l.tags.map((t) => [t.id, t.name]));
+    const usesOf = (v: string) => {
+      const u = uses.byValue.get(v);
+      return {
+        automations: u?.automations.size ?? 0,
+        conversations: u?.conversations ?? 0,
+        rows: KINDS.filter((k) => l.account[k] === v),
+      };
+    };
+    return {
+      models: this.loaded(account, l).map((m) => {
+        const r = parseChoice(m.id) as ModelRoute;
+        const kinds = kindsOf(r);
+        const e = marks[m.id];
+        return {
+          id: m.id,
+          connection: r.connection,
+          model: r.model,
+          zdr: r.zdr,
+          privacy: privacyOf(r),
+          server: !l.models.some((x) => x.id === m.id),
+          kinds,
+          tags: m.tags.map((t) => ({ id: `${TAG_REF}${t}`, name: tagName.get(t) ?? "" })),
+          key: !!this.keyFor(account, r.connection),
+          evaluation: markOf(this.partsOf(account, m.id), kinds, now),
+          cost: e
+            ? Object.values(e.parts).reduce((a, p) => a + (p?.cost ?? 0), 0) *
+              this.config(account).usdToEur
+            : null,
+          eur: eur.get(`${r.connection}:${r.model}`) ?? 0,
+          uses: usesOf(m.id),
+        };
+      }),
+      tags: l.tags.map((t) => ({
+        id: `${TAG_REF}${t.id}`,
+        name: t.name,
+        uses: usesOf(`${TAG_REF}${t.id}`),
+      })),
+      account: KINDS.filter((k) => k !== "decision" || this.hasDecision(account)).map((k) => {
+        const r = this.resolveModel(account, k, null);
+        return {
+          kind: k,
+          value: l.account[k],
+          answers: "refused" in r ? null : r.id,
+          automations: uses.byKind[k].size,
+        };
+      }),
+      evaluating: this.runningModel.get(account) ?? null,
+    };
+  }
+
+  /**
+   * The desktop of before chose a use's model (`PUT …/models/roles/:role`): the row of its kind follows, with the model
+   * loaded when it was not, so both screens answer with the same model until the new one ships (AU-244).
+   */
+  followRole(account: number, role: Role, choice: RoleChoice | undefined): void {
+    if (role === "reviewer") return;
+    const l = this.list(account);
+    const kind = KIND_OF_ROLE[role];
+    if (!choice) l.account[kind] = null;
+    else {
+      const id = choiceId({ ...choice, zdr: !!choice.zdr });
+      if (!l.models.some((m) => m.id === id)) {
+        if (l.models.length >= MODELS_MAX) return;
+        l.models.push({ id, tags: [] });
+      }
+      l.account[kind] = id;
+    }
+    this.saveList(account, l);
+  }
+
+  /** A model's evaluation whole, its cases by part (AU-234, «Ver los casos»); null when it has none. */
+  evaluationOf(account: number, id: string): ModelEvaluation | null {
+    return this.marks(account)[id] ?? null;
+  }
+
+  /**
+   * The model a converted step carries (AU-245): none for «Agente», «Lector» and «Decisor» (it reads «De la cuenta»);
+   * for «Revisor», the reviewer's own id only when it is another model than the reader's, so it reviews with the one
+   * it always did.
+   */
+  modelRefOf(account: number, use: Role): string | null {
+    if (use !== "reviewer") return null;
+    const views = this.roles(account);
+    const reviewer = views.find((v) => v.role === "reviewer");
+    const reader = views.find((v) => v.role === "reader");
+    if (!reviewer) return null;
+    const id = choiceId(reviewer);
+    return reader && choiceId(reader) === id ? null : id;
+  }
+
+  /** The model that would answer a use's calls now, by its id (the map, AU-245): the reviewer's own while it has one. */
+  answerOf(account: number, use: Role): string | null {
+    const own = this.modelRefOf(account, use);
+    if (own) return own;
+    const r = this.resolveModel(account, KIND_OF_ROLE[use], null);
+    return "refused" in r ? null : r.id;
+  }
+
+  /**
+   * The uses of before become the list (AU-244), once, by code, with no model and without reading the keys. Its
+   * models: each use's, every one evaluated lately for the agent or the reader (what `modelChoices` offered, but for
+   * the key, which is not read: an id without its key is offered nowhere all the same), and every one a conversation
+   * or a step names; «De la cuenta»'s first, the rest by their last evaluation. Its rows: each use's, or the
+   * server's. Its evaluations: each use's newest result as the part of its kind, with its date; the reviewer's count
+   * as the reading. `models/config` and `models/evals` stay as they were. Run twice, it changes nothing: the list's
+   * presence says it ran, and it is written last.
+   */
+  private migrate(account: number): void {
+    const store = this.o.host.store(account);
+    if (store.setting(LIST) !== null) return;
+    const c = this.config(account);
+    const evals = [...this.evaluations(account)].sort((a, b) => b.at - a.at);
+    const now = this.now();
+    const marks = this.marks(account);
+    for (const e of evals) {
+      const id = choiceId(e);
+      const kind = KIND_OF_ROLE[e.role];
+      const had = marks[id]?.parts[kind];
+      if (had && had.at >= e.at) continue;
+      const { role: _r, connection: _c, model: _m, zdr: _z, ...result } = e;
+      marks[id] = { parts: { ...(marks[id]?.parts ?? {}), [kind]: { ...result } } };
+    }
+    const idOf = (r: RoleChoice | undefined) => (r ? choiceId({ ...r, zdr: !!r.zdr }) : null);
+    const rows = {
+      agent: idOf(c.roles.planner),
+      reading: idOf(c.roles.reader),
+      decision: idOf(c.roles.decider),
+    };
+    const lastEval = (id: string) =>
+      Math.max(0, ...Object.values(marks[id]?.parts ?? {}).map((p) => p?.at ?? 0));
+    // What something names (the reviewer, a step, a conversation) runs on it: it is never the one left out.
+    const named = new Set<string>();
+    const reviewer = idOf(c.roles.reviewer);
+    if (reviewer) named.add(reviewer);
+    for (const s of stepModels(store)) if (s.model && parseChoice(s.model)) named.add(s.model);
+    for (const conv of listConversations(store))
+      if (conv.model && parseChoice(conv.model)) named.add(conv.model);
+    const offeredOnly = new Set<string>();
+    for (const e of evals)
+      if ((e.role === "planner" || e.role === "reader") && now - e.at < EVAL_DAYS * 86_400_000)
+        offeredOnly.add(choiceId(e));
+    const first = [...new Set(Object.values(rows).filter((x): x is string => !!x))];
+    const byEval = (ids: Iterable<string>, skip: string[]) =>
+      [...ids].filter((id) => !skip.includes(id)).sort((a, b) => lastEval(b) - lastEval(a));
+    const kept = [...first, ...byEval(named, first)];
+    // Past 30, only a model nothing names, there for its evaluation alone, is left out, the oldest evaluated first.
+    // (Thirty models named by rows, steps and conversations would be cut too, as a list of more is no list.)
+    const extra = byEval(offeredOnly, kept).slice(0, Math.max(0, MODELS_MAX - kept.length));
+    const others = byEval([...kept, ...extra], first);
+    const list: ModelsList = {
+      models: [...first, ...others].slice(0, MODELS_MAX).map((id) => ({ id, tags: [] })),
+      tags: [],
+      account: rows,
+    };
+    store.setSetting(MARKS, JSON.stringify(marks));
+    store.setSetting(LIST, JSON.stringify(list));
   }
 
   /** What the page reads. */
@@ -688,17 +1343,46 @@ export interface PlannerChoice {
   /** The planner role's own model (the account's). */
   current: boolean;
 }
-const choiceId = (c: { connection: Connection; model: string; zdr: boolean }) =>
-  `${c.connection}:${c.model}${c.zdr ? ":zdr" : ""}`;
-/** A choice's id read back (`choiceId`): its connection, model and route; null when it is not one. */
-function parseChoice(id: string): { connection: Connection; model: string; zdr: boolean } | null {
-  const at = id.indexOf(":");
-  if (at <= 0) return null;
-  const connection = id.slice(0, at) as Connection;
-  if (!CONNECTIONS.includes(connection)) return null;
-  const zdr = id.endsWith(":zdr");
-  const model = id.slice(at + 1, zdr ? -":zdr".length : undefined);
-  return model ? { connection, model, zdr } : null;
+
+/** The kind of call an AI step makes, by its type (§5.16): never by its model or a tag. Null: no AI step. */
+function kindOfStep(type: unknown): Kind | null {
+  if (type === AGENT_TYPE) return "agent";
+  if (typeof type !== "string") return null;
+  if (isReaderType(type)) return "reading";
+  if (type === "boni.mailDecider") return "decision";
+  return isBoniType(type) ? "reading" : null;
+}
+
+/**
+ * Every AI step's «Modelo» in the automations, of their drafts and their published versions (AU-233, AU-244): one
+ * row per step, its kind of call and its value (null: «El de la cuenta»). A document that does not read is skipped.
+ */
+function stepModels(store: UserStore): { automation: string; kind: Kind; model: string | null }[] {
+  const j = store.journal;
+  const out: { automation: string; kind: Kind; model: string | null }[] = [];
+  for (const a of j.automations()) {
+    const docs = [
+      j.automationDraft(a.id)?.doc,
+      a.published !== null ? j.automationVersion(a.id, a.published)?.doc : undefined,
+    ];
+    for (const doc of docs) {
+      if (!doc) continue;
+      let steps: unknown;
+      try {
+        steps = (JSON.parse(doc) as { steps?: unknown }).steps;
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(steps)) continue;
+      for (const s of steps as { type?: unknown; params?: Record<string, unknown> }[]) {
+        const kind = kindOfStep(s?.type);
+        if (!kind) continue;
+        const m = s.params?.model;
+        out.push({ automation: a.id, kind, model: typeof m === "string" && m !== "" ? m : null });
+      }
+    }
+  }
+  return out;
 }
 
 /** One role's provider from its choice and key. */
@@ -827,10 +1511,19 @@ export async function serveModels(
         const errors = modelsErrors(c);
         if (errors.length) return send(res, 400, { error: "invalid", errors });
         // A model takes a role only after its evaluation (Juan, 2026-10-24).
-        if (!models.evaluated(who.account, { role, ...choice, zdr: !!choice.zdr }))
+        // Either gate opens it: the use's of before, or the model's (AU-244), so both screens agree.
+        if (
+          !models.evaluated(who.account, { role, ...choice, zdr: !!choice.zdr }) &&
+          !models.offered(
+            who.account,
+            choiceId({ ...choice, zdr: !!choice.zdr }),
+            KIND_OF_ROLE[role],
+          )
+        )
           return send(res, 409, { error: "needs-evaluation" });
       }
       const errors = models.saveConfig(who.account, c);
+      if (!errors.length) models.followRole(who.account, role, c.roles[role]);
       return errors.length
         ? send(res, 400, { error: "invalid", errors })
         : send(res, 200, models.view(who.account));
@@ -845,6 +1538,9 @@ export async function serveModels(
         (key !== null && (key.length < 10 || key.length > 500 || /\s/.test(key)))
       )
         return send(res, 400, { error: "bad-key" });
+      // «Quitar» a key asks first where its models are used (AU-233, AU-241): `dry` changes nothing and says it.
+      if (key === null && b.dry === true)
+        return send(res, 200, { where: models.keyUses(who.account, connection) });
       models.setKey(who.account, connection, key);
       return send(res, 200, models.view(who.account));
     }
@@ -878,6 +1574,84 @@ export async function serveModels(
       return errors.length
         ? send(res, 400, { error: "invalid", errors })
         : send(res, 200, models.view(who.account));
+    }
+    // «Modelos» without uses (§5.16): the list, its tags, «De la cuenta» and each model's evaluation.
+    case "GET /api/agent/models/list":
+      return send(res, 200, models.listView(who.account));
+    case "GET /api/agent/models/choices": {
+      const kind = KINDS.find(
+        (k) => k === new URL(req.url ?? "/", "http://boni").searchParams.get("kind"),
+      );
+      if (!kind) return bad(res);
+      return send(res, 200, models.choices(who.account, kind));
+    }
+    case "GET /api/agent/models/evaluation": {
+      const id = new URL(req.url ?? "/", "http://boni").searchParams.get("id") ?? "";
+      const e = models.evaluationOf(who.account, id);
+      return e ? send(res, 200, e) : send(res, 404, { error: "not-found" });
+    }
+    case "POST /api/agent/models/list": {
+      const b = await bodyOf(req);
+      const r = models.addModel(who.account, {
+        connection: b.connection as Connection,
+        model: String(b.model ?? ""),
+        zdr: b.zdr === true,
+      });
+      if (r === "invalid") return bad(res);
+      return r === "added"
+        ? send(res, 200, models.listView(who.account))
+        : send(res, 409, { error: r });
+    }
+    case "POST /api/agent/models/list/remove": {
+      const b = await bodyOf(req);
+      const r = models.removeModel(who.account, String(b.id ?? ""), b.confirm === true);
+      if ("done" in r) return send(res, 200, models.listView(who.account));
+      return send(res, r.error === "not-found" ? 404 : 409, r);
+    }
+    case "PUT /api/agent/models/order": {
+      const b = await bodyOf(req);
+      const ids = Array.isArray(b.ids) ? b.ids.map(String) : null;
+      return ids && models.orderModels(who.account, ids)
+        ? send(res, 200, models.listView(who.account))
+        : bad(res);
+    }
+    case "POST /api/agent/models/tags": {
+      const b = await bodyOf(req);
+      const r = models.addTag(who.account, String(b.name ?? ""));
+      return "id" in r ? send(res, 200, r) : send(res, r.error === "full" ? 409 : 400, r);
+    }
+    case "PUT /api/agent/models/tags/:tag": {
+      const b = await bodyOf(req);
+      const r = models.renameTag(who.account, `${TAG_REF}${params.tag}`, String(b.name ?? ""));
+      if (r === "not-found") return send(res, 404, { error: r });
+      return r === "done" ? send(res, 200, models.listView(who.account)) : bad(res);
+    }
+    case "PUT /api/agent/models/tagged": {
+      const b = await bodyOf(req);
+      const tags = Array.isArray(b.tags) ? b.tags.map(String) : null;
+      if (!tags) return bad(res);
+      const r = models.tagModel(who.account, String(b.id ?? ""), tags, b.confirm === true);
+      if ("done" in r) return send(res, 200, models.listView(who.account));
+      if (r.error === "invalid") return bad(res);
+      return send(res, r.error === "not-found" ? 404 : 409, r);
+    }
+    case "PUT /api/agent/models/account/:kind": {
+      const kind = KINDS.find((k) => k === params.kind);
+      if (!kind) return send(res, 404, { error: "not-found" });
+      const b = await bodyOf(req);
+      const value = b.value === null ? null : typeof b.value === "string" ? b.value : undefined;
+      if (value === undefined) return bad(res);
+      return models.setAccountRow(who.account, kind, value) === "done"
+        ? send(res, 200, models.listView(who.account))
+        : send(res, 409, { error: "not-offered" });
+    }
+    case "POST /api/agent/models/list/evaluate": {
+      const b = await bodyOf(req);
+      const r = models.evaluateModel(who.account, String(b.id ?? ""));
+      if (r === "not-found") return send(res, 404, { error: r });
+      return r === "started"
+        ? send(res, 202, models.listView(who.account))
+        : send(res, 409, { error: r });
     }
     default:
       return send(res, 404, { error: "not-found" });

@@ -168,6 +168,32 @@ export const READER_TYPES = {
 export type ReaderType = keyof typeof READER_TYPES;
 export const isReaderType = (type: string): type is ReaderType => Object.hasOwn(READER_TYPES, type);
 
+/**
+ * What a step's «Modelo» holds (AU-238): nothing («El de la cuenta»), a model's id of «Modelos»
+ * (`connection:model`, with `:zdr`) or `tag:` and a tag's id; never a key, a route or a setting (AU-50). Which model
+ * answers is the server's (`resolveModel`): this is only the value's shape.
+ */
+export const MODEL_VALUE =
+  /^(?:tag:[a-z0-9]{6,32}|(?!tag:)[a-z]+:[A-Za-z0-9._/~-][A-Za-z0-9._:/~-]{0,123})$/;
+export const isModelValue = (v: unknown): boolean =>
+  v === undefined || v === "" || (typeof v === "string" && MODEL_VALUE.test(v));
+
+/**
+ * A model does not choose a model (AU-243): the steps of a document a model proposed (the assistant, the MCP,
+ * «Pedir a Boni») keep the «Modelo» the person gave them, and a new step, or one whose «Modelo» the proposal
+ * changed, comes with none («El de la cuenta»). `before` is the document the proposal starts from (null: a new
+ * one). Where the text goes and what it costs stays the person's.
+ */
+export function keepOwnModels(before: readonly Step[] | null, proposed: Step[]): Step[] {
+  const own = new Map((before ?? []).map((s) => [s.id, s.params[READER_PARAMS.model]]));
+  return proposed.map((s) => {
+    const m = s.params[READER_PARAMS.model];
+    if (m === undefined || m === null || m === "" || own.get(s.id) === m) return s;
+    const { [READER_PARAMS.model]: _chosen, ...params } = s.params;
+    return { ...s, params };
+  });
+}
+
 /** The parameters of the four, by their keys (catalogue.ts paints them). */
 export const READER_PARAMS = {
   text: "text",

@@ -18,6 +18,7 @@ import {
   type Box,
   type Cell,
   DAY_MS,
+  keepOwnModels,
   newConnection,
   parseAutomation,
 } from "@boni/automations";
@@ -25,11 +26,13 @@ import { label } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { handLabel, runAction } from "../actions.ts";
+import { handLabel, JUAN_ONLY, runAction, serverRegistry } from "../actions.ts";
 import { AgentHost, serveAgent } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { openDb } from "../db.ts";
+import { mcpTools } from "../mcp.ts";
 import { AccountModels } from "../models.ts";
+import { ROUTES } from "../routes.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { isTransient, serverAi, wireAutomationModels } from "./ai.ts";
 import { reachStore } from "./collections.ts";
@@ -217,27 +220,25 @@ function server(o: { plan?: Answer; read?: Answer } = {}) {
     sent,
     at,
     answers,
-    /** His own key for OpenRouter, and `model` evaluated for `role` `daysAgo` days ago. */
-    evaluated(role: "planner" | "reader", model: string, daysAgo = 1) {
+    /** His own key for OpenRouter, and `model` loaded and evaluated for `kind` `daysAgo` days ago (AU-234). */
+    evaluated(kind: "agent" | "reading", model: string, daysAgo = 1) {
       models.setKey(1, "openrouter", MY_KEY);
-      const was = JSON.parse(s.setting("models/evals") ?? "[]") as unknown[];
-      s.setSetting(
-        "models/evals",
-        JSON.stringify([
-          {
-            role,
-            connection: "openrouter",
-            model,
-            zdr: false,
+      models.addModel(1, { connection: "openrouter", model, zdr: false });
+      const id = `openrouter:${model}`;
+      const marks = models.marks(1);
+      marks[id] = {
+        parts: {
+          ...(marks[id]?.parts ?? {}),
+          [kind]: {
             right: 9,
             total: 10,
             tokens: 1000,
             cost: 0.01,
             at: at.now - daysAgo * 86_400_000,
           },
-          ...was,
-        ]),
-      );
+        },
+      };
+      s.setSetting("models/evaluation", JSON.stringify(marks));
     },
     /** A model call of this month that cost so many dollars, as the agent writes them. */
     spend(usd: number) {
@@ -359,28 +360,25 @@ describe("«Reintentar si el modelo falla» on the server (decision 28 of docs/a
 });
 
 describe("which model an AI step runs on (AU-199)", () => {
-  it("AU-199 · `modelChoices` gives the account's model for the step's role and every model evaluated lately for it with its key; a step stores a choice's id or nothing", async () => {
+  it("AU-199 · a step's «Modelo» offers «El de la cuenta» and every loaded model evaluated lately for its kind with its key; a step stores a choice's id or nothing", async () => {
     const t = server({ read: () => ({ text: "Un resumen inventado" }) });
-    // The account's own, «El de la cuenta», for each use.
-    expect(t.models.modelChoices(1, "reader").map((c) => [c.id, c.current])).toEqual([
-      [READER, true],
-    ]);
-    expect(t.models.modelChoices(1, "planner").map((c) => c.id)).toEqual([PLANNER]);
-    // A model evaluated for the reader a day ago, with its key: a choice of the reader's only.
-    t.evaluated("reader", "modelo-de-ejemplo");
+    const ids = (k: "agent" | "reading") => t.models.choices(1, k).models.map((c) => c.id);
+    // The account's own, «El de la cuenta», for each kind: the server's.
+    expect(t.models.choices(1, "reading").account).toEqual({ value: null, answers: READER });
+    expect(ids("reading")).toEqual([READER]);
+    expect(ids("agent")).toEqual([PLANNER]);
+    // A model evaluated for reading a day ago, with its key: a choice of reading only.
+    t.evaluated("reading", "modelo-de-ejemplo");
     // One evaluated 40 days ago is not (it must be evaluated again).
-    t.evaluated("reader", "modelo-antiguo", 40);
-    expect(t.models.modelChoices(1, "reader").map((c) => [c.id, c.current])).toEqual([
-      [READER, true],
-      [OTHER, false],
-    ]);
-    expect(t.models.modelChoices(1, "planner").map((c) => c.id)).toEqual([PLANNER]);
-    // The conversation's planners are the same list as the «Agente»'s.
-    expect(t.models.plannerChoices(1)).toEqual(t.models.modelChoices(1, "planner"));
+    t.evaluated("reading", "modelo-antiguo", 40);
+    expect(ids("reading")).toEqual([OTHER, READER]);
+    expect(ids("agent")).toEqual([PLANNER]);
+    // The conversation's planners are «El de la cuenta» and the same models as the «Agente»'s.
+    expect(t.models.plannerChoices(1).map((c) => [c.id, c.current])).toEqual([[PLANNER, true]]);
     // Without its key, it is not a choice.
     t.models.setKey(1, "openrouter", null);
-    expect(t.models.modelChoices(1, "reader").map((c) => c.id)).toEqual([READER]);
-    t.evaluated("reader", "modelo-de-ejemplo");
+    expect(ids("reading")).toEqual([READER]);
+    t.evaluated("reading", "modelo-de-ejemplo");
 
     // A step with a choice's id runs on it; one with none on the account's.
     for (const [model, on] of [
@@ -425,7 +423,7 @@ describe("which model an AI step runs on (AU-199)", () => {
     });
     // The same for an «Agente», read against the planner's list.
     const agentOff = made(t.s, [START, AGENT([conn("pedido")], { model: OTHER })]);
-    t.evaluated("reader", "modelo-de-ejemplo");
+    t.evaluated("reading", "modelo-de-ejemplo");
     expect(agentOff.publish()).toMatchObject({
       refused: "blocked",
       problems: [expect.objectContaining({ code: "param.value", param: "model" })],
@@ -468,6 +466,188 @@ describe("which model an AI step runs on (AU-199)", () => {
       expect(JSON.stringify(tried)).toContain("budget");
     }
     expect(t.sent).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------- §5.16: a step's «Modelo» with tags
+
+describe("«Modelo» with a model, a tag or nothing (§5.16)", () => {
+  const A = "openrouter:modelo-a";
+  const B = "openrouter:modelo-b";
+  /** «Barato» on modelo-a and modelo-b, both evaluated for reading, in the order given. */
+  const cheap = (t: ReturnType<typeof server>, order: string[]) => {
+    t.evaluated("reading", "modelo-a");
+    t.evaluated("reading", "modelo-b");
+    const tag = (t.models.addTag(1, "Barato") as { id: string }).id;
+    for (const id of [A, B]) expect(t.models.tagModel(1, id, [tag], false)).toEqual({ done: true });
+    const rest = t.models
+      .list(1)
+      .models.map((m) => m.id)
+      .filter((id) => !order.includes(id));
+    expect(t.models.orderModels(1, [...order, ...rest])).toBe(true);
+    return tag;
+  };
+
+  it("AU-239 · a step resolves its model once and a failed call does not try the tag's next model; a tag answers with the first of its models in the list's order, and «Lo que hizo» names the tag", async () => {
+    const t = server({ read: () => ({ text: "Un resumen inventado" }) });
+    const tag = cheap(t, [B, A]);
+    const a = made(t.s, [START, WRITE(tag)]);
+    ok(a.publish());
+    t.sent.length = 0;
+    expect((await ran(t.s, a.id, a.step("Inicio"), { nota: "x" })).state).toBe("done");
+    expect(t.sent.map((x) => x.model)).toEqual(["modelo-b"]);
+    // Forty days later, still modelo-b: the clock does not change who answers.
+    t.at.now += 40 * DAY_MS;
+    t.sent.length = 0;
+    expect((await ran(t.s, a.id, a.step("Inicio"), { nota: "x" })).state).toBe("done");
+    expect(t.sent.map((x) => x.model)).toEqual(["modelo-b"]);
+    // His order does: modelo-a first, and «Lo que hizo» says the model with the tag it came by.
+    t.at.now -= 40 * DAY_MS;
+    const ids = t.models.list(1).models.map((m) => m.id);
+    t.models.orderModels(1, [A, ...ids.filter((id) => id !== A)]);
+    const tried = ok(
+      await testAutomation(t.s, a.id, { trigger: a.step("Inicio"), fields: { nota: "x" } }, JUAN),
+    );
+    expect(tried.tests[a.step("Redactar")]?.ai).toMatchObject({ models: ["modelo-a · Barato"] });
+    // Every call of one run goes with the model it resolved first, though the list changes meanwhile.
+    let calls = 0;
+    t.answers.read = () => {
+      calls++;
+      if (calls === 1) t.models.orderModels(1, [B, ...ids.filter((id) => id !== B)]);
+      return { text: "Un resumen inventado" };
+    };
+    const many = made(t.s, [
+      START,
+      ["Buscar", "collection", { collection: "pedido", action: "find", limit: 5 }],
+      ["Redactar", "write", { instructions: "Resume", text: cite("$json.nota"), model: tag }],
+    ]);
+    orders(t.s, 3);
+    ok(many.publish());
+    t.sent.length = 0;
+    expect((await ran(t.s, many.id, many.step("Inicio"), { nota: "x" })).state).toBe("done");
+    expect(new Set(t.sent.map((x) => x.model))).toEqual(new Set(["modelo-a"]));
+    // A failed call fails its step: the tag's next model is not tried (decision 23).
+    t.answers.read = () => {
+      throw new Error("no answer");
+    };
+    t.sent.length = 0;
+    expect((await ran(t.s, a.id, a.step("Inicio"), { nota: "x" })).state).toBe("failed");
+    expect(new Set(t.sent.map((x) => x.model))).toEqual(new Set([t.sent[0]?.model]));
+    expect(t.sent).toHaveLength(1);
+    // A tag with no model that may take it is «Sin modelo», and a step with it does not publish.
+    const empty = (t.models.addTag(1, "Vacía") as { id: string }).id;
+    const off = made(t.s, [START, WRITE(empty)]);
+    expect(off.publish()).toMatchObject({
+      refused: "blocked",
+      problems: [expect.objectContaining({ code: "param.value", param: "model" })],
+    });
+  });
+
+  it("AU-241 · a tag without a usable model is a problem of its step at publish and «no-model» in a published run", async () => {
+    const t = server({ read: () => ({ text: "Un resumen inventado" }) });
+    t.evaluated("reading", "modelo-a");
+    const tag = (t.models.addTag(1, "Barato") as { id: string }).id;
+    t.models.tagModel(1, A, [tag], false);
+    const a = made(t.s, [START, WRITE(tag)]);
+    ok(a.publish());
+    // He takes the tag off its only model, saying yes to the question: the published step fails «no-model».
+    expect(t.models.tagModel(1, A, [], false)).toMatchObject({ error: "in-use" });
+    expect(t.models.tagModel(1, A, [], true)).toEqual({ done: true });
+    t.sent.length = 0;
+    const r = await ran(t.s, a.id, a.step("Inicio"), { nota: "x" });
+    expect(r.state).toBe("failed");
+    expect(r.error).toMatchObject({ ai: { code: "ai.refused", detail: { why: "no-model" } } });
+    expect(t.sent).toEqual([]);
+    const again = made(t.s, [START, WRITE(tag)]);
+    expect(again.publish()).toMatchObject({
+      refused: "blocked",
+      problems: [expect.objectContaining({ code: "param.value", param: "model" })],
+    });
+  });
+
+  it("AU-235 · a published step keeps its model when its evaluation expires; a new publish asks for it in date", async () => {
+    const t = server({ read: () => ({ text: "Un resumen inventado" }) });
+    t.evaluated("reading", "modelo-a");
+    const a = made(t.s, [START, WRITE(A)]);
+    ok(a.publish());
+    t.at.now += 40 * DAY_MS;
+    t.sent.length = 0;
+    expect((await ran(t.s, a.id, a.step("Inicio"), { nota: "x" })).state).toBe("done");
+    expect(t.sent.map((x) => x.model)).toEqual(["modelo-a"]);
+    const again = made(t.s, [START, WRITE(A)], { at: t.at.now });
+    expect(again.publish(t.at.now)).toMatchObject({ refused: "blocked" });
+  });
+
+  it("AU-240 · a tag or a place in the list grants nothing: the same call gets the same decision whichever way its model came, and a failed call tries no other model", async () => {
+    const t = server({
+      plan: (_, n) =>
+        n === 1 ? plan(CREATE("s1", "pedido", "nota", "propuesta")) : plan(answer("s2")),
+    });
+    t.evaluated("agent", "modelo-a");
+    const tag = (t.models.addTag(1, "Agentes") as { id: string }).id;
+    t.models.tagModel(1, A, [tag], false);
+    const lines: unknown[] = [];
+    for (const model of [null, A, tag]) {
+      const a = made(t.s, [
+        START,
+        AGENT([conn("pedido", { create: { ...ASK, fields: ["nota"] } })], model ? { model } : {}),
+      ]);
+      t.sent.length = 0;
+      const tried = ok(
+        await testAutomation(t.s, a.id, { trigger: a.step("Inicio"), fields: { nota: "x" } }, JUAN),
+      );
+      lines.push(tried.tests[a.step("Analista")]?.agent?.units[0]?.lines);
+      expect(t.sent.map((x) => x.model)[0]).toBe(model ? "modelo-a" : "claude-opus-5-5");
+    }
+    expect(lines[1]).toEqual(lines[0]);
+    expect(lines[2]).toEqual(lines[0]);
+    // A tag of two whose first fails: its step fails, and the second is never asked.
+    t.evaluated("agent", "modelo-b");
+    t.models.tagModel(1, B, [tag], false);
+    t.answers.plan = (req) => {
+      throw new Error(`no answer from ${req.role}`);
+    };
+    const failing = made(t.s, [START, AGENT([conn("pedido")], { model: tag })]);
+    ok(failing.publish());
+    t.sent.length = 0;
+    expect((await ran(t.s, failing.id, failing.step("Inicio"), { nota: "x" })).state).toBe(
+      "failed",
+    );
+    expect(new Set(t.sent.map((x) => x.model))).toEqual(new Set(["modelo-a"]));
+  });
+
+  it("AU-243 · a proposed draft carries no model its author chose, and no action writes models, tags, order or the account's rows", () => {
+    const step = (id: string, model?: string) =>
+      ({
+        id,
+        name: id,
+        type: "write",
+        params: { text: "x", ...(model ? { model } : {}) },
+      }) as never;
+    const before = [step("s1", A), step("s2", B), step("s3")];
+    // Untouched, kept; changed or new, «El de la cuenta».
+    const got = keepOwnModels(before, [step("s1", A), step("s2", A), step("s3", B), step("s4", B)]);
+    expect(got.map((s: { params: Record<string, unknown> }) => s.params.model ?? null)).toEqual([
+      A,
+      null,
+      null,
+      null,
+    ]);
+    expect(keepOwnModels(null, [step("s1", "tag:k3v9q2x7")])[0]).toMatchObject({
+      params: { text: "x" },
+    });
+    // No action or MCP tool loads a model, tags one, orders them or sets a row: each such route is his alone.
+    const tools = [
+      ...serverRegistry()
+        .all()
+        .map((x) => x.name),
+      ...mcpTools().map((x) => x.name),
+    ];
+    expect(tools.filter((n) => /model|tag|evaluat/i.test(n))).toEqual([]);
+    const writes = Object.keys(ROUTES).filter(
+      (r) => r.includes("/api/agent/models") && !/^(GET|HEAD) /.test(r),
+    );
+    expect(writes.filter((r) => !(r in JUAN_ONLY))).toEqual([]);
   });
 });
 

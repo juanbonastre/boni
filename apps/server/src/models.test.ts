@@ -5,10 +5,12 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { fakePlanner, type ModelProvider, ScriptedProvider } from "@boni/agent";
+import { createConversation, fakePlanner, type ModelProvider, ScriptedProvider } from "@boni/agent";
+import { clock, under } from "@boni/pace";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentHost, serveAgent } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { cite, made as madeAutomation, START } from "./automations/run.test-util.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { flowMap } from "./flowMap.ts";
@@ -888,4 +890,686 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(s.runs()).toEqual([]);
     expect(s.store().journal.flowRuns(BUDGET_FLOW).runs).toBe(0);
   });
+});
+
+// ---------------------------------------------------------------- «Modelos» without uses (docs/automatizaciones.md §5.16)
+
+describe("«Modelos» without uses (§5.16)", () => {
+  const made: (() => void)[] = [];
+  afterEach(() => {
+    for (const close of made.splice(0)) close();
+    vi.restoreAllMocks();
+  });
+  const DAY = 86_400_000;
+  /** Invented models of his own key, through OpenRouter, and a decision model. */
+  const A = "openrouter:ejemplo/modelo-a";
+  const B = "openrouter:ejemplo/modelo-b";
+  const C = "openrouter:ejemplo/modelo-c:zdr";
+  const JEV = "openrouter:typesafe/jev-1.14";
+  const SERVER_AGENT = "anthropic:claude-opus-5-5";
+  const SERVER_READING = "anthropic:claude-haiku-4-5";
+
+  /** A fresh account with the server's two models and Juan's OpenRouter key; requests answered as a personal device. */
+  function fresh(o: { key?: boolean } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), "boni-list-"));
+    const sys = openDb(join(dir, "system.db"));
+    addUser(sys, "juan", PASSWORD);
+    const clock = { now: Date.UTC(2026, 10, 18, 9) };
+    const planner = fakePlanner([]);
+    const h = new AgentHost({
+      dataDir: dir,
+      providers: { planner, reader: planner },
+      now: () => clock.now,
+    });
+    const asked: string[] = [];
+    const m = new AccountModels({
+      db: sys,
+      key: randomBytes(32),
+      host: h,
+      defaults: {
+        planner: { connection: "anthropic", model: "claude-opus-5-5" },
+        reader: { connection: "anthropic", model: "claude-haiku-4-5" },
+      },
+      serverKeys: { anthropic: SERVER_KEY },
+      now: () => clock.now,
+      // A scripted model: no network, an answer that reads, and what it cost.
+      makeProvider: (v): ModelProvider => ({
+        id: v.connection,
+        privacy: "external-api",
+        complete: async () => {
+          asked.push(`${v.role}:${v.model}`);
+          return {
+            json: { items: [] },
+            usage: { input: 100, output: 10, cost: 0.002 },
+            model: v.model,
+          };
+        },
+      }),
+    });
+    h.models = m;
+    h.providersFor = (a) => m.providers(a);
+    if (o.key !== false) m.setKey(1, "openrouter", MY_KEY);
+    made.push(() => {
+      h.close();
+      sys.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const store = () => h.store(1);
+    /** `id` evaluated for these kinds `daysAgo` days ago, 8 right of 10 each. */
+    const evaluated = (id: string, kinds: ("agent" | "reading" | "decision")[], daysAgo = 1) => {
+      const marks = m.marks(1);
+      const parts = { ...(marks[id]?.parts ?? {}) };
+      for (const k of kinds)
+        parts[k] = {
+          right: 8,
+          total: 10,
+          wrong: 2,
+          tokens: 900,
+          cost: 0.01,
+          cases: [],
+          at: clock.now - daysAgo * DAY,
+        };
+      store().setSetting("models/evaluation", JSON.stringify({ ...marks, [id]: { parts } }));
+    };
+    const route = (id: string) => {
+      const [connection, ...rest] = id.split(":");
+      const zdr = rest[rest.length - 1] === "zdr";
+      return {
+        connection: connection as "openrouter",
+        model: (zdr ? rest.slice(0, -1) : rest).join(":"),
+        zdr,
+      };
+    };
+    /** A request of the app, as `serveModels` answers it. */
+    async function ask(
+      r: string,
+      q: {
+        body?: unknown;
+        url?: string;
+        params?: Record<string, string>;
+        trust?: "personal" | "shared";
+      } = {},
+    ) {
+      const res = { status: 0, body: "" };
+      const out = {
+        writeHead: (st: number) => {
+          res.status = st;
+          return out;
+        },
+        end: (b?: string) => {
+          res.body = b ?? "";
+          return out;
+        },
+        setHeader: () => out,
+      } as unknown as ServerResponse;
+      const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(q.body ?? {}))]), {
+        url: q.url ?? "/",
+      }) as unknown as IncomingMessage;
+      await serveModels(m, req, out, r, q.params ?? {}, {
+        account: 1,
+        trust: q.trust ?? "personal",
+      });
+      return {
+        status: res.status,
+        json: JSON.parse(res.body || "null") as Record<string, unknown>,
+      };
+    }
+    const load = (...ids: string[]) => {
+      for (const id of ids) expect(m.addModel(1, route(id))).toBe("added");
+    };
+    return { host: h, models: m, clock, store, evaluated, ask, load, asked, route };
+  }
+
+  it("AU-232 · the list gives every loaded model once, in the person's order, with its tags, its evaluation and the month's cost; with 30 models and a year of calls it answers in its time", async () => {
+    const t = fresh();
+    t.load(A, B);
+    t.evaluated(A, ["agent", "reading"]);
+    t.evaluated(B, ["reading"], 40);
+    const tag = t.models.addTag(1, "Barato") as { id: string };
+    expect(t.models.tagModel(1, B, [tag.id], false)).toEqual({ done: true });
+    expect(t.models.orderModels(1, [B, A])).toBe(true);
+    t.store().journal.modelCall({
+      run: "r",
+      role: "reader",
+      provider: "openrouter",
+      model: "ejemplo/modelo-b",
+      promptHash: "h",
+      request: {},
+      response: {},
+      usage: { input: 10, output: 1, cost: 1 },
+      at: t.clock.now - 1000,
+    });
+    const v = (await t.ask("GET /api/agent/models/list")).json as ReturnType<
+      AccountModels["listView"]
+    >;
+    // His two, in his order, then the server's he has not placed («Del servidor»); each once.
+    expect(v.models.map((x) => [x.id, x.server])).toEqual([
+      [B, false],
+      [A, false],
+      [SERVER_AGENT, true],
+      [SERVER_READING, true],
+    ]);
+    expect(v.models[0]?.tags).toEqual([{ id: tag.id, name: "Barato" }]);
+    // One evaluation per model: its parts summed, «Caducada» when one is old; no use is named.
+    expect(v.models[1]?.evaluation).toMatchObject({
+      right: 16,
+      total: 20,
+      partial: false,
+      expired: false,
+    });
+    expect(v.models[0]?.evaluation).toMatchObject({
+      right: 8,
+      total: 10,
+      partial: true,
+      expired: true,
+    });
+    expect(v.models[0]?.eur).toBeCloseTo(t.models.config(1).usdToEur, 5);
+    expect(JSON.stringify(v)).not.toMatch(/planner|reviewer|decider/);
+    expect(v.tags).toEqual([
+      { id: tag.id, name: "Barato", uses: { automations: 0, conversations: 0, rows: [] } },
+    ]);
+
+    // His volume: 30 models and a year of model calls, twenty a day.
+    const many = Array.from(
+      { length: 28 },
+      (_, i) => `openrouter:ejemplo/modelo-${String(i).padStart(2, "0")}`,
+    );
+    t.load(...many);
+    for (const id of many) t.evaluated(id, ["agent", "reading"]);
+    const s = t.store();
+    s.batch(() => {
+      for (let d = 0; d < 365; d++)
+        for (let k = 0; k < 20; k++)
+          s.journal.modelCall({
+            run: `r${d}-${k}`,
+            role: "reader",
+            provider: "openrouter",
+            model: `ejemplo/modelo-${String(k).padStart(2, "0")}`,
+            promptHash: "h",
+            request: {},
+            response: {},
+            usage: { input: 1000, output: 100, cost: 0.001 },
+            at: t.clock.now - d * DAY - k * 1000,
+          });
+    });
+    const at = clock();
+    const big = t.models.listView(1);
+    under(clock() - at, 300, "clock", "«Modelos» with 30 models and a year of calls");
+    expect(big.models.filter((x) => !x.server)).toHaveLength(30);
+  });
+
+  it("AU-233 · removing a model in use says where it is used, keeps its evaluation and leaves every reference answering «no-model»; one added is «Sin evaluar» and offered nowhere", async () => {
+    const t = fresh();
+    expect((await t.ask("POST /api/agent/models/list", { body: t.route(A) })).status).toBe(200);
+    expect((await t.ask("POST /api/agent/models/list", { body: t.route(A) })).status).toBe(409);
+    expect(
+      (await t.ask("POST /api/agent/models/list", { body: { connection: "openrouter" } })).status,
+    ).toBe(400);
+    const listed = t.models.listView(1).models.find((x) => x.id === A);
+    expect(listed?.evaluation).toBeNull();
+    for (const k of ["agent", "reading", "decision"] as const)
+      expect(t.models.choices(1, k).models.map((x) => x.id)).not.toContain(A);
+    t.evaluated(A, ["reading"]);
+    // Used by a row and a conversation: removing it asks first, saying where.
+    expect(t.models.setAccountRow(1, "reading", A)).toBe("done");
+    createConversation(t.store(), { model: A, now: t.clock.now });
+    const asked = await t.ask("POST /api/agent/models/list/remove", { body: { id: A } });
+    expect(asked.status).toBe(409);
+    expect(asked.json).toMatchObject({
+      error: "in-use",
+      where: { rows: ["reading"], conversations: 1 },
+    });
+    expect(
+      (await t.ask("POST /api/agent/models/list/remove", { body: { id: A, confirm: true } }))
+        .status,
+    ).toBe(200);
+    // The row goes back to the server's; the conversation's id answers no model; the evaluation stays.
+    expect(t.models.listView(1).account.find((r) => r.kind === "reading")).toMatchObject({
+      value: null,
+      answers: SERVER_READING,
+    });
+    expect(t.models.resolveModel(1, "reading", A)).toEqual({ refused: "no-model" });
+    expect(t.models.evaluationOf(1, A)?.parts.reading).toBeTruthy();
+    t.load(A);
+    expect(t.models.choices(1, "reading").models.map((x) => x.id)).toContain(A);
+    // A server's model is not removed; one not there is not found.
+    expect(
+      (await t.ask("POST /api/agent/models/list/remove", { body: { id: SERVER_AGENT } })).status,
+    ).toBe(409);
+    expect((await t.ask("POST /api/agent/models/list/remove", { body: { id: B } })).status).toBe(
+      404,
+    );
+    // Removing a key asks first where its models are used, and `dry` changes nothing.
+    t.models.setAccountRow(1, "reading", A);
+    const dry = await t.ask("PUT /api/agent/models/keys/:connection", {
+      params: { connection: "openrouter" },
+      body: { key: null, dry: true },
+    });
+    expect(dry.json).toMatchObject({ where: [{ id: A, rows: ["reading"] }] });
+    expect(t.models.view(1).connections).toContainEqual({
+      connection: "openrouter",
+      mine: true,
+      server: false,
+    });
+  });
+
+  it("AU-234 · one evaluation of a model runs every case it can answer once and keeps one result with its parts, and one older than its days is marked expired", async () => {
+    const t = fresh();
+    t.load(A, JEV);
+    expect((await t.ask("POST /api/agent/models/list/evaluate", { body: { id: A } })).status).toBe(
+      202,
+    );
+    expect((await t.ask("POST /api/agent/models/list/evaluate", { body: { id: B } })).status).toBe(
+      404,
+    );
+    await t.models.idle();
+    const e = t.models.evaluationOf(1, A);
+    expect(Object.keys(e?.parts ?? {}).sort()).toEqual(["agent", "reading"]);
+    expect(e?.parts.agent?.at).toBe(t.clock.now);
+    expect(e?.parts.reading?.at).toBe(t.clock.now);
+    // No real model was called: only the scripted one, as the planner and the reader.
+    expect(new Set(t.asked.map((x) => x.split(":")[0]))).toEqual(new Set(["planner", "reader"]));
+    // Its cost went in the journal like any call; its result, whatever it is, opens the gate.
+    expect(t.models.spending(1).rows.some((r) => r.model === "ejemplo/modelo-a")).toBe(true);
+    expect(t.models.choices(1, "agent").models.map((x) => x.id)).toContain(A);
+    // A decision model is evaluated with the decision's cases only.
+    t.asked.length = 0;
+    expect(t.models.evaluateModel(1, JEV)).toBe("started");
+    await t.models.idle();
+    expect(Object.keys(t.models.evaluationOf(1, JEV)?.parts ?? {})).toEqual(["decision"]);
+    expect(new Set(t.asked.map((x) => x.split(":")[0]))).toEqual(new Set(["decider"]));
+    // Older than its days, «Caducada»; the next one replaces it whole, with one date.
+    t.clock.now += 31 * DAY;
+    expect(t.models.listView(1).models.find((x) => x.id === A)?.evaluation).toMatchObject({
+      partial: false,
+      expired: true,
+    });
+    // From a device that is not his, nothing.
+    expect(
+      (await t.ask("POST /api/agent/models/list/evaluate", { body: { id: A }, trust: "shared" }))
+        .status,
+    ).toBe(403);
+  });
+
+  it("AU-235 · a model is offered only with its key and a current evaluation, for the kinds of call its evaluation has cases of, whatever its result", () => {
+    const t = fresh();
+    t.load(A, B, C);
+    t.evaluated(A, ["agent", "reading"]);
+    t.evaluated(B, ["reading"], 31);
+    t.evaluated(C, ["reading"]);
+    const ids = (k: "agent" | "reading") => t.models.choices(1, k).models.map((x) => x.id);
+    expect(ids("agent")).toEqual([A, SERVER_AGENT]);
+    expect(ids("reading")).toEqual([A, C, SERVER_READING]);
+    // Each part with its own date: «Lectura» of C expires while A's «Agente» stays.
+    t.clock.now += 29.5 * DAY;
+    expect(ids("reading")).toEqual([SERVER_READING]);
+    expect(ids("agent")).toEqual([SERVER_AGENT]);
+    t.evaluated(A, ["agent"], 0);
+    expect(ids("agent")).toEqual([A, SERVER_AGENT]);
+    // Chosen for the account's row, it keeps its place there when its evaluation expires; another kind it does not.
+    expect(t.models.setAccountRow(1, "agent", A)).toBe("done");
+    t.clock.now += 31 * DAY;
+    expect(ids("agent")).toEqual([A, SERVER_AGENT]);
+    expect(ids("reading")).toEqual([SERVER_READING]);
+    expect(t.models.setAccountRow(1, "reading", A)).toBe("not-offered");
+    // Without its key, nowhere; the chat's list is the same gate.
+    t.models.setKey(1, "openrouter", null);
+    expect(ids("agent")).toEqual([SERVER_AGENT]);
+    expect(t.models.plannerChoices(1).map((c) => c.id)).toEqual([SERVER_AGENT]);
+  });
+
+  it("AU-236 · a step and a conversation that chose nothing use the account's row of their kind, read at each run; «Decisión» shows only with a decision model", async () => {
+    const t = fresh();
+    t.load(A, JEV);
+    let v = t.models.listView(1);
+    expect(v.account.map((r) => [r.kind, r.value, r.answers])).toEqual([
+      ["agent", null, SERVER_AGENT],
+      ["reading", null, SERVER_READING],
+    ]);
+    // Not evaluated: not offered for the row.
+    const refused = await t.ask("PUT /api/agent/models/account/:kind", {
+      params: { kind: "agent" },
+      body: { value: A },
+    });
+    expect(refused.status).toBe(409);
+    t.evaluated(A, ["agent", "reading"]);
+    t.evaluated(JEV, ["decision"]);
+    expect(
+      (
+        await t.ask("PUT /api/agent/models/account/:kind", {
+          params: { kind: "agent" },
+          body: { value: A },
+        })
+      ).status,
+    ).toBe(200);
+    // A decision model answers decisions only.
+    expect(t.models.setAccountRow(1, "reading", JEV)).toBe("not-offered");
+    expect(t.models.setAccountRow(1, "decision", JEV)).toBe("done");
+    v = t.models.listView(1);
+    expect(v.account.map((r) => [r.kind, r.answers])).toEqual([
+      ["agent", A],
+      ["reading", SERVER_READING],
+      ["decision", JEV],
+    ]);
+    // What chose nothing reads the row each time it is asked: the chat's «El de la cuenta», a step's.
+    expect(t.models.plannerChoices(1)[0]).toMatchObject({ id: A, current: true });
+    expect(t.models.stepProvider(1, "agent", null)).toMatchObject({ model: "ejemplo/modelo-a" });
+    expect(t.models.setAccountRow(1, "agent", null)).toBe("done");
+    expect(t.models.stepProvider(1, "agent", null)).toMatchObject({ model: "claude-opus-5-5" });
+    // The engine of before plans with the row's model.
+    t.models.setAccountRow(1, "agent", A);
+    expect(t.models.providers(1)).not.toBeNull();
+    expect(
+      (
+        await t.ask("PUT /api/agent/models/account/:kind", {
+          params: { kind: "writer" },
+          body: { value: A },
+        })
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await t.ask("PUT /api/agent/models/account/:kind", {
+          params: { kind: "agent" },
+          body: { value: null },
+          trust: "shared",
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it("AU-237 · a tag renamed keeps every step that names it, and no tag exists that the person did not write", async () => {
+    const t = fresh();
+    // None comes with Boni nor with the change from the uses.
+    expect(t.models.list(1).tags).toEqual([]);
+    t.load(A, B);
+    t.evaluated(A, ["reading"]);
+    t.evaluated(B, ["reading"]);
+    const created = await t.ask("POST /api/agent/models/tags", { body: { name: "Barato" } });
+    const tag = created.json.id as string;
+    expect(tag).toMatch(/^tag:[a-z0-9]{16}$/);
+    expect((await t.ask("POST /api/agent/models/tags", { body: { name: "barato" } })).status).toBe(
+      400,
+    );
+    expect(
+      (await t.ask("POST /api/agent/models/tags", { body: { name: "x".repeat(25) } })).status,
+    ).toBe(400);
+    expect(
+      (await t.ask("PUT /api/agent/models/tagged", { body: { id: A, tags: [tag] } })).status,
+    ).toBe(200);
+    expect(t.models.setAccountRow(1, "reading", tag)).toBe("done");
+    expect(
+      (
+        await t.ask("PUT /api/agent/models/tags/:tag", {
+          params: { tag: tag.slice(4) },
+          body: { name: "Económico" },
+        })
+      ).status,
+    ).toBe(200);
+    const v = t.models.listView(1);
+    expect(v.tags.map((x) => [x.id, x.name])).toEqual([[tag, "Económico"]]);
+    expect(v.account.find((r) => r.kind === "reading")).toMatchObject({ value: tag, answers: A });
+    // A tag nobody uses and no model has goes away with the next change.
+    const other = t.models.addTag(1, "Sin uso") as { id: string };
+    t.models.orderModels(1, [B, A]);
+    expect(t.models.listView(1).tags.map((x) => x.id)).not.toContain(other.id);
+  });
+
+  it("AU-241 · what would leave a tag in use without a model says where it is used before it is done", async () => {
+    const t = fresh();
+    t.load(A);
+    t.evaluated(A, ["reading"]);
+    const tag = (t.models.addTag(1, "Barato") as { id: string }).id;
+    t.models.tagModel(1, A, [tag], false);
+    t.models.setAccountRow(1, "reading", tag);
+    const asked = await t.ask("PUT /api/agent/models/tagged", { body: { id: A, tags: [] } });
+    expect(asked.status).toBe(409);
+    expect(asked.json).toMatchObject({ error: "in-use", where: { tagsLeft: ["Barato"] } });
+    const removing = t.models.removeModel(1, A, false);
+    expect(removing).toMatchObject({ error: "in-use", where: { tagsLeft: ["Barato"] } });
+    expect(
+      (await t.ask("PUT /api/agent/models/tagged", { body: { id: A, tags: [], confirm: true } }))
+        .status,
+    ).toBe(200);
+    expect(t.models.choices(1, "reading").tags).toEqual([
+      { id: tag, name: "Barato", answers: null, state: "no-model" },
+    ]);
+  });
+
+  it("AU-242 · a conversation is offered the account's and the evaluated models that answer as an agent, and one whose model is gone answers with the account's", () => {
+    const t = fresh();
+    t.load(A, B);
+    t.evaluated(A, ["agent", "reading"]);
+    t.evaluated(B, ["reading"]);
+    expect(t.models.plannerChoices(1).map((c) => [c.id, c.current])).toEqual([
+      [SERVER_AGENT, true],
+      [A, false],
+    ]);
+    expect(t.models.plannerProvider(1, A)).not.toBeNull();
+    expect(t.models.plannerProvider(1, B)).toBeNull();
+    // With a tag in the row, «El de la cuenta» is the model it answers with now.
+    const tag = (t.models.addTag(1, "Agente") as { id: string }).id;
+    t.models.tagModel(1, A, [tag], false);
+    t.models.setAccountRow(1, "agent", tag);
+    expect(t.models.plannerChoices(1)[0]).toMatchObject({ id: A, current: true });
+    // A model removed is no choice: the conversation that named it plans with the account's (agent.ts).
+    t.models.setAccountRow(1, "agent", null);
+    t.models.removeModel(1, A, true);
+    expect(t.models.plannerProvider(1, A)).toBeNull();
+    expect(t.models.plannerChoices(1).map((c) => c.id)).toEqual([SERVER_AGENT]);
+  });
+
+  it("AU-239 · a tag with two models answers with the first in the list's order, an expired evaluation changes nothing and a model never evaluated is never taken", () => {
+    const t = fresh();
+    t.load(A, B, C);
+    t.evaluated(B, ["reading"]);
+    t.evaluated(C, ["reading"]);
+    const tag = (t.models.addTag(1, "Barato") as { id: string }).id;
+    for (const id of [A, B, C]) t.models.tagModel(1, id, [tag], false);
+    // A is first but never evaluated: never taken.
+    expect(t.models.resolveModel(1, "reading", tag)).toMatchObject({
+      id: B,
+      tag: { name: "Barato" },
+    });
+    // The clock changes nothing: B's evaluation old, B still.
+    t.clock.now += 60 * DAY;
+    expect(t.models.resolveModel(1, "reading", tag)).toMatchObject({ id: B });
+    // His acts do: the order, a tag taken off, a key.
+    t.models.orderModels(1, [C, A, B]);
+    expect(t.models.resolveModel(1, "reading", tag)).toMatchObject({ id: C });
+    t.models.tagModel(1, C, [], true);
+    expect(t.models.resolveModel(1, "reading", tag)).toMatchObject({ id: B });
+    // No kind it cannot answer: it has no agent's cases.
+    expect(t.models.resolveModel(1, "agent", tag)).toEqual({ refused: "no-model" });
+    t.models.setKey(1, "openrouter", null);
+    expect(t.models.resolveModel(1, "reading", tag)).toEqual({ refused: "no-model" });
+  });
+
+  it("AU-244 · with settings shaped like a person's, every use, conversation and step answers with the same connection and model before and after, every model is offered where it was and nowhere else, twice run changes nothing, and the keys are not read", () => {
+    // His key is there: the migration does not read it, and nothing it writes depends on it.
+    const t = fresh();
+    const s = t.store();
+    const at = t.clock.now;
+    // His uses of before: his own planner and reader, a reviewer that is another model, the server's decider.
+    s.setSetting(
+      "models/config",
+      JSON.stringify({
+        roles: {
+          planner: { ...t.route(A) },
+          reader: { ...t.route(B) },
+          reviewer: { ...t.route(C) },
+        },
+        budget: { monthlyEur: 10, warnAt: 0.8 },
+        usdToEur: 0.92,
+      }),
+    );
+    // Several evaluations per use: new and old, one too old to offer, and the reviewer's.
+    const ev = (role: string, id: string, daysAgo: number, right: number) => ({
+      role,
+      ...t.route(id),
+      right,
+      total: 10,
+      wrong: 10 - right,
+      tokens: 500,
+      cost: 0.01,
+      at: at - daysAgo * DAY,
+    });
+    const D = "openrouter:ejemplo/modelo-d";
+    const E = "openrouter:ejemplo/modelo-e";
+    const OLD = "openrouter:ejemplo/modelo-viejo";
+    s.setSetting(
+      "models/evals",
+      JSON.stringify([
+        ev("planner", A, 2, 9),
+        ev("planner", A, 20, 6),
+        ev("reader", B, 3, 8),
+        ev("reader", D, 5, 7),
+        ev("planner", E, 10, 7),
+        ev("reader", OLD, 45, 9),
+        ev("reviewer", C, 4, 10),
+      ]),
+    );
+    // A conversation and two steps naming models.
+    const STEP = "openrouter:ejemplo/modelo-del-paso";
+    createConversation(s, { model: E, now: at });
+    const auto = madeAutomation(s, [
+      START,
+      ["Redactar", "write", { instructions: "Resume", text: cite("$json.nota"), model: STEP }],
+    ]);
+    expect(auto.id).toBeTruthy();
+    // Before: what each use ran on.
+    const before = Object.fromEntries(
+      t.models.roles(1).map((r) => [r.role, `${r.connection}:${r.model}${r.zdr ? ":zdr" : ""}`]),
+    );
+    const keys = vi.spyOn(t.models as unknown as { keys: () => unknown }, "keys");
+    const keyFor = vi.spyOn(t.models as unknown as { keyFor: () => unknown }, "keyFor");
+    (t.models as unknown as { migrate: (a: number) => void }).migrate(1);
+    expect(keys).not.toHaveBeenCalled();
+    expect(keyFor).not.toHaveBeenCalled();
+    const list1 = s.setting("models/list");
+    const marks1 = s.setting("models/evaluation");
+    // Twice: nothing changes.
+    (t.models as unknown as { migrate: (a: number) => void }).migrate(1);
+    expect(s.setting("models/list")).toBe(list1);
+    expect(s.setting("models/evaluation")).toBe(marks1);
+    // The old settings stay as they were.
+    expect(JSON.parse(s.setting("models/evals") ?? "[]")).toHaveLength(7);
+    // The list: the account's first, then the rest by their last evaluation; the one too old stays out.
+    const l = t.models.list(1);
+    expect(l.models.map((x) => x.id)).toEqual([A, B, C, D, E, STEP]);
+    expect(l.account).toEqual({ agent: A, reading: B, decision: null });
+    // Each use's newest result is its part, with its date; the reviewer's counts as the reading.
+    const marks = t.models.marks(1);
+    expect(marks[A]?.parts.agent).toMatchObject({ right: 9, at: at - 2 * DAY });
+    expect(marks[C]?.parts.reading).toMatchObject({ right: 10, at: at - 4 * DAY });
+    expect(marks[OLD]?.parts.reading).toMatchObject({ right: 9 });
+    // The same answers as before.
+    expect(t.models.resolveModel(1, "agent", null)).toMatchObject({ id: before.planner });
+    expect(t.models.resolveModel(1, "reading", null)).toMatchObject({ id: before.reader });
+    expect(t.models.modelRefOf(1, "reviewer")).toBe(before.reviewer);
+    expect(t.models.resolveModel(1, "agent", E)).toMatchObject({ id: E });
+    expect(t.models.plannerChoices(1).map((c) => c.id)).toContain(E);
+    expect(t.models.resolveModel(1, "reading", STEP)).toMatchObject({ id: STEP });
+    // Offered where it was (an evaluation in date of its use) and nowhere else; the reviewer's model is offered for
+    // «Lectura», since its cases are the reading's (§5.16, the table of the uses).
+    expect(t.models.choices(1, "agent").models.map((x) => x.id)).toEqual([A, E, SERVER_AGENT]);
+    expect(t.models.choices(1, "reading").models.map((x) => x.id)).toEqual([
+      B,
+      C,
+      D,
+      SERVER_READING,
+    ]);
+  });
+
+  it("AU-244 · past thirty models, the migration leaves out only one there for its evaluation alone, the oldest evaluated, never one a step names", () => {
+    const t = fresh();
+    const s = t.store();
+    const at = t.clock.now;
+    const id = (i: number) => `openrouter:ejemplo/modelo-${String(i).padStart(2, "0")}`;
+    // 32 models evaluated lately as readers, model-00 the newest; a step names the oldest one.
+    s.setSetting(
+      "models/evals",
+      JSON.stringify(
+        Array.from({ length: 32 }, (_, i) => ({
+          role: "reader",
+          ...t.route(id(i)),
+          right: 8,
+          total: 9,
+          wrong: 1,
+          tokens: 500,
+          cost: 0.01,
+          at: at - (i + 1) * 3_600_000,
+        })),
+      ),
+    );
+    madeAutomation(s, [
+      START,
+      ["Redactar", "write", { instructions: "Resume", text: cite("$json.nota"), model: id(31) }],
+    ]);
+    const got = t.models.list(1).models.map((m) => m.id);
+    expect(got).toHaveLength(30);
+    expect(got).toContain(id(31));
+    // Out: the two oldest of those that nothing names.
+    expect(got).not.toContain(id(30));
+    expect(got).not.toContain(id(29));
+    expect(got).toContain(id(28));
+  });
+
+  it("AU-245 · the model a converted step carries: none for the agent, the reader and the decider, and the reviewer's own only when it differs from the reader's", () => {
+    const t = fresh();
+    expect(
+      ["planner", "reader", "decider", "reviewer"].map((r) =>
+        t.models.modelRefOf(1, r as "planner"),
+      ),
+    ).toEqual([null, null, null, null]);
+    t.models.saveConfig(1, {
+      ...t.models.config(1),
+      roles: { reader: t.route(A), reviewer: t.route(A) },
+    });
+    expect(t.models.modelRefOf(1, "reviewer")).toBeNull();
+    t.models.saveConfig(1, {
+      ...t.models.config(1),
+      roles: { reader: t.route(A), reviewer: t.route(C) },
+    });
+    expect(t.models.modelRefOf(1, "reviewer")).toBe(C);
+    // The map names the model that would answer each use's node, not the use.
+    expect(t.models.answerOf(1, "reviewer")).toBe(C);
+    const m = flowMap(t.store(), {
+      now: t.clock.now,
+      days: 7,
+      tz: "Europe/Madrid",
+      mailType: null,
+      mailAccount: null,
+      answerOf: (r) => t.models.answerOf(1, r as "planner"),
+    });
+    // The list was made from the uses (the reader's is A), so the chat's node names the server's planner and A.
+    expect(m.nodes.find((n) => n.id === "boni:chat")?.answers).toEqual([SERVER_AGENT, A]);
+  });
+
+  it("AU-244 · the desktop of before still answers: choosing a use's model moves the row of its kind, and evaluating a use writes its model's part", async () => {
+    const t = fresh();
+    // Evaluated by use, as the desktop of before does: its model's part is written too.
+    expect(t.models.evaluate(1, "reader", t.route(A))).toBe("started");
+    await t.models.idle();
+    expect(t.models.evaluationOf(1, A)?.parts.reading?.at).toBe(t.clock.now);
+    expect(
+      (await put2(t, "PUT /api/agent/models/roles/:role", { role: "reader" }, t.route(A))).status,
+    ).toBe(200);
+    expect(t.models.list(1).account.reading).toBe(A);
+    expect(t.models.resolveModel(1, "reading", null)).toMatchObject({ id: A });
+    expect(
+      (await put2(t, "PUT /api/agent/models/roles/:role", { role: "reader" }, {})).status,
+    ).toBe(200);
+    expect(t.models.list(1).account.reading).toBeNull();
+    expect(t.models.evaluate(1, "planner", t.route(B))).toBe("started");
+    await t.models.idle();
+    expect(t.models.evaluationOf(1, B)?.parts.agent?.at).toBe(t.clock.now);
+  });
+
+  const put2 = (
+    t: ReturnType<typeof fresh>,
+    r: string,
+    params: Record<string, string>,
+    body: unknown,
+  ) => t.ask(r, { params, body });
 });
