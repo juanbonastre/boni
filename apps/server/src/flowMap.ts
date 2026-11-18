@@ -83,6 +83,8 @@ export interface MapNode {
   /** The models that answered in the period, and the roles its steps ask for (the app names the role's model). */
   models?: string[];
   roles?: string[];
+  /** The models that would answer its steps now, by their ids, one per role (AU-245: a use's node is its model). */
+  answers?: string[];
   /** Proposals made in the period and how many were accepted (and, the Bandeja, rejected). */
   proposals?: number;
   accepted?: number;
@@ -213,9 +215,25 @@ export function flowMap(
     mailAccount: string | null;
     /** A tool's title from the registry («Crear»), for a step's name. */
     titleOf?: (tool: string) => string | null;
+    /** The model that would answer a role's calls now (`AccountModels.answerOf`); null: none answers. */
+    answerOf?: (role: string) => string | null;
   },
 ): MapView {
-  return timed("the map", 400, () => makeMap(store, o));
+  return timed("the map", 400, () => {
+    const m = makeMap(store, o);
+    const answerOf = o.answerOf;
+    if (!answerOf) return m;
+    // Each role asked once: the nodes say the model that would answer, not the use (§5.16).
+    const memo = new Map<string, string | null>();
+    const of = (r: string) => {
+      if (!memo.has(r)) memo.set(r, answerOf(r));
+      return memo.get(r) ?? null;
+    };
+    for (const n of m.nodes)
+      if (n.roles?.length)
+        n.answers = [...new Set(n.roles.map(of).filter((x): x is string => !!x))];
+    return m;
+  });
 }
 
 function makeMap(

@@ -19,7 +19,7 @@ import {
 } from "./catalogue.ts";
 import type { FindQuery } from "./effects.ts";
 import { CannotRun } from "./engine.ts";
-import { ACTION, type Automation, MAIN, OUT, type Step } from "./format.ts";
+import { ACTION, type Automation, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 import { touches } from "./graph.ts";
 import { OUTSIDE, OWN, outOf, policy, start, store } from "./run.test-util.ts";
 import { validate } from "./validate.ts";
@@ -631,6 +631,48 @@ function paramLists(): ParamList[] {
   }
   return lists;
 }
+
+describe("«Modelo» (docs/automatizaciones.md §5.16)", () => {
+  it("AU-238 · «Modelo» takes nothing, a model's id or a tag, and nothing else", () => {
+    const notes = collection(ids(238), ["text"]);
+    const [body] = notes.fields.map((f) => f.key) as [string];
+    const problemsWith = (model: unknown) => {
+      const s = sketch(239)
+        .step("Inicio", "manual")
+        .step("Buscar", "collection", { collection: notes.key, [ACTION]: "find", limit: 50 })
+        .step("Leer", "summarize", {
+          text: cite(body),
+          ...(model === undefined ? {} : { model: model as ParamValue }),
+        })
+        .arrow("Inicio", "Buscar")
+        .arrow("Buscar", "Leer");
+      return validate(s.build() as Automation, { ...knowing(notes), ai: true })
+        .filter((p) => p.param === "model")
+        .map((p) => p.code);
+    };
+    // Nothing («El de la cuenta»), a model's id (with its route) or a tag's id.
+    for (const ok of [
+      undefined,
+      "",
+      "openrouter:ejemplo/modelo-a",
+      "openrouter:ejemplo/modelo-a:zdr",
+      "anthropic:modelo-b",
+      "tag:k3v9q2x7",
+    ])
+      expect(problemsWith(ok), String(ok)).toEqual([]);
+    // Nothing else: a bare name, a key, a list of models, a setting, a tag with no id, a number.
+    for (const bad of [
+      "modelo-a",
+      "openrouter: modelo con espacios",
+      "tag:",
+      "tag:Barato",
+      ["openrouter:a", "openrouter:b"],
+      { temperature: 0.2 },
+      7,
+    ])
+      expect(problemsWith(bad), JSON.stringify(bad)).toEqual(["param.value"]);
+  });
+});
 
 describe("the catalogue as data", () => {
   it("has the triggers («Programada» since F14d) and the steps of Datos, Transformar and Lógica of F14a, each once", () => {
