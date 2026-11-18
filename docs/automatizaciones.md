@@ -2603,7 +2603,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   como `RunDeps.ai` para los modelos): `packages/automations` conoce su tipo, sus parámetros y sus salidas, y no
   importa nada de una app (A-02). Una pieza no tiene celdas ni «Sí», y en «Probar» no cambia nada y dice lo que
   haría (A-19, D-43), con una excepción: «Crear en la elegida», la única que escribe datos de Juan, lleva una
-  celda «Crear» por colección y pasa por P28 como un paso «Colección» (AU-250; propuesto: pregunta A del §5.17).
+  celda «Crear» por colección y pasa por P28 como un paso «Colección» (AU-250; decisión 30).
   Cambiar una automatización de Boni cambia lo que hace, nunca lo que se le permite: sus topes (una revisión al
   día, 20 casos por medida y 45 lecturas al día para medir; 150 llamadas a modelos al día y 20 por remitente al
   leer correo; un aviso al mes) están en el código, no en un parámetro (AU-253). Lo que Juan añade a una de ellas
@@ -3163,7 +3163,7 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   lo publicado. Es una de las automatizaciones de Boni, que se abren, se limitan y se apagan, como «Revisar la guía»,
   y llega con ellas (F16; decisión 16). La F15 le deja hecho lo que no necesita un modelo: las señales
   (AU-207) y dónde se ven (AU-208).
-  En la F16 (§5.17; propuesto: pregunta B): es una sola automatización de Boni, «Revisar instrucciones», para los
+  En la F16 (§5.17; decisión 31): es una sola automatización de Boni, «Revisar instrucciones», para los
   pasos que leen con un modelo: la «Lectora» de «Leer correo» y cada «Agente». Sustituye a «Revisar la guía» y a la
   «Revisar los agentes» que el diseño de la fase añadía aparte: con la guía del correo en los paneles de sus pasos
   (AU-249), revisar la guía y revisar un «Agente» son lo mismo sobre otra cosa. Sus pasos: «Cuando tus decisiones
@@ -3560,8 +3560,8 @@ Lo que hacía cada pieza lo decidía una configuración que el lienzo no enseña
 Correo), y preguntar, guardar sin preguntar, aprender y el registro tenían cada uno una segunda máquina solo para el
 correo, al lado de la que las automatizaciones ya traen. Este apartado lo rehace, y manda sobre lo que AU-127,
 AU-220, AU-221 y AU-211 decían del correo. No toca las decisiones 13, 16, 19, 20 y 21, ni el suelo (AU-230, §6).
-Lo que es de Juan decidir va como pregunta (A, B, C y D, al final del apartado): **hasta que conteste, lo que cuelga
-de ellas está propuesto**, y cada regla dice de cuál cuelga.
+Lo que era de Juan decidir fue como pregunta (A, B, C y D, al final del apartado), y contestó el 2026-11-18: «Sí,
+las recomendadas». Son las decisiones 30 a 33 del §10, y cada regla dice de cuál cuelga.
 
 **Lo que existe (T-05).** El correo de hoy está en `docs/correo.md` §1.2 y `docs/fiabilidad.md`; su código, en
 `apps/server/src/mail.ts` (`mailPlan`, `ensureFlow`, `bindingsFor`, `proposeOne`, `foldThread`, `logRead`),
@@ -3590,17 +3590,17 @@ automatewithai) y las páginas de Zapier de correo a tarea.
 | «Traer correo» (mirar el buzón y «Guardar en Correos») | **Se queda**, como dos pasos de Boni | Es el conector: el buzón, su clave, IMAP solo de lectura, no guardar dos veces, los adjuntos. No hay nada que dibujar | Nada cambia: se enciende y se apaga |
 | El disparador «Llega un correo» | **Se queda; cambia lo que da**: solo el correo, como lo guarda la colección de correos, entero de fuera | Hoy lleva además valores que Boni prepara y nadie ve (la guía, lo ya propuesto, las opciones) | Todo lo que un paso usa está en la fila o en su panel. El mismo disparador vale en una automatización suya |
 | El plan regenerado (`mailPlan`, `ensureFlow`) | **Se quita** | Son dos verdades: cambiar Ajustes → Correo reescribe el flujo, salvo que la última versión sea suya, y entonces ya no | Lo que ve en el lienzo es lo que corre. Pierde que un cambio en Ajustes redibuje el flujo: lo cambia en el paso |
-| La configuración de la lectura (colecciones, indicaciones, reglas, ejemplos) | **Cambia de sitio**: a los paneles de los pasos (pregunta B) | Un sitio. Y un cambio se prueba con «Probar con…» antes de publicarlo, y tiene versión | Gana probar y volver atrás. Pierde el toque único: cambiar es cambiar, probar y publicar |
+| La configuración de la lectura (colecciones, indicaciones, reglas, ejemplos) | **Cambia de sitio**: a los paneles de los pasos (decisión 31) | Un sitio. Y un cambio se prueba con «Probar con…» antes de publicarlo, y tiene versión | Gana probar y volver atrás. Pierde el toque único: cambiar es cambiar, probar y publicar |
 | «Regla del remitente» | **Se queda** como paso de Boni, con su tabla en el panel | Con «Filtrar» y «Elegir rama» serían dos pasos con listas largas, y una lectura que pide su mano no debe saltarse | Las reglas se ven y se cambian donde se aplican |
 | «Leer invitación» | **Se queda** (código, sin modelo); su «Crear» propio se quita | Leer un `.ics` es código de Boni. Lo que saca es una fila más, que sigue el mismo camino | Un paso menos |
 | «Lectora» | **Se queda** como paso de Boni, con «Busca», «Indicaciones», «Ejemplos» y «Modelo» en su panel | «Extraer datos» da una fila por texto y un correo trae varias cosas; y su texto está medido con la evaluación (`docs/correo.md`). En su versión puede cambiarla por «Extraer datos» o un «Agente» | Ve y cambia qué busca y con qué indicaciones |
-| Lo que la «Lectora» recibe además del correo (lo ya propuesto de ese remitente, el título de la invitación, dónde está él entre los destinatarios) | **Cambia** (AU-255; pregunta D): lo que salió de un correo se lee entre marcas, con su etiqueta de fuera; nada de eso viaja como valor de Boni | Hoy el código lo pasa aparte, fuera de las marcas y como valores públicos suyos. En el motor nuevo la etiqueta sigue a la fila, y la regla de siempre (nunca datos suyos junto a un texto de fuera) rechaza la llamada | En la Bandeja, lo mismo: no repite lo ya propuesto. En «Ejecuciones», todo lo que leyó sale «de fuera» |
+| Lo que la «Lectora» recibe además del correo (lo ya propuesto de ese remitente, el título de la invitación, dónde está él entre los destinatarios) | **Cambia** (AU-255; decisión 33): lo que salió de un correo se lee entre marcas, con su etiqueta de fuera; nada de eso viaja como valor de Boni | Hoy el código lo pasa aparte, fuera de las marcas y como valores públicos suyos. En el motor nuevo la etiqueta sigue a la fila, y la regla de siempre (nunca datos suyos junto a un texto de fuera) rechaza la llamada | En la Bandeja, lo mismo: no repite lo ya propuesto. En «Ejecuciones», todo lo que leyó sale «de fuera» |
 | «Ya propuesto» y «Plegar hilo» | **Se juntan** en «Plegar hilo», antes de guardar | Un paso detrás de uno que pregunta no recibe filas (AU-14): plegar va antes. Las dos miran lo mismo: lo ya propuesto en el hilo | Un paso menos; los días siguen en su panel |
 | «Decisora» | **Se queda** (decisiones 20 y 22): decide con confianza, preguntada dos veces, y el catálogo no tiene un paso así | «Clasificar» es una lectura sin confianza | Igual que hoy: su panel lista las colecciones |
-| La pregunta de la «Decisora» | **Se cambia** por el paso «Preguntar», en su salida «Duda» (pregunta C) | Hoy es una ejecución del motor de antes que espera; el nuevo ya sabe esperar una respuesta | La pregunta se ve en el lienzo y se cambia. Caduca |
+| La pregunta de la «Decisora» | **Se cambia** por el paso «Preguntar», en su salida «Duda» (decisión 32) | Hoy es una ejecución del motor de antes que espera; el nuevo ya sabe esperar una respuesta | La pregunta se ve en el lienzo y se cambia. Caduca |
 | «Rellenadora» y «Buscar relaciones» | **Se quedan** | Rellenan los campos de la colección elegida, que cambia en cada fila; con «Extraer datos» haría falta uno por colección | Igual |
 | «Crear en la elegida» | **Cambia**: guarda por una celda «Crear» por colección (AU-250) | Hoy propone por un camino propio (P7) y no puede llevar «Sí» | El permiso de cada colección está a la vista, con su cuenta |
-| «Aceptar solas» y su interruptor «Solo» | **Se quita** (pregunta A): lo hace la celda, con «Solo conocidos» | Es la misma idea que la celda, la sugerencia y la pausa (los mismos números: 20 con el 95 %; tres seguidas o una de cada cinco), hecha dos veces | Un solo sitio dice qué entra sin preguntar. Al convertir nada entra solo hasta que pone «Sí» |
+| «Aceptar solas» y su interruptor «Solo» | **Se quita** (decisión 30): lo hace la celda, con «Solo conocidos» | Es la misma idea que la celda, la sugerencia y la pausa (los mismos números: 20 con el 95 %; tres seguidas o una de cada cinco), hecha dos veces | Un solo sitio dice qué entra sin preguntar. Al convertir nada entra solo hasta que pone «Sí» |
 | Las tarjetas del correo | **Iguales a la vista**; por dentro son la propuesta de la ejecución, pintada una tarjeta por fila (AU-251) | La decisión 20 da por hecha una tarjeta por cosa; la tarjeta única de AU-193 sería peor. Y así vale para cualquier automatización | Nada cambia en la Bandeja. Sus automatizaciones ganan esa tarjeta |
 | El tope del día | **Se queda** en el código y pasa al disparador (AU-253) | Vale para toda automatización que empieza con un correo; hoy una suya no lo tiene | Lo ve en el panel del disparador |
 | El registro de lecturas (`logRead`) | **Se quita**: es «Ejecuciones» | Una línea en el registro del servidor, con remitente y título, que no se guarda ni se ve en la app | Ve cada lectura paso a paso; el remitente deja de salir en el registro del servidor |
@@ -3624,7 +3624,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
 | «Crear en la elegida» | Crea la fila en su colección | Una fila por colección con «Crear»: «No», «Preguntar», «Sí»; «Solo conocidos» tras «Añadir opción» |
 
 - **AU-249** (F16, pendiente) · «Leer correo» es su documento: nada la regenera y nada le llega a un paso que no
-  esté en la fila del disparador o en su panel (propuesto: pregunta B). Las piezas de Boni que quedan son las de la
+  esté en la fila del disparador o en su panel (decisión 31). Las piezas de Boni que quedan son las de la
   tabla, más las dos de «Traer correo» y las del revisor (AU-211); «Ya propuesto», el «Crear» de la invitación,
   «Aceptar solas» y los valores preparados del disparador se van. `mailPlan`, `ensureFlow` para el correo y
   `bindingsFor` se van con el motor de antes (AU-152). Ajustes → Correo se queda con el buzón (servidor, usuario,
@@ -3640,8 +3640,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   cuarentena, etiquetas, cuenta de llamadas, presupuesto) y su código recibe la fila, así que el motor de antes se
   puede quitar sin ellas. La prueba: `packages/automations/src/boni-steps.test.ts` y
   `apps/server/src/automations/mail.test.ts` («AU-249 · …»).
-- **AU-250** (F16, pendiente) · Lo que «Leer correo» guarda lo decide una celda, no una pieza (propuesto: pregunta
-  A). «Crear en la elegida» tiene una fila por colección de la «Decisora» con la celda «Crear», y lo que crea pasa
+- **AU-250** (F16, pendiente) · Lo que «Leer correo» guarda lo decide una celda, no una pieza (decisión 30). «Crear en la elegida» tiene una fila por colección de la «Decisora» con la celda «Crear», y lo que crea pasa
   por `decide` con el origen `automation` y esa celda (P28), como un paso «Colección». Nace en «Preguntar» en todas
   (AU-230); un «Sí» lo pone su mano en un dispositivo personal (decisión 13); con «Sí» la fila se guarda marcada
   como de fuera y se deshace con la ejecución (decisión 11); la cuenta bajo la celda, la sugerencia y la pausa son
@@ -3668,11 +3667,13 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   nueva ya está propuesta: una ejecución que falla no retira nada. Las tarjetas del correo que esperaban al
   convertir siguen siendo las suyas (AU-226) y el plegado las ve. La prueba:
   `apps/server/src/automations/proposal.test.ts` y `e2e-boni/automations-mail.spec.ts` («AU-251 · …»).
-- **AU-252** (F16, pendiente) · La duda de la «Decisora» es un «Preguntar» (propuesto: pregunta C). La «Decisora»
+- **AU-252** (F16, pendiente) · La duda de la «Decisora» es un «Preguntar» (decisión 32). La «Decisora»
   tiene dos salidas: la principal, con la colección elegida, y «Duda», con la fila y sus opciones. En la de Boni,
   «Duda» va a un «Preguntar» del catálogo: «¿Dónde va «{{ título }}»?», «Una opción» entre las colecciones de la
-  «Decisora» y «Ninguna», «Días de espera» 7, «Una vez por fila». La ejecución espera como cualquiera (AU-125,
-  AU-203; contesta cualquier dispositivo con su sesión, decisión 26) y al contestar sigue por «Rellenadora»; con
+  «Decisora» y «Ninguna», «Por dónde» solo «Bandeja» (AU-246: la tarjeta de hoy, y ninguna notificación por cada
+  correo que dude; añadir «Notificación» es suyo, en el paso), «Días de espera» 7, «Una vez por fila». La ejecución
+  espera como cualquiera (AU-125, AU-203) y la pregunta vive en ella (AU-247): se contesta desde su tarjeta o desde
+  la ejecución, con cualquier dispositivo con su sesión (decisión 26), y al contestar sigue por «Rellenadora»; con
   «Ninguna», o caducada, no crea nada y lo dice. La respuesta elige entre colecciones escritas en el paso, y lo
   creado pasa después por su celda igual. Con 20 preguntas esperando, la ejecución siguiente que dude falla con su
   motivo (`ask.waiting`), se ve en «Ejecuciones» con «Reintentar» y avisa una vez por racha (decisión 12). El título
@@ -3716,7 +3717,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   la lista cerrada: «Ya no acepta sola: lo decide «Permiso»» y «Su duda es una pregunta en la Bandeja, y caduca». La
   prueba: `apps/server/src/automations/convert.test.ts` y `apps/server/src/automations/mail.test.ts` («AU-254 · …»).
 
-- **AU-255** (F16, pendiente) · Lo que una pieza da a leer a un modelo (propuesto: pregunta D). En el motor nuevo la
+- **AU-255** (F16, pendiente) · Lo que una pieza da a leer a un modelo (decisión 33). En el motor nuevo la
   respuesta de un paso de Boni lleva la etiqueta de la fila que recibe (AU-230), y la fila de «Llega un correo» es
   entera de fuera (AU-220): todo lo que sale después del disparador es de fuera, y así se queda. Ninguna etiqueta se
   pone ni se quita para que un lector acepte una llamada: el código de Boni no escribe etiquetas en los campos de la
@@ -3743,8 +3744,10 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   (`docs/correo.md` §4.5). La prueba: `apps/server/src/automations/mail.test.ts` («AU-255 · …») y
   `packages/automations/src/boni-steps.test.ts`.
 
-**Preguntas para Juan (propuestas, sin contestar).** Cada una dice cuándo pasa, qué ve y las dos salidas sobre un
-ejemplo inventado.
+**Las preguntas, contestadas.** **Juan, 2026-11-18: «Sí, las recomendadas»**, a las cuatro: son las decisiones
+30 a 33 del §10. Se quedan aquí como se le hicieron, con cuándo pasa cada una, qué ve y las salidas sobre un
+ejemplo inventado; en las cuatro vale la primera salida, la recomendada. Los nombres «Revisar instrucciones»,
+«Solo conocidos» y «Duda» son propuestos: los puede cambiar.
 
 - **A · ¿«Leer correo» deja de aceptar por su cuenta con «Aceptar solas», y lo decide el «Permiso» de su paso
   «Crear en la elegida»?** Recomendada: sí. Lo decide una vez, al poner «Sí» en una colección (un toque y
@@ -4276,7 +4279,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   |---|---|---|
   | Un flujo de Juan convertido, en segundo plano | P7: lo que escribe se propone | P28: cada celda de escribir nace en «Preguntar» (decisión 13; `lowerYes` al convertir, también en sus versiones de antes) y propone lo mismo, en una sola tarjeta por ejecución (AU-193). Un «Sí» lo pone después su mano, en un dispositivo personal (AU-188) |
   | Un flujo de Juan convertido, iniciado por él | P5: algunas escrituras iban solas | Pregunta: quién la inicia no cambia lo que guarda (decisión 11). Es lo que la conversión cambia, y lo dice («Lo que cambia», AU-224) |
-  | Una pieza de Boni y lo que traen sus automatizaciones | P7, con el origen de su flujo: propone; «Aceptar solas» es lo único que acepta | Igual: sin celdas, sin «Sí» y sin P28 (AU-127). «Aceptar solas» se va, y la única pieza que escribe datos suyos, «Crear en la elegida», lleva una celda por colección que nace en «Preguntar» y pasa por P28 como un paso «Colección» (AU-250; propuesto: pregunta A del §5.17) |
+  | Una pieza de Boni y lo que traen sus automatizaciones | P7, con el origen de su flujo: propone; «Aceptar solas» es lo único que acepta | Igual: sin celdas, sin «Sí» y sin P28 (AU-127). «Aceptar solas» se va, y la única pieza que escribe datos suyos, «Crear en la elegida», lleva una celda por colección que nace en «Preguntar» y pasa por P28 como un paso «Colección» (AU-250; decisión 30) |
   | «Acción de Boni» y «Lector de Boni» en una publicada | P7: las lecturas corren, lo que cambia se propone, salir fuera se niega | Igual. No tienen celda de «Sí», y lo que viene de fuera nunca vale como destino (P14) |
   | El chat de una página | P26 y P27: lee lo de su página; lo que escribe es una tarjeta, salvo un valor suyo | Igual: su «Agente» no tiene «Sí» (AU-137) |
   | Un turno de la conversación | P4, P5, P8 y las demás, con el origen del turno | Igual: el origen lo pone el servidor y nunca es `automation`; una prueba diferencial corre los mismos planes en los dos motores y compara cada llamada a `decide` y su respuesta |
@@ -5042,6 +5045,65 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
     - No se construye todavía: abrir un chat desde la notificación, ni botones de respuesta en la notificación del
       móvil (tarea 148).
 
+30. **«Leer correo» deja de aceptar por su cuenta: lo decide el «Permiso» de «Crear en la elegida».** El diseño
+    del correo de la F16 (tarea 130, §5.17) preguntó: «¿«Leer correo» deja de aceptar por su cuenta con «Aceptar
+    solas», y lo decide el «Permiso» de su paso «Crear en la elegida»?», con la recomendación de que sí.
+    **Juan, 2026-11-18: «Sí, las recomendadas»** (a las cuatro preguntas de ese diseño: las decisiones 30 a 33; su respuesta llegó por la sesión que coordina la fase).
+    La otra respuesta era dejar «Aceptar solas» como hoy. Por ejemplo, Ana (ejemplo.ana@example.com) le ha escrito
+    cinco veces con una cita y las cinco las aceptó tal cual; llega otro suyo y uno de alguien que no le ha escrito
+    nunca. Al convertir, los dos salen como tarjeta, también el de Ana, que hoy con «Solo» encendido entraría solo;
+    cuando ponga «Sí» en Eventos con «Solo conocidos», el de Ana se crea sin preguntar, marcado «de fuera», y el otro
+    sale como tarjeta. Con la otra respuesta nada habría cambiado al convertir, y «Leer correo» llevaría un paso que
+    acepta con su propia regla y su propio interruptor, al lado de las celdas. Lo que queda:
+    - «Crear en la elegida» tiene una celda «Crear» por colección, que nace en «Preguntar»; «Aceptar solas», su
+      interruptor «Solo» y el ámbito `mail.accept` se van (AU-250). Prueba:
+      `apps/server/src/automations/mail.test.ts` («AU-250 · …»).
+    - Al convertir con «Solo» encendido nada pasa a «Sí», y el aviso de la conversión lo dice y lleva a la celda
+      (AU-254, AU-230).
+    - «Solo conocidos» es un nombre propuesto: lo puede cambiar.
+31. **Cómo se lee el correo se cambia en los pasos de «Leer correo», no en Ajustes → Correo.** El diseño del correo
+    de la F16 (tarea 130, §5.17) preguntó: «¿Lo que hoy cambia en Ajustes → Correo sobre cómo se lee (colecciones,
+    indicaciones, reglas de remitentes, ejemplos) pasa a cambiarse en los pasos de «Leer correo»?», con la
+    recomendación de que sí. **Juan, 2026-11-18: «Sí, las recomendadas»** (a las cuatro preguntas de ese diseño: las decisiones 30 a 33; su respuesta llegó por la sesión que coordina la fase).
+    La otra respuesta era seguir en Ajustes. Por ejemplo, no quiere que se lea lo de ejemplo.boletin@example.com:
+    abre «Leer correo» → «Regla del remitente», añade la fila «No leer», «Probar con…» le enseña que de él ya no
+    propone nada, y «Publicar»; queda como una versión, con «Volver a esta». Con la otra respuesta la regla habría
+    valido desde el correo siguiente, sin probar y sin versión, y los pasos harían cosas que el lienzo no enseña. Lo
+    que queda:
+    - «Leer correo» es su documento: nada la regenera, y Ajustes → Correo se queda con el buzón y «Leer correo ·
+      Abrir» (AU-249). Prueba: `apps/server/src/automations/mail.test.ts` («AU-249 · …»).
+    - La conversión escribe las colecciones, las indicaciones, las reglas y los ejemplos en los paneles (AU-254).
+    - Un solo revisor, «Revisar instrucciones», en vez de «Revisar la guía» y «Revisar los agentes» (AU-211,
+      AU-221). El nombre es propuesto: lo puede cambiar.
+32. **La duda de la «Decisora» es una tarjeta de «Preguntar» que caduca a los 7 días.** El diseño del correo de la
+    F16 (tarea 130, §5.17) preguntó: «Cuando la «Decisora» duda, ¿la pregunta es una tarjeta de «Preguntar» que
+    caduca a los 7 días?», con la recomendación de que sí. **Juan, 2026-11-18: «Sí, las recomendadas»** (a las cuatro preguntas de ese diseño: las decisiones 30 a 33; su respuesta llegó por la sesión que coordina la fase).
+    La otra respuesta era la pregunta de hoy, dentro de la pieza y sin caducar. Por ejemplo, llega «Te paso el
+    presupuesto, dime algo antes del viernes» y duda entre Tareas y Notas: pregunta «¿Dónde va «Contestar al
+    presupuesto»?», con «Tareas», «Notas» y «Ninguna»; elige «Tareas» y sale la tarjeta de la tarea; si no contesta
+    en 7 días queda «Caducada», no se crea nada y desde el correo sigue «Proponer tarea». Con la otra respuesta la
+    pregunta habría esperado sin caducar, sin verse ni cambiarse en el lienzo. Lo que queda:
+    - La «Decisora» tiene la salida «Duda», que en la de Boni va a un «Preguntar» del catálogo con «Días de espera»
+      7 y «Por dónde» solo «Bandeja»: la tarjeta, sin una notificación por cada correo que dude (decisión 29,
+      AU-246) (AU-252). Prueba: `apps/server/src/automations/mail.test.ts` («AU-252 · …»).
+    - «Duda» es un nombre propuesto: lo puede cambiar.
+33. **Lo que salió de un correo llega a la «Lectora» como texto de fuera, entre marcas, y nada de eso viaja como
+    valor de Boni.** El diseño del correo de la F16 (tarea 130, §5.17) preguntó: «¿Lo que la «Lectora» recibe de un
+    correo además de su texto lo lee como texto de fuera, con su marca, y nada de eso viaja como valor de Boni?», con
+    la recomendación de que sí. **Juan, 2026-11-18: «Sí, las recomendadas»** (a las cuatro preguntas de ese diseño: las decisiones 30 a 33; su respuesta llegó por la sesión que coordina la fase).
+    Las otras dos no se eligieron: que el código de Boni pusiera etiquetas propias en campos de la fila del correo
+    y sus pasos dejaran de recibir la fila (lo de hoy, y lo que propuso quien lo construía para el motor nuevo), que
+    bajaba el suelo; y una más estricta, que la «Lectora» leyera solo el correo. Por ejemplo, Ana escribió el lunes
+    «Entrega el informe el viernes» y la tarjeta «Entregar el informe» espera; el miércoles escribe en otro hilo «No
+    te olvides de lo del informe»: la «Lectora» lee ese correo y, entre las mismas marcas, lo ya propuesto de Ana, y
+    no propone nada nuevo; en «Ejecuciones» las dos cosas salen «de fuera». Con la más estricta habría salido una
+    segunda tarjeta, «Lo del informe». Lo que queda:
+    - Ninguna etiqueta se pone ni se quita para que un lector acepte una llamada: el código no etiqueta campos de la
+      fila del disparador, una pieza recibe siempre su fila y el puerto comprueba, nunca rebaja (AU-255, AU-230,
+      AU-220). Prueba: `apps/server/src/automations/mail.test.ts` («AU-255 · …»).
+    - El texto base de la «Lectora» cambia en una cosa (lo ya propuesto pasa dentro de las marcas) y se mide otra vez
+      con la evaluación a mano antes del despliegue (`docs/correo.md` §4.5).
+
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 
 | Principio | Su prueba | Fase |
@@ -5092,9 +5154,9 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
 | Lo convertido que escribe nace en «Preguntar» (AU-230, decisión 13; AU-188) | Un flujo que creaba una fila, convertido: ninguna versión suya lleva un «Sí», y su ejecución propone | F16 |
 | El turno recibe las mismas decisiones en el motor nuevo (AU-143, AU-230; P4, P5, P8) | Los mismos planes en los dos motores: cada llamada a `decide` y su respuesta, iguales; el origen nunca es `automation` | F16 |
 | Una pieza de Boni solo corre en su automatización y propone como hoy (AU-127; A-19) | Una pieza en otra automatización no valida; en «Probar» no cambia nada; lo que crea «Leer correo» es una propuesta | F16 |
-| Lo que «Leer correo» guarda lo decide una celda que nace en «Preguntar» (AU-250, AU-254; propuesto: pregunta A del §5.17) | Convertida con «Solo» encendido, ninguna celda suya lleva «Sí»; con «Sí» y «Solo conocidos», lo de un remitente nuevo se propone | F16 |
+| Lo que «Leer correo» guarda lo decide una celda que nace en «Preguntar» (AU-250, AU-254; decisión 30) | Convertida con «Solo» encendido, ninguna celda suya lleva «Sí»; con «Sí» y «Solo conocidos», lo de un remitente nuevo se propone | F16 |
 | Un correo no gasta más que su tope del día, empiece la automatización que empiece (AU-253) | Con el tope pasado, la ejecución no empieza, no se llama a ningún modelo y el correo espera | F16 |
-| Lo que salió de un correo llega a un lector solo como texto de fuera, entre marcas; ninguna etiqueta se pone ni se quita para que una llamada pase (AU-255; propuesto: pregunta D del §5.17) | Un lector de una pieza con una fila suya al lado, o con un campo de la fila del disparador etiquetado aparte, falla con `ai.private` | F16 |
+| Lo que salió de un correo llega a un lector solo como texto de fuera, entre marcas; ninguna etiqueta se pone ni se quita para que una llamada pase (AU-255; decisión 33) | Un lector de una pieza con una fila suya al lado, o con un campo de la fila del disparador etiquetado aparte, falla con `ai.private` | F16 |
 | El chat de una página no escribe solo (AU-137; P26, P27) | Su «Agente» no admite «Sí» ni al publicar ni al correr; lo que quiere escribir es una tarjeta, salvo un valor de su página | F16 |
 | Un modelo o el MCP proponen un borrador, nunca publican (AU-140, AU-144; A-10, A-35) | Aceptar la propuesta deja un borrador con cada «Sí» bajado, sin publicar y sin encender | F16 |
 | A cada flujo o automatización lo corre un solo motor (AU-228) | Ningún identificador tiene a la vez un flujo que corre y una automatización encendida | F16 |
