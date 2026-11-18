@@ -37,7 +37,7 @@ import { ApiError } from "../core/api.ts";
 import { deviceZone } from "../core/clock.ts";
 import { host, phoneLayout } from "../host.ts";
 import type { T } from "../i18n.ts";
-import { agentApi, errorText, showAutomation, toast, useStore } from "../store.ts";
+import { agentApi, errorText, openProposal, showAutomation, toast, useStore } from "../store.ts";
 import { AutomationCanvas, useCollectionNames } from "./AutomationCanvas.tsx";
 import { Modal } from "./AutomationPublish.tsx";
 import {
@@ -451,6 +451,32 @@ function RunDetail({
           {/* What it told when it ended (AU-102, AU-167): the server's words, painted as text. */}
           {r.notice && (
             <span className="auto-run-notice">{t("auto.run.notice", { text: r.notice.text })}</span>
+          )}
+          {/* What it asked (AU-193): where its proposal is, and the way to it while it waits. */}
+          {view.proposal && (
+            <span className="auto-run-proposal" data-status={view.proposal.status}>
+              {t(`auto.run.proposal.${view.proposal.status}`)}
+              {view.proposal.status === "pending" && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="link-btn"
+                    onClick={() => void openProposal(view.proposal?.id ?? "")}
+                  >
+                    {t("auto.run.proposal.open")}
+                  </button>
+                </>
+              )}
+              {view.proposal.status === "stale" && canRetry && (
+                <>
+                  {" · "}
+                  <button type="button" className="link-btn" disabled={busy} onClick={askRetry}>
+                    {t("inbox.run.again")}
+                  </button>
+                </>
+              )}
+            </span>
           )}
           {r.undone !== null && (
             <span className="auto-run-undone">

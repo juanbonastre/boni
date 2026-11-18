@@ -105,6 +105,7 @@ import {
   lightKeys,
   openCollection,
   openPage,
+  showAutomation,
   showChat,
   showFlow,
   showInbox,
@@ -186,6 +187,7 @@ function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: 
   if (n.kind === "connector") return <Mail {...p} />;
   if (n.kind === "collection") return <Database {...p} />;
   if (n.kind === "flow") return <Workflow {...p} />;
+  if (n.kind === "automation") return <Zap {...p} />;
   if (n.kind === "page") return <FileText {...p} />;
   if (n.kind === "block")
     return n.code === "control" ? (
@@ -243,6 +245,17 @@ function lineOf(
   if (n.kind === "collection")
     out.push(t(n.rows === 1 ? "map.rows.one" : "map.rows", { n: n.rows ?? 0 }));
   if (n.kind === "flow" && n.trigger) out.push(triggerText(t, n.trigger, keyName));
+  // An automation (AU-47): what starts it and its version, then its runs of the period.
+  if (n.kind === "automation") {
+    const starts = (n.starts ?? []).map((type) => t(`auto.step.${type}`));
+    out.push(
+      [
+        ...(starts.length ? [starts.join(" · ")] : []),
+        ...(n.version != null ? [t("auto.run.by.version", { n: n.version })] : []),
+      ].join(" · "),
+    );
+    out.push(t(n.runs === 1 ? "map.runs.one" : "map.runs", { n: n.runs }));
+  }
   if (n.kind === "flow" || n.kind === "boni") {
     const runs =
       n.code === "chat"
@@ -319,7 +332,7 @@ const MapCard = memo(function MapCard({ id, data }: NodeProps<Node<CardData, "ca
   return (
     <div
       {...mapPoint(t, id, data.name)}
-      className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.way ? " way" : ""}${data.centre ? " centre" : ""}${n.kind === "flow" && !n.on ? " off" : ""}`}
+      className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.way ? " way" : ""}${data.centre ? " centre" : ""}${(n.kind === "flow" || n.kind === "automation") && !n.on ? " off" : ""}`}
       title={data.name}
       style={data.way ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties) : undefined}
     >
@@ -349,12 +362,16 @@ const MapCard = memo(function MapCard({ id, data }: NodeProps<Node<CardData, "ca
           {l}
         </div>
       ))}
-      {(data.models.length > 0 || (n.kind === "flow" && (n.boni || !n.on))) && (
+      {(data.models.length > 0 ||
+        (n.kind === "flow" && (n.boni || !n.on)) ||
+        (n.kind === "automation" && !n.on)) && (
         <div className="mp-tags">
           {n.kind === "flow" && n.boni && (
             <span className="mp-tag boni">{t("flows.group.boni")}</span>
           )}
-          {n.kind === "flow" && !n.on && <span className="mp-tag">{t("flows.disabled")}</span>}
+          {(n.kind === "flow" || n.kind === "automation") && !n.on && (
+            <span className="mp-tag">{t("flows.disabled")}</span>
+          )}
           {data.models.slice(0, 2).map((m) => (
             <span key={m} className="mp-tag model">
               {m}
@@ -785,8 +802,11 @@ const EDGE_TYPES: EdgeTypes = { map: MapEdgeView };
 
 /** The heights of a node's card by what it shows. */
 function heightOf(n: MapNode, models: number): number {
-  const lines = n.kind === "flow" ? 2 : 1;
-  const tags = models > 0 || (n.kind === "flow" && (n.boni || !n.on)) ? 1 : 0;
+  const lines = n.kind === "flow" || n.kind === "automation" ? 2 : 1;
+  const tags =
+    models > 0 || (n.kind === "flow" && (n.boni || !n.on)) || (n.kind === "automation" && !n.on)
+      ? 1
+      : 0;
   return 34 + lines * 17 + tags * 24;
 }
 
@@ -1782,6 +1802,7 @@ function Canvas({
     `${t(`map.edge.${e.kind}`)}${e.n !== null && e.n > 0 ? ` · ${e.n}` : ""}`;
   const open_ = (n: MapNode) => {
     if (n.kind === "flow") showFlow(n.id.slice("flow:".length));
+    else if (n.kind === "automation") showAutomation(n.id.slice("auto:".length));
     else if (n.kind === "collection") openCollection(n.id.slice("col:".length));
     else if (n.kind === "page") openPage(n.id.slice("page:".length));
     else if (n.kind === "block" && n.page) openPage(n.page.slice("page:".length));
@@ -1789,7 +1810,7 @@ function Canvas({
     else if (n.code === "inbox") showInbox();
   };
   const canOpen = (n: MapNode) =>
-    ["flow", "collection", "page"].includes(n.kind) ||
+    ["flow", "automation", "collection", "page"].includes(n.kind) ||
     (n.kind === "block" && !!n.page) ||
     n.code === "chat" ||
     n.code === "inbox";

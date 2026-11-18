@@ -432,7 +432,8 @@ interface State {
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
   deciding: Record<string, "accept" | "done" | "reject">;
   /** Why deciding one failed, in Juan's words, on its card. */
-  decideErrors: Record<string, { text: string; gone: boolean }>;
+  /** `code`: the server's, when it gave one (a run's proposal no longer valid says «Ejecutar otra vez», AU-193). */
+  decideErrors: Record<string, { text: string; gone: boolean; code?: string }>;
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   /** The conversation over the screen (docs/sistema.md §4.7, F9): a window over what is open, or docked to the right. */
@@ -783,8 +784,15 @@ export function navigate(screen: string) {
   } else if (screen.startsWith("edit:")) {
     const spec = get().chartSpecs.find((c) => c.id === screen.slice(5));
     if (spec) openEditor(spec);
+  } else if (RUN_SCREEN.test(screen)) {
+    // The notice of a run (AU-102): that run, open in its automation's «Ejecuciones».
+    const [, automation, run] = screen.split(":");
+    set({ panel: null });
+    showAutomation(automation as string, { run });
   } else showStart();
 }
+/** `run:<automation>:<run>`: what the desktop's notice of a run asks to show (notices.cjs, AU-102). */
+const RUN_SCREEN = /^run:[A-Za-z0-9_-]{1,80}:[A-Za-z0-9_-]{1,80}$/;
 
 /**
  * Boni's circle and widget on the phone (task 115, F9): the conversation, the last one, over whatever was open, as the
@@ -2564,9 +2572,20 @@ function decideFailed(id: string, code: string | { text: string }) {
           ? t("inbox.alreadyDecided")
           : code === "nothing-pending" || code === "run-expired"
             ? t("inbox.requestGone")
-            : agentErrorText(t, code);
-  set((s) => ({ decideErrors: { ...s.decideErrors, [id]: { text, gone } } }));
+            : SHARED_REFUSALS.has(code)
+              ? t("mail.error.personal-device-only")
+              : agentErrorText(t, code);
+  set((s) => ({
+    decideErrors: {
+      ...s.decideErrors,
+      [id]: { text, gone, ...(typeof code === "string" ? { code } : {}) },
+    },
+  }));
 }
+/** A shared device reads the inbox and decides nothing of a run (decision 15): the server's words for it. */
+const SHARED_REFUSALS = new Set(["accept-on-a-personal-device", "personal-device-only"]);
+/** What the server answers with a 400 and its code when accepting cannot be: said as `decideFailed` says it. */
+const DECIDE_CODES = new Set(["stale", "no-such-proposal", ...SHARED_REFUSALS]);
 /** Takes a card that can no longer be decided out of the list. */
 export function dismissProposal(id: string) {
   dropProposal(id);
@@ -2595,6 +2614,7 @@ export function acceptProposal(
     try {
       // The word the card showed goes with it: the server checks the card again before acting (task 73).
       const seen = get().inbox.find((p) => p.id === id)?.card?.now.state ?? null;
+      const asked = get().inbox.find((p) => p.id === id)?.runAsked ?? null;
       const r = await agent.accept(id, opts.done ? { ...edits, done: true } : edits, seen);
       if (r.pending?.kind === "confirm") {
         // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
@@ -2611,7 +2631,14 @@ export function acceptProposal(
           view: { kind: "chat" },
         }));
       } else if (r.error) decideFailed(id, r.error);
-      else {
+      else if (asked) {
+        // What a run asked (AU-193) has no «Deshacer» of its own: it is undone with its run, which the toast opens.
+        dropProposal(id);
+        toast(t("inbox.run.accepted", { name: asked.name }), {
+          label: t("inbox.run.open"),
+          run: () => showAutomation(asked.automation, { run: asked.run }),
+        });
+      } else {
         dropProposal(id);
         // A while to take it back (Juan, 2026-11-02): the toast's «Deshacer» undoes what it made and the card returns.
         toast(
@@ -2632,6 +2659,7 @@ export function acceptProposal(
       // empty shows its word; pressed again, it is accepted.
       if (e instanceof ApiError && e.status === 409 && e.code === "changed")
         decideFailed(id, { text: t("inbox.changed") });
+      else if (e instanceof ApiError && DECIDE_CODES.has(e.code)) decideFailed(id, e.code);
       else decideFailed(id, { text: errorText(t, e) });
     }
   });

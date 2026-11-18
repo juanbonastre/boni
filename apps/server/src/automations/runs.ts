@@ -56,7 +56,7 @@ import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
 import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
-import { proposeRun } from "./proposal.ts";
+import { type AskedView, askedOf, proposeRun } from "./proposal.ts";
 import {
   isRefusal,
   type Refusal,
@@ -966,6 +966,21 @@ const viewOfRow = (k: StoredRow): RowView => ({
     ? { fields: Object.fromEntries(Object.entries(k.fields).map(([f, l]) => [f, l.label])) }
     : {}),
 });
+
+/**
+ * «Ver todo» of what a run asked (AU-193): its rows as its card in the inbox paints them, 50 at a time from `offset`,
+ * with how many it asked; of a run of this automation only.
+ */
+export function runAsked(
+  store: UserStore,
+  id: string,
+  run: string,
+  offset: number,
+): { asked: AskedView[]; total: number } | ServiceError {
+  if (!runOf(store, id, run)) return NOT_FOUND;
+  if (!Number.isInteger(offset) || offset < 0) return BAD;
+  return askedOf(store, run, offset) ?? NOT_FOUND;
+}
 
 /** Some rows of one step of a run (AU-99): of one of its outputs, or of what came in by one input, a page at a time. */
 export function runRows(

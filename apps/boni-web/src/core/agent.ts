@@ -265,6 +265,97 @@ export interface Proposal {
   card: InboxCard | null;
   /** A flow a model proposed (docs/flujos.md F5): drawn by the server, with what it changes. */
   flow?: FlowProposalView;
+  /** What a run of an automation asked (AU-193): painted by the app's code from the server's `RunProposalView`. */
+  runAsked?: RunProposal;
+}
+
+/** The tool of a run's proposal (apps/server/src/automations/proposal.ts `ACCEPT_RUN`). */
+export const ACCEPT_RUN = "automations.accept_run";
+/** One change a run asked (AU-193), as the server's `AskedView`: the values it would save, by their field's key. */
+export interface AskedRow {
+  step: string;
+  action: "create" | "update" | "trash";
+  /** The collection's key, and its name when the run asked. */
+  collection: string;
+  name: string | null;
+  /** The row it changes or sends to the trash, with its title then. */
+  row: { id: string; title: string } | null;
+  /** Each value, with what the row held (`before`, a change's only) and whether it came from outside (AU-170). */
+  values: { key: string; value: unknown; before?: unknown; outside: boolean }[];
+}
+/** What the proposal of a run says (the server's `RunProposalView.run`): its counts and its first changes. */
+export interface RunProposal {
+  automation: string;
+  name: string;
+  version: number | null;
+  run: string;
+  startedBy: string;
+  count: number;
+  counts: { collection: string; name: string | null; action: AskedRow["action"]; n: number }[];
+  first: AskedRow[];
+}
+const ASKED_ACTIONS = ["create", "update", "trash"] as const;
+const askedAction = (v: unknown): AskedRow["action"] | null =>
+  (ASKED_ACTIONS as readonly unknown[]).includes(v) ? (v as AskedRow["action"]) : null;
+/** One change of what a run asked, or null when it is not one. Its values stay values: the screen paints them as text. */
+export function parseAskedRow(v: unknown): AskedRow | null {
+  if (!isObj(v)) return null;
+  const action = askedAction(v.action);
+  if (!action) return null;
+  const row =
+    isObj(v.row) && typeof v.row.id === "string"
+      ? { id: v.row.id.slice(0, 80), title: str(v.row.title, 300) ?? "" }
+      : null;
+  const values = isObj(v.values)
+    ? Object.entries(v.values)
+        .slice(0, 50)
+        .flatMap(([key, x]) =>
+          isObj(x)
+            ? [
+                {
+                  key: key.slice(0, 80),
+                  value: x.value,
+                  ...("before" in x ? { before: x.before } : {}),
+                  outside: x.outside === true,
+                },
+              ]
+            : [],
+        )
+    : [];
+  return {
+    step: str(v.step, 80) ?? "",
+    action,
+    collection: str(v.collection, 80) ?? "",
+    name: str(v.name, 80),
+    row,
+    values,
+  };
+}
+/** The proposal of a run, or undefined when its view does not carry one. */
+export function parseRunProposal(v: unknown): RunProposal | undefined {
+  const r = isObj(v) && isObj(v.run) ? v.run : null;
+  if (!r) return undefined;
+  const automation = str(r.automation, 80);
+  const run = str(r.run, 80);
+  if (!automation || !run) return undefined;
+  return {
+    automation,
+    name: str(r.name, 120) ?? "",
+    version: typeof r.version === "number" ? r.version : null,
+    run,
+    startedBy: str(r.startedBy, 40) ?? "user",
+    count: num(r.count),
+    counts: (Array.isArray(r.counts) ? r.counts : []).slice(0, 50).flatMap((c) => {
+      const action = isObj(c) ? askedAction(c.action) : null;
+      return isObj(c) && action
+        ? [{ collection: str(c.collection, 80) ?? "", name: str(c.name, 80), action, n: num(c.n) }]
+        : [];
+    }),
+    first: (Array.isArray(r.first) ? r.first : [])
+      .slice(0, 200)
+      .map(parseAskedRow)
+      .filter((x): x is AskedRow => x !== null),
+  };
 }
 /** Who reads or writes a collection (F6, apps/server/src/usage.ts): a flow, or who did in the period. */
 export interface Who {
@@ -1001,6 +1092,9 @@ export interface MapNode extends MapNodeLike {
   pack: string | null;
   /** The devices: how many notices they were told in the period. */
   notices: number;
+  /** An automation (AU-47): the version on the map, and the types of the steps that start it. */
+  version?: number | null;
+  starts?: string[];
 }
 export interface MapEdge extends MapEdgeLike {
   steps: string[];
@@ -1019,6 +1113,7 @@ const MAP_KINDS: readonly MapKind[] = [
   "page",
   "block",
   "device",
+  "automation",
 ];
 const MAP_EDGES: readonly MapEdgeKind[] = [
   "brings",
@@ -1034,7 +1129,7 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "controls",
   "tells",
 ];
-const MAP_ID = /^(conn|col|flow|boni|actor|page|block|dev):[A-Za-z0-9_.:@-]{1,120}$/;
+const MAP_ID = /^(conn|col|flow|auto|boni|actor|page|block|dev):[A-Za-z0-9_.:@-]{1,120}$/;
 /** The account's devices on the map (the server's `DEVICES`): where what Boni tells arrives. */
 export const MAP_DEVICES = "dev:all";
 /** The devices' node as a map has it, for one whose period has no notice (a run that told before it goes to them). */
@@ -1105,6 +1200,17 @@ export function parseMap(b: unknown): MapView | null {
         : [],
       pack: strOf(n.pack, 40),
       notices: numOf(n.notices),
+      ...(kind === "automation"
+        ? {
+            version: typeof n.version === "number" ? n.version : null,
+            // What starts it, as its published version says: each trigger step's type (AU-47).
+            starts: (Array.isArray(n.trigger) ? n.trigger : [])
+              .slice(0, 8)
+              .flatMap((x) =>
+                isObj(x) && typeof x.type === "string" ? [x.type.slice(0, 40)] : [],
+              ),
+          }
+        : {}),
     });
   }
   const ids = new Set(nodes.map((n) => n.id));
@@ -3012,6 +3118,9 @@ export class AgentApi {
           card: parseCard(p.card),
           ...(p.tool === "flows.save" && parseFlowProposal(p.flow)
             ? { flow: parseFlowProposal(p.flow) }
+            : {}),
+          ...(p.tool === ACCEPT_RUN && parseRunProposal(p.view)
+            ? { runAsked: parseRunProposal(p.view) }
             : {}),
         },
       ];

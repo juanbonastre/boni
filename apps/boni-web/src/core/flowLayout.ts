@@ -156,7 +156,9 @@ export type MapKind =
   | "page"
   /** A block of a page that paints a collection, or a value (a «Control») one of them reads. */
   | "block"
-  | "device";
+  | "device"
+  /** An automation of the new format, as its published version says (AU-47): never one never published. */
+  | "automation";
 export type MapEdgeKind =
   | "brings"
   | "starts"
@@ -262,10 +264,10 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
     n.id === lens.center ||
     ((n.kind !== "page" || lens.pages) &&
       (n.kind !== "block" || (!!blockPage && n.page === blockPage)) &&
-      (!lens.on || n.kind !== "flow" || n.on !== false) &&
+      (!lens.on || (n.kind !== "flow" && n.kind !== "automation") || n.on !== false) &&
       (!lens.ai ||
         n.through ||
-        (n.kind !== "flow" && n.kind !== "boni") ||
+        (n.kind !== "flow" && n.kind !== "boni" && n.kind !== "automation") ||
         (n.roles?.length ?? 0) > 0));
   let nodes = map.nodes.filter(keep);
   const ids = new Set(nodes.map((n) => n.id));

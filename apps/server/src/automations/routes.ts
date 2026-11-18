@@ -189,4 +189,9 @@ export const AUTOMATION_ROUTES: Readonly<Record<string, { action: string; runs: 
   "GET /api/agent/automations/:id/runs": { action: "automations.read", runs: "runsOf" },
   "GET /api/agent/automations/:id/runs/:run": { action: "automations.read", runs: "runView" },
   "GET /api/agent/automations/:id/runs/:run/rows": { action: "automations.read", runs: "runRows" },
+  // F14d P3b (runs.ts): «Ver todo» of what a run asked, as its card in the inbox paints it (AU-193).
+  "GET /api/agent/automations/:id/runs/:run/asked": {
+    action: "automations.read",
+    runs: "runAsked",
+  },
 };
