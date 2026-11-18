@@ -2,6 +2,7 @@ import { markdownToBlocks } from "@boni/views";
 import {
   ChevronDown,
   ChevronRight,
+  BellRing,
   HelpCircle,
   Inbox,
   Mail,
@@ -705,6 +706,71 @@ const DAY_MS = 24 * 60 * 60_000;
  * came from outside keeps its mark); answering sends the choice's number or the typed text, never more.
  */
 export function RequestCard({ r }: { r: InboxRequest }) {
+  if (r.notice) return <NoticeCard r={r} />;
+  return <QuestionCard r={r} />;
+}
+
+/**
+ * An «Avisar» whose «Por dónde» has «Bandeja» (AU-246): its text, the automation that sent it, and «Descartar»; it
+ * waits for nothing, and the server says whether this device puts it away (any of the account, never a speaker).
+ * The text is the step's, painted as plain text with its mark when it came from outside.
+ */
+function NoticeCard({ r }: { r: InboxRequest }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.deciding[r.id]);
+  const failed = useStore((s) => s.decideErrors[r.id]);
+  const off = !!busy || !!failed?.gone;
+  return (
+    <section
+      className="card inbox-card request-card notice-card"
+      {...pointAttrs(
+        { kind: "question", id: r.id },
+        chipTitle(t("inbox.kind.notice"), textOf(r.ask.prompt)),
+      )}
+    >
+      <p className="inbox-kind">
+        <BellRing size={12} strokeWidth={1.8} aria-hidden="true" />
+        {t("inbox.kind.notice")}
+      </p>
+      <h3 className="request-prompt">
+        <ValueText p={r.ask.prompt} />
+      </h3>
+      <p className="inbox-source muted">
+        {r.automation?.name
+          ? t("inbox.ask.from", { name: r.automation.name })
+          : t("inbox.run.unnamed")}
+      </p>
+      {r.mayAnswer !== false && (
+        <div className="inbox-actions">
+          <span className="spacer" />
+          <button
+            type="button"
+            className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
+            disabled={off}
+            aria-busy={busy === "reject"}
+            aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
+            onClick={() => void dismissRequest(r.id)}
+          >
+            <span className="decide-label">{t("inbox.putAway")}</span>
+            {busy === "reject" && <span className="spinner" aria-hidden="true" />}
+          </button>
+        </div>
+      )}
+      {failed && (
+        <p className="decide-error" role="alert">
+          <span>{failed.text}</span>
+          {failed.gone && (
+            <button type="button" className="btn ghost small" onClick={() => dismissProposal(r.id)}>
+              {t("inbox.dismiss")}
+            </button>
+          )}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function QuestionCard({ r }: { r: InboxRequest }) {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.deciding[r.id]);
   const failed = useStore((s) => s.decideErrors[r.id]);
@@ -942,7 +1008,7 @@ function whenText(
 }
 
 /**
- * The entry a proposal may be («¿Es «Quedada cafe, 16:00–17:00»?», task 58) and how «Es el mismo» accepts it: linked
+ * The entry a proposal may be («Posible duplicado: «Quedada cafe, 16:00–17:00»», task 58) and how «Es el mismo» accepts it: linked
  * to the external event, or into the record (what the record lacks, the server decides).
  */
 function sameOf(

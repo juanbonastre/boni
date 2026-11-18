@@ -517,7 +517,7 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
     area: "flows",
     service: "automations",
     undo: undoOf("automations.answer"),
-    title: "Contestar una pregunta de una ejecución que espera",
+    title: "Responder una pregunta de una ejecución de una automatización",
     describe:
       "Answer one question a waiting run of an automation asks (step, i: its place among the step's questions), with yes, choice, choices or text as its «Respuesta» takes, or put it away with none: as its card in the inbox would. Any device of the account unless the step asks for a personal one",
     args: {

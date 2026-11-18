@@ -14,7 +14,7 @@ import {
   type Step,
 } from "@boni/automations";
 import { useMemo, useState } from "react";
-import type { StepTest, TestGiven } from "../automations/client.ts";
+import type { RunAsk, StepTest, TestGiven } from "../automations/client.ts";
 import { fullWhen } from "../automations/runWords.ts";
 import { deviceZone } from "../core/clock.ts";
 import type { T } from "../i18n.ts";
@@ -122,8 +122,108 @@ export function AskPanel({
   );
 }
 
+/**
+ * A waiting run's questions in «Ejecuciones» (AU-247, decision 29 of §10): where its notification opens, each with
+ * the control of its kind and its own «Enviar» and «Sin respuesta», as its card would. A question answered already
+ * says «Respondida». Where the server says this device does not answer it, the text alone and why. `answer` sends
+ * one and resolves once the run was asked again.
+ */
+export function RunQuestions({
+  t,
+  lang,
+  asks,
+  nameOf,
+  answer,
+}: {
+  t: T;
+  lang: Lang;
+  asks: RunAsk[];
+  nameOf: (step: string) => string;
+  answer: (at: { step: string; i: number }, given: TestGiven | null) => Promise<void>;
+}) {
+  const zone = useMemo(deviceZone, []);
+  const [given, setGiven] = useState<Record<string, Given>>({});
+  const [sending, setSending] = useState<string | null>(null);
+  const send = async (step: string, i: number, g: TestGiven | null) => {
+    const at = `${step}:${i}`;
+    setSending(at);
+    try {
+      await answer({ step, i }, g);
+    } finally {
+      setSending(null);
+    }
+  };
+  return (
+    <section className="auto-ask auto-run-asks" aria-label={t("auto.ask.title")}>
+      {asks.map((ask) => (
+        <div key={ask.step} className="auto-ask-step">
+          <h4 className="auto-ask-head">
+            <span>{nameOf(ask.step)}</span>
+            <span className="auto-ask-until">
+              {t("auto.ask.until", { when: fullWhen(lang, zone, ask.until) })}
+            </span>
+          </h4>
+          {!ask.mayAnswer && <p className="muted small">{t("inbox.ask.personalOnly")}</p>}
+          {ask.questions.map((q, i) => {
+            const at = `${ask.step}:${i}`;
+            const open = ask.mayAnswer && !q.answered;
+            return (
+              <fieldset
+                // biome-ignore lint/suspicious/noArrayIndexKey: a question is its place in the step's list.
+                key={i}
+                className="auto-ask-question"
+                disabled={sending !== null}
+              >
+                <legend className="auto-ask-text">{q.text}</legend>
+                {q.answered ? (
+                  <p className="muted small auto-ask-done">{t("auto.ask.answered")}</p>
+                ) : open ? (
+                  <>
+                    <AnswerControl
+                      t={t}
+                      ask={ask}
+                      options={q.options}
+                      label={ask.questions.length > 1 ? t("auto.ask.questionN", { n: i + 1 }) : q.text}
+                      given={given[at]}
+                      set={(g) => setGiven((was) => ({ ...was, [at]: g }))}
+                    />
+                    <div className="auto-ask-actions">
+                      <button
+                        type="button"
+                        className="btn primary small"
+                        data-boni-action="automations.answer"
+                        disabled={sending !== null || !isAnswer(ask, given[at])}
+                        aria-busy={sending === at || undefined}
+                        onClick={() => {
+                          const g = given[at];
+                          if (g) void send(ask.step, i, g);
+                        }}
+                      >
+                        {t("auto.ask.send")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn ghost small"
+                        data-boni-action="automations.answer"
+                        disabled={sending !== null}
+                        onClick={() => void send(ask.step, i, null)}
+                      >
+                        {t("auto.ask.none")}
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </fieldset>
+            );
+          })}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 /** Whether `g` answers a question of `ask`'s kind: a text not empty, at least one option of several. */
-function isAnswer(ask: AskRecord, g: Given): boolean {
+function isAnswer(ask: Pick<AskRecord, "answer">, g: Given): boolean {
   if (!g) return false;
   if (ask.answer === "text") return "text" in g && g.text.trim() !== "";
   if (ask.answer === "several") return "choices" in g && g.choices.length > 0;
@@ -140,7 +240,7 @@ function AnswerControl({
   set,
 }: {
   t: T;
-  ask: AskRecord;
+  ask: Pick<AskRecord, "answer">;
   options: string[];
   label: string;
   given: Given;
@@ -278,9 +378,16 @@ export function PeopleOut({
   return null;
 }
 
-/** One notice as SALIDA says it: its text and where it goes; the one that groups the rest, «y 12 más». */
+/**
+ * One notice as SALIDA says it: its text and where it goes, by «Por dónde» (AU-246): the devices of a notification,
+ * «Bandeja» for a card; the one that groups the rest, «y 12 más».
+ */
 function noticeWords(t: T, n: Notice, locale: string): string {
-  const where = t(`auto.notice.where.${n.where}`);
+  const via = n.via ?? ["notification"];
+  const where = [
+    ...(via.includes("notification") ? [t(`auto.notice.where.${n.where}`)] : []),
+    ...(via.includes("inbox") ? [t("auto.notice.inbox")] : []),
+  ].join(" · ");
   if (n.more !== undefined && !n.text)
     return `${t("auto.notice.more", { n: n.more.toLocaleString(locale) })} · ${where}`;
   return `${n.text} · ${where}`;

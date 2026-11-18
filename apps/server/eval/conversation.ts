@@ -240,7 +240,7 @@ const CASES: Case[] = [
   },
 ];
 
-/** What each kind of question is answered with: the first option, a number, Friday, no and «Ahora no». */
+/** What each kind of question is answered with: the first option, a number, Friday, no and «Descartar». */
 function answerOf(v: AskView): AskAnswer | null {
   switch (v.control) {
     case "choice":

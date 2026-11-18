@@ -129,7 +129,7 @@ import type { TurnsService } from "./turnActions.ts";
  *                            `corrects`: the run of an earlier turn of that conversation whose message Juan
  *                            edited (docs/conversacion.md §3.1): taken back first (409 cannot-undo: nothing done;
  *                            409 corrected: it was already, on another device)
- *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra cosa…», the
+ *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra…», the
  *                            question ends and they are the next turn; `record`: a row made with «Nueva…»)
  *   POST /api/agent/confirm  { run, confirmation, live? }
  *   POST /api/agent/decline  { run, confirmation }

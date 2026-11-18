@@ -12600,6 +12600,25 @@ tr[data-boni-pointed] > td {
   justify-self: start;
   margin-top: 7px;
 }
+/* «Por dónde» (AU-246): one box per surface, side by side, wrapping on a phone. */
+.auto-many {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 6px 0 0;
+  border: 0;
+  min-width: 0;
+}
+.auto-many-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.auto-many-item input:disabled {
+  cursor: default;
+}
 .auto-list {
   display: flex;
   flex-direction: column;

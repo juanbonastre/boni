@@ -336,6 +336,55 @@ export interface RunView {
   published: number | null;
   /** The proposal it left in the inbox and where it is (AU-193): its bar says it. Null when it asked nothing. */
   proposal: { id: string; status: ProposalStatus } | null;
+  /** The questions it waits for (AU-247), each «Preguntar» with its own; empty when it waits for none. */
+  asks: RunAsk[];
+}
+
+/**
+ * A waiting «Preguntar» of a run (AU-247): its questions in their order, each answered or not yet, until when it
+ * waits, and whether this device answers it (decision 26 of §10: the server says so; a speaker never does).
+ */
+export interface RunAsk {
+  step: string;
+  answer: AskRecord["answer"];
+  until: number;
+  questions: { text: string; options: string[]; answered: boolean }[];
+  mayAnswer: boolean;
+}
+
+const ANSWERS: readonly string[] = ["yesNo", "one", "several", "text"];
+/** A run's waiting questions as the server sent them; what does not read as one is left out. 200 at most. */
+export function runAsksOf(x: unknown): RunAsk[] {
+  if (!Array.isArray(x)) return [];
+  return x.slice(0, 200).flatMap((a): RunAsk[] => {
+    if (!isObj(a) || typeof a.step !== "string" || !ANSWERS.includes(a.answer as string)) return [];
+    const questions = (Array.isArray(a.questions) ? a.questions : []).flatMap((q) =>
+      isObj(q) && typeof q.text === "string"
+        ? [
+            {
+              text: q.text,
+              options: (Array.isArray(q.options) ? q.options : []).flatMap((o) =>
+                isObj(o) && typeof o.value === "string"
+                  ? [o.value]
+                  : typeof o === "string"
+                    ? [o]
+                    : [],
+              ),
+              answered: q.answered === true,
+            },
+          ]
+        : [],
+    );
+    return [
+      {
+        step: a.step,
+        answer: a.answer as AskRecord["answer"],
+        until: typeof a.until === "number" ? a.until : 0,
+        questions,
+        mayAnswer: a.mayAnswer === true,
+      },
+    ];
+  });
 }
 
 /** Where a run's proposal is (AU-193): waiting in the inbox, accepted, rejected, or no longer valid. */
@@ -442,6 +491,16 @@ export interface AutomationsClient {
     id: string,
     run: string,
   ): Promise<{ pins: Record<string, Pin>; trigger: string } | Refused>;
+  /**
+   * `POST automations/:id/runs/:run/answer` (AU-247): one question of a waiting run, answered from the run; null
+   * puts it away («Sin respuesta»). `gone`: it was answered, ended or its run cancelled meanwhile.
+   */
+  answerRun(
+    id: string,
+    run: string,
+    at: { step: string; i: number },
+    answer: TestGiven | null,
+  ): Promise<{ run: string } | { gone: true } | Refused>;
   /** `GET automations/:id/learning` (AU-208): the published cells with their counts. */
   learning(id: string): Promise<CellCount[]>;
   /** `POST automations/:id/learning` (AU-209, AU-210): «Quitar pausa» or «No» to a suggestion; never a «Sí». */
@@ -555,6 +614,7 @@ export function runViewOf(x: unknown): RunView {
               : "stale",
           }
         : null,
+    asks: runAsksOf(o.asks),
   };
 }
 
@@ -750,6 +810,17 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
     unpin: async (id, step) => {
       const r = await api.automations("DELETE", path(id, `/pins/${encodeURIComponent(step)}`));
       return isRefused(r) ? r : { pins: pinsOf(isObj(r) ? r.pins : null) };
+    },
+    answerRun: async (id, run, at, answer) => {
+      const r = await api.automations(
+        "POST",
+        path(id, `/runs/${encodeURIComponent(run)}/answer`),
+        { step: at.step, i: at.i, ...(answer ? { answer } : {}) },
+      );
+      if (isRefused(r)) return r;
+      return isObj(r) && r.gone === true
+        ? { gone: true }
+        : { run: isObj(r) && typeof r.run === "string" ? r.run : run };
     },
     learning: async (id) => {
       const r = await api.automations("GET", path(id, "/learning"));

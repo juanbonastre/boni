@@ -12,6 +12,8 @@
  */
 import {
   ACTION,
+  ASK_PARAMS,
+  ASK_TYPE,
   type Arrow,
   type Automation,
   actionOf,
@@ -21,6 +23,8 @@ import {
   type Connection,
   inputsOf,
   isTrigger,
+  NO_ANSWER,
+  NOTIFY_PARAMS,
   newConnection,
   outputsOf,
   type ParamSpec,
@@ -37,7 +41,7 @@ import {
   wouldCycle,
 } from "@boni/automations";
 import type { FilterItem } from "@boni/views";
-import { isEmpty, rowsOf } from "./panel.ts";
+import { isEmpty, PEOPLE_ACTIONS, rowsOf } from "./panel.ts";
 import type { AddAt } from "./state.ts";
 import { type Namer, uniqueName } from "./words.ts";
 
@@ -549,6 +553,7 @@ export function changeAction(
   names: Namer,
 ): { draft: Automation; dropped: string[] } {
   const before = draft.steps.find((s) => s.id === step);
+  if (before && isPeople(before.type)) return changePeople(draft, before, action, names);
   const spec = before && specOf(before.type);
   const next = spec?.actions.find((a) => a.key === action);
   if (!before || !spec || !next || before.params[ACTION] === action) return { draft, dropped: [] };
@@ -572,6 +577,50 @@ export function changeAction(
     ...[...gone].filter((k) => !shown.includes(k)),
   ];
   return { draft: followed(draft, before, { ...before, params }, names), dropped };
+}
+
+const isPeople = (type: string) => (PEOPLE_ACTIONS as readonly string[]).includes(type);
+
+/**
+ * «Avisar» ⇄ «Preguntar» (AU-248, decision 29 of §10), as another action of «Colección»: the step becomes the other
+ * type with what both share kept (the text, which «Preguntar» calls its question, «Por dónde», «Dónde» and «Se
+ * ejecuta»); what only one has goes and is named in `dropped`. Going to «Avisar», the arrows out of «sin respuesta»
+ * go with it: an «Avisar» has one way out.
+ */
+function changePeople(
+  draft: Automation,
+  before: Step,
+  action: string,
+  names: Namer,
+): { draft: Automation; dropped: string[] } {
+  if (!isPeople(action) || before.type === action) return { draft, dropped: [] };
+  const textOf = (type: string) => (type === ASK_TYPE ? ASK_PARAMS.question : NOTIFY_PARAMS.text);
+  const shared: Record<string, string> = {
+    [textOf(before.type)]: textOf(action),
+    [NOTIFY_PARAMS.via]: NOTIFY_PARAMS.via,
+    [NOTIFY_PARAMS.where]: NOTIFY_PARAMS.where,
+    [NOTIFY_PARAMS.mode]: NOTIFY_PARAMS.mode,
+  };
+  const params: Record<string, ParamValue> = {};
+  const gone = new Set<string>();
+  for (const [key, value] of Object.entries(before.params)) {
+    const to = shared[key];
+    if (to) params[to] = value;
+    else if (!isEmpty(value)) gone.add(key);
+  }
+  const shown = rowsOf(before).map((r) => r.param.key);
+  const dropped = [
+    ...shown.filter((k) => gone.has(k)),
+    ...[...gone].filter((k) => !shown.includes(k)),
+  ];
+  const after: Step = { ...before, type: action, params };
+  let out = followed(draft, before, after, names);
+  if (action !== ASK_TYPE)
+    out = {
+      ...out,
+      arrows: out.arrows.filter((a) => !(a.from.step === before.id && a.from.output === NO_ANSWER)),
+    };
+  return { draft: out, dropped };
 }
 
 /** Whether a value of `p` is a value of `q`: the same control over the same things («Límite» in two actions). */

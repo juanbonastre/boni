@@ -17,6 +17,7 @@ import {
   type RunSummary,
   type RunsFilter,
   type RunView,
+  type TestGiven,
 } from "../automations/client.ts";
 import { stoppedByLimit } from "../automations/publishing.ts";
 import { mergeRuns, runEditor, treeLines } from "../automations/runs.ts";
@@ -39,6 +40,7 @@ import { host, phoneLayout } from "../host.ts";
 import type { T } from "../i18n.ts";
 import { agentApi, errorText, openProposal, showAutomation, toast, useStore } from "../store.ts";
 import { AutomationCanvas, useCollectionNames } from "./AutomationCanvas.tsx";
+import { RunQuestions } from "./AutomationPeople.tsx";
 import { Modal } from "./AutomationPublish.tsx";
 import {
   LookContext,
@@ -415,6 +417,21 @@ function RunDetail({
       setBusy(false);
     }
   };
+  /**
+   * One question of the waiting run (AU-247): answered here as on its card; the run is asked again after, so what
+   * it did meanwhile shows. One answered or ended meanwhile says so.
+   */
+  const answerAsk = async (at: { step: string; i: number }, given: TestGiven | null) => {
+    try {
+      const answer = await client.answerRun(id, runId, at, given);
+      if (isRefused(answer)) toast(runRefusedWords(t, answer));
+      else if ("gone" in answer) toast(t("auto.ask.gone"));
+    } catch (e) {
+      toast(touchError(t, e));
+    }
+    await load();
+    onChanged();
+  };
   /** «Abrir en el editor con estos datos» (AU-100, AU-93): the trigger's output of this run, pinned on the draft. */
   const openWithData = async () => {
     setBusy(true);
@@ -541,6 +558,15 @@ function RunDetail({
           )}
         </div>
       </div>
+      {r.state === "waiting" && view.asks.length > 0 && (
+        <RunQuestions
+          t={t}
+          lang={lang}
+          asks={view.asks}
+          nameOf={(step) => stepName(step) ?? ""}
+          answer={answerAsk}
+        />
+      )}
       {r.state === "missed" ? null : !hasSteps ? (
         <p className="muted auto-run-only">
           {t(ended(r) ? "auto.run.summaryOnly" : "auto.run.waiting")}
