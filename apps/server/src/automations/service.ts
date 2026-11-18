@@ -72,7 +72,7 @@ import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { aiFor } from "./ai.ts";
-import { boniPortFor, boniTestRow } from "./boni.ts";
+import { boniOf, boniPortFor, boniTestRow } from "./boni.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
@@ -485,6 +485,8 @@ export function setDeleted(
   deleted: boolean,
 ): { ok: true } | ServiceError {
   if (!store.journal.automation(id)) return NOT_FOUND;
+  // Boni's own are turned off, never deleted (AU-221).
+  if (deleted && boniOf(store, id)) return BAD;
   store.journal.setAutomationDeleted(id, deleted);
   // What waited for an answer is cancelled, and stays so if it comes back (AU-203).
   if (deleted) cancelWaits(store, id);

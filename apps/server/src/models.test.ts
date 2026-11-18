@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { createConversation, fakePlanner, type ModelProvider, ScriptedProvider } from "@boni/agent";
 import { type Cell, NOTIFY_TYPE } from "@boni/automations";
 import { clock, under } from "@boni/pace";
+import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { jsBox } from "../../../packages/agent/test/convert.test-util.ts";
 import { AgentHost, serveAgent } from "./agent.ts";
@@ -17,11 +18,12 @@ import { keepBoniFlows, revertFlow } from "./automations/convert.ts";
 import { publish, setEnabled } from "./automations/publish.ts";
 import { cite, JUAN, made as madeAutomation, START } from "./automations/run.test-util.ts";
 import { startRun } from "./automations/runs.ts";
-import { publishedOf, testAutomation } from "./automations/service.ts";
+import { publishedOf, setDeleted, testAutomation } from "./automations/service.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { flowMap } from "./flowMap.ts";
 import { BUDGET_FLOW, checkFlow, ensureFlow, saveUserFlow } from "./flows.ts";
+import { deleteAutomationRow, flowsCollection } from "./flowsCollection.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { AccountModels, BUDGET_PLAN, BUDGET_TRIGGER, catalogueOf, serveModels } from "./models.ts";
@@ -947,6 +949,39 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
       s.host.boniFlowsCurrent(1);
       expect(s.store().journal.automationVersions(BUDGET_FLOW)).toHaveLength(1);
       expect(s.models.view(1).notice).toBe(true);
+    });
+
+    it("AU-221 · S2c: in «Automatizaciones» it is Boni's, started by «El gasto llega al aviso», on, on the map telling the devices, and never deleted", () => {
+      const s = serverOf();
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      const list = flowsCollection(s.store());
+      const row = list.rows.find((r) => r.id === SYS.flows.automation + BUDGET_FLOW);
+      const words = list.type.fields
+        .find((f) => f.id === SYS.flows.trigger)
+        ?.options?.find((o) => o.id === row?.values[SYS.flows.trigger])?.name;
+      expect([row?.values[SYS.flows.title], words, row?.values[SYS.flows.state]]).toEqual([
+        "Aviso del presupuesto",
+        "El gasto llega al aviso",
+        SYS.flows.on,
+      ]);
+      expect(row?.values[SYS.flows.by]).toBe(SYS.flows.boni);
+      const m = flowMap(s.store(), {
+        now: s.clock.now,
+        days: 7,
+        tz: "Europe/Madrid",
+        mailType: null,
+        mailAccount: null,
+      });
+      expect(m.nodes.filter((n) => n.name === "Aviso del presupuesto")).toHaveLength(1);
+      expect(m.nodes.some((n) => n.kind === "device")).toBe(true);
+      // Turned off, never deleted: by the list and by its own «Eliminar».
+      expect(() =>
+        deleteAutomationRow(s.store(), SYS.flows.automation + BUDGET_FLOW, true),
+      ).toThrow("flow-boni-delete");
+      expect(setDeleted(s.store(), BUDGET_FLOW, true)).toEqual({ error: "bad-request" });
+      expect(s.store().journal.automation(BUDGET_FLOW)).toMatchObject({ by: "preset" });
+      expect(flowsCollection(s.store()).rows.some((r) => r.id === row?.id)).toBe(true);
     });
 
     it("AU-220 · S2c: passing the warning runs its published version once a month, by the clock, telling what the flow told; no run of before", async () => {
