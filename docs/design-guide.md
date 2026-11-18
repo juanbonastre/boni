@@ -1189,6 +1189,26 @@ contraseña ni un código aquí» under a question.
   says «Cambiar el límite» in «Registro», which opens «Ajustes» on that field. From a shared device «Publicar», the
   switch and «Ejecutar» say «Solo desde un dispositivo personal» and change nothing. A «Eliminar filas» with «Sí»
   says «A la papelera · sin preguntar» in each row of «Haría esto».
+- **«Versiones»** (F14d P3b, `AutomationVersions.tsx`, `automations/versions.ts`; AU-98, decision 12; the sketch's
+  screen 8 as a model). «⋯» has «Versiones» under «Ajustes» once it is published (not on the phone). It takes the
+  canvas's place, laid out as «Ejecuciones»: on the left, 330 px, «Volver al editor» over the versions, the newest
+  first, each a row of two lines: «Versión 3 · hace 2 días» and whose, «Tú» or «De Boni», with «La que corre» in a pill
+  of `--accent-soft` on the one that runs. On the right the one chosen (the one that runs at first): a bar with «Versión 3»,
+  its date in full · whose, «Comparar con» (a small select, «Ninguna» and the other versions) and «Volver a esta» (not
+  on the one that runs); under it its canvas, the editor's own over its document, looked at and never changed (no
+  «Probar», no «+»). Compared, «Qué cambia de la versión 1 a la 3» lists the changes in the lines of «Publicar», and
+  the two canvases go side by side, the older on the left: a card added has a `--good` border, one removed
+  `--bad` and dashed, one changed `--warn`, each with a small pill «Añadido», «Quitado» or «Cambiado» on its top.
+  Only the documents shown are asked (200 versions list at once). **«Volver a esta»** opens «Publicar» about that
+  version's document: «Qué cambia» against the one that runs, what stops it with today's collections, and «Publicar
+  versión 4», which publishes it as a new version and leaves the draft as it was, so the header says «· cambios sin
+  publicar». From a shared device it says «Solo desde un dispositivo personal.» and changes nothing.
+- **«Eliminadas»** (F14d P3b, `AutomationDeleted.tsx`; AU-191). The list's page has «⋯» beside its title (not on the
+  phone) with «Eliminadas»: a modal «Automatizaciones eliminadas» saying «Cada una vuelve apagada, con su borrador,
+  sus versiones y sus ejecuciones.» over one row per deleted automation, the latest first, its name (plain text, cut
+  with an ellipsis) and «Recuperar» (small button). Recovered, it leaves the modal and comes back to the list as
+  «Apagada» (or «Sin publicar»), the notice saying «Nombre» recuperada y apagada; with none, «No hay ninguna
+  eliminada». From a shared device «Recuperar» says «Solo desde un dispositivo personal.».
 - **«Ejecuciones»** (F14d P2, `AutomationRuns.tsx`, `automations/runs.ts`, `automations/runWords.ts`; AU-18, AU-93,
   AU-97, AU-99 to AU-101, AU-103, AU-190; the sketch's screen 8). «Ejecutar» (the header, «⋯», the notice of
   publishing, and a ▶ in the list's row of a published automation, which opens it and asks its fields) goes to this
@@ -1380,7 +1400,11 @@ contraseña ni un código aquí» under a question.
   underlined where it is (an error in `--bad`, a warning in `--warn`) with its words on hover; under the editor in
   12 px `--muted` «1.234 de 20.000 caracteres», and below it what has no place (too long) in `--bad`. A collection
   cited and not connected: a notice «Conecta «Categorías» a este paso» with «Conectar» (small button), once per
-  collection; it connects it to read only. While the code is empty, or has an error, «Probar paso» cannot be pressed
+  collection; it connects it to read only. A collection cited by a name it had when the version that runs was
+  published and no longer has (AU-192, F14d P3b) is underlined and says, in a notice of the same kind, «Lecturas» es el
+  nombre de antes: la colección ahora se llama «Libros», with «Cambiar a «Libros»» (small button), which rewrites every
+  `$col('Lecturas')` of that code and nothing else; the phone and a version looked at show the notice with no button.
+  While the code is empty, or has an error, «Probar paso» cannot be pressed
   and says why in `--muted` («Escribe el código para probarlo», «Corrige lo marcado en el código para probarlo»); a
   warning never stops it. In the ENTRADA of a «Código» each field's header says its name and its key, «Importe · importe» (the one
   place outside an expression where a key is seen). Keyboard: Tab indents, Escape first

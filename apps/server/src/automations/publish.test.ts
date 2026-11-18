@@ -434,6 +434,8 @@ describe("«Versiones» (F14d)", () => {
     const two = ok(versionOf(store, a.id, 2));
     expect(two.automation.version).toBe(2);
     expect(JSON.stringify(two.automation)).toContain("dos");
+    // AU-192: with the names its code cited, which the editor reads of the running one (none cited here).
+    expect(two.names).toEqual({});
   });
 
   it("AU-98 · going back to the 2 from the 4 publishes a 5 with the document of the 2, after the same checks as any publish, and leaves the draft, with its unpublished changes, exactly as it was", () => {

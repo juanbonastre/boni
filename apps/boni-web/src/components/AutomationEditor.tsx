@@ -54,12 +54,14 @@ import { AutomationCanvas } from "./AutomationCanvas.tsx";
 import { PublishScreen, RunScreen, SettingsScreen } from "./AutomationPublish.tsx";
 import { RunsPane, touchError } from "./AutomationRuns.tsx";
 import {
+  KeptContext,
   PhoneContext,
   type Tester,
   TesterContext,
   trialOf,
   triggerFields,
 } from "./AutomationTest.tsx";
+import { VersionsPane } from "./AutomationVersions.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
@@ -74,7 +76,8 @@ async function readPublished(id: string): Promise<Published | null> {
   try {
     const v = await client.versions(id);
     if (v.running === null) return { running: null, enabled: v.enabled, doc: null };
-    return { running: v.running, enabled: v.enabled, doc: await client.version(id, v.running) };
+    const { automation, names } = await client.version(id, v.running);
+    return { running: v.running, enabled: v.enabled, doc: automation, names };
   } catch {
     return null;
   }
@@ -99,10 +102,17 @@ export function AutomationPage({
   const [error, setError] = useState<string | null>(null);
   /** The version that runs and the switch (AU-95, AU-194): asked when it opens, and kept after each publish. */
   const [published, setPublished] = useState<Published | null>(null);
-  /** «Publicar» open: what the server showed and the draft it was asked for. */
-  const [publishing, setPublishing] = useState<{ view: PublishView; draft: Automation } | null>(
-    null,
-  );
+  /**
+   * «Publicar» open: what the server showed and the draft it was asked for or, with `version`, the document of the
+   * version «Volver a esta» goes back to (AU-98).
+   */
+  const [publishing, setPublishing] = useState<{
+    view: PublishView;
+    draft: Automation;
+    version?: number;
+  } | null>(null);
+  /** «⋯ → Versiones» open over the canvas (AU-98); `shown` is new after each publish, for its list to be asked again. */
+  const [versions, setVersions] = useState<{ shown: number } | null>(null);
   const [running, setRunning] = useState(false);
   /** «Ejecutar»'s box open (AU-97). */
   const [asking, setAsking] = useState(false);
@@ -354,25 +364,55 @@ export function AutomationPage({
       toast(touchError(t, e));
     }
   };
-  /** «Publicar versión N»: the draft the screen showed, by its `rev`; then its notice with «Ejecutar» (AU-97). */
+  /**
+   * «Volver a esta» (AU-98): «Publicar» with that version's document instead of the draft: what changes against the
+   * one that runs, what stops it with today's collections and what it will be able to do, as the server says.
+   */
+  const openRestore = async (n: number, doc: Automation) => {
+    const s = latest.current;
+    if (!s?.id) return;
+    try {
+      const view = await client.publishView(s.id, n);
+      setPublishing({ view, draft: doc, version: n });
+    } catch (e) {
+      toast(touchError(t, e));
+    }
+  };
+  /**
+   * «Publicar versión N»: the draft the screen showed, by its `rev`, or the old version «Volver a esta» showed (a new
+   * version with its document; the draft is not touched and says «cambios sin publicar»); then its notice with
+   * «Ejecutar» (AU-97).
+   */
   const publish = async () => {
     const s = latest.current;
     if (!s?.id || !publishing) return;
-    const { view, draft: sent } = publishing;
+    const { view, draft: sent, version } = publishing;
     setRunning(true);
     try {
-      const r = await client.publish(s.id, { rev: view.rev });
+      const r = await client.publish(s.id, version !== undefined ? { version } : { rev: view.rev });
       if (isRefused(r)) {
         toast(refusedWords(t, r.refused));
         // Another device changed the draft, or the server found what stops it: the screen is asked again.
         if (r.refused === "stale" || r.refused === "blocked") {
           setPublishing(null);
-          void openPublish();
+          void (version !== undefined ? openRestore(version, sent) : openPublish());
         }
         return;
       }
       setPublishing(null);
       setPublished({ running: r.version, enabled: r.enabled, doc: sent });
+      // The names the new version kept (AU-192), which the draft's code is checked against from now on.
+      const at = s.id;
+      void client.version(at, r.version).then(
+        (v) =>
+          setPublished((p) =>
+            p && p.running === r.version && latest.current?.id === at
+              ? { ...p, names: v.names }
+              : p,
+          ),
+        () => undefined,
+      );
+      if (version !== undefined) setVersions((v) => (v ? { shown: v.shown + 1 } : v));
       void loadRows(SYS.flows.id);
       toast(t("auto.pub.done", { n: r.version }), {
         label: t(DO.run),
@@ -467,6 +507,11 @@ export function AutomationPage({
   const tab = runs && state?.id ? "runs" : "editor";
   // On the phone it is looked at and tested, never changed (AU-74); another layout mounts another app.
   const phone = phoneLayout();
+  // «Versiones» is of the editor's tab and of this automation: another tab or another automation leaves it.
+  useEffect(() => {
+    if (tab === "runs") setVersions(null);
+  }, [tab]);
+  useEffect(() => setVersions(null), [id]);
   return (
     <div className="content page-doc full auto-page" data-boni-action="automations.read">
       <div className="doc">
@@ -482,6 +527,7 @@ export function AutomationPage({
           onToggle={(on) => void toggle(on)}
           onRun={() => void startRun()}
           onSettings={() => apply((s) => ({ ...s, ajustes: { limit: null } }))}
+          onVersions={() => setVersions((v) => v ?? { shown: 0 })}
           tab={id ? tab : null}
         />
         {error ? (
@@ -499,11 +545,21 @@ export function AutomationPage({
               showAutomation(state.id);
             }}
           />
+        ) : versions && state.id && !phone ? (
+          <VersionsPane
+            key={versions.shown}
+            id={state.id}
+            places={state.places}
+            onBack={() => setVersions(null)}
+            onRestore={(n, doc) => void openRestore(n, doc)}
+          />
         ) : (
           <section className="auto-canvas" aria-label={state.draft.name}>
             <PhoneContext.Provider value={phone}>
               <TesterContext.Provider value={tester}>
-                <AutomationCanvas state={state} apply={apply} />
+                <KeptContext.Provider value={published?.names ?? null}>
+                  <AutomationCanvas state={state} apply={apply} />
+                </KeptContext.Provider>
               </TesterContext.Provider>
             </PhoneContext.Provider>
           </section>
@@ -511,14 +567,19 @@ export function AutomationPage({
         {state && publishing && (
           <PublishScreen
             view={publishing.view}
-            draft={state.draft}
+            draft={publishing.version !== undefined ? publishing.draft : state.draft}
             was={published?.doc ?? null}
             busy={running}
             onClose={() => setPublishing(null)}
             onPublish={() => void publish()}
             onStep={(step) => {
               setPublishing(null);
-              apply((s) => ({ ...s, selected: [step], arrow: null, open: step }));
+              setVersions(null);
+              apply((s) =>
+                s.draft.steps.some((x) => x.id === step)
+                  ? { ...s, selected: [step], arrow: null, open: step }
+                  : s,
+              );
             }}
           />
         )}
@@ -561,6 +622,7 @@ function Header({
   onToggle,
   onRun,
   onSettings,
+  onVersions,
   tab,
 }: {
   state: EditorState | null;
@@ -574,6 +636,8 @@ function Header({
   onToggle: (on: boolean) => void;
   onRun: () => void;
   onSettings: () => void;
+  /** «⋯ → Versiones» (AU-98). */
+  onVersions: () => void;
   /** «Editor | Ejecuciones» (pantalla 8): null on «Nueva»'s empty canvas, which has no runs. */
   tab: "editor" | "runs" | null;
 }) {
@@ -730,6 +794,16 @@ function Header({
                   onSettings();
                 }}
               />
+              {isPublished && (
+                <MenuRow
+                  label={t(DO.versions)}
+                  boniAction="automations.read"
+                  onClick={() => {
+                    close();
+                    onVersions();
+                  }}
+                />
+              )}
               <MenuSep />
               <MenuRow
                 label={t(DO.duplicate)}

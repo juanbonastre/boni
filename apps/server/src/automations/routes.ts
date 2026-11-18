@@ -77,7 +77,8 @@ export const AUTOMATION_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   "automations.restore": {
     effect: "touch",
     undo: "«Eliminar» again",
-    control: "«Deshacer» in the notice «Eliminar» leaves",
+    control:
+      "«Deshacer» in the notice «Eliminar» leaves, and «Recuperar» in the list's «Eliminadas»",
   },
 };
 

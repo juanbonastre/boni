@@ -116,6 +116,23 @@ describe("«Publicar», the versions, the switch and «Ejecutar» asked of the s
     ]);
     for (const p of asked) expect(allowed(p.split(" ")[1] as string), p).toBe(true);
   });
+
+  it("AU-98 · AU-192 · a version comes with the names its code kept, and none from a server before them", async () => {
+    const names = { s_01jcodigo: { Gastos: "c_gastos" } };
+    let with_ = true;
+    const client = automationsClient({
+      automations: async () =>
+        with_ ? { automation: { name: "Una" }, names } : { automation: { name: "Una" } },
+    } as never);
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6k9p";
+    expect(await client.version(id, 3)).toEqual({ automation: { name: "Una" }, names });
+    with_ = false;
+    expect((await client.version(id, 3)).names).toEqual({});
+  });
+
+  it("AU-191 · «Eliminadas» is the list's own read with `deleted=1`, which both apps let through", () => {
+    expect(allowed("api/data/types/t_sys_flujos/rows?deleted=1")).toBe(true);
+  });
 });
 
 describe("«Ejecuciones» asked of the server", () => {

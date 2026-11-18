@@ -83,6 +83,7 @@ import {
   redo,
   undo,
 } from "../automations/state.ts";
+import type { DiffMark } from "../automations/versions.ts";
 import {
   DO,
   entryNames,
@@ -175,11 +176,18 @@ interface ArrowData extends Record<string, unknown> {
 }
 type ArrowEdge = Edge<ArrowData, "arrow">;
 
+/**
+ * Two versions compared in «Versiones» (AU-98): what each card of this side's canvas is to the other, by step id
+ * (`compared`, automations/versions.ts). None on any other canvas.
+ */
+export const DiffContext = createContext<Record<string, DiffMark> | null>(null);
+
 /** A step's card (AU-63): its icon, its name and one line of summary, its inputs on the left, its outputs right. */
 const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>) {
   const acts = useActs();
   const phone = useStill();
   const { t } = acts;
+  const diff = useContext(DiffContext)?.[data.step.id];
   const {
     step,
     summary,
@@ -205,11 +213,13 @@ const StepCard = memo(function StepCard({ data, selected }: NodeProps<CardNode>)
   );
   return (
     <div
-      className={`auto-card${selected ? " selected" : ""}${off ? " off" : ""}${problem ? " problem" : ""}`}
+      className={`auto-card${selected ? " selected" : ""}${off ? " off" : ""}${problem ? " problem" : ""}${diff ? ` diff-${diff}` : ""}`}
       style={{ width: CARD.width, height: height + (mark?.why ? 30 : 0) }}
       data-step={step.id}
       data-state={mark?.state}
+      data-diff={diff}
     >
+      {diff && <span className="auto-card-diff">{t(`auto.ver.mark.${diff}`)}</span>}
       <NodeToolbar
         isVisible={alone && selected && !phone}
         position={Position.Top}

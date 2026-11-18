@@ -18,6 +18,7 @@ import type {
   Cell,
   CodeFailure,
   ConsoleLine,
+  KeptNames,
   Look,
   Problem,
   StepError,
@@ -313,8 +314,11 @@ export interface AutomationsClient {
   publish(id: string, what: { rev: number } | { version: number }): Promise<PublishAnswer>;
   /** `GET automations/:id/versions`. */
   versions(id: string): Promise<Versions>;
-  /** `GET automations/:id/versions/:n`: that version's document as it runs. */
-  version(id: string, n: number): Promise<Automation>;
+  /**
+   * `GET automations/:id/versions/:n`: that version's document as it runs, and the names its code cites each
+   * collection by with the key it was (AU-192), empty from a server before them.
+   */
+  version(id: string, n: number): Promise<{ automation: Automation; names: KeptNames }>;
   /** `PUT automations/:id/enabled`: the switch (AU-194). */
   setEnabled(id: string, enabled: boolean): Promise<{ enabled: boolean } | Refused>;
   /** `POST automations/:id/run` (AU-97): the published version, with the trigger and its fields. */
@@ -558,7 +562,10 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
     version: async (id, n) => {
       const o = await api.automations("GET", path(id, `/versions/${n}`));
       if (!isObj(o) || !isObj(o.automation)) throw new Error("automations: not a version");
-      return o.automation as unknown as Automation;
+      return {
+        automation: o.automation as unknown as Automation,
+        names: isObj(o.names) ? (o.names as KeptNames) : {},
+      };
     },
     setEnabled: async (id, enabled) => {
       const r = await api.automations("PUT", path(id, "/enabled"), { enabled });

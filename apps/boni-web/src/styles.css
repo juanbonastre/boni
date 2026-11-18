@@ -13712,3 +13712,122 @@ button.auto-log-line {
 .auto-run-proposal .link-btn {
   font-size: inherit;
 }
+/* F14d P3b-1. «Versiones» (AU-98): pantalla 8's layout, the list of versions on the left, one version's canvas (or two
+   compared side by side) on the right; each card of a comparison says what it is to the other. */
+.auto-vers-item .auto-runs-when strong {
+  color: var(--text);
+}
+.auto-vers-running {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.auto-vers-against {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.auto-vers-changes {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 13px;
+  max-height: 160px;
+  overflow: auto;
+}
+.auto-vers-changes h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.auto-vers-changes ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.auto-vers-compare {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  flex: 1 1 0;
+  min-height: 320px;
+}
+.auto-vers-compare .auto-vers-canvas {
+  height: 100%;
+  min-height: 320px;
+}
+.auto-card.diff-added {
+  border-color: var(--good);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 25%, transparent);
+}
+.auto-card.diff-removed {
+  border-color: var(--bad);
+  border-style: dashed;
+  opacity: 0.75;
+}
+.auto-card.diff-changed {
+  border-color: var(--warn, #d9a441);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn, #d9a441) 25%, transparent);
+}
+.auto-card-diff {
+  position: absolute;
+  top: -9px;
+  left: 10px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+}
+.auto-card.diff-added .auto-card-diff {
+  color: var(--good);
+}
+.auto-card.diff-removed .auto-card-diff {
+  color: var(--bad);
+}
+.auto-card.diff-changed .auto-card-diff {
+  color: var(--warn, #d9a441);
+}
+/* «Eliminadas» (AU-191): the list's «⋯» beside its title, and each deleted one with «Recuperar». */
+.flows-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.auto-deleted-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 60vh;
+  overflow: auto;
+}
+.auto-deleted-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.auto-deleted-item:hover {
+  background: var(--surface-2, var(--surface));
+}
+.auto-deleted-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* AU-192: the notice of a collection cited by its name of before, with its button. */
+.auto-code-renamed {
+  margin-top: 6px;
+}
