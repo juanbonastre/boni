@@ -729,7 +729,7 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
     expect(titles()).not.toContain("Leche de soja");
     expect(store.setting("views/t_tarea")).toBe("[2]");
 
-    // «Otra cosa…»: the question ends, its turn says so, and an answer of the wrong kind is refused.
+    // «Otra…»: the question ends, its turn says so, and an answer of the wrong kind is refused.
     plans.push({
       version: 1,
       steps: [

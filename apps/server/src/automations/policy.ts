@@ -116,8 +116,8 @@ export const ACTS: Readonly<Record<"query" | "get" | "create" | "update" | "tras
 };
 
 /**
- * «Avisar» as the policy is told it (AU-201, F15 S2): a call with no recipient. Its text is content, and «Dónde» a
- * value of the step as saved, from a closed list of his own devices: neither is a destination (P2, P14).
+ * «Avisar» as the policy is told it (AU-201, AU-246, F15): a call with no recipient. Its text is content, and «Dónde» and «Por dónde»
+ * values of the step as saved, from closed lists of his own devices and surfaces: none is a destination (P2, P14).
  */
 export const NOTICE: ToolDef = {
   name: "notify",
@@ -129,6 +129,10 @@ export const NOTICE: ToolDef = {
   args: {
     text: { role: "content", required: true, describe: "the text" },
     where: { role: "value", describe: "which of his own devices" },
+    via: {
+      role: "value",
+      describe: "by which of his own surfaces: the notification, the Bandeja or both",
+    },
   },
 };
 
@@ -142,7 +146,12 @@ export function noticeDecision(notice: Notice, own: Label): Decision {
   return decide(
     {
       tool: NOTICE,
-      args: { text: leaf(notice.text, notice.label), where: leaf(notice.where, own) },
+      // «Dónde» and «Por dónde» are the step's own, fixed as saved (AU-201, AU-246): the automation's label.
+      args: {
+        text: leaf(notice.text, notice.label),
+        where: leaf(notice.where, own),
+        via: leaf(notice.via.join(" "), own),
+      },
       control: null,
       flow: true,
     },

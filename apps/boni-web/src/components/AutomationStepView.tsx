@@ -59,6 +59,7 @@ import {
   labelsOf,
   markedOf,
   optionsLeft,
+  peopleAction,
   rowsOf,
   SETTINGS_ROWS,
   settingsChanged,
@@ -276,10 +277,16 @@ function ChoiceControl(p: ControlProps) {
   const current = value ?? param.default;
   const now = typeof current === "string" ? current : "";
   if (Array.isArray(param.options)) {
+    // «Avisar» and «Preguntar» are said by the step's own word (AU-248); any other action by its phrase.
     const word = (o: string) =>
       v.t(
-        param.key === ACTION ? KEY.action(v.step.type, o) : KEY.choice(v.step.type, param.key, o),
+        param.key === ACTION
+          ? peopleAction(v.step)
+            ? KEY.step(o)
+            : KEY.action(v.step.type, o)
+          : KEY.choice(v.step.type, param.key, o),
       );
+    if (param.many) return <ManyControl {...p} options={param.options} word={word} />;
     return (
       <select
         className="input"
@@ -315,6 +322,42 @@ function ChoiceControl(p: ControlProps) {
         </option>
       ))}
     </select>
+  );
+}
+
+/**
+ * One or more of a closed list («Por dónde», AU-246): a box for each, in the list's order. The last one chosen
+ * cannot be taken off, so the step always reaches him by one at least.
+ */
+function ManyControl({
+  value,
+  param,
+  set,
+  label,
+  options,
+  word,
+}: ControlProps & { options: readonly string[]; word: (o: string) => string }) {
+  const current = value ?? param.default;
+  const chosen = Array.isArray(current) ? current.filter((x) => typeof x === "string") : [];
+  return (
+    <fieldset className="auto-many" aria-label={label}>
+      {options.map((o) => {
+        const on = chosen.includes(o);
+        return (
+          <label key={o} className="auto-many-item">
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={on && chosen.length === 1}
+              onChange={(e) =>
+                set(options.filter((x) => (x === o ? e.target.checked : chosen.includes(x))))
+              }
+            />
+            <span>{word(o)}</span>
+          </label>
+        );
+      })}
+    </fieldset>
   );
 }
 

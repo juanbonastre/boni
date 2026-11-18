@@ -39,12 +39,20 @@ import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
 import {
   type AskGiven,
   answerAsk,
+  askGivenOf,
   interruptRuns,
   onRunEvent,
   startRun,
   tellLearned,
 } from "./automations/runs.ts";
-import { askPlace, mayAnswer, noticeText, onPeople } from "./automations/waits.ts";
+import {
+  askPlace,
+  mayAnswer,
+  mayDismissNotice,
+  noticePlace,
+  noticeText,
+  onPeople,
+} from "./automations/waits.ts";
 import { pressButton } from "./buttons.ts";
 import type { MailService } from "./connectorActions.ts";
 import { setProtection } from "./data.ts";
@@ -121,7 +129,7 @@ import type { TurnsService } from "./turnActions.ts";
  *                            `corrects`: the run of an earlier turn of that conversation whose message Juan
  *                            edited (docs/conversacion.md §3.1): taken back first (409 cannot-undo: nothing done;
  *                            409 corrected: it was already, on another device)
- *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra cosa…», the
+ *   POST /api/agent/answer   { run, ask, choice | text | words | record, live? } (`words`: «Otra…», the
  *                            question ends and they are the next turn; `record`: a row made with «Nueva…»)
  *   POST /api/agent/confirm  { run, confirmation, live? }
  *   POST /api/agent/decline  { run, confirmation }
@@ -1227,17 +1235,6 @@ async function serveConversations(
   }
 }
 
-/** What a card of an automation's «Preguntar» was answered with, as the Bandeja sends it; null when it is none. */
-function askGiven(b: Record<string, unknown> | null): AskGiven | null {
-  if (!b) return null;
-  if (typeof b.yes === "boolean") return { yes: b.yes };
-  if (Number.isInteger(b.choice)) return { choice: b.choice as number };
-  if (Array.isArray(b.choices) && b.choices.length <= 100 && b.choices.every(Number.isInteger))
-    return { choices: b.choices as number[] };
-  if (str(b.text, 500)) return { text: b.text as string };
-  return null;
-}
-
 /**
  * Juan answers, or puts away (`given` null), a card of an automation's «Preguntar» (AU-125, AU-203): from any device
  * signed in to the account unless its step asks for a personal one (`mayAnswer`, decision 26 of
@@ -1488,7 +1485,7 @@ async function answerAgent(
       return send(res, 200, {
         requests: agent
           .requests()
-          .filter((r) => !off || askPlace(r.view))
+          .filter((r) => !off || askPlace(r.view) || noticePlace(r.view))
           .map((r) => {
             // Where it comes from (the mail that was being read), as the Registro says it.
             let about: RunInfo["what"] | null = null;
@@ -1505,6 +1502,9 @@ async function answerAgent(
             // Whether this device answers it (decision 26 of §10): the screen reads it, it keeps no rule of its own.
             // The agent's own questions take any device's answer, as they did.
             const place = askPlace(r.view);
+            // A notice's card (AU-246): put away from any device of the account, a speaker never.
+            const notice = place ? null : noticePlace(r.view);
+            const from = place ?? notice;
             return {
               id: r.id,
               run: r.run,
@@ -1513,10 +1513,14 @@ async function answerAgent(
               expires: r.expires,
               about,
               open,
-              ...(place
-                ? { automation: { id: place.automation, name: askerOf(r.run, place.automation) } }
+              ...(from
+                ? { automation: { id: from.automation, name: askerOf(r.run, from.automation) } }
                 : {}),
-              mayAnswer: place ? mayAnswer(place, who.trust) : true,
+              mayAnswer: place
+                ? mayAnswer(place, who.trust)
+                : notice
+                  ? mayDismissNotice(who.trust)
+                  : true,
             };
           }),
         // The pauses and the suggestions that wait (AU-209, AU-210), with no model: the app words them, and only a
@@ -1532,7 +1536,9 @@ async function answerAgent(
       if (!r) return send(res, 404, { error: "not-found" });
       const b = await bodyOf(req);
       // An automation's «Preguntar» (AU-125, AU-203): its answer goes to its run, not to the agent.
-      if (askPlace(r.view)) return askAnswered(host, who, r.id, askGiven(b), res);
+      if (askPlace(r.view)) return askAnswered(host, who, r.id, askGivenOf(b), res);
+      // A notice's card has nothing to answer (AU-246).
+      if (noticePlace(r.view)) return bad();
       if (off) return agentOff();
       const answer =
         typeof b.choice === "number" && Number.isInteger(b.choice)
@@ -1546,6 +1552,14 @@ async function answerAgent(
     case "POST /api/agent/requests/:id/dismiss": {
       const r = host.store(who.account).journal.request(params.id ?? "");
       if (r && askPlace(r.view)) return askAnswered(host, who, r.id, null, res);
+      // A notice's card (AU-246): put away by any device of the account, never a speaker; it ends nothing else.
+      if (r && noticePlace(r.view)) {
+        if (!mayDismissNotice(who.trust)) return send(res, 403, { error: "personal-device-only" });
+        const dismissed = r.status === "pending";
+        if (dismissed) host.store(who.account).journal.setRequest(r.id, "dismissed", Date.now());
+        host.emit(who.account, "requests", {});
+        return send(res, 200, { dismissed });
+      }
       if (off) return agentOff();
       return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
     }
