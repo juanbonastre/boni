@@ -10,6 +10,17 @@ import { FILTER_OPS } from "@boni/views";
 import { AGENT_PARAMS, AGENT_ROUNDS, AGENT_TOOLS, codeToolsOf } from "./agent.ts";
 import { fieldsOf } from "./ai.ts";
 import {
+  BONI_ACTION_TYPE,
+  BONI_LIMITS,
+  BONI_PARAMS,
+  BONI_TRIGGERS,
+  type BoniAutomation,
+  boniOwner,
+  boniPiece,
+  isBoniTrigger,
+  isBoniType,
+} from "./boni.ts";
+import {
   actionOf,
   inputsOf,
   isTrigger,
@@ -134,6 +145,20 @@ export interface ValidationContext {
    * Without it they are `step.unknownType`.
    */
   people?: boolean;
+  /**
+   * Boni's code can be reached (`RunDeps.boni`, F16): «Acción de Boni», «Lector de Boni», «Llega un correo» and
+   * «Mensaje de chat» are step types, and in Boni's automation `automation` (as the server knows it from where the
+   * automation is stored, never from the document) so are its pieces and its trigger (AU-127, AU-220). Without it, or
+   * in another automation, they are `step.unknownType`: a copy loses them, and says so.
+   */
+  boni?: { automation?: BoniAutomation };
+}
+
+/** Whether a Boni type is a step type here: there is a way to Boni's code and, for an owned one, its automation. */
+export function boniTyped(type: string, context: Pick<ValidationContext, "boni">): boolean {
+  if (!context.boni || !isBoniType(type)) return false;
+  const owner = boniOwner(type);
+  return owner === undefined || owner === context.boni.automation;
 }
 
 /**
@@ -158,7 +183,8 @@ export function validate(
   const typed = (s: Step) =>
     !!stepType(s.type) ||
     (!!context.ai && (!!readerStep(s.type) || s.type === AGENT_TYPE)) ||
-    (!!context.people && !!peopleStep(s.type));
+    (!!context.people && !!peopleStep(s.type)) ||
+    boniTyped(s.type, context);
   const add = (code: ProblemCode, at: Omit<Problem, "code" | "severity"> = {}) =>
     problems.push({ code, severity: WARNINGS.includes(code) ? "warning" : "error", ...at });
 
@@ -224,6 +250,7 @@ export function validate(
     new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
     if (step.type === AGENT_TYPE) agentParams(step, add, code !== undefined);
     if (step.type === ASK_TYPE) askParams(step, add);
+    if (isBoniType(step.type)) boniParams(step, add);
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
     );
@@ -289,6 +316,66 @@ function askParams(step: Step, add: Add): void {
     !optionsOk(options)
   )
     add("param.value", { ...at, param: ASK_PARAMS.options });
+}
+
+/** A key of «Acción de Boni»'s or «Lector de Boni»'s arguments, as the action list names them. */
+const ARG_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,40}$/;
+/** An action's name as the list of actions has it (`docs/sistema.md` §4.1): `entities.query`, `pages.create`. */
+const ACTION_NAME = /^[a-z][A-Za-z0-9_]{0,40}(\.[a-z][A-Za-z0-9_]{0,40}){0,3}$/;
+
+/**
+ * What a Boni step takes beyond its controls (AU-127, AU-137): what a piece lets change within its bounds
+ * (`BONI_LIMITS`), the «Decisora»'s collections each once, «Mensaje de chat»'s texts within the chat's lengths, and the
+ * arguments of «Acción de Boni» and «Lector de Boni» each with a key of their own. The bounds are the piece's code's,
+ * never this parameter's: a value outside them is an error, not a wider bound.
+ */
+function boniParams(step: Step, add: Add): void {
+  const at = { step: step.id };
+  const p = step.params;
+  const whole = (key: string, b: { min: number; max: number }) => {
+    const v = p[key];
+    if (typeof v === "number" && !(Number.isInteger(v) && v >= b.min && v <= b.max))
+      add("param.value", { ...at, param: key });
+  };
+  const text = (v: unknown, max: number, param: string) => {
+    if (typeof v === "string" && v.length > max) add("param.value", { ...at, param });
+  };
+  const rows = (v: unknown) =>
+    (Array.isArray(v) ? v : []).map((r) =>
+      r && typeof r === "object" && !Array.isArray(r) && !isExpr(r as ParamValue)
+        ? (r as Record<string, unknown>)
+        : {},
+    );
+  if (step.type === BONI_TRIGGERS.decisions) whole(BONI_PARAMS.every, BONI_LIMITS.every);
+  if (boniPiece(step.type)?.params.includes("days")) whole(BONI_PARAMS.days, BONI_LIMITS.days);
+  if (boniPiece(step.type)?.params.includes("mails")) whole(BONI_PARAMS.mails, BONI_LIMITS.mails);
+  if (boniPiece(step.type)?.params.includes("collections")) {
+    const keys = rows(p[BONI_PARAMS.collections]).map((r) => r.collection);
+    if (new Set(keys).size !== keys.length)
+      add("param.value", { ...at, param: BONI_PARAMS.collections });
+  }
+  if (step.type === BONI_TRIGGERS.chat) {
+    text(p[BONI_PARAMS.welcome], BONI_LIMITS.welcome, BONI_PARAMS.welcome);
+    for (const [i, b] of rows(p[BONI_PARAMS.buttons]).entries()) {
+      text(b.label, BONI_LIMITS.label, `${BONI_PARAMS.buttons}.${i}.label`);
+      text(b.text, BONI_LIMITS.text, `${BONI_PARAMS.buttons}.${i}.text`);
+    }
+  }
+  if (step.type === BONI_ACTION_TYPE) {
+    const name = p[BONI_PARAMS.action];
+    if (typeof name === "string" && name !== "" && !ACTION_NAME.test(name))
+      add("param.value", { ...at, param: BONI_PARAMS.action });
+  }
+  if (!isBoniTrigger(step.type)) {
+    const why = p[BONI_PARAMS.why];
+    if (!isExpr(why)) text(why, BONI_LIMITS.why, BONI_PARAMS.why);
+    const seen = new Set<unknown>();
+    for (const [i, r] of rows(p[BONI_PARAMS.args]).entries()) {
+      if (typeof r.key === "string" && (!ARG_KEY.test(r.key) || seen.has(r.key)))
+        add("param.value", { ...at, param: `${BONI_PARAMS.args}.${i}.key` });
+      seen.add(r.key);
+    }
+  }
 }
 
 /** Fixed options of a question: distinct texts that are not blank, at least one. */
