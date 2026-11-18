@@ -6,7 +6,8 @@
  */
 
 import { actionOf, PERMISSION } from "./catalogue.ts";
-import { AGENT_TYPE, CODE_TYPE, WRITE_ACTIONS, type WriteAction } from "./code.ts";
+import { CODE_TYPE, WRITE_ACTIONS, type WriteAction } from "./code.ts";
+import { hasConnections } from "./connections.ts";
 import type { Automation, Step } from "./format.ts";
 import { canonical } from "./steps.ts";
 import { stepChanges, type WriteMode } from "./writes.ts";
@@ -28,7 +29,7 @@ const NO_NAMES = { collectionNamed: () => undefined };
  * action with its «Permiso» (an «Crear o modificar» is two cells with one «Permiso»). A step that only reads has none.
  */
 export function cellsOfStep(step: Step): StepCell[] {
-  if (step.type === CODE_TYPE || step.type === AGENT_TYPE)
+  if (hasConnections(step.type))
     return (step.connections ?? []).flatMap((c) =>
       WRITE_ACTIONS.flatMap((action) => {
         const cell = c[action];
@@ -111,7 +112,7 @@ export function lowerCells(
 ): Automation {
   let changed = false;
   const steps = a.steps.map((step) => {
-    if (step.type === CODE_TYPE || step.type === AGENT_TYPE) {
+    if (hasConnections(step.type)) {
       if (!step.connections?.length) return step;
       let mine = false;
       const connections = step.connections.map((c) => {

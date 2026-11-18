@@ -147,8 +147,7 @@ export const TRANSLATION: Readonly<Record<string, string>> = {
   "tool:entities.get":
     "collection · get · untranslated:noCollection (but the mail that started it)",
   "tool:entities.aggregate": "collection · aggregate",
-  "tool:entities.create":
-    "collection · create, «Preguntar» · boni.create / boni.createChosen in «Leer correo»",
+  "tool:entities.create": "collection · create, «Preguntar» · boni.createChosen in «Leer correo»",
   "tool:entities.update": "untranslated:noCollection",
   "tool:entities.delete": "untranslated:noCollection",
   "tool:notify": NOTIFY_TYPE,
@@ -782,20 +781,14 @@ class Translator {
     return { step, out: { kind: "value", name: step.name }, one: true };
   }
 
-  /** «Leer correo»'s «Crear» (AU-127): in the collection the plan names, or in the one the «Decisora» chose. */
+  /**
+   * «Leer correo»'s «Crear» (AU-250): «Crear en la elegida», in the collection the row says. Its cells are written
+   * by the conversion of «Leer correo» (AU-254), all in «Preguntar»; a plan's literal translation gives it none.
+   */
   private createPiece(s: Extract<Step, { op: "call" }>, feed: Arrow["from"][]): Made | null {
     this.writes = true;
-    const type = s.args.type;
-    const fixed = type && "lit" in type && typeof type.lit === "string" ? type.lit : null;
-    const def = BONI_PIECES.find((p) => p.type === (fixed ? "boni.create" : "boni.createChosen"));
-    const { type: _t, ...rest } = s.args;
-    return this.piece(
-      s,
-      def as BoniPieceDef,
-      fixed ? rest : s.args,
-      feed,
-      fixed ? { [BONI_PARAMS.collection]: fixed } : {},
-    );
+    const def = BONI_PIECES.find((p) => p.type === "boni.createChosen");
+    return this.piece(s, def as BoniPieceDef, s.args, feed);
   }
 
   /** The collection a call names: a literal key, or untranslated. */

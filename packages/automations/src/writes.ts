@@ -11,6 +11,7 @@
  */
 import type { Label, Labeled } from "@boni/entities";
 import { matchesFilters } from "@boni/views";
+import { CREATE_CHOSEN } from "./boni.ts";
 import { type Fields, jsonBytes } from "./box.ts";
 import { actionOf, PERMISSION, PERMISSION_BORN } from "./catalogue.ts";
 import {
@@ -25,7 +26,7 @@ import {
   WRITE_ACTIONS,
   type WriteAction,
 } from "./code.ts";
-import { asRead, type Connection, literalCell } from "./connections.ts";
+import { asRead, type Connection, hasConnections, literalCell } from "./connections.ts";
 import type {
   Asked,
   Change,
@@ -339,8 +340,9 @@ export function stepChanges(
       };
     });
   }
-  // An «Agente» can do all its connection does not have in «No» (AU-200): no analysis says less.
-  if (step.type === AGENT_TYPE)
+  // An «Agente» can do all its connection does not have in «No» (AU-200): no analysis says less. «Crear en la
+  // elegida» too: it creates in any collection whose «Crear» is not «No» (AU-250).
+  if (step.type === AGENT_TYPE || step.type === CREATE_CHOSEN)
     return (step.connections ?? [])
       .map((c) => ({
         collection: c.collection,
@@ -369,7 +371,7 @@ export function stepChanges(
  * is the second door: it proposes what a model wrote and denies what no «Sí» opens (P2, P9, P14, P28).
  */
 export function consentOf(step: Step, collection: string, action: WriteAction): false | WriteMode {
-  if (step.type === CODE_TYPE || step.type === AGENT_TYPE) {
+  if (hasConnections(step.type)) {
     const cell = (step.connections ?? []).find((c) => c.collection === collection)?.[action];
     return cell ? cell.mode : false;
   }
@@ -421,7 +423,8 @@ function lowered(step: Step): Step {
     };
   const action = actionOf(step);
   if (
-    step.type !== CODE_TYPE &&
+    // A step whose writes its connections decide («Código», «Crear en la elegida») has no «Permiso» to lower.
+    !hasConnections(step.type) &&
     action?.effect === "write" &&
     action.key in PERMISSION_BORN &&
     step.params[PERMISSION] !== "ask"

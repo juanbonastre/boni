@@ -378,6 +378,23 @@ function boniParams(step: Step, add: Add): void {
     if (new Set(keys).size !== keys.length)
       add("param.value", { ...at, param: BONI_PARAMS.collections });
   }
+  // «Regla del remitente» (AU-249): a sender within a mail address's length; «A una colección» names one, «Saltar» none.
+  if (boniPiece(step.type)?.params.includes("rules"))
+    for (const [i, r] of rows(p[BONI_PARAMS.rules]).entries()) {
+      text(r.sender, BONI_LIMITS.sender, `${BONI_PARAMS.rules}.${i}.sender`);
+      const named = typeof r.collection === "string" && r.collection !== "";
+      if ((r.do === "collection") !== named)
+        add("param.value", { ...at, param: `${BONI_PARAMS.rules}.${i}.collection` });
+    }
+  // «Lectora» (AU-249, AU-255): its instructions and each example within the reader's own text.
+  if (boniPiece(step.type)?.params.includes("instructions")) {
+    if (!isExpr(p[BONI_PARAMS.instructions]))
+      text(p[BONI_PARAMS.instructions], BONI_LIMITS.instructions, BONI_PARAMS.instructions);
+    for (const [i, r] of rows(p[BONI_PARAMS.examples]).entries()) {
+      text(r.mail, BONI_LIMITS.example, `${BONI_PARAMS.examples}.${i}.mail`);
+      text(r.want, BONI_LIMITS.example, `${BONI_PARAMS.examples}.${i}.want`);
+    }
+  }
   if (step.type === BONI_TRIGGERS.chat) {
     text(p[BONI_PARAMS.welcome], BONI_LIMITS.welcome, BONI_PARAMS.welcome);
     for (const [i, b] of rows(p[BONI_PARAMS.buttons]).entries()) {

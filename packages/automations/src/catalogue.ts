@@ -30,12 +30,15 @@ import {
   BONI_ACTION_TYPE,
   BONI_CATEGORY,
   BONI_LIMITS,
+  BONI_MODULES,
   BONI_PARAMS,
   BONI_PIECES,
   BONI_READER_TYPE,
   BONI_READERS,
   BONI_TRIGGERS,
+  type BoniPieceDef,
   isBoniType,
+  RULE_DOES,
 } from "./boni.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
@@ -1419,35 +1422,83 @@ const PIECE_PARAMS: Readonly<Record<string, ParamSpec>> = {
       },
     ],
   },
-  collection: {
-    key: BONI_PARAMS.collection,
-    control: "picker",
-    of: "collection",
+  // «Regla del remitente» (AU-249): a table fixed in the step, so nothing from a mail and no model writes where a
+  // sender's mail goes (AU-230). «A una colección» names the collection; «No leer» names none.
+  rules: {
+    key: BONI_PARAMS.rules,
+    control: "list",
+    place: "shown",
+    shape: true,
+    max: BONI_LIMITS.rules,
+    columns: [
+      fixedText("sender", true),
+      {
+        key: "do",
+        control: "choice",
+        options: RULE_DOES,
+        place: "shown",
+        required: true,
+        shape: true,
+      },
+      { key: "collection", control: "picker", of: "collection", place: "shown", shape: true },
+    ],
+  },
+  // «Busca» of the «Lectora» (AU-249): what it looks for in a mail, one or more.
+  modules: {
+    key: BONI_PARAMS.modules,
+    control: "choice",
+    options: BONI_MODULES,
+    many: true,
     place: "shown",
     required: true,
     shape: true,
+    default: [...BONI_MODULES],
+  },
+  // «Indicaciones»: his text, fixed in the step; the only words of his a reader of a piece gets (AU-255).
+  instructions: fixedText(BONI_PARAMS.instructions),
+  // «Ejemplos» (AU-249): each cites a mail, so it is read only between markers, as from outside (AU-255).
+  examples: {
+    key: BONI_PARAMS.examples,
+    control: "list",
+    place: "option",
+    shape: true,
+    max: BONI_LIMITS.examples,
+    columns: [fixedText("mail", true), fixedText("want", true)],
+  },
+  // «Solo conocidos» (AU-250): only narrows a «Sí»; born off in the catalogue, on in Boni's own (its drawing).
+  onlyKnown: {
+    key: BONI_PARAMS.onlyKnown,
+    control: "toggle",
+    place: "option",
+    shape: true,
+    default: false,
   },
   days: fixedNumber(BONI_PARAMS.days, BONI_LIMITS.days.born),
-  alone: { key: BONI_PARAMS.alone, control: "toggle", place: "shown", shape: true, default: false },
   mails: fixedNumber(BONI_PARAMS.mails, BONI_LIMITS.mails.born),
 };
 /**
- * A Boni step that is not a trigger: no write effect, so no «Permiso» and no cell (what Boni's code changes passes
- * `decide` behind the port, AU-127); one output with what Boni's code answered (`BONI_VALUE`).
+ * A Boni step that is not a trigger. With no write effect it has no «Permiso» and no cell (what Boni's code changes
+ * passes `decide` behind the port, AU-127); its outputs are the piece's (the «Decisora» adds `BONI_DOUBT`, AU-252), or
+ * one with what Boni's code answered (`BONI_VALUE`). «Crear en la elegida» (`writes`) is the one that writes: it
+ * creates, and its connections' «Crear» cells decide, one per collection (AU-250).
  */
-const boniStep = (type: string, params: readonly ParamSpec[]): StepTypeSpec => ({
+const boniStep = (
+  type: string,
+  params: readonly ParamSpec[],
+  piece?: BoniPieceDef,
+): StepTypeSpec => ({
   type,
   category: BONI_CATEGORY,
   inputs: [MAIN],
   params: [],
   actions: [
     {
-      key: RUN,
-      effect: "none",
+      key: piece?.writes ? "create" : RUN,
+      effect: piece?.writes ? "write" : "none",
       destroys: false,
       mode: "all",
       pairs: false,
-      outputs: [MAIN],
+      outputs: piece?.outputs ?? [MAIN],
       params: [...params, BONI_MODE],
     },
   ],
@@ -1502,7 +1553,15 @@ const BONI_STEPS: readonly StepTypeSpec[] = [
   ]),
   // A piece also takes what its call of before passed (data for its code, never a destination: AU-230) and its why.
   ...BONI_PIECES.map((p) =>
-    boniStep(p.type, [...p.params.map((k) => PIECE_PARAMS[k] as ParamSpec), BONI_ARGS, BONI_WHY]),
+    boniStep(
+      p.type,
+      [
+        ...[...p.params, ...(p.options ?? [])].map((k) => PIECE_PARAMS[k] as ParamSpec),
+        BONI_ARGS,
+        BONI_WHY,
+      ],
+      p,
+    ),
   ),
 ];
 const BONI_BY_TYPE = new Map(BONI_STEPS.map((s) => [s.type, s]));

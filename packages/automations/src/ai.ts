@@ -6,6 +6,15 @@
 // is trusted: the engine checks it again against the step's own closed shape (`answerOf`).
 import { join, type Label, label as makeLabel } from "@boni/entities";
 import type { AgentCall, AgentReply } from "./agent.ts";
+import {
+  BONI_LIMITS,
+  BONI_MODULES,
+  BONI_PARAMS,
+  BONI_USER_IN,
+  type PieceRead,
+  type PieceReader,
+  type PieceReply,
+} from "./boni.ts";
 import { citationsIn, type Scope } from "./expression.ts";
 import { StepFault } from "./failures.ts";
 import type { ParamValue, Step } from "./format.ts";
@@ -106,6 +115,35 @@ export function retriesOf(step: Step): number {
 export interface AiPort {
   read(call: ReaderCall): Promise<ReaderReply>;
   agent?(call: AgentCall): Promise<AgentReply>;
+  /** A piece of Boni's (AU-249, AU-255): one call of its reader. A port without it runs no piece that reads. */
+  piece?(call: PieceCall): Promise<ReaderReply>;
+}
+
+/**
+ * One call of a piece's reader (AU-255), as the engine hands it to the port after its checks: what it reads, which the
+ * port puts between markers, all of it as from outside (the step's row, what that sender has waiting, «Ejemplos»);
+ * and, outside the markers, only the step's panel and closed lists the code checked. Nothing else of his.
+ */
+export interface PieceCall {
+  /** The kind of call (§5.16): the «Decisora» decides, the other two read. */
+  use: "reading" | "decision";
+  model: string | null;
+  reader: PieceReader;
+  texts: string[];
+  /** «Ejemplos» of the «Lectora»: each a mail cited and what it should give, read between markers. */
+  examples?: { mail: string; want: string }[];
+  /** «Busca» and «Indicaciones» of the «Lectora». */
+  modules?: string[];
+  instructions?: string;
+  /** The «Decisora»'s options: its panel's collections, with their names and descriptions as defined. */
+  options?: { key: string; name: string; description?: string }[];
+  /** The «Rellenadora»'s collection, by key. */
+  collection?: string;
+  userIn?: (typeof BONI_USER_IN)[number];
+  again?: { fault: string };
+  /** When and where the run is: for the days a reader writes («mañana»). */
+  now: number;
+  zone: string;
 }
 
 // ---------------------------------------------------------------- what goes wrong
@@ -596,3 +634,157 @@ function emptyValues(
 /** The label of what a model wrote in a step of an automation (`docs/nucleo.md` §7.4: never a destination). */
 export const modelLabelOf = (automation: string, step: string): Label =>
   makeLabel("model", "public", [{ kind: "model", id: `${automation}:${step}` }]);
+
+// ---------------------------------------------------------------- Boni's pieces
+
+/** At most this many texts to a piece's reader in one call, and options to the «Decisora». */
+export const PIECE_TEXTS = 40;
+export const PIECE_OPTIONS = 50;
+
+/** A label for what is read as from outside: an «Ejemplo» cites a mail (AU-249, AU-255), whoever wrote it. */
+const EXAMPLE_LABEL: Label = makeLabel(
+  "external",
+  "personal",
+  [{ kind: "mail", id: "example" }],
+  true,
+);
+
+interface PieceInput {
+  reader: PieceReader;
+  read: PieceRead;
+  /** The step's parameter, resolved with its label, or undefined when the step has none. */
+  param(key: string): { value: Cell; label: Label } | undefined;
+  /** The collection's definition (its name and description), or undefined for one that is not there. */
+  collection(key: string): { name?: string; description?: string } | undefined;
+  port: AiPort | undefined;
+  modelCall(): void;
+  now(): number;
+  zone: string;
+  /** The label of what a model wrote, for this step. */
+  model: Label;
+  record: AiRecord;
+}
+
+const privateParam = (param: string): AiFault =>
+  new AiFault(`a value no model may receive is in «${param}»`, {
+    code: "ai.private",
+    param,
+    detail: { field: param },
+  });
+
+/**
+ * One call of a piece's reader (AU-249, AU-255, AU-206): counted before it is made; refused with `ai.private` when a
+ * text no model may receive arrives, when a parameter of its panel is not his own words fixed in the step, or when a
+ * closed list holds what its panel does not; and its answer labelled with everything it read, the model's label
+ * first. Nothing here lowers a label: what came from outside stays from outside (AU-230).
+ */
+export async function pieceRead(input: PieceInput): Promise<PieceReply> {
+  const { reader, read: r, port, record } = input;
+  if (!port?.piece)
+    throw new AiFault("there is no port to call a model by", { code: "ai.unavailable" });
+  const read: Label[] = [];
+  if (!Array.isArray(r.texts) || r.texts.length > PIECE_TEXTS)
+    throw new AiFault("a piece's reader got no list of texts", {
+      code: "ai.params",
+      detail: { why: "texts" },
+    });
+  const texts: string[] = [];
+  for (const t of r.texts) {
+    if (typeof t?.value !== "string" || !t.label) throw privateParam("texts");
+    // What it reads is what came from outside, between markers (AU-255): never a row of his, nor what no model gets.
+    if (t.label.noModel || t.label.integrity !== "external") throw privateParam("texts");
+    read.push(t.label);
+    const text = t.value.length > READER_TEXT_CHARS ? t.value.slice(0, READER_TEXT_CHARS) : t.value;
+    if (text !== t.value) record.cut++;
+    texts.push(text);
+  }
+  // The panel: his own words, fixed in the step (`shape`), so nothing of a row or of outside is ever one of them.
+  const own = (key: string): Cell | undefined => {
+    const got = input.param(key);
+    if (got === undefined) return undefined;
+    if (got.label.noModel || !atLeastOwn(got.label)) throw privateParam(key);
+    read.push(got.label);
+    return got.value;
+  };
+  const model = own(BONI_PARAMS.model);
+  const call: PieceCall = {
+    use: reader === "decide" ? "decision" : "reading",
+    model: typeof model === "string" && model ? model : null,
+    reader,
+    texts,
+    now: input.now(),
+    zone: input.zone,
+  };
+  if (reader === "read_message") {
+    const modules = own(BONI_PARAMS.modules);
+    const list = Array.isArray(modules) ? modules : [...BONI_MODULES];
+    if (!list.length || !list.every((m) => (BONI_MODULES as readonly unknown[]).includes(m)))
+      throw privateParam(BONI_PARAMS.modules);
+    call.modules = list as string[];
+    const instructions = own(BONI_PARAMS.instructions);
+    if (instructions !== undefined && instructions !== null && instructions !== "") {
+      if (typeof instructions !== "string" || instructions.length > BONI_LIMITS.instructions)
+        throw privateParam(BONI_PARAMS.instructions);
+      call.instructions = instructions;
+    }
+    // «Ejemplos» cite mails: read between markers, as from outside, whoever wrote them (AU-249).
+    const examples = input.param(BONI_PARAMS.examples);
+    if (examples && Array.isArray(examples.value) && examples.value.length) {
+      if (examples.label.noModel) throw privateParam(BONI_PARAMS.examples);
+      const out: { mail: string; want: string }[] = [];
+      for (const e of examples.value.slice(0, BONI_LIMITS.examples)) {
+        const o = e as Record<string, unknown> | null;
+        const mail = typeof o?.mail === "string" ? o.mail.slice(0, BONI_LIMITS.example) : "";
+        const want = typeof o?.want === "string" ? o.want.slice(0, BONI_LIMITS.example) : "";
+        if (mail) out.push({ mail, want });
+      }
+      if (out.length) {
+        call.examples = out;
+        read.push(examples.label, EXAMPLE_LABEL);
+      }
+    }
+  }
+  if (r.userIn !== undefined) {
+    if (!(BONI_USER_IN as readonly unknown[]).includes(r.userIn)) throw privateParam("userIn");
+    call.userIn = r.userIn;
+  }
+  if (reader === "decide") {
+    // The options are collections of the panel, by key; their names and descriptions come from their definitions.
+    const panel = own(BONI_PARAMS.collections);
+    const keys = new Set(
+      (Array.isArray(panel) ? panel : []).map((c) =>
+        typeof c === "object" && c !== null && !Array.isArray(c)
+          ? (c as Record<string, unknown>).collection
+          : c,
+      ),
+    );
+    const options = r.options ?? [];
+    if (!Array.isArray(options) || !options.length || options.length > PIECE_OPTIONS)
+      throw privateParam("options");
+    call.options = options.map((key) => {
+      const def = typeof key === "string" && keys.has(key) ? input.collection(key) : undefined;
+      if (!def) throw privateParam("options");
+      return {
+        key,
+        name: def.name ?? key,
+        ...(def.description ? { description: def.description } : {}),
+      };
+    });
+  }
+  if (reader === "fill") {
+    if (typeof r.collection !== "string" || !input.collection(r.collection))
+      throw privateParam("collection");
+    call.collection = r.collection;
+  }
+  if (r.again) call.again = { fault: String(r.again.fault).slice(0, 60) };
+  input.modelCall();
+  record.calls++;
+  const start = input.now();
+  const reply = await port.piece(call);
+  record.ms += input.now() - start;
+  if (reply.model && !record.models.includes(reply.model)) record.models.push(reply.model);
+  if ("refused" in reply) return { refused: reply.refused };
+  return { answer: reply.answer, label: join(input.model, ...read) };
+}
+
+const atLeastOwn = (l: Label): boolean => l.integrity === "own" || l.integrity === "user";
