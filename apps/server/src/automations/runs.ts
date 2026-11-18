@@ -29,13 +29,16 @@
 import { EventEmitter } from "node:events";
 import type { Trust } from "@boni/agent";
 import {
+  type AskRecord,
   type Automation,
+  answerFits,
   arrowsInto,
   type Box,
+  CannotRun,
   type Cell,
   type Execution,
-  endedState,
   executionOrder,
+  type GivenAnswer,
   parseAutomation,
   type StartedBy,
   type StepError,
@@ -49,11 +52,18 @@ import {
   StoreError,
   type UserStore,
 } from "@boni/store";
+import { handLabel } from "../actions.ts";
 import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
 import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
 import { type AskedView, askedOf, proposeRun } from "./proposal.ts";
-import { isRefusal, type Refusal, type RunRequest, runPublished } from "./publish.ts";
+import {
+  isRefusal,
+  type Refusal,
+  type RunRequest,
+  resumePublished,
+  runPublished,
+} from "./publish.ts";
 import {
   ASKED_STEP,
   keepAsked,
@@ -79,6 +89,14 @@ import {
   sha256,
   testedFields,
 } from "./service.ts";
+import {
+  type AskPlace,
+  addAskCards,
+  askPlace,
+  endAskCards,
+  untilOf,
+  waitingAsks,
+} from "./waits.ts";
 
 /** «Lo que hizo en una línea» (AU-99): the app words it with i18n.ts. */
 export interface RunLine {
@@ -480,14 +498,50 @@ async function execute(
     }
     return;
   }
+  if (result.state === "waiting") return wait(store, id, run, result, ended - started, ended);
+  finish(store, id, run, result, ended - started, ended);
+}
+
+/**
+ * A run reached a «Preguntar» (AU-203): it waits, keeping what it needs to go on, its questions in the Bandeja, and
+ * its turn let go (the lane goes on with the next). Nothing is proposed yet: its proposal is made once, as it ends.
+ */
+function wait(
+  store: UserStore,
+  id: string,
+  run: string,
+  e: Execution,
+  ms: number,
+  now: number,
+): void {
+  store.journal.waitAutomationRun(run, {
+    ms,
+    line: JSON.stringify(lineOf(store, run, e.asked)),
+    automation: id,
+    until: untilOf(e),
+    execution: JSON.stringify(e),
+  });
+  addAskCards(store, id, run, e, now);
+  told(store, { automation: id, run, state: "waiting" });
+}
+
+/** A run ended, at once or after waiting: what it asked is one proposal (AU-193), its end is kept and told. */
+function finish(
+  store: UserStore,
+  id: string,
+  run: string,
+  result: Execution,
+  ms: number,
+  ended: number,
+): void {
+  const state = result.state === "failed" ? "failed" : "done";
   keepAsked(store, run, result.asked);
   // What it asked is one proposal in the inbox, for Juan to accept or reject (AU-193).
   if (result.asked.length) proposeRun(store, id, run, result.asked);
-  const state = endedState(result);
   store.journal.endAutomationRun(run, {
     state,
     ended,
-    ms: ended - started,
+    ms,
     step: result.error?.step ?? null,
     error: result.error ? JSON.stringify(result.error) : null,
     line: JSON.stringify(lineOf(store, run, result.asked)),
@@ -495,14 +549,231 @@ async function execute(
   hasEnded(store, id, run, state);
 }
 
+// ---------------------------------------------------------------- a run that waits (AU-203)
+
+/** By the «Preguntar»'s step, by the question's place: its answer, or null for none (put away). */
+type KeptAnswers = Record<string, Record<string, GivenAnswer | null>>;
+
+const keptAnswers = (text: string): KeptAnswers => {
+  try {
+    const v = JSON.parse(text) as unknown;
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as KeptAnswers) : {};
+  } catch {
+    return {};
+  }
+};
+
+/**
+ * A waiting run goes on (AU-203): in the account's lane, behind what is queued (its turn, as any run), from what it
+ * kept. Called when a step's every question has an entry and when its limit passes (the scheduler); one that no
+ * longer waits by its turn (it went on already, was cancelled or undone) does nothing.
+ */
+export function goOn(store: UserStore, run: string, o: { zone: string; box?: Box }): Promise<void> {
+  const lane = laneOf(store);
+  lane.pending++;
+  const going = lane.tail
+    .then(() => carryOn(store, run, o.zone, o.box ?? sandboxBox()))
+    .catch((e) => console.error(`automation run ${run}:`, e))
+    .finally(() => {
+      lane.pending--;
+    });
+  lane.tail = going;
+  return going;
+}
+
+/**
+ * Goes on with a waiting run by its turn: the version it started with, its steps as they were, and the lowest «Sí»
+ * between that version's and the one published now (`lowerYes`: a step that is not the same in both asks, so waiting
+ * never keeps a «Sí» Juan took back; the pause of AU-210 is S3's). Off or deleted meanwhile, it is cancelled.
+ */
+async function carryOn(store: UserStore, run: string, zone: string, box: Box): Promise<void> {
+  const r = store.journal.automationRun(run);
+  const w = store.journal.automationWait(run);
+  if (!r || r.state !== "waiting" || !w) return;
+  const id = r.automation;
+  const row = store.journal.automation(id);
+  const v = r.version === null ? null : store.journal.automationVersion(id, r.version);
+  if (!row || row.deleted || !row.enabled || !v) return cancelWait(store, r, Date.now());
+  const kept = JSON.parse(w.execution) as Execution;
+  // The steps whose every question has an entry go on; the rest stay as they were, past their limit or not.
+  const given = keptAnswers(w.answers);
+  const answers: Record<string, (GivenAnswer | null)[]> = {};
+  for (const [step, ask] of waitingAsks(kept)) {
+    const got = given[step];
+    if (got && ask.questions.every((_, i) => String(i) in got)) {
+      answers[step] = ask.questions.map((_, i) => got[String(i)] ?? null);
+      delete given[step];
+    }
+  }
+  store.journal.setAutomationWaitAnswers(run, JSON.stringify(given));
+  const hand: RunHand = { device: r.device ?? "", now: Date.now(), trust: "personal", zone };
+  store.journal.resumeAutomationRun(run);
+  told(store, { automation: id, run, state: "running" });
+  let n = Object.keys(kept.steps).length;
+  const onStep = (step: string, record: StepRecord, phase: "started" | "ended") => {
+    if (phase === "started") {
+      store.journal.setAutomationRunStep(run, step);
+      return;
+    }
+    keepStep(store, run, n++, step, record);
+    told(store, {
+      automation: id,
+      run,
+      state: "running",
+      step,
+      out: Object.fromEntries(Object.entries(record.out).map(([k, v]) => [k, v.length])),
+    });
+  };
+  let result: Execution;
+  try {
+    // Its version, read again by its number, and the lowest «Sí» are publish.ts's (AU-95: only it runs for real).
+    const going = await resumePublished(
+      store,
+      id,
+      {
+        version: v.n,
+        trigger: r.trigger,
+        fields: JSON.parse(r.fields) as Record<string, Cell>,
+        startedBy: r.startedBy as StartedBy,
+      },
+      hand,
+      run,
+      { kept, answers, box },
+      { onStep },
+    );
+    if (isError(going)) throw new CannotRun("its version is no longer kept");
+    result = going;
+  } catch (e) {
+    // It cannot go on as it started (its version no longer valid, say): it fails saying so, nothing more runs.
+    const ended = Date.now();
+    store.journal.dropAutomationWait(run);
+    endAskCards(store, run, "expired", ended);
+    store.journal.endAutomationRun(run, {
+      state: "failed",
+      ended,
+      ms: r.ms ?? 0,
+      step: null,
+      error: JSON.stringify({
+        message: e instanceof CannotRun ? e.message : "it could not go on",
+        step: null,
+      }),
+      line: r.line ?? JSON.stringify(lineOf(store, run, kept.asked)),
+    });
+    if (!(e instanceof CannotRun)) console.error(`automation run ${run}:`, e);
+    return hasEnded(store, id, run, "failed");
+  }
+  const ended = Date.now();
+  if (result.state === "waiting") return wait(store, id, run, result, result.ms, ended);
+  store.journal.dropAutomationWait(run);
+  // A question it no longer waits for (another failed and stopped it, say): its card says «Ya no vale».
+  endAskCards(store, run, "expired", ended);
+  finish(store, id, run, result, result.ms, ended);
+}
+
+/** What a card's answer may be, as the route reads it (the Bandeja's controls). */
+export type AskGiven =
+  | { yes: boolean }
+  | { choice: number }
+  | { choices: number[] }
+  | { text: string };
+
+/** The answer's value for its question, or null when it does not fit (a number out of the options, say). */
+function answerValue(place: AskPlace, ask: AskRecord, given: unknown): Cell | null {
+  const g = (given ?? {}) as Record<string, unknown>;
+  const q = ask.questions[place.i];
+  if (!q) return null;
+  const option = (i: unknown) =>
+    Number.isInteger(i) && (i as number) >= 0 ? q.options?.[i as number]?.value : undefined;
+  let value: Cell | undefined;
+  if (place.answer === "yesNo" && typeof g.yes === "boolean") value = g.yes;
+  else if (place.answer === "one") value = option(g.choice);
+  else if (place.answer === "several" && Array.isArray(g.choices)) {
+    const values = g.choices.map(option);
+    value = values.every((x) => x !== undefined) ? (values as string[]) : undefined;
+  } else if (place.answer === "text" && typeof g.text === "string") value = g.text;
+  return value !== undefined && answerFits(q, ask.answer, value) ? value : null;
+}
+
+/**
+ * Juan answers a card of a «Preguntar» (AU-125, AU-203): from a personal device only, as accepting a proposal
+ * (AU-193, decision 13). The answer is kept with the wait, labelled his hand on that device, and when every question
+ * of its step has one the run goes on in its turn. `dismissed`: put away, it counts as no answer. A card no longer
+ * pending, past its limit, or of a run that no longer waits is `gone` («Ya no vale»).
+ */
+export function answerAsk(
+  store: UserStore,
+  card: string,
+  given: AskGiven | null,
+  hand: RunHand,
+  box?: Box,
+): { run: string } | { gone: true } | RunRefusal | ServiceError {
+  if (hand.trust !== "personal") return { refused: "not-personal" };
+  const r = store.journal.request(card);
+  const place = r ? askPlace(r.view) : null;
+  if (!r || !place) return NOT_FOUND;
+  const w = store.journal.automationWait(place.run);
+  if (r.status !== "pending" || r.expires <= hand.now || !w) return { gone: true };
+  const ask = (JSON.parse(w.execution) as Execution).steps[place.step]?.ask;
+  if (!ask || ask.ended) return { gone: true };
+  const value = given === null ? null : answerValue(place, ask, given);
+  if (given !== null && value === null) return BAD;
+  store.journal.setRequest(
+    card,
+    given === null ? "dismissed" : "answered",
+    hand.now,
+    given ?? undefined,
+  );
+  const answers = keptAnswers(w.answers);
+  const step = answers[place.step] ?? {};
+  step[String(place.i)] = value === null ? null : { value, by: handLabel(hand.device) };
+  answers[place.step] = step;
+  store.journal.setAutomationWaitAnswers(place.run, JSON.stringify(answers));
+  if (ask.questions.every((_, i) => String(i) in step))
+    void goOn(store, place.run, { zone: hand.zone, ...(box ? { box } : {}) });
+  return { run: place.run };
+}
+
+/** The waits past their limit go on, by «sin respuesta» (AU-203): the scheduler's, each tick, 50 at most. */
+export function expireWaits(
+  store: UserStore,
+  o: { now: number; zone: string; box?: Box },
+): Promise<void>[] {
+  return store.journal
+    .automationWaitsDue(o.now, 50)
+    .map((run) => goOn(store, run, { zone: o.zone, ...(o.box ? { box: o.box } : {}) }));
+}
+
+/** A waiting run is cancelled (AU-203: «Cancelada»): nothing more of it runs, and its cards say «Ya no vale». */
+function cancelWait(store: UserStore, r: AutomationRunRow, now: number): void {
+  store.journal.dropAutomationWait(r.id);
+  endAskCards(store, r.id, "expired", now);
+  store.journal.endAutomationRun(r.id, {
+    state: "cancelled",
+    ended: now,
+    ms: r.ms ?? 0,
+    step: null,
+    error: null,
+    line: r.line ?? JSON.stringify(lineOf(store, r.id, [])),
+  });
+  told(store, { automation: r.automation, run: r.id, state: "cancelled" });
+}
+
+/** Every waiting run of an automation is cancelled: it was turned off or deleted (AU-203). */
+export function cancelWaits(store: UserStore, id: string, now = Date.now()): void {
+  for (const r of store.journal.waitingAutomationRuns(id)) cancelWait(store, r, now);
+}
+
 /**
  * At start-up (AU-190, decision 12): every run still queued or running is closed as interrupted, saying the step
- * it was in; nothing is run again. What its finished steps saved stays, and is undone from it (AU-18).
+ * it was in; nothing is run again. What its finished steps saved stays, and is undone from it (AU-18). One that
+ * waits for an answer is not cut (AU-203): it goes on waiting, and its cards stay.
  */
 export function interruptRuns(store: UserStore, now = Date.now()): string[] {
   const ids = store.journal.interruptAutomationRuns(now);
   // One that started alone counts as a failure of its streak (AU-102): it tells as one.
   for (const run of ids) {
+    // Cut while it went on after a wait: its questions left go with it.
+    endAskCards(store, run, "expired", now);
     const notice = keepNotice(store, run);
     if (notice) told(store, { automation: notice.automation, run, state: "interrupted", notice });
   }
@@ -530,7 +801,13 @@ function titleOf(store: UserStore, entity: string): string {
 function undoAll(store: UserStore, r: AutomationRunRow, hand: Hand): RunRefusal | null {
   if (r.test) return { refused: "nothing" };
   if (r.state === "queued" || r.state === "running") return { refused: "running", run: r.id };
-  if (r.undone !== null || !store.runUndoable(r.id)) return { refused: "nothing" };
+  // Undoing one that waits cancels its wait (AU-203), whether or not it saved anything yet.
+  const waiting = r.state === "waiting";
+  if (r.undone !== null || !store.runUndoable(r.id)) {
+    if (!waiting) return { refused: "nothing" };
+    cancelWait(store, r, hand.now);
+    return null;
+  }
   try {
     store.undoRun(r.id, { actor: "user", device: hand.device });
   } catch (e) {
@@ -540,6 +817,7 @@ function undoAll(store: UserStore, r: AutomationRunRow, hand: Hand): RunRefusal 
     throw e;
   }
   store.journal.setAutomationRunUndone(r.id, hand.now);
+  if (waiting) cancelWait(store, r, hand.now);
   // What it still proposed goes with it: accepting it would save into a run undone (AU-193).
   if (r.proposal && store.journal.proposal(r.proposal)?.status === "pending")
     store.journal.setProposal(r.proposal, "stale", hand.now);

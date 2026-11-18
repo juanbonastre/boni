@@ -325,6 +325,10 @@ function byAutomation(call: Call, tool: ToolDef, external: boolean): Decision {
       if (call.yes === true) return allow("P28");
       return tool.alwaysConfirm ? confirm("P5") : propose("P28");
     }
+    // «Avisar» (AU-201, F15 S2): a notice to his own devices has no recipient, so it is P1 as from a turn or the background, also
+    // with a text from outside or a model's; what has a recipient stays denied below.
+    case "notify":
+      return allow("P1");
     case "egress":
     case "send":
       return deny("P28", "automation-egress");

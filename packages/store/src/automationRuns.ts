@@ -42,6 +42,18 @@ import { OUTSIDE_INTEGRITY, TEST_ROWS_CHUNK } from "./automations.ts";
  *   CREATE INDEX automation_runs_count ON automation_runs (automation, test, at, state);
  *   CREATE TABLE automation_run_counts (automation TEXT PRIMARY KEY, runs INTEGER NOT NULL, last INTEGER)
  *     WITHOUT ROWID;  -- kept by two triggers on automation_runs: every real run that did not miss its hour
+ *
+ * Migration 32 (`automationRunWaitsMigration`, F15 S2, AU-203) keeps what a run that waits for Juan's answer needs to
+ * go on: the engine's execution as it left it (2 MB at most, `ASK_LIMITS.keptBytes`), the earliest instant one of its
+ * questions stops waiting, and the answers given so far, by the «Preguntar»'s step. A row per waiting run, dropped
+ * when it goes on for the last time, is cancelled, or is interrupted by a restart in the middle of going on:
+ *
+ *   CREATE TABLE automation_run_waits (
+ *     run TEXT PRIMARY KEY, automation TEXT NOT NULL, until INTEGER NOT NULL, execution TEXT NOT NULL,
+ *     answers TEXT NOT NULL
+ *   );
+ *   CREATE INDEX automation_run_waits_until ON automation_run_waits (until);
+ *   CREATE INDEX automation_run_waits_of ON automation_run_waits (automation);
  */
 
 /**
@@ -59,7 +71,14 @@ export type AutomationRunState =
   | "failed"
   | "interrupted"
   /** «No corrió» (AU-114): a «Programada»'s hour passed its margin while the server was off; no step ran. */
-  | "missed";
+  | "missed"
+  /**
+   * «Esperando» (AU-203): a «Preguntar» waits for Juan's answer. Its turn is let go, a restart keeps it (it is not
+   * `interrupted`), and it goes on when answered or when its limit passes.
+   */
+  | "waiting"
+  /** It waited and was cancelled (AU-203): its automation was turned off or deleted, or the run undone, meanwhile. */
+  | "cancelled";
 
 /** One run, real or a whole «Probar» (AU-99), without its steps and rows. */
 export interface AutomationRunRow {
@@ -119,6 +138,17 @@ export interface AutomationRunsKeep {
   now: number;
   /** How many runs one call lets go at most: each call is one short write (task 137). */
   batch: number;
+}
+
+/** What a waiting run keeps to go on (AU-203, migration 32): JSON of the engine's execution and of the answers so far. */
+export interface AutomationWaitRow {
+  run: string;
+  automation: string;
+  /** The earliest instant one of its questions stops waiting (epoch ms): the scheduler goes on with it then. */
+  until: number;
+  execution: string;
+  /** By the «Preguntar»'s step id, one entry per question: an answer, null for none, or absent while it waits. */
+  answers: string;
 }
 
 /** Which runs a page of the list holds (AU-99): all, the failed (and interrupted) real ones, or the tests. */
@@ -209,8 +239,28 @@ export interface AutomationRunsJournal {
   automationRunCounts(): Map<string, { runs: number; last: number | null }>;
   /** How many real runs of an automation were asked in `[from, to)`, missed hours left out, by the index (AU-47). */
   automationRunsIn(automation: string, from: number, to: number): number;
+  /**
+   * A run starts to wait (AU-203): `waiting`, with how long it ran so far, its line and what it needs to go on. One
+   * transaction.
+   */
+  waitAutomationRun(
+    id: string,
+    w: Pick<AutomationRunRow, "ms" | "line"> & Omit<AutomationWaitRow, "run" | "answers">,
+  ): void;
+  /** A waiting run goes on: `running` again, its wait kept until it ends or waits again. */
+  resumeAutomationRun(id: string): void;
+  automationWait(run: string): AutomationWaitRow | null;
+  /** The answers given so far to a waiting run's questions (JSON, `AutomationWaitRow.answers`). */
+  setAutomationWaitAnswers(run: string, answers: string): void;
+  dropAutomationWait(run: string): void;
+  /** The waiting runs whose earliest limit is at or before `now`, oldest limit first: what the scheduler goes on with. */
+  automationWaitsDue(now: number, limit: number): string[];
+  /** How many runs of an automation wait for an answer now (AU-203: 20 at most), by the index. */
+  automationWaiting(automation: string): number;
   /** The run of an automation that is queued or running, if there is one: one at a time (AU-97). */
   openAutomationRun(automation: string): AutomationRunRow | null;
+  /** The runs of an automation that wait for an answer (AU-203), by the index: what turning it off cancels. */
+  waitingAutomationRuns(automation: string): AutomationRunRow[];
   /**
    * A page of an automation's runs, the newest first, by the index (A-29): `before` is the id of the last one of the
    * page before. Reads no step and no row.
@@ -278,6 +328,14 @@ export const AUTOMATION_RUNS_MIGRATION = `CREATE TABLE IF NOT EXISTS automation_
      id TEXT NOT NULL, step TEXT NOT NULL, output TEXT NOT NULL, chunk INTEGER NOT NULL, rows TEXT NOT NULL,
      PRIMARY KEY (id, step, output, chunk)
    ) WITHOUT ROWID;`;
+
+/** Migration 32 (see the top of this file). It may run again on a database that has it, as 25. */
+export const AUTOMATION_RUN_WAITS_MIGRATION = `CREATE TABLE IF NOT EXISTS automation_run_waits (
+     run TEXT PRIMARY KEY, automation TEXT NOT NULL, until INTEGER NOT NULL, execution TEXT NOT NULL,
+     answers TEXT NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS automation_run_waits_until ON automation_run_waits (until);
+   CREATE INDEX IF NOT EXISTS automation_run_waits_of ON automation_run_waits (automation);`;
 
 /**
  * Migration 30 (see the top of this file): what a run told, when it was pruned, and the counts, filled from the runs
@@ -524,7 +582,7 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
         const old = db
           .prepare(
             `SELECT id FROM automation_runs INDEXED BY automation_runs_whole
-             WHERE automation = ? AND pruned IS NULL AND test = 0 AND state NOT IN ('queued', 'running')
+             WHERE automation = ? AND pruned IS NULL AND test = 0 AND state NOT IN ('queued', 'running', 'waiting')
                AND (at < ? ${real ? "OR at < ? OR (at = ? AND id < ?)" : ""})
                -- What it asked is read from it when its proposal is accepted (proposal.ts): it waits whole.
                AND (automation_runs.proposal IS NULL OR NOT EXISTS (SELECT 1 FROM proposals p
@@ -564,6 +622,66 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
         | undefined;
       return r ? runOf(r) : null;
     },
+    waitAutomationRun: (id, w) =>
+      atomic(() => {
+        db.prepare(
+          "UPDATE automation_runs SET state = 'waiting', ms = ?, line = ?, step = NULL WHERE id = ?",
+        ).run(w.ms, w.line, id);
+        db.prepare(
+          `INSERT INTO automation_run_waits (run, automation, until, execution, answers) VALUES (?, ?, ?, ?, '{}')
+           ON CONFLICT(run) DO UPDATE SET until = excluded.until, execution = excluded.execution`,
+        ).run(id, w.automation, w.until, w.execution);
+      }),
+    resumeAutomationRun: (id) =>
+      void db
+        .prepare("UPDATE automation_runs SET state = 'running' WHERE id = ? AND state = 'waiting'")
+        .run(id),
+    automationWait: (run) => {
+      const r = db.prepare("SELECT * FROM automation_run_waits WHERE run = ?").get(run) as
+        | Record<string, unknown>
+        | undefined;
+      return r
+        ? {
+            run: r.run as string,
+            automation: r.automation as string,
+            until: Number(r.until),
+            execution: r.execution as string,
+            answers: r.answers as string,
+          }
+        : null;
+    },
+    setAutomationWaitAnswers: (run, answers) =>
+      void db
+        .prepare("UPDATE automation_run_waits SET answers = ? WHERE run = ?")
+        .run(answers, run),
+    dropAutomationWait: (run) =>
+      void db.prepare("DELETE FROM automation_run_waits WHERE run = ?").run(run),
+    automationWaitsDue: (now, limit) =>
+      (
+        db
+          .prepare(
+            `SELECT w.run AS run FROM automation_run_waits w JOIN automation_runs r ON r.id = w.run
+             WHERE w.until <= ? AND r.state = 'waiting' ORDER BY w.until LIMIT ?`,
+          )
+          .all(now, limit) as { run: string }[]
+      ).map((r) => r.run),
+    automationWaiting: (automation) =>
+      Number(
+        (
+          db
+            .prepare("SELECT count(*) AS n FROM automation_run_waits WHERE automation = ?")
+            .get(automation) as { n: number }
+        ).n,
+      ),
+    waitingAutomationRuns: (automation) =>
+      (
+        db
+          .prepare(
+            `SELECT r.* FROM automation_run_waits w JOIN automation_runs r ON r.id = w.run
+             WHERE w.automation = ? AND r.state = 'waiting' ORDER BY r.at, r.id`,
+          )
+          .all(automation) as Record<string, unknown>[]
+      ).map(runOf),
     openAutomationRun: (automation) => {
       const r = db
         .prepare(
@@ -611,12 +729,17 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
                WHERE state IN ('queued', 'running') RETURNING id`,
             )
             .all(now, now) as { id: string }[]
-        ).map((r) => r.id),
+        ).map((r) => {
+          // One cut while it went on after a wait: what it kept to go on goes with it (nothing runs again).
+          db.prepare("DELETE FROM automation_run_waits WHERE run = ?").run(r.id);
+          return r.id;
+        }),
       ),
     setAutomationRunUndone: (id, at) =>
       void db.prepare("UPDATE automation_runs SET undone = ? WHERE id = ?").run(at, id),
     dropAutomationRun: (id) =>
       atomic(() => {
+        db.prepare("DELETE FROM automation_run_waits WHERE run = ?").run(id);
         db.prepare("DELETE FROM automation_run_rows WHERE run = ?").run(id);
         db.prepare("DELETE FROM automation_run_steps WHERE run = ?").run(id);
         db.prepare("DELETE FROM automation_runs WHERE id = ?").run(id);

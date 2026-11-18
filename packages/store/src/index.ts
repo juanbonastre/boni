@@ -20,6 +20,7 @@ export type {
   AutomationRunsJournal,
   AutomationRunsKeep,
   AutomationRunWrites,
+  AutomationWaitRow,
 } from "./automationRuns.ts";
 export { AUTOMATION_RUNS_IN_SQL } from "./automationRuns.ts";
 export {

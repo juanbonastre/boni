@@ -51,8 +51,12 @@ export function fullWhen(lang: Lang, zone: string, at: number): string {
 
 /** Whether it has ended: only then is it undone, retried or said with its time. */
 export const ended = (r: RunSummary) => r.state !== "queued" && r.state !== "running";
-/** Whether it went badly: a failure, an interruption, an hour it missed, or a state this app does not know. */
-export const bad = (r: RunSummary) => r.state !== "done" && ended(r);
+/**
+ * Whether it went badly: a failure, an interruption, an hour it missed, or a state this app does not know. One that
+ * waits for his answer, or that he cancelled, did not (AU-203).
+ */
+export const bad = (r: RunSummary) =>
+  r.state !== "done" && r.state !== "waiting" && r.state !== "cancelled" && ended(r);
 
 /**
  * How it ended, in a few words (the list's second line, the bar's start): «Bien · 4,1 s», «Falló en «Analista» · 2,0 s»,
@@ -79,6 +83,10 @@ export function howWords(
       return `${at ? t("auto.run.how.interruptedAt", { step: at }) : t("auto.run.how.interrupted")}${secs}`;
     case "missed":
       return t("auto.run.how.missed");
+    case "waiting":
+      return t("auto.run.how.waiting");
+    case "cancelled":
+      return `${t("auto.run.how.cancelled")}${secs}`;
     default:
       // "failed", and a state a newer server may give: said as a failure, never as nothing.
       return `${at ? t("auto.run.how.failedAt", { step: at }) : t("auto.run.how.failed")}${secs}`;
@@ -112,7 +120,8 @@ function countWords(
 /**
  * What it did, in one line (AU-99), from what the log says it saved and what it proposed: «Creó 1 fila en Tareas ·
  * con datos de fuera», «Propuso modificar 12 filas en Gastos», «No hizo nada». A proposal is counted, and nothing
- * more is promised of it (it waits for Juan, S3). Null while it runs, and for a test, which saves nothing.
+ * more is promised of it (it waits for Juan, S3). Null while it runs, and for a test, which saves nothing; while it
+ * waits for an answer, only what it saved so far (AU-203).
  */
 export function didWords(
   t: T,
@@ -122,11 +131,13 @@ export function didWords(
 ): string | null {
   if (r.test || !ended(r) || r.state === "missed") return null;
   const line = r.line;
+  // While it waits for an answer its proposal is not made yet (AU-203): only what it saved so far, if anything.
+  const waiting = r.state === "waiting";
   const parts = [
     ...(line?.writes ?? []).map((c) => countWords(t, lang, c, false, names)),
-    ...(line?.asked ?? []).map((c) => countWords(t, lang, c, true, names)),
+    ...(waiting ? [] : (line?.asked ?? [])).map((c) => countWords(t, lang, c, true, names)),
   ];
-  if (!parts.length) return t("auto.run.did.nothing");
+  if (!parts.length) return waiting ? null : t("auto.run.did.nothing");
   if (line?.outside) parts.push(t("auto.run.did.outside"));
   return parts.join(" · ");
 }

@@ -1,7 +1,8 @@
 /**
  * «Publicar», «Versiones», the switch and «Eliminadas» on the server (docs/automatizaciones.md §5.8, phase F14d S1:
  * AU-95, AU-96, AU-98, AU-182, AU-188, AU-191, AU-194). A draft never runs for real: only a published version does,
- * and `runPublished` is the one function that runs one for real. It takes the automation's id, never a document:
+ * and `runPublished` is the one function that runs one for real (and `resumePublished` the one that goes on with a
+ * run that waited for an answer, AU-203). They take the automation's id, never a document:
  * the document it runs and the «Sí» its policy reads both come from the version the store keeps (A-37).
  *
  * What a publish does, in order (AU-95, AU-96):
@@ -33,14 +34,17 @@ import {
   type CodeProblem,
   diffAutomations,
   type Execution,
+  type GivenAnswer,
   isReaderType,
   type KeptNames,
   keptNames,
   type Look,
+  lowerYes,
   type Problem,
   parseAutomation,
   publishChecks,
   type RunDeps,
+  resume,
   run as runAutomation,
   type StartedBy,
   stepPrints,
@@ -50,6 +54,7 @@ import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
+import { cancelWaits } from "./runs.ts";
 import { scheduleColumn } from "./scheduler.ts";
 import {
   automationLabel,
@@ -113,6 +118,9 @@ function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
     keptKey: (step, name) => kept[step]?.[name],
     // The AI steps are step types where a model can be called (AU-57, AU-199): a server with «Modelos».
     ...(modelsOf(store) ? { ai: true } : {}),
+    // «Preguntar», «Avisar» and «Responder» are step types: the server asks and tells through its port (AU-203,
+    // waits.ts `peoplePort`), with or without models.
+    people: true,
   };
 }
 
@@ -344,6 +352,8 @@ export function setEnabled(
   if (typeof enabled !== "boolean") return BAD;
   if (row.published === null) return { refused: "unpublished" };
   store.journal.setAutomationEnabled(id, enabled, hand.now);
+  // Turned off, what waited for an answer is cancelled (AU-203): turning it on again starts nothing.
+  if (!enabled) cancelWaits(store, id, hand.now);
   return { enabled };
 }
 
@@ -404,6 +414,53 @@ export async function runPublished(
     if (e instanceof CannotRun) return { refused: "invalid", problems: [...(e.problems ?? [])] };
     throw e;
   }
+}
+
+/** What a waiting run started with, as the store keeps it: its version's number, never a document (AU-95). */
+export interface ResumeRequest {
+  /** The version it started with (`automation_runs.version`). */
+  version: number;
+  trigger: string;
+  fields: Record<string, Cell>;
+  startedBy: StartedBy;
+}
+
+/**
+ * The other way a run for real reaches the engine (AU-95, AU-203): a run that waited for an answer goes on, with the
+ * version it started with, read from the store by its number, and the lowest «Sí» between that version's and the one
+ * published now (`lowerYes`, AU-125: a step that is not the same in both asks, so waiting never keeps a «Sí» Juan
+ * took back; the pause of AU-210 is S3's). Like `runPublished`, it takes no document. That version gone, nothing
+ * goes on (`NOT_FOUND`); runs.ts checks the switch and the deletion before.
+ */
+export async function resumePublished(
+  store: UserStore,
+  id: string,
+  request: ResumeRequest,
+  hand: Hand & { trust: Trust; zone: string },
+  run: string,
+  going: { kept: Execution; answers: Record<string, (GivenAnswer | null)[]>; box: Box },
+  watch: Pick<RunDeps, "onStep"> = {},
+): Promise<Execution | ServiceError> {
+  const v = store.journal.automationVersion(id, request.version);
+  if (!v) return NOT_FOUND;
+  const started = parseAutomation(JSON.parse(v.doc));
+  const automation = lowerYes(started, publishedOf(store, id)?.automation);
+  const names = JSON.parse(v.names) as KeptNames;
+  return resume(
+    {
+      automation,
+      trigger: request.trigger,
+      fields: {
+        json: request.fields,
+        label: request.startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
+      },
+      test: false,
+      startedBy: request.startedBy,
+    },
+    { ...runDeps(store, id, hand, going.box, run, { automation, names }), ...watch },
+    going.kept,
+    going.answers,
+  );
 }
 
 export { refused as isRefusal };

@@ -11,12 +11,15 @@
  * kept as «No corrió» (`missRun`). The store refuses a second run with the same hour (a unique index), so two ticks,
  * a restart or two servers never run one hour twice; an interrupted run's hour counts as run (AU-190). While a run of
  * it is under way, it waits for the next tick. What a run writes is decided as for any run of a version (AU-195).
+ *
+ * Each tick also goes on with the runs whose wait for an answer passed its limit (AU-203: «sin respuesta»), in the
+ * account's lane: a restart loses none, since the limit is kept with the wait in the store.
  */
 
 import { type Automation, type Box, SCHEDULE_DAYS, SCHEDULE_EVERY } from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import { graceOf, lastSlot, type Schedule } from "../flowScheduler.ts";
-import { missRun, startScheduledRun } from "./runs.ts";
+import { expireWaits, missRun, startScheduledRun } from "./runs.ts";
 
 /** One schedule trigger of a version and its rules, as the column keeps them. */
 export interface ScheduleEntry {
@@ -124,6 +127,15 @@ export class AutomationScheduler {
       if (!this.o.hasStore(account)) continue;
       const store = this.o.store(account);
       const tz = this.o.zone(account);
+      for (const going of expireWaits(store, {
+        now,
+        zone: tz,
+        ...(this.o.box ? { box: this.o.box } : {}),
+      })) {
+        const job = going.finally(() => this.started.delete(job));
+        this.started.add(job);
+        out.push(job);
+      }
       for (const a of store.journal.scheduledAutomations()) {
         if (a.busy) continue;
         const due = dueHour(parse(a.schedule), a.since, a.last, now, tz);

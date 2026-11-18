@@ -267,3 +267,22 @@ function pick(t: ToolDef, args: Record<string, Val>): Record<string, Val> {
     else if ((spec as { required?: boolean }).required) out[name] = leaf("x", user);
   return out;
 }
+
+describe("a notice of a run (AU-201, F15 S2)", () => {
+  it("AU-201 · from the origin `automation`, a notice to his own devices (no recipient) is allowed as from a turn or the background (P1), whatever its text's label; a send with a recipient stays denied", () => {
+    const NOTIFY = tool("notify");
+    for (const l of [user, own, ext, model, ambient]) {
+      const call: Call = {
+        tool: NOTIFY,
+        args: { text: leaf("Listo", l) },
+        control: null,
+        flow: true,
+      };
+      expect(ruled(call), l.integrity).toBe("allow P1");
+      expect(ruled({ ...call, control: ext }), l.integrity).toBe("allow P1");
+      for (const origin of OTHERS.slice(0, 2))
+        expect(ruled(call, origin), origin.kind).toBe("allow P1");
+    }
+    expect(ruled({ tool: SEND, args: pick(SEND, {}), control: null, flow: true })).toBe("deny P28");
+  });
+});

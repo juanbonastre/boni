@@ -206,9 +206,19 @@ export type RunAnswer = { run: { id: string; state: string; version: number | nu
 
 /**
  * How a run ended or where it is (AU-99, AU-190); "missed" (S3: it did not run, Boni was off at its hour) is read
- * as it comes, a state this app may not know yet is said as a failure (`runWords`).
+ * as it comes, a state this app may not know yet is said as a failure (`runWords`). "waiting": a «Preguntar» waits
+ * for his answer in the Bandeja; "cancelled": it waited and its automation was turned off or deleted, or the run
+ * undone (AU-203).
  */
-export type RunState = "queued" | "running" | "done" | "failed" | "interrupted" | "missed";
+export type RunState =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "interrupted"
+  | "missed"
+  | "waiting"
+  | "cancelled";
 
 /** What a run saved or proposed, by collection and action (AU-99's line): counts, never rows. */
 export interface RunCount {
