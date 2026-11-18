@@ -33,6 +33,7 @@ import {
   type Automation,
   answerFits,
   arrowsInto,
+  BONI_TRIGGER_OWNER,
   type Box,
   CannotRun,
   type Cell,
@@ -60,6 +61,7 @@ import { learnUndo, recordRun } from "./learning.ts";
 import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
 import { type AskedView, askedOf, proposeRun } from "./proposal.ts";
 import {
+  type BoniStart,
   isRefusal,
   type Refusal,
   type RunRequest,
@@ -85,6 +87,7 @@ import {
   keptTests,
   NOT_FOUND,
   open,
+  publishedOf,
   ROWS_PAGE,
   type RowView,
   type ServiceError,
@@ -349,6 +352,10 @@ export async function startRun(
   const no = cannotStart(store, id, hand);
   if (no) return no;
   if (!validRequest(request)) return BAD;
+  // A trigger that exists only in one of Boni's automations is started by its code (`runBoni`), never by a hand: as
+  // the flow's «Ejecutar» was refused, so figures typed by hand never reach its steps (F16 S2c, AU-220).
+  const type = publishedOf(store, id)?.automation.steps.find((s) => s.id === request.trigger)?.type;
+  if (type && BONI_TRIGGER_OWNER[type]) return { refused: "invalid", problems: [] };
   return enqueue(store, id, request, hand, { ...o, startedBy: o.startedBy ?? "user" });
 }
 
@@ -387,6 +394,38 @@ export async function startScheduledRun(
 }
 
 /**
+ * A run of one of Boni's automations, started by its code (F16 S2c: «Aviso del presupuesto» when the month's spending
+ * passes the warning), in the account's lane as any run, with no device and no hand: its trigger's row is the one
+ * Boni's code made (`BoniStart`), kept in the run's row as `request.fields`. It resolves once the run has ended (or
+ * waits on a question a version of Juan's added), so the code that started it goes on as it did after a flow's run.
+ * It is `schedule`'s, as Boni's runs of before are once copied (conversions.ts), so the policy treats it as a run
+ * that started alone (AU-167). Refused before it started (off, unpublished, not Boni's), it says so and keeps nothing.
+ */
+export async function runBoni(
+  store: UserStore,
+  id: string,
+  request: RunRequest,
+  start: BoniStart,
+  zone: string,
+  o: { box?: Box } = {},
+): Promise<RunSummary | RunRefusal | ServiceError> {
+  let ended = () => {};
+  const over = new Promise<void>((r) => {
+    ended = r;
+  });
+  const r = await enqueue(store, id, request, scheduledHand(zone), {
+    ...o,
+    startedBy: "schedule",
+    boni: start,
+    ended: () => ended(),
+  });
+  if ("refused" in r || "error" in r) return r;
+  await over;
+  const kept = store.journal.automationRun(r.run.id);
+  return kept ? summaryOf(kept) : NOT_FOUND;
+}
+
+/**
  * An hour of a «Programada» past its margin (AU-114): kept as «No corrió», with no step, so «Ejecuciones» says it and
  * the hour is not tried again. False when the store already had that hour.
  */
@@ -417,7 +456,15 @@ async function enqueue(
   id: string,
   request: RunRequest,
   hand: RunHand,
-  o: { box?: Box; retryOf?: string; startedBy: StartedBy; slot?: number },
+  o: {
+    box?: Box;
+    retryOf?: string;
+    startedBy: StartedBy;
+    slot?: number;
+    /** Boni's code starts it (`runBoni`), and is told when it has ended. */
+    boni?: BoniStart;
+    ended?: () => void;
+  },
 ): Promise<{ run: RunSummary } | RunRefusal | ServiceError> {
   const version = store.journal.automation(id)?.published ?? null;
   const run = newRunId();
@@ -454,6 +501,7 @@ async function enqueue(
           o.box ?? sandboxBox(),
           waiting,
           resolve,
+          o.boni,
         ),
       )
       .catch((e) => {
@@ -462,6 +510,7 @@ async function enqueue(
       })
       .finally(() => {
         lane.pending--;
+        o.ended?.();
       });
   });
   if (!waiting) {
@@ -483,6 +532,7 @@ async function execute(
   box: Box,
   queued: boolean,
   begun: (refused: RunRefusal | ServiceError | null) => void,
+  boni?: BoniStart,
 ): Promise<void> {
   const started = Date.now();
   store.journal.startAutomationRun(run, started);
@@ -509,7 +559,16 @@ async function execute(
   };
   let result: Execution | Refusal | ServiceError;
   try {
-    result = await runPublished(store, id, request, hand, run, box, { onStep }, startedBy);
+    result = await runPublished(
+      store,
+      id,
+      request,
+      hand,
+      run,
+      box,
+      { onStep, ...(boni ? { boni } : {}) },
+      startedBy,
+    );
   } catch (e) {
     result = { error: "bad-request" };
     console.error(`automation run ${run}:`, e);

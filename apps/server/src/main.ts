@@ -136,6 +136,7 @@ const models = new AccountModels({
   db,
   key,
   host: agent,
+  zone: tz,
   defaults: apiKey
     ? {
         planner: { connection: "anthropic", model: plannerModel ?? "claude-opus-5-5" },
@@ -197,6 +198,11 @@ wireBoni({
     const account = agent.accountOf(store);
     if (account === null) throw new Error("boni: a store of no account");
     return agent.agent(account, true);
+  },
+  // «Probar» of «Aviso del presupuesto»: the month's spending and the budget, as now, whatever is typed (models.ts).
+  triggerRow: (store, automation) => {
+    const account = agent.accountOf(store);
+    return automation === "budgetNotice" && account !== null ? models.noticeRow(account) : null;
   },
 });
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
