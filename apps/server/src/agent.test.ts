@@ -10,6 +10,7 @@ import { label } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost, acceptCorrected } from "./agent.ts";
 import { addUser, sessionUser } from "./auth.ts";
+import { convertFlow } from "./automations/convert.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { ensureFlow, flowCatalog } from "./flows.ts";
@@ -1285,6 +1286,58 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
     };
     expect(catalog.tools.map((t) => t.name)).toContain("entities.create");
     expect(catalog.collections.map((c) => c.key)).toContain("tarea");
+  });
+
+  it("AU-228 · S1: a converted flow answers the old editor's writes with flow-converted, and «Ejecutar» starts its automation", async () => {
+    const token = await login(base, "juan");
+    const made = (await (
+      await call(token, "POST", "/api/agent/flows", { name: "Cuenta convertida" })
+    ).json()) as { id: string };
+    const count = {
+      version: 1,
+      steps: [
+        {
+          id: "n",
+          op: "call",
+          tool: "entities.aggregate",
+          args: { type: { lit: "tarea" }, op: { lit: "count" } },
+        },
+      ],
+    };
+    const trigger = { manual: true };
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}`, { base: 1, trigger, plan: count }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call(token, "PUT", `/api/agent/flows/${made.id}/enabled`, { enabled: true })).status,
+    ).toBe(200);
+    const store = host.store(1);
+    expect(convertFlow(store, made.id, Date.now())).toMatchObject({ state: "converted" });
+    const writes: [string, string, unknown][] = [
+      ["PUT", "", { base: 2, trigger, plan: count }],
+      ["PUT", "/draft", { base: 2, trigger, plan: count }],
+      ["DELETE", "/draft", undefined],
+      ["PUT", "/enabled", { enabled: false }],
+      ["POST", "/revert", { version: 1 }],
+      ["DELETE", "", undefined],
+    ];
+    for (const [method, path, body] of writes) {
+      const r = await call(token, method, `/api/agent/flows/${made.id}${path}`, body);
+      expect([method, path, r.status, await r.json()]).toEqual([
+        method,
+        path,
+        409,
+        { error: "flow-converted" },
+      ]);
+    }
+    expect(store.journal.automation(made.id)?.enabled).toBe(true);
+    // «Ejecutar» of before starts the published automation, not the flow (AU-225).
+    const ran = await call(token, "POST", `/api/agent/flows/${made.id}/run`, { inputs: {} });
+    expect(ran.status).toBe(200);
+    const body = (await ran.json()) as { automation: { id: string; run: string; state: string } };
+    expect(body.automation.id).toBe(made.id);
+    expect(store.journal.automationRun(body.automation.run)?.automation).toBe(made.id);
   });
 
   it("a flow on a schedule runs by hand too, given today in the server's zone (F4)", async () => {

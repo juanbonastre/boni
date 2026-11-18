@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import { type AutomationRunsJournal, automationRunsJournal } from "./automationRuns.ts";
 import { type AutomationsJournal, automationsJournal } from "./automations.ts";
+import { type ConversionsJournal, conversionsJournal, NOT_CONVERTED_SQL } from "./conversions.ts";
 
 /**
  * The agent's journal in the user's database (docs/nucleo.md, 7.6 and 7.7): runs and what each step
@@ -188,7 +189,7 @@ export interface ConfirmationRow {
   used: number | null;
 }
 
-export interface Journal extends AutomationsJournal, AutomationRunsJournal {
+export interface Journal extends AutomationsJournal, AutomationRunsJournal, ConversionsJournal {
   startRun(
     r: Omit<
       RunRow,
@@ -446,6 +447,7 @@ export function openJournal(db: DatabaseSync): Journal {
   return {
     ...automationsJournal(db),
     ...automationRunsJournal(db),
+    ...conversionsJournal(db),
     addDecision: (d) =>
       void db
         .prepare(
@@ -516,7 +518,7 @@ export function openJournal(db: DatabaseSync): Journal {
             `SELECT f.* FROM flows f
              JOIN (SELECT id, max(version) AS version FROM flows GROUP BY id) l
                ON l.id = f.id AND l.version = f.version
-             WHERE f.deleted = 0
+             WHERE f.deleted = 0 AND ${NOT_CONVERTED_SQL}
              ORDER BY f.name, f.id`,
           )
           .all() as Record<string, unknown>[]

@@ -1,3 +1,4 @@
+import { suite } from "@boni/pace/suite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -14,5 +15,10 @@ export default defineConfig({
     ...(server ? { proxy: { "/api": { target: server, changeOrigin: true, secure: true } } } : {}),
   },
   build: { target: "es2022", sourcemap: true },
-  test: { environment: "happy-dom", include: ["src/**/*.test.{ts,tsx}"] },
+  // The files that bound time run alone, after the rest (T-12, task 155).
+  test: {
+    environment: "happy-dom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    ...suite(import.meta.dirname),
+  },
 });

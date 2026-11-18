@@ -427,7 +427,9 @@ describe("«Versiones» (F14d)", () => {
     expect(list.enabled).toBe(true);
     expect(list.versions.map((v) => v.n)).toEqual([4, 3, 2, 1]);
     for (const v of list.versions) {
-      expect(Object.keys(v).sort()).toEqual(["at", "by", "device", "hash", "id", "n"]);
+      expect(Object.keys(v).sort()).toEqual(["at", "by", "device", "flow", "hash", "id", "n"]);
+      // «Convertida» (AU-225): none of these was a flow.
+      expect(v.flow).toBeNull();
       expect(v.by).toBe("user");
     }
     // One whole, to look at it: its document as it runs.
@@ -571,7 +573,7 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
     // What writes a draft: a function that calls one of the journal's two writes of one, and a function that calls
     // one of those (an action, a route's handler).
     const direct = bodies.filter(({ body }) =>
-      /\.(saveAutomationDraft|createAutomation)\(/.test(body),
+      /\.(saveAutomationDraft|createAutomation|adoptFlow)\(/.test(body),
     );
     const writers = new Set(direct.map((f) => f.name));
     for (const f of bodies)
@@ -585,9 +587,10 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
       )
         writers.add(f.name);
     expect([...writers].sort()).toEqual(Object.keys(DRAFT_WRITERS).sort());
+    // An outside writer lowers what it writes; one that only calls such a writer passes through it.
     for (const [name, how] of Object.entries(DRAFT_WRITERS))
       if (how === "outside")
-        for (const f of bodies) if (f.name === name) expect(f.body, name).toMatch(/\blowerYes\(/);
+        for (const f of direct) if (f.name === name) expect(f.body, name).toMatch(/\blowerYes\(/);
   });
 
   it("AU-188 · the ways a «Sí» stays, one case each: the user's hand on the cell in the editor, a duplicate (born unpublished), going back to a version the user published, and a deleted automation recovered by «Recuperar» or by its notice's «Deshacer» (off, and with no «Sí» it did not have)", () => {

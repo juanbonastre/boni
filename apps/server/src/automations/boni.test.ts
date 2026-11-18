@@ -5,7 +5,37 @@
 // Pending: the phase's first PR brings one test per rule and its builders make each real, the rule's id kept in its
 // name (`make check` reads them, T-10). They will run the real server with a store per test, invented mail and a
 // scripted model, and a year of mail for the times (A-15: 11,000 runs, their clock from `@boni/pace`).
-import { describe, it } from "vitest";
+import { type Agent, leaf } from "@boni/agent";
+import type { BoniCall } from "@boni/automations";
+import { afterEach, describe, expect, it } from "vitest";
+import { BoniFault, boniPortFor, unitPlan, wireBoni } from "./boni.ts";
+import { folder, OUTSIDE } from "./run.test-util.ts";
+
+const f = folder("boni");
+afterEach(() => wireBoni(null));
+
+const HAND = {
+  integrity: "user",
+  sensitivity: "personal",
+  thirdParty: false,
+  sources: [],
+} as const;
+const cell = (value: BoniCall["args"][string]["value"], label = HAND) => ({
+  value,
+  label,
+  derived: false,
+});
+const call = (o: Partial<BoniCall>): BoniCall => ({
+  automation: "a-ejemplo",
+  step: "s1",
+  type: "boni.action",
+  name: "otra.accion",
+  values: {},
+  args: {},
+  row: null,
+  test: false,
+  ...o,
+});
 
 describe("Boni's own automations (F16)", () => {
   it.todo(
@@ -32,4 +62,65 @@ describe("Boni's own automations (F16)", () => {
   it.todo(
     "AU-211 · with «Aprender» off, or its automation off, the reviewer suggests nothing; the signals, the counts and the pause stay where F15 put them",
   );
+});
+
+describe("the port of Boni's code on the server (F16 S1)", () => {
+  it("AU-230 · S1: a unit is one plan of one step whose arguments code binds as $x0, $x1… with their labels; a key of the document is never a name of the plan, and a reader reads its input", () => {
+    const u = unitPlan(
+      call({
+        args: { $texto: cell("de ejemplo", OUTSIDE as never), b: cell(2) },
+        values: { why: cell("porque sí") },
+      }),
+    );
+    expect(u.plan).toEqual({
+      version: 1,
+      steps: [
+        {
+          id: "a",
+          op: "call",
+          tool: "otra.accion",
+          args: { $texto: { ref: "$x0" }, b: { ref: "$x1" } },
+          why: { ref: "$why" },
+        },
+      ],
+    });
+    expect(u.bind.x0?.label).toEqual(OUTSIDE);
+    expect(Object.keys(u.bind).sort()).toEqual(["why", "x0", "x1"]);
+    const r = unitPlan(
+      call({
+        name: "classify",
+        values: { input: cell("un texto") },
+        args: { options: cell(["a", "b"]) },
+      }),
+    );
+    expect((r.plan as { steps: unknown[] }).steps[0]).toMatchObject({
+      op: "read",
+      reader: "classify",
+      input: { ref: "$input" },
+    });
+  });
+
+  it("AU-230 · S1: the port answers with the label of what Boni's code made, fails with its code when the agent stops, and is null with no agent wired, so a Boni step does not validate", async () => {
+    const store = f.store();
+    try {
+      expect(boniPortFor(store, "a-ejemplo")).toBeNull();
+      let answer: Awaited<ReturnType<Agent["boniCall"]>> = {
+        status: "done",
+        error: null,
+        value: leaf("respuesta", OUTSIDE),
+        proposals: [],
+        would: [],
+      };
+      const agent = { boniCall: async () => answer } as unknown as Agent;
+      wireBoni({ reaches: () => true, agentOf: () => agent });
+      const port = boniPortFor(store, "a-ejemplo");
+      expect(port?.automation).toBeUndefined();
+      expect(await port?.run(call({}))).toEqual({ value: "respuesta", label: OUTSIDE });
+      answer = { ...answer, status: "stopped", error: "R3-kept-from-models", value: null };
+      await expect(port?.run(call({}))).rejects.toBeInstanceOf(BoniFault);
+    } finally {
+      store.close();
+      f.done();
+    }
+  });
 });

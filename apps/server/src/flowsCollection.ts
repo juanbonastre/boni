@@ -277,6 +277,9 @@ export function updateFlowRow(
   if (!values || typeof values !== "object" || Array.isArray(values))
     throw new DataError("bad-body");
   const f = flowOf(store, row);
+  // Converted (F16 S1, AU-228): its automation is what runs.
+  if (store.journal.flowConversion(f.id)?.state === "converted")
+    throw new DataError("flow-converted");
   const changes = Object.entries(values as Record<string, unknown>);
   if (changes.some(([k]) => !(F.editable as readonly string[]).includes(k)))
     throw new DataError("read-only");
@@ -298,6 +301,8 @@ export function updateFlowRow(
 export function deleteFlowRow(store: UserStore, row: string): void {
   const f = flowOf(store, row);
   if (isBoni(store, f.id)) throw new DataError("flow-boni-delete");
+  if (store.journal.flowConversion(f.id)?.state === "converted")
+    throw new DataError("flow-converted");
   store.journal.setFlowDeleted(f.id, true);
 }
 

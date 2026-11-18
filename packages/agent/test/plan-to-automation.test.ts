@@ -427,6 +427,19 @@ describe("a plan translated to an automation (F16)", () => {
       "automationLimits",
     ]);
     expect(convert(reads).changes).toEqual(["textsCut", "automationLimits"]);
+    // A flow's `classify` was the decider's, asked in both orders; «Clasificar» is the reader's (task 130 S1).
+    const classifies = plan({
+      id: "k",
+      op: "read",
+      reader: "classify",
+      input: lit("Un texto de ejemplo"),
+      params: { options: lit(["a", "b"]) },
+    });
+    expect(convert(classifies).changes).toEqual([
+      "textsCut",
+      "readerClassifies",
+      "automationLimits",
+    ]);
     // A turn keeps the turn's limits (AU-143).
     expect(
       planToAutomation({
@@ -437,7 +450,7 @@ describe("a plan translated to an automation (F16)", () => {
         from: "turn",
       }).changes,
     ).toEqual(["textsCut"]);
-    for (const p of [writes, reads])
+    for (const p of [writes, reads, classifies])
       for (const ch of convert(p).changes) expect(CHANGES).toContain(ch);
   });
 

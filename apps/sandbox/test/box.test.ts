@@ -1,4 +1,6 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+// Its cases' limits are times: the bare import puts this file in the serial run, alone (T-12, task 155).
+import "@boni/pace";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

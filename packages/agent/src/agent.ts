@@ -437,6 +437,16 @@ export interface AgentOptions {
    * conversation gets it as the background reading does (docs/correo.md §4.1, task 23).
    */
   readingGuide?: () => Val | null;
+  /**
+   * A flow of before that is an automation now (docs/automatizaciones.md AU-228, F16 S1): `flows.run` (a turn, a
+   * page's button) starts its automation through this, the server's `startRun`, with its fields by name as plain
+   * JSON and the origin that pressed; what came of it, in fixed codes. Without it a converted flow is not found.
+   */
+  runAutomation?: (
+    id: string,
+    fields: Record<string, Json>,
+    origin: Origin,
+  ) => Promise<{ run: string | null; status: string; error: string | null }>;
   /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2): opaque to the core (A-02). */
   pieces?: () => unknown;
   /** What the steps that run an extension's function get (the server's, task 93). */
@@ -1210,34 +1220,43 @@ export class Agent {
     bind: Record<string, Val>,
     o: { origin: Origin; flow: { id: string; version: number; by: string; input?: string } },
   ): Promise<TurnResult & { outputs: Record<string, Painted>; would: Record<string, Would[]> }> {
-    const run = randomUUID();
-    this.o.store.journal.startRun({
-      id: run,
-      turn: null,
-      origin: "test",
-      device: o.origin.device ?? null,
-      started: this.now(),
-      flow: o.flow.id,
-      flowVersion: o.flow.version,
-      input: o.flow.input ?? null,
-    });
-    const st = this.newState(run, { id: run, text: "" }, o.origin, { version: 1, steps: [] }, null);
-    st.dry = true;
-    st.would = new Map();
-    st.flowRun = true;
-    if (o.flow.by === "user") st.litLabel = flowLabel(o.flow.id);
-    const v = validatePlan(plan, this.catalogView(o.origin, true), "", Object.keys(bind));
-    if (!v.ok) return { ...this.finish(st, "stopped", "plan-invalid"), outputs: {}, would: {} };
-    for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
-    st.plan = v.plan;
-    this.o.store.journal.setPlan(run, st.plan);
-    const r = await this.advance(st);
+    const { r, st } = await this.runDry(plan, bind, o.origin, o.flow);
+    if (!st.plan.steps.length) return { ...r, outputs: {}, would: {} };
     const outputs: Record<string, Painted> = {};
     for (const s of st.plan.steps) {
       const val = st.env.get(s.id);
       if (val) outputs[s.id] = paint(val);
     }
-    return { ...r, outputs, would: Object.fromEntries(st.would) };
+    return { ...r, outputs, would: Object.fromEntries(st.would ?? []) };
+  }
+
+  /** `dryRun`'s run, with its state (`boniCall` dry, with no flow). */
+  private async runDry(
+    plan: unknown,
+    bind: Record<string, Val>,
+    origin: Origin,
+    flow: { id: string; version: number; by: string; input?: string } | null,
+  ): Promise<{ r: TurnResult; st: RunState }> {
+    const run = randomUUID();
+    this.o.store.journal.startRun({
+      id: run,
+      turn: null,
+      origin: "test",
+      device: origin.device ?? null,
+      started: this.now(),
+      ...(flow ? { flow: flow.id, flowVersion: flow.version, input: flow.input ?? null } : {}),
+    });
+    const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
+    st.dry = true;
+    st.would = new Map();
+    st.flowRun = true;
+    if (flow?.by === "user") st.litLabel = flowLabel(flow.id);
+    const v = validatePlan(plan, this.catalogView(origin, true), "", Object.keys(bind));
+    if (!v.ok) return { r: this.finish(st, "stopped", "plan-invalid"), st };
+    for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
+    st.plan = v.plan;
+    this.o.store.journal.setPlan(run, st.plan);
+    return { r: await this.advance(st), st };
   }
 
   /**
@@ -1305,6 +1324,25 @@ export class Agent {
      */
     flow?: { id: string; version: number; input?: string; by?: string },
   ): Promise<TurnResult> {
+    const { r, st } = await this.runBackground(plan, bind, budget, flow, !!flow);
+    if (!keep.length) return r;
+    // What the code asked to see of its own plan: those steps' values (checked, without their labels).
+    const kept: Record<string, Json> = {};
+    for (const id of keep) {
+      const val = st.env.get(id);
+      if (val) kept[id] = plain(val);
+    }
+    return { ...r, kept };
+  }
+
+  /** `background`'s run, with its state: `boniCall` reads the labelled value of its one step. */
+  private async runBackground(
+    plan: unknown,
+    bind: Record<string, Val>,
+    budget: Budget | undefined,
+    flow: { id: string; version: number; input?: string; by?: string } | undefined,
+    inFlow: boolean,
+  ): Promise<{ r: TurnResult; st: RunState }> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
     this.o.store.journal.startRun({
@@ -1317,22 +1355,54 @@ export class Agent {
     });
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
     if (flow?.by === "user") st.litLabel = flowLabel(flow.id);
-    if (flow) st.flowRun = true;
-    const v = validatePlan(plan, this.catalogView(origin, !!flow), "", Object.keys(bind));
-    if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
+    if (inFlow) st.flowRun = true;
+    const v = validatePlan(plan, this.catalogView(origin, inFlow), "", Object.keys(bind));
+    if (!v.ok) return { r: this.finish(st, "stopped", "plan-invalid"), st };
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
     if (budget) st.budget = budget;
     st.plan = v.plan;
     this.o.store.journal.setPlan(run, st.plan);
-    const r = await this.advance(st);
-    if (!keep.length) return r;
-    // What the code asked to see of its own plan: those steps' values (checked, without their labels).
-    const kept: Record<string, Json> = {};
-    for (const id of keep) {
-      const val = st.env.get(id);
-      if (val) kept[id] = plain(val);
+    return { r: await this.advance(st), st };
+  }
+
+  /**
+   * One unit of a Boni step of an automation (docs/automatizaciones.md AU-127, F16 S1; the server's port,
+   * apps/server/src/automations/boni.ts): a tool or a reader of today, run by today's code as a plan of one step `a`
+   * that code made, with the background origin and as a flow runs (P7: what it would write is proposed, a flow is
+   * not started from it). With `test` («Probar», A-19, D-43) it runs dry: nothing changes, and what it would do is
+   * its `would`. `bind` gives each argument by its name with its label; the answer is the step's value with the
+   * label the tool or the reader gave it, or null when it stopped (`error`, a fixed code). Kept in the journal as
+   * any background run, with no flow: it is no run of a flow of before.
+   */
+  async boniCall(
+    plan: unknown,
+    bind: Record<string, Val>,
+    test: boolean,
+  ): Promise<{
+    status: TurnResult["status"];
+    error: string | null;
+    value: Val | null;
+    proposals: string[];
+    would: Would[];
+  }> {
+    if (test) {
+      const d = await this.runDry(plan, bind, { kind: "background", trust: "personal" }, null);
+      return {
+        status: d.r.status,
+        error: d.r.error,
+        value: d.st.env.get("a") ?? null,
+        proposals: [],
+        would: d.st.would?.get("a") ?? [],
+      };
     }
-    return { ...r, kept };
+    const { r, st } = await this.runBackground(plan, bind, undefined, undefined, true);
+    return {
+      status: r.status,
+      error: r.error,
+      value: r.status === "done" ? (st.env.get("a") ?? null) : null,
+      proposals: r.proposals,
+      would: [],
+    };
   }
 
   private newState(
@@ -1423,10 +1493,12 @@ export class Agent {
       })),
     }));
     // The user's flows `flows.run` may start (docs/flujos.md F4): their ids, names and what their forms ask for.
+    // A converted one (F16 S1) is its automation now: listed while that is on, with the inputs its flow asked for.
     const flows = tools.some((t) => t.name === "flows.run")
-      ? this.o.store.journal
-          .flows()
-          .filter((f) => f.enabled && runnableNames(f.trigger))
+      ? [
+          ...this.o.store.journal.flows().filter((f) => f.enabled && runnableNames(f.trigger)),
+          ...this.convertedFlows(),
+        ]
           .slice(0, 30)
           .map((f) => ({
             id: f.id,
@@ -2229,9 +2301,22 @@ export class Agent {
    * `flows.save` once the user accepted it (docs/flujos.md F5): checked again, saved as a version of his (the flow it
    * changes, or a new one) and on: accepting is what turns it on.
    */
+  /** The converted flows whose automation is on and starts by hand or by the clock: their flow's last version. */
+  private convertedFlows(): FlowRow[] {
+    const j = this.o.store.journal;
+    return j
+      .flowConversions()
+      .filter((c) => c.state === "converted" && j.automation(c.id)?.enabled)
+      .map((c) => j.flow(c.id))
+      .filter((f): f is FlowRow => !!f && !!runnableNames(f.trigger));
+  }
+
   private flowWriter(): FlowWriter {
     return {
       save: (def) => {
+        // A converted flow is an automation now (F16 S1): a version saved here would never run.
+        if (def.flow && this.o.store.journal.flowConversion(def.flow)?.state === "converted")
+          throw new ToolError("flow-converted");
         const existing = def.flow ? this.o.store.journal.flow(def.flow) : null;
         const c = checkFlowDef(def, this.o.registry, existing);
         if (!c.ok) throw new ToolError("flow-invalid");
@@ -2346,6 +2431,11 @@ export class Agent {
       run: async (flow, inputs) => {
         if (st.flowRun) throw new ToolError("flow-in-flow");
         const id = plain(flow);
+        if (
+          typeof id === "string" &&
+          this.o.store.journal.flowConversion(id)?.state === "converted"
+        )
+          return this.startConverted(id, inputs, st.origin);
         const f = typeof id === "string" ? this.o.store.journal.flow(id) : null;
         if (!f?.enabled) throw new ToolError("flow-not-found");
         const names = runnableNames(f.trigger);
@@ -2375,6 +2465,26 @@ export class Agent {
         );
       },
     };
+  }
+
+  /**
+   * `flows.run` of a converted flow (AU-228): its automation runs instead, by the server's `startRun`. Its fields are
+   * plain values there, which a run by hand takes as his: an input made from outside (a mail, a model's text, a
+   * shared device's voice) is refused (`flow-input-outside`) rather than given his label (P4).
+   */
+  private async startConverted(id: string, inputs: Val | undefined, origin: Origin): Promise<Val> {
+    if (!this.o.runAutomation) throw new ToolError("flow-not-found");
+    const given = inputs?.t === "rec" ? inputs.fields : {};
+    const fields: Record<string, Json> = {};
+    for (const [k, v] of Object.entries(given)) {
+      const i = deepLabel(v).integrity;
+      if (i === "external" || i === "model" || i === "ambient")
+        throw new ToolError("flow-input-outside");
+      fields[k] = plain(v);
+    }
+    const r = await this.o.runAutomation(id, fields, origin);
+    const l = codeLabel("flow");
+    return rec({ run: leaf(r.run, l), status: leaf(r.status, l), error: leaf(r.error, l) }, l);
   }
 
   private async execRead(

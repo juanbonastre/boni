@@ -72,6 +72,8 @@ export interface AutomationVersionInfo {
   device: string | null;
   /** Whose it is: `user` (Juan's hand) today; `preset` (Boni's own) from F16. */
   by: string;
+  /** «Convertida» (AU-225): the flow version it was converted from, or null for one published here. */
+  flow: number | null;
 }
 
 /** A version whole: its document as it runs (its `version` is `n`), and the names its code cited (AU-192). */
@@ -156,7 +158,7 @@ export interface AutomationsJournal {
    * writes nothing.
    */
   publishAutomation(
-    v: Omit<AutomationVersionRow, "n">,
+    v: Omit<AutomationVersionRow, "n" | "flow">,
     expect: number,
     /** The version's «Programada» hours (`ScheduledAutomation.schedule`), or null; its hours count from `v.at`. */
     schedule?: string | null,
@@ -351,6 +353,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
     at: Number(r.at),
     device: (r.device as string | null) ?? null,
     by: r.by as string,
+    flow: r.flow === null || r.flow === undefined ? null : Number(r.flow),
   });
   return {
     automations: () =>
@@ -405,7 +408,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
       (
         db
           .prepare(
-            "SELECT id, n, hash, at, device, by FROM automation_versions WHERE id = ? ORDER BY n DESC",
+            "SELECT id, n, hash, at, device, by, flow FROM automation_versions WHERE id = ? ORDER BY n DESC",
           )
           .all(id) as Record<string, unknown>[]
       ).map(info),

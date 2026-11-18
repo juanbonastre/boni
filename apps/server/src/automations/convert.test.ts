@@ -2,11 +2,158 @@
 // what it keeps, how it is undone, what happens to what was under way and to the old runs, and the order in which
 // the old engine goes (AU-150, AU-152, AU-225, AU-226, AU-227, AU-228, with AU-230's case of a converted write).
 //
-// Pending: the phase's first PR brings one test per rule and its builders make each real, the rule's id kept in its
-// name (`make check` reads them, T-10). They will run the real server with a store per test, invented flows shaped
-// like a user's (generated ids, several versions, a draft half done) and a year of runs (A-15: 50 flows with 60
-// versions, 20,000 runs with 200,000 steps, their clock from `@boni/pace`), and no model.
-import { describe, it } from "vitest";
+// The real store per test, invented flows shaped like a person's (generated ids, several versions, a draft half done,
+// one flow per shape the old engine allows: by hand with a form, by hand alone, by the clock, by a mail, Boni's), a
+// year of runs for the times (A-15: 50 flows with 60 versions, 20,000 runs with 200,000 steps, their clock from
+// `@boni/pace`), and no model. What is still `todo` is S2's, P1's or the removal's (the rule's «Falta»).
+
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
+import { newId } from "@boni/entities";
+import { clock, under } from "@boni/pace";
+import { openUserStore, type UserStore } from "@boni/store";
+import { SYS } from "@boni/views";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AgentHost, trashFlow } from "../agent.ts";
+import { DataError } from "../data.ts";
+import { lastSlot } from "../flowScheduler.ts";
+import { deleteFlowRow, updateFlowRow } from "../flowsCollection.ts";
+import { wireBoni } from "./boni.ts";
+import {
+  COPY_CHUNK,
+  conversionReport,
+  convertFlow,
+  convertFlows,
+  copyBeforeRuns,
+  reconvertFlow,
+  revertFlow,
+  wireDryConversion,
+} from "./convert.ts";
+import { publish, setEnabled, versionsOf } from "./publish.ts";
+import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
+import { undoAutomationRun } from "./runs.ts";
+import { automationView } from "./service.ts";
+
+const DAY = 24 * HOUR;
+const lit = (v: unknown) => ({ lit: v });
+const ref = (r: string) => ({ ref: r });
+const fn = (name: string, ...args: unknown[]) => ({ fn: name, args });
+const plan = (...steps: unknown[]) => ({ version: 1, steps });
+
+/** Its plans, as the old editor saved them, over the seeded «Pedido» (run.test-util.ts `seeded`). */
+const COUNT = plan({
+  id: "n",
+  op: "call",
+  tool: "entities.aggregate",
+  args: { type: lit("pedido"), op: lit("count") },
+});
+const CREATE = (nota: unknown) =>
+  plan({
+    id: "c",
+    op: "call",
+    tool: "entities.create",
+    args: { type: lit("pedido"), values: fn("obj", lit("nota"), nota) },
+  });
+/** An update by the id a query found: no step of the new engine yet (`noCollection`). */
+const UPDATE = plan(
+  { id: "q", op: "call", tool: "entities.query", args: { type: lit("pedido") } },
+  {
+    id: "u",
+    op: "call",
+    tool: "entities.update",
+    args: { id: ref("$q[0].id"), values: fn("obj") },
+  },
+);
+/** An action of Boni's with no step of its own: «Acción de Boni». */
+const ACTION = plan({
+  id: "a",
+  op: "call",
+  tool: "otra.accion",
+  args: { texto: lit("de ejemplo") },
+});
+
+/** A `classify` of the reading model: «Clasificar», an AI step (AU-224). */
+const CLASSIFY = plan({
+  id: "k",
+  op: "read",
+  reader: "classify",
+  input: lit("un texto de ejemplo"),
+  params: { options: lit(["urgente", "normal"]) },
+});
+
+const MANUAL = { manual: true, inputs: [{ name: "nota" }] };
+const ALONE = { manual: true };
+const DAILY = { schedule: { every: "day", at: "08:00" } };
+
+const f = folder("conversion");
+afterAll(() => f.done());
+let store: UserStore;
+beforeEach(() => {
+  store = f.store();
+  // Boni's code reached: «Acción de Boni» validates, as on the server (main.ts). No call reaches it in these tests.
+  wireBoni({
+    reaches: () => true,
+    agentOf: () => {
+      throw new Error("no Boni call in these tests");
+    },
+  });
+});
+afterEach(() => {
+  wireBoni(null);
+  store.close();
+});
+
+/** A flow of the person's: a generated id, `versions` saves of its plans, each a day after the one before. */
+function flow(
+  o: {
+    name?: string;
+    trigger?: unknown;
+    plans?: unknown[];
+    by?: string;
+    enabled?: boolean;
+    created?: number;
+    id?: string;
+  } = {},
+  s: UserStore = store,
+): string {
+  const id =
+    o.id ?? `${(o.name ?? "flujo").toLowerCase().replace(/\W+/g, "-")}-${newId("f").slice(-6)}`;
+  const plans = o.plans ?? [COUNT];
+  plans.forEach((p, i) => {
+    s.journal.saveFlow({
+      id,
+      name: o.name ?? "Flujo de ejemplo",
+      trigger: o.trigger ?? ALONE,
+      inputs: [],
+      plan: p,
+      layout: null,
+      by: o.by ?? "user",
+      enabled: o.enabled ?? true,
+      created: (o.created ?? NOW - 400 * DAY) + i * DAY,
+    });
+  });
+  return id;
+}
+
+/** A finished run of a flow of before, as the old engine kept it. */
+function oldRun(s: UserStore, id: string, at: number, status = "done", origin = "turn"): string {
+  const run = randomUUID();
+  const version = s.journal.flow(id)?.version ?? 1;
+  s.journal.startRun({
+    id: run,
+    turn: null,
+    origin,
+    device: "d_portatil",
+    started: at,
+    flow: id,
+    flowVersion: version,
+  });
+  s.journal.finishRun(run, status, null, at + 1_500);
+  return run;
+}
 
 describe("the saved flows converted to automations (F16)", () => {
   it.todo(
@@ -19,19 +166,7 @@ describe("the saved flows converted to automations (F16)", () => {
     "AU-225 · the conversion's list says for each automation «Hace lo mismo» or «Lo que cambia», and how many runs it has had since and how many failed",
   );
   it.todo(
-    "AU-225 · it happens once at the store's opening, a flow per transaction, and running it again changes nothing; the id, the name, on or off and the schedule are kept",
-  );
-  it.todo(
-    "AU-225 · each version of a flow is a version of its automation with its number, date and author, marked as converted, and a draft half done is its draft",
-  );
-  it.todo(
-    "AU-225 · «Volver al flujo de antes» leaves the flow running as it was and the automation off, and nothing is deleted from the old tables",
-  );
-  it.todo(
     "AU-226 · a proposal waiting in the Bandeja is accepted as before, an old run that waits is resumed only by the engine that started it, and a scheduled flow runs once in each slot across the conversion",
-  );
-  it.todo(
-    "AU-227 · the old runs are summary rows of their automation, copied in chunks with the server free between them, and still undone by their run id",
   );
   it.todo(
     "AU-227 · with a year of runs the conversion, the copy and the list of runs of the mail automation stay within their times",
@@ -42,7 +177,305 @@ describe("the saved flows converted to automations (F16)", () => {
   it.todo(
     "AU-152 · after the removal nothing imports the old engine or the old editor, and nothing that runs reads the archived flow tables",
   );
-  it.todo(
-    "AU-230 · a flow that created a row, converted: none of its versions carries a «Sí», whoever starts it",
-  );
+
+  it("AU-150 · S1: the dry report runs on a copy and says, by the flows' order, how many convert, which step types they get, «Lo que cambia», why the rest stay and which can be replayed; no name or text of the person's", () => {
+    flow({ name: "Apuntar pedido", trigger: MANUAL, plans: [CREATE(ref("$nota"))] });
+    const daily = flow({ name: "Contar pedidos", trigger: DAILY });
+    oldRun(store, daily, NOW - DAY, "done", "background");
+    flow({ name: "Arreglar pedido", plans: [UPDATE] });
+    flow({ name: "Leer correo", id: "leer-correo", trigger: { created: "correo" }, by: "preset" });
+    const r = conversionReport(store, NOW);
+    expect(r).toMatchObject({ flows: 4, converted: 2, kept: 1, left: 1, runsToCopy: 1 });
+    expect(r.replay).toEqual({ byClock: 1, byHand: 0, inputsNotKept: 0, neverRan: 1 });
+    expect(r.reasons).toEqual({ "tool:entities.update:noCollection": 1, notTheUsers: 1 });
+    expect(Object.keys(r.stepTypes).sort()).toEqual(["collection", "manual", "schedule"]);
+    expect(r.changes.asksNow).toBe(1);
+    const text = JSON.stringify(r);
+    for (const words of ["Apuntar", "Contar", "Arreglar", "Leer correo", "pedido"])
+      expect(text).not.toContain(words);
+  });
+
+  it("AU-225 · S1: at the store's opening each flow of the person's started by hand or by the clock is an automation with its id, name, switch and hours, and a second opening changes nothing", () => {
+    const dir = join(f.dir, `host-${randomUUID()}`);
+    mkdirSync(join(dir, "users"), { recursive: true });
+    const s = openUserStore(join(dir, "users", "1.db"), { now: () => NOW });
+    seeded(s);
+    const byHand = flow(
+      { name: "Apuntar pedido", trigger: MANUAL, plans: [CREATE(ref("$nota"))] },
+      s,
+    );
+    const daily = flow({ name: "Contar pedidos", trigger: DAILY, enabled: false }, s);
+    const mail = flow({ name: "Leer correo", trigger: { created: "correo" }, by: "preset" }, s);
+    s.close();
+    const host = new AgentHost({ dataDir: dir, providers: null });
+    try {
+      const opened = host.store(1);
+      const j = opened.journal;
+      expect(j.automation(byHand)).toMatchObject({ enabled: true, published: 1 });
+      expect(j.automation(daily)).toMatchObject({ enabled: false, published: 1 });
+      expect(j.automationDraft(byHand)?.name).toBe("Apuntar pedido");
+      // Its hours: the «Programada» of the flow's schedule.
+      const sched = parseAutomation(JSON.parse(j.automationDraft(daily)?.doc ?? "{}"));
+      expect(sched.steps.find((x) => x.type === "schedule")).toBeTruthy();
+      // Boni's own and a preset's stay flows (S2); only the person's leave `flows()`.
+      expect(j.automation(mail)).toBeNull();
+      const listed = j.flows().map((x) => x.id);
+      expect(listed).toContain(mail);
+      expect(listed).not.toContain(byHand);
+      expect(listed).not.toContain(daily);
+      // Again: nothing new is written.
+      const before = j.flowConversions();
+      const again = convertFlows(opened, NOW + HOUR);
+      expect(again.every((o) => o.state === "already" || o.state === "left")).toBe(true);
+      expect(j.flowConversions()).toEqual(before);
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-225 · S1: each version of a flow that converts whole is a version of its automation, in order, with its date and author and «Convertida» naming the flow version; the rest are counted", () => {
+    const id = flow({
+      trigger: MANUAL,
+      plans: [CREATE(lit("una")), UPDATE, CREATE(lit("dos")), CREATE(ref("$nota"))],
+    });
+    expect(convertFlow(store, id, NOW)).toMatchObject({
+      state: "converted",
+      versions: 3,
+      skipped: 1,
+    });
+    const v = versionsOf(store, id);
+    if ("error" in v) throw new Error(v.error);
+    expect(v.running).toBe(3);
+    expect(v.versions.map((x) => [x.n, x.flow, x.by, x.at])).toEqual([
+      [3, 4, "user", NOW - 397 * DAY],
+      [2, 3, "user", NOW - 398 * DAY],
+      [1, 1, "user", NOW - 400 * DAY],
+    ]);
+    // The draft is the running version's document; «Lo que cambia» and the skipped count are the view's.
+    const view = automationView(store, id);
+    if ("error" in view) throw new Error(view.error);
+    expect(view.conversion).toMatchObject({ state: "converted", skipped: 1 });
+    expect(view.conversion?.changes).toContain("asksNow");
+  });
+
+  it("AU-225 · S1: «Volver al flujo de antes» leaves the flow running as it was and the automation off; «Convertir otra vez» comes back only while the flow has no version the automation lacks; nothing is deleted from the old tables", () => {
+    const id = flow({ trigger: DAILY, plans: [COUNT, COUNT] });
+    const run = oldRun(store, id, NOW - DAY, "done", "background");
+    const plain = () => ({ flows: store.journal.flowVersions(id), run: store.journal.run(run) });
+    const was = plain();
+    convertFlow(store, id, NOW);
+    expect(store.journal.flows().map((x) => x.id)).not.toContain(id);
+    expect(revertFlow(store, id, NOW + HOUR)).toBe(true);
+    expect(store.journal.automation(id)?.enabled).toBe(false);
+    expect(store.journal.flows().map((x) => x.id)).toContain(id);
+    expect(plain()).toEqual(was);
+    // Again, and back: the automation on from now.
+    expect(reconvertFlow(store, id, NOW + 2 * HOUR)).toBe("ok");
+    expect(store.journal.automation(id)?.enabled).toBe(true);
+    expect(store.journal.flows().map((x) => x.id)).not.toContain(id);
+    // Changed while it ran as before: not converted again by this.
+    revertFlow(store, id, NOW + 3 * HOUR);
+    flow({ id, trigger: DAILY, plans: [CREATE(lit("tres"))], created: NOW + 3 * HOUR });
+    expect(reconvertFlow(store, id, NOW + 4 * HOUR)).toBe("changed");
+    expect(store.journal.automation(id)?.enabled).toBe(false);
+  });
+
+  it("AU-228 · S1: a flow whose running version does not convert whole stays on the engine of before, saying why step by step, and is tried again at the next opening; one id never runs on both", () => {
+    const kept = flow({ plans: [COUNT, UPDATE] });
+    const done = flow({ plans: [UPDATE, COUNT] });
+    convertFlows(store, NOW);
+    expect(store.journal.flowConversion(kept)).toMatchObject({
+      state: "kept",
+      reasons: [{ step: "u", what: "tool:entities.update", reason: "noCollection" }],
+    });
+    expect(store.journal.automation(kept)).toBeNull();
+    expect(store.journal.automation(done)?.enabled).toBe(true);
+    // One engine per id: what `flows()` lists (the old scheduler's and the planner's) has no automation on.
+    for (const x of store.journal.flows())
+      expect(store.journal.automation(x.id)?.enabled ?? false).toBe(false);
+    // The next opening asks again and, with the same answer, writes nothing.
+    expect(convertFlow(store, kept, NOW + DAY)).toEqual({ id: kept, state: "already" });
+  });
+
+  it("AU-228 · S1: one id, one engine across the switches: a reverted flow's automation is neither published nor turned on, and the old engine's switch, «Borrar» and the «Flujos» row refuse a converted flow", () => {
+    const id = flow({ trigger: ALONE, plans: [COUNT] });
+    convertFlow(store, id, NOW);
+    // Converted: the old engine's writes are refused, the flow as it was.
+    expect(trashFlow(store, id)).toEqual({ error: "converted" });
+    const row = `${SYS.flows.row}${id}`;
+    const code = (f: () => void) => {
+      try {
+        f();
+        return null;
+      } catch (e) {
+        return e instanceof DataError ? e.code : String(e);
+      }
+    };
+    expect(code(() => deleteFlowRow(store, row))).toBe("flow-converted");
+    expect(code(() => updateFlowRow(store, row, { state: "off" }, () => [], NOW))).toBe(
+      "flow-converted",
+    );
+    // Back to before: the flow runs, so its automation stays off and unpublished from here.
+    revertFlow(store, id, NOW + HOUR);
+    // Not deleted by the refused «Borrar»: back to before, it is listed again.
+    expect(store.journal.flows().map((x) => x.id)).toContain(id);
+    const hand = { ...JUAN, now: NOW + 2 * HOUR };
+    expect(setEnabled(store, id, true, hand)).toEqual({ refused: "reverted" });
+    expect(publish(store, id, { version: 1 }, hand)).toEqual({ refused: "reverted" });
+    expect(setEnabled(store, id, false, hand)).toEqual({ enabled: false });
+    expect(store.journal.automation(id)?.enabled).toBe(false);
+    // «Convertir otra vez» is the way back, and then the switch is the automation's again.
+    expect(reconvertFlow(store, id, NOW + 3 * HOUR)).toBe("ok");
+    expect(setEnabled(store, id, false, { ...hand, now: NOW + 4 * HOUR })).toEqual({
+      enabled: false,
+    });
+  });
+
+  it("AU-150 · S1: the dry report sees Boni's code and «Modelos» as the server does, with no agent and no key: a flow with a reader converts in it", () => {
+    const id = flow({ trigger: ALONE, plans: [CLASSIFY] });
+    // With no «Modelos» wired, an AI step would block publishing: the report would say kept where the server converts.
+    const copy = f.store();
+    flow({ id, trigger: ALONE, plans: [CLASSIFY] }, copy);
+    expect(convertFlow(copy, id, NOW)).toMatchObject({ state: "kept" });
+    copy.close();
+    const unwire = wireDryConversion(1);
+    try {
+      const r = conversionReport(store, NOW);
+      expect(r).toMatchObject({ converted: 1, kept: 0 });
+      expect(r.changes).toHaveProperty("readerClassifies", 1);
+    } finally {
+      unwire();
+    }
+  });
+
+  it("AU-226 · S1: a flow by the clock runs once in each slot across the conversion: the hour it ran before is not run again, and the next one runs on the new engine", async () => {
+    const id = flow({ trigger: DAILY, created: NOW - 30 * DAY });
+    // The old scheduler ran today's 08:00 (Madrid); then the conversion.
+    const today = lastSlot({ every: "day", at: "08:00" }, NOW, ZONE) as number;
+    oldRun(store, id, today + 2_000, "done", "background");
+    convertFlow(store, id, NOW);
+    const t = scheduler(store);
+    await t.at(NOW + 10 * 60_000);
+    expect(
+      store.journal.automationRuns(id, { filter: "all", limit: 10 }).filter((r) => !r.before),
+    ).toEqual([]);
+    await t.at(today + DAY + 60_000);
+    const runs = store.journal
+      .automationRuns(id, { filter: "all", limit: 10 })
+      .filter((r) => !r.before);
+    expect(runs.map((r) => r.slot)).toEqual([today + DAY]);
+  });
+
+  it("AU-227 · S1: the old runs are «De antes» rows of their automation with their ids, copied in chunks with the server free between them, and «Deshacer lo que hizo» still undoes what one wrote", async () => {
+    const id = flow({ trigger: ALONE, plans: [CREATE(lit("de antes"))] });
+    for (let i = 0; i < COPY_CHUNK + 5; i++) oldRun(store, id, NOW - (300 - i) * HOUR);
+    const failed = oldRun(store, id, NOW - 2 * HOUR, "stopped:R3-kept-from-models");
+    // One that wrote: its operation carries its run, as the old engine saved it.
+    const wrote = oldRun(store, id, NOW - HOUR);
+    const row = store.create(
+      PEDIDO,
+      {},
+      { actor: "agent", device: "d_portatil", run: wrote },
+    ).entity;
+    convertFlow(store, id, NOW);
+    const copiedSoFar = () =>
+      store.journal.automationRuns(id, { filter: "all", limit: 1_000 }).length;
+    const copying = copyBeforeRuns(store, NOW);
+    // The first chunk is written before the copy lets the server go; the rest after.
+    expect(copiedSoFar()).toBe(COPY_CHUNK);
+    expect(await copying).toBe(COPY_CHUNK + 7);
+    expect(copiedSoFar()).toBe(COPY_CHUNK + 7);
+    expect(store.journal.flowConversion(id)?.copied).toBe(NOW);
+    expect(store.journal.automationRun(failed)).toMatchObject({
+      state: "failed",
+      before: true,
+      version: 1,
+    });
+    expect(store.journal.automationRun(wrote)).toMatchObject({
+      state: "done",
+      before: true,
+      version: 1,
+    });
+    // Copying again adds nothing.
+    expect(await copyBeforeRuns(store, NOW + HOUR)).toBe(0);
+    expect(undoAutomationRun(store, id, wrote, JUAN)).not.toHaveProperty("refused");
+    expect(store.get(row.id)?.entity.deleted).toBe(NOW);
+    expect(store.journal.automationRun(wrote)?.undone).toBe(NOW);
+  });
+
+  it("AU-227 · S1: with 50 flows of 60 versions and a year of 20,000 runs with 200,000 steps, the conversion and each chunk of the copy stay within their times", async () => {
+    const path = join(f.dir, `volumen-${randomUUID()}.db`);
+    store.close();
+    store = openUserStore(path, { now: () => NOW });
+    seeded(store);
+    const ids: string[] = [];
+    for (let i = 0; i < 50; i++)
+      ids.push(
+        flow({
+          name: `Flujo ${i}`,
+          trigger: i % 2 ? DAILY : ALONE,
+          // One version in seven updates by id: no step yet, so it is skipped; the running one converts.
+          plans: Array.from({ length: 60 }, (_, k) =>
+            k % 7 === 2 ? UPDATE : CREATE(lit(`v${k}`)),
+          ),
+        }),
+      );
+    // A year of runs, 400 per flow with ten steps each, written straight as the old engine's rows.
+    const raw = new DatabaseSync(path);
+    raw.exec("BEGIN");
+    const run = raw.prepare(
+      "INSERT INTO runs (id, turn, origin, device, status, plan, started, finished, flow, flow_version) VALUES (?, NULL, ?, 'd_portatil', 'done', NULL, ?, ?, ?, 60)",
+    );
+    const step = raw.prepare(
+      "INSERT INTO run_steps (run, seq, step, kind, decision, rule, detail, at) VALUES (?, ?, 'c', 'call', 'allow', NULL, NULL, ?)",
+    );
+    for (let i = 0; i < 20_000; i++) {
+      const at = NOW - 365 * DAY + i * 1_500_000;
+      const r = `r_${i.toString(36).padStart(6, "0")}`;
+      run.run(r, i % 2 ? "background" : "turn", at, at + 900, ids[i % 50] as string);
+      for (let k = 0; k < 10; k++) step.run(r, k, at + k);
+    }
+    raw.exec("COMMIT");
+    raw.close();
+    let start = clock();
+    const out = convertFlows(store, NOW);
+    under(clock() - start, 5_000, "cpu", "the conversion of 50 flows with 60 versions each");
+    expect(out.filter((o) => o.state === "converted")).toHaveLength(50);
+    // Each chunk of the copy: the slowest of them all.
+    let slowest = 0;
+    let total = 0;
+    for (const id of ids)
+      for (;;) {
+        start = clock();
+        const n = store.journal.copyBeforeRuns(id, COPY_CHUNK, NOW);
+        slowest = Math.max(slowest, clock() - start);
+        total += n;
+        if (!n) break;
+      }
+    under(slowest, 100, "cpu", "a chunk of 200 runs of before copied over a year of runs");
+    expect(total).toBe(20_000);
+  });
+
+  it("AU-230 · a flow that created a row, converted: none of its versions carries a «Sí», whoever starts it", () => {
+    const id = flow({ trigger: MANUAL, plans: [CREATE(lit("una")), CREATE(ref("$nota"))] });
+    const daily = flow({ trigger: DAILY, plans: [CREATE(lit("cada día"))] });
+    const action = flow({ trigger: ALONE, plans: [ACTION] });
+    convertFlows(store, NOW);
+    for (const x of [id, daily]) {
+      const v = versionsOf(store, x);
+      if ("error" in v) throw new Error(v.error);
+      for (const n of v.versions) {
+        const doc = parseAutomation(
+          JSON.parse(store.journal.automationVersion(x, n.n)?.doc ?? "{}"),
+        );
+        // Born «Preguntar» (decision 13): the step that creates asks, and none says «Sí».
+        const said = doc.steps.map((step) => consentOf(step, "pedido", "create"));
+        expect(said).toContain("ask");
+        expect(said).not.toContain("yes");
+      }
+    }
+    // An action of Boni's converts as «Acción de Boni», which has no «Sí»: its acts are decided behind the port.
+    const doc = parseAutomation(JSON.parse(store.journal.automationDraft(action)?.doc ?? "{}"));
+    expect(doc.steps.map((s) => s.type)).toContain(BONI_ACTION_TYPE);
+  });
 });

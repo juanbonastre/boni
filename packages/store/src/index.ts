@@ -38,6 +38,14 @@ export {
 export { type BlameLine, blame } from "./blame.ts";
 export { type Checkpointed, checkpointOnce, startCheckpoints, walBytes } from "./checkpoint.ts";
 export type {
+  AdoptedVersion,
+  ConversionReason,
+  ConversionsJournal,
+  FlowAdoption,
+  FlowConversionRow,
+  FlowConversionState,
+} from "./conversions.ts";
+export type {
   ConfirmationRow,
   DecisionRow,
   FlowDraftRow,
