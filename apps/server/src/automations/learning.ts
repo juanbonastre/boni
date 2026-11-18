@@ -395,7 +395,7 @@ export function judgeDue(store: UserStore, now: number): boolean {
 
 /** A cell's last judged results, newest last (true = right), by its area's index; taken after `after`. */
 function resultsOf(store: UserStore, area: string, after = 0): boolean[] {
-  return store.journal.judgedDecisions(area, LAST, after).map((d) => d.result === "right");
+  return store.journal.judgedResults(area, LAST, after).map((r) => r === "right");
 }
 
 /** The cell as the version published now has it, when it is the same step (by its print); else null. */

@@ -299,10 +299,11 @@ export interface Journal extends AutomationsJournal, AutomationRunsJournal {
   /** An area's last decisions, newest last (the Registro's counts; an area's thresholds and «Solo»). */
   decisions(area: string, limit?: number): DecisionRow[];
   /**
-   * An area's last judged decisions (a result given), taken after `after`, newest last: what a count reads when
-   * many of the newest still wait for theirs (an hourly «Sí» judged 7 days later, AU-207), by `decisions_area`.
+   * The results of an area's last judged decisions (a result given), taken after `after`, newest last: what a count
+   * reads when many of the newest still wait for theirs (an hourly «Sí» judged 7 days later, AU-207), by
+   * `decisions_area`. Only the result: the Bandeja reads one area after another (A-15).
    */
-  judgedDecisions(area: string, limit: number, after?: number): DecisionRow[];
+  judgedResults(area: string, limit: number, after?: number): ("right" | "wrong")[];
   /** The areas with any decision, by name. */
   decisionAreas(): string[];
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
@@ -426,7 +427,7 @@ export function openJournal(db: DatabaseSync): Journal {
   const judgedQuery = (): StatementSync => {
     if (!judged)
       judged = db.prepare(
-        "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? AND at > ? AND result IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
+        "SELECT result FROM decisions WHERE area = ? AND at > ? AND result IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT ?",
       );
     return judged;
   };
@@ -488,8 +489,10 @@ export function openJournal(db: DatabaseSync): Journal {
           )
           .all(area, limit) as Record<string, unknown>[]
       ).map(decisionOf),
-    judgedDecisions: (area, limit, after = 0) =>
-      (judgedQuery().all(area, after, limit) as Record<string, unknown>[]).map(decisionOf),
+    judgedResults: (area, limit, after = 0) =>
+      (judgedQuery().all(area, after, limit) as { result: "right" | "wrong" }[])
+        .map((r) => r.result)
+        .reverse(),
     startRun: (r) =>
       void db
         .prepare(
