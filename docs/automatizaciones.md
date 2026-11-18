@@ -3668,7 +3668,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
 | «Buscar relaciones» | Enlaza con filas suyas que tienen que ver | Nada |
 | «Crear en la elegida» | Crea la fila en su colección | Una fila por colección con «Crear»: «No», «Preguntar», «Sí»; «Solo conocidos» tras «Añadir opción» |
 
-- **AU-249** (F16, pendiente) · «Leer correo» es su documento: nada la regenera y nada le llega a un paso que no
+- **AU-249** (F16, en parte) · «Leer correo» es su documento: nada la regenera y nada le llega a un paso que no
   esté en la fila del disparador o en su panel (decisión 31). Las piezas de Boni que quedan son las de la
   tabla, más las dos de «Traer correo» y las del revisor (AU-211); «Ya propuesto», el «Crear» de la invitación,
   «Aceptar solas» y los valores preparados del disparador se van. `mailPlan`, `ensureFlow` para el correo y
@@ -3684,8 +3684,8 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   piezas no corren como planes del motor de antes: sus lectores van por el puerto de los modelos (`RunDeps.ai`:
   cuarentena, etiquetas, cuenta de llamadas, presupuesto) y su código recibe la fila, así que el motor de antes se
   puede quitar sin ellas. La prueba: `packages/automations/src/boni-steps.test.ts` y
-  `apps/server/src/automations/mail.test.ts` («AU-249 · …»).
-- **AU-250** (F16, pendiente) · Lo que «Leer correo» guarda lo decide una celda, no una pieza (decisión 30). «Crear en la elegida» tiene una fila por colección de la «Decisora» con la celda «Crear», y lo que crea pasa
+  `apps/server/src/automations/mail.test.ts` («AU-249 · …»). Hecho (S2b, primer PR): las piezas del catálogo como dice la tabla (13; «Ya propuesto», el «Crear» de la invitación y «Aceptar solas» fuera), con sus paneles («Reglas», «Busca», «Indicaciones», «Ejemplos», «Solo conocidos») y sus límites, y sus lectores por el puerto de los modelos (`AiPort.piece`, `pieceRead`). Falta: el código de las piezas en el puerto del servidor sobre la fila, `serverAi.piece`, Ajustes → Correo y que «Leer correo» corra en el motor nuevo (segundo PR, tras el arranque de PR 529).
+- **AU-250** (F16, en parte) · Lo que «Leer correo» guarda lo decide una celda, no una pieza (decisión 30). «Crear en la elegida» tiene una fila por colección de la «Decisora» con la celda «Crear», y lo que crea pasa
   por `decide` con el origen `automation` y esa celda (P28), como un paso «Colección». Nace en «Preguntar» en todas
   (AU-230); un «Sí» lo pone su mano en un dispositivo personal (decisión 13); con «Sí» la fila se guarda marcada
   como de fuera y se deshace con la ejecución (decisión 11); la cuenta bajo la celda, la sugerencia y la pausa son
@@ -3697,7 +3697,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   y el ámbito `mail.accept` se van: no hay un segundo sitio que acepte. Las decisiones de antes sobre propuestas del
   correo cuentan para «conocido» y para la cuenta de la celda de su colección. Ningún modelo lee ni cambia una
   celda. La prueba: `apps/server/src/automations/mail.test.ts` («AU-250 · …») y
-  `packages/agent/test/automation-origin.test.ts`.
+  `packages/agent/test/automation-origin.test.ts`. Hecho (primer PR): el motor crea por la celda de la colección elegida («Preguntar» propone, «Sí» va a P28, «No» nada), nace sin celdas, «Solo conocidos» solo estrecha un «Sí», `lowerYes` baja su «Sí», y el servidor lee ese «Sí» de la versión guardada. Falta: `known` en el puerto del servidor (`wouldAccept`), la cuenta bajo la celda y la conversión con sus celdas en «Preguntar» (segundo PR).
 - **AU-251** (F16, pendiente) · Una tarjeta por cosa. La propuesta de una ejecución sigue siendo una en el registro
   (AU-193). Cuando lo único que pide es crear filas, y son cinco o menos, la Bandeja la pinta como una tarjeta por
   fila, con la tarjeta de siempre: el título y los valores, la marca de fuera, de dónde viene cuando la ejecución
@@ -3712,7 +3712,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   nueva ya está propuesta: una ejecución que falla no retira nada. Las tarjetas del correo que esperaban al
   convertir siguen siendo las suyas (AU-226) y el plegado las ve. La prueba:
   `apps/server/src/automations/proposal.test.ts` y `e2e-boni/automations-mail.spec.ts` («AU-251 · …»).
-- **AU-252** (F16, pendiente) · La duda de la «Decisora» es un «Preguntar» (decisión 32). La «Decisora»
+- **AU-252** (F16, en parte) · La duda de la «Decisora» es un «Preguntar» (decisión 32). La «Decisora»
   tiene dos salidas: la principal, con la colección elegida, y «Duda», con la fila y sus opciones. En la de Boni,
   «Duda» va a un «Preguntar» del catálogo: «¿Dónde va «{{ título }}»?», «Una opción» entre las colecciones de la
   «Decisora» y «Ninguna», «Por dónde» solo «Bandeja» (AU-246: la tarjeta de hoy, y ninguna notificación por cada
@@ -3722,7 +3722,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   «Ninguna», o caducada, no crea nada y lo dice. La respuesta elige entre colecciones escritas en el paso, y lo
   creado pasa después por su celda igual. Con 20 preguntas esperando, la ejecución siguiente que dude falla con su
   motivo (`ask.waiting`), se ve en «Ejecuciones» con «Reintentar» y avisa una vez por racha (decisión 12). El título
-  viene del correo: en la tarjeta es texto. La prueba: `apps/server/src/automations/mail.test.ts` («AU-252 · …»).
+  viene del correo: en la tarjeta es texto. La prueba: `apps/server/src/automations/mail.test.ts` («AU-252 · …»). Hecho (primer PR): la «Decisora» tiene la salida «Duda» y sus filas van por su flecha. Falta: el «Preguntar» del catálogo detrás, con su pregunta y sus opciones, en la de Boni y en la conversión (segundo PR).
 - **AU-253** (F16, pendiente) · El tope del día, el registro y volver a leer. Toda automatización que empieza con
   «Llega un correo» tiene un tope al día en el código, no en un parámetro: 150 llamadas a modelos y 20 por
   remitente, los números de hoy (`extensions.ts`, `RUN_LIMITS`), contadas antes de hacerlas como las de una
@@ -3762,7 +3762,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   la lista cerrada: «Ya no acepta sola: lo decide «Permiso»» y «Su duda es una pregunta en la Bandeja, y caduca». La
   prueba: `apps/server/src/automations/convert.test.ts` y `apps/server/src/automations/mail.test.ts` («AU-254 · …»).
 
-- **AU-255** (F16, pendiente) · Lo que una pieza da a leer a un modelo (decisión 33). En el motor nuevo la
+- **AU-255** (F16, en parte) · Lo que una pieza da a leer a un modelo (decisión 33). En el motor nuevo la
   respuesta de un paso de Boni lleva la etiqueta de la fila que recibe (AU-230), y la fila de «Llega un correo» es
   entera de fuera (AU-220): todo lo que sale después del disparador es de fuera, y así se queda. Ninguna etiqueta se
   pone ni se quita para que un lector acepte una llamada: el código de Boni no escribe etiquetas en los campos de la
@@ -3787,7 +3787,7 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   `ai.private` y se ve en «Ejecuciones». El texto base de la «Lectora» cambia en una cosa (lo ya propuesto pasa de
   fuera de las marcas a dentro), así que se mide otra vez con la evaluación a mano antes del despliegue
   (`docs/correo.md` §4.5). La prueba: `apps/server/src/automations/mail.test.ts` («AU-255 · …») y
-  `packages/automations/src/boni-steps.test.ts`.
+  `packages/automations/src/boni-steps.test.ts`. Hecho (primer PR): el puerto de los modelos (`pieceRead`) cuenta cada llamada, solo da a leer textos de fuera sin `noModel` (una fila suya falla con `ai.private`), toma del panel solo lo fijado en el paso, comprueba las opciones de la «Decisora» contra su panel y la colección de la «Rellenadora», lleva los «Ejemplos» como de fuera y etiqueta la respuesta con todo lo que leyó. Falta: las peticiones de `serverAi.piece` (marcas, lo ya propuesto del remitente) y su prueba del servidor (segundo PR).
 
 **Las preguntas, contestadas.** **Juan, 2026-11-18: «Sí, las recomendadas»**, a las cuatro: son las decisiones
 30 a 33 del §10. Se quedan aquí como se le hicieron, con cuándo pasa cada una, qué ve y las salidas sobre un

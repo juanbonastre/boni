@@ -6,6 +6,7 @@
  * AU-161, AU-174).
  */
 import { type FilterItem, filterErrors, isFilterGroup } from "@boni/views";
+import { CREATE_CHOSEN } from "./boni.ts";
 import {
   AGENT_TYPE,
   CODE_LIMITS,
@@ -137,11 +138,18 @@ export type NarrowedAsk = ReadAsk & {
 
 /**
  * Which actions a step type's connections may give, and so the columns of its table (AU-41, AU-46, AU-176): «Código»
- * and «Agente» (F15 E3), the four; every other type, none (a connection on it does not validate).
+ * and «Agente» (F15 E3), the four; «Crear en la elegida» (AU-250), only «Crear», one row per collection it may create
+ * in; every other type, none (a connection on it does not validate).
  */
 export function connectionActions(type: string): readonly ConnectionAction[] {
-  return type === CODE_TYPE || type === AGENT_TYPE ? ALL : NONE;
+  return type === CODE_TYPE || type === AGENT_TYPE
+    ? ALL
+    : type === CREATE_CHOSEN
+      ? CREATE_ONLY
+      : NONE;
 }
+/** Whether a step type's writes are decided by its connections' cells (and not by a «Permiso»). */
+export const hasConnections = (type: string): boolean => connectionActions(type).length > 0;
 
 /**
  * A write action's cell as it is born when a hand takes it out of «No» (AU-196): with `mode`, and on an «Agente»
@@ -152,6 +160,7 @@ export function bornCell(type: string, mode: "ask" | "yes"): WriteCell {
 }
 const ALL: readonly ConnectionAction[] = Object.freeze([...CONNECTION_ACTIONS]);
 const NONE: readonly ConnectionAction[] = Object.freeze([]);
+const CREATE_ONLY: readonly ConnectionAction[] = Object.freeze(["create"]);
 
 /** What connecting a collection gives (AU-41): reading with no limits, and no permission to write. */
 export function newConnection(collection: string): Connection {
@@ -332,6 +341,10 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
   for (const c of connections) {
     if (seen.has(c.collection)) add("connection.repeated", { collection: c.collection });
     seen.add(c.collection);
+    // An action the type does not give is «No» (for «Crear en la elegida», all but «Crear», reading too: AU-250).
+    for (const a of CONNECTION_ACTIONS)
+      if (!actions.includes(a) && c[a] !== false)
+        add("connection.notAllowed", { collection: c.collection, action: a });
     const shape = context.collection(c.collection);
     if (!shape) {
       add("connection.unknown", { collection: c.collection });
@@ -381,6 +394,9 @@ export function connectionProblems(step: Step, context: ValidationContext): Code
       fixedOk(c.create);
       rowsOk("create", c.create.limit);
       linesOk(c.create);
+      // «Crear en la elegida»'s cell is its mode and «Como mucho» only: its code fills the fields (AU-250).
+      if (step.type === CREATE_CHOSEN && (c.create.fields || c.create.fixed || c.create.lines))
+        limits("chosen");
     }
     if (c.update !== false) {
       whereOk(c.update.where);

@@ -194,5 +194,8 @@ async function runUnit(agent: Agent, call: BoniCall): Promise<BoniAnswer> {
       label: codeLabel("boni"),
     };
   if (!r.value) return { value: { proposals: r.proposals }, label: codeLabel("boni") };
-  return { value: plain(r.value) as BoniAnswer["value"], label: deepLabel(r.value) };
+  return {
+    value: plain(r.value) as Extract<BoniAnswer, { value: unknown }>["value"],
+    label: deepLabel(r.value),
+  };
 }

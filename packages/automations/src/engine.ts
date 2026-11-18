@@ -54,6 +54,7 @@ import {
   fieldsOf,
   isReaderType,
   modelLabelOf,
+  pieceRead,
   type ReaderOutcome,
   readRows,
   retriesOf,
@@ -68,6 +69,8 @@ import {
   type BoniCall,
   type BoniPort,
   boniPiece,
+  CHOSEN,
+  CREATE_CHOSEN,
   isBoniTrigger,
   isBoniType,
 } from "./boni.ts";
@@ -176,6 +179,7 @@ import { blocking } from "./versions.ts";
 import {
   applyWrites,
   CONNECTION_ASKS,
+  consentOf,
   grantsOf,
   permissionOf,
   readWrites,
@@ -1266,9 +1270,11 @@ class Run {
               ? NOTIFY_EXECUTORS[action.mode]
               : step.type === REPLY_TYPE
                 ? REPLY_EXECUTOR
-                : isBoniType(step.type)
-                  ? BONI_EXECUTORS[action.mode]
-                  : EXECUTORS[executorKey(step.type, action.key)]
+                : step.type === CREATE_CHOSEN
+                  ? CHOSEN_EXECUTORS[action.mode]
+                  : isBoniType(step.type)
+                    ? BONI_EXECUTORS[action.mode]
+                    : EXECUTORS[executorKey(step.type, action.key)]
       : undefined;
     const tries = 1 + Math.max(0, settings.retry.times);
     let stop: StepError | undefined;
@@ -1443,6 +1449,9 @@ class Run {
           if (step.type === NOTIFY_TYPE) ctx.notify = (t) => this.notify(step, record, t);
           if (isBoniType(step.type) && this.deps.boni) {
             const port = this.deps.boni;
+            const reads = boniPiece(step.type)?.reads;
+            if (reads) record.ai ??= { calls: 0, models: [], ms: 0, cut: 0 };
+            const ai = record.ai;
             ctx.boni = (call) =>
               port.run({
                 ...call,
@@ -1450,7 +1459,32 @@ class Run {
                 step: step.id,
                 type: step.type,
                 test: this.input.test,
+                // A piece that reads reaches a model only through here (AU-249, AU-255): counted, checked, labelled.
+                ...(reads && ai
+                  ? {
+                      read: (r) =>
+                        pieceRead({
+                          reader: reads,
+                          read: r,
+                          param: (key) => {
+                            const p = paramsOf(step).find((x) => x.key === key);
+                            const v = p ? paramValue(step, p) : undefined;
+                            return v === undefined ? undefined : resolve(v, scope);
+                          },
+                          collection: (key) => this.deps.collections.shape(key),
+                          port: this.deps.ai,
+                          modelCall: () => this.modelCall(),
+                          now: () => clock.now(),
+                          zone: clock.zone,
+                          model: modelLabelOf(this.input.automation.id, step.id),
+                          record: ai,
+                        }),
+                    }
+                  : {}),
               });
+            // «Solo conocidos» (AU-250): Boni's code says who is known, from his decisions; nobody, without it.
+            if (step.type === CREATE_CHOSEN)
+              ctx.known = (r, collection) => port.known?.(r, collection) ?? Promise.resolve(false);
           }
           if (step.type === REPLY_TYPE)
             ctx.reply = (t) => {
@@ -2335,6 +2369,17 @@ class Run {
     // run, a test or one started by hand too, after the policy (the second door) was asked and did not refuse it.
     const cellAsks =
       step.type === "collection" && action.effect === "write" && permissionOf(step) === "ask";
+    // «Crear en la elegida» (AU-250): the «Crear» cell of the collection each change creates in, as saved. «No» is
+    // refused here too, though its executor never asks for one.
+    const chosen = step.type === CREATE_CHOSEN;
+    const asks = (change: ChangeWith["change"]): boolean => {
+      if (cellAsks) return true;
+      if (!chosen) return false;
+      const mode = change.kind === "create" ? consentOf(step, change.collection, "create") : false;
+      if (mode === false)
+        throw new Denied(CONNECTION_ASKS, "the step's cell for this collection is «No»");
+      return mode === "ask";
+    };
     const run = this;
     /** «Permiso: Preguntar»: the policy is asked for each (it may refuse), and every one waits for Juan. */
     async function askAll(changes: readonly ChangeWith[]): Promise<WriteResult[]> {
@@ -2362,7 +2407,7 @@ class Run {
         // Every change counts against «rows written», saved, tested or proposed, before the policy is asked (AU-17).
         run.reserve(1);
         run.written++;
-        if (cellAsks) return askAll([{ change, values }]).then((r) => r[0] as WriteResult);
+        if (asks(change)) return askAll([{ change, values }]).then((r) => r[0] as WriteResult);
         const r = await g.write(change, values);
         if (r.kind === "asked") asked.push(r.asked);
         return r;
@@ -2373,7 +2418,7 @@ class Run {
       // way to write what was not decided. A change whose kind is not the step's action («Crear o modificar» makes a
       // `create` or an `update`) goes through `write`: `decideAll` tells the policy the change's kind as the action.
       async writeAll(changes) {
-        if (changes.some((c) => c.change.kind !== action.key) || changes.length < 2) {
+        if (chosen || changes.some((c) => c.change.kind !== action.key) || changes.length < 2) {
           const out: WriteResult[] = [];
           for (const { change, values } of changes) out.push(await unit.write(change, values));
           return out;
@@ -2393,6 +2438,13 @@ class Run {
           const a = byPolicy.get(c.change);
           return a ? { kind: "asked", asked: a } : (saved[next++] as WriteResult);
         });
+      },
+      // Asking more than a cell would is always allowed: it writes nothing (AU-250's «Solo conocidos»).
+      async propose(changes) {
+        run.reserve(changes.length);
+        run.written += changes.length;
+        for (const { change } of changes) asks(change);
+        return askAll(changes.map(({ change, values }) => ({ change, values })));
       },
       // Deciding alone is the «Código»'s (writes.ts), through a gate of its own: never an executor's.
       decideAll: closed,
@@ -2493,6 +2545,8 @@ export interface StepContext {
   reply?(text: Labeled<Cell>): void;
   /** A Boni step only (AU-127): one unit through the port, which the engine completes with the run's own. */
   boni?(call: Pick<BoniCall, "name" | "values" | "args" | "row">): Promise<BoniAnswer>;
+  /** «Crear en la elegida» only (AU-250): whether the sender of the mail `row` came from is known for `collection`. */
+  known?(row: Row, collection: string): Promise<boolean>;
 }
 
 /** A row an executor gives: its fields and their labels. The engine sets `parent` and `path`, never the executor. */
@@ -2622,18 +2676,16 @@ const notifyOf = (ctx: StepContext) => {
 const BONI_EXECUTORS: Readonly<Record<"all" | "perRow", Executor>> = {
   all: {
     mode: "all",
-    run: async (ctx, input) => ({
-      [OUT.main]: [await boniUnit(ctx, Object.values(input).flat()[0] ?? null)],
-    }),
+    run: async (ctx, input) => boniUnit(ctx, Object.values(input).flat()[0] ?? null),
   },
   perRow: {
     mode: "perRow",
-    run: async (ctx, row) => ({ [OUT.main]: [await boniUnit(ctx, row)] }),
+    run: async (ctx, row) => boniUnit(ctx, row),
   },
 };
 /** The parameters the port is not given as `values`: the arguments, and how the step runs. */
 const BONI_NOT_VALUES: ReadonlySet<string> = new Set([BONI_PARAMS.args, BONI_PARAMS.mode]);
-async function boniUnit(ctx: StepContext, row: Row | null): Promise<RowOut> {
+async function boniUnit(ctx: StepContext, row: Row | null): Promise<StepOutput> {
   if (!ctx.boni) throw new StepFault("nothing reaches Boni's code here", { code: "other" });
   const step = ctx.step;
   const values: Record<string, Labeled<Cell>> = {};
@@ -2656,9 +2708,81 @@ async function boniUnit(ctx: StepContext, row: Row | null): Promise<RowOut> {
         : (boniPiece(step.type)?.old ?? step.type);
   const answer = await ctx.boni({ name, values, args, row });
   const read = [...Object.values(values), ...Object.values(args)].map((v) => v.label);
-  if (row) read.push(row.label, ...Object.values(row.fields ?? {}).map((f) => f.label));
-  return { json: { [BONI_VALUE]: answer.value }, label: join(answer.label, ...read) };
+  if (row) read.push(...rowLabels(row));
+  const label = join(answer.label, ...read);
+  if (!("rows" in answer)) return { [OUT.main]: [{ json: { [BONI_VALUE]: answer.value }, label }] };
+  // A piece's rows (AU-249), each by one of the step's outputs; every one with the whole label (AU-230, AU-255).
+  const outputs = actionOf(step)?.outputs;
+  const out: Record<string, RowOut[]> = {};
+  for (const o of Array.isArray(outputs) ? outputs : [OUT.main]) out[o] = [];
+  for (const r of answer.rows) {
+    const list = out[r.output ?? OUT.main];
+    if (!list)
+      throw new StepFault("Boni's code answered by an output the step does not have", {
+        code: "other",
+      });
+    list.push({ json: r.json, label });
+  }
+  return out;
 }
+
+/** Every label a row carries: its own and each field's (a row's fields may cite something else). */
+const rowLabels = (row: Row): Label[] => [
+  row.label,
+  ...Object.values(row.fields ?? {}).map((f) => f.label),
+];
+
+/**
+ * «Crear en la elegida» (AU-250): each row says the collection its code chose (`CHOSEN.collection`) and the values
+ * (`CHOSEN.values`); the engine creates it through the gate, where the collection's «Crear» cell, as saved, decides:
+ * «Preguntar» proposes it, «Sí» goes to the policy as a «Colección» write (P28), «No» creates nothing. Every value
+ * carries the whole label of the row, so what came by mail is saved as from outside. «Solo conocidos» only narrows a
+ * «Sí»: a sender Boni's code does not know is asked. What is saved, or would be in «Probar», passes on.
+ */
+async function chosenUnit(ctx: StepContext, rows: readonly Row[]): Promise<StepOutput> {
+  const step = ctx.step;
+  const onlyKnown = step.params[BONI_PARAMS.onlyKnown] === true;
+  const out: RowOut[] = [];
+  for (const row of rows) {
+    const collection = row.json[CHOSEN.collection];
+    const given = row.json[CHOSEN.values];
+    if (typeof collection !== "string") continue;
+    const mode = consentOf(step, collection, "create");
+    // Taking a collection out of the ones it chooses is putting its cell in «No» (decision 20): nothing is created.
+    if (mode === false) continue;
+    const label = join(row.label, ...rowLabels(row).slice(1));
+    const fields: Record<string, Cell> = {};
+    const values: Record<string, Labeled<Cell>> = {};
+    if (typeof given === "object" && given !== null && !Array.isArray(given))
+      for (const [k, v] of Object.entries(given as Record<string, Cell>)) {
+        fields[k] = v;
+        values[k] = { value: v, label, derived: true };
+      }
+    const change = { kind: "create" as const, collection, fields };
+    const narrowed =
+      mode === "yes" && onlyKnown && !(await (ctx.known?.(row, collection) ?? false));
+    // A gate that cannot propose cannot narrow: refused, never written as the «Sí» it narrowed.
+    if (narrowed && !ctx.gate.propose)
+      throw new StepFault("this gate cannot ask for a row it narrowed", { code: "other" });
+    const [result] =
+      narrowed && ctx.gate.propose
+        ? await ctx.gate.propose([{ change, values }])
+        : [await ctx.gate.write(change, values)];
+    if (!result || result.kind === "asked") continue;
+    const { json, fields: labels, origin } = result.row;
+    out.push({
+      json,
+      label: result.row.label,
+      ...(labels ? { fields: labels } : {}),
+      ...(origin ? { origin } : {}),
+    });
+  }
+  return { [OUT.main]: out };
+}
+const CHOSEN_EXECUTORS: Readonly<Record<"all" | "perRow", Executor>> = {
+  all: { mode: "all", run: (ctx, input) => chosenUnit(ctx, Object.values(input).flat()) },
+  perRow: { mode: "perRow", run: (ctx, row) => chosenUnit(ctx, row ? [row] : []) },
+};
 
 /** «Responder» (AU-202): sets the run's answer once with all the rows; the rows pass on. */
 const REPLY_EXECUTOR: Executor = {

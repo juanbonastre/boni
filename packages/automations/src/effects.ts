@@ -227,6 +227,12 @@ export interface Gate {
    * more. In a test nothing is written and each comes back `tested`, with the row as it would be.
    */
   writeAll(changes: readonly ChangeWith[]): Promise<WriteResult[]>;
+  /**
+   * Proposes every change to Juan, after the policy was asked (it may refuse): nothing is written, whatever a cell
+   * says. It only narrows, so a step may use it to ask what its cell would let it save («Solo conocidos», AU-250).
+   * Only an engine's unit gate has it.
+   */
+  propose?(changes: readonly ChangeWith[]): Promise<WriteResult[]>;
 }
 
 /** Which step and row a gate works for: what every `PolicyCall` of it carries. */
