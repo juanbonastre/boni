@@ -2378,7 +2378,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   respuesta, la ejecución sigue en su turno con la versión con la que empezó y el «Sí» más bajo entre esa versión y
   la publicada en ese momento (`lowerYes`: un paso que cambió pregunta entero); la propuesta se hace al terminar.
   Apagar o eliminar la automatización, o deshacer la ejecución, la cancela («Cancelada») y sus tarjetas quedan
-  «Ya no vale», igual que la de una ejecución que ya siguió o pasó su límite. Falta: la pausa de AU-210 al seguir
+  «Ya no vale», igual que la de una ejecución que ya siguió o pasó su límite. Con los modelos apagados, la Bandeja
+  sigue sirviendo lo que una ejecución puso en ella por código, su propuesta (`automations.accept_run`) y su
+  «Preguntar», y se aceptan, rechazan y contestan igual (por la política y desde un dispositivo personal); una
+  propuesta que escribió un modelo y el resto de `/api/agent` siguen apagados (`OFF_ROUTES` en `agent.ts`; decidido
+  de noche, para que Juan lo confirme). Falta: la pausa de AU-210 al seguir
   (S3), y de la pantalla (P2) el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la
   prueba.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son

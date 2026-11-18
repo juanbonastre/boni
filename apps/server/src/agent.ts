@@ -30,7 +30,7 @@ import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
-import type { RunsService } from "./automations/proposal.ts";
+import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
 import { type AskGiven, answerAsk, interruptRuns, onRunEvent } from "./automations/runs.ts";
 import { askPlace, noticeText, onPeople } from "./automations/waits.ts";
 import { pressButton } from "./buttons.ts";
@@ -99,7 +99,8 @@ import type { TurnsService } from "./turnActions.ts";
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
  * its own store (`users/<id>.db` next to system.db) and its own agent. The device's trust level
  * (identity) is the turn's origin: a confirmation only counts from a personal device. Without a
- * model provider configured the agent is off and every route answers 503 { error: "agent-off" }.
+ * model provider configured the agent is off and every route answers 503 { error: "agent-off" }, but the Bandeja's
+ * for what a run of an automation put there by code (`OFF_ROUTES`, F15 S2): its proposal and its «Preguntar».
  *
  *   POST /api/agent/turn     { text, conversation?, live?, screen? } -> TurnResult (replies, pending, proposals,
  *                            notices); `screen`: what is on the app's screen, by reference (screen.ts, F9)
@@ -160,6 +161,17 @@ export interface Providers {
   /** The reviewer's own model (Modelos); without it, the reader's. */
   reviewer?: ModelProvider;
 }
+
+/**
+ * The models of an agent built with the models off (F15 S2): every call refuses, so only what needs no model goes on
+ * (the Bandeja's routes of `OFF_ROUTES`: accepting or rejecting a run's proposal, through the policy as ever).
+ */
+const OFF_MODEL: ModelProvider = {
+  id: "off",
+  privacy: "local",
+  complete: () => Promise.reject(new Error("agent-off")),
+};
+const OFF_PROVIDERS: Providers = { planner: OFF_MODEL, reader: OFF_MODEL };
 
 export interface AgentHostOptions {
   /** Where the users' stores live (`users/` in it); null: no agent. */
@@ -328,10 +340,15 @@ export class AgentHost {
     return [...this.stores.keys()].map((id) => join(users, `${id}.db`));
   }
 
-  agent(account: number): Agent {
+  /**
+   * The account's agent. With its models off it is refused (`agent-off`), but with `off` true: then one whose models
+   * refuse every call, for the Bandeja's routes that need no model (`OFF_ROUTES`); given models later, the same agent
+   * goes on with them.
+   */
+  agent(account: number, off = false): Agent {
     let a = this.agents.get(account);
     if (!a) {
-      const p = this.providersOf(account);
+      const p = this.providersOf(account) ?? (off ? OFF_PROVIDERS : null);
       if (!p) throw new Error("agent-off");
       a = new Agent({
         store: this.store(account),
@@ -794,9 +811,31 @@ export async function serveAgent(
       return;
     }
   }
-  if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
-  await answerAgent(host, req, res, route, params, who);
+  // With the models off, only what a run of an automation put in the Bandeja by code (decided overnight, F15 S2).
+  const off = !host.onFor(who.account);
+  if (off && !(host.hasData && OFF_ROUTES.has(route)))
+    return send(res, 503, { error: "agent-off" });
+  await answerAgent(host, req, res, route, params, who, off);
 }
+
+/**
+ * The routes of the Bandeja served with the models off (F15 S2, decided overnight for Juan to confirm): a run of an
+ * automation puts its proposal (`automations.accept_run`) and its «Preguntar» there by code, so they are listed,
+ * accepted, rejected and answered with no model. Only those two kinds: a proposal a model wrote, or a question of
+ * the agent's, still answers `agent-off`; accepting still passes through the policy and needs a personal device, and
+ * so does answering. Nothing else of /api/agent opens.
+ */
+const OFF_ROUTES = new Set([
+  "GET /api/agent/proposals",
+  "POST /api/agent/proposals/:id/accept",
+  "POST /api/agent/proposals/:id/reject",
+  "GET /api/agent/requests",
+  "POST /api/agent/requests/:id/answer",
+  "POST /api/agent/requests/:id/dismiss",
+]);
+
+/** Whether a proposal is a run's of an automation, made by code (`OFF_ROUTES`): never one a model wrote. */
+const isRunProposal = (p: { tool: string } | null): boolean => p?.tool === ACCEPT_RUN;
 
 /** The flows of the account (docs/flujos.md, F1): the list with their runs, and one as nodes and arrows. */
 async function serveFlows(
@@ -1145,9 +1184,12 @@ async function answerAgent(
   route: string,
   params: Record<string, string>,
   who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+  /** The models are off: only `OFF_ROUTES`, and in them only a run's proposal and an automation's «Preguntar». */
+  off = false,
 ): Promise<void> {
-  const agent = host.agent(who.account);
+  const agent = host.agent(who.account, off);
   const bad = () => send(res, 400, { error: "bad-request" });
+  const agentOff = () => send(res, 503, { error: "agent-off" });
   const after = (r: { proposals: string[] }) => {
     if (r.proposals.length) host.emit(who.account, "proposals", { n: r.proposals.length });
     return r;
@@ -1290,66 +1332,72 @@ async function answerAgent(
       });
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
-        proposals: store.journal.proposals("pending").map((p) => {
-          let card: InboxCard | null = null;
-          try {
-            card = inboxCard(store, p, { mailAccount }, ctx);
-          } catch {
-            // a proposal the card cannot read still shows with its rows
-          }
-          // A flow a model proposed (docs/flujos.md F5): drawn, with what it changes.
-          const flow =
-            p.tool === "flows.save"
-              ? flowProposalView(
-                  store,
-                  p,
-                  (tool) => host.toolTitle(tool),
-                  (key) =>
-                    Object.values(store.schema().types).find((t) => t.key === key)?.name ?? null,
-                )
-              : null;
-          return {
-            id: p.id,
-            tool: p.tool,
-            view: p.view,
-            sources: p.sources,
-            created: p.created,
-            run: p.run,
-            // The flow whose run made it, for «Ver en el mapa» (null: a turn of the conversation).
-            madeBy: store.journal.run(p.run)?.flow ?? null,
-            card,
-            ...(flow ? { flow } : {}),
-          };
-        }),
+        proposals: store.journal
+          .proposals("pending")
+          .filter((p) => !off || isRunProposal(p))
+          .map((p) => {
+            let card: InboxCard | null = null;
+            try {
+              card = inboxCard(store, p, { mailAccount }, ctx);
+            } catch {
+              // a proposal the card cannot read still shows with its rows
+            }
+            // A flow a model proposed (docs/flujos.md F5): drawn, with what it changes.
+            const flow =
+              p.tool === "flows.save"
+                ? flowProposalView(
+                    store,
+                    p,
+                    (tool) => host.toolTitle(tool),
+                    (key) =>
+                      Object.values(store.schema().types).find((t) => t.key === key)?.name ?? null,
+                  )
+                : null;
+            return {
+              id: p.id,
+              tool: p.tool,
+              view: p.view,
+              sources: p.sources,
+              created: p.created,
+              run: p.run,
+              // The flow whose run made it, for «Ver en el mapa» (null: a turn of the conversation).
+              madeBy: store.journal.run(p.run)?.flow ?? null,
+              card,
+              ...(flow ? { flow } : {}),
+            };
+          }),
       });
     }
     case "GET /api/agent/requests": {
       const store = host.store(who.account);
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
-        requests: agent.requests().map((r) => {
-          // Where it comes from (the mail that was being read), as the Registro says it.
-          let about: RunInfo["what"] | null = null;
-          let open: { type: string; id: string } | null = null;
-          const run = store.journal.run(r.run);
-          try {
-            if (run) about = runInfo(store, run, { mailAccount }).what;
-            const mail = mailOfRun(store, r.run);
-            const m = mail ? store.get(mail) : null;
-            if (m) open = { type: m.entity.type, id: m.entity.id };
-          } catch {
-            // the question shows without where it came from
-          }
-          return {
-            id: r.id,
-            run: r.run,
-            view: r.view,
-            created: r.created,
-            expires: r.expires,
-            about,
-            open,
-          };
-        }),
+        requests: agent
+          .requests()
+          .filter((r) => !off || askPlace(r.view))
+          .map((r) => {
+            // Where it comes from (the mail that was being read), as the Registro says it.
+            let about: RunInfo["what"] | null = null;
+            let open: { type: string; id: string } | null = null;
+            const run = store.journal.run(r.run);
+            try {
+              if (run) about = runInfo(store, run, { mailAccount }).what;
+              const mail = mailOfRun(store, r.run);
+              const m = mail ? store.get(mail) : null;
+              if (m) open = { type: m.entity.type, id: m.entity.id };
+            } catch {
+              // the question shows without where it came from
+            }
+            return {
+              id: r.id,
+              run: r.run,
+              view: r.view,
+              created: r.created,
+              expires: r.expires,
+              about,
+              open,
+            };
+          }),
       });
     }
     case "POST /api/agent/requests/:id/answer": {
@@ -1358,6 +1406,7 @@ async function answerAgent(
       const b = await bodyOf(req);
       // An automation's «Preguntar» (AU-125, AU-203): its answer goes to its run, not to the agent.
       if (askPlace(r.view)) return askAnswered(host, who, r.id, askGiven(b), res);
+      if (off) return agentOff();
       const answer =
         typeof b.choice === "number" && Number.isInteger(b.choice)
           ? { choice: b.choice }
@@ -1370,12 +1419,15 @@ async function answerAgent(
     case "POST /api/agent/requests/:id/dismiss": {
       const r = host.store(who.account).journal.request(params.id ?? "");
       if (r && askPlace(r.view)) return askAnswered(host, who, r.id, null, res);
+      if (off) return agentOff();
       return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
     }
     case "POST /api/agent/proposals/:id/accept": {
+      if (off && !isRunProposal(host.store(who.account).journal.proposal(params.id ?? "")))
+        return agentOff();
       // `seen`: the state word the card showed (task 73), checked again before acting.
       const b = ((await bodyOf(req)) ?? {}) as { edits?: unknown; seen?: unknown };
-      const r = await acceptCorrected(host, who, params.id ?? "", b.edits, b.seen ?? null);
+      const r = await acceptCorrected(host, who, params.id ?? "", b.edits, b.seen ?? null, off);
       if ("error" in r)
         return r.error === "changed"
           ? send(res, 409, { error: r.error, state: r.state ?? null })
@@ -1383,6 +1435,8 @@ async function answerAgent(
       return send(res, 200, after(r.done));
     }
     case "POST /api/agent/proposals/:id/reject":
+      if (off && !isRunProposal(host.store(who.account).journal.proposal(params.id ?? "")))
+        return agentOff();
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});
     case "POST /api/agent/proposals/:id/restore": {
@@ -1601,6 +1655,8 @@ export async function acceptCorrected(
    * (an action of the conversation, which shows no card word) counts as none.
    */
   seen?: unknown,
+  /** The models are off: only a run's proposal reaches here (`OFF_ROUTES`), accepted by an agent with no models. */
+  off = false,
 ): Promise<
   | { error: string; state?: CardState | null }
   | { done: Awaited<ReturnType<Agent["acceptProposal"]>> }
@@ -1608,7 +1664,7 @@ export async function acceptCorrected(
   const asked = (raw && typeof raw === "object" ? raw : undefined) as
     | { title?: unknown; collection?: unknown; done?: unknown; values?: unknown }
     | undefined;
-  const agent = host.agent(who.account);
+  const agent = host.agent(who.account, off);
   // Juan's corrections first (a new title, another collection), as the agent's edits.
   const store = host.store(who.account);
   const p = store.journal.proposal(id);
