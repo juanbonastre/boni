@@ -46,6 +46,7 @@ import {
   hiddenLines,
 } from "./agent.ts";
 import {
+  AI_RETRY,
   type AiFailure,
   AiFault,
   type AiPort,
@@ -55,6 +56,7 @@ import {
   modelLabelOf,
   type ReaderOutcome,
   readRows,
+  retriesOf,
 } from "./ai.ts";
 import {
   BONI_ACTION_TYPE,
@@ -858,6 +860,17 @@ class Run {
     this.models = countModelCall(this.limits, this.models);
   }
 
+  /**
+   * Before retry `n` of «Reintentar si el modelo falla» (`AI_RETRY`): waits `n` times `AI_RETRY.waitMs` by the run's
+   * clock, then checks the run's time and counts the call like any other (AU-17, AU-206): `LimitPassed` stops the run.
+   */
+  async retryCall(n: number): Promise<void> {
+    await this.deps.clock.sleep(AI_RETRY.waitMs * n);
+    const elapsed = this.elapsed();
+    if (elapsed >= this.limits.ms) throw new LimitPassed("ms", this.limits.ms, elapsed);
+    this.modelCall();
+  }
+
   /** What the run counted so far (AU-203): what a wait carries across. */
   counts(): RunCounts {
     return {
@@ -1093,7 +1106,13 @@ class Run {
     const until =
       this.deps.clock.now() + (typeof days === "number" ? days : ASK_LIMITS.waitDays.born) * DAY_MS;
     // What the run keeps is measured once it has done all it can before waiting (`go`): `ask.kept`.
-    return { answer, mode, questions, until };
+    return {
+      answer,
+      mode,
+      questions,
+      until,
+      ...(step.params[ASK_PARAMS.personal] === true ? { personal: true as const } : {}),
+    };
   }
 
   /** A question's options (AU-125): fixed with the automation's label, or the list an expression gives with its own. */
@@ -1364,6 +1383,7 @@ class Run {
           resolve: (v, scope) => resolve(v, scope),
           port: this.deps.ai,
           modelCall: () => this.modelCall(),
+          retry: (n) => this.retryCall(n),
           now: () => clock.now(),
           model: modelLabelOf(this.input.automation.id, step.id),
           record: record.ai,
@@ -2073,6 +2093,12 @@ class Run {
       modelCall: () => {
         this.modelCall();
         ai.calls++;
+      },
+      retries: retriesOf(step),
+      retry: async (n) => {
+        await this.retryCall(n);
+        ai.calls++;
+        ai.retried = (ai.retried ?? 0) + 1;
       },
       called: (name, ms) => {
         ai.ms += ms;

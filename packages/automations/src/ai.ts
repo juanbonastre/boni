@@ -71,9 +71,32 @@ export interface ReaderCall {
 /**
  * What the port answers. `answer`: what the model gave, after the port's own checks; the engine checks it again.
  * `refused`: the call was not answered (no key, no model, the month's budget, the provider said no): a key the screen
- * can say, never retried (`docs/nucleo.md` §7.4). `model`: the name of the model that answered, as «Modelos» shows it.
+ * can say (`docs/nucleo.md` §7.4). `transient`: the port's word that the call timed out or the provider failed on its
+ * own side (a 5xx), the only refusals «Reintentar si el modelo falla» asks again after (`AI_RETRY`); any other is never
+ * retried. `model`: the name of the model that answered, as «Modelos» shows it.
  */
-export type ReaderReply = { answer: unknown; model: string } | { refused: string; model?: string };
+export type ReaderReply =
+  | { answer: unknown; model: string }
+  | { refused: string; model?: string; transient?: true };
+
+/**
+ * «Reintentar si el modelo falla» (Juan, 2026-11-18, decision 28 of §10), behind «Añadir opción» in the five AI steps: how many
+ * times a call is asked again after the port says it timed out or the provider failed on its side (`transient`), never
+ * after a refusal of the policy, of the budget or of a key, a limit of the run, or an answer that does not fit (that
+ * one has its own second call, AU-59). Born 0 (no retry, as before), at most 2. Before retry `n` the run waits `n`
+ * times `waitMs` by its own clock (2 s, then 4 s), then counts the call against «Llamadas a modelos» and checks its
+ * time (AU-17, AU-206): a retry the run cannot pay stops it with `run.limit`, as any call would.
+ */
+export const AI_RETRY = { born: 0, max: 2, waitMs: 2000 } as const;
+/** The key of «Reintentar si el modelo falla» in the four readers and in «Agente» (`AGENT_PARAMS.retries`). */
+export const RETRY_PARAM = "retries";
+/** A step's «Reintentar si el modelo falla» as the engine reads it: a whole number from 0 to `AI_RETRY.max`. */
+export function retriesOf(step: Step): number {
+  const v = step.params[RETRY_PARAM];
+  return typeof v === "number" && Number.isInteger(v)
+    ? Math.min(Math.max(v, 0), AI_RETRY.max)
+    : AI_RETRY.born;
+}
 
 /**
  * How the engine calls a model (`RunDeps.ai`, §7): one reader call at a time, and one «Agente»'s unit of work, whose
@@ -153,6 +176,7 @@ export const READER_PARAMS = {
   options: "options",
   length: "length",
   instructions: "instructions",
+  retries: RETRY_PARAM,
 } as const;
 
 /**
@@ -172,6 +196,10 @@ export interface AiRecord {
   ms: number;
   /** Texts cut to `READER_TEXT_CHARS`. */
   cut: number;
+  /**
+   * Of `calls`, the ones «Reintentar si el modelo falla» asked again after a timeout or a provider's 5xx (`AI_RETRY`).
+   */
+  retried?: number;
 }
 
 /** What a reader step gives for one row of its input: the output row's new values, or its failure. */
@@ -186,6 +214,11 @@ interface ReaderInput {
   port: AiPort | undefined;
   /** Before each call (AU-206); throws `LimitPassed`, which stops the run. */
   modelCall(): void;
+  /**
+   * Before retry `n` of «Reintentar si el modelo falla» (`AI_RETRY`): waits, then counts the call and checks the run's
+   * time; throws `LimitPassed`, which stops the run. Without it, no call is retried.
+   */
+  retry?(n: number): Promise<void>;
   now(): number;
   /** The label of what a model wrote, for this step. */
   model: Label;
@@ -358,6 +391,7 @@ export async function readRows(
   const modelId = typeof model === "string" && model ? model : null;
   const length = step.params[P.length];
   const long = length === "medium" || length === "long" ? length : undefined;
+  const retries = retriesOf(step);
 
   // What each row sends: its text, and what Juan set (fixed, or an expression over the row). Labels of what is sent
   // become the output's: what comes out of a text from outside is from outside (AU-57).
@@ -471,13 +505,26 @@ export async function readRows(
     };
     let fault = "";
     let values: Cell[] | undefined;
+    const read = async (asked: ReaderCall): Promise<ReaderReply> => {
+      const start = input.now();
+      const reply = await port.read(asked);
+      record.ms += input.now() - start;
+      if (reply.model && !record.models.includes(reply.model)) record.models.push(reply.model);
+      return reply;
+    };
     for (let attempt = 0; attempt < 2 && !values; attempt++) {
       input.modelCall();
       record.calls++;
-      const start = input.now();
-      const reply = await port.read(attempt ? { ...call, again: { fault } } : call);
-      record.ms += input.now() - start;
-      if (reply.model && !record.models.includes(reply.model)) record.models.push(reply.model);
+      const asked = attempt ? { ...call, again: { fault } } : call;
+      let reply = await read(asked);
+      // «Reintentar si el modelo falla»: only after a timeout or a provider's 5xx, each retry waited, counted and timed
+      // first.
+      for (let n = 1; "refused" in reply && reply.transient && input.retry && n <= retries; n++) {
+        await input.retry(n);
+        record.calls++;
+        record.retried = (record.retried ?? 0) + 1;
+        reply = await read(asked);
+      }
       if ("refused" in reply) {
         fault = "";
         const f = new AiFault(`the model was not called: ${reply.refused}`, {

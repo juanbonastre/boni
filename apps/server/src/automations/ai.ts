@@ -10,11 +10,13 @@
  *   any origin (PR 490, choice 7); a «Probar» asks it too (`dry`, so it starts no notice) and spends from it (AU-199).
  *   Over it, the call is not made and is refused `budget`.
  * - **Each call.** One request through the provider with a timeout (`AI_TIMEOUTS`); it is never retried here: a call
- *   that timed out may have been charged, and asking again would pay twice (the engine asks again only for an answer
- *   that did not fit its shape, AU-59, AU-198, and counts that call first, AU-206). Every call that came back is kept
- *   in the journal with its usage, so the month's spending counts it; one that failed after the provider charged it
- *   (a provider error that carries `usage`) is kept too, with only its error code as response. What the provider
- *   said on an error never goes on: the step gets a fixed key.
+ *   that timed out may have been charged, and asking again would pay twice. The engine asks again for an answer that
+ *   did not fit its shape (AU-59, AU-198), and, only when the step's «Reintentar si el modelo falla» says so (decision
+ *   28 of docs/automatizaciones.md §10; born at none), after a refusal this port marks `transient`: our timeout, or the
+ *   provider's own timeout, overload or 5xx (`isTransient`). Each such call is counted first (AU-206). Every call that
+ *   came back is kept in the journal with its usage, so the month's spending counts it; one that failed after the
+ *   provider charged it (a provider error that carries `usage`) is kept too, with only its error code as response. What
+ *   the provider said on an error never goes on: the step gets a fixed key.
  * - **What a model receives.** A reader: its prompt and schema of packages/agent, the texts between markers and what
  *   Juan set in the step; nothing else of the run (`docs/nucleo.md` §7.4). An «Agente»: `AGENT_PROMPT` and the
  *   round's request as packages/agent's `runRounds` builds it (AU-197); its plan is checked by the code, and every
@@ -65,7 +67,19 @@ export interface AiFor {
   timeouts?: Partial<Record<keyof typeof AI_TIMEOUTS, number>>;
 }
 
-type Called = { json: unknown; model: string } | { refused: string };
+type Called = { json: unknown; model: string } | { refused: string; transient?: true };
+
+/**
+ * A refusal the step's «Reintentar si el modelo falla» may retry (decision 28 of §10): the call timed out, or the
+ * provider was down for a moment (its timeout, overload or a 5xx). Never a limit (429), a key, a budget, the policy or
+ * a network fault on our side: those would only fail again or pay again.
+ */
+export const isTransient = (key: string): boolean =>
+  key === "timeout" ||
+  key === "model-timeout" ||
+  key === "model-overloaded" ||
+  key === "model-server-error" ||
+  /^model-http-5\d\d(-|$)/.test(key);
 
 const hashOf = (s: string) => createHash("sha256").update(s).digest("hex");
 const READER_HASHES = new Map<string, string>();
@@ -124,7 +138,7 @@ export function serverAi(o: AiFor): AiPort {
   const timeout = (role: keyof typeof AI_TIMEOUTS) => o.timeouts?.[role] ?? AI_TIMEOUTS[role];
   const over = () => o.models.overBudget(o.account, { dry: o.test });
 
-  /** One call, timed out, kept in the journal when it came back or was charged. Never retried. */
+  /** One call, timed out, kept in the journal when it came back or was charged. Never retried here. */
   async function complete(
     provider: ModelProvider,
     req: ModelRequest,
@@ -149,7 +163,7 @@ export function serverAi(o: AiFor): AiPort {
           usage,
           at: now(),
         });
-      return { refused: why };
+      return isTransient(why) ? { refused: why, transient: true } : { refused: why };
     }
     o.store.journal.modelCall({
       run: o.run,
@@ -178,7 +192,7 @@ export function serverAi(o: AiFor): AiPort {
       }
       const got = await complete(p.provider, req, hash);
       return "refused" in got
-        ? { refused: got.refused, model: p.model }
+        ? { refused: got.refused, model: p.model, ...(got.transient ? { transient: true } : {}) }
         : { answer: got.json, model: got.model };
     },
     async agent(call: AgentCall): Promise<AgentReply> {
@@ -203,7 +217,7 @@ export function serverAi(o: AiFor): AiPort {
           AGENT_HASH,
         );
         return "refused" in got
-          ? { refused: got.refused, model: p.model }
+          ? { refused: got.refused, model: p.model, ...(got.transient ? { transient: true } : {}) }
           : { plan: got.json, model: got.model };
       });
       return reply as unknown as AgentReply;

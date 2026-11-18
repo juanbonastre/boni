@@ -45,6 +45,7 @@ import {
   type StepRecord,
   stepPrints,
 } from "@boni/automations";
+import { label } from "@boni/entities";
 import {
   type AutomationRunFilter,
   type AutomationRunRow,
@@ -95,6 +96,7 @@ import {
   addAskCards,
   askPlace,
   endAskCards,
+  mayAnswer,
   untilOf,
   waitingAsks,
 } from "./waits.ts";
@@ -676,7 +678,7 @@ async function carryOn(store: UserStore, run: string, zone: string, box: Box): P
   const ended = Date.now();
   if (result.state === "waiting") return wait(store, id, run, result, result.ms, ended);
   store.journal.dropAutomationWait(run);
-  // A question it no longer waits for (another failed and stopped it, say): its card says «Ya no vale».
+  // A question it no longer waits for (another failed and stopped it, say): its card ends as expired.
   endAskCards(store, run, "expired", ended);
   finish(store, id, run, result, result.ms, ended);
 }
@@ -706,10 +708,22 @@ function answerValue(place: AskPlace, ask: AskRecord, given: unknown): Cell | nu
 }
 
 /**
- * Juan answers a card of a «Preguntar» (AU-125, AU-203): from a personal device only, as accepting a proposal
- * (AU-193, decision 13). The answer is kept with the wait, labelled his hand on that device, and when every question
- * of its step has one the run goes on in its turn. `dismissed`: put away, it counts as no answer. A card no longer
- * pending, past its limit, or of a run that no longer waits is `gone` («Ya no vale»).
+ * The label of an answer given on a device of the account (decision 26 of §10). On a personal device it is Juan's own
+ * hand (`handLabel`). On a shared one anyone at it may have typed it, so it is not his hand: `ambient`, as the agent
+ * labels a background question answered there, with the device as its source.
+ */
+export const answerLabel = (hand: RunHand) =>
+  hand.trust === "personal"
+    ? handLabel(hand.device)
+    : label("ambient", "personal", [{ kind: "user-edit", id: `device:${hand.device}` }]);
+
+/**
+ * Juan answers a card of a «Preguntar» (AU-125, AU-203) from any device signed in to the account, unless its step
+ * asks for a personal one (`mayAnswer`, decision 26 of §10); the rest of what a run's hand does stays personal-only
+ * (decisions 13 and 15). The answer is kept with the wait, labelled by that device (`answerLabel`), and when every
+ * question of its step has one the run goes on in its turn. `dismissed`: put away, it counts as no answer, by the same
+ * rule. A card no longer pending, past its limit, or of a run that no longer waits is `gone`; `cancelled` when Juan
+ * cancelled its run (decision 27 of §10).
  */
 export function answerAsk(
   store: UserStore,
@@ -717,13 +731,14 @@ export function answerAsk(
   given: AskGiven | null,
   hand: RunHand,
   box?: Box,
-): { run: string } | { gone: true } | RunRefusal | ServiceError {
-  if (hand.trust !== "personal") return { refused: "not-personal" };
+): { run: string } | { gone: true; cancelled?: true } | RunRefusal | ServiceError {
   const r = store.journal.request(card);
   const place = r ? askPlace(r.view) : null;
   if (!r || !place) return NOT_FOUND;
+  if (r.status === "cancelled") return { gone: true, cancelled: true };
   const w = store.journal.automationWait(place.run);
   if (r.status !== "pending" || r.expires <= hand.now || !w) return { gone: true };
+  if (!mayAnswer(place, hand.trust)) return { refused: "not-personal" };
   const ask = (JSON.parse(w.execution) as Execution).steps[place.step]?.ask;
   if (!ask || ask.ended) return { gone: true };
   const value = given === null ? null : answerValue(place, ask, given);
@@ -736,7 +751,7 @@ export function answerAsk(
   );
   const answers = keptAnswers(w.answers);
   const step = answers[place.step] ?? {};
-  step[String(place.i)] = value === null ? null : { value, by: handLabel(hand.device) };
+  step[String(place.i)] = value === null ? null : { value, by: answerLabel(hand) };
   answers[place.step] = step;
   store.journal.setAutomationWaitAnswers(place.run, JSON.stringify(answers));
   if (ask.questions.every((_, i) => String(i) in step))
@@ -754,10 +769,14 @@ export function expireWaits(
     .map((run) => goOn(store, run, { zone: o.zone, ...(o.box ? { box: o.box } : {}) }));
 }
 
-/** A waiting run is cancelled (AU-203: «Cancelada»): nothing more of it runs, and its cards say «Ya no vale». */
+/**
+ * A waiting run is cancelled (AU-203: «Cancelada»): nothing more of it runs, and its pending cards end `cancelled`, a
+ * state apart from `expired`, which a card gets when its limit passes (decision 27 of §10; the screen's words are its
+ * own).
+ */
 function cancelWait(store: UserStore, r: AutomationRunRow, now: number): void {
   store.journal.dropAutomationWait(r.id);
-  endAskCards(store, r.id, "expired", now);
+  endAskCards(store, r.id, "cancelled", now);
   store.journal.endAutomationRun(r.id, {
     state: "cancelled",
     ended: now,

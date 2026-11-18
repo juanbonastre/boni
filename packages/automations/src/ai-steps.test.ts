@@ -8,6 +8,7 @@ import { type Label, label } from "@boni/entities";
 import { clock as now, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
 import {
+  AI_RETRY,
   type AiPort,
   READER_BATCH,
   READER_TEXT_CHARS,
@@ -23,7 +24,7 @@ import { type Execution, type RunDeps, run } from "./engine.ts";
 import { resolve } from "./expression.ts";
 import { ACTION, type Automation, type Step } from "./format.ts";
 import type { Row } from "./rows.ts";
-import { deps, OUTSIDE, OWN, store } from "./run.test-util.ts";
+import { clock, deps, OUTSIDE, OWN, store } from "./run.test-util.ts";
 import { validate } from "./validate.ts";
 
 const next = ids(157);
@@ -126,7 +127,7 @@ describe("the reader steps (F15)", () => {
     expect(shown("write")).toEqual(["instructions", "text", "model"]);
     expect(
       paramsOf({ id: "s_x", name: "x", type: "summarize", params: {} }).map((p) => p.key),
-    ).toEqual(["text", "model", "length"]);
+    ).toEqual(["text", "model", "length", "retries"]);
     for (const type of ["extract", "classify", "summarize", "write"]) {
       const action = actionOf({ id: "s_x", name: "x", type, params: {} });
       // Row by row, each row out paired to its own, nothing read or written in a collection.
@@ -498,5 +499,99 @@ describe("the reader steps (F15)", () => {
     under(now() - t1, 250, "clock", "batching 3,000 rows for a list reader");
     expect(port.calls).toHaveLength(3000 / READER_BATCH);
     expect(got.outcomes).toHaveLength(3000);
+  });
+});
+
+describe("«Reintentar si el modelo falla» (decision 28 of docs/automatizaciones.md §10)", () => {
+  /** The provider down for a moment: the server's port marks it `transient` (a timeout, an overload, a 5xx). */
+  const DOWN: ReaderReply = { refused: "model-overloaded", transient: true };
+  const classify = (retries?: number) =>
+    reading("classify", {
+      text: cite(body),
+      options: OPTIONS,
+      ...(retries === undefined ? {} : { retries }),
+    });
+
+  it("AU-57 · behind «Añadir opción» in the four readers and in «Agente», born at none; validation takes a whole number from 0 to 2", () => {
+    for (const type of ["extract", "classify", "summarize", "write", "agent"]) {
+      const p = paramsOf({ id: "s_x", name: "x", type, params: {} }).find(
+        (x) => x.key === "retries",
+      );
+      expect(p, type).toMatchObject({
+        place: "option",
+        default: 0,
+        control: "value",
+        of: "number",
+      });
+    }
+    expect(AI_RETRY).toEqual({ born: 0, max: 2, waitMs: 2000 });
+    for (const [n, ok] of [
+      [0, true],
+      [2, true],
+      [3, false],
+      [-1, false],
+      [1.5, false],
+    ] as const) {
+      const { automation, reader } = classify(n);
+      const problems = validate(automation, { ...knowing(notes), ai: true });
+      expect(
+        problems.some(
+          (p) => p.step === reader && p.code === "param.value" && p.param === "retries",
+        ),
+        String(n),
+      ).toBe(!ok);
+    }
+  });
+
+  it("AU-57 AU-206 · a reader is asked again only after a timeout or a provider's 5xx, at most its number of times, waiting 2 s then 4 s by the run's clock, and its record says how many calls were retried; born at none it is not asked again", async () => {
+    // Born: the call the provider could not answer fails the step at once, as before.
+    const once = scripted(() => DOWN);
+    const born = await go(classify().automation, { collections: db(3), ai: once });
+    expect(once.calls).toHaveLength(1);
+    expect(born.error?.ai).toEqual({ code: "ai.refused", detail: { why: "model-overloaded" } });
+    // Two: down twice, then answered. The same batch is asked again, as it was.
+    const { automation, reader } = classify(2);
+    const c = clock();
+    const twice = scripted((call, n) => (n <= 2 ? DOWN : valid(call)));
+    const e = await go(automation, { collections: db(3), ai: twice, clock: c });
+    expect(e.state).toBe("done");
+    expect(twice.calls).toHaveLength(3);
+    expect(twice.calls[2]).toEqual(twice.calls[0]);
+    expect(c.slept).toEqual([2000, 4000]);
+    expect(e.steps[reader]?.ai).toMatchObject({ calls: 3, retried: 2 });
+    // One: down twice, the step fails after two calls, saying why.
+    const down = scripted(() => DOWN);
+    const one = await go(classify(1).automation, { collections: db(3), ai: down });
+    expect(down.calls).toHaveLength(2);
+    expect(one.error?.ai).toEqual({ code: "ai.refused", detail: { why: "model-overloaded" } });
+    // Never after a refusal that is not transient: the budget, a key or a model gone, the provider's limit (429).
+    for (const why of ["budget", "no-key", "no-model", "model-rate-limit"]) {
+      const no = scripted(() => ({ refused: why }));
+      const r = await go(classify(2).automation, { collections: db(3), ai: no });
+      expect(no.calls, why).toHaveLength(1);
+      expect(r.error?.ai, why).toEqual({ code: "ai.refused", detail: { why } });
+    }
+  });
+
+  it("AU-206 AU-17 · a retry counts in «Llamadas a modelos» and in the run's time: past either, the run stops with `run.limit` before the call is made", async () => {
+    const calls = classify(2);
+    calls.automation.settings = { limits: { modelCalls: 2 } };
+    const down = scripted(() => DOWN);
+    const e = await go(calls.automation, { collections: db(3), ai: down });
+    expect(down.calls).toHaveLength(2);
+    expect(e.error).toMatchObject({
+      step: calls.reader,
+      failure: { code: "run.limit", detail: { limit: "modelCalls", max: 2, got: 3 } },
+    });
+    // Time: the second retry waits 4 s, past a run of 5 s; its call is not made.
+    const timed = classify(2);
+    timed.automation.settings = { limits: { ms: 5000 } };
+    const slow = scripted(() => DOWN);
+    const t = await go(timed.automation, { collections: db(3), ai: slow, clock: clock() });
+    expect(slow.calls).toHaveLength(2);
+    expect(t.error).toMatchObject({
+      step: timed.reader,
+      failure: { code: "run.limit", detail: { limit: "ms", max: 5000 } },
+    });
   });
 });
