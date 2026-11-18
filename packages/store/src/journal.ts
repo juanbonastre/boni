@@ -134,7 +134,8 @@ export interface RequestRow {
   run: string;
   /** What the panel paints (the agent's `Pending` view, labelled values). */
   view: unknown;
-  status: "pending" | "answered" | "expired" | "dismissed";
+  /** `cancelled`: its run was cancelled while it waited (decision 27 of docs/automatizaciones.md §10). */
+  status: "pending" | "answered" | "expired" | "dismissed" | "cancelled";
   created: number;
   expires: number;
   decided: number | null;

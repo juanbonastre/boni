@@ -8,7 +8,7 @@
  */
 import { FILTER_OPS } from "@boni/views";
 import { AGENT_PARAMS, AGENT_ROUNDS, AGENT_TOOLS, codeToolsOf } from "./agent.ts";
-import { fieldsOf } from "./ai.ts";
+import { AI_RETRY, fieldsOf, isReaderType, RETRY_PARAM } from "./ai.ts";
 import {
   actionOf,
   inputsOf,
@@ -223,6 +223,7 @@ export function validate(
     }
     new StepCheck(step, context, byId, byName, down, add, code !== undefined).run();
     if (step.type === AGENT_TYPE) agentParams(step, add, code !== undefined);
+    if (step.type === AGENT_TYPE || isReaderType(step.type)) retryParam(step, add);
     if (step.type === ASK_TYPE) askParams(step, add);
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
@@ -266,6 +267,15 @@ export function validate(
 }
 
 type Add = (code: ProblemCode, at: Omit<Problem, "code" | "severity">) => void;
+
+/**
+ * «Reintentar si el modelo falla» (`AI_RETRY`, decision 28 of §10): a whole number of retries from 0 to `AI_RETRY.max`.
+ */
+function retryParam(step: Step, add: Add): void {
+  const n = step.params[RETRY_PARAM];
+  if (typeof n === "number" && !(Number.isInteger(n) && n >= 0 && n <= AI_RETRY.max))
+    add("param.value", { step: step.id, param: RETRY_PARAM });
+}
 
 /**
  * What a «Preguntar» takes beyond its controls (AU-125): «Límite de espera» a whole number of days from 1 to

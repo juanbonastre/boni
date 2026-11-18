@@ -1386,7 +1386,9 @@ que un paso espere a Juan.
   `no-model` o `no-key` en vez de llamar. El puerto del servidor (`apps/server/src/automations/ai.ts`) pregunta el
   presupuesto antes de cada llamada, de cada ronda de un «Agente» y de cada reintento, para una ejecución de
   cualquier origen y en «Probar» (sin aviso: `dry`), y sobre él la llamada no se hace (`ai.refused`, `budget`).
-  Cada llamada va con un tope de tiempo y no se repite (una que se agotó pudo cobrarse); la que vuelve, y la que
+  Cada llamada va con un tope de tiempo y no se repite (una que se agotó pudo cobrarse), salvo con «Reintentar si
+  el modelo falla» (decisión 28 del §10, tarea 129), que la repite una o dos veces tras un tope o un 5xx; la que
+  vuelve, y la que
   falló cobrada, quedan en el diario con su gasto. Al publicar, un «Modelo» que no está en `modelChoices` de su uso
   es un problema del paso (`param.value`, `model`; `aiProblems` de `publish.ts`). Falta: la lista en el editor (P1).
   Hecho en P1 de la F15: «Modelo» del «Agente» es una lista de `modelChoices` de su uso (`GET …/agent/planners`, la
@@ -2417,7 +2419,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
     de horas mira los límites de espera vencidos.
   - El límite de tiempo de la ejecución (AU-17) cuenta lo que corre, no lo que espera; las filas escritas y las
     llamadas a modelos se cuentan juntas, antes y después.
-  Contestar es un toque en un dispositivo personal, como aceptar una propuesta (AU-193). La ejecución sigue desde
+  Contestar es un toque en un dispositivo con la sesión de la cuenta, personal o compartido (decisión 26 del §10;
+  un altavoz no), salvo que el paso pida uno personal. La ejecución sigue desde
   ese paso, en su turno y con la versión con la que empezó, aunque haya otra publicada, y lo dice su línea. Sus
   pasos son los de esa versión; lo que guarda después de la espera se decide al guardar, con el «Sí» más bajo entre
   el de esa versión y el de la publicada en ese momento (una celda que Juan bajó o quitó desde entonces pregunta) y
@@ -2425,7 +2428,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   se junta cuando la ejecución termina, también después de una espera: mientras espera una respuesta su línea dice
   «Esperando tu respuesta», y «1 propuesta sin responder» solo cuando ya terminó. Pasado el
   límite sale por «sin respuesta» y la tarjeta queda «Ya no vale». Apagar o eliminar la automatización, o deshacer
-  la ejecución, cancela la espera («Cancelada»). En «Probar» la pregunta sale en el panel de la prueba y se contesta
+  la ejecución, cancela la espera («Cancelada»), y su tarjeta queda cancelada, aparte de las que
+  caducan (decisión 27). En «Probar» la pregunta sale en el panel de la prueba y se contesta
   allí: no va a la Bandeja. La prueba: `packages/automations/src/people.test.ts` y
   `apps/server/src/automations/ai.test.ts`.
   Hecho en E4, en el motor: al llegar a un «Preguntar» termina lo que no depende de la respuesta, el paso queda
@@ -2446,7 +2450,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`expireWaits`, 50 cada vez), que salen por «sin respuesta». Cada pregunta es una tarjeta de la Bandeja
   (`RequestRow`, con `view.automation`: ejecución, paso y pregunta), pintada por código con los controles de la app
   («Sí o no», una opción, varias o texto); se contesta o se aparta solo desde un dispositivo personal, y la
-  respuesta lleva su mano y su dispositivo (`GivenAnswer.by`). Cuando todas las preguntas de un paso tienen
+  respuesta lleva su mano y su dispositivo (`GivenAnswer.by`). (Cambiado en la tarea 129, decisión 26: también desde
+  uno compartido.) Cuando todas las preguntas de un paso tienen
   respuesta, la ejecución sigue en su turno con la versión con la que empezó y el «Sí» más bajo entre esa versión y
   la publicada en ese momento (`lowerYes`: un paso que cambió pregunta entero); la propuesta se hace al terminar.
   Apagar o eliminar la automatización, o deshacer la ejecución, la cancela («Cancelada») y sus tarjetas quedan
@@ -2457,6 +2462,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   de noche, para que Juan lo confirme). Hecho en S3: al seguir, la ejecución lee también la pausa de AU-210
   (`resumePublished` con `pausedDoc`), que solo baja; esa lectura no tiene todavía una prueba propia. Falta, de la
   pantalla (P2), el límite en «Esperando tu respuesta · hasta…» y la pregunta en el panel de la prueba.
+  Hecho en la tarea 129 (decisiones 26 y 27): contesta o aparta cualquier dispositivo de la cuenta menos un altavoz
+  (`mayAnswer` de `waits.ts`, que `GET /api/agent/requests` da por tarjeta), y solo uno personal si el paso tiene
+  «Solo desde un dispositivo personal» (`personal`, que la tarjeta guarda en `view.automation`); una respuesta
+  escrita desde uno compartido lleva la etiqueta `ambient` con el dispositivo como fuente (`answerLabel` de
+  `runs.ts`). Las tarjetas de una espera cancelada quedan `cancelled` (migración 34) y una respuesta a ellas vuelve
+  con `run-cancelled`. Falta (P2): la opción en el editor, «Solo desde un dispositivo personal» en sus palabras, la
+  tarjeta según `mayAnswer` y las palabras de una tarjeta cancelada.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
 - **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
@@ -4255,7 +4267,10 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       después, con «Revisar la guía» de la F16** (AU-211, §5.15). La F15 construye lo que no necesita un modelo: las
       señales, la cuenta bajo la celda, la sugerencia y la pausa. La otra: un PR más en la F15 y llamadas a modelos
       del presupuesto del mes antes de que existan las automatizaciones de Boni que las limitan.
-    - **Cuando un «Sí» falla tres veces seguidas, o 4 de sus últimas 20, Boni vuelve a preguntar** (AU-210). El
+    - **Cuando un «Sí» falla tres veces seguidas, o uno de cada cinco entre sus últimas 20 juzgadas (con al menos
+      tres), Boni vuelve a preguntar** (AU-210). Esta línea decía «4 de sus últimas 20», que no es lo que se
+      construyó (`backOff`: tres seguidas, o un 20 % mal de las últimas 20 con al menos tres juzgadas); **Juan,
+      2026-11-18: «No recuerdo decir "4 de los ultimos 20", haz lo que consideres mejor»**, y queda lo construido. El
       «Analista» tiene «Crear: Sí» en Notas y deshace tres ejecuciones seguidas: la siguiente deja una tarjeta en vez
       de guardar, la celda dice «Sí · en pausa», y un aviso lo cuenta una vez con «Quitar pausa». La versión
       publicada no cambia y la pausa solo baja. La otra: solo el aviso, y las ejecuciones seguirían guardando hasta
@@ -4418,6 +4433,70 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
       eligió porque hoy no la hay, porque pide un número que alguien tiene que fijar y porque una evaluación es
       información para él y una condición que el código comprueba, no una guarda: lo que un modelo puede hacer lo
       dicen las conexiones y la política. Si la quiere, es una regla nueva sobre AU-235, por clase de trabajo.
+26. **Contesta un «Preguntar» cualquier dispositivo con la sesión de la cuenta; el paso puede pedir uno personal.**
+    El diseño de la F15 (tarea 129) dejaba contestar solo desde un dispositivo personal, como aceptar una propuesta.
+    **Juan, 2026-11-18: «No distinguiria entre dispositivos personales y compartidos, si has iniciado sesion puedes
+    aceptarlo, a menos que pueda configurarlo asi en la automatizacion».** Por ejemplo, «Revisar facturas» pregunta
+    «¿De qué cuenta es este cargo?» con tres opciones; la tableta compartida de la cocina tiene la sesión de la
+    cuenta, y desde ella se elige «Casa»: la ejecución sigue. Con la otra respuesta (solo personal, la de antes) la
+    tarjeta de esa tableta diría «Solo desde un dispositivo personal» y habría que esperar al teléfono. Lo que queda:
+    - Contestar (o apartar) una tarjeta de «Preguntar» se puede desde un dispositivo personal o uno compartido de la
+      cuenta; un altavoz (`ambient`) nunca, porque no confirma nada. El servidor le dice a la pantalla, por tarjeta,
+      si ese dispositivo puede contestarla (`mayAnswer` en `GET /api/agent/requests`), y lo comprueba otra vez al
+      recibir la respuesta (`mayAnswer` de `waits.ts`; si no, `personal-device-only`). Prueba:
+      `apps/server/src/automations/ai.test.ts` («A-45 AU-203 · decision 26: any device signed in to the account
+      answers a «Preguntar» card…»).
+    - El paso gana una opción detrás de «Añadir opción», «Solo desde un dispositivo personal», apagada al nacer:
+      encendida, solo un dispositivo personal contesta sus tarjetas, como antes. La misma prueba.
+    - **La etiqueta de la respuesta sale del dispositivo** (decidido de noche, para que Juan lo confirme): desde uno
+      personal es su mano (`handLabel`); una respuesta escrita desde uno compartido lleva la etiqueta de algo que no
+      es su mano (`ambient`, con el dispositivo como fuente), porque cualquiera delante de esa tableta pudo
+      escribirla, igual que las preguntas que el agente hace en segundo plano. Una opción elegida lleva la etiqueta
+      de la opción (AU-125), venga de donde venga. Así, el paso que guarda lo escrito desde la tableta lo guarda
+      como de fuera, y su «Sí» lo trata como trata un correo. La otra: su mano desde cualquier dispositivo, y lo
+      escrito en la cocina contaría como escrito por él.
+    - Solo se abre contestar. Aceptar la propuesta de una ejecución, «Ejecutar», reintentar, deshacer, «Fijar»,
+      publicar, encender y poner un «Sí» siguen pidiendo un dispositivo personal (decisiones 13 y 15). Prueba:
+      `apps/server/src/automations/ai.test.ts` («A-45 · decision 26 opens only answering…»).
+    - Apartar una tarjeta sigue la misma regla que contestarla (decidido de noche, para que Juan lo confirme; la
+      otra era apartar solo desde uno personal).
+27. **Una ejecución cancelada deja sus tarjetas en su propio estado, no en «Ya no vale».** El diseño decía que las
+    tarjetas de una ejecución que se canceló mientras esperaba quedaban «Ya no vale», como las que pasaron su
+    límite. **Juan, 2026-11-18: «usa algo como "Ejecución abortada" o algo similar».** Por ejemplo, Juan apaga
+    «Revisar facturas» con una pregunta esperando: la tarjeta deja de pedir respuesta y dice que la ejecución se
+    canceló, no que la pregunta caducó. La otra: «Ya no vale» para todas, sin distinguir. Lo que queda:
+    - La tarjeta tiene un estado más, `cancelled`, aparte de `expired` (migración 34 de `requests`). Lo ponen apagar
+      o eliminar la automatización, deshacer la ejecución que espera y una ejecución que al seguir encuentra la
+      automatización apagada; pasar el límite, una ejecución interrumpida o una que ya siguió dejan `expired`. Una
+      respuesta a una tarjeta cancelada vuelve con `run-cancelled`, y a una caducada con `run-expired`. Prueba:
+      `apps/server/src/automations/ai.test.ts` («AU-203 · the 21st waiting run of an automation fails at its
+      question; turning the automation off, deleting it or undoing a run cancels its waits, and their cards end as
+      cancelled…»).
+    - Las palabras de la tarjeta son de la pantalla (P2, tarea 153).
+28. **«Reintentar si el modelo falla»: una opción de los pasos de IA, que nace sin reintentar.** El diseño decía
+    que una llamada a un modelo no se repite, porque una que se agotó pudo cobrarse. **Juan, 2026-11-18: «Ok, pero se
+    deberia poder configurar tambien».** Por ejemplo, «Resumir» en «Revisar facturas» con «Reintentar si el modelo
+    falla: 2»: el proveedor tarda más que el tope de la llamada, Boni espera 2 s y la pide otra vez, y la segunda
+    vuelve; «Lo que hizo» dice que hubo un reintento. Sin la opción, el paso habría fallado y seguido su «Si falla».
+    La otra: no repetir nunca, la del diseño. Lo que queda:
+    - Los cinco pasos de IA («Extraer», «Clasificar», «Resumir», «Escribir» y «Agente») tienen la opción detrás de
+      «Añadir opción»: 0 al nacer, 1 o 2. Otro número no publica (`param.value`). Es otra cosa que «Reintentos» de
+      los ajustes (AU-16), que no vuelve a llamar al modelo. Prueba: `packages/automations/src/ai-steps.test.ts`
+      (««Reintentar si el modelo falla»…»).
+    - Se reintenta solo tras un tope de tiempo o un 5xx del proveedor (`transient`, que marca el puerto del
+      servidor: `isTransient` de `apps/server/src/automations/ai.ts`); un 429, un fallo de red, un 4xx, la clave o
+      el presupuesto no se reintentan. Antes de cada reintento la ejecución espera 2 s y luego 4 s por su reloj.
+      Prueba: `apps/server/src/automations/ai.test.ts` («AU-57 · the port marks `transient` only our timeout…»).
+    - Cada reintento cuenta en «Llamadas a modelos» y en el tiempo de la ejecución, y se comprueban antes de
+      hacerlo; el presupuesto del mes se pregunta en cada uno. El registro de la llamada dice cuántas veces se
+      reintentó (`retried`). En el «Agente», cada ronda reintenta igual. Pruebas:
+      `packages/automations/src/ai-steps.test.ts` («AU-206 AU-17 · a retry counts in «Llamadas a modelos» and in the
+      run's time…») y `packages/agent/test/automation-ai.test.ts` («AU-206 · a round's call is asked again only
+      after a `transient` refusal…»).
+    - Lo que no se eligió: reintentar también tras un 429 o un fallo de red (lo que hace «Retry On Fail» de
+      n8n, del que solo se tomó la idea); un límite del proveedor se respeta, y un fallo de red suele durar más de
+      unos segundos. Contar intentos en vez de reintentos («2» serían dos llamadas en total): se cuenta lo que se
+      añade a la llamada de siempre, para que 0 sea «como hoy».
 
 ## 11. Principios que entran o cambian (cada uno con su prueba, en el PR de su fase)
 

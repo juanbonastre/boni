@@ -411,6 +411,23 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 33: the decisions of a few days, by when they were taken (F15 S3, AU-207): once a day the server judges what a
   // run saved in the last 7 days by what Juan's hand did since, reading only those, never an area whole.
   `CREATE INDEX IF NOT EXISTS decisions_at ON decisions(at);`,
+  // 34: a card of a waiting run Juan cancelled ends as `cancelled`, apart from one past its limit (`expired`): decision
+  // 27 of docs/automatizaciones.md §10. SQLite cannot change a CHECK, so the table is made again with its rows.
+  `CREATE TABLE requests_new (
+     id TEXT PRIMARY KEY,
+     run TEXT NOT NULL,
+     view TEXT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('pending', 'answered', 'expired', 'dismissed', 'cancelled')),
+     created INTEGER NOT NULL,
+     expires INTEGER NOT NULL,
+     decided INTEGER,
+     answer TEXT
+   );
+   INSERT INTO requests_new (id, run, view, status, created, expires, decided, answer)
+     SELECT id, run, view, status, created, expires, decided, answer FROM requests;
+   DROP TABLE requests;
+   ALTER TABLE requests_new RENAME TO requests;
+   CREATE INDEX requests_status ON requests(status);`,
 ];
 
 export function migrate(db: DatabaseSync): void {
