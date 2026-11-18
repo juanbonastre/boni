@@ -1345,16 +1345,9 @@ export const MODELS = {
   evaluating: null,
 };
 const GLM = choice("openrouter", "z-ai/glm-5.2", true);
-export const MODELS_EVALUATING = { ...MODELS, evaluating: { ...GLM, role: "planner" } };
 export const MODELS_EVALUATED = {
   ...MODELS,
   evaluations: [evaluation("planner", GLM, 7, 8), ...MODELS.evaluations],
-};
-export const MODELS_USED = {
-  ...MODELS_EVALUATED,
-  roles: MODELS.roles.map((r) =>
-    r.role === "planner" ? { ...r, ...GLM, privacy: "keeps-nothing", chosen: true } : r,
-  ),
 };
 export const MODELS_CATALOGUE = {
   models: [
@@ -1444,6 +1437,168 @@ export const MODELS_CATALOGUE_WORST = {
     context: 1000000,
     providers: Array.from({ length: 30 }, (_, j) => `P${j}`),
     structured: true,
+  })),
+};
+
+/**
+ * «Modelos» without uses (docs/automatizaciones.md §5.16): `GET api/agent/models/list` as apps/server/src/models.ts
+ * `listView` gives it. His two, in his order (one tagged «Barato» and evaluated, one just added «Sin evaluar»), then
+ * the server's two; «De la cuenta» with its rows; invented names and figures.
+ */
+export const FLASH = "openrouter:deepseek/deepseek-v4.1-flash:zdr";
+export const GLM_ID = "openrouter:z-ai/glm-5.2:zdr";
+export const OPUS = "anthropic:claude-opus-5-5";
+export const HAIKU = "anthropic:claude-haiku-4-5";
+export const BARATO = "tag:barato0000000001";
+const listed = (
+  id: string,
+  o: {
+    privacy: string;
+    server?: boolean;
+    kinds?: string[];
+    tags?: { id: string; name: string }[];
+    evaluation?: {
+      right: number;
+      total: number;
+      at: number;
+      partial: boolean;
+      expired: boolean;
+    } | null;
+    cost?: number | null;
+    eur?: number;
+    uses?: { rows: string[]; automations: number; conversations: number };
+  },
+) => {
+  const [connection, ...rest] = id.split(":");
+  const zdr = rest[rest.length - 1] === "zdr";
+  return {
+    id,
+    connection,
+    model: (zdr ? rest.slice(0, -1) : rest).join(":"),
+    zdr,
+    privacy: o.privacy,
+    server: o.server ?? false,
+    kinds: o.kinds ?? ["agent", "reading"],
+    tags: o.tags ?? [],
+    key: true,
+    evaluation: o.evaluation ?? null,
+    cost: o.cost ?? null,
+    eur: o.eur ?? 0,
+    uses: o.uses ?? { rows: [], automations: 0, conversations: 0 },
+  };
+};
+const MARK_AT = Date.UTC(2026, 10, 12, 9);
+export const MODELS_LIST = {
+  models: [
+    listed(FLASH, {
+      privacy: "keeps-nothing",
+      tags: [{ id: BARATO, name: "Barato" }],
+      evaluation: { right: 22, total: 24, at: MARK_AT, partial: false, expired: false },
+      cost: 0.05,
+      eur: 0.74,
+      uses: { rows: ["reading"], automations: 3, conversations: 0 },
+    }),
+    listed(GLM_ID, { privacy: "keeps-nothing" }),
+    listed(OPUS, {
+      privacy: "deletes-in-30-days",
+      server: true,
+      kinds: ["agent"],
+      eur: 2.61,
+      uses: { rows: ["agent"], automations: 0, conversations: 2 },
+    }),
+    listed(HAIKU, { privacy: "deletes-in-30-days", server: true, kinds: ["reading"] }),
+  ],
+  tags: [
+    { id: BARATO, name: "Barato", uses: { rows: ["reading"], automations: 2, conversations: 0 } },
+  ],
+  account: [
+    { kind: "agent", value: null, answers: OPUS, automations: 4 },
+    { kind: "reading", value: BARATO, answers: FLASH, automations: 6 },
+  ],
+  evaluating: null,
+  personal: true,
+};
+/** The same list on a shared device: it only reads (AU-243). */
+export const MODELS_LIST_SHARED = { ...MODELS_LIST, personal: false };
+/** «Modelo»'s choices of a kind (`GET api/agent/models/choices?kind=`), as `choices` gives them. */
+const offered = (id: string, privacy: string, server = false) => {
+  const { connection, model, zdr } = listed(id, { privacy });
+  return { id, connection, model, zdr, privacy, server };
+};
+export const CHOICES_AGENT = {
+  kind: "agent",
+  account: { value: null, answers: OPUS },
+  tags: [{ id: BARATO, name: "Barato", answers: FLASH, state: "ok" }],
+  models: [offered(FLASH, "keeps-nothing"), offered(OPUS, "deletes-in-30-days", true)],
+  personal: true,
+};
+export const CHOICES_READING = {
+  kind: "reading",
+  account: { value: BARATO, answers: FLASH },
+  tags: [
+    { id: BARATO, name: "Barato", answers: FLASH, state: "ok" },
+    { id: "tag:vacia000000000001", name: "Para revisar", answers: null, state: "no-model" },
+    { id: "tag:vieja000000000001", name: "De antes", answers: FLASH, state: "expired" },
+  ],
+  models: [offered(FLASH, "keeps-nothing"), offered(HAIKU, "deletes-in-30-days", true)],
+  personal: true,
+};
+/** A model's evaluation whole (`GET api/agent/models/evaluation?id=`): its cases by part. */
+export const MODELS_PARTS = {
+  id: FLASH,
+  parts: {
+    agent: {
+      right: 14,
+      total: 15,
+      wrong: 1,
+      cost: 0.04,
+      at: MARK_AT,
+      cases: evaluation(
+        "planner",
+        choice("openrouter", "deepseek/deepseek-v4.1-flash", true),
+        14,
+        15,
+      ).cases,
+    },
+    reading: {
+      right: 8,
+      total: 9,
+      wrong: 1,
+      cost: 0.01,
+      at: MARK_AT,
+      cases: evaluation("reader", READER, 8, 9).cases,
+    },
+  },
+};
+/** The longest a real list may be: 30 of his models with long ids, 20 tags on one, the server's two. */
+export const MODELS_LIST_WORST = {
+  ...MODELS_LIST,
+  models: [
+    ...Array.from({ length: 30 }, (_, i) =>
+      listed(`openrouter:${LONG}-${i}:zdr`, {
+        privacy: i % 3 ? "keeps-nothing" : "may-keep",
+        tags: Array.from({ length: i === 0 ? 20 : 2 }, (_, j) => ({
+          id: `tag:larga${String(j).padStart(11, "0")}`,
+          name: `Etiqueta larga ${j}`.slice(0, 24),
+        })),
+        evaluation: {
+          right: 23,
+          total: 24,
+          at: MARK_AT,
+          partial: i % 2 === 0,
+          expired: i % 5 === 0,
+        },
+        cost: 1.23,
+        eur: 1234.56,
+        uses: { rows: ["agent", "reading"], automations: 123, conversations: 45 },
+      }),
+    ),
+    ...MODELS_LIST.models.slice(2),
+  ],
+  tags: Array.from({ length: 20 }, (_, j) => ({
+    id: `tag:larga${String(j).padStart(11, "0")}`,
+    name: `Etiqueta larga ${j}`.slice(0, 24),
+    uses: { rows: [], automations: 99, conversations: 0 },
   })),
 };
 

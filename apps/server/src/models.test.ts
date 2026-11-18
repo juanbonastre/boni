@@ -16,7 +16,13 @@ import { addUser } from "./auth.ts";
 import { wireBoni } from "./automations/boni.ts";
 import { keepBoniFlows, revertFlow } from "./automations/convert.ts";
 import { publish, setEnabled } from "./automations/publish.ts";
-import { cite, JUAN, made as madeAutomation, START } from "./automations/run.test-util.ts";
+import {
+  cite,
+  JUAN,
+  made as madeAutomation,
+  START,
+  type StepSpec,
+} from "./automations/run.test-util.ts";
 import { startRun } from "./automations/runs.ts";
 import { publishedOf, setDeleted, testAutomation } from "./automations/service.ts";
 import { type Db, openDb } from "./db.ts";
@@ -1381,6 +1387,58 @@ describe("«Modelos» without uses (§5.16)", () => {
     const big = t.models.listView(1);
     under(clock() - at, 300, "clock", "«Modelos» with 30 models and a year of calls");
     expect(big.models.filter((x) => !x.server)).toHaveLength(30);
+  });
+
+  it("AU-232 AU-238 · with 30 models, 20 tags and 200 steps naming them, the list and each kind's choices answer in their time (A-15)", () => {
+    const t = fresh();
+    const ids = Array.from(
+      { length: 30 },
+      (_, i) => `openrouter:ejemplo/modelo-${String(i).padStart(2, "0")}`,
+    );
+    t.load(...ids);
+    for (const id of ids) t.evaluated(id, ["agent", "reading"]);
+    const tags = Array.from({ length: 20 }, (_, i) => {
+      const tag = t.models.addTag(1, `Etiqueta ${i}`) as { id: string };
+      expect(t.models.tagModel(1, ids[i] as string, [tag.id], false)).toEqual({ done: true });
+      return tag.id;
+    });
+    // 40 automations of five AI steps each: a tag, a model or «El de la cuenta».
+    const s = t.store();
+    for (let a = 0; a < 40; a++)
+      madeAutomation(s, [
+        START,
+        ...Array.from(
+          { length: 5 },
+          (_, k): StepSpec => [
+            `Redactar ${k}`,
+            "write",
+            {
+              instructions: "Resume",
+              text: cite("$json.nota"),
+              model:
+                k === 0
+                  ? ""
+                  : k % 2
+                    ? (tags[(a + k) % 20] as string)
+                    : (ids[(a + k) % 30] as string),
+            },
+          ],
+        ),
+      ]);
+    // Asked once when «Modelos» opens, and once per kind when a step's panel opens: a frame's worth each, widened by
+    // the machine's load. Measured here (2026-11-18, idle): the list 8 ms, the choices of a kind 1 to 14 ms.
+    let at = clock();
+    const v = t.models.listView(1);
+    under(clock() - at, 300, "clock", "«Modelos» with 30 models, 20 tags and 200 steps");
+    expect(v.models.filter((x) => !x.server)).toHaveLength(30);
+    expect(v.tags).toHaveLength(20);
+    expect(v.tags.every((g) => g.uses.automations > 0)).toBe(true);
+    for (const kind of ["agent", "reading", "decision"] as const) {
+      at = clock();
+      const c = t.models.choices(1, kind);
+      under(clock() - at, 100, "clock", `the choices of «${kind}» with 20 tags and 200 steps`);
+      expect(c.kind).toBe(kind);
+    }
   });
 
   it("AU-233 · removing a model in use says where it is used, keeps its evaluation and leaves every reference answering «no-model»; one added is «Sin evaluar» and offered nowhere", async () => {
