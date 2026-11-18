@@ -3,8 +3,12 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   ACCURACY,
   ACCURACY_ON,
+  BARATO as BARATO_ID,
   CARD_DETAILED,
+  CHOICES_AGENT,
+  CHOICES_READING,
   DONE,
+  FLASH as FLASH_ID,
   FLOW_BUDGET,
   FLOW_BUDGET_CHECK,
   FLOW_BUDGET_CHECK_NONE,
@@ -27,7 +31,9 @@ import {
   FLOWS_WITH_BUDGET,
   FLOWS_WITH_REVIEW,
   FLOWS_WITH_SUMMARY,
+  GLM_ID,
   GUIDE_RULES,
+  HAIKU as HAIKU_ID,
   MAP,
   MAP_BUDGET,
   MAP_CHOSEN,
@@ -35,9 +41,9 @@ import {
   MAP_TELLS,
   MODELS,
   MODELS_CATALOGUE,
-  MODELS_EVALUATED,
-  MODELS_EVALUATING,
-  MODELS_USED,
+  MODELS_LIST,
+  MODELS_LIST_SHARED,
+  MODELS_PARTS,
   ORIGIN_MAIL,
   ORIGIN_TURN,
   ORIGIN_USER,
@@ -59,8 +65,9 @@ import {
 import { openApp, openInTree, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
- * Boni's models (design audit, Juan 2026-10-25): what configures them is Ajustes → Modelos (each use with its model in
- * large type, a click opens it; the month's spending and the budget; the keys). What they did is the template page
+ * Boni's models (design audit, Juan 2026-10-25; without uses since task 154, §5.16): what configures them is Ajustes →
+ * Modelos (one list of loaded models with their tags, «De la cuenta» above it, the month's spending, the budget and
+ * the keys under it). What they did is the template page
  * «Uso de la IA», ordinary blocks over Boni's own read-only collections; a click on a number lists what it counts.
  */
 const SHOTS = "e2e-boni/screenshots";
@@ -73,7 +80,7 @@ const requests = async (page: Page, prefix: string) =>
 async function openModels(page: Page) {
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
   await page.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
-  await page.locator(".use-card").first().waitFor();
+  await page.locator(".models-settings").waitFor();
 }
 
 /** «Flujos» → its table → a flow on a page of its own (docs/sistema.md §4.4: «Flujos» is one of Boni's collections). */
@@ -100,51 +107,75 @@ async function openFlow(page: Page, name = "Leer correo") {
   await page.locator(".flow-editor .flow-canvas .fl-node").first().waitFor();
 }
 
-test("«Modelos» in Ajustes: each use with its model, the month's spending and budget, the keys", async ({
-  page,
-}) => {
+/** What «Modelos» asks when it opens: the budget and the keys, and the list (§5.16). */
+const LISTED = (list: unknown = MODELS_LIST) => ({
+  "GET api/agent/models": [MODELS],
+  "GET api/agent/models/list": [list],
+  "GET api/agent/models/choices": [CHOICES_AGENT],
+  "GET api/agent/models/choices?kind=reading": [CHOICES_READING],
+});
+const rows = (page: Page) => page.locator(".models-items .models-item");
+
+test("AU-232 · «Modelos» is one list and no use is named in it", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "/?still", { agent: { "GET api/agent/models": [MODELS] } });
+  await openApp(page, "/?still", {
+    agent: { ...LISTED(), "GET api/agent/models/evaluation": [MODELS_PARTS] },
+  });
   await openModels(page);
-  // «Flujos» has no «Modelos» any more: one section, «Tabla | Mapa» (docs/sistema.md §4.4, decision 3).
-  const spend = page.locator(".modal .kpi").first();
-  await expect(spend).toContainText("3,42 €");
-  await expect(spend).toContainText("de 10,00 €");
-  const reader = page.getByRole("button", { name: /^Lector/ });
-  await expect(reader.locator(".use-model")).toHaveText("deepseek-v4.1-flash");
-  await expect(reader.locator(".models-badge")).toHaveText("No guarda tus datos");
-  await expect(reader).toContainText("0,74 € · 512 llamadas");
-  await expect(page.getByRole("button", { name: /^Agente/ })).toContainText(
-    "Borra lo que recibe en 30 días",
-  );
+  const modal = page.locator(".modal");
+  // His two in his order, then the server's; each row its name, connection, privacy, tags, result and month.
+  await expect(rows(page).locator(".models-name")).toHaveText([
+    "deepseek-v4.1-flash",
+    "glm-5.2",
+    "claude-opus-5-5",
+    "claude-haiku-4-5",
+  ]);
+  const flash = rows(page).nth(0);
+  await expect(flash).toContainText("OpenRouter");
+  await expect(flash.locator(".models-badge")).toHaveText("No guarda tus datos");
+  await expect(flash.locator(".models-tag")).toHaveText("Barato");
+  await expect(flash.locator(".models-mark")).toHaveText("22 de 24");
+  await expect(flash.locator(".models-amount")).toHaveText("0,74 €");
+  await expect(rows(page).nth(1).locator(".models-mark")).toHaveText("Sin evaluar");
+  await expect(rows(page).nth(1).locator(".models-amount")).toHaveText("—");
+  await expect(rows(page).nth(2)).toContainText("Del servidor");
+  // Above it «De la cuenta», a row per kind of call; under it the spending, the budget and «Claves».
+  await expect(modal.locator(".models-account > li")).toHaveText([
+    /^Agente\s*claude-opus-5-5 · Del servidor/,
+    /^Lectura\s*Barato · deepseek-v4.1-flash/,
+  ]);
+  await expect(modal.locator(".kpi").first()).toContainText("3,42 €");
+  await expect(page.locator(".models-spend")).toContainText("Presupuesto: 10,00 € al mes");
+  await expect(page.getByRole("button", { name: /^Claves/ })).toBeVisible();
+  // No use is named: no «Lector», «Decisor», «Revisor», no per-use evaluation.
+  await expect(modal).not.toContainText(/Lector|Decisor|Revisor|Planificador/);
   await page.screenshot({ path: `${SHOTS}/models.png` });
 
-  // The spending by model and the budget are there too.
-  const more = page.locator(".models-spend");
-  await expect(more).toContainText("Evaluación: Lector · deepseek-v4.1-flash");
-  await expect(more).toContainText("512 llamadas · 3 sin precio conocido");
-  await expect(more).toContainText("Presupuesto: 10,00 € al mes, aviso al 80 %");
-
-  await reader.click();
+  // A model opened: its route, tags, evaluation with its cases by part, where it is used and its month.
+  await flash.locator(".models-item-main").click();
   const panel = page.locator(".models-panel");
-  await expect(panel.locator("h2")).toHaveText("Lector");
-  await expect(panel).toContainText("Lee cada correo y dice qué te piden");
-  await expect(panel).toContainText("OpenRouter solo lo envía a proveedores que no guardan");
-  await expect(panel).toContainText("Elegido por ti");
-  await expect(panel).toContainText("Este mes: 0,74 € en 512 llamadas");
-  await expect(panel).toContainText("Evaluación: 19 de 20 bien");
+  await expect(panel.locator("h2")).toHaveText("deepseek-v4.1-flash");
+  await expect(panel).toContainText("deepseek/deepseek-v4.1-flash · OpenRouter");
+  await expect(panel.locator(".models-tag")).toHaveText("Barato");
+  await expect(panel.getByRole("region", { name: "Evaluación" })).toContainText("22 de 24");
+  await expect(panel.getByRole("region", { name: "Evaluación" })).toContainText("0,05 €");
   await panel.getByRole("button", { name: "Ver los casos" }).click();
-  await expect(panel.locator(".models-cases li.fail")).toHaveCount(1);
-  // Who failed and what, in words (task 132, I-40); the grader's detail is not painted.
-  await expect(panel.locator(".models-cases li.fail")).toContainText(
-    "· Lector: respuesta equivocada",
+  await expect(panel.locator(".models-cases-part h4")).toHaveText([
+    "Agente · 14 de 15",
+    "Lectura · 8 de 9",
+  ]);
+  await expect(panel.locator(".models-cases li.fail")).toHaveCount(2);
+  // The grader's detail is not painted (task 132, I-40).
+  await expect(panel.locator(".models-cases")).not.toContainText("wrong collection");
+  await expect(panel.getByRole("region", { name: "Se usa en" })).toContainText(
+    "«De la cuenta · Lectura» y 3 automatizaciones",
   );
-  await expect(panel.locator(".models-cases li.fail")).not.toContainText("wrong collection");
+  await expect(panel).toContainText("Este mes: 0,74 €");
   await page.screenshot({ path: `${SHOTS}/models-use.png` });
-  // Escape closes the use, not Ajustes.
+  // Escape closes the model, not Ajustes.
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(page.locator(".modal")).toBeVisible();
+  await expect(modal).toBeVisible();
 
   await page.getByRole("button", { name: /^Claves/ }).click();
   const conns = page.locator(".models-card", {
@@ -157,99 +188,393 @@ test("«Modelos» in Ajustes: each use with its model, the month's spending and 
     /TypeSafe · Sin clave/,
   ]);
   await page.screenshot({ path: `${SHOTS}/models-open.png` });
+  expect(await requests(page, "GET api/agent/models/list")).toHaveLength(1);
 });
 
-test("change a role: pick from the catalogue, evaluate, compare, use", async ({ page }) => {
+test.describe("on the phone", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("AU-232 AU-243 · «Modelos» is one list and no use is named in it, at a phone's width, where it only reads", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openApp(page, "/?still", { agent: LISTED() });
+    await page.getByRole("button", { name: "Ajustes" }).first().tap();
+    await page.locator(".modal").getByRole("tab", { name: "Modelos" }).tap();
+    await rows(page).first().waitFor();
+    await expect(rows(page)).toHaveCount(4);
+    await expect(page.locator(".models-head")).toHaveText("Solo lectura en este dispositivo");
+    // Nothing that writes: no «Añadir modelo», no «Cambiar», no order, no budget, no keys to put.
+    const modal = page.locator(".modal");
+    await expect(modal.getByRole("button", { name: "Añadir modelo" })).toHaveCount(0);
+    await expect(modal.getByRole("button", { name: /^Cambiar/ })).toHaveCount(0);
+    await expect(modal.locator(".models-grip, .models-move")).toHaveCount(0);
+    await rows(page).first().locator(".models-item-main").tap();
+    const panel = page.locator(".models-panel");
+    await expect(panel.locator("h2")).toHaveText("deepseek-v4.1-flash");
+    await expect(
+      panel.getByRole("button", { name: /^(Evaluar|Quitar|Añadir etiqueta)$/ }),
+    ).toHaveCount(0);
+    await expect(panel.locator(".models-tag-x")).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      360,
+    );
+    await panel.getByRole("button", { name: "Cerrar" }).tap();
+    await expect(rows(page)).toHaveCount(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      360,
+    );
+    await page.screenshot({ path: `${SHOTS}/models-phone.png` });
+    expect(await requests(page, "PUT api/agent/models")).toEqual([]);
+    expect(await requests(page, "POST api/agent/models")).toEqual([]);
+  });
+});
+
+test("AU-233 · a model added is «Sin evaluar» and is offered nowhere", async ({ page }) => {
+  const added = {
+    ...MODELS_LIST,
+    models: [
+      ...MODELS_LIST.models.slice(0, 2),
+      {
+        ...(MODELS_LIST.models[1] as object),
+        id: "openrouter:anthropic/claude-opus-5.5:zdr",
+        model: "anthropic/claude-opus-5.5",
+      },
+      ...MODELS_LIST.models.slice(2),
+    ],
+  };
   await openApp(page, "/?still", {
     agent: {
-      "GET api/agent/models": [MODELS, MODELS_EVALUATED],
+      ...LISTED(),
       "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
-      "POST api/agent/models/evaluate": [{ __status: 409, error: "no-key" }, MODELS_EVALUATING],
-      "PUT api/agent/models/roles/:role": [MODELS_USED],
+      "POST api/agent/models/list": [{ __status: 409, error: "exists" }, added],
     },
   });
   await openModels(page);
-  await page.getByRole("button", { name: /^Agente/ }).click();
-  await page.getByRole("button", { name: "Cambiar" }).click();
+  await page.getByRole("button", { name: "Añadir modelo" }).click();
   const panel = page.locator(".models-panel");
-  await expect(panel.locator("h2")).toHaveText("Agente");
-  // The planner takes any model; cheapest first.
+  await expect(panel.locator("h2")).toHaveText("Añadir modelo");
+  // The finder of before: OpenRouter's catalogue, cheapest first, then the decision models.
   await expect(panel.locator(".models-option .models-name")).toHaveText([
     "Ejemplo: sin esquema",
     "DeepSeek: V4.1 Flash",
     "Z.ai: GLM 5.2",
     "Anthropic: Claude Opus 5.5",
+    "typesafe/jev-1.14",
+    "jev-1.14.0",
   ]);
-  await panel.getByRole("textbox", { name: "Buscar un modelo" }).pressSequentially("glm");
+  await panel.getByRole("textbox", { name: "Buscar un modelo" }).pressSequentially("opus");
   await expect(panel.locator(".models-option")).toHaveCount(1);
-  const glm = panel.getByRole("button", { name: /^Z\.ai: GLM 5\.2/ });
-  await expect(glm).toContainText("0,6 $ / 2,2 $ por millón de tokens");
-  await expect(glm).toContainText("3 proveedores que no guardan datos");
-  await glm.click();
-  await expect(glm).toHaveAttribute("aria-pressed", "true");
+  await panel.getByRole("button", { name: /^Anthropic: Claude Opus 5\.5/ }).click();
   const compare = panel.locator(".models-compare");
-  await expect(compare).toContainText("Ahora: claude-opus-5-5 · 8 de 8 bien");
-  await expect(compare).toContainText("Nuevo: z-ai/glm-5.2 · Sin evaluar todavía");
-  await expect(compare.getByRole("button", { name: "Usar este modelo" })).toBeDisabled();
-  // Without the key it says where to put it.
-  await compare.getByRole("button", { name: "Evaluar" }).click();
-  await expect(compare.locator(".decide-error")).toHaveText(
-    "Pon antes tu clave de OpenRouter en Claves.",
-  );
-  await compare.getByRole("button", { name: "Evaluar" }).click();
-  await expect(compare).toContainText("Evaluando con casos inventados");
-  await expect(compare.getByRole("button", { name: "Evaluar" })).toBeDisabled();
-  // The page looks again while it runs, and shows the result next to the current one's.
-  await expect(compare).toContainText("7 de 8 bien · 1 equivocado · La prueba costó 0,012 $", {
-    timeout: 8000,
-  });
-  await page.screenshot({ path: `${SHOTS}/models-change.png` });
-  await compare.getByRole("button", { name: "Usar este modelo" }).click();
-  await expect(panel).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Agente/ }).locator(".use-model")).toHaveText(
-    "glm-5.2",
-  );
+  await compare.getByRole("button", { name: "Añadir" }).click();
+  await expect(compare.locator(".decide-error")).toHaveText("Ya está en la lista.");
+  await compare.getByRole("button", { name: "Añadir" }).click();
+  // It opens where the list was: «Sin evaluar», used nowhere.
+  await expect(panel.locator("h2")).toHaveText("claude-opus-5.5");
+  await expect(panel.getByRole("region", { name: "Evaluación" })).toContainText("Sin evaluar");
+  await expect(panel.getByRole("region", { name: "Se usa en" })).toContainText("Ningún sitio");
+  await page.keyboard.press("Escape");
+  await expect(rows(page).nth(2).locator(".models-mark")).toHaveText("Sin evaluar");
   expect(await requests(page, "POST api/agent/models")).toEqual([
-    'POST api/agent/models/evaluate {"role":"planner","connection":"openrouter","model":"z-ai/glm-5.2","zdr":true}',
-    'POST api/agent/models/evaluate {"role":"planner","connection":"openrouter","model":"z-ai/glm-5.2","zdr":true}',
-  ]);
-  expect(await requests(page, "PUT api/agent/models")).toEqual([
-    'PUT api/agent/models/roles/planner {"connection":"openrouter","model":"z-ai/glm-5.2","zdr":true}',
+    'POST api/agent/models/list {"connection":"openrouter","model":"anthropic/claude-opus-5.5","zdr":true}',
+    'POST api/agent/models/list {"connection":"openrouter","model":"anthropic/claude-opus-5.5","zdr":true}',
   ]);
 });
 
-test("readers only see models that answer a fixed form; the decider only Jev; Escape closes the panel", async ({
+test("AU-233 AU-241 · «Quitar» a model or a key in use asks first and says where it is used", async ({
+  page,
+}) => {
+  const where = {
+    rows: ["reading"],
+    automations: 3,
+    conversations: 0,
+    tagsLeft: ["Barato"],
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      ...LISTED(),
+      "POST api/agent/models/list/remove": [
+        { __status: 409, error: "in-use", where },
+        { ...MODELS_LIST, models: MODELS_LIST.models.slice(1) },
+      ],
+      "PUT api/agent/models/keys/:connection": [
+        { where: [{ id: FLASH_ID, ...where }] },
+        { ...MODELS, connections: MODELS.connections.map((c) => ({ ...c, mine: false })) },
+      ],
+    },
+  });
+  await openModels(page);
+  await rows(page).first().locator(".models-item-main").click();
+  const panel = page.locator(".models-panel");
+  await panel.getByRole("button", { name: "Quitar" }).click();
+  const ask = panel.locator(".models-ask");
+  await expect(ask.locator(".models-line")).toHaveText([
+    "Se usa en «De la cuenta · Lectura» y 3 automatizaciones.",
+    "Barato se queda sin modelo.",
+  ]);
+  await page.screenshot({ path: `${SHOTS}/models-remove.png` });
+  await ask.getByRole("button", { name: "Quitar" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(rows(page)).toHaveCount(3);
+
+  // A key: «Quitar tu clave» asks the server first, which changes nothing (`dry`).
+  await page.getByRole("button", { name: /^Claves/ }).click();
+  const openrouter = page.locator(".models-conn", { hasText: "OpenRouter" });
+  await openrouter.getByRole("button", { name: "Quitar tu clave" }).click();
+  await expect(openrouter.locator(".models-ask .models-line")).toHaveText([
+    "deepseek-v4.1-flash: se usa en «De la cuenta · Lectura» y 3 automatizaciones.",
+    "Barato se queda sin modelo.",
+  ]);
+  await openrouter.locator(".models-ask").getByRole("button", { name: "Quitar tu clave" }).click();
+  await expect(openrouter).toContainText("OpenRouter · Clave del servidor");
+  expect(await requests(page, "POST api/agent/models/list/remove")).toEqual([
+    `POST api/agent/models/list/remove {"id":"${FLASH_ID}","confirm":false}`,
+    `POST api/agent/models/list/remove {"id":"${FLASH_ID}","confirm":true}`,
+  ]);
+  expect(await requests(page, "PUT api/agent/models/keys")).toEqual([
+    'PUT api/agent/models/keys/openrouter {"key":null,"dry":true}',
+    'PUT api/agent/models/keys/openrouter {"key":null}',
+  ]);
+});
+
+test("AU-234 · «Evaluar» evaluates that model alone, says it runs, and the list shows its result", async ({
+  page,
+}) => {
+  const glm = (evaluation: unknown) => ({
+    ...MODELS_LIST,
+    models: MODELS_LIST.models.map((m) => (m.id === GLM_ID ? { ...m, evaluation, cost: 0.02 } : m)),
+  });
+  const running = { ...MODELS_LIST, evaluating: GLM_ID };
+  await openApp(page, "/?still", {
+    agent: {
+      ...LISTED(),
+      "GET api/agent/models/list": [
+        MODELS_LIST,
+        running,
+        glm({
+          right: 21,
+          total: 24,
+          at: Date.UTC(2026, 10, 18, 9),
+          partial: false,
+          expired: false,
+        }),
+      ],
+      "POST api/agent/models/list/evaluate": [{ __status: 409, error: "no-key" }, running],
+    },
+  });
+  await openModels(page);
+  await rows(page).nth(1).locator(".models-item-main").click();
+  const panel = page.locator(".models-panel");
+  const evaluation = panel.getByRole("region", { name: "Evaluación" });
+  await expect(evaluation).toContainText("Sin evaluar");
+  // Without the key it says where to put it.
+  await evaluation.getByRole("button", { name: "Evaluar" }).click();
+  await expect(panel.locator(".decide-error")).toHaveText(
+    "Falta la clave de OpenRouter en Claves.",
+  );
+  await evaluation.getByRole("button", { name: "Evaluar" }).click();
+  await expect(evaluation.getByRole("status")).toContainText("Evaluando con casos inventados");
+  await expect(evaluation.getByRole("button", { name: "Evaluar" })).toBeDisabled();
+  // The page looks again while it runs, and the result comes: one result, no use chosen.
+  await expect(evaluation.locator(".models-mark")).toHaveText("21 de 24", { timeout: 12_000 });
+  await page.keyboard.press("Escape");
+  await expect(rows(page).nth(1).locator(".models-mark")).toHaveText("21 de 24");
+  expect(await requests(page, "POST api/agent/models")).toEqual([
+    `POST api/agent/models/list/evaluate {"id":"${GLM_ID}"}`,
+    `POST api/agent/models/list/evaluate {"id":"${GLM_ID}"}`,
+  ]);
+});
+
+test("AU-236 · «Cambiar» a row «De la cuenta» offers what its kind may choose and says how many automations follow it", async ({
   page,
 }) => {
   await openApp(page, "/?still", {
     agent: {
-      "GET api/agent/models": [MODELS],
-      "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
+      ...LISTED(),
+      "PUT api/agent/models/account/:kind": [
+        {
+          ...MODELS_LIST,
+          account: [
+            MODELS_LIST.account[0],
+            { kind: "reading", value: HAIKU_ID, answers: HAIKU_ID, automations: 6 },
+          ],
+        },
+      ],
     },
   });
   await openModels(page);
-  await page.getByRole("button", { name: /^Lector/ }).click();
-  await page.getByRole("button", { name: "Cambiar" }).click();
-  const panel = page.locator(".models-panel");
-  await expect(panel.locator(".models-option")).toHaveCount(3);
-  await expect(panel).not.toContainText("sin esquema");
-  await page.keyboard.press("Escape");
-  await expect(panel).toHaveCount(0);
-  // Escape closed the use only, not Ajustes.
-  await expect(page.locator(".modal")).toBeVisible();
-  await page.getByRole("button", { name: /^Decisor/ }).click();
-  await page.getByRole("button", { name: "Cambiar" }).click();
-  await expect(panel.locator(".models-option .models-name")).toHaveText([
-    "typesafe/jev-1.14",
-    "jev-1.14.0",
+  await page.getByRole("button", { name: "Cambiar · Lectura" }).click();
+  const row = page.locator(".models-account > li", { hasText: "Lectura" });
+  const select = row.getByRole("combobox", { name: "Lectura" });
+  await expect(select.locator("option")).toHaveText([
+    "Del servidor",
+    "Barato · deepseek-v4.1-flash",
+    "Para revisar · Sin modelo",
+    "De antes · Caducada",
+    "deepseek-v4.1-flash",
+    "claude-haiku-4-5",
   ]);
-  await expect(panel.getByRole("textbox", { name: "Buscar un modelo" })).toHaveCount(0);
+  await expect(select).toHaveValue(BARATO_ID);
+  await expect(select.locator("option", { hasText: "Para revisar" })).toBeDisabled();
+  await expect(row).toContainText("La usan 6 automatizaciones");
+  await select.selectOption(HAIKU_ID);
+  await row.getByRole("button", { name: "Guardar" }).click();
+  await expect(row).toContainText("claude-haiku-4-5");
+  await expect(row.getByRole("combobox")).toHaveCount(0);
+  expect(await requests(page, "PUT api/agent/models/account")).toEqual([
+    `PUT api/agent/models/account/reading {"value":"${HAIKU_ID}"}`,
+  ]);
+});
+
+test("AU-237 AU-241 · a tag is put on a model by its name, new or one that exists, and taking the last one off a tag in use asks first", async ({
+  page,
+}) => {
+  const tagged = (id: string, tags: { id: string; name: string }[]) => ({
+    ...MODELS_LIST,
+    models: MODELS_LIST.models.map((m) => (m.id === id ? { ...m, tags } : m)),
+  });
+  const barato = { id: BARATO_ID, name: "Barato" };
+  const rapido = { id: "tag:rapido0000000001", name: "Rápido" };
+  await openApp(page, "/?still", {
+    agent: {
+      ...LISTED(),
+      "POST api/agent/models/tags": [{ id: rapido.id }],
+      "PUT api/agent/models/tagged": [
+        tagged(GLM_ID, [barato]),
+        {
+          ...tagged(GLM_ID, [barato, rapido]),
+          tags: [
+            ...MODELS_LIST.tags,
+            { ...rapido, uses: { rows: [], automations: 0, conversations: 0 } },
+          ],
+        },
+        {
+          __status: 409,
+          error: "in-use",
+          where: { rows: [], automations: 0, conversations: 0, tagsLeft: ["Barato"] },
+        },
+        tagged(FLASH_ID, []),
+      ],
+    },
+  });
+  await openModels(page);
+  await rows(page).nth(1).locator(".models-item-main").click();
+  const panel = page.locator(".models-panel");
+  const tags = panel.getByRole("region", { name: "Etiquetas" });
+  // One that exists, by its name: the same tag, no new one.
+  await tags.getByRole("combobox", { name: "Etiqueta" }).fill("Barato");
+  await tags.getByRole("button", { name: "Añadir etiqueta" }).click();
+  await expect(tags.locator(".models-tag")).toHaveText(["Barato"]);
+  // A new name: the tag is made, then put.
+  await tags.getByRole("combobox", { name: "Etiqueta" }).pressSequentially("Rápido");
+  await tags.getByRole("button", { name: "Añadir etiqueta" }).click();
+  await expect(tags.locator(".models-tag")).toHaveText(["Barato", "Rápido"]);
+  await page.keyboard.press("Escape");
+  await expect(rows(page).nth(1).locator(".models-tag")).toHaveText(["Barato", "Rápido"]);
+
+  // Taken off the model that answers a tag in use: asked first.
+  await rows(page).first().locator(".models-item-main").click();
+  await tags.getByRole("button", { name: "Quitar la etiqueta Barato" }).click();
+  await expect(tags.locator(".models-ask .models-line")).toHaveText([
+    "Barato se queda sin modelo.",
+  ]);
+  await tags.locator(".models-ask").getByRole("button", { name: "Guardar" }).click();
+  await expect(tags.locator(".models-tag")).toHaveCount(0);
+  expect(await requests(page, "POST api/agent/models/tags")).toEqual([
+    'POST api/agent/models/tags {"name":"Rápido"}',
+  ]);
+  expect(await requests(page, "PUT api/agent/models/tagged")).toEqual([
+    `PUT api/agent/models/tagged {"id":"${GLM_ID}","tags":["${BARATO_ID}"],"confirm":false}`,
+    `PUT api/agent/models/tagged {"id":"${GLM_ID}","tags":["${BARATO_ID}","${rapido.id}"],"confirm":false}`,
+    `PUT api/agent/models/tagged {"id":"${FLASH_ID}","tags":[],"confirm":false}`,
+    `PUT api/agent/models/tagged {"id":"${FLASH_ID}","tags":[],"confirm":true}`,
+  ]);
+});
+
+test("AU-232 · the order is his: a row dragged, or «Subir» and «Bajar» in its menu; the server's are not moved", async ({
+  page,
+}) => {
+  const swapped = {
+    ...MODELS_LIST,
+    models: [MODELS_LIST.models[1], MODELS_LIST.models[0], ...MODELS_LIST.models.slice(2)],
+  };
+  await openApp(page, "/?still", {
+    agent: { ...LISTED(), "PUT api/agent/models/order": [swapped, MODELS_LIST] },
+  });
+  await openModels(page);
+  // Only his own have a grip and a menu.
+  await expect(page.locator(".models-items .models-move")).toHaveCount(2);
+  await expect(page.locator(".models-items .models-grip")).toHaveCount(2);
+  await page.getByRole("button", { name: "Mover · deepseek-v4.1-flash" }).click();
+  await expect(page.getByRole("menuitem")).toHaveText(["Bajar"]);
+  await page.getByRole("menuitem", { name: "Bajar" }).click();
+  await expect(rows(page).locator(".models-name")).toHaveText([
+    "glm-5.2",
+    "deepseek-v4.1-flash",
+    "claude-opus-5-5",
+    "claude-haiku-4-5",
+  ]);
+  // Dragged back, as a person does.
+  await rows(page).nth(1).dragTo(rows(page).nth(0));
+  await expect(rows(page).locator(".models-name").first()).toHaveText("deepseek-v4.1-flash");
+  expect(await requests(page, "PUT api/agent/models/order")).toEqual([
+    `PUT api/agent/models/order {"ids":["${GLM_ID}","${FLASH_ID}"]}`,
+    `PUT api/agent/models/order {"ids":["${FLASH_ID}","${GLM_ID}"]}`,
+  ]);
+});
+
+test("AU-242 AU-243 · the chat's chip ends in «Añadir modelo» only on a personal device", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { agent: LISTED() });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const chip = page.locator(".chat-model-btn");
+  // Nothing chosen: the account's model.
+  await expect(chip).toHaveText("claude-opus-5-5");
+  await chip.click();
+  const menu = page.locator(".chat-model-menu");
+  // «El de la cuenta» and the models that answer as «Agente», no tags.
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    /^claude-opus-5-5\s*el de tu cuenta/,
+    "deepseek-v4.1-flash",
+    "claude-opus-5-5",
+  ]);
+  await expect(menu).not.toContainText("Barato");
+  await menu.getByRole("button", { name: "Añadir modelo" }).click();
+  await expect(page.locator(".modal").getByRole("tab", { name: "Modelos" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(await requests(page, "GET api/agent/models/choices")).toEqual([
+    "GET api/agent/models/choices?kind=agent",
+  ]);
+});
+
+test("AU-242 AU-243 · on a shared device the chip has no «Añadir modelo» and «Modelos» only reads", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      ...LISTED(MODELS_LIST_SHARED),
+      "GET api/agent/models/choices": [{ ...CHOICES_AGENT, personal: false }],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.locator(".chat-model-btn").click();
+  const menu = page.locator(".chat-model-menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(3);
+  await expect(menu.getByRole("button", { name: "Añadir modelo" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await openModels(page);
+  await expect(page.locator(".models-head")).toHaveText("Solo lectura en este dispositivo");
+  await expect(page.locator(".modal").getByRole("button", { name: /^Cambiar/ })).toHaveCount(0);
+  await expect(page.locator(".models-items .models-move")).toHaveCount(0);
 });
 
 test("the budget and a key: changed in «Modelos», the key never shown", async ({ page }) => {
   await openApp(page, "/?still", {
     agent: {
-      "GET api/agent/models": [MODELS],
+      ...LISTED(),
       "PUT api/agent/models/budget": [{ ...MODELS, budget: { monthlyEur: 15, warnAt: 0.9 } }],
       "PUT api/agent/models/keys/:connection": [
         {
@@ -2008,6 +2333,7 @@ test("the month's run of «Aviso del presupuesto» is that flow's in the Registr
       "GET api/agent/runs/:id": [RUN_BUDGET],
       "GET api/agent/map": [MAP_BUDGET],
       "GET api/agent/models": [{ ...MODELS, notice: false }],
+      "GET api/agent/models/list": [MODELS_LIST],
       "GET api/agent/flows": [FLOWS_WITH_BUDGET],
     },
   });
@@ -2332,7 +2658,10 @@ test("without a budget (0 €), Ajustes → Modelos says «Sin presupuesto» and
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", {
-    agent: { "GET api/agent/models": [{ ...MODELS, budget: { monthlyEur: 0, warnAt: 0.8 } }] },
+    agent: {
+      "GET api/agent/models": [{ ...MODELS, budget: { monthlyEur: 0, warnAt: 0.8 } }],
+      "GET api/agent/models/list": [MODELS_LIST],
+    },
   });
   await openModels(page);
   const line = page.locator(".models-spend .models-line").last();

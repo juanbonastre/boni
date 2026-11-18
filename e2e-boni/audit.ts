@@ -99,6 +99,7 @@ export const MODELS_TEXT = {
     conns: /^Claves/,
     budget: "Cambiar el presupuesto",
     change: "Cambiar",
+    add: "Añadir modelo",
     cases: "Ver los casos",
     chat: "Conversación",
     activity: "Registro",
@@ -114,6 +115,7 @@ export const MODELS_TEXT = {
     conns: /^Keys/,
     budget: "Change the budget",
     change: "Change",
+    add: "Add model",
     cases: "See the cases",
     chat: "Conversation",
     activity: "Activity log",
@@ -124,33 +126,46 @@ export const MODELS_TEXT = {
   },
 };
 
-/** Ajustes → Modelos (again its place since «Modelos» left «Flujos», docs/sistema.md §4.4) with every part opened: the budget, the keys, each use's panel with its cases and the list to change it. */
+/** Ajustes → Modelos (again its place since «Modelos» left «Flujos», docs/sistema.md §4.4; without uses, §5.16) with every part opened: the budget, the keys, a row «De la cuenta» changing, models opened with their cases and the finder. */
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
   await page.locator(".modal").getByRole("tab", { name: l.modelsTab }).click();
-  await page.locator(".use-card").first().waitFor();
+  const rows = page.locator(".models-items .models-item");
+  await rows.first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
   await page.getByRole("button", { name: l.budget }).click();
   issues.push(...(await audit(page, `${where} models spending`)));
   await page.getByRole("button", { name: l.conns }).click();
   issues.push(...(await audit(page, `${where} models opened`)));
-  const cards = page.locator(".use-card");
-  for (let i = 0; i < (await cards.count()); i++) {
-    await cards.nth(i).click();
+  // «Cambiar» a row «De la cuenta»: its choices and how many follow it.
+  await page
+    .getByRole("button", { name: new RegExp(`^${l.change} · `) })
+    .first()
+    .click();
+  await page.locator(".models-account-edit").waitFor();
+  issues.push(...(await audit(page, `${where} models account`)));
+  // His first two and the last (the server's), each opened with its cases.
+  const n = await rows.count();
+  for (const i of [...new Set([0, 1, n - 1])].filter((x) => x >= 0 && x < n)) {
+    await rows.nth(i).locator(".models-item-main").click();
     await page.locator(".models-panel").waitFor();
     const cases = page.locator(".models-panel").getByRole("button", { name: l.cases });
-    if (await cases.count()) await cases.click();
-    issues.push(...(await audit(page, `${where} models use ${i}`)));
-    // Back to the list of uses.
+    if (await cases.count()) {
+      await cases.click();
+      await page.locator(".models-panel .models-cases").first().waitFor();
+    }
+    issues.push(...(await audit(page, `${where} models model ${i}`)));
+    // Back to the list.
     await page.keyboard.press("Escape");
+    await rows.first().waitFor();
   }
-  await cards.first().click();
-  await page.locator(".models-panel").getByRole("button", { name: l.change, exact: true }).click();
+  await page.getByRole("button", { name: l.add, exact: true }).click();
   await page.locator(".models-panel .models-option").first().click();
   await page.locator(".models-compare").waitFor();
-  issues.push(...(await audit(page, `${where} models panel`)));
+  issues.push(...(await audit(page, `${where} models add`)));
   await page.keyboard.press("Escape");
+  await rows.first().waitFor();
   await page.keyboard.press("Escape");
   if (await page.locator(".modal").count()) await page.keyboard.press("Escape");
   await page.locator(".modal").waitFor({ state: "detached" });
