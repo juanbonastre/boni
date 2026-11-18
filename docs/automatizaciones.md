@@ -3458,7 +3458,9 @@ explica nada dentro de la app: son nombres y valores.
   without a model says where it is used before it is done») y `apps/server/src/automations/ai.test.ts` («AU-241 ·
   a tag without a usable model is a problem of its step at publish and «no-model» in a published run»); en
   pantalla, la pregunta y el apagado en `e2e-boni/models.spec.ts` y `e2e-boni/automations-ai.spec.ts` (las de
-  AU-241).
+  AU-241). La pregunta dice una línea por etiqueta con cuántas automatizaciones la usan, de las cuentas de la lista
+  (`tags[].uses`): «Barato se queda sin modelo. La usan 2 automatizaciones.»; una que no usa ninguna dice solo que
+  se queda sin modelo.
 - **AU-242** (FM, hecho) · El chat elige un modelo cargado. El chip de la barra lista «El de la cuenta» y los
   modelos que valen para «Agente» (AU-235), y termina en «Añadir modelo», que abre Ajustes → Modelos (solo desde
   un dispositivo personal; en los demás no sale). Sin etiquetas: en el chat se elige un modelo. Una conversación
@@ -3469,7 +3471,11 @@ explica nada dentro de la app: son nombres y valores.
   that answer as an agent, and one whose model is gone answers with the account's») y `e2e-boni/models.spec.ts`
   («AU-242 AU-243 · the chat's chip ends in «Añadir modelo» only on a personal device» y la de un dispositivo
   compartido). El chip pide `GET /api/agent/models/choices?kind=agent`; `GET /api/agent/planners` se queda para la
-  versión de escritorio anterior.
+  versión de escritorio anterior. Lo que ofrecen el chip y el «Modelo» de un paso abierto se vuelve a pedir cuando
+  cambia lo que ofrecerían en Ajustes → Modelos (un modelo añadido, quitado, etiquetado o evaluado, una fila «De la
+  cuenta») y al cerrarla, sin desmontar el chat ni el paso, y nunca por la consulta de cada pocos segundos de una
+  evaluación (`reloadModelChoices`; lo prueba `models.spec.ts`, «AU-242 · what the chat's chip offers is read
+  again»).
 - **AU-243** (FM, en parte) · Un modelo no elige modelo. Qué modelo recibe un texto es decir adónde va ese texto y
   cuánto cuesta, así que lo pone la mano de Juan, como un «Sí» (AU-187). En un borrador que proponen el asistente,
   el MCP o «Pedir a Boni» (AU-140, AU-141, AU-144), un paso nuevo, o uno cuyo «Modelo» no es el que Juan le había
@@ -3564,7 +3570,7 @@ modelo no hay cifra, como hoy; después, lo que costó la última queda junto a 
 | PR | Qué | Antes de | Estado |
 |---|---|---|---|
 | **M1** Servidor y núcleo | La lista, las etiquetas, «De la cuenta», la evaluación del modelo (`evalModel` y la puerta de AU-235), `resolveModel`, la migración (AU-244), la ruta de opciones con `planners` como su caso, el valor `tag:` en el catálogo y en `aiProblems`, `modelRefOf` (AU-245), el mapa, y las rutas por uso de hoy contestando igual. Sin pantalla: en la app no cambia nada | La conversión de la F16 (su S1), que llama a `modelRefOf` y cuyo informe en seco compara modelos | en main (#521) |
-| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega | en curso: su PR, a falta de la revisión de conformidad; las rutas por uso y `planners` se quedan (la versión de escritorio anterior las pide) |
+| **M2** Pantallas | Ajustes → Modelos, el desplegable «Modelo» del paso, el chip del chat, a ancho de teléfono; la guía de diseño; quita las rutas por uso si ya no hay quien las pida | El despliegue de la F16, para que salga todo en una entrega | en main (#530, con su revisión de conformidad; sus dos hallazgos medios, la cuenta de automatizaciones en la pregunta de AU-241 y las opciones que se quedaban viejas en el chip y en «Modelo», en el PR de las tareas 139, 149 y 150); las rutas por uso y `planners` se quedan (la versión de escritorio anterior las pide) |
 
 M1 no toca lo que construye ahora la F16 (su parte pura no escribe modelos) y puede ir en paralelo con ella. M2 toca
 el mismo panel del paso que las pantallas de la F15: va después de ellas, no a la vez. Si M1 se desplegara antes que

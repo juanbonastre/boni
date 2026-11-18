@@ -908,7 +908,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
   (a quiet chip; its menu lists «El de la cuenta» with the model that answers it and the models offered for «Agente»,
   never a tag, and on a personal device off the phone ends in «Añadir modelo», which opens Ajustes → Modelos; §5.16
-  AU-242) and a round
+  AU-242; what it offers follows a change in Modelos with the chat left open, as a step's «Modelo» does) and a round
   button on the right: an arrow that sends, or a square that stops the turn («Parar»; the turn then says «Parado.» in
   muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table, and a chart: bars across, label, bar and value on
@@ -1808,7 +1808,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   while it runs); «Se usa en» (its rows «De la cuenta · Lectura», «3 automatizaciones», «2 conversaciones», or
   «Ningún sitio»); its month's €; and «Quitar». «Quitar», and a tag taken off or a key removed that leaves something
   in use without a model, asks first in place with where it is used («Se usa en 3 automatizaciones y en «De la cuenta
-  · Lectura».», «Barato se queda sin modelo.») and «Quitar» / «Cancelar». «Añadir modelo» opens the finder as before
+  · Lectura».», «Barato se queda sin modelo. La usan 2 automatizaciones.», the count left out when none uses it) and «Quitar» / «Cancelar». «Añadir modelo» opens the finder as before
   (search, OpenRouter's models some provider serves keeping nothing, cheapest first, a box each with its name, price
   per million tokens and providers; readers only those that answer a fixed form) and, the model picked, «Añadir»: it
   enters at the end «Sin evaluar», asking for its connection's key in «Claves» when missing. On the phone and on a
