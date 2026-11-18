@@ -27,7 +27,7 @@
  */
 
 import { EventEmitter } from "node:events";
-import { codeLabel, type Trust } from "@boni/agent";
+import type { Trust } from "@boni/agent";
 import {
   type AskRecord,
   type Automation,
@@ -39,10 +39,7 @@ import {
   type Execution,
   executionOrder,
   type GivenAnswer,
-  type KeptNames,
-  lowerYes,
   parseAutomation,
-  resume,
   type StartedBy,
   type StepError,
   type StepRecord,
@@ -60,7 +57,13 @@ import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
 import { type AutomationNotice, keepNotice, type RunNotice } from "./notices.ts";
 import { proposeRun } from "./proposal.ts";
-import { isRefusal, type Refusal, type RunRequest, runPublished } from "./publish.ts";
+import {
+  isRefusal,
+  type Refusal,
+  type RunRequest,
+  resumePublished,
+  runPublished,
+} from "./publish.ts";
 import {
   ASKED_STEP,
   keepAsked,
@@ -80,10 +83,8 @@ import {
   keptTests,
   NOT_FOUND,
   open,
-  publishedOf,
   ROWS_PAGE,
   type RowView,
-  runDeps,
   type ServiceError,
   sha256,
   testedFields,
@@ -605,9 +606,6 @@ async function carryOn(store: UserStore, run: string, zone: string, box: Box): P
     }
   }
   store.journal.setAutomationWaitAnswers(run, JSON.stringify(given));
-  const started = parseAutomation(JSON.parse(v.doc));
-  const automation = lowerYes(started, publishedOf(store, id)?.automation);
-  const names = JSON.parse(v.names) as KeptNames;
   const hand: RunHand = { device: r.device ?? "", now: Date.now(), trust: "personal", zone };
   store.journal.resumeAutomationRun(run);
   told(store, { automation: id, run, state: "running" });
@@ -628,21 +626,23 @@ async function carryOn(store: UserStore, run: string, zone: string, box: Box): P
   };
   let result: Execution;
   try {
-    result = await resume(
+    // Its version, read again by its number, and the lowest «Sí» are publish.ts's (AU-95: only it runs for real).
+    const going = await resumePublished(
+      store,
+      id,
       {
-        automation,
+        version: v.n,
         trigger: r.trigger,
-        fields: {
-          json: JSON.parse(r.fields) as Record<string, Cell>,
-          label: r.startedBy === "schedule" ? codeLabel("schedule") : handLabel(r.device ?? ""),
-        },
-        test: false,
+        fields: JSON.parse(r.fields) as Record<string, Cell>,
         startedBy: r.startedBy as StartedBy,
       },
-      { ...runDeps(store, id, hand, box, run, { automation, names }), onStep },
-      kept,
-      answers,
+      hand,
+      run,
+      { kept, answers, box },
+      { onStep },
     );
+    if (isError(going)) throw new CannotRun("its version is no longer kept");
+    result = going;
   } catch (e) {
     // It cannot go on as it started (its version no longer valid, say): it fails saying so, nothing more runs.
     const ended = Date.now();

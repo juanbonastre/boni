@@ -817,6 +817,16 @@ describe("a run that waits for an answer (AU-203, phase F15 S2)", () => {
     const [undone, ...rest] = waiting as [(typeof waiting)[0], ...typeof waiting];
     expect(ok(undoAutomationRun(s, a.id, undone.id, JUAN)).run.state).toBe("cancelled");
     expect(cardOf(s, undone.id, ask)?.status).toBe("expired");
+    // Put away from a personal device, the card counts as no answer: the run goes on by «sin respuesta» and saves
+    // nothing.
+    const dismissed = rest.pop() as (typeof waiting)[0];
+    expect(answerAsk(s, askCardId(dismissed.id, ask, 0), null, JUAN)).toEqual({
+      run: dismissed.id,
+    });
+    await settled(s);
+    expect(runOf(s, a.id, dismissed.id).run.state).toBe("done");
+    expect(cardOf(s, dismissed.id, ask)?.status).toBe("dismissed");
+    expect(s.journal.automationWait(dismissed.id)).toBeFalsy();
     // Turned off, every other one is cancelled: nothing of it runs, its card says «Ya no vale».
     ok(setEnabled(s, a.id, false, JUAN));
     for (const r of rest) {
