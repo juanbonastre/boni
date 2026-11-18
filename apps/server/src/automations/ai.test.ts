@@ -1443,10 +1443,14 @@ describe("a run that waits for an answer (AU-203, phase F15 S2)", () => {
       expect(w.state).toBe("waiting");
       const about = { automation: a.id, run: w.id };
       const notified = () => events.filter((e) => e.event === "notify").map((e) => e.data);
-      expect(notified()).toEqual([
-        { text: "¿Una?", integrity: expect.any(String), about },
-        { text: "¿Otra?", integrity: expect.any(String), about },
-      ]);
+      // The two branches run in either order: one notification each.
+      expect(notified()).toHaveLength(2);
+      expect(notified()).toEqual(
+        expect.arrayContaining([
+          { text: "¿Una?", integrity: expect.any(String), about },
+          { text: "¿Otra?", integrity: expect.any(String), about },
+        ]),
+      );
       // «Dónde» of the question's notification: «Otra» goes to the app only.
       expect(pushed).toEqual(["¿Una?"]);
       // A card only for the one with «Bandeja» in its «Por dónde».
