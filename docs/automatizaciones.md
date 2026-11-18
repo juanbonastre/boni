@@ -1029,7 +1029,9 @@ interface Connection {
   ejecuciones del periodo; y una flecha «lee» o «escribe» por cada colección de `abilities` sobre esa versión, con
   sus pasos. Las ejecuciones se cuentan con una consulta que contesta el índice `automation_runs_count` sin leer
   ninguna (`AUTOMATION_RUNS_IN_SQL`); las pruebas y las horas que no corrieron no cuentan. Con 200 automatizaciones,
-  una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`).
+  una de ellas con un año de ejecuciones cada hora, el mapa de un año va dentro de su tiempo (`runs.test.ts`). Ese límite
+  de tiempo del mapa en el servidor está en cuarentena por la tarea 158 (2026-11-18: se atasca a veces, 159, 129 y
+  177 ms contra 150, con el código en unos 35 ms); lo que el mapa devuelve se sigue comprobando.
   Hecho en P3b: `FlowMap.tsx` pinta el nodo: el rayo, su nombre, «Disparado por el usuario · Programada · versión 2»
   y sus ejecuciones del periodo; apagada, «Apagada» y en gris; sus flechas «lee» y «escribe»; elegido, «Abrir» lleva
   a ella. Una sin publicar no está nunca (`automations-publish.spec.ts`, AU-47); con 200 automatizaciones, una con
