@@ -38,6 +38,8 @@ cualquier cosa que nazca de él se propone, nunca se escribe sola (P4, P7).
 
 ### 1.2 La lectura en segundo plano (cada correo nuevo)
 
+(Con la F16 esto se rehace como una automatización: §8.)
+
 | Quién | Qué ve | Qué hace |
 |---|---|---|
 | **El código** | El correo | Hace el plan (no hay planificador): leer, elegir colección y proponer. Calcula dónde está Juan entre los destinatarios (`user_in`) y lo que sigue pendiente del mismo remitente (`known`) |
@@ -373,3 +375,31 @@ Fuentes: [Gemini en Gmail](https://support.google.com/mail/answer/14199860),
 [Superhuman](https://superhuman.com/mail/features/ai-native-email-client),
 [Ghostwriter de Shortwave](https://www.zenml.io/llmops-database/building-an-ai-powered-email-writing-assistant-with-personalized-style-matching),
 [comprobaciones de promptfoo](https://www.promptfoo.dev/docs/configuration/expected-outputs/).
+
+## 8. El correo como automatización (F16; decidido el 2026-11-18)
+
+Los §1 a §7 cuentan el correo como corre hoy, y valen hasta que la F16 lo cambie. Con la F16 («Lo de antes», tarea
+130) la lectura en segundo plano deja de ser un plan que el código regenera y pasa a ser una automatización, «Leer
+correo», que se abre, se lee paso a paso y se cambia. El diseño, sus reglas (AU-249 a AU-255), lo que pasa al
+convertir y las cuatro preguntas que Juan contestó el 2026-11-18 («Sí, las recomendadas»: las decisiones
+30 a 33 de su §10) están en `docs/automatizaciones.md` §5.17. Aquí, solo qué le pasa a cada parte del §1.2.
+
+| Parte del §1.2 | Con la F16 |
+|---|---|
+| El código hace el plan, con valores que prepara aparte (`user_in`, `known`, la guía, las opciones) | No hay plan regenerado: «Leer correo» es su documento, y a un paso solo le llega la fila del disparador (el correo, entero de fuera) y lo que dice su panel (AU-249) |
+| La invitación de calendario | El paso «Leer invitación», sin modelo como hoy; lo que saca es una fila más, que sigue el mismo camino |
+| Lo ya propuesto en el hilo | El paso «Plegar hilo», con sus días a la vista (nace en 60), antes de guardar; retira la tarjeta anterior solo cuando la nueva ya está propuesta (AU-251) |
+| El lector `read_message` | El paso «Lectora»: el mismo lector sin herramientas y el mismo prompt base del código, con «Busca», «Indicaciones», «Ejemplos» y «Modelo» en su panel. Lo ya propuesto de ese remitente y el título de la invitación, que hoy recibe aparte como valores de Boni, los lee entre marcas y con su etiqueta de fuera (AU-255; decisión 33) |
+| Las reglas de la guía, que aplica el código | El paso «Regla del remitente», con su tabla en el panel; las sigue aplicando el código |
+| El decisor, y su pregunta en el panel de peticiones | El paso «Decisora», con sus colecciones en el panel; lo que duda sale por «Duda» a un paso «Preguntar», que espera en la Bandeja y caduca a los 7 días (AU-252; decisión 32) |
+| La propuesta en la Bandeja | La misma tarjeta, una por cosa; por dentro es la propuesta de la ejecución (AU-251). Lo que se guarda lo decide el «Permiso» de «Crear en la elegida», una celda por colección que nace en «Preguntar»; «Aceptar solas» y su interruptor «Solo» se van (AU-250; decisión 30) |
+| La revisora | «Revisar instrucciones», una sola automatización para la «Lectora» y para cada «Agente»; mide igual antes de sugerir y nada cambia solo (AU-211) |
+| El log del servidor (`mail N: read …`) | Se quita: cada correo leído es una ejecución en «Ejecuciones», con sus pasos (AU-253) |
+| La guía de Juan en Ajustes → Correo | Sus indicaciones, reglas y ejemplos pasan a los paneles de esos pasos, donde un cambio se prueba con «Probar con…» y se publica como versión; Ajustes → Correo se queda con el buzón (decisión 31). La versión de lectura de un correo es la versión de la automatización que lo leyó, y «Volver a leer» sigue |
+
+Lo que no cambia: el buzón se lee sin tocarlo (§1.1); un correo es texto de fuera y lo que nace de él se propone,
+salvo una celda que Juan puso en «Sí» con su mano (§5; `docs/automatizaciones.md` §6); el lector lee sin herramientas;
+el tope del día está en el código (150 llamadas a modelos al día y 20 por remitente; medir gasta de su propio cupo, 45
+lecturas al día); la conversación (§1.3, §4.1 a §4.4) sigue leyendo el correo como aquí se cuenta, y la guía le llega
+desde los paneles de «Leer correo» en vez de desde los ajustes; y el banco de pruebas (§4.5) sigue midiendo el prompt
+de la «Lectora».
