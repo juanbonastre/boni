@@ -43,7 +43,7 @@ import {
   type Val,
 } from "@boni/agent";
 import { type EvalResult, evalModel, evalRole } from "@boni/agent/evals";
-import { AGENT_TYPE, isBoniType, isReaderType } from "@boni/automations";
+import { callKindOf } from "@boni/automations";
 import { wrappedKeysIn } from "@boni/identity";
 import { fetchText } from "@boni/net";
 import {
@@ -1344,15 +1344,6 @@ export interface PlannerChoice {
   current: boolean;
 }
 
-/** The kind of call an AI step makes, by its type (§5.16): never by its model or a tag. Null: no AI step. */
-function kindOfStep(type: unknown): Kind | null {
-  if (type === AGENT_TYPE) return "agent";
-  if (typeof type !== "string") return null;
-  if (isReaderType(type)) return "reading";
-  if (type === "boni.mailDecider") return "decision";
-  return isBoniType(type) ? "reading" : null;
-}
-
 /**
  * Every AI step's «Modelo» in the automations, of their drafts and their published versions (AU-233, AU-244): one
  * row per step, its kind of call and its value (null: «El de la cuenta»). A document that does not read is skipped.
@@ -1375,7 +1366,7 @@ function stepModels(store: UserStore): { automation: string; kind: Kind; model: 
       }
       if (!Array.isArray(steps)) continue;
       for (const s of steps as { type?: unknown; params?: Record<string, unknown> }[]) {
-        const kind = kindOfStep(s?.type);
+        const kind = callKindOf(s?.type);
         if (!kind) continue;
         const m = s.params?.model;
         out.push({ automation: a.id, kind, model: typeof m === "string" && m !== "" ? m : null });
@@ -1486,6 +1477,9 @@ export async function serveModels(
 ): Promise<void> {
   if ((route.startsWith("PUT ") || route.startsWith("POST ")) && who.trust !== "personal")
     return send(res, 403, { error: "personal-device-only" });
+  // Whether this device may change «Modelos» (AU-243): the screen offers no write a shared device would be refused.
+  const personal = who.trust === "personal";
+  const listOf = () => ({ ...models.listView(who.account), personal });
   switch (route) {
     case "GET /api/agent/models":
       return send(res, 200, models.view(who.account));
@@ -1577,13 +1571,13 @@ export async function serveModels(
     }
     // «Modelos» without uses (§5.16): the list, its tags, «De la cuenta» and each model's evaluation.
     case "GET /api/agent/models/list":
-      return send(res, 200, models.listView(who.account));
+      return send(res, 200, listOf());
     case "GET /api/agent/models/choices": {
       const kind = KINDS.find(
         (k) => k === new URL(req.url ?? "/", "http://boni").searchParams.get("kind"),
       );
       if (!kind) return bad(res);
-      return send(res, 200, models.choices(who.account, kind));
+      return send(res, 200, { ...models.choices(who.account, kind), personal });
     }
     case "GET /api/agent/models/evaluation": {
       const id = new URL(req.url ?? "/", "http://boni").searchParams.get("id") ?? "";
@@ -1598,22 +1592,18 @@ export async function serveModels(
         zdr: b.zdr === true,
       });
       if (r === "invalid") return bad(res);
-      return r === "added"
-        ? send(res, 200, models.listView(who.account))
-        : send(res, 409, { error: r });
+      return r === "added" ? send(res, 200, listOf()) : send(res, 409, { error: r });
     }
     case "POST /api/agent/models/list/remove": {
       const b = await bodyOf(req);
       const r = models.removeModel(who.account, String(b.id ?? ""), b.confirm === true);
-      if ("done" in r) return send(res, 200, models.listView(who.account));
+      if ("done" in r) return send(res, 200, listOf());
       return send(res, r.error === "not-found" ? 404 : 409, r);
     }
     case "PUT /api/agent/models/order": {
       const b = await bodyOf(req);
       const ids = Array.isArray(b.ids) ? b.ids.map(String) : null;
-      return ids && models.orderModels(who.account, ids)
-        ? send(res, 200, models.listView(who.account))
-        : bad(res);
+      return ids && models.orderModels(who.account, ids) ? send(res, 200, listOf()) : bad(res);
     }
     case "POST /api/agent/models/tags": {
       const b = await bodyOf(req);
@@ -1624,14 +1614,14 @@ export async function serveModels(
       const b = await bodyOf(req);
       const r = models.renameTag(who.account, `${TAG_REF}${params.tag}`, String(b.name ?? ""));
       if (r === "not-found") return send(res, 404, { error: r });
-      return r === "done" ? send(res, 200, models.listView(who.account)) : bad(res);
+      return r === "done" ? send(res, 200, listOf()) : bad(res);
     }
     case "PUT /api/agent/models/tagged": {
       const b = await bodyOf(req);
       const tags = Array.isArray(b.tags) ? b.tags.map(String) : null;
       if (!tags) return bad(res);
       const r = models.tagModel(who.account, String(b.id ?? ""), tags, b.confirm === true);
-      if ("done" in r) return send(res, 200, models.listView(who.account));
+      if ("done" in r) return send(res, 200, listOf());
       if (r.error === "invalid") return bad(res);
       return send(res, r.error === "not-found" ? 404 : 409, r);
     }
@@ -1642,16 +1632,14 @@ export async function serveModels(
       const value = b.value === null ? null : typeof b.value === "string" ? b.value : undefined;
       if (value === undefined) return bad(res);
       return models.setAccountRow(who.account, kind, value) === "done"
-        ? send(res, 200, models.listView(who.account))
+        ? send(res, 200, listOf())
         : send(res, 409, { error: "not-offered" });
     }
     case "POST /api/agent/models/list/evaluate": {
       const b = await bodyOf(req);
       const r = models.evaluateModel(who.account, String(b.id ?? ""));
       if (r === "not-found") return send(res, 404, { error: r });
-      return r === "started"
-        ? send(res, 202, models.listView(who.account))
-        : send(res, 409, { error: r });
+      return r === "started" ? send(res, 202, listOf()) : send(res, 409, { error: r });
     }
     default:
       return send(res, 404, { error: "not-found" });

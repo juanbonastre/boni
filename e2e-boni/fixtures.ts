@@ -2730,7 +2730,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           p === "api/mail" ||
           p.startsWith("api/mail/")
         ) {
-          const key = `${method} ${p
+          let key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
             .replace(/\/requests\/[^/]+\//, "/requests/:id/")
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
@@ -2743,12 +2743,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/audit\/actions\/[^/]+$/, "/audit/actions/:seq")
             .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
+            .replace(/\/models\/tags\/[^/]+$/, "/models/tags/:tag")
+            .replace(/\/models\/account\/[^/]+$/, "/models/account/:kind")
             .replace(/\/live\/[^/]+$/, "/live/:id")
             .replace(/\/origin\/[^/]+$/, "/origin/:id")
             .replace(/\/chats\/[^/]+$/, "/chats/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
             .replace(/\/flows\/[^/]+\/(enabled|revert|run|test|draft)$/, "/flows/:id/$1")
             .replace(/\/mail\/webmail\/[^/]+$/, "/mail/webmail/:id")}`;
+          // «Modelo»'s choices by kind of call (§5.16): `GET api/agent/models/choices?kind=reading` when a test gives
+          // that kind its own answers, else the same for every kind.
+          const byKind =
+            p === "api/agent/models/choices" ? `${key}?${path.split("?")[1] ?? ""}` : null;
+          if (byKind && opts.agent?.[byKind]?.length) key = byKind;
           const list = opts.agent?.[key];
           // A flow's draft kept as the server keeps it (task 80), unless a test says otherwise.
           if (!list?.length && key === "PUT api/agent/flows/:id/draft")

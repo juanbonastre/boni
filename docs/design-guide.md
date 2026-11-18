@@ -906,7 +906,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
   into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
-  (a quiet chip; its menu lists the account's own and the ones evaluated in Ajustes → Modelos, and links there) and a round
+  (a quiet chip; its menu lists «El de la cuenta» with the model that answers it and the models offered for «Agente»,
+  never a tag, and on a personal device off the phone ends in «Añadir modelo», which opens Ajustes → Modelos; §5.16
+  AU-242) and a round
   button on the right: an arrow that sends, or a square that stops the turn («Parar»; the turn then says «Parado.» in
   muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table, and a chart: bars across, label, bar and value on
@@ -1099,8 +1101,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   the areas decided inside a proposal (no switch); for «Aceptar propuestas», «Solo» with a switch at the right,
   disabled until earned, with how far it is as a count («12 de 20», the numbers from the server); when Boni
   turned it off itself, «Apagado por Boni el 3 nov 2026». Nothing explains the rule on the screen (§5). Only a
-  personal device turns it. **Modelos**: under an evaluation's result, muted, the decider's
-  calibration by level («Calibración: 0,9–1: 10 de 10 · 0,8–0,9: 5 de 6») when the evaluation measured it.
+  personal device turns it. **Modelos**: below.
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
   **Privacidad** (what the AI sees): the levels explained once at the top, then one row per collection with a select.
@@ -1505,9 +1506,11 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   AU-48, AU-50, AU-52, AU-54, AU-166, AU-196, AU-199, AU-200): in «Añadir paso» under «Usar IA» with the `Bot` icon.
   Its view shows six rows in this order: «Instrucciones», «Modelo», «Conexiones», «Lecturas», «Respuesta», «Se
   ejecuta»; «Las hace este código» adds «Código» under «Lecturas», a plain monospace text box for now. Nothing about
-  a model's keys or settings. «Modelo» is a select: first «El de la cuenta · claude-…» (the account's model for the
-  use, by its name without the provider), then the models evaluated for it; a choice no longer offered reads «… · ya
-  no está en la lista». «Conexiones» is the «Código»'s table with «Leer» a select «No / Sí», each cell's limits under
+  a model's keys or settings. «Modelo» is a closed select, the same in an «Agente» and in the readers, asked by the
+  step's kind of call (§5.16, AU-238): first «El de la cuenta · claude-…» (the account's row of that kind, by the
+  model's name without the provider), then an optgroup «Etiquetas» (each «Barato · m-ejemplo», or disabled with
+  «Sin modelo» or «Caducada», AU-241) and an optgroup «Modelos» (the models offered for that kind); a choice no
+  longer offered reads «… · no disponible». «Conexiones» is the «Código»'s table with «Leer» a select «No / Sí», each cell's limits under
   its select in 12 px `--muted` («hasta 20», «1 campo · hasta 5»), and «Conectar» (ghost, small, a menu of the
   collections a model may read and the step does not hold: never a private one) under the table. A write cell taken out
   of «No» is born «hasta 20». Each `<details>` «Límites de «Tareas»» has one section per action that is not «No», its
@@ -1784,23 +1787,37 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   why in words: «una regla de seguridad lo impide» (the policy's rules and what a model may read), «se llegó al límite
   de gasto de hoy», «se llegó a un límite de la petición», «lo paraste tú», «un fallo al hacerlo».
 - **Ajustes → Modelos** (again its place, 2026-11-06: the tab «Modelos» of «Flujos», task 59b, is gone with its declared
-  canvas; what every model does and costs is on the map's flows and steps, `docs/sistema.md` §4.4): what configures
-  the models: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
-  the model's short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted
-  «Borra lo que recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use in
-  place of the list (Esc or its close button goes back to the list, not out of Ajustes): the model and its route, what
-  the use does, the privacy in a sentence, whose choice it is, this month's spending, the last evaluation with «Ver
-  los casos» (each case's text, and a failed one followed by who failed and what (a use's miss in at most five words): «· Agente:
-  no devolvió un plan», «· Lector: respuesta que no vale», «· Proveedor: la cuenta del proveedor no tiene saldo», a provider's refusal in the words a run that stopped on it gets; from fixed codes only, never
-  the grader's detail nor a model's or a provider's text, and nothing when the code is unknown or the evaluation is
-  from before task 132; I-40), «Volver al del servidor» and «Cambiar», which shows the models to choose (search, OpenRouter's models
-  some provider serves keeping nothing, cheapest first, a box each with its name, price per million tokens and
-  providers; readers only those that answer a fixed form, the Decisor only Jev) and under the list, fixed while it
-  scrolls, «Ahora» and «Nuevo» with their scores, «Evaluar» and «Usar este modelo» (enabled only with a recent
-  evaluation). Then the month's spending against the budget (a tile with its bar), the spending per model and
-  «Cambiar el presupuesto», by the line that says the budget and its warning («Presupuesto: 10,00 € al mes, aviso al
-  80 %»; with Boni's «Aviso del presupuesto» turned off, «…, aviso apagado»; with a budget of 0 €, «Sin presupuesto»,
-  and the tile's bar never in its warning colour: states in a word, §5; D-53); «Claves» folded at the end (a password field in place; the key never comes back). What the
+  canvas; what every model does and costs is on the map's flows and steps, `docs/sistema.md` §4.4; without uses since
+  task 154, `docs/automatizaciones.md` §5.16): what configures the models, top to bottom. «Añadir modelo» (ghost,
+  small) at the head. **«De la cuenta»**: one bordered row per kind of call («Agente», «Lectura», and «Decisión» only
+  when a decision model is there), each its kind's name, the model or tag it holds and the model that answers
+  («Barato · deepseek-v4.1-flash», «Del servidor · claude-…», or «Sin modelo» in `--bad`), and «Cambiar · Agente»;
+  «Cambiar» opens under the row a select of what is valid for that kind (the same optgroups as a step's «Modelo»,
+  with «Del servidor» first) and, muted, how many follow the row («La usan 6 automatizaciones»), with «Guardar» and
+  «Cancelar». **The list** («Modelos cargados»): one row per model in his order, each with a grip (drag a row onto
+  another to move it) and a button that is the row: the model's name without its provider, its connection, the
+  route's privacy pill (as before: `--good` «No guarda tus datos», muted «Borra lo que recibe en 30 días», `--bad`
+  «Puede guardar tus datos»), its tags as small pills, the evaluation («22 de 24», with «Caducada» or «Parcial», or
+  muted «Sin evaluar») and this month's €; a menu «Mover» with «Subir» and «Bajar» at the right. The server's models
+  close the list as «Del servidor»: no grip, no tags, never removed. With none, «Sin modelos: el agente está
+  apagado.» A click opens the model in place of the list (Esc or its close button goes back to the list, not out of
+  Ajustes): its name, its connection and route with the pill; «Etiquetas» (each pill with an ×, and a field that
+  offers his tags or takes a new name, «Añadir etiqueta»; up to 20, 24 characters); «Evaluación» (the result, its
+  date and cost, «Ver los casos» by part, «Agente · 14 de 15», «Lectura · 8 de 9», each case's text and a failed
+  one followed by who failed and what, from fixed codes only, I-40; and «Evaluar», one model alone, the button busy
+  while it runs); «Se usa en» (its rows «De la cuenta · Lectura», «3 automatizaciones», «2 conversaciones», or
+  «Ningún sitio»); its month's €; and «Quitar». «Quitar», and a tag taken off or a key removed that leaves something
+  in use without a model, asks first in place with where it is used («Se usa en 3 automatizaciones y en «De la cuenta
+  · Lectura».», «Barato se queda sin modelo.») and «Quitar» / «Cancelar». «Añadir modelo» opens the finder as before
+  (search, OpenRouter's models some provider serves keeping nothing, cheapest first, a box each with its name, price
+  per million tokens and providers; readers only those that answer a fixed form) and, the model picked, «Añadir»: it
+  enters at the end «Sin evaluar», asking for its connection's key in «Claves» when missing. On the phone and on a
+  shared device the page only reads: no grip, no «Mover», «Cambiar», «Quitar», «Evaluar», «Añadir modelo» nor tag
+  field, and a muted «Solo lectura en este dispositivo» (AU-243). Then the month's spending against the budget (a
+  tile with its bar; each model's € is on its row) and «Cambiar el presupuesto», by the line that says the budget and
+  its warning («Presupuesto: 10,00 € al mes, aviso al 80 %»; with Boni's «Aviso del presupuesto» turned off, «…,
+  aviso apagado»; with a budget of 0 €, «Sin presupuesto», and the tile's bar never in its warning colour: states in
+  a word, §5; D-53); «Claves» folded at the end (a password field in place; the key never comes back). What the
   models did is the page «Uso de la IA».
 - **Registro** (Boni): an ordinary template page over the read-only «Ejecuciones» collection, with total runs, time and
   cost, a daily chart and the runs table. «Actividad» links to that page. The conversation's «Registro» keeps the

@@ -7235,63 +7235,6 @@ button.kpi[aria-expanded="true"] {
   gap: 12px;
   min-width: 0;
 }
-.uses {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-/* Two use cards side by side while each has room (about 190 px); one under another below. */
-@container (max-width: 400px) {
-  .uses {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.use-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.use-card:hover {
-  background: var(--hover);
-}
-.use-card.on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.use-role {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.use-model {
-  max-width: 100%;
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.use-spend {
-  max-width: 100%;
-  font-size: 13px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .role-detail {
   display: flex;
   flex-direction: column;
@@ -7904,6 +7847,159 @@ button.rows-panel-row:hover {
 .models-settings-role > .side-panel {
   width: 100%;
   border-left: 0;
+}
+/* Ajustes → Modelos (AU-232): «Añadir modelo» on top, «De la cuenta» one row per kind of call, then the list. */
+.models-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 32px;
+}
+.models-account {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.models-account > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 44px;
+  padding: 8px 14px;
+}
+.models-account > li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.models-account-kind {
+  flex: 0 0 88px;
+  color: var(--muted);
+}
+.models-account-value {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-account-edit {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.models-account-edit select {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.models-account-uses {
+  flex: 1 1 100%;
+}
+.models-items {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.models-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0 6px 0 4px;
+}
+.models-item + .models-item {
+  border-top: 1px solid var(--line-soft);
+}
+.models-item.dragging {
+  opacity: 0.5;
+}
+.models-grip {
+  flex: none;
+  color: var(--muted);
+  cursor: grab;
+}
+.models-grip.off {
+  visibility: hidden;
+}
+.models-item-main {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 8px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.models-item-main:hover {
+  background: var(--hover);
+}
+.models-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.models-tag-x {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.models-tag-x:hover {
+  color: var(--text);
+}
+.models-mark {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.models-move {
+  flex: none;
+}
+.models-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.models-ask .models-actions {
+  justify-content: flex-end;
+}
+.models-part,
+.models-cases-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 .collection-system-pill {
   display: inline-flex;

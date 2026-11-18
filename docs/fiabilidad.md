@@ -198,6 +198,10 @@ acepta sola (hoy solo el Registro), y la corrección de lo creado (cambiar el t�
 borrar.
 | F4 | Los aprendices de la tarea 13 y las sugerencias de `docs/preferencias.md` sobre el procedimiento | P3 de `docs/preferencias.md` |
 
+Con la F16 de las automatizaciones (decidido por Juan el 2026-11-18, decisión 30; `docs/automatizaciones.md` §5.17, AU-250) el ámbito
+«Aceptar propuestas» (`mail.accept`) se va: lo que «Leer correo» guarda sin preguntar lo decide el «Permiso» de su
+paso, con la misma cuenta y la misma pausa, y las decisiones de antes cuentan.
+
 **Hecho, F4 (2026-11-03; A-14):** las tres señales de corrección del plan de la tarea 13 ya tienen cada una su
 aprendiz sobre el procedimiento, y cada aprendiz ajusta solo algo acotado:
 
