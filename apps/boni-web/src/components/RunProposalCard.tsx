@@ -1,7 +1,7 @@
 /**
  * The card in the inbox of what a run of an automation asked (AU-193, F14d P3b): painted by the app's code from the
  * server's `RunProposalView`, never from a model's words. It says the automation and its version, how many rows it
- * creates, modifies and sends to the trash in each collection («Tarea de la mañana quiere crear 4 filas en Tareas»),
+ * creates, modifies and sends to the trash in each collection («Tarea de la mañana: crear 4 filas en Tareas»),
  * and each row with its before, its after and the mark of what came from outside, every value as plain text (A-01).
  * «Ver todo» reads the rest a page at a time. Accepted, it has no «Deshacer» of its own: it is undone with its run,
  * which «Ver la ejecución» opens in «Ejecuciones». Expired, it says «Caducada» and runs it again.
@@ -28,7 +28,7 @@ import { cellText } from "./AutomationRows.tsx";
 
 const client = automationsClient(agentApi);
 
-/** «Tarea de la mañana quiere crear 4 filas en Tareas y modificar 2 filas en Gastos». */
+/** «Tarea de la mañana: crear 4 filas en Tareas y modificar 2 filas en Gastos». */
 export function wantsWords(
   t: T,
   lang: "es" | "en",
@@ -137,6 +137,7 @@ export function RunProposalCard({ p, asked }: { p: Proposal; asked: RunProposal 
                 collection: names(r.collection) ?? r.name ?? t("auto.run.did.gone"),
                 title: r.row?.title || t("auto.value.empty"),
               })}
+              {r.byAgent && <span className="run-asked-agent"> · {t("auto.conn.byAgent")}</span>}
             </span>
             {r.values.map((v) => (
               <span className="run-asked-value" key={v.key}>

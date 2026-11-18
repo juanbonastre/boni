@@ -1326,7 +1326,7 @@ test("an old card checked again (task 27, §3.4 rule 3a): changed since, it come
   });
   await ask(page, "marca como leído el de Cortázar");
   await page.locator(".ask-options .pill").first().click();
-  await expect(page.locator(".ask .ask-state")).toHaveText("Ha cambiado");
+  await expect(page.locator(".ask .ask-state")).toHaveText("Modificada");
   await expect(page.locator(".ask-options .pill").first()).toHaveText(
     "Rayuela (edición de bolsillo)",
   );
@@ -1767,7 +1767,7 @@ test("«Marcar como hecha» saves a task already done; a card Boni would have ac
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
-  await expect(card.locator(".would-accept")).toHaveText("Boni la habría aceptado");
+  await expect(card.locator(".would-accept")).toHaveText("Aceptación prevista");
   await page.screenshot({ path: `${SHOTS}/inbox-done.png` });
   await card.getByRole("button", { name: "Marcar como hecha" }).click();
   await expect(card.getByRole("button", { name: "Apuntando como hecha…" })).toBeVisible();
@@ -2583,7 +2583,7 @@ test("a proposal the calendar already has says so, and «Enlazar» accepts it li
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
   await expect(card.locator(".inbox-already")).toContainText(
-    "Ya está en el calendario: Reconocimiento, 12:00–13:00",
+    "En el calendario: Reconocimiento, 12:00–13:00",
   );
   await expect(card.locator(".inbox-overlap")).toContainText("Se solapa con Clase FUP");
   // The primary button is «Enlazar», and it sends the event's id with the acceptance.
@@ -2741,7 +2741,7 @@ test("«Aceptar» on a card that changed since it was seen is stopped and says s
   const card = page.locator(".inbox-panel .inbox-card").first();
   await card.getByRole("button", { name: "Aceptar" }).click();
   // Not taken: the card stays, saying it changed; the request carried no word (the card showed none).
-  await expect(card.locator(".decide-error")).toHaveText("Ha cambiado");
+  await expect(card.locator(".decide-error")).toHaveText("Modificada");
   await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(1);
   expect(await requests(page, "POST api/agent/proposals/c73/accept")).toEqual([
     "POST api/agent/proposals/c73/accept",

@@ -725,7 +725,7 @@ export function StepOutput({
 /**
  * ENTRADA of a step that is not a trigger (AU-71, AU-84): «De «Buscar gastos» · 128 filas», a tab per input
  * («Combinar»), any step before it on the path to look at instead, and its rows; with nothing tested before it,
- * «Prueba los pasos anteriores» with «Probar los anteriores».
+ * «Sin datos de entrada» with «Probar los anteriores».
  */
 export function StepInput({
   state,

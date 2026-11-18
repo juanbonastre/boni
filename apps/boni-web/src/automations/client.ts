@@ -269,7 +269,18 @@ export interface RunSummary {
   /** Where it is, or where it stopped. */
   step: string | null;
   error: (StepError & { step: string | null }) | null;
-  line: { writes: RunCount[]; asked: RunCount[]; outside: boolean } | null;
+  /**
+   * `byAgent`: an «Agente» saved something without asking (AU-204). `reply`: its «Responder»'s first 200 characters
+   * (AU-202), plain text. `noAnswer`: a «Preguntar» ended by «sin respuesta» (AU-125).
+   */
+  line: {
+    writes: RunCount[];
+    asked: RunCount[];
+    outside: boolean;
+    byAgent?: boolean;
+    reply?: string | null;
+    noAnswer?: boolean;
+  } | null;
   undone: number | null;
   retryOf: string | null;
   /** S3: the hour a scheduled run was due. */
@@ -295,6 +306,12 @@ export interface RunStep {
   console?: { lines: ConsoleLine[]; dropped: number };
   reads?: { collection: string; rows: number }[];
   writes?: { saved: number; asked: number; would: number };
+  /** An AI step's calls and an «Agente»'s «Lo que hizo» (AU-54): the engine's, kept with the run's step. */
+  ai?: AiRecord;
+  agent?: AgentRecord;
+  /** A «Preguntar»'s questions and how they ended, and what an «Avisar» sent (AU-125, AU-201). */
+  ask?: AskRecord;
+  notices?: NoticeRecord;
 }
 
 /** `GET automations/:id/runs/:run`: one run, the version it ran and each step it reached. */
@@ -459,7 +476,14 @@ export function runSummaryOf(x: unknown): RunSummary {
     step: typeof o.step === "string" ? o.step : null,
     error: isObj(o.error) ? (o.error as unknown as RunSummary["error"]) : null,
     line: line
-      ? { writes: counts(line.writes), asked: counts(line.asked), outside: line.outside === true }
+      ? {
+          writes: counts(line.writes),
+          asked: counts(line.asked),
+          outside: line.outside === true,
+          byAgent: line.byAgent === true,
+          reply: typeof line.reply === "string" ? [...line.reply].slice(0, 200).join("") : null,
+          noAnswer: line.noAnswer === true,
+        }
       : null,
     undone: num(o.undone),
     retryOf: typeof o.retryOf === "string" ? o.retryOf : null,

@@ -209,7 +209,7 @@ describe("what «Ejecuciones» says of a run", () => {
       },
     });
     expect(didWords(es, "es", r, names)).toBe(
-      "Creó 1 fila en Tareas · Propuso modificar 12 filas en una colección que ya no está · con datos de fuera",
+      "Creó 1 fila en Tareas · Propuso modificar 12 filas en una colección eliminada · con datos de fuera",
     );
     expect(
       didWords(es, "es", summary({ line: { writes: [], asked: [], outside: false } }), names),
@@ -229,6 +229,55 @@ describe("what «Ejecuciones» says of a run", () => {
       },
     });
     expect(didWords(es, "es", asksOnly, names)).toBeNull();
+  });
+  it("AU-204 · AU-200 · what an «Agente» saved without asking says «decidido por un modelo» in the run's line, before «con datos de fuera»; what it only proposed does not", () => {
+    const names = (k: string) => (k === "c_tareas" ? "Tareas" : undefined);
+    const saved = summary({
+      line: {
+        writes: [{ collection: "c_tareas", name: "Tareas", action: "trash", n: 20 }],
+        asked: [],
+        outside: true,
+        byAgent: true,
+      },
+    });
+    expect(didWords(es, "es", saved, names)).toBe(
+      "Mandó a la papelera 20 filas de Tareas · decidido por un modelo · con datos de fuera",
+    );
+    const asked = summary({
+      line: {
+        writes: [],
+        asked: [{ collection: "c_tareas", name: "Tareas", action: "create", n: 1 }],
+        outside: false,
+        byAgent: true,
+      },
+    });
+    expect(didWords(es, "es", asked, names)).toBe("Propuso crear 1 fila en Tareas");
+    // From the wire: only `true` marks it, and a server before it gives nothing.
+    expect(
+      runSummaryOf({ id: "r_1", line: { writes: [], asked: [], byAgent: "sí" } }).line?.byAgent,
+    ).toBe(false);
+  });
+  it("AU-125 · AU-203 · AU-202 · a run whose «Preguntar» ended by «sin respuesta» says «Sin respuesta», and its reply comes as plain text cut to 200 characters", () => {
+    const r = runSummaryOf({
+      id: "r_1",
+      state: "done",
+      ms: 2_000,
+      line: {
+        writes: [],
+        asked: [],
+        outside: false,
+        noAnswer: true,
+        reply: "<b>" + "x".repeat(300),
+      },
+    });
+    expect(howWords(es, "es", r, () => undefined)).toBe("Sin respuesta · 2,0 s");
+    expect(r.line?.reply).toHaveLength(200);
+    expect(r.line?.reply?.startsWith("<b>")).toBe(true);
+    const answered = { ...r, line: { writes: [], asked: [], outside: false, noAnswer: false } };
+    expect(howWords(es, "es", answered, () => undefined)).toBe("Completada · 2,0 s");
+    expect(
+      runSummaryOf({ id: "r_1", line: { writes: [], asked: [], reply: 7 } }).line?.reply,
+    ).toBeNull();
   });
   it("AU-18 · S2's refusals in words: a shared device in the app's own, and a later run that stands by the row's title", () => {
     expect(runRefusedWords(es, { refused: "not-personal" })).toBe(

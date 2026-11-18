@@ -595,7 +595,7 @@ test.describe("the header and «Publicar»", () => {
       ];
     });
     await screen(page).getByRole("button", { name: "Publicar versión 1" }).click();
-    await expect(toast(page)).toContainText("Falta algo antes de publicar");
+    await expect(toast(page)).toContainText("Publicación bloqueada");
     await expect(part(page, "Antes de publicar").locator("li.bad")).toContainText(
       "Crear una fila en Libros",
     );
@@ -1017,7 +1017,7 @@ test.describe("«Ejecuciones»", () => {
     const undo = runBar(page).getByRole("button", { name: "Deshacer lo que hizo" });
     await expect(undo).toBeVisible();
     await undo.click();
-    await expect(toast(page)).toContainText("Deshecho lo que hizo");
+    await expect(toast(page)).toContainText("Ejecución deshecha");
     await expect(runBar(page)).toContainText("Deshecha hoy");
     await expect(undo).toHaveCount(0);
     expect(await recorded(page, "__autoUndo")).toEqual(["r_01jbien"]);
@@ -1666,7 +1666,7 @@ test.describe("what a run tells and asks", () => {
     const c = runCardOf(page);
     await expect(c.locator(".inbox-kind")).toHaveText("Propuesta de automatización");
     await expect(c.locator("h3")).toHaveText(
-      "Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros",
+      "Revisar pendientes: modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros",
     );
     await expect(c.locator(".run-proposal-line")).toHaveText(
       "versión 2 · Programada · Pendiente en la Bandeja",
@@ -1718,7 +1718,7 @@ test.describe("what a run tells and asks", () => {
     await openAsking(page, { accept: [DONE] });
     await runCardOf(page).getByRole("button", { name: "Aceptar", exact: true }).click();
     await expect(runCardOf(page)).toHaveCount(0);
-    await expect(toast(page)).toContainText("Guardado lo que propuso Revisar pendientes");
+    await expect(toast(page)).toContainText("Propuesta aceptada: Revisar pendientes");
     await expect(toast(page).getByRole("button", { name: "Deshacer" })).toHaveCount(0);
     await toast(page).getByRole("button", { name: "Ver la ejecución" }).click();
     await expect(runItems(page).first()).toHaveAttribute("aria-current", "true");
@@ -1836,7 +1836,7 @@ test.describe("what a run tells and asks", () => {
     await expect(runBar(page).locator(".auto-run-notice")).toHaveText(`Avisó: ${text}`);
     const undo = runBar(page).getByRole("button", { name: "Deshacer lo que hizo" });
     await undo.click();
-    await expect(toast(page)).toContainText("Deshecho lo que hizo");
+    await expect(toast(page)).toContainText("Ejecución deshecha");
     await expect(runBar(page)).toContainText("Deshecha hoy");
     expect(await recorded(page, "__autoUndo")).toEqual(["r_01jsola"]);
   });
@@ -1850,7 +1850,7 @@ test.describe("what a run asks, on the phone", () => {
     await page.setViewportSize({ width: 360, height: 740 });
     await openAsking(page, { phone: true });
     const c = runCardOf(page);
-    await expect(c.locator("h3")).toContainText("Revisar pendientes quiere modificar 3 filas");
+    await expect(c.locator("h3")).toContainText("Revisar pendientes: modificar 3 filas");
     await expect(c.getByRole("button", { name: "Aceptar", exact: true })).toBeVisible();
     await expect(c.locator(".run-asked-after").first()).toHaveText(LOOKS_LIKE_MARKUP);
     expect(

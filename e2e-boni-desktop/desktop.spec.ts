@@ -437,7 +437,7 @@ test("«Automatizaciones» over the real server is a collection (F8, AU-61, AU-6
   const rows = await w.locator(".db-table tbody tr").count();
   await w.locator(".db-head").getByRole("button", { name: "Nueva" }).click();
   // The empty canvas, nothing saved: its first step makes it.
-  await expect(w.locator(".auto-start")).toContainText("¿Cómo empieza?");
+  await expect(w.locator(".auto-start")).toContainText("Disparador");
   await w.getByRole("button", { name: "Disparado por el usuario" }).click();
   await expect(w.locator(".auto-saved")).toHaveText("Guardado");
   const name = w.getByRole("textbox", { name: "Nombre de la automatización" });

@@ -224,7 +224,7 @@ test.describe("the «Agente» step (F15)", () => {
     const model = param(page, "model").getByRole("combobox", { name: "Modelo" });
     await expect(model).toHaveValue("anthropic:claude-ejemplo-viejo");
     await expect(model.locator("option:checked")).toHaveText(
-      "anthropic:claude-ejemplo-viejo · ya no está en la lista",
+      "anthropic:claude-ejemplo-viejo · no disponible",
     );
   });
 });

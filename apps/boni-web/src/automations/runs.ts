@@ -22,6 +22,12 @@ export function testOfRun(step: RunStep, at: number): StepTest {
     ...(step.error ? { error: step.error } : {}),
     stale: false,
     ...(step.console ? { console: step.console } : {}),
+    // «Lo que hizo» of a run's AI step (AU-54) and a «Preguntar»'s or an «Avisar»'s record: the step's view paints
+    // them as it paints a test's, from the engine's record and never from a model, as plain text.
+    ...(step.ai ? { ai: step.ai } : {}),
+    ...(step.agent ? { agent: step.agent } : {}),
+    ...(step.ask ? { ask: step.ask } : {}),
+    ...(step.notices ? { notices: step.notices } : {}),
   };
 }
 

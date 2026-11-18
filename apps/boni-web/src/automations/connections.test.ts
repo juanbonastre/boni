@@ -33,6 +33,7 @@ import {
   setWriteField,
   setWriteLimits,
 } from "./edit.ts";
+import { testOfRun } from "./runs.ts";
 
 const t = translator("es");
 const en = translator("en");
@@ -440,11 +441,50 @@ describe("an «Agente»'s connections", () => {
     );
     expect(run?.head).toBe("2 rondas · 0,8 s");
     expect(run?.units).toEqual([
-      { title: "Fila 1", lines: ["Propuso 1 fila nueva en Notas: espera tu permiso"] },
+      { title: "Fila 1", lines: ["Propuso 1 fila nueva en Notas · pendiente"] },
       { title: "Fila 2", lines: ["Creó 1 fila en Notas"] },
     ]);
     expect(run?.more).toBe(0);
     expect(didLines(t, { ms: 10 }, step, "es-ES", nameOf)).toBeNull();
+  });
+  it("AU-54 · «Lo que hizo» in a run's record: the run's step brings the engine's `agent` and `ai`, painted as a test's, and the calls «Reintentar si el modelo falla» asked again are said beside the calls", () => {
+    const step = agentStep([conn("notas", { create: { mode: "yes", limit: 20 } })]);
+    const kept = testOfRun(
+      {
+        state: "done",
+        in: { main: 1 },
+        out: { main: 1 },
+        ms: 4100,
+        retries: 0,
+        failed: 0,
+        asked: 0,
+        ai: { calls: 3, models: ["modelo-ejemplo"], ms: 3600, cut: 0, retried: 1 },
+        agent: {
+          units: [
+            {
+              rounds: 2,
+              more: 0,
+              seen: [],
+              lines: [{ op: "create", collection: "notas", state: "applied" } as AgentLine],
+            },
+          ],
+        },
+      },
+      1_000,
+    );
+    const did = didLines(t, kept, step, "es-ES", nameOf);
+    expect(did?.head).toBe(
+      "2 rondas · 3 llamadas al modelo · 1 reintento · modelo-ejemplo · 3,6 s",
+    );
+    expect(did?.units).toEqual([{ title: null, lines: ["Creó 1 fila en Notas"] }]);
+    const twice = didLines(
+      t,
+      { ...kept, ai: { calls: 3, models: [], ms: 3600, cut: 0, retried: 2 } },
+      step,
+      "es-ES",
+      nameOf,
+    );
+    expect(twice?.head).toBe("2 rondas · 3 llamadas al modelo · 2 reintentos · 3,6 s");
   });
   it("AU-54 · A-15 · «Una vez por fila» over 5.000 rows, each unit with its 50 lines: «Lo que hizo» words the first 20 units and counts the rest, within a frame", () => {
     const step = agentStep([conn("notas", { create: { mode: "ask", limit: 20 } })]);

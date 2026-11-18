@@ -373,6 +373,8 @@ export function didLines(
   const head = [t(counted("auto.did.rounds", rounds), { n: num(rounds) })];
   if (ai) {
     head.push(t(counted("auto.did.calls", ai.calls), { n: num(ai.calls) }));
+    // Of those calls, the ones «Reintentar si el modelo falla» asked again (decision 28): said beside them.
+    if (ai.retried) head.push(t(counted("auto.did.retried", ai.retried), { n: num(ai.retried) }));
     if (ai.models.length > 0) head.push(ai.models.join(", "));
   }
   const ms = ai?.ms ?? test.ms;

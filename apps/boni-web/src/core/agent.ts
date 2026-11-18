@@ -274,6 +274,8 @@ export const ACCEPT_RUN = "automations.accept_run";
 /** One change a run asked (AU-193), as the server's `AskedView`: the values it would save, by their field's key. */
 export interface AskedRow {
   step: string;
+  /** The step is an «Agente» in the version that ran (the server reads it there): an AI chose this change (AU-42, AU-200). */
+  byAgent: boolean;
   action: "create" | "update" | "trash";
   /** The collection's key, and its name when the run asked. */
   collection: string;
@@ -324,6 +326,7 @@ export function parseAskedRow(v: unknown): AskedRow | null {
     : [];
   return {
     step: str(v.step, 80) ?? "",
+    byAgent: v.byAgent === true,
     action,
     collection: str(v.collection, 80) ?? "",
     name: str(v.name, 80),

@@ -267,7 +267,7 @@ test("AU-65 AU-21 AU-70 · the criterion of F14b in the desktop app over the rea
   const before = written();
   await openAutomations(w);
   await w.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
-  await expect(w.locator(".auto-start")).toContainText("¿Cómo empieza?");
+  await expect(w.locator(".auto-start")).toContainText("Disparador");
   await panel(w).getByRole("button", { name: "Disparado por el usuario", exact: true }).click();
   await expect(view(w)).toBeVisible();
   const trigger = (await view(w).getAttribute("data-step")) as string;

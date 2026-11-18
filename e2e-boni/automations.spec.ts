@@ -566,7 +566,7 @@ test.describe("the list", () => {
     await expect(found).toHaveAttribute("data-boni-action", "automations.create");
     await noFlujo();
     await page.keyboard.press("Enter");
-    await expect(page.locator(".auto-start h2")).toHaveText("¿Cómo empieza?");
+    await expect(page.locator(".auto-start h2")).toHaveText("Disparador");
     await page.getByRole("button", { name: "Volver a Automatizaciones" }).click();
     // The map: its groups by automation, its cards of the flows of before.
     await page.getByRole("tab", { name: "Mapa" }).click();
@@ -641,7 +641,7 @@ test.describe("the list", () => {
     const rows = await list(page);
     await expect(rows).toHaveCount(1);
     await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
-    await expect(page.locator(".auto-start h2")).toHaveText("¿Cómo empieza?");
+    await expect(page.locator(".auto-start h2")).toHaveText("Disparador");
     await expect(nameBox(page)).toHaveValue("Nueva automatización");
     // Longer than the pause before a save: nothing was asked and nothing says it was saved.
     await page.waitForTimeout(1500);
@@ -792,7 +792,7 @@ test.describe("the editor", () => {
     await rows.getByText("Revisar gastos", { exact: true }).click();
     await head(page).getByRole("button", { name: "Más" }).click();
     await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
-    // The copy, opened: its name, its own id, its trigger (no «¿Cómo empieza?»).
+    // The copy, opened: its name, its own id, its trigger (no «Disparador»).
     await expect(nameBox(page)).toHaveValue("Revisar gastos (copia)");
     expect(
       await sent(page, "POST api/agent/automations/a_01jx8p3k5m7n9q2r4t6v8w0y1z/duplicate "),
@@ -1623,16 +1623,16 @@ test.describe("the editor", () => {
 });
 
 test.describe("adding a step", () => {
-  test("AU-69 · the panel is on the right with its search on top: on an empty canvas it asks «¿Cómo empieza?» and lists the triggers; then the three categories of F14b by what one wants to do, and «Añadir otro disparador» last; «Colección» shows its actions as phrases", async ({
+  test("AU-69 · the panel is on the right with its search on top: on an empty canvas it asks «Disparador» and lists the triggers; then the three categories of F14b by what one wants to do, and «Añadir otro disparador» last; «Colección» shows its actions as phrases", async ({
     page,
   }) => {
     await openApp(page, "/?still", { agent: BEFORE() });
     await list(page);
     await page.locator(".db-head").getByRole("button", { name: "Nueva", exact: true }).click();
-    // On an empty canvas: «¿Cómo empieza?» and the triggers («Programada» since F14d S3), at the right, the search on
+    // On an empty canvas: «Disparador» and the triggers («Programada» since F14d S3), at the right, the search on
     // top.
     const p = panel(page);
-    await expect(p.locator("h2")).toHaveText("¿Cómo empieza?");
+    await expect(p.locator("h2")).toHaveText("Disparador");
     await expect(p.locator(".auto-start-row")).toHaveText([
       "Disparado por el usuario",
       "Programada",
@@ -1927,7 +1927,7 @@ test.describe("the step's view", () => {
     await expect(header.getByRole("button", { name: "Cerrar" })).toBeVisible();
     await expect(view(page).getByRole("button", { name: /Guardar/ })).toHaveCount(0);
     // Before any test: ENTRADA asks to test the steps before, SALIDA says «Sin probar».
-    await expect(cols.nth(0)).toContainText("Prueba los pasos anteriores");
+    await expect(cols.nth(0)).toContainText("Sin datos de entrada");
     await expect(cols.nth(0).getByRole("button", { name: "Probar los anteriores" })).toBeVisible();
     await expect(cols.nth(2)).toContainText("Sin probar");
     await page.screenshot({ path: `${SHOTS}/automation-step-view.png` });
@@ -1969,15 +1969,15 @@ test.describe("the step's view", () => {
     await expect(asked.getByRole("spinbutton", { name: "Mínimo" })).toBeVisible();
     await expect(asked).not.toContainText("No pide campos");
   });
-  test("AU-71 · ENTRADA says which step its rows come from and how many, lets any earlier step of the path be chosen, and is seen as «Esquema» (first, each field with a sample value cut to a line), «Tabla» or «JSON»; with more than ten fields it has a search; a related row unfolds one level; empty, it says «Prueba los pasos anteriores» with its button, which tests them; «Combinar» has a tab per input", async ({
+  test("AU-71 · ENTRADA says which step its rows come from and how many, lets any earlier step of the path be chosen, and is seen as «Esquema» (first, each field with a sample value cut to a line), «Tabla» or «JSON»; with more than ten fields it has a search; a related row unfolds one level; empty, it says «Sin datos de entrada» with its button, which tests them; «Combinar» has a tab per input", async ({
     page,
   }) => {
     await openApp(page, "/?still", { automations: [testOf(ALL_DONE)], agent: BEFORE() });
     await openCanvas(page, TESTED.name, 7);
-    // Empty: «Prueba los pasos anteriores», and its button tests them.
+    // Empty: «Sin datos de entrada», and its button tests them.
     await openStep(page, "s_01jsi");
     const empty = entrada(page).locator('[data-in="untested"]');
-    await expect(empty).toContainText("Prueba los pasos anteriores");
+    await expect(empty).toContainText("Sin datos de entrada");
     await empty.getByRole("button", { name: "Probar los anteriores" }).click();
     await expect(entrada(page).locator(".auto-in-from")).toHaveText(
       "De «Buscar filas en Libros» · 128 filas",
@@ -2318,7 +2318,7 @@ test.describe("the step's view", () => {
     await expect(cols).toHaveCount(2);
     await expect(cols.nth(0).getByRole("tab")).toHaveText(["Entrada", "Salida"]);
     await expect(cols.nth(1).getByRole("tab")).toHaveText(["Parámetros", "Ajustes"]);
-    await expect(cols.nth(0)).toContainText("Prueba los pasos anteriores");
+    await expect(cols.nth(0)).toContainText("Sin datos de entrada");
     await cols.nth(0).getByRole("tab", { name: "Salida" }).click();
     await expect(cols.nth(0)).toContainText("Sin probar");
     // Nothing cut and nothing sideways, on each tab, down to 640 px: under it the app is the phone's,
@@ -3303,7 +3303,7 @@ test.describe("against a sea of options", () => {
     const nueva = empty.getByRole("button", { name: "Nueva", exact: true });
     await expect(nueva.first()).toBeVisible();
     await nueva.first().click();
-    await expect(panel(empty)).toContainText("¿Cómo empieza?");
+    await expect(panel(empty)).toContainText("Disparador");
     await panel(empty)
       .getByRole("textbox", { name: "Buscar un paso" })
       .pressSequentially("zzz", { delay: 40 });
@@ -3315,7 +3315,7 @@ test.describe("against a sea of options", () => {
     await openCanvas(page, TESTED.name, 7);
     await openStep(page, "s_01jsi");
     await expect(entrada(page).locator('[data-in="untested"]')).toContainText(
-      "Prueba los pasos anteriores",
+      "Sin datos de entrada",
     );
     await expect(
       entrada(page).getByRole("button", { name: "Probar los anteriores" }),
