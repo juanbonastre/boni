@@ -321,12 +321,17 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   Hecho en S2, en el servidor de verdad: con 3.000 filas que cumplen la condición en un almacén de 12.000 registros,
   la ejecución para por defecto sin una operación en el registro; «Las que cumplan…» con dos filas de entrada para
   a medias, lo que guardó la primera se queda y «Deshacer lo que hizo» deja el almacén como estaba (decisión 14).
-  Falta, en la tarea 137: con el límite subido, guardar «en una transacción dentro de su tiempo». Hoy la puerta
-  guarda cada cambio en su propia transacción (`apply` por fila; `applyAll` existe y el motor no la llama), y cada
-  fila borra su entrada del índice de búsqueda recorriéndolo entero. Medido a mano (`BONI_MEASURE`): 3.000 filas
-  se guardan en 14 a 65 s según la vuelta y se deshacen en 7 a 9 s; 12.000, en 232 s y 27 s. Durante todo ese
-  tiempo el servidor no contesta a nada, porque la escritura es síncrona. Hasta entonces esas dos pruebas son
-  `it.todo` con la tarea.
+  Hecho en la tarea 137: con el límite subido, «Las que cumplan…» guarda el cambio de cada fila de entrada en una
+  transacción. La puerta de la ejecución (`writeAll` de `Run.gate`, `engine.ts`) pregunta a la política por cada fila,
+  con la misma llamada que al guardar una sola (`collection-batch.test.ts`), antes de guardar ninguna, y guarda las que
+  permite con `applyAll`; si niega una o una fila cambió desde que se leyó, no se guarda ninguna de ese cambio, y lo
+  que guardaron las filas de entrada anteriores se queda (decisión 14). Las que pediría preguntar esperan a Juan y las
+  demás se guardan, como antes. El índice de búsqueda ya no se recorre por fila (migración 31). Las dos `it.todo` son
+  pruebas con su tiempo (`runs.test.ts`, `@boni/pace`). Medido a mano (`BONI_MEASURE`), en un portátil: 3.000 filas de
+  un almacén de 12.000 se guardan en 2,3 s y se deshacen en 1,8 s; las 12.000, en cuatro cambios, en 8,7 s y 4,4 s;
+  aceptar una propuesta de 3.000 cambios, 1,5 s. En el techo, 20.000 filas de un almacén de 20.000 en un cambio se
+  guardan en 7,7 s y se deshacen en 7,5 s, y 20.000 creadas una por fila de entrada (una transacción cada una), en 25
+  a 34 s. Durante ese tiempo el servidor no contesta a nada.
   Hecho en P1: «⋯ → Ajustes» enseña «Tiempo» y, si un paso escribe, «Filas escritas» (`shownLimits`), cada uno con
   «Por defecto … · máximo …»; por encima de su techo el campo dice «Como mucho …» y no lo guarda, y volver al valor
   por defecto lo quita del borrador (`withLimit`). Una prueba que paró por un límite dice en «Registro» «Cambiar el
@@ -388,8 +393,9 @@ interface Arrow { from: { step: string; output: string }; to: { step: string; in
   (`acceptRun`, `apps/server/src/automations/proposal.ts`), así que «Deshacer lo que hizo» lo deshace con lo demás
   (`proposal.test.ts`); el «Deshacer» de la Bandeja no lo deshace aparte («cannot-undo»).
   Hecho en S4: una ejecución de la que solo queda el resumen se deshace igual (`runs.test.ts`), porque deshacer lee
-  el registro de operaciones; lo que no tiene es «Fijar» sus datos (`pinFromRun` contesta `pruned`). Falta: el
-  tiempo: deshacer 3.000 filas en un almacén de 12.000 tarda unos 11 s y el servidor no atiende mientras (tarea 137).
+  el registro de operaciones; lo que no tiene es «Fijar» sus datos (`pinFromRun` contesta `pruned`). Hecho en la
+  tarea 137: deshacer 3.000 filas en un almacén de 12.000 tarda 1,8 s, con su tiempo en `runs.test.ts`; el servidor
+  sigue sin atender mientras.
   Hecho en P2: «Deshacer lo que hizo» en la barra de una ejecución de «Ejecuciones», solo si escribió y no está
   deshecha; con `changed`, «No se pudo deshacer: «…» cambió después», y deshecha, «Deshecha hoy, 10:20» sin botón.
 - **AU-19** (F14a, hecho) · Cada operación de un paso lleva en el catálogo si lee o escribe y si destruye, y de

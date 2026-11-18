@@ -1371,6 +1371,11 @@ describe("the limits of a run at the user's volume (F14d)", () => {
    * (vitest keeps a test's console to itself). Task 137 makes them fast enough to bound here.
    */
   const MEASURE = process.env.BONI_MEASURE;
+  /** The bounds of a run at this volume, in ms (task 137): see the tests that use them. */
+  const WRITE_3000 = 7_000;
+  const UNDO_3000 = 6_000;
+  const WRITE_12000 = 26_000;
+  const UNDO_12000 = 14_000;
   const told = (what: string, m: { ms: number; worst: number }) => {
     if (MEASURE)
       appendFileSync(
@@ -1409,62 +1414,171 @@ describe("the limits of a run at the user's volume (F14d)", () => {
     expect(runView(store, a.id, m.value.id)).toMatchObject({ undoable: false, wrote: false });
   }, 60_000);
 
-  it.todo(
-    "AU-17 · with the limit raised, «Las que cumplan…» saves its 3,000 rows in one transaction within the time written here, and undoing the run brings them back (task 137: a run commits one transaction per row today, 72 s for these 3,000)",
-  );
+  /** «Mover»: each order of amount 0 to 3 to that amount plus 10, one unit per amount: 12,000 rows in four changes. */
+  const MOVE: StepSpec[] = [
+    ["Inicio", "manual", { fields: [] }],
+    [
+      "Lista",
+      "edit",
+      { fields: [{ field: "n", value: [0, 1, 2, 3].map((v) => ({ from: v, to: v + 10 })) }] },
+    ],
+    ["Partir", "split", { field: "n" }],
+    [
+      "Mover",
+      "collection",
+      {
+        collection: "pedido",
+        action: "update",
+        target: "matching",
+        where: [{ field: "importe", op: "is", value: cite("$json.n.from") }],
+        fields: [{ field: "importe", value: cite("$json.n.to") }],
+        permission: "yes",
+      },
+    ],
+  ];
+
+  // Since task 137 a unit's change is saved in one transaction, and a save finds its row's entry in the search
+  // index by its rowid: measured on the laptop with the queue held, «Measured» in its PR (3,000 rows: 72 s before).
+  // The bounds are about three times that, for CI's machines; `under` widens them by the machine's load.
+  it("AU-17 · with the limit raised, «Las que cumplan…» saves its 3,000 rows in one transaction within the time written here, and undoing the run brings them back", async () => {
+    const importe = twelve();
+    const a = made(MARK, { limits: { rowsWritten: 3_000 } });
+    a.publish();
+    const m = await paused(() => ran(a.id, a.step("Inicio")));
+    told("3,000 rows of 12,000 written", m);
+    expect(m.value.state, JSON.stringify(m.value.error)).toBe("done");
+    expect(store.runOps(m.value.id)).toHaveLength(3_000);
+    expect(count(importe, 9)).toBe(3_000);
+    const u = await paused(async () => ok(undoAutomationRun(store, a.id, m.value.id, JUAN)));
+    told("3,000 rows of 12,000 undone", u);
+    expect(count(importe, 0)).toBe(3_000);
+    expect(count(importe, 9)).toBe(0);
+    under(m.ms, WRITE_3000, "clock", "a run saving 3,000 rows of a store of 12,000");
+    under(u.ms, UNDO_3000, "clock", "undoing a run of 3,000 rows");
+  }, 120_000);
+
+  it("AU-17 · a run that writes 12,000 rows, with its limit raised to them, saves and is undone whole within the time written here", async () => {
+    const importe = twelve();
+    const a = made(MOVE, { limits: { rowsWritten: 12_000, ms: 600_000 } });
+    a.publish();
+    const m = await paused(() => ran(a.id, a.step("Inicio")));
+    told("12,000 rows of 12,000 written, four changes", m);
+    expect(m.value.state, JSON.stringify(m.value.error)).toBe("done");
+    expect(store.runOps(m.value.id)).toHaveLength(12_000);
+    expect(count(importe, 13)).toBe(3_000);
+    const u = await paused(async () => ok(undoAutomationRun(store, a.id, m.value.id, JUAN)));
+    told("12,000 rows of 12,000 undone", u);
+    for (const v of [0, 1, 2, 3]) expect(count(importe, v)).toBe(3_000);
+    under(m.ms, WRITE_12000, "clock", "a run saving 12,000 rows of a store of 12,000");
+    under(u.ms, UNDO_12000, "clock", "undoing a run of 12,000 rows");
+  }, 300_000);
 
   it.skipIf(!MEASURE)(
-    "measured by hand: a run that writes 3,000 and then 12,000 rows of a store of 12,000, and its undo, with how long the server pauses meanwhile",
+    "measured by hand: runs that write 1,000, 3,000 and 20,000 rows in stores of 3,000, 12,000 and 20,000 records, and their undo, with how long the server pauses meanwhile",
     async () => {
-      const importe = twelve();
-      const a = made(MARK, { limits: { rowsWritten: 3_000 } });
-      a.publish();
-      const m = await paused(() => ran(a.id, a.step("Inicio")));
-      told("3,000 rows written", m);
-      expect(m.value.state, JSON.stringify(m.value.error)).toBe("done");
-      expect(store.runOps(m.value.id)).toHaveLength(3_000);
-      const u = await paused(async () => ok(undoAutomationRun(store, a.id, m.value.id, JUAN)));
-      told("3,000 rows undone", u);
-      expect(count(importe, 0)).toBe(3_000);
-
-      const b = made(
-        [
+      // The store of 20,000 holds only the ceiling's case: one change of 20,000 rows, every record noted «tres mil».
+      for (const size of [3_000, 12_000, 20_000]) {
+        const s = openUserStore(join(dir, `medida-${size}-${++n}.db`), { now: () => NOW });
+        seeded(s);
+        const importe = field(s, PEDIDO, "importe");
+        const nota = field(s, PEDIDO, "nota");
+        // Amounts 0, 1, 2…, a thousand each; the first 3,000 noted «tres mil».
+        s.batch(() => {
+          for (let i = 0; i < size; i++)
+            s.create(
+              PEDIDO,
+              {
+                [importe]: { value: Math.floor(i / 1_000), label: SEED },
+                [nota]: { value: i < 3_000 || size === 20_000 ? "tres mil" : "otra", label: SEED },
+              },
+              { actor: "import", device: "seed" },
+            );
+        });
+        const once = async (
+          what: string,
+          steps: StepSpec[],
+          settings: Record<string, unknown>,
+          box?: Box,
+        ) => {
+          const a = made(steps, settings, s);
+          a.publish();
+          const m = await paused(() => ran(a.id, a.step("Inicio"), {}, box ? { box } : {}, s));
+          told(`store of ${size}: ${what} written`, m);
+          expect(m.value.state, JSON.stringify(m.value.error)).toBe("done");
+          const u = await paused(async () => ok(undoAutomationRun(s, a.id, m.value.id, JUAN)));
+          told(`store of ${size}: ${what} undone`, u);
+        };
+        const mark = (where: Record<string, unknown>): StepSpec[] => [
           ["Inicio", "manual", { fields: [] }],
           [
-            "Lista",
-            "edit",
-            { fields: [{ field: "n", value: [0, 1, 2, 3].map((v) => ({ from: v, to: v + 10 })) }] },
-          ],
-          ["Partir", "split", { field: "n" }],
-          [
-            "Mover",
+            "Marcar",
             "collection",
             {
               collection: "pedido",
               action: "update",
               target: "matching",
-              where: [{ field: "importe", op: "is", value: cite("$json.n.from") }],
-              fields: [{ field: "importe", value: cite("$json.n.to") }],
+              where: [where],
+              fields: [{ field: "importe", value: 99 }],
               permission: "yes",
             },
           ],
-        ],
-        { limits: { rowsWritten: 12_000, ms: 600_000 } },
-      );
-      b.publish();
-      const n = await paused(() => ran(b.id, b.step("Inicio")));
-      told("12,000 rows written", n);
-      expect(n.value.state, JSON.stringify(n.value.error)).toBe("done");
-      expect(store.runOps(n.value.id)).toHaveLength(12_000);
-      const v = await paused(async () => ok(undoAutomationRun(store, b.id, n.value.id, JUAN)));
-      told("12,000 rows undone", v);
-      expect(count(importe, 13)).toBe(0);
+        ];
+        const big = { limits: { rowsWritten: 20_000, ms: 600_000 } };
+        if (size === 20_000) {
+          await once(
+            "20,000 rows changed in one change",
+            mark({ field: "nota", op: "is", value: "tres mil" }),
+            big,
+          );
+          s.close();
+          continue;
+        }
+        await once(
+          "1,000 rows changed in one change",
+          mark({ field: "importe", op: "is", value: 0 }),
+          {},
+        );
+        await once(
+          "3,000 rows changed in one change",
+          mark({ field: "nota", op: "is", value: "tres mil" }),
+          { limits: { rowsWritten: 3_000 } },
+        );
+        // A «Código» asks for 5,000 writes at most (`stepWrites`): its ceiling, in one change.
+        const creates: WriteRequest[] = Array.from({ length: 5_000 }, (_, i) => ({
+          collection: "Pedido",
+          action: "create",
+          fields: { nota: `nueva ${i}` },
+        }));
+        await once("5,000 rows created by a «Código» in one change", [START, CODE], big, {
+          run: async () => answering(creates),
+        });
+        await once(
+          "20,000 rows created one per arriving row",
+          [
+            ["Inicio", "manual", { fields: [] }],
+            [
+              "Lista",
+              "edit",
+              { fields: [{ field: "n", value: Array.from({ length: 20_000 }, (_, i) => i) }] },
+            ],
+            ["Partir", "split", { field: "n" }],
+            [
+              "Crear",
+              "collection",
+              {
+                collection: "pedido",
+                action: "create",
+                fields: [{ field: "importe", value: cite("$json.n") }],
+                permission: "yes",
+              },
+            ],
+          ],
+          big,
+        );
+        s.close();
+      }
     },
     3_600_000,
-  );
-
-  it.todo(
-    "AU-17 · a run that writes 12,000 rows, with its limit raised to them, saves and is undone whole within the time written here (task 137: 314 s today)",
   );
 });
 

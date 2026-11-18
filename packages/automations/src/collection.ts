@@ -93,7 +93,11 @@ async function targets(ctx: StepContext, row: Row | null): Promise<RowOrigin[]> 
   return [row.origin];
 }
 
-/** Writes each change through the gate: what was saved or would be, in order; nothing for what waits for Juan. */
+/**
+ * Writes a unit's changes through the gate, as one change (task 137): the policy is asked for each before any is
+ * written, and the ones it allows are saved in one transaction, all or nothing. What was saved or would be, in order;
+ * nothing for what waits for Juan.
+ */
 async function writeAll(
   ctx: StepContext,
   changes: Change[],
@@ -102,9 +106,8 @@ async function writeAll(
   // The run's «rows written» first, for all of them (AU-17): «Las que cumplan…» fails before it writes any of what
   // it found for this unit; an earlier unit may already have saved, and a later one finds what it saved.
   ctx.reserve?.(changes.length);
-  const out: RowOut[] = [];
-  for (const c of changes) out.push(...written(await ctx.gate.write(c, values)));
-  return one(out);
+  const results = await ctx.gate.writeAll(changes.map((change) => ({ change, values })));
+  return one(results.flatMap(written));
 }
 
 // «Buscar filas»: the rows that match, in the order asked, up to the limit (AU-120).
