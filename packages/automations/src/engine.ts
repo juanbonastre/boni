@@ -90,6 +90,7 @@ import { COLLECTION } from "./collection.ts";
 import type { Connection } from "./connections.ts";
 import {
   type Asked,
+  type ChangeWith,
   type Clock,
   type Collections,
   type Dates,
@@ -2245,7 +2246,24 @@ class Run {
     const cellAsks =
       step.type === "collection" && action.effect === "write" && permissionOf(step) === "ask";
     const run = this;
-    return {
+    /** «Permiso: Preguntar»: the policy is asked for each (it may refuse), and every one waits for Juan. */
+    async function askAll(changes: readonly ChangeWith[]): Promise<WriteResult[]> {
+      const decided = await g.decideAll(changes);
+      const byPolicy = new Map((decided === "allow" ? [] : decided).map((a) => [a.change, a]));
+      return changes.map(({ change, values }) => {
+        const policy = byPolicy.get(change);
+        const a: Asked = policy ?? {
+          step: step.id,
+          kind: change.kind === "trash" ? "confirm" : "propose",
+          rule: CONNECTION_ASKS,
+          change,
+          values,
+        };
+        asked.push(a);
+        return { kind: "asked", asked: a };
+      });
+    }
+    const unit: Gate = {
       shape: (c) => g.shape(c),
       find: (q, v, f) => g.find(q, v, f),
       get: (c, id) => g.get(c, id),
@@ -2254,32 +2272,42 @@ class Run {
         // Every change counts against «rows written», saved, tested or proposed, before the policy is asked (AU-17).
         run.reserve(1);
         run.written++;
-        if (cellAsks) {
-          const byPolicy = await g.decideAll([{ change, values }]);
-          const r: WriteResult = {
-            kind: "asked",
-            asked:
-              byPolicy === "allow" || !byPolicy[0]
-                ? {
-                    step: step.id,
-                    kind: change.kind === "trash" ? "confirm" : "propose",
-                    rule: CONNECTION_ASKS,
-                    change,
-                    values,
-                  }
-                : byPolicy[0],
-          };
-          asked.push(r.asked);
-          return r;
-        }
+        if (cellAsks) return askAll([{ change, values }]).then((r) => r[0] as WriteResult);
         const r = await g.write(change, values);
         if (r.kind === "asked") asked.push(r.asked);
         return r;
       },
-      // A step's changes together are the «Código»'s (writes.ts), through a gate of their own: never an executor's.
+      // An executor's changes for one unit (task 137): the policy is asked for each, one by one, as `write` asks it,
+      // before any is written; then the ones it allows are written in one transaction of the store, all or nothing,
+      // and the ones it would ask Juan about come back `asked`, in order. It decides itself, so an executor has no
+      // way to write what was not decided. A change whose kind is not the step's action («Crear o modificar» makes a
+      // `create` or an `update`) goes through `write`: `decideAll` tells the policy the change's kind as the action.
+      async writeAll(changes) {
+        if (changes.some((c) => c.change.kind !== action.key) || changes.length < 2) {
+          const out: WriteResult[] = [];
+          for (const { change, values } of changes) out.push(await unit.write(change, values));
+          return out;
+        }
+        // All of them count against «rows written» before any is asked, as each would one by one (AU-17).
+        run.reserve(changes.length);
+        run.written += changes.length;
+        // The same call `write` makes: no `row` and no `written`, which only an «Agente»'s writes carry.
+        const plain = changes.map(({ change, values }) => ({ change, values }));
+        if (cellAsks) return askAll(plain);
+        const decided = await g.decideAll(plain);
+        const byPolicy = new Map((decided === "allow" ? [] : decided).map((a) => [a.change, a]));
+        for (const a of byPolicy.values()) asked.push(a);
+        const saved = await g.writeAll(plain.filter((c) => !byPolicy.has(c.change)));
+        let next = 0;
+        return plain.map((c): WriteResult => {
+          const a = byPolicy.get(c.change);
+          return a ? { kind: "asked", asked: a } : (saved[next++] as WriteResult);
+        });
+      },
+      // Deciding alone is the «Código»'s (writes.ts), through a gate of its own: never an executor's.
       decideAll: closed,
-      writeAll: closed,
     };
+    return unit;
   }
 
   /** What expressions are resolved against for one unit (AU-13), with what its JavaScript gave, if it has any. */

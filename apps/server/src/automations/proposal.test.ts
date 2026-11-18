@@ -4,24 +4,28 @@
 // the inbox of always, and accepting it with each value's label. The rule's id is kept in each test's name
 // (`make check` reads them, T-10). A store per test with data shaped like the user's (seed.test-util.ts), a scheduled
 // run started by the test's clock, and no model call; accepting goes through the real agent's `acceptProposal`.
-import { mkdtempSync } from "node:fs";
+import { appendFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { fakePlanner } from "@boni/agent";
 import { type Cell, newConnection } from "@boni/automations";
-import { SYSTEM_TYPES } from "@boni/entities";
+import { label, SYSTEM_TYPES } from "@boni/entities";
+import { clock, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, describe, expect, it } from "vitest";
 import { AgentHost } from "../agent.ts";
 import { typeId } from "../seed.test-util.ts";
 import { collectionNamed } from "./collections.ts";
 import { ACCEPT_RUN, acceptRun, type RunProposalView } from "./proposal.ts";
+import { publish } from "./publish.ts";
 import {
   answering,
   boxOf,
   CODE,
   CREATE,
   cite,
+  docOf,
   folder,
+  HAND,
   JUAN,
   made,
   notes,
@@ -38,7 +42,7 @@ import {
   ZONE,
 } from "./run.test-util.ts";
 import { runsOf, runView, undoAutomationRun } from "./runs.ts";
-import { testAutomation } from "./service.ts";
+import { automationView, createAutomation, testAutomation } from "./service.ts";
 
 const files = folder("propuesta");
 afterAll(files.done);
@@ -752,4 +756,73 @@ describe("the proposal of a run (F14d)", () => {
       host.close();
     }
   });
+});
+
+describe("accepting a proposal at the user's volume (task 137)", () => {
+  // Measured on the laptop with the queue held, «Measured» in task 137's PR B; the bound is about three times that,
+  // for CI's machines, and `under` widens it by the machine's load.
+  const ACCEPT_3000 = 5_000;
+
+  it("AU-193 · accepting a run's proposal of 3,000 changes in a store of 12,000 records saves them in one transaction with the run in the log, within the time written here, and «Deshacer lo que hizo» takes them back", async () => {
+    const { host, s, agent } = server();
+    try {
+      const importe = fieldOf(s, PEDIDO, "importe");
+      const seedLabel = label("imported", "public", [{ kind: "vault", id: "seed" }]);
+      s.batch(() => {
+        for (let i = 0; i < 12_000; i++)
+          s.create(
+            PEDIDO,
+            { [importe]: { value: i % 4, label: seedLabel } },
+            { actor: "import", device: "seed" },
+          );
+      });
+      const ids = new Map<string, string>();
+      const doc = docOf(
+        [
+          START,
+          [
+            "Marcar",
+            "collection",
+            {
+              collection: "pedido",
+              action: "update",
+              target: "matching",
+              where: [{ field: "importe", op: "is", value: 0 }],
+              fields: [{ field: "importe", value: 9 }],
+              permission: "ask",
+            },
+          ],
+        ],
+        ids,
+      );
+      const id = ok(
+        createAutomation(s, { ...doc, settings: { limits: { rowsWritten: 3_000 } } }, HAND),
+      ).id;
+      ok(publish(s, id, { rev: ok(automationView(s, id)).rev }, JUAN));
+      const r = await ran(s, id, ids.get("Inicio") as string);
+      expect(r.state, JSON.stringify(r.error)).toBe("done");
+      expect(s.runOps(r.id)).toEqual([]);
+      const proposal = r.proposal as string;
+      expect(proposal).toBeTruthy();
+      const t = clock();
+      const done = await agent.acceptProposal(proposal, "personal");
+      const took = clock() - t;
+      if (process.env.BONI_MEASURE)
+        appendFileSync(
+          process.env.BONI_MEASURE,
+          `3,000 changes accepted: ${Math.round(took)} ms\n`,
+        );
+      expect(done.error ?? null).toBeNull();
+      const count = (v: number) =>
+        s.list(PEDIDO).filter((e) => e.entity.values[importe] === v).length;
+      expect(count(9)).toBe(3_000);
+      expect(s.runOps(r.id)).toHaveLength(3_000);
+      under(took, ACCEPT_3000, "clock", "accepting a proposal of 3,000 changes");
+      ok(undoAutomationRun(s, id, r.id, JUAN));
+      expect(count(9)).toBe(0);
+      expect(count(0)).toBe(3_000);
+    } finally {
+      host.close();
+    }
+  }, 120_000);
 });
