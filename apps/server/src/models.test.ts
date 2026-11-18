@@ -975,6 +975,10 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
       });
       expect(m.nodes.filter((n) => n.name === "Aviso del presupuesto")).toHaveLength(1);
       expect(m.nodes.some((n) => n.kind === "device")).toBe(true);
+      // Its «Avisar» tells the devices, as the flow's did; the period's notices of the new engine are not counted.
+      expect(m.edges.filter((e) => e.from === `auto:${BUDGET_FLOW}` && e.kind === "tells")).toEqual(
+        [expect.objectContaining({ to: "dev:all", n: null, outside: false })],
+      );
       // Turned off, never deleted: by the list and by its own «Eliminar».
       expect(() =>
         deleteAutomationRow(s.store(), SYS.flows.automation + BUDGET_FLOW, true),

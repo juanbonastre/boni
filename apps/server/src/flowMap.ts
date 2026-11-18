@@ -12,7 +12,14 @@
  * node and arrow carries its numbers of the last days; the app words Boni's own nodes and the arrows (i18n), a
  * collection, a flow and a page by their own names.
  */
-import { abilities, isTrigger, parseAutomation } from "@boni/automations";
+import {
+  abilities,
+  isTrigger,
+  NOTIFY_PARAMS,
+  NOTIFY_TYPE,
+  parseAutomation,
+  viaOf,
+} from "@boni/automations";
 import type { RunRow, UserStore } from "@boni/store";
 import { controlsOf, controlsOfBlock, type PageBlock } from "@boni/views";
 import { AUTO_AREA } from "./autoAccept.ts";
@@ -582,6 +589,20 @@ function makeMap(
       // What starts it, as its published version says: each trigger step, by id and kind.
       trigger: doc.steps.filter(isTrigger).map((s) => ({ step: s.id, type: s.type })),
     });
+    // Its «Avisar» steps that notify the devices («Por dónde»: `notification`, AU-246): the arrow to the devices, as a
+    // flow's «Avisar» drew it, so Boni's flows converted keep it (AU-221). Without its number: the period's notices
+    // are counted from the old engine's runs only, and an arrow with no number says none was counted.
+    const telling = doc.steps
+      .filter(
+        (s) =>
+          s.type === NOTIFY_TYPE &&
+          viaOf("notify", s.params?.[NOTIFY_PARAMS.via]).includes("notification"),
+      )
+      .map((s) => s.id);
+    if (telling.length) {
+      node({ id: DEVICES, kind: "device", name: null, code: "devices", notices });
+      edge({ from: id, to: DEVICES, kind: "tells", n: null, steps: telling, outside: false });
+    }
     for (const l of abilities(doc, { collectionNamed: named })) {
       const t = byKey.get(l.collection);
       if (!t) continue;
