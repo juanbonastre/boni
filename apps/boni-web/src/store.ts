@@ -40,12 +40,13 @@ import {
   type MailGuide,
   type MailInput,
   type MailView,
+  type ModelChoices,
+  type ModelKind,
   type Origin,
   type Page,
   type PageChat,
   type PageInfo,
   type Painted,
-  type Planner,
   type Proposal,
   type ProposalView,
   type Related,
@@ -359,8 +360,11 @@ interface State {
   pointing: boolean;
   /** The turn running now, as it goes (3.5). */
   live: LiveTurn | null;
-  /** The models a conversation may plan with (3.5). */
-  planners: Planner[];
+  /**
+   * What «Modelo» may choose, by kind of call (AU-238, AU-242): a step's dropdown, a row «De la cuenta» and the chat's
+   * chip. Asked when one of them opens, never on a key.
+   */
+  modelChoices: Partial<Record<ModelKind, ModelChoices>>;
   /** The phone's list of conversations, a drawer opened from its top bar. */
   chatList: boolean;
   /** Inicio's «Hoy» on the phone: today in Juan's calendars; null until loaded, or from a server without it. */
@@ -557,7 +561,7 @@ export const useStore = create<State>(() => ({
   chatUploads: {},
   pointing: false,
   live: null,
-  planners: [],
+  modelChoices: {},
   chatList: false,
   today: null,
   rowHistory: false,
@@ -2365,11 +2369,12 @@ export async function loadConversations() {
     if (get().conversations === null) set({ conversations: [] });
   }
 }
-export async function loadPlanners() {
+export async function loadModelChoices(kind: ModelKind) {
   try {
-    set({ planners: await agent.planners() });
+    const c = await agent.modelChoices(kind);
+    set({ modelChoices: { ...get().modelChoices, [kind]: c ?? undefined } });
   } catch {
-    set({ planners: [] });
+    // An older server, or none: what was there stays; without any, «Modelo» offers «El de la cuenta» alone.
   }
 }
 /** A conversation of the list, its turns as the server keeps them. */

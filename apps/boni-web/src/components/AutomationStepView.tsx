@@ -16,6 +16,7 @@ import {
   type Automation,
   CODE_PARAMS,
   type Control,
+  callKindOf,
   isExpr,
   isPeopleType,
   isTrigger,
@@ -67,9 +68,10 @@ import {
 } from "../automations/panel.ts";
 import { change, type EditorState, undo } from "../automations/state.ts";
 import { DO, entryWords, KEY, labelWord, type Namer, summaryWords } from "../automations/words.ts";
-import type { DataType as AppType, DataField, Planner } from "../core/agent.ts";
+import type { DataType as AppType, DataField, ModelChoices } from "../core/agent.ts";
+import { modelOptions } from "../core/modelChoices.ts";
 import type { T } from "../i18n.ts";
-import { agentApi, loadPlanners, useStore } from "../store.ts";
+import { agentApi, loadModelChoices, useStore } from "../store.ts";
 import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
 import { type AgentConnections, ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
@@ -575,31 +577,27 @@ function ConnFixedValue({
   );
 }
 
-/** A model's name as «Modelos» shows it, without its provider: the server's text, painted as plain text. */
-const modelName = (model: string) => model.replace(/^[a-z0-9-]+\//i, "");
-
 /**
- * «Modelo» of an «Agente» (AU-199): «El de la cuenta» or one of the account's choices for its use; the step keeps the
- * choice's id, never a key or a setting. «El de la cuenta» names the account's (`current`), which follows the account
- * when it changes; the others are the models evaluated for it. A stored id no longer offered says so, and publishing
- * stops on it.
+ * «Modelo» of an AI step (AU-238, AU-199): a closed dropdown with «El de la cuenta» (the default, keeps nothing) and the
+ * model that answers it, the tags with the model each would take now (off, with its reason, when none would: AU-241),
+ * and the models of the step's kind of call. The step keeps nothing, a model's id or `tag:` and a tag's id, never a
+ * key or a setting. A stored value no longer offered says so in the list itself, and publishing stops on it.
  */
 function ModelChoice({
   t,
   value,
   label,
-  planners,
+  choices,
   set,
 }: {
   t: T;
   value: ParamValue | undefined;
   label: string;
-  planners: readonly Planner[];
+  choices: ModelChoices | undefined;
   set: (id: string) => void;
 }) {
   const id = typeof value === "string" ? value : "";
-  const gone = id !== "" && !planners.some((p) => p.id === id);
-  const own = planners.find((p) => p.current);
+  const o = modelOptions(choices, id);
   return (
     <select
       className="input auto-agent-model"
@@ -609,18 +607,35 @@ function ModelChoice({
       onChange={(e) => set(e.target.value)}
     >
       <option value="">
-        {own
-          ? t("auto.agent.model.accountIs", { model: modelName(own.model) })
+        {o.account
+          ? t("auto.agent.model.accountIs", { model: o.account })
           : t("auto.agent.model.account")}
       </option>
-      {planners
-        .filter((p) => !p.current || p.id === id)
-        .map((p) => (
-          <option key={p.id} value={p.id}>
-            {modelName(p.model)}
-          </option>
-        ))}
-      {gone && <option value={id}>{t("auto.agent.model.gone", { model: id })}</option>}
+      {o.tags.length > 0 && (
+        <optgroup label={t("auto.agent.model.tags")}>
+          {o.tags.map((g) => (
+            <option key={g.value} value={g.value} disabled={g.off !== null}>
+              {t("auto.agent.model.tagIs", {
+                tag: g.name,
+                model:
+                  g.off === null && g.answers
+                    ? g.answers
+                    : t(g.off === "expired" ? "models.expired" : "models.noModel"),
+              })}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {o.models.length > 0 && (
+        <optgroup label={t("auto.agent.model.models")}>
+          {o.models.map((m) => (
+            <option key={m.value} value={m.value}>
+              {m.name}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {o.gone && <option value={id}>{t("auto.agent.model.gone", { model: o.gone })}</option>}
     </select>
   );
 }
@@ -987,12 +1002,12 @@ export function AutomationStepView({
   );
   /** The names the version that runs kept (AU-192), for a «Código»'s context. */
   const kept = useContext(KeptContext);
-  // «Modelo» of an «Agente» (AU-199): the account's choices for its use, asked when one opens, never on a key.
-  const planners = useStore((s) => s.planners);
-  const agentOpen = step?.type === AGENT_TYPE;
+  // «Modelo» of an AI step (AU-238): the choices of its kind of call, asked when one opens, never on a key.
+  const kind = callKindOf(step?.type);
+  const choices = useStore((s) => (kind ? s.modelChoices[kind] : undefined));
   useEffect(() => {
-    if (agentOpen) loadPlanners();
-  }, [agentOpen, stepId]);
+    if (kind) void loadModelChoices(kind);
+  }, [kind, stepId]);
   if (!step) return null;
 
   const collections = types ?? [];
@@ -1300,13 +1315,13 @@ export function AutomationStepView({
           )
             return [];
           const Painted: Painter =
-            isAgent && param.key === AGENT_PARAMS.model
+            kind && param.key === AGENT_PARAMS.model
               ? (p) => (
                   <ModelChoice
                     t={t}
                     value={p.value}
                     label={p.label}
-                    planners={planners}
+                    choices={choices}
                     set={(id) =>
                       edit((d) =>
                         id === ""

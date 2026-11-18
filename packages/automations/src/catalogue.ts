@@ -35,6 +35,7 @@ import {
   BONI_READER_TYPE,
   BONI_READERS,
   BONI_TRIGGERS,
+  isBoniType,
 } from "./boni.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
@@ -1001,7 +1002,22 @@ const TEXT: ParamSpec = {
   place: "shown",
   required: true,
 };
-/** «Modelo» (AU-199): the id of a choice of «Modelos» for the use «Lector», or absent for «El de la cuenta». */
+/** The kinds of call a step makes to a model (docs/automatizaciones.md §5.16): the class, never a model's role. */
+export const CALL_KINDS = ["agent", "reading", "decision"] as const;
+export type CallKind = (typeof CALL_KINDS)[number];
+/**
+ * The kind of call an AI step makes, by its type (§5.16): never by its model, a tag or the person. «Agente» calls by
+ * rounds with tools; the four readers and Boni's pieces read; «Decisora» decides. Null: a step that calls no model.
+ * The server counts uses by it and the editor asks «Modelo»'s choices of it (AU-238).
+ */
+export function callKindOf(type: unknown): CallKind | null {
+  if (type === AGENT_TYPE) return "agent";
+  if (typeof type !== "string") return null;
+  if (isReaderType(type)) return "reading";
+  if (type === "boni.mailDecider") return "decision";
+  return isBoniType(type) ? "reading" : null;
+}
+/** «Modelo» (AU-238): nothing («El de la cuenta»), a model's id of «Modelos» or a tag of the step's kind of call. */
 const MODEL: ParamSpec = {
   key: P.model,
   control: "value",

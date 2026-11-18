@@ -17,10 +17,13 @@ import {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  /** The server's whole answer, parsed (a `409` that says where something is used, AU-233). */
+  readonly body: unknown;
+  constructor(status: number, code: string, message: string, body: unknown = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 

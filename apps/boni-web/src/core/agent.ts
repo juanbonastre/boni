@@ -242,14 +242,6 @@ export type LiveEvent =
   | { type: "reply"; reply: Reply }
   | { type: "waiting" }
   | { type: "end"; status: TurnResult["status"]; error: string | null };
-/** A model a conversation may plan with. */
-export interface Planner {
-  id: string;
-  model: string;
-  connection: string;
-  privacy: string;
-  current: boolean;
-}
 
 export interface Proposal {
   id: string;
@@ -1134,6 +1126,99 @@ function choiceOf(v: Record<string, unknown>): ModelChoice | null {
 }
 const numOf = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
 
+/**
+ * «Modelos» without uses (docs/automatizaciones.md §5.16, FM): the kinds of call a step makes (the step's type says
+ * which, never its model), the list of loaded models in the person's order with their tags, and «De la cuenta», a row
+ * per kind. What answers is the server's (`resolveModel`); these are what the screen paints.
+ */
+export const MODEL_KINDS = ["agent", "reading", "decision"] as const;
+export type ModelKind = (typeof MODEL_KINDS)[number];
+/** Where a model, a tag or a row is used: its rows «De la cuenta», how many automations and conversations. */
+export interface ModelUses {
+  rows: ModelKind[];
+  automations: number;
+  conversations: number;
+}
+/** A model's evaluation as the list says it (AU-234): its parts summed, «Parcial», «Caducada». */
+export interface ModelMark {
+  right: number;
+  total: number;
+  at: number;
+  partial: boolean;
+  expired: boolean;
+}
+export interface ListedModel extends ModelChoice {
+  /** `connection:model`, with `:zdr`: what a step or a conversation keeps. */
+  id: string;
+  privacy: ModelPrivacy;
+  /** The server brings it: it is not removed. */
+  server: boolean;
+  kinds: ModelKind[];
+  tags: { id: string; name: string }[];
+  /** Its connection has a key. */
+  key: boolean;
+  evaluation: ModelMark | null;
+  /** What its last evaluation cost, in euros; null without one. */
+  cost: number | null;
+  /** This month's spending, in euros. */
+  eur: number;
+  uses: ModelUses;
+}
+export interface ModelTag {
+  /** `tag:` and the tag's id. */
+  id: string;
+  name: string;
+  uses: ModelUses;
+}
+export interface ModelAccountRow {
+  kind: ModelKind;
+  /** A model's id, a tag (`tag:…`) or null (the server's). */
+  value: string | null;
+  /** The model that answers it now; null: «Sin modelo». */
+  answers: string | null;
+  /** How many automations have a step of this kind that chose nothing. */
+  automations: number;
+}
+export interface ModelsList {
+  models: ListedModel[];
+  tags: ModelTag[];
+  account: ModelAccountRow[];
+  /** The model being evaluated, by its id. */
+  evaluating: string | null;
+  /** This device may change «Modelos» (AU-243): a shared device only reads. A server that does not say: it may. */
+  personal: boolean;
+}
+/** What a step's «Modelo», a row «De la cuenta» or the chat may choose for a kind (AU-238, AU-242). */
+export interface ModelChoices {
+  kind: ModelKind;
+  account: { value: string | null; answers: string | null };
+  tags: {
+    id: string;
+    name: string;
+    answers: string | null;
+    state: "ok" | "no-model" | "expired";
+  }[];
+  models: (ModelChoice & { id: string; privacy: ModelPrivacy; server: boolean })[];
+  personal: boolean;
+}
+/** What a change would leave without: the server's `409` before it is done (AU-233, AU-241). */
+export interface ModelWhere extends ModelUses {
+  tagsLeft: string[];
+}
+export type EvalCase = ModelEvaluation["cases"][number];
+export interface ModelPart {
+  right: number;
+  total: number;
+  wrong: number;
+  cost: number;
+  at: number;
+  cases: EvalCase[];
+}
+/** A model's evaluation whole, its cases by part (AU-234, «Ver los casos»). */
+export interface ModelParts {
+  parts: Partial<Record<ModelKind, ModelPart>>;
+}
+
 /** Boni's map (docs/sistema.md §4.4, F8; the server's `flowMap`): what brings, starts, reads and writes the data. */
 export interface MapNode extends MapNodeLike {
   /** A collection's, a flow's, a page's or an assistant's own name; null for Boni's own (named by `code`). */
@@ -1903,6 +1988,166 @@ export function parseModels(b: unknown): ModelsView | null {
       }),
     evaluating: evalRole && evalChoice ? { ...evalChoice, role: evalRole } : null,
   };
+}
+const PRIVACIES = ["keeps-nothing", "deletes-in-30-days", "may-keep", "unknown"] as const;
+const kindsIn = (v: unknown): ModelKind[] =>
+  Array.isArray(v) ? MODEL_KINDS.filter((k) => v.includes(k)) : [];
+const usesOf = (v: unknown): ModelUses => {
+  const u = isObj(v) ? v : {};
+  return {
+    rows: kindsIn(u.rows),
+    automations: num(u.automations),
+    conversations: num(u.conversations),
+  };
+};
+const nullStr = (v: unknown, max = 200): string | null =>
+  typeof v === "string" && v ? v.slice(0, max) : null;
+const markIn = (v: unknown): ModelMark | null =>
+  isObj(v)
+    ? {
+        right: num(v.right),
+        total: num(v.total),
+        at: num(v.at),
+        partial: v.partial === true,
+        expired: v.expired === true,
+      }
+    : null;
+const tagsIn = (v: unknown) => (Array.isArray(v) ? v : []).filter(isObj).slice(0, 20);
+/** `GET …/models/list` and every write of the list (apps/server/src/models.ts `listView`). */
+export function parseModelsList(b: unknown): ModelsList | null {
+  if (!isObj(b) || !Array.isArray(b.models)) return null;
+  return {
+    models: b.models
+      .filter(isObj)
+      .slice(0, 60)
+      .flatMap((m) => {
+        const c = choiceOf(m);
+        const id = nullStr(m.id);
+        if (!c || !id) return [];
+        return [
+          {
+            ...c,
+            id,
+            privacy: oneOf(PRIVACIES, m.privacy) ?? "unknown",
+            server: m.server === true,
+            kinds: kindsIn(m.kinds),
+            tags: tagsIn(m.tags).flatMap((t) => {
+              const tid = nullStr(t.id, 40);
+              return tid ? [{ id: tid, name: s200(t.name, 24) }] : [];
+            }),
+            key: m.key === true,
+            evaluation: markIn(m.evaluation),
+            cost: typeof m.cost === "number" && Number.isFinite(m.cost) ? m.cost : null,
+            eur: num(m.eur),
+            uses: usesOf(m.uses),
+          },
+        ];
+      }),
+    tags: tagsIn(b.tags).flatMap((t) => {
+      const id = nullStr(t.id, 40);
+      return id ? [{ id, name: s200(t.name, 24), uses: usesOf(t.uses) }] : [];
+    }),
+    account: (Array.isArray(b.account) ? b.account : []).filter(isObj).flatMap((r) => {
+      const kind = oneOf(MODEL_KINDS, r.kind);
+      return kind
+        ? [
+            {
+              kind,
+              value: nullStr(r.value),
+              answers: nullStr(r.answers),
+              automations: num(r.automations),
+            },
+          ]
+        : [];
+    }),
+    evaluating: nullStr(b.evaluating),
+    personal: b.personal !== false,
+  };
+}
+const TAG_STATES = ["ok", "no-model", "expired"] as const;
+/** `GET …/models/choices?kind=` (apps/server/src/models.ts `choices`). */
+export function parseModelChoices(b: unknown): ModelChoices | null {
+  if (!isObj(b)) return null;
+  const kind = oneOf(MODEL_KINDS, b.kind);
+  if (!kind) return null;
+  const a = isObj(b.account) ? b.account : {};
+  return {
+    kind,
+    account: { value: nullStr(a.value), answers: nullStr(a.answers) },
+    tags: tagsIn(b.tags).flatMap((t) => {
+      const id = nullStr(t.id, 40);
+      return id
+        ? [
+            {
+              id,
+              name: s200(t.name, 24),
+              answers: nullStr(t.answers),
+              state: oneOf(TAG_STATES, t.state) ?? "no-model",
+            },
+          ]
+        : [];
+    }),
+    models: (Array.isArray(b.models) ? b.models : [])
+      .filter(isObj)
+      .slice(0, 60)
+      .flatMap((m) => {
+        const c = choiceOf(m);
+        const id = nullStr(m.id);
+        return c && id
+          ? [
+              {
+                ...c,
+                id,
+                privacy: oneOf(PRIVACIES, m.privacy) ?? "unknown",
+                server: m.server === true,
+              },
+            ]
+          : [];
+      }),
+    personal: b.personal !== false,
+  };
+}
+export const parseModelWhere = (v: unknown): ModelWhere => ({
+  ...usesOf(v),
+  tagsLeft: (isObj(v) && Array.isArray(v.tagsLeft) ? v.tagsLeft : [])
+    .filter((x): x is string => typeof x === "string")
+    .slice(0, 20)
+    .map((x) => x.slice(0, 24)),
+});
+const CODE = /^[a-z0-9-]{1,30}$/;
+/** A case of an evaluation, kept to what the page paints (task 132: who failed and what, as short codes). */
+function caseOf(x: Record<string, unknown>): EvalCase {
+  const f = x.failed;
+  return {
+    name: s200(x.name, 300),
+    ok: x.ok === true,
+    note: s200(x.note, 200),
+    ...(isObj(f) &&
+    typeof f.who === "string" &&
+    typeof f.what === "string" &&
+    CODE.test(f.who) &&
+    CODE.test(f.what)
+      ? { failed: { who: f.who, what: f.what } }
+      : {}),
+  };
+}
+/** `GET …/models/evaluation?id=`: the parts with their cases. */
+export function parseModelParts(b: unknown): ModelParts | null {
+  if (!isObj(b) || !isObj(b.parts)) return null;
+  const parts: ModelParts["parts"] = {};
+  for (const k of MODEL_KINDS) {
+    const p = b.parts[k];
+    if (!isObj(p)) continue;
+    parts[k] = {
+      right: num(p.right),
+      total: num(p.total),
+      wrong: num(p.wrong),
+      cost: num(p.cost),
+      at: num(p.at),
+      cases: (Array.isArray(p.cases) ? p.cases : []).filter(isObj).slice(0, 60).map(caseOf),
+    };
+  }
+  return { parts };
 }
 /** What Settings «Decisiones» shows: the areas and whether Boni learns at all (an older server: it does). */
 export interface DecisionsView {
@@ -3015,7 +3260,7 @@ export class AgentApi {
     if (r.status < 200 || r.status >= 300) {
       const code =
         isObj(parsed) && typeof parsed.error === "string" ? parsed.error : `http_${r.status}`;
-      throw new ApiError(r.status, code, code);
+      throw new ApiError(r.status, code, code, parsed);
     }
     return parsed;
   }
@@ -3133,23 +3378,6 @@ export class AgentApi {
       if (typeof a.name === "string" && a.name.length <= 80 && icon) out[a.name] = icon;
     }
     return out;
-  }
-  async planners(): Promise<Planner[]> {
-    const b = await this.call("GET", "planners");
-    return (isObj(b) && Array.isArray(b.planners) ? b.planners : []).filter(isObj).flatMap((p) => {
-      const id = str(p.id, 200);
-      const model = str(p.model, 200);
-      if (!id || !model) return [];
-      return [
-        {
-          id,
-          model,
-          connection: str(p.connection, 40) ?? "",
-          privacy: str(p.privacy, 40) ?? "",
-          current: p.current === true,
-        },
-      ];
-    });
   }
   /** What the turn `id` did since event `after`; null while the server does not know it yet. */
   async live(id: string, after: number): Promise<{ events: LiveEvent[]; done: boolean } | null> {
@@ -3363,10 +3591,56 @@ export class AgentApi {
       ),
     );
   catalogue = async () => parseCatalogue(await this.call("GET", "models/catalogue"));
-  evaluateModel = async (role: ModelRole, c: ModelChoice) =>
-    parseModels(await this.call("POST", "models/evaluate", { role, ...c }));
-  setModelRole = async (role: ModelRole, c: ModelChoice | null) =>
-    parseModels(await this.call("PUT", `models/roles/${role}`, c ?? {}));
+  /** «Modelos» without uses (§5.16): the list, asked once when the page opens, and each of its changes. */
+  modelsList = async () => parseModelsList(await this.call("GET", "models/list"));
+  modelChoices = async (kind: ModelKind) =>
+    parseModelChoices(await this.call("GET", `models/choices?kind=${kind}`));
+  modelEvaluation = async (id: string) =>
+    parseModelParts(await this.call("GET", `models/evaluation?id=${encodeURIComponent(id)}`));
+  addModel = async (c: ModelChoice) => parseModelsList(await this.call("POST", "models/list", c));
+  /** A change that asks first (AU-233, AU-241): `where` until it is sent again with `confirm`. */
+  private async asking(
+    method: "POST" | "PUT",
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<ModelsList | { where: ModelWhere } | null> {
+    try {
+      return parseModelsList(await this.call(method, path, body));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "in-use" && isObj(e.body))
+        return { where: parseModelWhere(e.body.where) };
+      throw e;
+    }
+  }
+  removeModel = (id: string, confirm: boolean) =>
+    this.asking("POST", "models/list/remove", { id, confirm });
+  tagModel = (id: string, tags: string[], confirm: boolean) =>
+    this.asking("PUT", "models/tagged", { id, tags, confirm });
+  orderModels = async (ids: string[]) =>
+    parseModelsList(await this.call("PUT", "models/order", { ids }));
+  /** A new tag: its `tag:` id. */
+  addTag = async (name: string) => {
+    const b = await this.call("POST", "models/tags", { name });
+    return isObj(b) && typeof b.id === "string" ? b.id : null;
+  };
+  renameTag = async (tag: string, name: string) =>
+    parseModelsList(
+      await this.call("PUT", `models/tags/${encodeURIComponent(tag.replace(/^tag:/, ""))}`, {
+        name,
+      }),
+    );
+  setAccountRow = async (kind: ModelKind, value: string | null) =>
+    parseModelsList(await this.call("PUT", `models/account/${kind}`, { value }));
+  evaluateListed = async (id: string) =>
+    parseModelsList(await this.call("POST", "models/list/evaluate", { id }));
+  /** Where the models of a connection are used, before its key goes (AU-233): changes nothing. */
+  keyUses = async (connection: ModelConnection) => {
+    const b = await this.call("PUT", `models/keys/${connection}`, { key: null, dry: true });
+    return (isObj(b) && Array.isArray(b.where) ? b.where : [])
+      .filter(isObj)
+      .slice(0, 30)
+      .map((w) => ({ id: s200(w.id, 200), ...parseModelWhere(w) }));
+  };
   setModelKey = async (connection: ModelConnection, key: string | null) =>
     parseModels(await this.call("PUT", `models/keys/${connection}`, { key }));
   setModelBudget = async (b: { monthlyEur?: number; warnAt?: number; usdToEur?: number }) =>
