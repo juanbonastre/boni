@@ -47,6 +47,7 @@ import {
 } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { useStore } from "../store.ts";
+import { ConsoleLines } from "./AutomationCode.tsx";
 import { AskPanel, waitingAsks } from "./AutomationPeople.tsx";
 import { type RowsAsk, type RowsShow, TestRows } from "./AutomationRows.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
@@ -395,8 +396,8 @@ export function TreeButton({
 
 /**
  * The «Registro» tree (AU-101): each step in the order it ran, how it ended, its rows in and out and its seconds;
- * under it what it read, saved, proposed or would save, and its console. Counts only: the rows are in the step's
- * view. A click on a step selects it on the canvas.
+ * under it what it read, saved, proposed or would save, and its «Consola» whole. Counts only: the rows are in the
+ * step's view. A click on a step selects it on the canvas.
  */
 export function LogTree({
   lines,
@@ -429,8 +430,8 @@ export function LogTree({
           ...(l.saved ? [t("auto.tree.saved", { n: n(l.saved) })] : []),
           ...(l.asked ? [t("auto.tree.asked", { n: n(l.asked) })] : []),
           ...(l.would ? [t("auto.tree.would", { n: n(l.would) })] : []),
-          ...(l.console ? [t("auto.tree.console", { n: n(l.console) })] : []),
         ];
+        const wrote = l.console.lines.length > 0 || l.console.dropped > 0;
         return (
           <li key={l.step} className={`auto-tree-line ${l.state}`}>
             <button
@@ -449,11 +450,23 @@ export function LogTree({
               </span>
               <span className="auto-tree-ms">{secsWords(t, lang, l.ms)}</span>
             </button>
-            {under.length > 0 && (
+            {(under.length > 0 || wrote) && (
               <ul className="auto-tree-under">
                 {under.map((w) => (
                   <li key={w}>{w}</li>
                 ))}
+                {/* Its «Consola» whole, as under its output (AU-101, AU-33): the code's text, as plain text. */}
+                {wrote && (
+                  <li className="auto-tree-console">
+                    {t("auto.console")}
+                    <ConsoleLines
+                      t={t}
+                      lines={l.console.lines}
+                      dropped={l.console.dropped}
+                      locale={localeOf(lang)}
+                    />
+                  </li>
+                )}
               </ul>
             )}
           </li>

@@ -12,18 +12,20 @@ import {
   CODE_PARAMS,
   type CodeContext,
   type CodeFailure,
+  type ConsoleLine,
   completions,
   renameCollectionInCode,
   type Step,
 } from "@boni/automations";
 import { ChevronRight } from "lucide-react";
 import { lazy, Suspense, useMemo } from "react";
+import { codeCitation } from "../automations/cite.ts";
 import type { StepTest } from "../automations/client.ts";
 import { consoleOf, modeOf, sourceOf, sourceProblems } from "../automations/code.ts";
 import { wouldLines } from "../automations/connections.ts";
 import { DO, KEY, type SaidNames, said } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
-import { WouldTable } from "./AutomationRows.tsx";
+import { carriesField, draggedOf, WouldTable } from "./AutomationRows.tsx";
 import type { CodeMark } from "./CodeEditor.tsx";
 
 const CodeEditor = lazy(() => import("./CodeEditor.tsx"));
@@ -108,6 +110,15 @@ export function CodeParams({
               hint={t("auto.code.hint")}
               marks={marks}
               onChange={setSource}
+              // A field of ENTRADA let go on it is written there by its key (AU-25), as this mode cites it.
+              drop={(e, before, peek) => {
+                if (!carriesField(e)) return null;
+                if (peek) return "";
+                const field = draggedOf(e);
+                return field
+                  ? codeCitation(draft, step.id, field.from, field.path, mode, before)
+                  : "";
+              }}
               complete={(text, at) =>
                 completions(
                   text,
@@ -208,25 +219,43 @@ export function CodeConsole({
           {empty ? t("auto.console.empty") : lines.length.toLocaleString(locale)}
         </span>
       </summary>
-      {!empty && (
-        <ol className="auto-console-lines">
-          {lines.map((l, i) => (
-            <li key={i} className={`auto-console-line ${l.level}`}>
-              <span className="auto-console-text">{l.text}</span>
-              <span className="auto-console-where">
-                {l.line !== undefined && t("auto.console.line", { line: l.line })}
-                {l.row !== undefined && ` · ${t("auto.console.row", { row: l.row + 1 })}`}
-              </span>
-            </li>
-          ))}
-          {dropped > 0 && (
-            <li className="auto-console-more">
-              {t("auto.console.more", { n: dropped.toLocaleString(locale) })}
-            </li>
-          )}
-        </ol>
-      )}
+      {!empty && <ConsoleLines t={t} lines={lines} dropped={dropped} locale={locale} />}
     </details>
+  );
+}
+
+/**
+ * The lines of a «Consola», each with the line of the code that wrote it and its row, and how many were left out:
+ * under a step's output (AU-33) and in the «Registro» tree (AU-101). The code's own text, painted as plain text.
+ */
+export function ConsoleLines({
+  t,
+  lines,
+  dropped,
+  locale,
+}: {
+  t: T;
+  lines: readonly ConsoleLine[];
+  dropped: number;
+  locale: string;
+}) {
+  return (
+    <ol className="auto-console-lines">
+      {lines.map((l, i) => (
+        <li key={i} className={`auto-console-line ${l.level}`}>
+          <span className="auto-console-text">{l.text}</span>
+          <span className="auto-console-where">
+            {l.line !== undefined && t("auto.console.line", { line: l.line })}
+            {l.row !== undefined && ` · ${t("auto.console.row", { row: l.row + 1 })}`}
+          </span>
+        </li>
+      ))}
+      {dropped > 0 && (
+        <li className="auto-console-more">
+          {t("auto.console.more", { n: dropped.toLocaleString(locale) })}
+        </li>
+      )}
+    </ol>
   );
 }
 

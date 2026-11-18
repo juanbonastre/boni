@@ -94,6 +94,35 @@ export function dragFrom(
   return undefined;
 }
 
+/** A key that can follow a dot as it is. */
+const IDENT = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*$/u;
+
+/**
+ * What a field dropped into a «Código»'s editor writes there (AU-25): its key, as the code reads it, in the form the
+ * step's mode lets cite. «Una vez por fila» (`perRow`) has a current row, so it is the expression's own citation
+ * (`$json.precio`, `$('Paso').item.precio`, `$('Paso').first().precio`). «Una vez con todas las filas» (`all`) has
+ * none (`expr.noCurrentRow`): the input's first row or the step's (`$input.first().precio`,
+ * `$('Paso').first().precio`). `before`: the code just before the drop; right after a dot (`fila.`) the key alone
+ * goes there, so a row the code already holds is read by its key.
+ */
+export function codeCitation(
+  draft: Automation,
+  into: string,
+  from: string,
+  path: readonly string[],
+  mode: "all" | "perRow",
+  before = "",
+): string {
+  const [first, ...rest] = path;
+  if (first !== undefined && IDENT.test(first) && /\.\s*$/.test(before))
+    return first + printCitation({ step: null, pick: "item", path: rest }).slice("$json".length);
+  const cite = citationFor(draft, into, from, path);
+  if (mode === "perRow") return printCitation(cite);
+  if (cite.step === null)
+    return `$input.first()${printCitation(cite).slice("$json".length)}`;
+  return printCitation({ ...cite, pick: cite.pick === "item" ? "first" : cite.pick });
+}
+
 /** A citation as it goes into an expression's text. */
 const written = (cite: Citation) => `{{ ${printCitation(cite)} }}`;
 

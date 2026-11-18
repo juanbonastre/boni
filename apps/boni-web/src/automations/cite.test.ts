@@ -5,6 +5,7 @@ import {
   FORMAT,
   parseExpression,
   printCitation,
+  readCode,
   type Step,
 } from "@boni/automations";
 import { cpu, under } from "@boni/pace";
@@ -13,6 +14,7 @@ import { translator } from "../i18n.ts";
 import {
   citationFor,
   citedName,
+  codeCitation,
   dragFrom,
   dropCitation,
   namesOnDemand,
@@ -205,6 +207,47 @@ describe("the citation a dragged field writes", () => {
     expect(a).toMatchObject({ step: "s_gastos", name: "Importe", withStep: true });
     expect(b).toMatchObject({ step: "s_ingresos", name: "Importe", withStep: true });
     expect(c).toMatchObject({ step: "s_ingresos", name: "Cuenta", withStep: false });
+  });
+
+  it("AU-25 · a field dropped into a «Código» is written by its key as its mode cites it: with a current row as an expression does, with all the rows from the first row of its input or of its step; right after a dot, the key alone; and what is written reads that field", () => {
+    // «Una vez por fila»: the expression's own citation.
+    expect(codeCitation(draft, "s_orden", "s_filtro", ["importe"], "perRow")).toBe(
+      "$json.importe",
+    );
+    expect(codeCitation(draft, "s_orden", "s_gastos", ["importe"], "perRow")).toBe(
+      "$('Buscar gastos').item.importe",
+    );
+    expect(codeCitation(draft, "s_limite", "s_orden", ["fecha"], "perRow")).toBe(
+      "$('Ordenar').first().fecha",
+    );
+    // «Una vez con todas las filas»: no current row, so neither `$json` nor `.item`.
+    const all = [
+      codeCitation(draft, "s_orden", "s_filtro", ["importe"], "all"),
+      codeCitation(draft, "s_orden", "s_gastos", ["cuenta", "nombre completo"], "all"),
+      codeCitation(draft, "s_limite", "s_orden", ["fecha"], "all"),
+    ];
+    expect(all).toEqual([
+      "$input.first().importe",
+      `$('Buscar gastos').first().cuenta["nombre completo"]`,
+      "$('Ordenar').first().fecha",
+    ]);
+    // After `fila.` (a row the code holds), its key; a key that cannot follow a dot is cited whole.
+    expect(codeCitation(draft, "s_orden", "s_filtro", ["importe"], "all", "for (const fila of x) fila.")).toBe(
+      "importe",
+    );
+    expect(codeCitation(draft, "s_orden", "s_gastos", ["cuenta", "nombre completo"], "perRow", "f.")).toBe(
+      `cuenta["nombre completo"]`,
+    );
+    expect(codeCitation(draft, "s_orden", "s_filtro", ["nombre completo"], "perRow", "f.")).toBe(
+      `$json["nombre completo"]`,
+    );
+    // What is written is read by the core as that field (`readCode`, the server's own reading).
+    for (const cited of [all[0], codeCitation(draft, "s_orden", "s_filtro", ["importe"], "perRow")])
+      expect(readCode(`return [{ x: ${cited} }];`, "code").input?.fields, cited).toEqual([
+        "importe",
+      ]);
+    const step = readCode(`return [{ x: ${all[2]} }];`, "code").steps;
+    expect(step.map((s) => [s.name, s.fields, s.item])).toEqual([["Ordenar", ["fecha"], false]]);
   });
 
   it("AU-21 · in a step with two inputs a field of either is cited by its step with first(), never as $json", () => {
