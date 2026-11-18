@@ -12,6 +12,7 @@ import {
   type Cell,
   inputsOf,
   isTrigger,
+  type KeptNames,
   outputsOf,
   type Step,
   stepChanges,
@@ -86,6 +87,11 @@ export const usePhone = () => useContext(PhoneContext);
  */
 export const LookContext = createContext(false);
 export const useLook = () => useContext(LookContext);
+/**
+ * The names the version that runs kept for each collection its code cites (AU-192): with them, the draft's code that
+ * still cites a renamed collection by its name of before says so, with a button. None before it is published.
+ */
+export const KeptContext = createContext<KeptNames | null>(null);
 /** Nothing is changed here: the phone (AU-74), or a run's canvas (AU-99). */
 export function useStill(): boolean {
   const phone = useContext(PhoneContext);

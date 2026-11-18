@@ -105,6 +105,14 @@ export const DO = {
   pin: "auto.do.pin",
   unpin: "auto.do.unpin",
   moreRuns: "auto.do.moreRuns",
+  /** F14d P3b-1: «⋯ → Versiones» and its «Volver a esta» (AU-98), «Eliminadas» and «Recuperar» (AU-191). */
+  versions: "auto.do.versions",
+  restoreVersion: "auto.do.restoreVersion",
+  backToEditor: "auto.do.backToEditor",
+  deletedList: "auto.do.deletedList",
+  recover: "auto.do.recover",
+  /** «Cambiar a «Compras»» under a code that cites a renamed collection by its name of before (AU-192). */
+  renameCited: "auto.do.renameCited",
 } as const;
 
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */

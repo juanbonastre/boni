@@ -1717,7 +1717,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   cabecera, y «Guardado» seguido de «· sin publicar», «· publicada la versión 4» o «· cambios sin publicar»
   (`publishWord`, con `diffAutomations` contra el documento de la versión que corre, `GET …/versions/:n`). Falta:
   registrar la ruta que ejecuta, que S2 dejó hecha (AU-97, P2).
-- **AU-96** (F14d, en parte) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
+- **AU-96** (F14d, hecho) · «Publicar» (pantalla 10) enseña tres cosas: qué cambia respecto a la versión que
   corre; lo que falta o conviene mirar, con un enlace a cada paso (una salida sin conectar, por ejemplo); y «Lo que
   podrá hacer», la frase calculada de lo que lee, propone y escribe cuando corra sola. Con problemas en pasos a los
   que llega un disparador no se publica.
@@ -1748,7 +1748,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   cambia respecto a la versión N» (`diffLines`), «Antes de publicar» (`checkLines`: lo que lo impide primero, cada
   paso un enlace que lo abre) y «Lo que podrá hacer» (`abilityLine`), y el botón «Publicar versión N» o «Nada que
   publicar», apagado con algo que lo impide. Abrirla marca los parámetros obligatorios vacíos (`publishAsked`,
-  AU-83). Falta: abrirla con una versión vieja para «Volver a esta» (AU-98, P3).
+  AU-83).
+  Hecho en P3b: abierta con una versión vieja para «Volver a esta» (AU-98): la pide con `version`, enseña el
+  documento de esa versión en lugar del borrador y publica con `{ version }`.
 - **AU-97** (F14d, hecho) · «Ejecutar» corre la versión publicada: en su fila de la lista, en «⋯» de la cabecera
   del editor y en el aviso que sale al publicar («Publicada la versión 4 · Ejecutar»). Desde la F17, también un
   bloque de una página (AU-131).
@@ -1777,7 +1779,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   la fila de la lista (abre la automatización y pide sus campos); al ejecutar, la app va a «Ejecuciones» con esa
   ejecución, que avanza por el evento `run` en el escritorio y, en el navegador, preguntando cada 2,5 s solo mientras
   está en marcha y se ve. El bloque de una página es de la F17 (AU-131).
-- **AU-98** (F14d, en parte) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
+- **AU-98** (F14d, hecho) · «Versiones»: la lista, ver una, compararla con otra en dos lienzos y volver a una.
   Las de Boni dicen «De Boni» y se puede volver a la suya, como hoy.
   En la F14d: está en «⋯ → Versiones». La lista dice de cada una su número, cuándo, de quién («Tú»; «De Boni» desde
   la F16, que trae las suyas: la columna y la palabra ya están) y cuál corre. Ver una es su lienzo solo para ver,
@@ -1794,7 +1796,14 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   huella, la más nueva primero, con cuál corre y el interruptor), una entera (`GET …/:id/versions/:n`) y «Volver a
   esta» como `publish` con `version`: las mismas comprobaciones, una versión nueva con el documento de la vieja, el
   borrador sin tocar; volver a la que ya corre no publica nada, y a una cuya colección ya no está lo niega con el
-  problema. Falta: la pantalla (ver, comparar, volver; P1).
+  problema.
+  Hecho en P3b: la pantalla (`AutomationVersions.tsx`, `automations/versions.ts`): «⋯ → Versiones» (solo publicada y
+  no en el móvil) pone en el sitio del lienzo la lista, la más nueva primero, con número, cuándo, de quién y «La que
+  corre»; la elegida en su lienzo solo para ver; «Comparar con» pone las dos lado a lado, la vieja a la izquierda,
+  con cada tarjeta marcada «Añadido», «Quitado» o «Cambiado» (`compared`, sobre `diffAutomations`) y las líneas de
+  «Publicar» encima; «Volver a esta» abre «Publicar» (AU-96) con su documento, y publicar ahí deja el borrador como
+  estaba y la cabecera en «cambios sin publicar». Solo se pide el documento de las que se ven (200 versiones en la
+  prueba de volumen, A-15).
 - **AU-99** (F14d, en parte) · La pestaña «Ejecuciones» (pantalla 8): a la izquierda la lista, con «Todas | Fallos |
   Pruebas» (cuándo, cómo acabó, cuánto tardó, qué la inició, qué versión; las pruebas, marcadas); a la derecha el
   lienzo de esa ejecución, solo para ver, con sus filas en cada flecha y, encima, lo que hizo en una línea. Abrir un
@@ -1928,9 +1937,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   versiones y sus ejecuciones) y `automations-publish.spec.ts` («Eliminadas» y «Recuperar»).
   Hecho en S1: eliminarla la apaga (`enabled = 0`) y recuperarla no la enciende; `runPublished` no la encuentra;
   `deletedAutomations` del almacén da la lista, y «Recuperar» es la ruta `restore` que ya había.
-  Falta: «Eliminadas» en la app (P1), que sale de la colección de automatizaciones como la lista, y que no corra a
-  su hora (el programador es de S2, y empieza por `runPublished`).
-- **AU-192** (F14d, en parte) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
+  Hecho en P3b: «Eliminadas» en la app (`AutomationDeleted.tsx`): el «⋯» de la lista, junto a su título (no en el
+  móvil), abre las eliminadas, leídas de la misma colección que la lista (`GET …/t_sys_flujos/rows?deleted=1`,
+  `deletedAutomationRows`, sin leer ningún borrador), cada una con «Recuperar» (la ruta `restore`), que la devuelve a
+  la lista «Apagada»; desde un dispositivo compartido lo niega. Falta: una prueba de que el programador no la corre a
+  su hora (su consulta ya pide `deleted = 0`).
+- **AU-192** (F14d, hecho) · Cambiar el nombre de una colección no rompe lo publicado. Un «Colección» y una
   conexión guardan la clave de la colección; un «Código» la cita por su nombre (`$col('Gastos')`). Cada versión
   guarda, al publicarse, el nombre con que su código cita cada colección conectada y la clave que era. Al
   ejecutar, el nombre se resuelve primero por ahí, así que la versión publicada sigue leyendo y guardando en la
@@ -1949,7 +1961,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   paso (hoy `collectionNamed` es uno para toda la ejecución) y `runs.test.ts` (S2), y el botón (P3).
   Hecho en S2: una ejecución de verdad resuelve cada nombre con `namedFor` por paso, de los `names` de la versión
   publicada (`collectionNamed(name, step)`): tras el cambio de nombre guarda en la misma colección; sin esa conexión
-  en el paso, falla; con la colección archivada, falla diciendo cuál. Falta: el botón (P3).
+  en el paso, falla; con la colección archivada, falla diciendo cuál.
+  Hecho en P3b: el botón. El editor lee los `names` de la versión que corre (`GET …/versions/:n`) y se los pasa a la
+  validación del «Código» (`keptKey`): la cita vieja se subraya y un aviso dice «Lecturas» es el nombre de antes: la
+  colección ahora se llama «Libros», con «Cambiar a «Libros»», que la reescribe con `renameCollectionInCode`.
 - **AU-194** (F14d, en parte) · El interruptor dice si corre. Publicar por primera vez la enciende, y la pantalla
   lo dice antes (AU-96); publicar otra versión deja el interruptor como estaba. Apagada, no empieza ninguna
   ejecución de verdad: ni a su hora ni con «Ejecutar». «Probar» va siempre. Encenderla no corre lo que no corrió

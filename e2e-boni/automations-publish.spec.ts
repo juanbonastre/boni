@@ -1,3 +1,4 @@
+import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
 import { ALL_DONE, TESTED, testOf, withRuns } from "./automation-data.ts";
@@ -568,7 +569,13 @@ test.describe("«Ejecutar»", () => {
     await screen(page).locator(".modal-actions").getByRole("button", { name: "Cancelar" }).click();
     expect(await menuItems(page)).toContain("Ejecutar");
     await openCanvas(page, PUBLISHED.name);
-    expect(await menuItems(page)).toEqual(["Ejecutar", "Ajustes", "Duplicar", "Eliminar"]);
+    expect(await menuItems(page)).toEqual([
+      "Ejecutar",
+      "Ajustes",
+      "Versiones",
+      "Duplicar",
+      "Eliminar",
+    ]);
   });
   test("AU-97 · with «Campos que pide», «Ejecutar» shows the same box as «Probar» and runs the published version with them", async ({
     page,
@@ -1021,11 +1028,301 @@ test.describe("«Ejecuciones» on a phone", () => {
   });
 });
 
+/**
+ * «Revisar pendientes» published three times: version 1 searched a hundred and ended in a «Limitar» where today it
+ * creates a row; version 2 is Boni's; version 3, the draft, runs.
+ */
+const V1_STEPS = [
+  ...TESTED.steps
+    .slice(0, 6)
+    .map((s) =>
+      s.id === "s_01jbuscar" ? { ...s, params: { ...s.params, limit: 100 } } : (s as unknown),
+    ),
+  { id: "s_01jlimitar", name: "Limitar", type: "limit", params: { count: 10 } },
+] as Record<string, unknown>[];
+const V1_ARROWS = [
+  ...TESTED.arrows.slice(0, 6),
+  { from: { step: "s_01jcombinar", output: "main" }, to: { step: "s_01jlimitar", input: "main" } },
+];
+const VERSIONED = {
+  ...TESTED,
+  published: {
+    versions: 3,
+    docs: { 1: { steps: V1_STEPS, arrows: V1_ARROWS } },
+    by: { 2: "preset" as const },
+  },
+};
+const versionsList = (page: Page) =>
+  page.getByRole("complementary", { name: "Versiones publicadas" });
+const versionItems = (page: Page) => page.locator(".auto-vers-item");
+const versionCanvas = (page: Page, n: number) =>
+  page.locator(`.auto-vers-canvas[data-version="${n}"]`);
+/** The list's «⋯» (FlowsView.tsx), by the page's title. */
+const listMore = (page: Page) => page.locator(".flows-head").getByRole("button", { name: "Más" });
+const deletedScreen = (page: Page) =>
+  page.getByRole("dialog", { name: "Automatizaciones eliminadas" });
+
 test.describe("«Versiones» and the deleted ones", () => {
-  test.fixme("AU-98 · «⋯ → Versiones» lists each version with its number, when, whose and which one runs; one opens as a read-only canvas; two are compared side by side with what was added, removed and changed marked", async () => {});
-  test.fixme("AU-98 · «Volver a esta» opens «Publicar» with that version's document, and publishing there leaves the draft saying «cambios sin publicar»", async () => {});
-  test.fixme("AU-191 · the list's «⋯» has «Eliminadas»: each deleted automation with «Recuperar», which brings it back to the list as «Apagada»", async () => {});
-  test.fixme("AU-192 · in the editor, a code that cites a collection by a name it no longer has is underlined with the name of today, and its button rewrites it", async () => {});
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
+  test("AU-98 · «⋯ → Versiones» lists each version with its number, when, whose and which one runs; one opens as a read-only canvas; two are compared side by side with what was added, removed and changed marked", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VERSIONED], agent: BEFORE() });
+    await openCanvas(page, TESTED.name);
+    await more(page, "Versiones");
+    await expect(versionsList(page)).toBeVisible();
+    // The newest first, each with its number and when, whose, and the one that runs said.
+    await expect(versionItems(page).locator("strong")).toHaveText([
+      "Versión 3",
+      "Versión 2",
+      "Versión 1",
+    ]);
+    for (const item of await versionItems(page).locator(".auto-runs-when").all())
+      await expect(item).toHaveText(/^Versión \d · \S/);
+    await expect(versionItems(page).locator(".auto-runs-who")).toHaveText([
+      "TúLa que corre",
+      "De Boni",
+      "Tú",
+    ]);
+    // The one that runs is open on its canvas, looked at: no step to add, no test, and nothing to go back to.
+    await expect(versionItems(page).first()).toHaveAttribute("aria-current", "true");
+    await expect(versionCanvas(page, 3).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    await expect(
+      versionCanvas(page, 3).getByRole("button", { name: "Añadir un paso" }),
+    ).toHaveCount(0);
+    await expect(versionCanvas(page, 3).getByRole("button", { name: "Probar" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Volver a esta" })).toHaveCount(0);
+    // The editor's canvas is not there meanwhile.
+    await expect(page.locator(".auto-canvas:not(.auto-vers-canvas)")).toHaveCount(0);
+    // Version 1 against it: the older on the left, what changed in lines above and on the cards.
+    await versionItems(page).nth(2).click();
+    await expect(versionCanvas(page, 1).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    await page.getByLabel("Comparar con").selectOption({ label: "Versión 3" });
+    const changes = page.getByRole("region", { name: "Qué cambia de la versión 1 a la 3" });
+    await expect(changes.locator("li")).toHaveText([
+      "Añade «Crear una fila en Libros»",
+      "Quita «Limitar»",
+      "Cambia «Buscar filas en Libros»: parámetros",
+      "Flechas: 1 nuevas, 1 quitadas",
+    ]);
+    const sides = page.locator(".auto-vers-compare .auto-vers-canvas");
+    await expect(sides).toHaveCount(2);
+    await expect(sides.nth(0)).toHaveAttribute("data-version", "1");
+    await expect(sides.nth(1)).toHaveAttribute("data-version", "3");
+    const marked = (n: number) =>
+      versionCanvas(page, n)
+        .locator(".auto-card[data-diff]")
+        .evaluateAll((cards) =>
+          Object.fromEntries(
+            cards.map((c) => [c.getAttribute("data-step"), c.getAttribute("data-diff")]),
+          ),
+        );
+    await expect.poll(() => marked(1)).toEqual({ s_01jbuscar: "changed", s_01jlimitar: "removed" });
+    await expect.poll(() => marked(3)).toEqual({ s_01jbuscar: "changed", s_01jcrear: "added" });
+    await expect(versionCanvas(page, 1).locator(".auto-card-diff")).toHaveText([
+      "Cambiado",
+      "Quitado",
+    ]);
+    // Back to the editor, its canvas as it was.
+    await page.getByRole("button", { name: "Volver al editor" }).click();
+    await expect(versionsList(page)).toHaveCount(0);
+    await expect(page.locator(".auto-card")).toHaveCount(TESTED.steps.length);
+  });
+
+  test("AU-98 · «Volver a esta» opens «Publicar» with that version's document, and publishing there leaves the draft saying «cambios sin publicar»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", { automations: [VERSIONED], agent: BEFORE() });
+    await openCanvas(page, TESTED.name);
+    await expect(published(page)).toHaveText("· publicada la versión 3");
+    await more(page, "Versiones");
+    await versionItems(page).nth(2).click();
+    await expect(versionCanvas(page, 1).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    await page.getByRole("button", { name: "Volver a esta" }).click();
+    await expect(screen(page)).toBeVisible();
+    // The screen is about version 1's document: asked with it, said as the next version.
+    expect(await recorded(page, "__autoPublishView")).toEqual(["version=1"]);
+    await screen(page).getByRole("button", { name: "Publicar versión 4" }).click();
+    await expect(screen(page)).toHaveCount(0);
+    expect(await sent(page, `POST api/agent/automations/${TESTED.id}/publish `)).toEqual([
+      { version: 1 },
+    ]);
+    await expect(toast(page)).toContainText("Publicada la versión 4");
+    // A new version with the old document; the draft untouched, so not what runs.
+    await expect(versionItems(page).locator("strong")).toHaveText([
+      "Versión 4",
+      "Versión 3",
+      "Versión 2",
+      "Versión 1",
+    ]);
+    await expect(versionItems(page).first().locator(".auto-vers-running")).toHaveText(
+      "La que corre",
+    );
+    expect(await sent(page, `PUT api/agent/automations/${TESTED.id}/draft `)).toEqual([]);
+    await page.getByRole("button", { name: "Volver al editor" }).click();
+    await expect(published(page)).toHaveText("· cambios sin publicar");
+    await expect(page.locator(".auto-card")).toHaveCount(TESTED.steps.length);
+  });
+
+  test("AU-98 · A-15 · 200 versions are listed at once and only the one shown is read whole", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...TESTED, published: { versions: 200 } }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, TESTED.name);
+    await head(page).getByRole("button", { name: "Más" }).click();
+    const pressed = clock();
+    await page.getByRole("menuitemradio", { name: "Versiones", exact: true }).click();
+    await expect(versionItems(page)).toHaveCount(200);
+    await expect(versionCanvas(page, 200).locator(".auto-card")).toHaveCount(TESTED.steps.length);
+    const opening = clock() - pressed;
+    await expect(versionItems(page).first().locator("strong")).toHaveText("Versión 200");
+    const read = (await recorded(page, "__automations")).filter((r) => /\/versions\/\d+$/.test(r));
+    // Once by the editor for the names it kept, and once for its canvas: no other version is read.
+    expect(new Set(read)).toEqual(new Set([`GET ${TESTED.id}/versions/200`]));
+    under(opening, 2000, "clock", "«Versiones» with 200, from the menu to the canvas of the last");
+  });
+
+  test("AU-191 · the list's «⋯» has «Eliminadas»: each deleted automation with «Recuperar», which brings it back to the list as «Apagada»", async ({
+    page,
+  }) => {
+    const gone = {
+      ...TESTED,
+      id: "a_01jx8x0t2v4x6z8b0d2f4h6d01",
+      name: "Resumen <b>semanal</b>",
+      published: { versions: 2, enabled: true },
+      deleted: true,
+    };
+    const draftOnly = { ...NEVER, deleted: true };
+    await openApp(page, "/?still", {
+      automations: [PUBLISHED, gone, draftOnly],
+      agent: BEFORE(),
+    });
+    await openList(page);
+    await expect(listState(page, PUBLISHED.name)).toHaveCount(1);
+    await expect(listState(page, "Resumen <b>semanal</b>")).toHaveCount(0);
+    await listMore(page).click();
+    await page.getByRole("menuitemradio", { name: "Eliminadas", exact: true }).click();
+    const items = deletedScreen(page).locator(".auto-deleted-item");
+    await expect(items.locator(".auto-deleted-name")).toHaveText([
+      "Resumen <b>semanal</b>",
+      NEVER.name,
+    ]);
+    // A name that looks like HTML is painted as text (A-01).
+    await expect(deletedScreen(page).locator(".auto-deleted-name b")).toHaveCount(0);
+    const recover = items.first().getByRole("button", { name: "Recuperar" });
+    await expect(recover).toHaveAttribute("data-boni-action", "automations.restore");
+    await recover.click();
+    await expect(toast(page)).toContainText("«Resumen <b>semanal</b>» recuperada y apagada");
+    await expect(items.locator(".auto-deleted-name")).toHaveText([NEVER.name]);
+    expect(await recorded(page, "__automations")).toContain(`POST ${gone.id}/restore`);
+    await page.keyboard.press("Escape");
+    await expect(deletedScreen(page)).toHaveCount(0);
+    // Back in the list, off though it was on when it was deleted.
+    await expect(listState(page, "Resumen <b>semanal</b>")).toContainText("Apagada");
+    await expect(listState(page, NEVER.name)).toHaveCount(0);
+  });
+
+  test("AU-191 · a shared device sees «Eliminadas» and its «Recuperar» is refused there", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [PUBLISHED, { ...NEVER, deleted: true }],
+      agent: BEFORE(),
+      sharedDevice: true,
+    });
+    await openList(page);
+    await listMore(page).click();
+    await page.getByRole("menuitemradio", { name: "Eliminadas", exact: true }).click();
+    const items = deletedScreen(page).locator(".auto-deleted-item");
+    await expect(items.locator(".auto-deleted-name")).toHaveText([NEVER.name]);
+    await items.first().getByRole("button", { name: "Recuperar" }).click();
+    await expect(toast(page)).toContainText("Solo desde un dispositivo personal.");
+    await expect(items).toHaveCount(1);
+  });
+
+  test("AU-191 · A-15 · 200 deleted ones are listed at once", async ({ page }) => {
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      ...TESTED,
+      id: `a_01jx8x0t2v4x6z8b0d2f4h${String(i).padStart(4, "0")}`,
+      name: `Eliminada ${i + 1}`,
+      updated: 1761990000000 - i * 60_000,
+      published: { versions: 1 },
+      deleted: true,
+    }));
+    await openApp(page, "/?still", { automations: [PUBLISHED, ...many], agent: BEFORE() });
+    await openList(page);
+    await expect(listState(page, PUBLISHED.name)).toHaveCount(1);
+    await listMore(page).click();
+    const pressed = clock();
+    await page.getByRole("menuitemradio", { name: "Eliminadas", exact: true }).click();
+    await expect(deletedScreen(page).locator(".auto-deleted-item")).toHaveCount(200);
+    const opening = clock() - pressed;
+    await expect(deletedScreen(page).locator(".auto-deleted-name").first()).toHaveText(
+      "Eliminada 1",
+    );
+    under(opening, 2000, "clock", "«Eliminadas» with 200, from the menu to the list");
+  });
+
+  test("AU-192 · in the editor, a code that cites a collection by a name it no longer has is underlined with the name of today, and its button rewrites it", async ({
+    page,
+  }) => {
+    const id = "a_01jx8x0t2v4x6z8b0d2f4h6d02";
+    const source = "return [{ n: $col('Lecturas').count() }];";
+    const coded = {
+      id,
+      name: "Contar lecturas",
+      updated: 1761990000000,
+      steps: [
+        TESTED.steps[0],
+        {
+          id: "s_01jcodigo",
+          name: "Código",
+          type: "code",
+          params: { source },
+          connections: [
+            { collection: "libros", read: {}, create: false, update: false, remove: false },
+          ],
+        },
+      ],
+      arrows: [
+        { from: { step: "s_inicio", output: "main" }, to: { step: "s_01jcodigo", input: "main" } },
+      ],
+      places: [
+        { step: "s_inicio", x: 0, y: 0 },
+        { step: "s_01jcodigo", x: 300, y: 0 },
+      ],
+      // The version that runs cited «Libros» when it was called «Lecturas».
+      published: { versions: 1, names: { s_01jcodigo: { Lecturas: "libros" } } },
+    };
+    await openApp(page, "/?still", { automations: [coded as never], agent: BEFORE() });
+    await openList(page);
+    await page.locator(".db-table tbody tr").getByText(coded.name, { exact: true }).click();
+    await expect(page.locator(".auto-card")).toHaveCount(2);
+    await openStep(page, "s_01jcodigo");
+    const editor = param(page, "source").locator(".cm-editor");
+    const marks = editor.locator(".cm-lintRange-error, .cm-lintRange-warning");
+    const notice = param(page, "source").locator(".auto-code-renamed");
+    await expect(notice).toContainText(
+      "«Lecturas» es el nombre de antes: la colección ahora se llama «Libros»",
+    );
+    await expect(marks).toHaveCount(1);
+    await notice.getByRole("button", { name: "Cambiar a «Libros»" }).click();
+    await expect(notice).toHaveCount(0);
+    await expect(marks).toHaveCount(0);
+    await expect
+      .poll(async () => {
+        const last = (await sent(page, `PUT api/agent/automations/${id}/draft `)).at(-1)
+          ?.automation as { steps: { id: string; params: { source?: string } }[] } | undefined;
+        return last?.steps.find((s) => s.id === "s_01jcodigo")?.params.source ?? null;
+      })
+      .toBe("return [{ n: $col('Libros').count() }];");
+  });
 });
 
 test.describe("«Fijar» and «Programada»", () => {

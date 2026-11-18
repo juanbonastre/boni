@@ -13,6 +13,7 @@ import {
   type CodeContext,
   type CodeFailure,
   completions,
+  renameCollectionInCode,
   type Step,
 } from "@boni/automations";
 import { ChevronRight } from "lucide-react";
@@ -133,6 +134,22 @@ export function CodeParams({
             >
               {said(t, "problem", p, locale, names)}
             </p>
+          ))}
+          {/* AU-192: a collection cited by its name of before; the button rewrites only its `$col('…')`, by his hand. */}
+          {found.renamed.map((r) => (
+            <div key={r.name} className="auto-view-notice auto-code-renamed" role="status">
+              <span>{t("auto.code.renamed", r)}</span>
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="btn small"
+                  data-boni-action="automations.edit"
+                  onClick={() => setSource(renameCollectionInCode(source, r.name, r.now))}
+                >
+                  {t(DO.renameCited, { now: r.now })}
+                </button>
+              )}
+            </div>
           ))}
           {found.notConnected.map((key) => (
             <div key={key} className="auto-view-notice auto-code-connect" role="status">
