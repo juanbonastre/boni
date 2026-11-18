@@ -122,3 +122,198 @@ export function anthropicCost(model: string, input: number, output: number): num
   if (id === "claude-haiku-5-5" && input > 100_000) [i, o] = [0.5, 2.5];
   return (input * i + output * o) / 1_000_000;
 }
+
+// ---------------------------------------------------------------- «Modelos» without uses (docs/automatizaciones.md §5.16)
+
+/**
+ * The kinds of call (§5.16): an «Agente» calls by rounds with tools within its connections, a reader gives a text with
+ * no tools and asks for a closed shape, the «Decisora» chooses among the code's options. The step's type fixes the
+ * kind, never the model, a tag or the person: reading outside content without tools is how a step calls the model.
+ */
+export const KINDS = ["agent", "reading", "decision"] as const;
+export type Kind = (typeof KINDS)[number];
+
+/** The kind of call each use of before made (AU-244): the reviewer read with the reader's cases. */
+export const KIND_OF_ROLE: Record<Role, Kind> = {
+  planner: "agent",
+  reader: "reading",
+  decider: "decision",
+  reviewer: "reading",
+};
+/** The use whose provider a kind of call is built as (rounds with effort; a reader with no reasoning; Jev). */
+export const ROLE_OF_KIND: Record<Kind, Exclude<Role, "reviewer">> = {
+  agent: "planner",
+  reading: "reader",
+  decision: "decider",
+};
+
+/** At most this many loaded models (AU-232) and tags (AU-237), and a tag's name at most this long. */
+export const MODELS_MAX = 30;
+export const TAGS_MAX = 20;
+export const TAG_NAME_MAX = 24;
+/** How long an evaluation (each of its parts) opens the gate (AU-234, AU-235). */
+export const EVAL_DAYS = 30;
+/** A step's «Modelo» or a row «De la cuenta» naming a tag: `tag:` and the tag's id (AU-238). */
+export const TAG_REF = "tag:";
+
+/** A model by its route: the connection, its id there, and (OpenRouter) the providers that keep nothing. */
+export interface ModelRoute {
+  connection: Connection;
+  model: string;
+  zdr: boolean;
+}
+
+/** A model's id: `connection:model`, with `:zdr` when it asks for providers that keep nothing. Never rewritten. */
+export const choiceId = (c: ModelRoute): string =>
+  `${c.connection}:${c.model}${c.zdr ? ":zdr" : ""}`;
+
+/** A model's id read back (`choiceId`); null when it is not one. */
+export function parseChoice(id: string): ModelRoute | null {
+  if (id.startsWith(TAG_REF)) return null;
+  const at = id.indexOf(":");
+  if (at <= 0) return null;
+  const connection = id.slice(0, at) as Connection;
+  if (!CONNECTIONS.includes(connection)) return null;
+  const zdr = id.endsWith(":zdr");
+  const model = id.slice(at + 1, zdr ? -":zdr".length : undefined);
+  return model && MODEL_ID.test(model) ? { connection, model, zdr } : null;
+}
+
+/** A tag's id in a `tag:` value; null when the value names no tag. */
+export const tagOfRef = (v: string | null | undefined): string | null =>
+  typeof v === "string" && v.startsWith(TAG_REF) && TAG_ID.test(v.slice(TAG_REF.length))
+    ? v.slice(TAG_REF.length)
+    : null;
+const TAG_ID = /^[a-z0-9]{6,32}$/;
+
+/** Jev, the decision model: it speaks another protocol and answers only that call (AU-234). */
+const DECISION_MODEL = /(^|\/)jev-/;
+
+/**
+ * The kinds of call a model answers, by what it is (AU-234): a decision model only decisions, any other both the
+ * «Agente» and the reading. Which cases its evaluation runs follows from it; never the person or a tag.
+ */
+export function kindsOf(m: Pick<ModelRoute, "connection" | "model">): Kind[] {
+  return m.connection === "typesafe" || DECISION_MODEL.test(m.model)
+    ? ["decision"]
+    : ["agent", "reading"];
+}
+
+/** «Modelos» as the person keeps it (AU-232, AU-236, AU-237), in the user's store beside `ModelsConfig`. */
+export interface ModelsList {
+  /** The loaded models, in the person's order (the order only says who wins in a tag), each with its tags' ids. */
+  models: { id: string; tags: string[] }[];
+  /** The tags the person wrote: an id under the name, so renaming breaks nothing. None ships. */
+  tags: { id: string; name: string }[];
+  /** «De la cuenta»: per kind of call, a model's id, `tag:<id>`, or null (the server's model, or «Sin modelo»). */
+  account: Record<Kind, string | null>;
+}
+
+export const EMPTY_LIST: ModelsList = {
+  models: [],
+  tags: [],
+  account: { agent: null, reading: null, decision: null },
+};
+
+/** What is wrong with a list (empty: fine). */
+export function listErrors(x: unknown): string[] {
+  const o = x as Partial<ModelsList> | null;
+  if (!o || typeof o !== "object") return ["not an object"];
+  const out: string[] = [];
+  const tags = Array.isArray(o.tags) ? o.tags : null;
+  if (!tags) out.push("tags: a list");
+  else {
+    if (tags.length > TAGS_MAX) out.push(`tags: at most ${TAGS_MAX}`);
+    const names = new Set<string>();
+    const ids = new Set<string>();
+    for (const t of tags) {
+      if (!t || typeof t.id !== "string" || !TAG_ID.test(t.id) || ids.has(t.id))
+        out.push("tags: each with an id of its own");
+      const name = typeof t?.name === "string" ? t.name.trim() : "";
+      if (!name || name.length > TAG_NAME_MAX || name !== t.name)
+        out.push(`tags: a name of 1 to ${TAG_NAME_MAX} characters`);
+      if (names.has(name.toLocaleLowerCase())) out.push("tags: names distinct from each other");
+      names.add(name.toLocaleLowerCase());
+      ids.add(t?.id);
+    }
+  }
+  const models = Array.isArray(o.models) ? o.models : null;
+  if (!models) out.push("models: a list");
+  else {
+    if (models.length > MODELS_MAX) out.push(`models: at most ${MODELS_MAX}`);
+    const seen = new Set<string>();
+    for (const m of models) {
+      if (!m || typeof m.id !== "string" || !parseChoice(m.id) || seen.has(m.id))
+        out.push("models: each a model's id, once");
+      seen.add(m?.id);
+      if (!Array.isArray(m?.tags) || m.tags.some((t) => !tags?.some((x) => x.id === t)))
+        out.push("models: tags among the list's");
+      else if (new Set(m.tags).size !== m.tags.length) out.push("models: each tag once");
+    }
+  }
+  const a = o.account;
+  if (!a || typeof a !== "object") out.push("account: one row per kind");
+  else
+    for (const k of KINDS) {
+      const v = a[k];
+      if (v === null) continue;
+      const tag = tagOfRef(v);
+      if (tag ? !tags?.some((t) => t.id === tag) : !(typeof v === "string" && parseChoice(v)))
+        out.push(`account.${k}: a model's id, a tag or nothing`);
+    }
+  return out;
+}
+
+/** One part of a model's evaluation, as the gate reads it: its count of cases and its own date (AU-244). */
+export interface EvalMark {
+  right: number;
+  total: number;
+  at: number;
+}
+export type EvalParts = Partial<Record<Kind, EvalMark>>;
+
+const current = (p: EvalMark | undefined, now: number) =>
+  !!p && now - p.at < EVAL_DAYS * 86_400_000;
+
+/**
+ * The gate (AU-235): a model may be chosen for a kind of call only with a part of that kind in its evaluation, of
+ * less than `EVAL_DAYS`. Its result is never read: «3 de 24» opens it as «24 de 24» does.
+ */
+export const gateOpen = (parts: EvalParts | undefined, kind: Kind, now: number): boolean =>
+  current(parts?.[kind], now);
+
+/** The model was evaluated for a kind, current or expired (what a tag takes, AU-239; never a model never evaluated). */
+export const evaluatedFor = (parts: EvalParts | undefined, kind: Kind): boolean => !!parts?.[kind];
+
+/**
+ * A model's evaluation as the list says it (AU-234, AU-244): its parts summed, «Parcial» when a kind it answers has
+ * no part (only those carried from the uses of before), «Caducada» when a part is past its days.
+ */
+export function markOf(
+  parts: EvalParts | undefined,
+  kinds: readonly Kind[],
+  now: number,
+): { right: number; total: number; at: number; partial: boolean; expired: boolean } | null {
+  const had = kinds.flatMap((k) => (parts?.[k] ? [parts[k] as EvalMark] : []));
+  if (!had.length) return null;
+  return {
+    right: had.reduce((a, p) => a + p.right, 0),
+    total: had.reduce((a, p) => a + p.total, 0),
+    at: Math.min(...had.map((p) => p.at)),
+    partial: had.length < kinds.length,
+    expired: had.some((p) => !current(p, now)),
+  };
+}
+
+/**
+ * The model a tag answers with (AU-239): the first of its models, in the list's order, that `usable` takes (its key
+ * there, evaluated for that kind, current or expired). The order and the tags are the person's acts only: the clock
+ * never changes who answers. Null: «Sin modelo» (AU-241).
+ */
+export function firstOfTag(
+  list: ModelsList,
+  tag: string,
+  usable: (id: string) => boolean,
+): string | null {
+  return list.models.find((m) => m.tags.includes(tag) && usable(m.id))?.id ?? null;
+}

@@ -126,9 +126,10 @@ function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
 }
 
 /**
- * What stops publishing an AI step that only the server can tell (AU-166, AU-199): a «Modelo» that is no longer one of
- * the choices for the step's use (`param.value` on `model`; a version already published keeps its own while its key
- * exists, PR 490 choice 6), and a collection no model may read connected to an «Agente» (`connection.notAllowed`
+ * What stops publishing an AI step that only the server can tell (AU-166, AU-199, AU-241): a «Modelo» that would not
+ * answer now — a model's id the gate no longer offers for the step's kind (AU-235), a tag «Sin modelo» or whose model
+ * has an old evaluation (AU-238) — as `param.value` on `model` (a version already published keeps its own while its
+ * key exists, PR 490 choice 6); and a collection no model may read connected to an «Agente» (`connection.notAllowed`
  * with `why: "private"`, on `connections`). Both are errors of the step; `blocking` keeps those a trigger reaches.
  */
 export function aiProblems(store: UserStore, a: Automation): Problem[] {
@@ -136,19 +137,14 @@ export function aiProblems(store: UserStore, a: Automation): Problem[] {
   if (!m) return [];
   const out: (Problem | CodeProblem)[] = [];
   const reach = reachStore(store, "UTC");
-  const choices = { reader: new Set<string>(), planner: new Set<string>() };
-  let read = false;
   for (const step of [...a.steps].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))) {
     const agent = step.type === AGENT_TYPE;
     if (!agent && !isReaderType(step.type)) continue;
     const model = step.params.model;
     if (typeof model === "string" && model !== "") {
-      if (!read) {
-        for (const c of m.models.modelChoices(m.account, "reader")) choices.reader.add(c.id);
-        for (const c of m.models.modelChoices(m.account, "planner")) choices.planner.add(c.id);
-        read = true;
-      }
-      if (!choices[agent ? "planner" : "reader"].has(model))
+      const kind = agent ? "agent" : "reading";
+      const r = m.models.resolveModel(m.account, kind, model);
+      if ("refused" in r || !m.models.offered(m.account, r.id, kind))
         out.push({ code: "param.value", severity: "error", step: step.id, param: "model" });
     }
     if (agent)

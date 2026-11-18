@@ -15,6 +15,8 @@ import {
   listConversations,
   type ModelProvider,
   markCorrected,
+  ROLES,
+  type Role,
   runnableNames,
   ToolError,
   type ToolRegistry,
@@ -786,6 +788,10 @@ export async function serveAgent(
           mailType: host.mailTypeOf?.(who.account) ?? null,
           mailAccount: host.mailAccountOf?.(who.account) ?? null,
           titleOf: (tool) => host.toolTitle(tool),
+          answerOf: (role) =>
+            ROLES.includes(role as Role)
+              ? (host.models?.answerOf(who.account, role as Role) ?? null)
+              : null,
         }),
       );
     }

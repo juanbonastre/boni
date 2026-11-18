@@ -137,6 +137,21 @@ export function serverAi(o: AiFor): AiPort {
   const now = o.now ?? Date.now;
   const timeout = (role: keyof typeof AI_TIMEOUTS) => o.timeouts?.[role] ?? AI_TIMEOUTS[role];
   const over = () => o.models.overBudget(o.account, { dry: o.test });
+  /**
+   * Each «Modelo» resolved once (AU-239): every row, round and retry of the run's steps that name it go with the
+   * model it gave first, whatever the list does meanwhile. A failed call fails its step: no other model is tried.
+   */
+  const resolved = new Map<string, ReturnType<AiModels["stepProvider"]>>();
+  const providerOf = (kind: "agent" | "reading", value: string | null) => {
+    const k = `${kind}|${value ?? ""}`;
+    const had = resolved.get(k);
+    if (had) return had;
+    const p = o.models.stepProvider(o.account, kind, value);
+    resolved.set(k, p);
+    return p;
+  };
+  /** The model as «Lo que hizo» says it: with the tag it came by (AU-239). */
+  const said = (model: string, tag: string | null) => (tag ? `${model} · ${tag}` : model);
 
   /** One call, timed out, kept in the journal when it came back or was charged. Never retried here. */
   async function complete(
@@ -182,7 +197,7 @@ export function serverAi(o: AiFor): AiPort {
   return {
     async read(call: ReaderCall): Promise<ReaderReply> {
       if (over()) return { refused: "budget" };
-      const p = o.models.stepProvider(o.account, "reader", call.model);
+      const p = providerOf("reading", call.model);
       if ("refused" in p) return { refused: p.refused };
       const req = readerRequest(call);
       let hash = READER_HASHES.get(req.system);
@@ -192,8 +207,12 @@ export function serverAi(o: AiFor): AiPort {
       }
       const got = await complete(p.provider, req, hash);
       return "refused" in got
-        ? { refused: got.refused, model: p.model, ...(got.transient ? { transient: true } : {}) }
-        : { answer: got.json, model: got.model };
+        ? {
+            refused: got.refused,
+            model: said(p.model, p.tag),
+            ...(got.transient ? { transient: true } : {}),
+          }
+        : { answer: got.json, model: said(got.model, p.tag) };
     },
     async agent(call: AgentCall): Promise<AgentReply> {
       // `AgentCall` of packages/automations mirrors the rounds' one field by field (A-02: it imports nothing of
@@ -202,7 +221,7 @@ export function serverAi(o: AiFor): AiPort {
       const schema = planSchema(roundArgNames(rounds));
       const reply = await runRounds(rounds, async (request: AgentRequest) => {
         if (over()) return { refused: "budget" };
-        const p = o.models.stepProvider(o.account, "planner", request.model);
+        const p = providerOf("agent", request.model);
         if ("refused" in p) return { refused: p.refused };
         const got = await complete(
           p.provider,
@@ -217,8 +236,12 @@ export function serverAi(o: AiFor): AiPort {
           AGENT_HASH,
         );
         return "refused" in got
-          ? { refused: got.refused, model: p.model, ...(got.transient ? { transient: true } : {}) }
-          : { plan: got.json, model: got.model };
+          ? {
+              refused: got.refused,
+              model: said(p.model, p.tag),
+              ...(got.transient ? { transient: true } : {}),
+            }
+          : { plan: got.json, model: said(got.model, p.tag) };
       });
       return reply as unknown as AgentReply;
     },
@@ -232,7 +255,7 @@ export function serverAi(o: AiFor): AiPort {
  * folder, a test that sets none) no run has a port, and the AI steps are `step.unknownType` as before F15.
  */
 export interface AutomationModels {
-  models: AiModels & Pick<AccountModels, "modelChoices">;
+  models: AiModels & Pick<AccountModels, "resolveModel" | "offered">;
   accountOf(store: UserStore): number | null;
 }
 let wired: AutomationModels | null = null;

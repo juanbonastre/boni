@@ -8,7 +8,14 @@
  */
 import { FILTER_OPS } from "@boni/views";
 import { AGENT_PARAMS, AGENT_ROUNDS, AGENT_TOOLS, codeToolsOf } from "./agent.ts";
-import { AI_RETRY, fieldsOf, isReaderType, RETRY_PARAM } from "./ai.ts";
+import {
+  AI_RETRY,
+  fieldsOf,
+  isModelValue,
+  isReaderType,
+  READER_PARAMS,
+  RETRY_PARAM,
+} from "./ai.ts";
 import {
   BONI_ACTION_TYPE,
   BONI_LIMITS,
@@ -252,6 +259,13 @@ export function validate(
     if (step.type === AGENT_TYPE || isReaderType(step.type)) retryParam(step, add);
     if (step.type === ASK_TYPE) askParams(step, add);
     if (isBoniType(step.type)) boniParams(step, add);
+    // «Modelo» takes nothing, a model's id or a tag (AU-238); what is no text at all is the control's own problem.
+    if (
+      (step.type === AGENT_TYPE || isReaderType(step.type) || isBoniType(step.type)) &&
+      typeof step.params[READER_PARAMS.model] === "string" &&
+      !isModelValue(step.params[READER_PARAMS.model])
+    )
+      add("param.value", { step: step.id, param: READER_PARAMS.model });
     problems.push(
       ...(code ? codeProblems(step, automation, code) : connectionProblems(step, context)),
     );
