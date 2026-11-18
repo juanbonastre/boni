@@ -120,7 +120,8 @@ function countWords(
 /**
  * What it did, in one line (AU-99), from what the log says it saved and what it proposed: «Creó 1 fila en Tareas ·
  * con datos de fuera», «Propuso modificar 12 filas en Gastos», «No hizo nada». A proposal is counted, and nothing
- * more is promised of it (it waits for Juan, S3). Null while it runs, and for a test, which saves nothing.
+ * more is promised of it (it waits for Juan, S3). Null while it runs, and for a test, which saves nothing; while it
+ * waits for an answer, only what it saved so far (AU-203).
  */
 export function didWords(
   t: T,
@@ -130,11 +131,13 @@ export function didWords(
 ): string | null {
   if (r.test || !ended(r) || r.state === "missed") return null;
   const line = r.line;
+  // While it waits for an answer its proposal is not made yet (AU-203): only what it saved so far, if anything.
+  const waiting = r.state === "waiting";
   const parts = [
     ...(line?.writes ?? []).map((c) => countWords(t, lang, c, false, names)),
-    ...(line?.asked ?? []).map((c) => countWords(t, lang, c, true, names)),
+    ...(waiting ? [] : (line?.asked ?? [])).map((c) => countWords(t, lang, c, true, names)),
   ];
-  if (!parts.length) return t("auto.run.did.nothing");
+  if (!parts.length) return waiting ? null : t("auto.run.did.nothing");
   if (line?.outside) parts.push(t("auto.run.did.outside"));
   return parts.join(" · ");
 }
