@@ -72,7 +72,7 @@ import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { aiFor } from "./ai.ts";
-import { boniPortFor } from "./boni.ts";
+import { boniOf, boniPortFor, boniTestRow } from "./boni.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
@@ -285,6 +285,10 @@ export const DRAFT_WRITERS: Readonly<Record<string, "hand" | "outside">> = {
   convertFlow: "outside",
   convertFlows: "outside",
   conversionReport: "outside",
+  // Boni's own (F16 S2c): converted together, and kept current with Boni's code, every «Sí» lowered.
+  convertBoniFlows: "outside",
+  followBoniFlow: "outside",
+  keepBoniFlows: "outside",
 };
 
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */
@@ -481,6 +485,8 @@ export function setDeleted(
   deleted: boolean,
 ): { ok: true } | ServiceError {
   if (!store.journal.automation(id)) return NOT_FOUND;
+  // Boni's own are turned off, never deleted (AU-221).
+  if (deleted && boniOf(store, id)) return BAD;
   store.journal.setAutomationDeleted(id, deleted);
   // What waited for an answer is cancelled, and stays so if it comes back (AU-203).
   if (deleted) cancelWaits(store, id);
@@ -709,9 +715,15 @@ export async function testAutomation(
   if (request.answers !== undefined) return answerTest(store, id, request.answers, hand, box);
   // A «Programada» tried by hand runs as at its hour (AU-195): `$run.startedBy` is `schedule`, and its hour, unless
   // the screen gave one, is now.
-  const scheduled = a.steps.find((s) => s.id === request.trigger)?.type === "schedule";
-  const fields: Record<string, Cell> =
-    scheduled && request.fields.date === undefined
+  const triggerType = a.steps.find((s) => s.id === request.trigger)?.type;
+  const scheduled = triggerType === "schedule";
+  // One of Boni's triggers whose row its code makes is tried with what that code would give it now, with the code's
+  // label, whatever the screen typed (F16 S2c: «El gasto llega al aviso», the month's spending and the budget), as
+  // the flow's «Probar» bound it.
+  const boniRow = boniTestRow(store, id, triggerType);
+  const fields: Record<string, Cell> = boniRow
+    ? boniRow.json
+    : scheduled && request.fields.date === undefined
       ? { ...request.fields, date: hand.now }
       : request.fields;
   const keptRows = keptTests(store, id);
@@ -738,7 +750,7 @@ export async function testAutomation(
   const input: TestInput = {
     automation: a,
     trigger: request.trigger,
-    fields: { json: fields, label: typedLabel(hand) },
+    fields: { json: fields, label: boniRow ? boniRow.label : typedLabel(hand) },
     startedBy: scheduled ? "schedule" : "user",
     prints,
     ...(request.step !== undefined ? { step: request.step, kept } : {}),

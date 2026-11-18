@@ -6,15 +6,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { createConversation, fakePlanner, type ModelProvider, ScriptedProvider } from "@boni/agent";
+import { type Cell, NOTIFY_TYPE } from "@boni/automations";
 import { clock, under } from "@boni/pace";
+import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { jsBox } from "../../../packages/agent/test/convert.test-util.ts";
 import { AgentHost, serveAgent } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { cite, made as madeAutomation, START, type StepSpec } from "./automations/run.test-util.ts";
+import { wireBoni } from "./automations/boni.ts";
+import { keepBoniFlows, revertFlow } from "./automations/convert.ts";
+import { publish, setEnabled } from "./automations/publish.ts";
+import {
+  cite,
+  JUAN,
+  made as madeAutomation,
+  START,
+  type StepSpec,
+} from "./automations/run.test-util.ts";
+import { startRun } from "./automations/runs.ts";
+import { publishedOf, setDeleted, testAutomation } from "./automations/service.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { flowMap } from "./flowMap.ts";
-import { BUDGET_FLOW, checkFlow, saveUserFlow } from "./flows.ts";
+import { BUDGET_FLOW, checkFlow, ensureFlow, saveUserFlow } from "./flows.ts";
+import { deleteAutomationRow, flowsCollection } from "./flowsCollection.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { AccountModels, BUDGET_PLAN, BUDGET_TRIGGER, catalogueOf, serveModels } from "./models.ts";
@@ -889,6 +904,282 @@ describe("«Aviso del presupuesto», Boni's flow (D-53)", () => {
     expect(s.store().setting("models/warned")).toBeNull();
     expect(s.runs()).toEqual([]);
     expect(s.store().journal.flowRuns(BUDGET_FLOW).runs).toBe(0);
+  });
+
+  // ------------------------------------------------ as one of Boni's automations (F16 S2c, AU-220, AU-221, AU-224)
+
+  /** Boni's steps wired as main.ts wires them, for this server's account: its agent, and «Probar»'s row. */
+  const wire = (s: ReturnType<typeof serverOf>) =>
+    wireBoni({
+      reaches: (st) => st === s.store(),
+      agentOf: () => s.host.agent(1, true),
+      triggerRow: (_st, automation) =>
+        automation === "budgetNotice" ? s.models.noticeRow(1) : null,
+    });
+  /** The automation's runs (not its tests), the newest first. */
+  const autoRuns = (s: ReturnType<typeof serverOf>) =>
+    s
+      .store()
+      .journal.automationRuns(BUDGET_FLOW, { filter: "all", limit: 50 })
+      .filter((r) => !r.test);
+  /** What each run's «Avisar» told. */
+  const toldBy = (s: ReturnType<typeof serverOf>, run: string) =>
+    s
+      .store()
+      .journal.automationRunSteps(run)
+      .flatMap(
+        (x) =>
+          (JSON.parse(x.record) as { notices?: { notices: { text: string }[] } }).notices
+            ?.notices ?? [],
+      )
+      .map((n) => n.text);
+
+  describe("as one of Boni's automations", () => {
+    afterEach(() => wireBoni(null));
+
+    it("AU-221 · S2c: converted the first time it is asked for: Boni's, started by the month's spending, its «Avisar», on; asked again, nothing more", () => {
+      const s = serverOf();
+      // Unwired (as the server is before main.ts wires Boni's steps), it stays the flow, kept to try again.
+      expect(s.store().journal.flowConversion(BUDGET_FLOW)?.state ?? "kept").toBe("kept");
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      expect(s.store().journal.flowConversion(BUDGET_FLOW)?.state).toBe("converted");
+      const row = s.store().journal.automation(BUDGET_FLOW);
+      expect(row).toMatchObject({ by: "preset", enabled: true, published: 1 });
+      const steps = publishedOf(s.store(), BUDGET_FLOW)?.automation.steps ?? [];
+      expect(steps.map((x) => x.type)).toEqual(["boni.spending", NOTIFY_TYPE]);
+      // The flow of before is untouched and asleep, reachable again by «Volver al flujo de antes» (decision 21).
+      expect(s.store().journal.flowVersions(BUDGET_FLOW)).toHaveLength(1);
+      expect(s.store().journal.flow(BUDGET_FLOW)).toMatchObject({ by: "preset", version: 1 });
+      s.models.keepFlowCurrent(1);
+      s.host.boniFlowsCurrent(1);
+      expect(s.store().journal.automationVersions(BUDGET_FLOW)).toHaveLength(1);
+      expect(s.models.view(1).notice).toBe(true);
+    });
+
+    it("AU-221 · S2c: in «Automatizaciones» it is Boni's, started by «El gasto llega al aviso», on, on the map telling the devices, and never deleted", () => {
+      const s = serverOf();
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      const list = flowsCollection(s.store());
+      const row = list.rows.find((r) => r.id === SYS.flows.automation + BUDGET_FLOW);
+      const words = list.type.fields
+        .find((f) => f.id === SYS.flows.trigger)
+        ?.options?.find((o) => o.id === row?.values[SYS.flows.trigger])?.name;
+      expect([row?.values[SYS.flows.title], words, row?.values[SYS.flows.state]]).toEqual([
+        "Aviso del presupuesto",
+        "El gasto llega al aviso",
+        SYS.flows.on,
+      ]);
+      expect(row?.values[SYS.flows.by]).toBe(SYS.flows.boni);
+      const m = flowMap(s.store(), {
+        now: s.clock.now,
+        days: 7,
+        tz: "Europe/Madrid",
+        mailType: null,
+        mailAccount: null,
+      });
+      expect(m.nodes.filter((n) => n.name === "Aviso del presupuesto")).toHaveLength(1);
+      expect(m.nodes.some((n) => n.kind === "device")).toBe(true);
+      // Its «Avisar» tells the devices, as the flow's did; the period's notices of the new engine are not counted.
+      expect(m.edges.filter((e) => e.from === `auto:${BUDGET_FLOW}` && e.kind === "tells")).toEqual(
+        [expect.objectContaining({ to: "dev:all", n: null, outside: false })],
+      );
+      // Turned off, never deleted: by the list and by its own «Eliminar».
+      expect(() =>
+        deleteAutomationRow(s.store(), SYS.flows.automation + BUDGET_FLOW, true),
+      ).toThrow("flow-boni-delete");
+      expect(setDeleted(s.store(), BUDGET_FLOW, true)).toEqual({ error: "bad-request" });
+      expect(s.store().journal.automation(BUDGET_FLOW)).toMatchObject({ by: "preset" });
+      expect(flowsCollection(s.store()).rows.some((r) => r.id === row?.id)).toBe(true);
+    });
+
+    it("AU-220 · S2c: passing the warning runs its published version once a month, by the clock, telling what the flow told; no run of before", async () => {
+      const s = serverOf();
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      s.spend(5); // 4.50 €: under the warning
+      expect(await s.check()).toBe(false);
+      expect([s.told, autoRuns(s)]).toEqual([[], []]);
+      s.spend(4); // 8.10 €
+      expect(await s.check()).toBe(false);
+      // The text as the flow told it. Its integrity is the code's row's («own», as the code's own notice), where the
+      // flow's step said «model».
+      const [run] = autoRuns(s);
+      // It says which run told it, so the app opens that run from the notice.
+      expect(s.told).toEqual([
+        {
+          text: "Los modelos llevan 8.10 € de 10 € este mes.",
+          integrity: "own",
+          about: { automation: BUDGET_FLOW, run: run?.id },
+        },
+      ]);
+      expect(run).toMatchObject({ state: "done", version: 1, startedBy: "schedule", device: null });
+      expect(toldBy(s, run?.id ?? "")).toEqual(["Los modelos llevan 8.10 € de 10 € este mes."]);
+      // Its trigger's row is the code's figures, nothing else.
+      expect(JSON.parse(run?.fields ?? "{}")).toEqual({ spent: "8.10", budget: "10" });
+      // The engine of before ran nothing, and no model was asked anything.
+      expect(s.runs()).toEqual([]);
+      expect(s.model.requests).toHaveLength(0);
+      // Once a month: more spent, asked again, nothing more.
+      s.spend(0.5);
+      expect(await s.check()).toBe(false);
+      expect(await s.check()).toBe(false);
+      expect([s.told.length, autoRuns(s).length]).toEqual([1, 1]);
+      // The next month, past the warning again: one run more.
+      s.clock.now = Date.UTC(2026, 10, 3, 9);
+      s.spend(9.5);
+      expect(await s.check()).toBe(false);
+      expect(s.told.map((n) => n.text)).toEqual([
+        "Los modelos llevan 8.10 € de 10 € este mes.",
+        "Los modelos llevan 8.55 € de 10 € este mes.",
+      ]);
+      expect(autoRuns(s)).toHaveLength(2);
+      expect(s.runs()).toEqual([]);
+    });
+
+    it("AU-220 · S2c: off by its switch, nothing is told and the month stays unmarked; on again, the next check tells", async () => {
+      const s = serverOf();
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      expect(setEnabled(s.store(), BUDGET_FLOW, false, JUAN)).toEqual({ enabled: false });
+      expect(s.models.view(1).notice).toBe(false);
+      s.spend(9);
+      expect(await s.check()).toBe(false);
+      expect(await s.check()).toBe(false);
+      expect([s.told, autoRuns(s), s.runs()]).toEqual([[], [], []]);
+      expect(s.store().setting("models/warned")).toBeNull();
+      expect(log.mock.calls.filter((c) => String(c[0]).includes("is off"))).toHaveLength(1);
+      expect(setEnabled(s.store(), BUDGET_FLOW, true, JUAN)).toEqual({ enabled: true });
+      expect(await s.check()).toBe(false);
+      expect(s.told.map((n) => n.text)).toEqual(["Los modelos llevan 8.10 € de 10 € este mes."]);
+      expect(autoRuns(s)).toHaveLength(1);
+    });
+
+    it("AU-221 · S2c: sent back to the flow («Volver al flujo de antes»), the flow runs as before and stays so", async () => {
+      const s = serverOf();
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      expect(revertFlow(s.store(), BUDGET_FLOW, s.clock.now)).toBe(true);
+      s.models.keepFlowCurrent(1);
+      expect(s.store().journal.flowConversion(BUDGET_FLOW)?.state).toBe("reverted");
+      s.spend(9);
+      expect(await s.check()).toBe(false);
+      expect(s.told.map((n) => n.text)).toEqual(["Los modelos llevan 8.10 € de 10 € este mes."]);
+      expect(s.runs()).toHaveLength(1);
+      expect(autoRuns(s)).toEqual([]);
+    });
+
+    it("AU-221 · S2c: a new version of Boni's runs when the one that runs is Boni's, its draft following; one Juan published stays, Boni's waiting", async () => {
+      const s = serverOf();
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      /** What a deploy brings: Boni's code with another text, saved as flows.ts saves it, then kept as models.ts does. */
+      const deploy = (lit: string) => {
+        const plan = structuredClone(BUDGET_PLAN) as {
+          steps: { args: { text: { args: { lit?: string }[] } } }[];
+        };
+        const first = plan.steps[0]?.args.text.args[0];
+        if (first) first.lit = lit;
+        const f = { id: BUDGET_FLOW, name: "Aviso del presupuesto", trigger: BUDGET_TRIGGER, plan };
+        ensureFlow(s.store(), { ...f, by: "preset" }, s.clock.now);
+        keepBoniFlows(s.store(), [{ id: BUDGET_FLOW, boni: "budgetNotice" }], s.clock.now);
+      };
+      const versions = () =>
+        s
+          .store()
+          .journal.automationVersions(BUDGET_FLOW)
+          .map((v) => [v.n, v.by]);
+      const wouldTell = async () => {
+        const t = await testAutomation(
+          s.store(),
+          BUDGET_FLOW,
+          { trigger: "trigger", fields: {} },
+          JUAN,
+          jsBox(),
+        );
+        if ("error" in t || "refused" in t) throw new Error(JSON.stringify(t));
+        return Object.values(t.tests).flatMap((x) => x.notices?.notices.map((n) => n.text) ?? []);
+      };
+      s.spend(3); // 2.70 €, under the warning: nothing runs, «Probar» says
+      deploy("Este mes los modelos llevan ");
+      expect(versions()).toEqual([
+        [2, "preset"],
+        [1, "preset"],
+      ]);
+      expect(s.store().journal.automation(BUDGET_FLOW)?.published).toBe(2);
+      // The draft was the running document, so it follows: «Probar» tries the new text.
+      expect(await wouldTell()).toEqual(["Este mes los modelos llevan 2.70 € de 10 € este mes."]);
+      // Kept again with the same code: nothing more.
+      keepBoniFlows(s.store(), [{ id: BUDGET_FLOW, boni: "budgetNotice" }], s.clock.now);
+      expect(versions()).toHaveLength(2);
+      // Juan publishes his own («Volver a esta» on the first): it runs, and a later version of Boni's waits.
+      expect(publish(s.store(), BUDGET_FLOW, { version: 1 }, JUAN)).toMatchObject({ version: 3 });
+      deploy("Llevas en modelos ");
+      expect(versions()[0]).toEqual([3, "user"]);
+      expect(s.store().journal.automation(BUDGET_FLOW)?.published).toBe(3);
+      expect(s.told).toEqual([]);
+    });
+
+    it("AU-224 · S2c: «Probar» converted says what the flow's «Probar» said, with the month's figures whatever is typed, and tells nothing; it is never started by hand", async () => {
+      const s = serverOf();
+      s.spend(3); // 2.70 €
+      // The engine of before, dry: its «Probar».
+      const before = (await s.ask("POST /api/agent/flows/:id/test")).json as {
+        steps: Record<string, { would: { text: string | null }[] }>;
+      };
+      const was = before.steps.notify?.would.map((w) => w.text);
+      expect(was).toEqual(["Los modelos llevan 2.70 € de 10 € este mes."]);
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      const tried = async (fields: Record<string, string>) => {
+        const t = await testAutomation(
+          s.store(),
+          BUDGET_FLOW,
+          { trigger: "trigger", fields },
+          JUAN,
+          jsBox(),
+        );
+        if ("error" in t || "refused" in t) throw new Error(JSON.stringify(t));
+        expect(t.state).toBe("done");
+        return Object.values(t.tests).flatMap((x) => x.notices?.notices.map((n) => n.text) ?? []);
+      };
+      expect(await tried({})).toEqual(was);
+      // Figures a request brings are not the trigger's: the month's own are what it would tell.
+      expect(await tried({ spent: "0.01", budget: "999" })).toEqual(was);
+      // Its spending starts it, never a hand: «Ejecutar» is refused, with the request's figures or without.
+      for (const fields of [{}, { spent: "0.01", budget: "999" }] as Record<string, Cell>[])
+        expect(
+          await startRun(s.store(), BUDGET_FLOW, { trigger: "trigger", fields }, JUAN),
+        ).toEqual({
+          refused: "invalid",
+          problems: [],
+        });
+      expect(await s.ask("POST /api/agent/flows/:id/run")).toEqual({
+        status: 409,
+        json: { error: "not-manual" },
+      });
+      expect(s.told).toEqual([]);
+      expect(s.store().setting("models/warned")).toBeNull();
+      expect(autoRuns(s)).toEqual([]);
+    });
+
+    it("AU-220 · S2c: a version that cannot start (Boni's steps unwired at its hour) never silences the notice: the code tells, once", async () => {
+      const s = serverOf();
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      wire(s);
+      s.models.keepFlowCurrent(1);
+      wireBoni(null);
+      s.spend(9);
+      expect(await s.check()).toBe(false);
+      expect(await s.check()).toBe(false);
+      expect(s.told).toEqual([
+        { text: "Los modelos llevan 8.10 € de 10 € este mes.", integrity: "own" },
+      ]);
+      expect(log.mock.calls.some((c) => String(c[0]).includes("told by code"))).toBe(true);
+      expect(s.runs()).toEqual([]);
+    });
   });
 });
 

@@ -2307,6 +2307,14 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   decía hora, como el programador de antes (`plan-to-automation.test.ts`). Falta (S2): que los inicie el camino
   publicado y no el programador de antes, y los tiempos con un año de correo; en S1 los flujos de Boni siguen siendo
   flujos.
+  Hecho en S2c: «El gasto llega al aviso» lo inicia el código del aviso por el camino publicado (`runBoni`, que encola
+  en la cola de la cuenta como una ejecución programada y da a su disparador la fila del código, con la etiqueta del
+  código, nunca la de una petición): una ejecución al mes, la marca del mes puesta antes de empezar, apagada no corre
+  y el mes queda sin marcar, y si no llega a empezar o falla antes de «Avisar» el aviso lo da el código, como antes.
+  Ni a mano ni con cifras escritas: «Ejecutar» de un disparador de Boni se rechaza (`startRun`) y «Probar» le da las
+  cifras del mes escriba lo que escriba la pantalla (`models.test.ts`). Falta: «Traer correo», «Leer correo» y
+  «Revisar la guía» (lo del correo, en su sesión), «Probar con…» de «Llega un correo» y los tiempos con un año de
+  correo.
 
 ### 5.10 El catálogo de pasos
 
@@ -2646,6 +2654,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   los cuatro identificadores de sus flujos de antes, `BONI_STORED`, y su autor `preset`), nunca del documento: una
   automatización de Juan con ese identificador o esos pasos no es de Boni. Falta (S2b y S2c): las cuatro como
   automatizaciones con sus llamadores, «Leer correo» dibujada a mano (§5.17) y «Revisar instrucciones».
+  Hecho en S2c: «Aviso del presupuesto» es la primera, convertida la primera vez que se pide (`keepBoniFlows`, al
+  abrir el almacén y en cada aviso): `preset`, el flujo de antes intacto y dormido, «Volver al flujo de antes» la deja
+  en el motor de antes; una versión nueva de Boni sigue a la del flujo solo si la que corre es de Boni
+  (`followBoniFlow`), y «Modelos» dice si está apagada por su interruptor. En «Automatizaciones» dice «De: Boni» y
+  no se elimina; en el mapa, su «Avisar» sigue llegando a «Dispositivos». Su traducción de un paso se lee, así que no
+  se dibuja a mano. Falta: las tres del correo (su sesión) y «Revisar instrucciones».
 - **AU-128** (sin fase) · Lo que sale fuera (una petición HTTP, un webhook, enviar un correo) no entra en estas
   fases: va después, en la F20 (decisión 9 del §10). Cuando entre, el destino lo escribe Juan y nunca sale de un
   dato ni de un modelo (P2), lo que vuelve cuenta como de fuera, y las claves se guardan en el servidor sin que el
@@ -2927,6 +2941,10 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   su pantalla es de la E2. Falta (S2b): lectores con respuestas guionizadas y uno que falla, que cada escritura sea
   la misma (colección, valores y orden, no solo cuántas), las etiquetas de lo que viene de fuera paso a paso, cada
   fila de la tabla de AU-223 y las cuatro de Boni.
+  Hecho en S2c: «Aviso del presupuesto»: el «Probar» del flujo de antes y el de la automatización convertida dicen el
+  mismo aviso con las cifras del mes, y ninguno lo envía (`models.test.ts`). Lo que cambia sin frase: el aviso que da
+  su «Avisar» lleva la integridad del código («own»), como el que daba el código, donde el paso del flujo decía
+  «model». Falta: las tres del correo y lo que queda de S2b.
 - **AU-225** (F16, en parte) · Cuándo se convierte, qué ve Juan, cómo lo comprueba y cómo vuelve. Una vez: al abrir
   su almacén tras el despliegue que la trae, por código, sin modelo y sin que él haga nada. Para Juan es un solo
   momento: decidió (2026-11-17) que nada de estas fases se despliega hasta acabar la F16, así que ese despliegue es

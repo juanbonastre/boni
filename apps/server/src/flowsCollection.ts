@@ -8,7 +8,7 @@
  * read (a dozen rows), never stored, outside the store's schema: no model and no assistant sees it.
  */
 import { createHash } from "node:crypto";
-import { chatTrigger } from "@boni/agent";
+import { chatTrigger, TRIGGER_NAMES } from "@boni/agent";
 import {
   type Entity,
   type FieldDef,
@@ -19,6 +19,7 @@ import {
 } from "@boni/entities";
 import type { FlowRow, UserStore } from "@boni/store";
 import { automationRowTarget, flowRowTarget, SYS } from "@boni/views";
+import { BONI_AUTHOR, boniOf } from "./automations/boni.ts";
 import { cancelWaits } from "./automations/runs.ts";
 import { DataError } from "./data.ts";
 import { createFlow, type Problem, renamable, renameFlow } from "./flows.ts";
@@ -87,7 +88,8 @@ export function automationTriggerWords(
     const words = hoursWords(schedule);
     if (words) return words;
   }
-  return AUTOMATION_TRIGGERS[type] ?? type;
+  // Boni's own triggers (F16 S2c) as their step is named: «El gasto llega al aviso», as the flow's row said it.
+  return AUTOMATION_TRIGGERS[type] ?? TRIGGER_NAMES[type] ?? type;
 }
 function hoursWords(schedule: string): string {
   try {
@@ -161,7 +163,8 @@ export function flowsCollection(store: UserStore): { type: TypeDef; rows: Entity
         [F.state]: a.published === null ? F.unpublished : a.enabled ? F.on : F.off,
         [F.runs]: runs?.runs ?? 0,
         ...(runs?.last != null ? { [F.last]: new Date(runs.last).toISOString() } : {}),
-        [F.by]: F.user,
+        // «De: Boni» for Boni's own (AU-221, by its author as `boniOf` reads it), else the user's.
+        [F.by]: a.by === BONI_AUTHOR ? F.boni : F.user,
       },
       created: i,
       updated: a.updated,
@@ -229,6 +232,8 @@ export function withFlows(store: UserStore, base: SystemCollections): SystemColl
 export function deleteAutomationRow(store: UserStore, row: string, deleted: boolean): void {
   const id = automationRowTarget(row);
   if (!id || !store.journal.automation(id)) throw new DataError("not-found");
+  // Boni's own are turned off, never deleted (AU-221), as its flows were.
+  if (deleted && boniOf(store, id)) throw new DataError("flow-boni-delete");
   store.journal.setAutomationDeleted(id, deleted);
   if (deleted) cancelWaits(store, id);
 }
