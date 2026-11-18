@@ -72,6 +72,7 @@ import { type Label, label, newId } from "@boni/entities";
 import type { AutomationPlace, AutomationTestRow, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { aiFor } from "./ai.ts";
+import { boniPortFor } from "./boni.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
@@ -172,6 +173,16 @@ export interface AutomationView {
   /** The device that saved it last, and when. */
   device: string | null;
   updated: number;
+  /**
+   * A flow of before made this automation (F16, AU-225): its state, «Lo que cambia» and the versions it could not
+   * convert, for the band the screens show (P1); null for one made here.
+   */
+  conversion: {
+    state: "converted" | "reverted" | "kept";
+    at: number;
+    changes: string[];
+    skipped: number;
+  } | null;
 }
 
 export type ServiceError = { error: "not-found" | "bad-request" | "too-large" };
@@ -265,6 +276,10 @@ export const DRAFT_WRITERS: Readonly<Record<string, "hand" | "outside">> = {
   duplicateAutomation: "hand",
   // The actions of Juan's hand (actions.ts) that call the three above.
   withAutomationActions: "hand",
+  // The flows of before made automations (convert.ts, F16): a document no hand wrote, every «Sí» lowered.
+  convertFlow: "outside",
+  convertFlows: "outside",
+  conversionReport: "outside",
 };
 
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */
@@ -382,7 +397,13 @@ export function automationView(store: UserStore, id: string): AutomationView | S
     pins: pinsView(store, id, o.automation, prints, tested),
     device: o.draft.device,
     updated: o.draft.updated,
+    conversion: conversionOf(store, id),
   };
+}
+
+function conversionOf(store: UserStore, id: string): AutomationView["conversion"] {
+  const c = store.journal.flowConversion(id);
+  return c ? { state: c.state, at: c.at, changes: c.changes, skipped: c.skipped } : null;
 }
 
 /** A save of the draft: see «Se guarda solo» above. */
@@ -630,9 +651,12 @@ export function runDeps(
   };
   // The AI steps' models (AU-199): a run's calls are kept under its id, a test's under the automation's.
   const ai = aiFor(store, run ?? `test:${id}`, !run);
+  // Boni's steps (AU-127, AU-223): today's code through the account's agent, when the host wired it.
+  const boni = boniPortFor(store, id);
   return {
     policy: automationPolicy(doc, own, reachStore(store, hand.zone)),
     ...(ai ? { ai } : {}),
+    ...(boni ? { boni } : {}),
     // «Avisar» and «Preguntar» (AU-201, AU-203): a test's never notifies, and its waits are not counted.
     people: peoplePort(store, id, own, run ?? null),
     collections: storeCollections(store, {

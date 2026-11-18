@@ -5,6 +5,7 @@ import { startCheckpoints } from "@boni/store";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
 import { wireAutomationModels } from "./automations/ai.ts";
+import { wireBoni } from "./automations/boni.ts";
 import { AutomationScheduler } from "./automations/scheduler.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
@@ -188,6 +189,15 @@ agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 wireAutomationModels({
   models,
   accountOf: (store) => agent.accountOf(store),
+});
+// The Boni steps of automations (AU-127, AU-223): today's code through the account's agent, as a flow ran it.
+wireBoni({
+  reaches: (store) => agent.accountOf(store) !== null,
+  agentOf: (store) => {
+    const account = agent.accountOf(store);
+    if (account === null) throw new Error("boni: a store of no account");
+    return agent.agent(account, true);
+  },
 });
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent, feeds });

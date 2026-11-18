@@ -25,12 +25,14 @@ import {
   updateConversation,
   type Val,
 } from "@boni/agent";
+import type { Cell } from "@boni/automations";
 import { dayToIso, todayIn } from "@boni/calendar";
 import { type Label, label } from "@boni/entities";
 import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import { convertFlows, copyBeforeRuns } from "./automations/convert.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
 import { learnAnswer } from "./automations/learning.ts";
 import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
@@ -39,6 +41,7 @@ import {
   answerAsk,
   interruptRuns,
   onRunEvent,
+  startRun,
   tellLearned,
 } from "./automations/runs.ts";
 import { askPlace, mayAnswer, noticeText, onPeople } from "./automations/waits.ts";
@@ -323,6 +326,22 @@ export class AgentHost {
         ),
       );
       this.stores.set(account, s);
+      // The flows of before made automations (F16, AU-225 to AU-228; automations/convert.ts), each in its own
+      // transaction, before a scheduler reads this store; their runs of before are copied after, in chunks, the
+      // server free between them. A conversion that fails leaves the flows as they were, running as before.
+      try {
+        convertFlows(s, (this.o.now ?? Date.now)());
+      } catch (e) {
+        console.error(`conversion of account ${account}:`, e);
+      }
+      const copying = s;
+      setImmediate(() =>
+        copyBeforeRuns(
+          copying,
+          (this.o.now ?? Date.now)(),
+          () => this.stores.get(account) === copying,
+        ).catch((e) => console.error(`runs of before of account ${account}:`, e)),
+      );
     }
     // Boni's «Aviso del presupuesto» is among the account's flows from the first time its store is asked for with
     // «Modelos» there (models.ts, D-53): once per account, also for a store opened before (the day's copy at start).
@@ -372,6 +391,23 @@ export class AgentHost {
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
         pieces: () => this.pieces?.(account) ?? null,
+        // A converted flow started by `flows.run` (AU-225): its automation's published version, as «Ejecutar» starts it.
+        runAutomation: async (id, fields, origin) => {
+          const r = await startRun(
+            this.store(account),
+            id,
+            { trigger: "trigger", fields: fields as Record<string, Cell> },
+            {
+              device: origin.device ?? "",
+              now: Date.now(),
+              trust: origin.trust,
+              zone: this.tz,
+            },
+          );
+          if ("error" in r) return { run: null, status: "refused", error: r.error };
+          if ("refused" in r) return { run: null, status: "refused", error: r.refused };
+          return { run: r.run.id, status: r.run.state, error: null };
+        },
         // The steps «Función» and «Aplicar cambios» (task 93): this account's store, and the box.
         functions: () => ({
           store: () => this.store(account),
@@ -850,6 +886,16 @@ const OFF_ROUTES = new Set([
 /** Whether a proposal is a run's of an automation, made by code (`OFF_ROUTES`): never one a model wrote. */
 const isRunProposal = (p: { tool: string } | null): boolean => p?.tool === ACCEPT_RUN;
 
+/** The flow routes that write a flow of the old engine: refused on a converted one (F16 S1, AU-228). */
+const FLOW_WRITES = new Set([
+  "PUT /api/agent/flows/:id",
+  "PUT /api/agent/flows/:id/draft",
+  "DELETE /api/agent/flows/:id/draft",
+  "PUT /api/agent/flows/:id/enabled",
+  "POST /api/agent/flows/:id/revert",
+  "DELETE /api/agent/flows/:id",
+]);
+
 /** The flows of the account (docs/flujos.md, F1): the list with their runs, and one as nodes and arrows. */
 async function serveFlows(
   host: AgentHost,
@@ -885,6 +931,9 @@ async function serveFlows(
   };
   if (route !== "GET /api/agent/flows" && route !== "GET /api/agent/flows/:id" && !mine)
     return send(res, 403, { error: "personal-device-only" });
+  // A converted flow is an automation now (F16 S1, AU-228): what the old editor would write to it would never run.
+  if (FLOW_WRITES.has(route) && store.journal.flowConversion(id)?.state === "converted")
+    return send(res, 409, { error: "flow-converted" });
   switch (route) {
     case "GET /api/agent/flows":
       host.boniFlowsCurrent(who.account);
@@ -998,6 +1047,34 @@ async function serveFlows(
       const names = runnableNames(f.trigger);
       if (!names) return send(res, 409, { error: "not-manual" });
       const b = (await bodyOf(req)) as { inputs?: unknown; conversation?: unknown; live?: unknown };
+      // A converted flow (AU-225, AU-228): only its automation runs, its published version as «Ejecutar» starts it,
+      // what he typed as the trigger's fields. The answer says the run; the flow of before is not run.
+      if (store.journal.flowConversion(id)?.state === "converted") {
+        const typed = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
+          string,
+          unknown
+        >;
+        const fields: Record<string, Cell> = {};
+        for (const n of names) {
+          const v = typed[n];
+          if (v !== undefined && (typeof v !== "string" || v.length > 2000))
+            return send(res, 400, { error: "bad-request" });
+          if (typeof v === "string") fields[n] = v;
+        }
+        const r = await startRun(
+          store,
+          id,
+          { trigger: "trigger", fields },
+          {
+            device: who.device,
+            now: Date.now(),
+            trust: who.trust,
+            zone: host.tz,
+          },
+        );
+        if ("error" in r || "refused" in r) return send(res, 409, r);
+        return send(res, 200, { automation: { id, run: r.run.id, state: r.run.state } });
+      }
       const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
         string,
         unknown
@@ -1778,6 +1855,8 @@ export function switchFlow(
   const store = host.store(account);
   const latest = store.journal.flow(id);
   if (!latest) return { error: "not-found" };
+  // Converted (AU-228): the automation's switch is the one that counts.
+  if (store.journal.flowConversion(id)?.state === "converted") return { error: "converted" };
   if (latest.enabled === on) return { error: "already" };
   if (on) {
     const check = checkFlow(store, host.tools, latest, editorOf(host, account));
@@ -1790,6 +1869,8 @@ export function switchFlow(
 /** A flow to the trash («Borrar» in «Flujos», and `flows.delete`): Boni's own are turned off, never deleted. */
 export function trashFlow(store: UserStore, id: string): { error: string } | null {
   if (!store.journal.flow(id)) return { error: "not-found" };
+  // Converted (AU-228): the automation is what runs; its own «Borrar» is the automation's.
+  if (store.journal.flowConversion(id)?.state === "converted") return { error: "converted" };
   if (store.journal.flowVersions(id).some((v) => v.by === "preset")) return { error: "preset" };
   store.journal.setFlowDeleted(id, true);
   return null;

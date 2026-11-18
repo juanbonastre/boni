@@ -52,6 +52,7 @@ import {
 import type { AutomationVersionInfo, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
+import { boniContextFor } from "./boni.ts";
 import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { pausedDoc } from "./learning.ts";
@@ -89,6 +90,11 @@ export type Refusal =
   | { refused: "unpublished" }
   /** Off (AU-194): no run starts for real. */
   | { refused: "off" }
+  /**
+   * A converted flow sent back to the old engine (decision 21, «Volver al flujo de antes»): the flow runs, so its
+   * automation is neither published nor turned on until «Convertir otra vez» (AU-228: one id, one engine).
+   */
+  | { refused: "reverted" }
   /** The run did not start: the trigger, or a field of it, is not the version's (`CannotRun`). */
   | { refused: "invalid"; problems: Problem[] };
 
@@ -104,7 +110,7 @@ function schemaKeys(store: UserStore) {
 }
 
 /** What validating a document for publishing reads: today's collections and names, and the names a version kept. */
-function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
+export function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
   const cols = storeCollections(store, {
     actor: "user",
     device: null,
@@ -122,6 +128,8 @@ function contextOf(store: UserStore, id: string, kept: KeptNames): CodeContext {
     // «Preguntar», «Avisar» and «Responder» are step types: the server asks and tells through its port (AU-203,
     // waits.ts `peoplePort`), with or without models.
     people: true,
+    // Boni's steps validate where a run would reach Boni's code (boni.ts).
+    ...boniContextFor(store, id),
   };
 }
 
@@ -263,6 +271,7 @@ export function publish(
   hand: Hand & { trust: Trust },
 ): { version: number; enabled: boolean } | Refusal | ServiceError {
   if (hand.trust !== "personal") return { refused: "not-personal" };
+  if (store.journal.flowConversion(id)?.state === "reverted") return { refused: "reverted" };
   if (!request || typeof request !== "object") return BAD;
   const subject = subjectOf(store, id, request.version);
   if (isError(subject)) return subject;
@@ -348,6 +357,8 @@ export function setEnabled(
   if (!row || row.deleted) return NOT_FOUND;
   if (typeof enabled !== "boolean") return BAD;
   if (row.published === null) return { refused: "unpublished" };
+  if (enabled && store.journal.flowConversion(id)?.state === "reverted")
+    return { refused: "reverted" };
   store.journal.setAutomationEnabled(id, enabled, hand.now);
   // Turned off, what waited for an answer is cancelled (AU-203): turning it on again starts nothing.
   if (!enabled) cancelWaits(store, id, hand.now);
