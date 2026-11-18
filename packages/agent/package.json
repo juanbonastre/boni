@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.135.0",
+    "@boni/automations": "workspace:*",
     "@boni/entities": "workspace:*",
     "@boni/store": "workspace:*",
     "@boni/views": "workspace:*"

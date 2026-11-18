@@ -62,6 +62,22 @@ export {
   updateConversation,
 } from "./conversations.ts";
 export {
+  CHANGES,
+  type Change,
+  type Conversion,
+  type ConvertInput,
+  FN_JS,
+  ITEMS_FIELD,
+  LANGUAGE,
+  planToAutomation,
+  TRANSLATION,
+  TRIGGER_NAMES,
+  UNTRANSLATED_REASONS,
+  type Untranslated,
+  type UntranslatedReason,
+  WHEN_FIELD,
+} from "./convert.ts";
+export {
   checkAnswers,
   type DecisionAnswers,
   type DecisionQuestion,

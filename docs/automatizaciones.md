@@ -2268,7 +2268,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   con un máximo a la vista, y la reanuda donde estaba aunque el servidor se haya reiniciado. «Por tandas» reparte
   las filas que le llegan en grupos de un tamaño, y los pasos que cuelgan de él corren una vez por grupo, uno
   detrás de otro (AU-07).
-- **AU-220** (F16, pendiente) · Los disparadores de Boni son pasos del catálogo, y los inicia el mismo camino que a
+- **AU-220** (F16, en parte) · Los disparadores de Boni son pasos del catálogo, y los inicia el mismo camino que a
   los demás. «Llega un correo» se puede poner en cualquier automatización: da una fila, el correo como lo guarda la
   colección de correos, marcada entera como de fuera, y corre una vez por correo nuevo, en el orden en que llegan.
   En «Leer correo» esa fila lleva además lo que Boni prepara hoy para sus piezas (lo que el disparador de antes
@@ -2287,6 +2287,11 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   de correo (11.000 ejecuciones de «Leer correo»), iniciar una ejecución, listarlas y recortarlas va dentro de su
   tiempo (A-15, AU-103). La prueba: `packages/automations/src/boni-steps.test.ts` y
   `apps/server/src/automations/boni.test.ts`.
+  Hecho en E1: los disparadores de Boni y «Mensaje de chat» son pasos (`BONI_TRIGGERS`): «Llega un correo» da una fila
+  marcada como de fuera y lo usa cualquier automatización; los otros tres validan solo en la suya
+  (`boni-steps.test.ts`); y el traductor da a cada disparador de antes el suyo, con «08:00» cuando el programado no
+  decía hora, como el programador de antes (`plan-to-automation.test.ts`). Falta (S1): que los inicie el camino
+  publicado y no el programador de antes, y los tiempos con un año de correo.
 
 ### 5.10 El catálogo de pasos
 
@@ -2471,7 +2476,7 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   tarjeta según `mayAnswer` y las palabras de una tarjeta cancelada.
 - **AU-126** (F14a, hecho) · «Solo si», «Para cada» y «Junto con» dejan de ser campos de todos los pasos: son
   «Si» o «Filtrar», el trabajo por fila del motor y «Combinar».
-- **AU-127** (F16, pendiente) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
+- **AU-127** (F16, en parte) · Las piezas de Boni son pasos de la categoría «Boni»: se ven, se conectan y se
   configuran con lo que hoy dejan cambiar. Por dentro siguen siendo código de Boni (decisión 3a de la tarea 103).
   En la F16: cada paso de una automatización de Boni es un tipo de la categoría «Boni», con el nombre que hoy tiene
   en su lienzo: uno por pieza (`PIECES`, `apps/server/src/pieces.ts`), y sus lectores y sus «Crear» también, para
@@ -2508,6 +2513,12 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   su paso (los de «Página», F17) el despliegue los migra (AU-08). La prueba:
   `packages/automations/src/boni-steps.test.ts`, `apps/server/src/automations/boni.test.ts` y
   `e2e-boni-desktop/automations-before.spec.ts`.
+  Hecho en E1: la categoría «Boni» del catálogo (`packages/automations/src/boni.ts`): las 16 piezas, cada una con solo
+  lo que deja cambiar, más lo que le pasaba su llamada de antes (`args`, datos para su código, nunca un destino) y su
+  porqué; «Acción de Boni» y «Lector de Boni»; y el puerto `RunDeps.boni`: sin él ningún paso de Boni valida, ni una
+  pieza fuera de su automatización; ninguno tiene celdas ni «Sí» (`boni-steps.test.ts`). Falta (S1): el puerto del
+  servidor, que corre el código de hoy con el origen de su flujo, y «Leer correo» convertida leyendo un correo
+  inventado (`boni.test.ts`).
 - **AU-221** (F16, pendiente) · Las automatizaciones de Boni son las cuatro que hoy son flujos («Traer correo», «Leer
   correo», «Revisar la guía» y «Aviso del presupuesto») y una nueva, «Revisar los agentes» (AU-211). Están en la lista
   con «De: Boni», se abren en el lienzo, se cambian, se prueban y
@@ -2624,7 +2635,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   borrador, marcando cada paso nuevo, cambiado o quitado, para aceptarlo o no.
 - **AU-142** (F18, pendiente) · El asistente puede ejecutar las automatizaciones que lo permiten (AU-111), con
   confirmación (P8).
-- **AU-143** (F16, pendiente) · En un turno de la conversación el modelo sigue escribiendo un plan. El plan se
+- **AU-143** (F16, en parte) · En un turno de la conversación el modelo sigue escribiendo un plan. El plan se
   traduce a pasos de este mismo catálogo y lo corre este motor, así que «Guardar como automatización» lo abre en el
   lienzo tal cual (D-41).
   En la F16: un solo traductor, `planToAutomation` (`packages/agent`), con la tabla de AU-223, y tres usos: la
@@ -2637,6 +2648,10 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   «Ejecuciones», ni la conversación una automatización (decisión 19). La prueba:
   `packages/agent/test/plan-to-automation.test.ts` y
   `packages/agent/test/automation-before.test.ts`.
+  Hecho en E1: el plan de un turno, validado por `validatePlan` como hoy, lo traduce la misma función (`from:
+  "turn"`): «Disparado por el usuario» sin campos, lo que citó de Juan como su valor, cada escritura en «Preguntar» y
+  sin «Sus límites son los de una automatización» (`plan-to-automation.test.ts`). Falta: «Guardar como
+  automatización», que lo guarda como borrador (S1), y el turno sobre el motor nuevo con sus topes y su registro.
 - **AU-144** (F16, pendiente) · MCP: `automations_describe`, `automations_propose`, `automations_test` y
   `automations_runs`. Los `flows_*` siguen una versión como alias.
   En la F16: `automations_describe` da el catálogo de pasos, las colecciones por su clave, los disparadores y sus
@@ -2695,7 +2710,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   retrasaría lo que quiere usar. La prueba: `apps/server/src/automations/convert.test.ts`.
   Desde la tarea 154 (§5.16): qué «Modelo» lleva cada paso convertido lo dice AU-245 (ninguno, salvo
   la «Revisora» de una cuenta cuyo «Revisor» no es su «Lector»).
-- **AU-223** (F16, pendiente) · La tabla de traducción: cada cosa que el lenguaje de planes sabe decir tiene su fila,
+- **AU-223** (F16, en parte) · La tabla de traducción: cada cosa que el lenguaje de planes sabe decir tiene su fila,
   con el paso al que va o, si no lo tiene, dicho con su nombre. Una prueba recorre el lenguaje (las cuatro
   operaciones, `READERS`, los controles de `ask`, `REPLY_COMPONENTS`, `FNS`, los disparadores y las acciones de la
   lista) y falla si a algo le falta su fila: una pieza nueva del lenguaje no entra sin decir a qué se convierte.
@@ -2740,7 +2755,25 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   cabía, cabe. Sin equivalente en una automatización publicada, y dicho así al convertir: nada de lo que hoy puede
   guardar un flujo (lo comprueba la prueba con `checkFlow`); el «Ensayo» y «Ejecución» solo existen en un turno. La
   prueba: `packages/agent/test/plan-to-automation.test.ts`.
-- **AU-224** (F16, pendiente) · Convertida, hace lo mismo. Con las mismas entradas y las mismas respuestas de los
+  Hecho en E1: `planToAutomation` y su tabla `TRANSLATION` (`packages/agent/src/convert.ts`), pura: el mismo plan da
+  el mismo documento. La prueba recorre operaciones, formas, átomos, `READERS`, los controles de `ask`,
+  `REPLY_COMPONENTS`, `FNS`, los disparadores, cada acción de `coreTools` y cada pieza: todas tienen su fila, y un
+  paso de cada una da su paso o dice por qué no lo tiene (`UNTRANSLATED_REASONS`, una lista cerrada); un argumento sin
+  sitio se dice, no se pierde. Cada función es una expresión que da lo mismo que la de antes sobre los mismos valores,
+  y falla donde fallaba. La forma: «Juntar en una» delante de lo que corría una vez si lo anterior puede dar más de
+  una fila; «Solo si», un «Editar» que calcula la condición y un «Si»; «Para cada», siempre con «Separar una lista»
+  delante (también sobre filas: cada vuelta lleva la etiqueta de toda la lista, más estricta, nunca menos); «Junto
+  con», «Combinar» por posición. Sin paso todavía, y dicho así al convertir: `entities.get`, `entities.update` y
+  `entities.delete` por id (el paso nuevo necesita la colección y el plan solo da la fila, `noCollection`; menos el
+  `entities.get` del correo que la inició, que es la fila del disparador); el `case` que elige colección (`chooses`,
+  «Elegir rama»); `ask` de número, fecha y archivo y `reply` de número, lista, tabla y gráfica (`laterPhase`, AU-222);
+  el «Agente» del chat (AU-137); el porqué en «Colección» y «Avisar»; `question`, `ask` y `given` de `classify`; y
+  `fill` fuera de «Leer correo», cuyos campos no son fijos; un «Cada cuántas decisiones» fuera de 10–500. Un paso con
+  una forma que no conoce se dice y no rompe la conversión. Falta (S1): esos pasos, con `entities.get`,
+  `entities.update` y `entities.delete` decididos sobre los flujos de verdad; la comprobación con `checkFlow` de que
+  nada de lo que hoy puede guardar un flujo queda sin paso; y la de que lo que cabía en los topes del lenguaje (50
+  vueltas, 40 pasos, 3 niveles) cabe convertido, donde un paso puede dar hasta siete.
+- **AU-224** (F16, en parte) · Convertida, hace lo mismo. Con las mismas entradas y las mismas respuestas de los
   modelos, la automatización convertida hace las mismas llamadas a lectores con el mismo valor de entrada, las
   mismas lecturas, y pide a la política las mismas escrituras, en el mismo orden y con las mismas etiquetas de lo
   que viene de fuera, que el flujo de antes. Lo comprueba una prueba diferencial: el ensayo en seco del motor de
@@ -2753,6 +2786,12 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   (AU-17). Cuando el motor de antes se va (AU-152), la prueba se queda con lo que el motor de antes hacía, grabado en
   ficheros, para que el traductor del turno no cambie sin verse. La prueba:
   `packages/agent/test/plan-to-automation.test.ts`.
+  Hecho en E1: «Lo que cambia» (`CHANGES`): las cuatro frases, calculadas por conversión: «asksNow» si un flujo que
+  iniciaba él escribe, «textsCut» si lee con un modelo, «undoWhole» si escribe, «automationLimits» si es un flujo (un
+  turno se queda sin ella). Y un flujo convertido corre en el motor nuevo con colecciones inventadas: cada lectura una
+  vez, con tres filas y con ninguna, y lo que escribe propuesto (`plan-to-automation.test.ts`). Falta (S1): la prueba
+  diferencial contra el ensayo en seco del motor de antes, con respuestas de modelo guionizadas, sobre la tabla de
+  AU-223, las cuatro de Boni y los flujos inventados.
 - **AU-225** (F16, pendiente) · Cuándo se convierte, qué ve Juan, cómo lo comprueba y cómo vuelve. Una vez: al abrir
   su almacén tras el despliegue que la trae, por código, sin modelo y sin que él haga nada. Para Juan es un solo
   momento: decidió (2026-11-17) que nada de estas fases se despliega hasta acabar la F16, así que ese despliegue es
@@ -3765,7 +3804,7 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   Falta: el límite en «Ajustes» cuando un paso llama a un modelo (P1). Hecho en P1 de la F15: «Ajustes» enseña
   «Llamadas a modelos» cuando un paso llama a un modelo, un «Agente» o un lector, con su valor por defecto y su tope
   (`shownLimits`, `publishing.test.ts`). Falta: verlo junto a «Se ejecuta» (AU-55, P2).
-- **AU-230** (F16, pendiente) · La F16 no mueve el suelo: cambia quién interpreta, no quién decide. Cada acto de
+- **AU-230** (F16, en parte) · La F16 no mueve el suelo: cambia quién interpreta, no quién decide. Cada acto de
   una automatización convertida, de una pieza de Boni y de un turno sigue pasando por `decide`, y recibe lo mismo
   que recibía.
 
@@ -3788,6 +3827,12 @@ depender de revisar el JavaScript: depende de dónde corre, de qué puede tocar 
   antes convertido» de AU-188 tiene aquí su caso de prueba, y `automations.create`, `automations.edit` y
   `automations_propose`, el suyo. La prueba: `packages/agent/test/automation-before.test.ts` y
   `apps/server/src/automations/convert.test.ts`.
+  Hecho en E1: el traductor escribe cada escritura con «Preguntar» y pasa el documento por `lowerYes`, y las pruebas
+  cubren cada camino por el que una celda de lo traducido podría decir «Sí»: un `permission` entre los argumentos del
+  plan (se dice como sin sitio, nunca es un parámetro), los argumentos de una pieza o de «Acción de Boni» (datos para
+  el código de Boni, sin celda), un turno, un flujo programado, cada versión; y su ejecución propone. Lo que contesta
+  el código de Boni llega a la escritura marcado como de fuera (`automation-before.test.ts`). Falta (S1): el puerto
+  del servidor, que decide las piezas como el fondo de hoy, y la prueba diferencial de `decide` en los dos motores.
 - **AU-183** (F14c, hecho) · El código se analiza sin ejecutarlo, y lo que dice el análisis se cumple. Boni lee
   el código con el mismo lector que la validación y el editor (`readCode`, `javascript.ts`) y sabe cada colección que
   puede cambiar y cómo (crear, modificar, eliminar), esté donde esté la llamada: en un `if`, en un bucle, en una

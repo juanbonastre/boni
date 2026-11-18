@@ -26,6 +26,16 @@ import {
   RETRY_PARAM,
   type ReaderType,
 } from "./ai.ts";
+import {
+  BONI_ACTION_TYPE,
+  BONI_CATEGORY,
+  BONI_LIMITS,
+  BONI_PARAMS,
+  BONI_PIECES,
+  BONI_READER_TYPE,
+  BONI_READERS,
+  BONI_TRIGGERS,
+} from "./boni.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
 import {
@@ -148,7 +158,8 @@ export interface ActionSpec {
 
 export interface StepTypeSpec {
   type: string;
-  category: Category | typeof AI_CATEGORY | typeof PEOPLE_CATEGORY;
+  /** A trigger of the category «Boni» is still `trigger`: what starts a run is said by its category (`isTrigger`). */
+  category: Category | typeof AI_CATEGORY | typeof PEOPLE_CATEGORY | typeof BONI_CATEGORY;
   /** Its inputs: none for a trigger, `MAIN` for the rest, two with names for «Combinar» (AU-124). */
   inputs: readonly string[];
   /** Parameters every action shares, painted first («Colección»: the collection, AU-120). */
@@ -1304,17 +1315,178 @@ export const peopleStep = (type: string): StepTypeSpec | undefined =>
 export const readerStep = (type: string): StepTypeSpec | undefined =>
   isReaderType(type) ? READER_STEPS[type] : undefined;
 
+// ---------------------------------------------------------------- «Boni» (AU-127, AU-137, AU-220, F16)
+
+/** «Se ejecuta» of a Boni step that is not a trigger, behind «Añadir opción»: it gives the step its mode (`actionOf`). */
+const BONI_MODE: ParamSpec = {
+  key: BONI_PARAMS.mode,
+  control: "choice",
+  options: ["all", "perRow"],
+  place: "option",
+  shape: true,
+  default: "all",
+};
+/** A text fixed in the step (AU-26). */
+const fixedText = (key: string, required = false): ParamSpec => ({
+  key,
+  control: "value",
+  of: "text",
+  place: "shown",
+  shape: true,
+  ...(required ? { required: true as const } : {}),
+});
+const fixedNumber = (key: string, born: number): ParamSpec => ({
+  key,
+  control: "value",
+  of: "number",
+  place: "shown",
+  shape: true,
+  default: born,
+});
+/** «Acción de Boni»'s and «Lector de Boni»'s arguments: each a key fixed in the step and a value, fixed or not. */
+const BONI_ARGS: ParamSpec = {
+  key: BONI_PARAMS.args,
+  control: "list",
+  place: "shown",
+  shape: true,
+  columns: [
+    fixedText("key", true),
+    { key: "value", control: "value", of: "any", place: "shown", required: true },
+  ],
+};
+/** Why it is done, as the plan said it: plain text of whoever wrote it, never the «Nota» (AU-223). */
+const BONI_WHY: ParamSpec = { key: BONI_PARAMS.why, control: "value", of: "text", place: "option" };
+/** What each piece lets change (AU-127), by key: each fixed in the step, so the map and the policy know it. */
+const PIECE_PARAMS: Readonly<Record<string, ParamSpec>> = {
+  model: fixedText(BONI_PARAMS.model),
+  collections: {
+    key: BONI_PARAMS.collections,
+    control: "list",
+    place: "shown",
+    required: true,
+    shape: true,
+    min: 1,
+    columns: [
+      {
+        key: "collection",
+        control: "picker",
+        of: "collection",
+        place: "shown",
+        required: true,
+        shape: true,
+      },
+    ],
+  },
+  collection: {
+    key: BONI_PARAMS.collection,
+    control: "picker",
+    of: "collection",
+    place: "shown",
+    required: true,
+    shape: true,
+  },
+  days: fixedNumber(BONI_PARAMS.days, BONI_LIMITS.days.born),
+  alone: { key: BONI_PARAMS.alone, control: "toggle", place: "shown", shape: true, default: false },
+  mails: fixedNumber(BONI_PARAMS.mails, BONI_LIMITS.mails.born),
+};
+/**
+ * A Boni step that is not a trigger: no write effect, so no «Permiso» and no cell (what Boni's code changes passes
+ * `decide` behind the port, AU-127); one output with what Boni's code answered (`BONI_VALUE`).
+ */
+const boniStep = (type: string, params: readonly ParamSpec[]): StepTypeSpec => ({
+  type,
+  category: BONI_CATEGORY,
+  inputs: [MAIN],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "all",
+      pairs: false,
+      outputs: [MAIN],
+      params: [...params, BONI_MODE],
+    },
+  ],
+});
+const boniTrigger = (type: string, params: readonly ParamSpec[]): StepTypeSpec => ({
+  type,
+  category: "trigger",
+  inputs: [],
+  params: [],
+  actions: [
+    {
+      key: RUN,
+      effect: "none",
+      destroys: false,
+      mode: "all",
+      pairs: false,
+      outputs: [MAIN],
+      params,
+    },
+  ],
+});
+const BONI_STEPS: readonly StepTypeSpec[] = [
+  boniTrigger(BONI_TRIGGERS.mail, []),
+  boniTrigger(BONI_TRIGGERS.mailbox, []),
+  boniTrigger(BONI_TRIGGERS.decisions, [fixedNumber(BONI_PARAMS.every, BONI_LIMITS.every.born)]),
+  boniTrigger(BONI_TRIGGERS.spending, []),
+  // «Mensaje de chat» (AU-137): the page, its welcome and up to six buttons, each a label and the text it writes.
+  boniTrigger(BONI_TRIGGERS.chat, [
+    fixedText(BONI_PARAMS.page, true),
+    fixedText(BONI_PARAMS.welcome),
+    {
+      key: BONI_PARAMS.buttons,
+      control: "list",
+      place: "shown",
+      shape: true,
+      max: BONI_LIMITS.buttons,
+      columns: [fixedText("label", true), fixedText("text", true)],
+    },
+  ]),
+  boniStep(BONI_ACTION_TYPE, [fixedText(BONI_PARAMS.action, true), BONI_ARGS, BONI_WHY]),
+  boniStep(BONI_READER_TYPE, [
+    {
+      key: BONI_PARAMS.reader,
+      control: "choice",
+      options: BONI_READERS,
+      place: "shown",
+      required: true,
+      shape: true,
+    },
+    { key: BONI_PARAMS.input, control: "value", of: "any", place: "shown", required: true },
+    BONI_ARGS,
+  ]),
+  // A piece also takes what its call of before passed (data for its code, never a destination: AU-230) and its why.
+  ...BONI_PIECES.map((p) =>
+    boniStep(p.type, [...p.params.map((k) => PIECE_PARAMS[k] as ParamSpec), BONI_ARGS, BONI_WHY]),
+  ),
+];
+const BONI_BY_TYPE = new Map(BONI_STEPS.map((s) => [s.type, s]));
+const BONI_PER_ROW = new Map(
+  BONI_STEPS.filter((s) => s.category === BONI_CATEGORY).map((s) => [
+    s.type,
+    { ...(s.actions[0] as ActionSpec), mode: "perRow" as const, pairs: true },
+  ]),
+);
+/**
+ * The spec of a Boni step's type, or undefined: reachable by its type, only with `ValidationContext.boni` and, for a
+ * piece or an owned trigger, only in its automation (validate.ts).
+ */
+export const boniSpec = (type: string): StepTypeSpec | undefined => BONI_BY_TYPE.get(type);
+
 /**
  * A type the engine can run by its key: the catalogue's, «Código» (the editor's panel adds it, adding.ts), a reader or
- * the «Agente» (F15: validation lets them in only with `ValidationContext.ai`), or a «Personas» step (only with
- * `ValidationContext.people`).
+ * the «Agente» (F15: validation lets them in only with `ValidationContext.ai`), a «Personas» step (only with
+ * `ValidationContext.people`), or a Boni one (only with `ValidationContext.boni`).
  */
 export const specOf = (type: string): StepTypeSpec | undefined =>
   type === CODE_TYPE
     ? CODE_STEP
     : type === AGENT_TYPE
       ? AGENT_STEP
-      : (stepType(type) ?? readerStep(type) ?? peopleStep(type));
+      : (stepType(type) ?? readerStep(type) ?? peopleStep(type) ?? boniSpec(type));
 
 /**
  * The action a step has chosen: the only one of its type, or the one its `ACTION` parameter names. Undefined when
@@ -1327,6 +1499,8 @@ export function actionOf(step: Step): ActionSpec | undefined {
     if (step.type === ASK_TYPE) return ASK_PER_ROW;
     if (step.type === NOTIFY_TYPE) return NOTIFY_PER_ROW;
   }
+  if (step.params[BONI_PARAMS.mode] === "perRow" && BONI_PER_ROW.has(step.type))
+    return BONI_PER_ROW.get(step.type);
   const spec = specOf(step.type);
   if (!spec) return undefined;
   if (spec.actions.length === 1) return spec.actions[0];
@@ -1405,5 +1579,5 @@ export const OUTPUT_BRANCHES: ReadonlySet<string> = new Set(["if", "switch"]);
 /** The names of a step's inputs: its type's. Empty for a trigger or an unknown type. */
 export const inputsOf = (step: Step): readonly string[] => specOf(step.type)?.inputs ?? [];
 
-/** Whether a step starts an automation (AU-110): a step of the category `trigger`. */
-export const isTrigger = (step: Step): boolean => stepType(step.type)?.category === "trigger";
+/** Whether a step starts an automation (AU-110): a step of the category `trigger`, Boni's (AU-220) among them. */
+export const isTrigger = (step: Step): boolean => specOf(step.type)?.category === "trigger";
