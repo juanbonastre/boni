@@ -621,21 +621,35 @@ export interface LearningNotice extends Omit<CellKey, "print"> {
  * changed (his «Sí», from a personal device), lifts the pause or says «No», it is not listed. The newest first.
  * One version read per automation that has one, whatever its cells.
  */
+type Kept = { n: number; a: Automation; print: (step: string) => string };
+/**
+ * A published version never changes: its document read and its steps' prints are kept per store, by automation and
+ * version, for the Bandeja's list, which asks again every time it looks (A-15). Read only, never handed out.
+ */
+const keptVersions = new WeakMap<UserStore, Map<string, Kept>>();
+
 export function learningNotices(store: UserStore): LearningNotice[] {
-  type Pub = { a: Automation; print: (step: string) => string } | null;
-  const pubs = new Map<string, Pub>();
-  const pubOf = (id: string): Pub => {
-    if (!pubs.has(id)) {
-      let p: Pub = null;
-      try {
-        const pub = publishedOf(store, id);
-        if (pub) p = { a: pub.automation, print: printer(pub.automation) };
-      } catch {
-        // a version that does not read is not listed
-      }
-      pubs.set(id, p);
+  let kept = keptVersions.get(store);
+  if (!kept) {
+    kept = new Map();
+    keptVersions.set(store, kept);
+  }
+  const versions = kept;
+  const pubOf = (id: string): Kept | null => {
+    const row = store.journal.automation(id);
+    if (!row || row.deleted || row.published === null) return null;
+    const was = versions.get(id);
+    if (was?.n === row.published) return was;
+    try {
+      const pub = publishedOf(store, id);
+      if (!pub) return null;
+      const now = { n: pub.n, a: pub.automation, print: printer(pub.automation) };
+      versions.set(id, now);
+      return now;
+    } catch {
+      // a version that does not read is not listed
+      return null;
     }
-    return pubs.get(id) ?? null;
   };
   // The collections' names once for the list, not once per notice.
   const types = Object.values(store.schema().types);

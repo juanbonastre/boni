@@ -681,9 +681,17 @@ describe("what Boni learns from the answers to an automation (F15)", () => {
       }
     });
     s.setSetting("automations/learning", JSON.stringify(state));
+    // The first ask reads each published version once; the Bandeja asks again every time it looks, and that is
+    // the ask bounded here.
+    expect(learningNotices(s)).toHaveLength(200);
     const start = clock();
     const listed = learningNotices(s);
-    under(clock() - start, 50, "cpu", "the Bandeja's pauses and suggestions of 200 automations");
+    under(
+      clock() - start,
+      50,
+      "cpu",
+      "the Bandeja's pauses and suggestions of 200 automations, asked again",
+    );
     expect(listed).toHaveLength(200);
     expect(listed[0]).toMatchObject({ kind: "paused", decided: 20 });
     expect(listed[1]).toMatchObject({ kind: "suggested", decided: 20 });

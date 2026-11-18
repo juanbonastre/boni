@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 
 /**
  * Where an automation lives (docs/automatizaciones.md §7; phase F14b): in the user's store (D-02), next to the
@@ -312,6 +312,16 @@ const STEPS_OF = "SELECT json_extract(value, '$.id') FROM json_each(?, '$.steps'
 
 /** The journal's part for automations, over the user's database (one savepoint per change of several rows). */
 export function automationsJournal(db: DatabaseSync): AutomationsJournal {
+  // The reads asked once per automation of a list (the Bandeja's, AU-209), prepared once (A-15).
+  const kept = new Map<string, StatementSync>();
+  const once = (name: string, sql: string): StatementSync => {
+    let q = kept.get(name);
+    if (!q) {
+      q = db.prepare(sql);
+      kept.set(name, q);
+    }
+    return q;
+  };
   let n = 0;
   const atomic = <T>(fn: () => T): T => {
     const name = `automations_${++n}`;
@@ -362,7 +372,7 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
         updated: Number(r.updated),
       })),
     automation: (id) => {
-      const r = db.prepare("SELECT * FROM automations WHERE id = ?").get(id) as
+      const r = once("automation", "SELECT * FROM automations WHERE id = ?").get(id) as
         | Record<string, unknown>
         | undefined;
       return r ? row(r) : null;
@@ -400,9 +410,10 @@ export function automationsJournal(db: DatabaseSync): AutomationsJournal {
           .all(id) as Record<string, unknown>[]
       ).map(info),
     automationVersion: (id, n) => {
-      const r = db.prepare("SELECT * FROM automation_versions WHERE id = ? AND n = ?").get(id, n) as
-        | Record<string, unknown>
-        | undefined;
+      const r = once("version", "SELECT * FROM automation_versions WHERE id = ? AND n = ?").get(
+        id,
+        n,
+      ) as Record<string, unknown> | undefined;
       return r ? { ...info(r), doc: r.doc as string, names: r.names as string } : null;
     },
     publishAutomation: (v, expect, schedule = null) =>
