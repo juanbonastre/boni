@@ -161,9 +161,27 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   // Formats in the quick view (task 2f): «tema» selected, the menu over it, Ctrl+B paints it bold.
   const line = peek.locator(".row-doc .blk-input").first();
   await expect(line).toHaveText("Preparar el tema 3.");
+  // Where the caret is in the line, as a person sees it: its offset in the line's text, -1 when it is not there or not
+  // a caret.
+  const caret = () =>
+    line.evaluate((el) => {
+      const s = window.getSelection();
+      if (!s?.isCollapsed || !s.focusNode || !el.contains(s.focusNode)) return -1;
+      const r = document.createRange();
+      r.setStart(el, 0);
+      r.setEnd(s.focusNode, s.focusOffset);
+      return r.toString().length;
+    });
+  // Each key read on the screen before the next, as a person moves the caret (task 151: on main's run the caret
+  // stayed at the line's end or one place short and nothing was selected; the test pressed on without looking).
   await line.click();
+  await expect.poll(caret).toBeGreaterThanOrEqual(0);
   await peek.keyboard.press("Home");
-  for (let i = 0; i < 12; i++) await peek.keyboard.press("ArrowRight");
+  await expect.poll(caret).toBe(0);
+  for (let i = 1; i <= 12; i++) {
+    await peek.keyboard.press("ArrowRight");
+    await expect.poll(caret).toBe(i);
+  }
   // One Shift+→ at a time, each read before the next, as a person selects: at the machine's pace one was lost on
   // CI's runner and «tem» stayed selected (PR #417, and again on PR #493's run, task 143).
   for (const sel of ["t", "te", "tem", "tema"]) {
@@ -205,6 +223,13 @@ test("a double click: the note in the calendar's own window, logged in once; a c
 });
 
 test("a proposal drawn in the calendar: one click shows its page in the peek; accepted, the peek goes", async () => {
+  // Its own address and login when the tests before did not leave them (task 151: a failure there restarts the app with
+  // a new server and data, and this test then found no peek at all).
+  const address = await main.evaluate(
+    (url) => (window as unknown as Bridges).boniDesktop.setPrefs({ boniUrl: `${url}/boni/` }),
+    BONI,
+  );
+  expect(address).toMatchObject({ ok: true });
   const login = await fetch(`${BONI}/api/login`, {
     method: "POST",
     body: JSON.stringify({ user: "ejemplo", password: PASSWORD, device: "pruebas" }),
@@ -227,6 +252,12 @@ test("a proposal drawn in the calendar: one click shows its page in the peek; ac
   await main.evaluate((pid) => (window as unknown as Bridges).boniNotes.openProposal(pid), id);
   const peek = await peekPage();
   await expect.poll(peekVisible).toBe(true);
+  await expect(peek.locator(".peek-login, .pp-title").first()).toBeVisible();
+  if (await peek.locator(".peek-login").isVisible()) {
+    await peek.getByLabel("Usuario").fill("ejemplo");
+    await peek.getByLabel("Contraseña").fill(PASSWORD);
+    await peek.getByRole("button", { name: "Entrar" }).click();
+  }
   await expect(peek.locator(".peek-head")).toContainText("Propuesta");
   await expect(peek.locator(".pp-title")).toHaveText("Revisión inventada");
   await peek.screenshot({ path: join(SHOTS, "calendar-peek-proposal.png") });
