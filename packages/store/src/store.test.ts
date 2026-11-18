@@ -1326,13 +1326,19 @@ describe("the search index at Juan's volume (task 137, A-15)", () => {
   it("A-15 · saving a record costs the same in a store of 3,000 records as in one of 12,000: a write finds its entry in the index by its rowid, never by reading the whole index", () => {
     const small = filled(3000);
     const large = filled(12_000);
-    const single = [oneByOne(small.store, small.ids), oneByOne(large.store, large.ids)] as const;
-    const batched = [
-      inOneBatch(small.store, small.ids, "r1"),
-      inOneBatch(large.store, large.ids, "r1"),
+    // Each side is the best of five repetitions: a median under a millisecond is one sample, and one slow sample
+    // (a flush of the disk, another process) decided the comparison (task 155). The bounds are as they were.
+    const best = (measure: () => number) => Math.min(...[0, 1, 2, 3, 4].map(() => measure()));
+    const single = [
+      best(() => oneByOne(small.store, small.ids)),
+      best(() => oneByOne(large.store, large.ids)),
     ] as const;
-    timing("task 137 · a record saved alone (median), 3,000 records", single[0]);
-    timing("task 137 · a record saved alone (median), 12,000 records", single[1]);
+    const batched = [
+      best(() => inOneBatch(small.store, small.ids, "r1")),
+      best(() => inOneBatch(large.store, large.ids, "r1")),
+    ] as const;
+    timing("task 137 · a record saved alone (median, best of 5), 3,000 records", single[0]);
+    timing("task 137 · a record saved alone (median, best of 5), 12,000 records", single[1]);
     timing("task 137 · a row of a batch of 1,000, 3,000 records", batched[0]);
     timing("task 137 · a row of a batch of 1,000, 12,000 records", batched[1]);
     // Measured on the laptop with the queue held (task 137), before: alone 1.5 ms at 3,000 and 29.5 ms at 12,000,
