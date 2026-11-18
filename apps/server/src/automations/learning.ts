@@ -637,6 +637,9 @@ export function learningNotices(store: UserStore): LearningNotice[] {
     }
     return pubs.get(id) ?? null;
   };
+  // The collections' names once for the list, not once per notice.
+  const types = Object.values(store.schema().types);
+  const nameOf = (key: string) => types.find((t) => t.key === key)?.name ?? key;
   const out: LearningNotice[] = [];
   for (const [area, s] of Object.entries(stateOf(store))) {
     const kind = s.paused ? "paused" : s.suggested && !s.declined ? "suggested" : null;
@@ -654,7 +657,7 @@ export function learningNotices(store: UserStore): LearningNotice[] {
       action: s.action,
       name: pub.a.name,
       stepName: stepName(pub.a, s.step),
-      collectionName: collectionName(store, s.collection),
+      collectionName: nameOf(s.collection),
       why: s.paused?.why ?? null,
       decided: results.length,
       right: results.filter(Boolean).length,

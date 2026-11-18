@@ -152,7 +152,8 @@ export function didWords(
 
 /** Why it failed, in words (A-34), as the failure says it in the editor. */
 export function failureWords(t: T, lang: Lang, r: RunSummary): string | null {
-  const f = r.error?.failure;
+  // An AI step says which of its failures (AU-59), not its general `other`.
+  const f = r.error?.ai ?? r.error?.failure;
   if (!f || typeof f.code !== "string") return null;
   return said(t, "failure", f as never, localeOf(lang));
 }

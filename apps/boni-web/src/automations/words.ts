@@ -7,6 +7,7 @@
 import {
   ACTION,
   AI_CATEGORY,
+  AI_FAILURES,
   type Automation,
   actionOf,
   CATALOGUE,
@@ -510,7 +511,7 @@ export const REASONS: Readonly<
  */
 const WITH: Readonly<Record<"problem" | "failure", Readonly<Record<string, string>>>> = {
   problem: {},
-  failure: { "code.threw": "line", "code.limit": "got" },
+  failure: { "code.threw": "line", "code.limit": "got", "ai.private": "field" },
 };
 
 /**
@@ -522,7 +523,22 @@ const SOME: Readonly<
   Record<"problem" | "failure", Readonly<Record<string, { by: string; of: readonly string[] }>>>
 > = {
   problem: { "connection.notAllowed": { by: "why", of: ["private"] } },
-  failure: { "code.write.notAllowed": { by: "why", of: ["many", "field"] } },
+  failure: {
+    "code.write.notAllowed": { by: "why", of: ["many", "field"] },
+    // Why an AI step failed (AU-50, AU-59): a parameter he set, and a call the port did not answer.
+    "ai.params": { by: "why", of: ["options", "fields", "instructions"] },
+    "ai.refused": { by: "why", of: ["budget", "no-model", "no-key"] },
+  },
+};
+
+/**
+ * The problems said by the parameter they are about, for a few: an «Agente» or a reader with no «Instrucciones»
+ * (AU-50: «Escribe qué tiene que hacer», not «Falta este dato») and a «Modelo» that is not among its choices at
+ * publishing (AU-199: «Elige otro modelo», not «Este valor no vale aquí»). The key is `auto.problem.<code>.<param>`.
+ */
+const BY_PARAM: Readonly<Record<string, readonly string[]>> = {
+  "param.required": ["instructions"],
+  "param.value": ["model"],
 };
 
 /** Every key the words of JavaScript need: what `catalogueKeys` adds, so both languages must have them. */
@@ -552,6 +568,14 @@ function saidKeys(): string[] {
         keys.push(`${(kind === "problem" ? KEY.problem : KEY.failure)(code)}.${reason}`);
   // Why «Preguntar», «Avisar» or «Responder» failed (people.ts): one key each.
   for (const code of PEOPLE_FAILURES) keys.push(KEY.failure(code));
+  for (const [code, params] of Object.entries(BY_PARAM))
+    for (const p of params) keys.push(`${KEY.problem(code)}.${p}`);
+  // Why an AI step failed (ai.ts, `AI_FAILURES`): one key each, and the field a private value was in.
+  for (const code of AI_FAILURES) {
+    keys.push(KEY.failure(code));
+    const w = WITH.failure[code];
+    if (w) keys.push(`${KEY.failure(code)}.${w}`);
+  }
   for (const l of HARD_LIMITS) keys.push(KEY.limit(l));
   for (const a of WRITE_ACTIONS) keys.push(KEY.writeAction(a));
   return keys;
@@ -601,11 +625,13 @@ export function amountOf(limit: string, n: number, locale: string): string {
 export function said(
   t: T,
   kind: "problem" | "failure",
-  x: { code: string; detail?: Record<string, string | number> },
+  x: { code: string; param?: string; detail?: Record<string, string | number> },
   locale: string,
   names: SaidNames = {},
 ): string {
   const d = x.detail ?? {};
+  const own = kind === "problem" ? x.param?.split(".")[0] : undefined;
+  if (own && BY_PARAM[x.code]?.includes(own)) return t(`${KEY.problem(x.code)}.${own}`);
   const base = (kind === "problem" ? KEY.problem : KEY.failure)(x.code);
   const reason = REASONS[kind][x.code];
   const w = WITH[kind][x.code];

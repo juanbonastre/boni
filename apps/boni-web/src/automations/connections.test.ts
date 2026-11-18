@@ -500,6 +500,22 @@ describe("an «Agente»'s connections", () => {
     expect(learningCardOf({ ...wire, mayDecide: true })[0]?.mayDecide).toBe(true);
     expect(learningCardOf({ ...wire, kind: "yes" })).toEqual([]);
     expect(learningCardOf({ ...wire, action: "read" })).toEqual([]);
+    // A-15: what the Bandeja reads every time it looks, 200 cards (the most the app takes), and the words of 500
+    // cells' counts, within a frame.
+    const many = Array.from({ length: 200 }, (_, i) => ({
+      ...wire,
+      automation: `a_${i}`,
+      mayDecide: true,
+    }));
+    learnedWords(t, "ask", { mode: "ask", decided: 20, right: 0, paused: false });
+    const t0 = cpu();
+    const cards = many.flatMap(learningCardOf);
+    const said = Array.from({ length: 500 }, (_, i) =>
+      learnedWords(t, "ask", { mode: "ask", decided: 20 + i, right: i, paused: false }),
+    );
+    under(cpu() - t0, 16, "cpu", "200 cards of the Bandeja and 500 cells' counts");
+    expect(cards).toHaveLength(200);
+    expect(said[0]).toEqual(["0 de 20 aceptadas"]);
   });
   it("AU-54 · «Lo que hizo» in a run's record: the run's step brings the engine's `agent` and `ai`, painted as a test's, and the calls «Reintentar si el modelo falla» asked again are said beside the calls", () => {
     const step = agentStep([conn("notas", { create: { mode: "yes", limit: 20 } })]);

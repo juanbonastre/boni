@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  AI_FAILURES,
   type Automation,
   CODE_FAILURES,
   CODE_LIMITS,
@@ -554,6 +555,30 @@ describe("what JavaScript's problems and failures say", () => {
     ).toBe("El código falló en la línea 4: <b>x</b> is not defined");
     expect(said(es, "failure", { code: "code.threw", detail: { message: "nada" } }, "es-ES")).toBe(
       "El código falló: nada",
+    );
+  });
+
+  it("AU-50 · AU-199 · AU-59 · an AI step's failures and problems say which in both languages: «Escribe qué tiene que hacer», «Elige otro modelo», the budget or the key a call lacked, and never a key", () => {
+    const keys = catalogueKeys();
+    for (const code of AI_FAILURES) expect(keys, code).toContain(`auto.failure.${code}`);
+    for (const t of [es, en])
+      for (const code of AI_FAILURES)
+        expect(said(t, "failure", { code }, "es-ES")).not.toMatch(/auto\./);
+    const problem = (code: string, param: string) =>
+      said(es, "problem", { code, param, detail: {} }, "es-ES");
+    expect(problem("param.required", "instructions")).toBe("Escribe qué tiene que hacer");
+    expect(problem("param.required", "text")).toBe("Falta este dato");
+    expect(problem("param.value", "model")).toBe("Elige otro modelo");
+    expect(problem("param.value", "options.2")).toBe("Este valor no vale aquí");
+    const fail = (detail: Record<string, string>, code = "ai.refused") =>
+      said(es, "failure", { code, detail }, "es-ES", names);
+    expect(fail({ why: "budget" })).toBe("Presupuesto del mes agotado");
+    expect(fail({ why: "no-key" })).toBe("Falta la clave de la conexión");
+    // A refusal the screen has no words for is said as the call that got no answer, never by its key.
+    expect(fail({ why: "provider-said-no" })).toBe("Modelo sin respuesta");
+    expect(fail({ why: "instructions" }, "ai.params")).toBe("Escribe qué tiene que hacer");
+    expect(fail({ field: "f_importe", collection: "c_01kx3m9q2a7v" }, "ai.private")).toBe(
+      "Un dato privado iba a llegar al modelo: Importe",
     );
   });
 });

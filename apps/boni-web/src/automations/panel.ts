@@ -6,6 +6,7 @@
  */
 import {
   ACTION,
+  type AiFailure,
   type Automation,
   actionOf,
   type CodeFailure,
@@ -195,7 +196,11 @@ export type OutputSays =
   | { kind: "untested" }
   | { kind: "skipped" }
   | { kind: "stopped" }
-  | { kind: "failed"; failure: StepFailure | CodeFailure | PeopleFailure; param?: ParamSpec }
+  | {
+      kind: "failed";
+      failure: StepFailure | CodeFailure | PeopleFailure | AiFailure;
+      param?: ParamSpec;
+    }
   | { kind: "empty" };
 
 export function outputSays(step: Step, test: StepTest | undefined): OutputSays | null {
@@ -205,9 +210,10 @@ export function outputSays(step: Step, test: StepTest | undefined): OutputSays |
   if (test.state === "stopped") return { kind: "stopped" };
   if (test.state === "failed") {
     // A failure of JavaScript says which in `why` (`CodeFault`), one of «Preguntar», «Avisar» or «Responder» in
-    // `people` (`PeopleFault`): that is what is said, not its general `other`.
-    const failure: StepFailure | CodeFailure | PeopleFailure = test.error?.why ??
+    // `people` (`PeopleFault`), an AI step's in `ai` (`AiFault`): that is what is said, not its general `other`.
+    const failure: StepFailure | CodeFailure | PeopleFailure | AiFailure = test.error?.why ??
       test.error?.people ??
+      test.error?.ai ??
       test.error?.failure ?? { code: "other" };
     // `param` is written as a problem's is: the parameter's key, then the path inside it.
     const key = failure.param?.split(".")[0];

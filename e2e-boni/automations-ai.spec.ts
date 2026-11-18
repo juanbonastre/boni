@@ -900,6 +900,34 @@ test.describe("the steps that talk to him (F15, P2)", () => {
       .toBe(true);
   });
 
+  test("AU-201 · AU-125 · «Se ejecuta» and «Dónde» of an «Avisar» are behind «Añadir opción»: «Una vez con todas las filas» and «Ordenador y móvil» when born, «Una vez por fila» and «Solo móvil» saved once chosen", async ({
+    page,
+  }) => {
+    const a = archiving("a_01jx8x0t2v4x6z8b0d2f4h6p01", { steps: {} });
+    await openApp(page, "/?still", { automations: [a as never], agent: BEFORE() });
+    await openCanvas(page, "Archivar leídos", 4);
+    await openStep(page, NOTIFY_ID);
+    await expect(param(page, "mode")).toHaveCount(0);
+    await expect(param(page, "where")).toHaveCount(0);
+    const add = view(page).getByRole("button", { name: "Añadir opción" });
+    await add.click();
+    await page.getByRole("menuitemradio", { name: "Se ejecuta" }).click();
+    const mode = param(page, "mode").getByRole("combobox");
+    await expect(mode.locator("option:checked")).toHaveText("Una vez con todas las filas");
+    await mode.selectOption({ label: "Una vez por fila" });
+    await add.click();
+    await page.getByRole("menuitemradio", { name: "Dónde" }).click();
+    const where = param(page, "where").getByRole("combobox");
+    await expect(where.locator("option:checked")).toHaveText("Ordenador y móvil");
+    await where.selectOption({ label: "Solo móvil" });
+    await expect
+      .poll(async () => {
+        const last = (await drafts(page, a.id)).at(-1);
+        return last?.steps.find((x) => x.id === NOTIFY_ID)?.params;
+      })
+      .toMatchObject({ mode: "perRow", where: "phone" });
+  });
+
   test("AU-203 · a run that waits for an answer says until when in «Ejecuciones», at the device's zone, and is not a failure", async ({
     page,
   }) => {

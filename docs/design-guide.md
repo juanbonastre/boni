@@ -958,7 +958,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   small surface card with its action as a heading and the rows of its card, a muted «· te lo preguntará antes» on what
   still asks, «· irá a la Bandeja» on what proposes; «Guardar» (tinted) goes on, «Ahora no» saves nothing and the turn
   says «No se ha guardado nada.»; it fits a 390 px phone without scrolling sideways. **An old card changed since**
-  (rule 3a): answering it answers nothing, and it comes back made again with the state word «Ha cambiado» after its prompt.
+  (rule 3a): answering it answers nothing, and it comes back made again with the state word «Modificada» after its prompt.
   **«Antes te he dicho X, pero es Y»** (§3.1) is a confirmation, «Deshacer lo que hizo» with «Mensaje» and the old
   message beside it; said yes, the old turn keeps «Corregido» as when he edits it. **A sent message is corrected by editing it**
   (task 27, §3.1; the pencil ChatGPT and Claude show on a sent message, without their «1/2» branches): a pencil
@@ -995,7 +995,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   first free hour of its day: one tap puts the time on the line and sends it with the acceptance; once Boni has
   earned it the line says the time already; when a reply in the same thread of mail moved it, «Antes: jue, 29
   oct, 12:00» in `--muted` after the day: the earlier card is gone and this one says what it was, task 46; when the
-  calendar already has the same thing, «Ya está en el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
+  calendar already has the same thing, «En el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
   it is an external calendar's event, the primary button reads «Enlazar» and the record is made linked to it; an
   entry at the same moment with another title may be it: «¿Es «Quedada cafe, 16:00–17:00»?» and a button «Es el
   mismo» before «Aceptar» that puts into that record what the proposal adds (nothing of it overwritten; an external
@@ -1003,9 +1003,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   task 51). **The card is checked again each time it is seen** (task 73, D-57): its day by name and number, with
   «Hoy», «Mañana» or «Ayer» in front when it is one of those («Docencia · Hoy, jue, 29 oct, 12:00»), and one word
   in the text's colour when something changed since the mail: «Hecho: Clase IPM, 17:00–18:00» (the same task,
-  already ticked), «Ya está en el calendario: …», or «Pasado» (its hour ended; a task without a time, its day).
+  already ticked), «En el calendario: …», or «Pasado» (its hour ended; a task without a time, its day).
   The words are the state, never a sentence; nothing leaves the Bandeja by itself. «Aceptar» on a card whose word
-  changed since it was drawn is not taken: «Ha cambiado» under the buttons, and the card read again shows its
+  changed since it was drawn is not taken: «Modificada» under the buttons, and the card read again shows its
   word; pressed again, it goes. The proposal's own page says the same line under its title. The mail's line ends
   in «· Leído» (never cut by a long sender) once Juan opened that mail in his mailbox. Where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
@@ -1062,7 +1062,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   ("Caducada…" for a stale one, "Ya decidida.") with "Quitar", and stays until taken out. **"Marcar como hecha"**
   (Juan, 2026-10-23), between Aceptar and Rechazar, only on a proposal to create something in a collection whose
   calendar has a task column: it is saved already done (struck through in the calendar), with the same spinner;
-  the toast says "Apuntada como hecha". **"Boni la habría aceptado"**: a quiet muted mark with a small sparkle,
+  the toast says "Apuntada como hecha". **"Aceptación prevista"**: a quiet muted mark with a small sparkle,
   beside the actions (and on the proposal's page next to its headline), when the code's rule says Boni would have
   accepted it alone; the Registro says on top, in one muted line, how often it would have been right. With «Solo»
   on for «Aceptar propuestas» (Settings › Decisiones, docs/fiabilidad.md §3.4) those proposals are accepted alone:
@@ -1236,7 +1236,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   missed is «Omitida: Boni estaba apagado», with neither «Reintentar» nor «Deshacer»). How long it took is said of every run that ended; «Completada» is the word of a
   step that ended well on the canvas, so a run and a step say it alike. On the right the run chosen (the newest when none is): a bar with the date
   in full, its line («Completada · 0,9 s · Manual · versión 2 · Creó 1 fila en Tareas · Propuso modificar 3 filas
-  en Libros · con datos de fuera»; a collection gone is «una colección que ya no está»), why it failed in the app's
+  en Libros · con datos de fuera»; a collection gone is «una colección eliminada»), why it failed in the app's
   words, «Deshecha hoy, 10:20» once undone, and what the run told, as the server wrote it and painted as plain text
   («Avisó: …»: a streak of failures, or a run that saved alone; decision 17: nothing pops up for what a «Programada»
   saved, it is said here, «Deshacer lo que hizo» beside it); then «Ver cada paso», «Deshacer lo que hizo» (only when it wrote and is
@@ -1261,12 +1261,12 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
 - **The proposal of a run** (F14d P3b, `RunProposalCard.tsx`, from `InboxCards.tsx`; AU-193, AU-170). In the
   Bandeja, the same card as every proposal, painted by code from the server's `view.run`, every value as plain text
   (HTML, Markdown or a link is read letter by letter): «Propuesta de automatización» as its kind; its title
-  «Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros»; a muted line
+  «Revisar pendientes: modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros»; a muted line
   «versión 2 · Programada · Pendiente en la Bandeja» («Caducada: una fila cambió después» once stale);
   then its first twenty rows, each ««Rayuela» en Libros», «Nueva fila en Libros» or «A la papelera: «Rayuela» de
   Libros» over its fields, «Título: antes → después», what came from outside marked «de fuera»; «Ver todo (128)» reads
   the rest fifty at a time. Its buttons: «Aceptar» (primary), «Rechazar» and «Ver la ejecución»; stale, «Ejecutar otra
-  vez» and «Quitar». Accepted, the toast says «Guardado lo que propuso Revisar pendientes» with «Ver la ejecución» and
+  vez» and «Quitar». Accepted, the toast says «Propuesta aceptada: Revisar pendientes» with «Ver la ejecución» and
   no «Deshacer»: what it saved is undone with its run's «Deshacer lo que hizo». From a shared device it is read, and
   «Aceptar» says «Solo desde un dispositivo personal.» under it and the proposal keeps waiting (decision 15). On the
   phone it is in the Bandeja's tab, whole within the screen's width.
@@ -1317,7 +1317,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   never cut; at the right «Probar paso» with why it cannot be pressed beside it in `--muted` («Falta: Colección», the
   names of the required parameters that are empty; «Probando…» while a test runs) and the cross. Three columns from 1100 px, ENTRADA · «Parámetros |
   Ajustes» · SALIDA (1 : 1.3 : 1), each with a small uppercase `--muted` head and its own scroll. ENTRADA before a
-  test says «Prueba los pasos anteriores»; a trigger's is «Datos de prueba», the fields it asks (or «No pide
+  test says «Sin datos de entrada»; a trigger's is «Datos de prueba», the fields it asks (or «No pide
   campos»). SALIDA says «Sin probar», with the labels that change the rows above it («Solo la primera fila», «Sigue
   sin filas», «Apagado»). The middle has two tabs, «Parámetros» and «Ajustes» («Ajustes (2)» counts what is not at its
   default). «Parámetros» is a row per parameter in sight, its name on the left (30 %, in `--bad` once marked) and its
@@ -1401,6 +1401,16 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Pregunta cancelada» when answered, an expired one «Pregunta caducada». «Solo desde un dispositivo personal» of
   «Preguntar» and «Reintentar si el modelo falla» of «Agente» (0 when born, 1 or 2) are behind «Añadir opción». Every
   text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
+- **What Boni learns of a cell, on screen** (F15 P2 part B, `LearningCard.tsx`, `connections.ts` `learnedWords`;
+  AU-208 to AU-210): under a published cell of an «Agente»'s connections table, after «lo usa», its count from 5
+  decisions on, in the same 12 px `--muted`: «18 de 20 aceptadas» with «Preguntar», «12 de 12 sin deshacer» with
+  «Sí»; a paused one says «Sí · en pausa». Nothing under a cell whose mode the draft changed: the count is the
+  published one's. In the Bandeja, after the questions, a card per suggestion or pause: its kind on top with the
+  lightbulb («Sugerencia», «En pausa»), the cell as its title («Ordenar tareas: Analista en Tareas»), one line with
+  the number («19 de 20 aceptadas», «3 seguidas deshechas, rechazadas o corregidas»), and its buttons: a suggestion
+  [Abrir] (primary) [No], a pause [Quitar pausa] (primary) [Abrir]. «Abrir» opens the automation. On a device that
+  may not decide (the server's `mayDecide`) no buttons, and «Solo desde un dispositivo personal» in `--muted`. Never a
+  button that sets «Sí»; every name on the card is plain text. The Bandeja's count counts these cards too.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
   sight. «{ }» closes every value's row, in one column: beside its control, with the same right edge, size and

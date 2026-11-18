@@ -29,6 +29,7 @@ import {
   type LearningNotice,
   learnAnswer,
   learningKey,
+  learningNotices,
   learningOf,
   pausedDoc,
   unpause,
@@ -640,6 +641,51 @@ describe("what Boni learns from the answers to an automation (F15)", () => {
     const cells = (read as { out: { cells: ReturnType<typeof learningOf> } }).out.cells;
     expect(cells).toMatchObject([{ mode: "ask", decided: 20, right: 20 }]);
     expect(cells[0]?.declined).toBeTypeOf("number");
+  });
+
+  it("AU-209 · AU-210 · A-15 · the Bandeja's list of pauses and suggestions over 200 published automations, each with a year of daily answers, stays within a frame", async () => {
+    const { s } = moving();
+    const state: Record<string, unknown> = {};
+    for (let i = 0; i < 200; i++) {
+      {
+        const a = made(s, [START, CREATE(`n${i}`, i % 2 ? "ask" : "yes")]);
+        ok(a.publish());
+        const key = learningKey(s, a.id, {
+          step: a.step("Crear"),
+          collection: "pedido",
+          action: "create",
+        }) as CellKey;
+        const area = cellArea(key);
+        state[area] =
+          i % 2
+            ? { ...key, suggested: NOW - i }
+            : { ...key, paused: { at: NOW - i, why: "share", run: "r_x" } };
+        // A year of daily answers of this cell, judged.
+        s.batch(() => {
+          for (let d = 0; d < 365; d++) {
+            const id = randomUUID();
+            s.journal.addDecision({
+              id,
+              run: `r_${i}_${d}`,
+              area,
+              cost: "B",
+              p: 1,
+              outcome: "do",
+              detail: null,
+              at: NOW - d * DAY,
+            });
+            s.journal.setDecisionResult(id, d % 5 ? "right" : "wrong", NOW - d * DAY + DAY);
+          }
+        });
+      }
+    }
+    s.setSetting("automations/learning", JSON.stringify(state));
+    const start = clock();
+    const listed = learningNotices(s);
+    under(clock() - start, 50, "cpu", "the Bandeja's pauses and suggestions of 200 automations");
+    expect(listed).toHaveLength(200);
+    expect(listed[0]).toMatchObject({ kind: "paused", decided: 20 });
+    expect(listed[1]).toMatchObject({ kind: "suggested", decided: 20 });
   });
 
   it("AU-210 · a pause can only lower a «Sí»: nothing it stores makes a run save what the cell would ask", async () => {
