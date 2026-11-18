@@ -1401,6 +1401,22 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Pregunta cancelada» when answered, an expired one «Pregunta caducada». «Solo desde un dispositivo personal» of
   «Preguntar» and «Reintentar si el modelo falla» of «Agente» (0 when born, 1 or 2) are behind «Añadir opción». Every
   text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
+- **«Avisar» and «Preguntar» as one step** (F15 P2 part C, decision 29; AU-246, AU-247, AU-248): both still sit by
+  name in «Preguntar o avisar» of «+», and once on the canvas their first row is **«Acción»**, a select «Avisar /
+  Preguntar» like «Colección»'s; changing it keeps the text, «Por dónde», «Dónde» and «Se ejecuta», and the toast
+  names what went, as any other action. The first view is only «Acción», the text («Texto» or «Pregunta»), **«Por
+  dónde»** and, for «Preguntar», «Respuesta» (with «Opciones» when it has them) and «Días de espera»: three rows for
+  «Avisar», five for «Preguntar». «Por dónde» is a row of checkboxes, «Notificación» and «Bandeja», on one line
+  (`.auto-many`, wrapping on the phone); the last ticked one is disabled, so one always stays. «Avisar» is born with
+  «Notificación», «Preguntar» with both. In the card's summary they read «Notificación, Bandeja». In SALIDA a notice
+  says where it would go, «Archivados 3 · ordenador · Bandeja». An «Avisar» with «Bandeja» leaves a **notice card**
+  in the Bandeja: the muted line on top «Aviso» with a bell, its text as the title (plain text, as a question's
+  prompt), «De «Archivar leídos»» in `--muted` and one quiet «Descartar»: nothing to answer. **A waiting run's
+  questions** show in «Ejecuciones», in the run's detail between its bar and its canvas, in the test's question box
+  laid in the flow (no shadow, no higher than a third of the screen, scrolling inside): each step's name with «hasta
+  …», each question with its control, «Enviar» and «Sin respuesta»; an answered one says «Respondida» in `--muted`;
+  a run this device may not answer shows the questions with «Solo desde un dispositivo personal» and no buttons. One
+  answered elsewhere says «Pregunta cerrada» in a toast. The desktop's notification of a question opens that run.
 - **What Boni learns of a cell, on screen** (F15 P2 part B, `LearningCard.tsx`, `connections.ts` `learnedWords`;
   AU-208 to AU-210): under a published cell of an «Agente»'s connections table, after «lo usa», its count from 5
   decisions on, in the same 12 px `--muted`: «18 de 20 aceptadas» with «Preguntar», «12 de 12 sin deshacer» with

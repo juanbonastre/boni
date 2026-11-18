@@ -13484,6 +13484,19 @@ button.auto-log-line {
   display: flex;
   gap: 8px;
 }
+/* A waiting run's questions in «Ejecuciones» (AU-247): the same block, in the detail's flow above its canvas, and
+   no higher than a third of the screen so the canvas stays in view; the 20 a step may ask scroll inside it. */
+.auto-ask.auto-run-asks {
+  position: static;
+  transform: none;
+  width: auto;
+  max-height: 34vh;
+  box-shadow: none;
+}
+.auto-run-asks .auto-ask-step + .auto-ask-step {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
 @media (max-width: 639px) {
   .auto-ask {
     left: 0;
