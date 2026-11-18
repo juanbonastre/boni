@@ -41,7 +41,7 @@ import {
   TRASH,
   ZONE,
 } from "./run.test-util.ts";
-import { runsOf, runView, undoAutomationRun } from "./runs.ts";
+import { runAsked, runsOf, runView, undoAutomationRun } from "./runs.ts";
 import { automationView, createAutomation, testAutomation } from "./service.ts";
 
 const files = folder("propuesta");
@@ -508,6 +508,28 @@ describe("the proposal of a run (F14d)", () => {
     expect(create?.row).toBeNull();
     // Where it came from, for the inbox's «De dónde».
     expect(s.journal.proposal(r.proposal as string)?.sources).toContain("mail:m_ejemplo");
+  });
+
+  it("AU-193 · «Ver todo» of what a run asked reads every row its card paints, 50 at a time, of a run of that automation only", async () => {
+    const s = files.store();
+    for (let i = 0; i < 60; i++) fromOutside(s, "de un correo");
+    const find = FIND("de un correo");
+    const a = made(s, [SCHEDULE(), [find[0], find[1], { ...find[2], limit: 100 }], SAVE("ask")]);
+    ok(a.publish());
+    const r = await atItsHour(s, a.id);
+    const view = s.journal.proposal(r.proposal as string)?.view as RunProposalView;
+    expect(view.run.count).toBe(60);
+    const first = ok(runAsked(s, a.id, r.id, 0));
+    expect(first.total).toBe(60);
+    expect(first.asked).toHaveLength(50);
+    expect(first.asked[0]).toMatchObject({ action: "create", collection: "cliente" });
+    expect(first.asked[0]?.values.nombre).toMatchObject({ value: "de un correo", outside: true });
+    expect(ok(runAsked(s, a.id, r.id, 50)).asked).toHaveLength(10);
+    // Another automation's id, a run that is not there and an offset that is not a row: nothing.
+    const b = made(s, [SCHEDULE(), CREATE("otra")]);
+    expect(runAsked(s, b.id, r.id, 0)).toEqual({ error: "not-found" });
+    expect(runAsked(s, a.id, "r_ninguna", 0)).toEqual({ error: "not-found" });
+    expect(runAsked(s, a.id, r.id, -1)).toEqual({ error: "bad-request" });
   });
 
   it("AU-193 · accepting it passes through the policy again as accepted, from a personal device only, and saves every change in one transaction with the run in the log; with one change that cannot be saved, none is", async () => {

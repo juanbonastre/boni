@@ -1237,6 +1237,23 @@ contraseña ni un código aquí» under a question.
   run opens over it with «Todas las ejecuciones» to go back; there it has no «Abrir en el editor con estos datos» and
   no «Cambiar el límite» (AU-74). From a shared device undoing, retrying and pinning say «Solo desde un dispositivo
   personal.» and change nothing.
+  A run that asked (F14d P3b, AU-193) says where its proposal is in its bar, muted: «Esperando en la Bandeja · Ver en
+  la Bandeja» (which opens the proposal), «Propuesta aceptada», «Propuesta rechazada», or «Ya no vale · Ejecutar otra
+  vez» (which runs it again, from a personal device). A notice of a run that failed alone opens that run here when
+  pressed: in the app by the screen `run:<automation>:<run>`, on the desktop by the system notification (AU-102); a
+  run that is not there opens nothing.
+- **The proposal of a run** (F14d P3b, `RunProposalCard.tsx`, from `InboxCards.tsx`; AU-193, AU-170). In the
+  Bandeja, the same card as every proposal, painted by code from the server's `view.run`, every value as plain text
+  (HTML, Markdown or a link is read letter by letter): «Lo que pregunta una automatización» as its kind; its title
+  «Revisar pendientes quiere modificar 3 filas en Libros y mandar a la papelera 125 filas de Libros»; a muted line
+  «versión 2 · A su hora · Esperando en la Bandeja» («Ya no vale: una fila cambió desde que lo propuso» once stale);
+  then its first twenty rows, each ««Rayuela» en Libros», «Nueva fila en Libros» or «A la papelera: «Rayuela» de
+  Libros» over its fields, «Título: antes → después», what came from outside marked «de fuera»; «Ver todo (128)» reads
+  the rest fifty at a time. Its buttons: «Aceptar» (primary), «Rechazar» and «Ver la ejecución»; stale, «Ejecutar otra
+  vez» and «Quitar». Accepted, the toast says «Guardado lo que propuso Revisar pendientes» with «Ver la ejecución» and
+  no «Deshacer»: what it saved is undone with its run's «Deshacer lo que hizo». From a shared device it is read, and
+  «Aceptar» says «Solo desde un dispositivo personal.» under it and the proposal keeps waiting (decision 15). On the
+  phone it is in the Bandeja's tab, whole within the screen's width.
 - **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the
@@ -1423,6 +1440,10 @@ contraseña ni un código aquí» under a question.
   the canvas taking the window's height. A card per node, 212 px: the mail connector («Correo · Conector», dashed), a
   collection («Tarea · 128 elementos», in `--surface`), a flow (an `--accent` border, dashed when off: its trigger,
   «42 ejecuciones · 0,41 US$», tags «De Boni», «Apagado» and its models' ids, and a chevron that unfolds its steps),
+  a published automation (F14d P3b, AU-47: the flow's card with a lightning icon, its name, «Disparado por el usuario ·
+  Programada · versión 2» and «4 ejecuciones» of the period; off, dimmed and tagged «Apagada»; «lee» and «escribe»
+  arrows to each collection of the version that runs; «Abrir» in its panel opens it in its editor; a draft never
+  published is never on the map),
   Boni's own work that is not a flow yet («Conversación», «Revisar la guía», `--accent`), **the Bandeja** («Bandeja ·
   3 esperan»: what a flow in the background or the conversation proposes waits there), «Tú» («Desde tus apps»), an
   assistant («Asistente · claude-ejemplo · Por el MCP»), a page, and **«Dispositivos»** («Dispositivos · 3 avisos»,

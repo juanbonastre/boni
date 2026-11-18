@@ -135,14 +135,15 @@ const live = createLive({
 // ---------- Boni's notices (task 62): a system notification for each, with the window open or only the tray ----------
 /** The notifications on screen, kept until clicked or closed (Electron drops the events of one it collected). */
 const notifications = new Set();
-function showNotice(text) {
+function showNotice(text, about) {
   const body = noticeBody(text);
   if (!body || !Notification.isSupported()) return;
   const n = new Notification({ title: "Boni", body, icon: ICON });
   notifications.add(n);
   n.on("click", () => {
     notifications.delete(n);
-    openMain();
+    // A notice about a run (AU-102) opens that run in its automation's «Ejecuciones»; any other, the window.
+    openMain(about ? `run:${about.automation}:${about.run}` : undefined);
   });
   n.on("close", () => notifications.delete(n));
   n.show();

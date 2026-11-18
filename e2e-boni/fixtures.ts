@@ -66,6 +66,10 @@ export interface FakeRun {
   notice?: { kind: "failed" | "wrote"; text: string } | null;
   changed?: string;
   advancing?: boolean;
+  /** F14d P3b (AU-193): the proposal it left in the inbox and where it is; accepting or rejecting it moves it. */
+  proposal?: { id: string; status: "pending" | "accepted" | "rejected" | "stale" } | null;
+  /** Every change it asked, as the server's `AskedView`: what «Ver todo» reads, 50 at a time. */
+  asked?: Record<string, unknown>[];
 }
 
 export interface Options {
@@ -1228,7 +1232,31 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           undoable: !r.test && now.done && runWrote(r) && !r.undone,
           wrote: runWrote(r),
           published: a.versions.at(-1)?.n ?? null,
+          proposal: r.proposal ?? null,
         };
+      };
+      /**
+       * A run's proposal decided in the inbox (AU-193): accepted, what it asked is what it wrote, undone with it;
+       * rejected, it says so. When the inbox's answer was an error: «stale» (a row changed since) leaves it no longer
+       * valid, any other (a shared device's refusal) leaves it waiting.
+       */
+      const runProposalDecided = (
+        proposal: string,
+        how: "accept" | "reject",
+        failed: string | null,
+      ) => {
+        for (const a of autos)
+          for (const r of a.runs) {
+            if (r.proposal?.id !== proposal) continue;
+            if (failed) {
+              if (failed === "stale") r.proposal = { id: proposal, status: "stale" };
+              continue;
+            }
+            r.proposal = { id: proposal, status: how === "accept" ? "accepted" : "rejected" };
+            // Accepted, what it saved is undone with the run; its line keeps what it said when it ended, as the
+            // server's does (runs.ts `lineOf` is written once).
+            if (how === "accept") r.wrote = true;
+          }
       };
       /** A run «Ejecutar» or «Reintentar» starts: refused while another is under way (one at a time, S2). */
       const startRun = (a: AutoHere, r: FakeRun) => {
@@ -1453,7 +1481,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             }),
           ];
         }
-        const rm = rest ? /^\/runs\/([^/]+)(\/rows|\/retry|\/undo|\/pin)?$/.exec(rest) : null;
+        const rm = rest
+          ? /^\/runs\/([^/]+)(\/rows|\/retry|\/undo|\/pin|\/asked)?$/.exec(rest)
+          : null;
         const fr = rm ? a.runs.find((r) => r.id === rm[1]) : undefined;
         if (rm && !fr) return gone;
         if (rm && fr) {
@@ -1490,6 +1520,16 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 rows: all.slice(offset, offset + 50).map((r) => ({ label: {}, ...r })),
                 total: all.length,
               }),
+            ];
+          }
+          // «Ver todo» of what a run asked (AU-193): 50 from ?offset. Every page: `window.__autoAsked`.
+          if (what === "/asked" && method === "GET") {
+            const offset = Number(new URLSearchParams(query).get("offset") ?? "0");
+            record("__autoAsked", `${fr.id} ${offset}`);
+            const all = fr.asked ?? [];
+            return [
+              200,
+              JSON.stringify({ asked: all.slice(offset, offset + 50), total: all.length }),
             ];
           }
           // «Reintentar» (AU-100): another run with its trigger and fields, by the version that runs now; with `undo`,
@@ -2532,7 +2572,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin)?)?|\/pins\/[^/]+)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked)?)?|\/pins\/[^/]+)?$/.exec(
             p,
           );
         if (automation)
@@ -2554,6 +2594,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         if (answered && asked) asked = asked.filter((x) => x.id !== answered[1]);
         const decided = /^api\/agent\/proposals\/([^/]+)\/(accept|reject)$/.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
+        if (decided) {
+          // The run whose proposal it is moves with it (AU-193), unless the answer given is an error.
+          const key = `POST api/agent/proposals/:id/${decided[2]}`;
+          const list = opts.agent?.[key];
+          const item = list?.[Math.min(agentCalls[key] ?? 0, list.length - 1)] as
+            | { __status?: unknown; error?: unknown }
+            | undefined;
+          runProposalDecided(
+            decided[1] as string,
+            decided[2] as "accept" | "reject",
+            typeof item?.__status === "number" ? String(item.error ?? "error") : null,
+          );
+        }
         // A decision taken back («Deshacer»): the proposal waits again, where it was.
         const restored = /^api\/agent\/proposals\/([^/]+)\/restore$/.exec(p);
         if (restored && inbox) {
