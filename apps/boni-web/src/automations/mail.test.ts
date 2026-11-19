@@ -10,7 +10,15 @@ import {
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import { setChosenCell, setParam } from "./edit.ts";
-import { capWords, chosenAmong, chosenRows, newRule, rulesOf, setRule } from "./mail.ts";
+import {
+  capWords,
+  chosenAmong,
+  chosenRows,
+  newRule,
+  type RuleRow,
+  rulesOf,
+  setRule,
+} from "./mail.ts";
 import { namer } from "./words.ts";
 
 const t = translator("es");
@@ -70,7 +78,7 @@ describe("«Leer correo»'s panels", () => {
 
   it("AU-249 · a rule is born «No leer», «No leer» names no collection, and one row changed leaves the others the same objects", () => {
     expect(newRule()).toEqual({ sender: "", do: "skip" });
-    const rows = [
+    const rows: RuleRow[] = [
       { sender: "ejemplo.boletin@example.com", do: "skip" },
       { sender: "ejemplo.banco@example.org", do: "collection", collection: KEY_A },
     ];
