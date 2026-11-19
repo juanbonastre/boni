@@ -379,7 +379,11 @@ test.describe("what came from before, on a phone (F16)", () => {
       .getByRole("button", { name: /^Páginas/ })
       .tap();
     await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
-    await page.locator(".db-table, .m-scroll").getByText(reverted.name, { exact: true }).last().tap();
+    await page
+      .locator(".db-table, .m-scroll")
+      .getByText(reverted.name, { exact: true })
+      .last()
+      .tap();
     await expect(head(page).locator(".auto-name")).toHaveText(reverted.name);
     await expect(head(page).locator(".auto-conv-state")).toHaveText("En el flujo de antes");
     await expect(toggle(page)).toHaveCount(0);
