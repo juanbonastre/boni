@@ -246,7 +246,7 @@ export function proposeRun(
       name,
       version: r?.version ?? null,
       run,
-      startedBy: r?.startedBy ?? "user",
+      startedBy: r?.startedBy ?? "schedule",
       count: asked.length,
       counts: [...counts.values()],
       first: asked.slice(0, PROPOSAL_FIRST).map((a) => viewOf(store, a, agents)),

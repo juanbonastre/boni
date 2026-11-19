@@ -228,7 +228,16 @@ describe("only the published version runs (F14d)", () => {
     a.edit(writes("borrador"));
     const r = runId();
     const e = ok(
-      await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, r),
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        r,
+        undefined,
+        undefined,
+        "user",
+      ),
     ) as Execution;
     expect(e.state, JSON.stringify(e.error)).toBe("done");
     expect(e.test).toBe(false);
@@ -255,7 +264,16 @@ describe("only the published version runs (F14d)", () => {
     const a = made(writes("nunca"));
     const log = opLog();
     expect(
-      await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, runId()),
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        runId(),
+        undefined,
+        undefined,
+        "user",
+      ),
     ).toEqual({ refused: "unpublished" });
     // What a run for real is built with refuses a draft: a draft never runs for real.
     const { runDeps } = await import("./service.ts");
@@ -274,7 +292,18 @@ describe("only the published version runs (F14d)", () => {
     published(a.id);
     const forged = { ...docOf(writes("falsa"), new Map()), id: a.id, version: 1 };
     const request = { trigger: a.step("Inicio"), fields: {}, automation: forged, doc: forged };
-    const e = ok(await runPublished(store, a.id, request as never, JUAN, runId())) as Execution;
+    const e = ok(
+      await runPublished(
+        store,
+        a.id,
+        request as never,
+        JUAN,
+        runId(),
+        undefined,
+        undefined,
+        "user",
+      ),
+    ) as Execution;
     expect(e.state).toBe("done");
     expect(notes()).toContain("publicada");
     expect(notes()).not.toContain("falsa");
@@ -491,7 +520,16 @@ describe("the switch and a deleted automation (F14d)", () => {
     expect(published(a.id)).toEqual({ version: 2, enabled: false });
     const log = opLog();
     expect(
-      await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, runId()),
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        runId(),
+        undefined,
+        undefined,
+        "user",
+      ),
     ).toEqual({ refused: "off" });
     expect(opLog()).toBe(log);
     const t = ok(
@@ -521,13 +559,33 @@ describe("the switch and a deleted automation (F14d)", () => {
     const a = made(writes("una"));
     published(a.id);
     const r = runId();
-    ok(await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, r));
+    ok(
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        r,
+        undefined,
+        undefined,
+        "user",
+      ),
+    );
     const draft = store.journal.automationDraft(a.id);
     const versions = allVersions(a.id);
     expect(setDeleted(store, a.id, true)).toEqual({ ok: true });
     expect(store.journal.automation(a.id)).toMatchObject({ deleted: true, enabled: false });
     expect(
-      await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, runId()),
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        runId(),
+        undefined,
+        undefined,
+        "user",
+      ),
     ).toEqual({ error: "not-found" });
     expect(store.journal.deletedAutomations().map((x) => x.id)).toEqual([a.id]);
     expect(store.journal.automations().map((x) => x.id)).not.toContain(a.id);
@@ -633,7 +691,18 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
     const log = opLog();
     // A run of the version saves a row; undoing the run takes the row back and nothing else.
     const r = runId();
-    ok(await runPublished(store, a.id, { trigger: a.step("Inicio"), fields: {} }, JUAN, r));
+    ok(
+      await runPublished(
+        store,
+        a.id,
+        { trigger: a.step("Inicio"), fields: {} },
+        JUAN,
+        r,
+        undefined,
+        undefined,
+        "user",
+      ),
+    );
     store.undoRun(r, { actor: "user", device: "d_portatil" });
     // The store's own undo of the last operation (what a turn's «Deshacer» does, one operation at a time).
     const last = store.logPage(0, 1_000_000).at(-1)?.seq as number;
@@ -791,6 +860,9 @@ describe("a «Sí» only from the user's hand, on the server (F14d)", () => {
         { trigger: a.step("Inicio"), fields: {}, yes: true } as never,
         JUAN,
         r,
+        undefined,
+        undefined,
+        "user",
       ),
     ) as Execution;
     expect(e.state).toBe("done");
