@@ -14,6 +14,7 @@ import { CodeFault } from "./code.ts";
 import type { Connection } from "./connections.ts";
 import { type CollectionShape, Denied } from "./effects.ts";
 import type { Step } from "./format.ts";
+import { PAGE_TOOLS, type PageAbility } from "./page.ts";
 import type { Cell } from "./rows.ts";
 import type { WriteAction, WriteRequest } from "./writes.ts";
 
@@ -34,6 +35,11 @@ export const AGENT_PARAMS = {
   tools: "tools",
   /** «Reintentar si el modelo falla» (`AI_RETRY`, decision 28 of §10), behind «Añadir opción», as in the readers. */
   retries: RETRY_PARAM,
+  /**
+   * «Esta página» (AU-137), behind «Añadir opción»: what it may do on the page of the chat it starts from
+   * (`PAGE_ABILITIES`). Only under «Mensaje de chat» (`agent.page.notChat` elsewhere).
+   */
+  page: "page",
 } as const;
 /** «Lecturas» (AU-51): «Las decide la IA» or «Las hace este código». */
 export const AGENT_READS = ["ai", "code"] as const;
@@ -46,7 +52,20 @@ export const AGENT_TOOLS = {
   inputs: 8,
   types: ["text", "number", "boolean", "date", "any"],
   name: /^[a-z][A-Za-z0-9_]{0,39}$/,
-  taken: ["find", "get", "count", "sum", "create", "update", "trash", "answer"],
+  // The round's own tools, and «Esta página»'s (`PAGE_TOOLS`, page.ts).
+  taken: [
+    "find",
+    "get",
+    "count",
+    "sum",
+    "create",
+    "update",
+    "trash",
+    "answer",
+    "pageFigures",
+    "pageSetValue",
+    "pageAddBlock",
+  ],
 } as const;
 /** One «Herramienta de código» as the step saves it. */
 export interface AgentCodeTool {
@@ -411,6 +430,14 @@ export interface ToolsInput {
     inputs: Record<string, Cell>,
     label: Label,
   ): Promise<{ rows: AgentValue[] } | { value: AgentValue } | { refused: string }>;
+  /**
+   * «Esta página» (AU-137): its tools by name, and the engine's call of one with its inputs (checked here) and the
+   * label of what it received. Absent: the step has none, and a call of one is a tool it does not have.
+   */
+  page?: {
+    tools: ReadonlyMap<string, PageAbility>;
+    call(ability: PageAbility, inputs: Record<string, Cell>, label: Label): Promise<AgentToolReply>;
+  };
 }
 
 const WRITES: Partial<Record<AgentTool, WriteAction>> = {
@@ -492,6 +519,8 @@ export class AgentTools {
     tool: AgentTool | string,
     args: Readonly<Record<string, AgentValue>>,
   ): Promise<AgentToolReply> {
+    const ability = this.input.page?.tools.get(tool);
+    if (ability) return this.pageTool(ability, args);
     const code = this.input.tools.find((t) => t.name === tool);
     if (code) return this.codeTool(code, args);
     if (!isTool(tool)) return this.refuse(tool, undefined, "bad-request");
@@ -538,6 +567,39 @@ export class AgentTools {
       rows: "rows" in got ? got.rows.length : 1,
     });
     return got;
+  }
+
+  /**
+   * A call of «Esta página» (AU-137): its inputs and nothing else (a page is never one: it is the port's), each of its
+   * type; then the engine's, through the policy. A no of the policy fails the unit as a code tool's does, but P29's.
+   */
+  async pageTool(
+    ability: PageAbility,
+    args: Readonly<Record<string, AgentValue>>,
+  ): Promise<AgentToolReply> {
+    const spec = PAGE_TOOLS[ability];
+    const page = this.input.page;
+    if (!page) return this.refuse(spec.name, undefined, "bad-request");
+    const inputs: Record<string, Cell> = {};
+    for (const k of Object.keys(args))
+      if (!spec.inputs.some((i) => i.name === k))
+        return this.refuse(spec.name, undefined, "bad-request");
+    for (const i of spec.inputs) {
+      const v = args[i.name]?.json;
+      if (v === undefined || (i.type === "text" && (typeof v !== "string" || !v)))
+        return this.refuse(spec.name, undefined, "bad-request");
+      inputs[i.name] = v;
+    }
+    const label = join(this.input.written, ...Object.values(args).map((a) => a.label));
+    try {
+      const got = await page.call(ability, inputs, label);
+      if ("refused" in got) return this.refuse(spec.name, undefined, got.refused);
+      addLine(this.input.unit, { op: "tool", name: spec.name, rows: 1 });
+      return got;
+    } catch (e) {
+      if (e instanceof Denied) return this.refuse(spec.name, undefined, deniedOf(e, {}));
+      throw e;
+    }
   }
 
   /** A read of the plan, narrowed by the step's connection as a «Código»'s (AU-51, AU-43). */

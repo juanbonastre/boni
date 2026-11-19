@@ -41,7 +41,7 @@ import {
   stepType,
   TIME_OF_DAY,
 } from "./catalogue.ts";
-import { chatYesProblems } from "./chat.ts";
+import { chatPageProblems, chatYesProblems } from "./chat.ts";
 import {
   AGENT_TYPE,
   CODE_LIMITS,
@@ -306,7 +306,7 @@ export function validate(
     if (inCycle(from.id, to.id)) add("arrow.cycle", at);
   });
   // Under a page's chat no write goes with a «Sí» (AU-137): publishing refuses one, whatever the editor offered.
-  problems.push(...chatYesProblems(automation));
+  problems.push(...chatYesProblems(automation), ...chatPageProblems(automation));
   return problems;
 }
 

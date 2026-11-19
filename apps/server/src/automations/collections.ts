@@ -135,7 +135,15 @@ export function collectionNamed(store: UserStore): (name: string) => string | un
   };
 }
 
-export function storeCollections(store: UserStore, who: CollectionsFor): Collections {
+export function storeCollections(
+  store: UserStore,
+  who: CollectionsFor,
+): Collections & {
+  applyAll(
+    changes: Parameters<Collections["applyAll"]>[0],
+    then?: () => void,
+  ): ReturnType<Collections["applyAll"]>;
+} {
   // One object per distinct label, for every row this gives (AU-162: shared, never changed in place).
   const interned = new Map<string, Label>();
   const intern = (l: Label): Label => {
@@ -372,12 +380,14 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
     async apply(change: Change, values: Labelled = {}) {
       return store.batch(() => one(change, values));
     },
-    async applyAll(changes) {
+    async applyAll(changes, then?: () => void) {
       // One transaction: a change that throws takes back every one before it (AU-174). A row changed earlier in the
       // same call is checked against the version that change left, so two requests for one row apply in order.
+      // `then`, in the same transaction after the rows: what else is saved with them (an accepted proposal's page
+      // changes, AU-137); if it throws, the rows are taken back too.
       return store.batch(() => {
         const left = new Map<string, number>();
-        return changes.map(({ change, values }) => {
+        const saved = changes.map(({ change, values }) => {
           const version = change.kind === "create" ? undefined : left.get(change.row.id);
           const row = one(
             version === undefined || change.kind === "create"
@@ -388,6 +398,8 @@ export function storeCollections(store: UserStore, who: CollectionsFor): Collect
           left.set(row.origin.id, row.origin.version);
           return row;
         });
+        then?.();
+        return saved;
       });
     },
   };

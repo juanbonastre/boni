@@ -51,6 +51,8 @@ import {
   NOTIFY_TYPE,
   newConnection,
   OUT,
+  PAGE_ABILITIES,
+  type PageAbility,
   type ParamValue,
   READER_TYPES,
   REPLY_PARAMS,
@@ -112,8 +114,20 @@ export const CHANGES = [
   "undoWhole",
   /** «Sus límites son los de una automatización» (AU-17). */
   "automationLimits",
+  /**
+   * «Antes ponía un valor en su página sin preguntar; ahora lo pregunta» (AU-137, F16 S2c B2): a page's chat set a
+   * control's value alone (P27); its «Esta página» proposes it, as it proposes a block, until Juan says otherwise.
+   */
+  "pageValueAsks",
 ] as const;
 export type Change = (typeof CHANGES)[number];
+
+/** The old chat's action for each ability of «Esta página» (the page tools of `packages/agent/src/chat.ts`). */
+const CHAT_PAGE_ACTIONS: Readonly<Record<PageAbility, string>> = {
+  figures: "pages.figures",
+  value: "pages.set_value",
+  block: "pages.add_block",
+};
 
 /**
  * One row per thing the plan language can say (AU-223): by its kind and its name, the step type it becomes, or
@@ -132,10 +146,10 @@ export const TRANSLATION: Readonly<Record<string, string>> = {
   "op:agent": `${AGENT_TYPE} + ${REPLY_TYPE} under «Mensaje de chat» · untranslated:laterPhase elsewhere`,
   "chat:entities.query": `${AGENT_TYPE} · «Leer» of the page's collections`,
   "chat:entities.aggregate": `${AGENT_TYPE} · «Leer» of the page's collections`,
-  // «Esta página» (AU-137) comes with the chat's turn on the server (F16 S2c part B2).
-  "chat:pages.figures": "untranslated:laterPhase",
-  "chat:pages.set_value": "untranslated:laterPhase",
-  "chat:pages.add_block": "untranslated:laterPhase",
+  // «Esta página» (AU-137, F16 S2c part B2): the page's own actions are the «Agente»'s abilities on the chat's page.
+  "chat:pages.figures": `${AGENT_TYPE} · «Esta página»: its figures`,
+  "chat:pages.set_value": `${AGENT_TYPE} · «Esta página»: a value, proposed`,
+  "chat:pages.add_block": `${AGENT_TYPE} · «Esta página»: a block, proposed`,
   // Any other action of a chat's «Agente», a write among them: said, never dropped, so that chat stays on the old engine.
   "chat:*": "untranslated:notExpressible",
   "form:when": "if",
@@ -392,6 +406,8 @@ class Translator {
   private readers = false;
   /** A `classify` became «Clasificar» (not the «Decisora» of «Leer correo»). */
   private classifies = false;
+  /** A page's chat set a value of its page alone (P27): its «Esta página» proposes it («pageValueAsks»). */
+  private pageValue = false;
   /** What the step being translated is inside: its plan step, and whether it walks a list (`$item`, `$zip`). */
   private current: { id: string; each: boolean; zip: Out | null } = {
     id: "",
@@ -453,6 +469,7 @@ class Translator {
     if (this.classifies) changes.add("readerClassifies");
     if (this.writes) changes.add("undoWhole");
     if (this.input.from === "flow") changes.add("automationLimits");
+    if (this.pageValue) changes.add("pageValueAsks");
     return {
       automation,
       untranslated: this.untranslated,
@@ -1142,9 +1159,11 @@ class Translator {
   /**
    * A chat's «Agente» of before (AU-137): an «Agente» with its instructions, given the page's collections with «Leer»
    * only when it could read them (`entities.query`, `entities.aggregate`) and no cell of writing, then «Responder» with
-   * its text. No step has more reach than the flow had, and nothing writes. «Esta página» (the page's figures, a value
-   * set, a block added) is said, not dropped: until it exists the chat stays on the old engine. So is any other action
-   * (a write, an action it does not know): it has no step here, and the conversion is not complete.
+   * its text. No step has more reach than the flow had. The page's own actions (`pages.figures`, `pages.set_value`,
+   * `pages.add_block`) are «Esta página» with those abilities only, bound by the server to the chat's page (P26); a
+   * value or a block it wants is proposed, never made alone (the narrower reading of AU-137, policy.ts `PAGE_ALONE`).
+   * Any other action (a write, an action it does not know) is said: it has no step here, and the conversion is not
+   * complete.
    */
   private chatAgent(
     s: AgentStep,
@@ -1155,19 +1174,21 @@ class Translator {
       this.miss("chat:actions", "notExpressible");
     const actions: readonly string[] = Array.isArray(s.actions) ? s.actions.map(String) : [];
     const reads = actions.includes("entities.query") || actions.includes("entities.aggregate");
-    // Every action that is not a read of the page's collections is said by its name: «Esta página» comes later, and
-    // anything else (a write among them) has no step here. None is dropped, so the conversion is not complete.
-    for (const a of actions) {
-      const row = TRANSLATION[`chat:${a}`];
-      if (row === "untranslated:laterPhase") this.miss(`chat:${a}`, "laterPhase");
-      else if (row === undefined) this.miss(`chat:${a}`, "notExpressible");
-    }
+    // The page's own actions are «Esta página», in its order; anything else that is not a read of the page's
+    // collections (a write among them) is said by its name and has no step here, so the conversion is not complete.
+    const page = PAGE_ABILITIES.filter((p) => actions.includes(CHAT_PAGE_ACTIONS[p]));
+    for (const a of actions)
+      if (TRANSLATION[`chat:${a}`] === undefined) this.miss(`chat:${a}`, "notExpressible");
+    if (page.includes("value")) this.pageValue = true;
     const agent = this.add(
       {
         id: `p-${s.id}`,
         name: s.id,
         type: AGENT_TYPE,
-        params: { [AGENT_PARAMS.instructions]: escapeText(String(s.instructions ?? "")) },
+        params: {
+          [AGENT_PARAMS.instructions]: escapeText(String(s.instructions ?? "")),
+          ...(page.length ? { [AGENT_PARAMS.page]: page } : {}),
+        },
         settings: { continueEmpty: true, firstRowOnly: true },
         ...(reads ? { connections: [...new Set(collections)].map(newConnection) } : {}),
       },

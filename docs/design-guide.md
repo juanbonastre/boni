@@ -1405,7 +1405,11 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Descartar», and «Solo desde un dispositivo personal» in `--muted` in their place; a card of a cancelled run says
   «Pregunta cancelada» when answered, an expired one «Pregunta caducada». «Solo desde un dispositivo personal» of
   «Preguntar» and «Reintentar si el modelo falla» of «Agente» (0 when born, 1 or 2) are behind «Añadir opción». Every
-  text of these (the question, the options, a notice, the answer, the automation's name) is plain text.
+  text of these (the question, the options, a notice, the answer, the automation's name) is plain text. So is
+  «Esta página» of an «Agente» that starts with «Mensaje de chat» (AU-137, F16 S2c B2): a list of what it may do on the
+  chat's page, «Leer sus cifras», «Poner un valor en un control», «Añadir un bloque»; under any other trigger it is the
+  problem «Esta página solo existe en un «Agente» que empieza en «Mensaje de chat»». It names no page: the page is the
+  trigger's.
 - **«Avisar» and «Preguntar» as one step** (F15 P2 part C, decision 29; AU-246, AU-247, AU-248): both still sit by
   name in «Preguntar o avisar» of «+», and once on the canvas their first row is **«Acción»**, a select «Avisar /
   Preguntar» like «Colección»'s; changing it keeps the text, «Por dónde», «Dónde» and «Se ejecuta», and the toast

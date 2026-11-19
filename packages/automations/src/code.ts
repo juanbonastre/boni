@@ -261,6 +261,11 @@ export const CODE_PROBLEMS = [
    * AU-58). `detail.name` (the collection, as written), `detail.action`.
    */
   "agent.reads.write",
+  /**
+   * «Esta página» on an «Agente» of an automation that does not start in «Mensaje de chat»: it exists only there
+   * (AU-137), since only a chat has a page.
+   */
+  "agent.page.notChat",
 ] as const;
 export type CodeProblemCode = (typeof CODE_PROBLEMS)[number];
 
