@@ -23,7 +23,7 @@ import {
   type Val,
 } from "@boni/agent";
 import type { Automation, BoniAnswer, BoniAutomation, BoniCall, BoniPort } from "@boni/automations";
-import { BONI_PARAMS, BONI_TRIGGER_OWNER, BONI_TRIGGERS } from "@boni/automations";
+import { BONI_PARAMS, BONI_TRIGGER_OWNER, BONI_TRIGGERS, boniPiece } from "@boni/automations";
 import type { Label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { knownSender, type MailHooks, runMailPiece } from "./mailPieces.ts";
@@ -179,19 +179,33 @@ function valOf(c: BoniCall["args"][string]): Val {
 /**
  * The plan of one unit: arguments bound as `$x0`, `$x1`… in the order of their keys (only code binds, and a key of
  * the document never becomes a name of the plan). A reader reads `values.input`; its other values are its parameters.
+ * A piece gives back what its call of before had (convert.ts `piece`): a reader's input among its arguments is what
+ * it reads («Revisora»), and a tool's parameters fixed in the step are its arguments again («Medir repitiendo»'s
+ * «cuántos casos repite», AU-211).
  */
 export function unitPlan(call: BoniCall): { plan: unknown; bind: Record<string, Val> } {
   const bind: Record<string, Val> = {};
   const refs: Record<string, { ref: string }> = {};
-  Object.keys(call.args)
+  const reader = (READERS as readonly string[]).includes(call.name);
+  const given: Record<string, BoniCall["args"][string]> = {};
+  for (const [k, v] of Object.entries(call.args))
+    if (!(reader && k === BONI_PARAMS.input)) given[k] = v;
+  const input = reader
+    ? (call.values[BONI_PARAMS.input] ?? call.args[BONI_PARAMS.input])
+    : undefined;
+  if (!reader)
+    for (const k of boniPiece(call.type)?.params ?? []) {
+      const v = call.values[k];
+      if (v && given[k] === undefined) given[k] = v;
+    }
+  Object.keys(given)
     .sort()
     .forEach((k, i) => {
       const n = `x${i}`;
-      bind[n] = valOf(call.args[k] as BoniCall["args"][string]);
+      bind[n] = valOf(given[k] as BoniCall["args"][string]);
       refs[k] = { ref: `$${n}` };
     });
-  if ((READERS as readonly string[]).includes(call.name)) {
-    const input = call.values[BONI_PARAMS.input];
+  if (reader) {
     bind.input = input ? valOf(input) : leaf(null, codeLabel("boni"));
     return {
       plan: {

@@ -48,7 +48,9 @@ export function Sidebar() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const settings = useStore((s) => s.settings);
-  const waiting = useStore((s) => s.inbox.length + s.requests.length + s.cellNotices.length);
+  const waiting = useStore(
+    (s) => s.inbox.length + s.requests.length + s.cellNotices.length + s.instructionNotices.length,
+  );
   const pages = useStore((s) => s.pages);
   const tree = useStore((s) => s.tree);
   const [drag, setDrag] = useState<Drag>(null);

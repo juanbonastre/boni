@@ -36,6 +36,7 @@ import { convertFlows, copyBeforeRuns } from "./automations/convert.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
 import { learnAnswer, learningNotices } from "./automations/learning.ts";
 import { ACCEPT_RUN, type RunsService, triggerMail } from "./automations/proposal.ts";
+import { instructionsNotices } from "./automations/review.ts";
 import {
   type AskGiven,
   answerAsk,
@@ -72,6 +73,7 @@ import {
   keepDraft,
   MAIL_FLOW,
   originOf,
+  REVIEW_FLOW,
   revertFlow,
   saveUserFlow,
   type TestView,
@@ -1529,6 +1531,11 @@ async function answerAgent(
         // The pauses and the suggestions that wait (AU-209, AU-210), with no model: the app words them, and only a
         // personal device lifts a pause or says «No» (decision 13), which the server holds again on the touch.
         learning: learningNotices(store).map((n) => ({
+          ...n,
+          mayDecide: who.trust === "personal",
+        })),
+        // What «Revisar instrucciones» suggests (AU-211): a change of a draft, which only a personal device takes.
+        instructions: instructionsNotices(store, REVIEW_FLOW).map((n) => ({
           ...n,
           mayDecide: who.trust === "personal",
         })),

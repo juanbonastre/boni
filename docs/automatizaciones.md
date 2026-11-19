@@ -3221,7 +3221,7 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   (AU-208) y la tarjeta «En pausa» de la Bandeja, «3 seguidas deshechas, rechazadas o corregidas», con [Quitar
   pausa] por `automations.learn`, solo desde un dispositivo personal (`learning.test.ts`,
   `automations-ai.spec.ts`). Falta: el registro y el Deshacer de AU-209.
-- **AU-211** (F16, pendiente) · Lo que necesita un modelo para aprender: un revisor que mira lo que Juan corrigió y
+- **AU-211** (F16, en parte) · Lo que necesita un modelo para aprender: un revisor que mira lo que Juan corrigió y
   propone
   un cambio en las «Instrucciones» de un «Agente», un ejemplo, o filas en una colección que el paso lee. Lo propone
   como un cambio del borrador que Juan ve con su antes y su después, acepta (con `lowerYes`) y publica: nunca cambia
@@ -3247,6 +3247,18 @@ cuando las pruebas llegan, una sugerencia de abrir la celda (AU-208, AU-209).
   que necesita un modelo. Lo demás no cambia de sitio: las señales, las cuentas, la sugerencia de abrir una celda y
   la pausa son de la F15 (AU-207 a AU-210, AU-212), código del servidor y no pasos, y ninguna de ellas pone ni quita
   un «Sí». La prueba: `apps/server/src/automations/boni.test.ts`.
+  Hecho en la F16 (E2, parte 2a): «Revisar instrucciones» es una automatización «De: Boni» dibujada a mano con sus
+  cinco pasos y su interruptor, nace con «Cada cuántas decisiones» en 20, y corre por `runBoni` una vez que «Leer
+  correo» está en el motor nuevo (`review.ts`, `mail.ts`). Revisa los paneles de «Leer correo»: las reglas de
+  remitente las encuentra el código (`ruleCandidates`), los ejemplos salen de sus decisiones, y la «Revisora» es un
+  lector en cuarentena sin herramientas; «Medir repitiendo» repite en seco hasta 20 casos con el tope de 45 del
+  revisor y solo sugiere si acierta más. La sugerencia espera en la Bandeja como «Sugerencia» con «Ver el cambio»
+  (sus reglas y ejemplos antes y después, como texto plano; `InstructionsCard.tsx`): «Aceptar» la pone en el
+  borrador por `lowerYes` y abre la automatización para que Juan publique; nunca cambia lo publicado ni pone un «Sí»;
+  «No» la aparta una semana; una al día; con «Aprender» o la automatización apagados no se ve; desde un dispositivo
+  compartido solo se lee (`review.test.ts`, `mail.test.ts` del servidor y de la app, `automations-ai.spec.ts`,
+  `mobile.spec.ts`). Falta (parte 2b): el cambio de las «Instrucciones» de cada «Agente» y de las «Indicaciones» de
+  la «Lectora» como texto libre, medido repitiendo con el paso publicado y no con `readOnce`.
 - **AU-212** (F15, hecho) · Los límites de aprender. El interruptor «Aprender» lo para todo: ni sugerencias ni
   pausas nuevas (las señales se siguen guardando, que son de Juan). Como mucho una sugerencia al día que no nazca de
   un chat, contando las de `docs/preferencias.md`. Nada de fuera mueve una cuenta: solo cuentan actos de su mano en
@@ -3753,9 +3765,11 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   hilo» retira la anterior tras proponer y nunca en una ejecución fallida. Hecho (S2b, PR 2b, tras la revisión):
   `apps/server/src/mail.test.ts` («AU-251 · after conversion a run that proposed folds its thread: …»: convertida,
   la ejecución de un correo del hilo retira la tarjeta del flujo de antes que esperaba, y la siguiente retira la suya;
-  cada tarjeta nueva dice su «Antes» y lo que se solapa en el calendario); el plegado lee el título por el campo de
-  título de la colección, no solo `values.title` (una fila de una ejecución nombra sus valores por las claves de su
-  colección, y sin eso no plegaba); `apps/server/src/automations/proposal.test.ts` («AU-251 · a run that asks to
+  cada tarjeta nueva dice su «Antes» y lo que se solapa en el calendario, y la que corrige y acepta llega a «Revisar
+  instrucciones» con su título y el propuesto); el plegado lee el título por el campo de título de la colección, no
+  solo `values.title` (una fila de una ejecución nombra sus valores por las claves de su colección, y sin eso no
+  plegaba); lo mismo las decisiones que lee la revisión (`mailReview.ts` `decisions`: sin eso, convertido el correo,
+  «Revisar instrucciones» no veía ninguna); `apps/server/src/automations/proposal.test.ts` («AU-251 · a run that asks to
   create and also to modify or to send to the trash is the one summary card of AU-193, …» y «AU-251 · a row accepted
   and then undone with its run counts as a miss for its cell, …»); deshacer una ejecución retira todas sus tarjetas
   por fila, no solo la que nombra.

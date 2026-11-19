@@ -1,6 +1,7 @@
 import { leaf } from "@boni/agent";
 import { label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import type { GuideExample, MailGuide, MailRule, Target } from "./mail.ts";
 
 /**
@@ -75,7 +76,11 @@ export function mailOfPlan(plan: unknown): string | null {
     : null;
 }
 
-/** Juan's decisions on proposals from mail of the collection `type`, oldest first (the latest 60). */
+/**
+ * Juan's decisions on proposals from mail of the collection `type`, oldest first (the latest 60): a proposal to create
+ * of the engine of before, or one row of a «Leer correo» run's (AU-251), whose agent run keeps the mail it read and
+ * whose title is under its collection's title field.
+ */
 export function decisions(
   store: UserStore,
   type: string,
@@ -83,24 +88,32 @@ export function decisions(
 ): Decision[] {
   const out: Decision[] = [];
   const schema = store.schema().types;
+  const nameOf = (k: string) => Object.values(schema).find((t) => t.key === k)?.name ?? k;
+  const titleKeyOf = (k: string) => {
+    const t = Object.values(schema).find((x) => x.key === k);
+    return t?.fields.find((f) => f.id === t.titleField)?.key ?? null;
+  };
   for (const status of ["accepted", "rejected"] as const)
     for (const p of store.journal.proposals(status)) {
-      if (p.tool !== "entities.create" || p.decided === null) continue;
+      const isRow = runRowOf(p) !== null;
+      if ((p.tool !== "entities.create" && !isRow) || p.decided === null) continue;
       const mail = mailOfRun(store, p.run);
       const m = mail ? store.get(mail) : null;
       if (!m || m.entity.type !== type) continue;
       const rows = (p.view as { rows?: { arg: string; value: unknown }[] }).rows ?? [];
       const row = (a: string) => rows.find((r) => r.arg === a)?.value;
       const key = String(row("type") ?? "");
-      const title = row("values.title");
+      const titleKey = isRow ? titleKeyOf(key) : "title";
+      if (!titleKey) continue;
+      const title = row(`values.${titleKey}`);
       if (typeof title !== "string") continue;
       const due = rows.find(
         (r) => r.arg.startsWith("values.") && /^\d{4}-\d{2}-\d{2}$/.test(String(r.value)),
       );
-      const nameOf = (k: string) => Object.values(schema).find((t) => t.key === k)?.name ?? k;
+
       // Juan's corrections: his title and collection, and what was proposed.
       const e = p.edits;
-      const fixedTitle = e?.values?.title?.to;
+      const fixedTitle = e?.values?.[titleKey]?.to;
       const myTitle = typeof fixedTitle === "string" && fixedTitle !== title ? fixedTitle : null;
       const myKey = e?.type && e.type.to !== key ? e.type.to : null;
       out.push({
@@ -343,13 +356,17 @@ export function reviewCandidate(
       .map((x) => checkRule(x, ds, h.targets, h.guide, h.excluded))
       .filter((x): x is MailRule => !!x && !found.some((c) => c.from === x.from)),
   ];
-  const have = new Set(h.guide.examples.map((e) => e.id));
+  // An example is had by its id, or by its mail's text: one in «Leer correo»'s panel carries no id (AU-211).
+  const have = new Set(h.guide.examples.flatMap((e) => [e.id, e.mail]));
   const mails = [
     ...new Set((out?.examples ?? []).map((id) => ds.find((d) => d.id === id)?.mail)),
   ].filter((m): m is string => !!m);
   const examples = mails
     .map((m) => exampleOf(h.store, m, ds))
-    .filter((e): e is GuideExample => !!e && !have.has(e.id) && !h.excluded.has(e.id));
+    .filter(
+      (e): e is GuideExample =>
+        !!e && !have.has(e.id) && !have.has(e.mail) && !h.excluded.has(e.id),
+    );
   if (!rules.length && !examples.length) return null;
   return {
     rules,

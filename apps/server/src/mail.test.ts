@@ -13,8 +13,18 @@ import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
 import { wireAutomationModels } from "./automations/ai.ts";
-import { wireBoni } from "./automations/boni.ts";
-import { revertFlow as backToFlow } from "./automations/convert.ts";
+import { boniEnabled, onNewEngine, wireBoni } from "./automations/boni.ts";
+import { revertFlow as backToFlow, convertBoniFlows } from "./automations/convert.ts";
+import { drawReadMail } from "./automations/mailAutomation.ts";
+import { setEnabled as setAutomationEnabled } from "./automations/publish.ts";
+import {
+  dropInstructions,
+  instructionsNotices,
+  pendingSuggestion,
+  REVIEW_NAME,
+  takeInstructions,
+} from "./automations/review.ts";
+import { open as openAutomation, publishedOf } from "./automations/service.ts";
 import { saveCalendarDefs } from "./calendarStore.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
@@ -23,6 +33,7 @@ import { flowMap } from "./flowMap.ts";
 import { FETCH_FLOW, MAIL_FLOW, REVIEW_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
+import { setLearning } from "./learning.ts";
 import { LoginGuard } from "./limits.ts";
 import {
   dueField,
@@ -1852,6 +1863,206 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
   });
 });
 
+describe("«Revisar instrucciones», Boni's automation over «Leer correo»'s panels (AU-211)", () => {
+  it("AU-211 · once «Leer correo» is an automation, his decisions start «Revisar instrucciones»: a run of its five steps reviews the panels, measures dry from its own cap and leaves a change of the draft, never of the published version; at most one a day, and off with «Aprender» or its switch", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-instructions-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    let reviewerSays: unknown = null;
+    let reviewerAsked = 0;
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (/decisions a user made/.test(req.system)) {
+        reviewerAsked++;
+        return reviewerSays;
+      }
+      if (/choose the one option/.test(req.system)) return { choice: "Docencia" };
+      const content = String((req.input as { content: string }).content);
+      const item = (title: string) => ({
+        quote: "…",
+        actor: "recipient",
+        kind: "task",
+        title,
+        due: null,
+      });
+      return {
+        items: /lista\.example/.test(content)
+          ? [item("Inscribirse en la feria")]
+          : [item("Revisar el acta"), item("Enviar las notas")],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_docencia",
+          key: "docencia",
+          name: "Docencia",
+          fields: [{ id: "t_docencia_t", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "t_docencia_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    let now = NOW;
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => now,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    try {
+      box.uidValidity = 71;
+      box.mails = new Map(
+        Array.from({ length: 8 }, (_, i) => [
+          i + 1,
+          i < 4
+            ? mail(80 + i, `Boletín ${i}`, "Feria de empleo.", `noticias${i}@lista.example.com`)
+            : mail(80 + i, `Acta ${i}`, "¿Revisas el acta y envías las notas?", "jefa@example.com"),
+        ]),
+      );
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+        collections: ["t_docencia"],
+      });
+      await m.check(1);
+      // Juan rejects the newsletters' proposals and accepts the boss's: 12 decisions.
+      for (const p of store.journal.proposals("pending")) {
+        const title = (p.view as { rows: { arg: string; value: string }[] }).rows.find(
+          (r) => r.arg === "values.title",
+        )?.value;
+        store.journal.setProposal(
+          p.id,
+          title === "Inscribirse en la feria" ? "rejected" : "accepted",
+          NOW,
+        );
+      }
+      // The server's wiring of Boni's steps (main.ts), once his decisions are made on the engine of before: wired
+      // before, the mail converts as it is kept current (AU-254).
+      wireBoni({
+        reaches: (st) => h.accountOf(st) !== null,
+        agentOf: () => h.agent(1, true),
+        mail: () => m.hooksFor(1),
+      });
+      // «Leer correo» on the new engine, drawn from the configuration as mail.ts will (AU-254), with a rule of his.
+      convertBoniFlows(
+        store,
+        [
+          {
+            id: MAIL_FLOW,
+            boni: "readMail",
+            draw: () =>
+              drawReadMail({
+                id: MAIL_FLOW,
+                name: "Leer correo",
+                collections: [{ key: "docencia", name: "Docencia" }],
+                rules: [{ sender: "ejemplo.viejo@example.org", do: "skip", collection: null }],
+                instructions: "Lo que pide un acta es una tarea.",
+                examples: [],
+                modules: ["tasks"],
+                days: 60,
+              }),
+          },
+        ],
+        NOW,
+      );
+      expect(onNewEngine(store, MAIL_FLOW)).toBe(true);
+      const published = publishedOf(store, MAIL_FLOW);
+      reviewerSays = {
+        rules: [
+          { from: "@lista.example.com", action: "skip", collection: null, decisions: ["d1", "d2"] },
+        ],
+        examples: ["d1"],
+      };
+      const day = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Madrid",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(Date.now());
+      const mailSpent = store.journal.spent(day, "reader:ext:correo");
+      // On its own: what his decisions show makes it look (the code found a rule).
+      const s = await m.reviewNow(1, true);
+      expect(onNewEngine(store, REVIEW_FLOW)).toBe(true);
+      expect(publishedOf(store, REVIEW_FLOW)?.automation.name).toBe(REVIEW_NAME);
+      expect(reviewerAsked).toBe(1);
+      expect(s?.rules.map((r) => [r.from, r.action])).toEqual([["@lista.example.com", "skip"]]);
+      expect(s && s.after > s.before).toBe(true);
+      // A run of the automation, its five steps; measuring spent from its own cap, never the mail's.
+      const run = store.journal.automationRun(s?.run ?? "");
+      expect(run?.automation).toBe(REVIEW_FLOW);
+      expect(
+        [...new Set(store.journal.automationRunSteps(s?.run ?? "").map((x) => x.step))].sort(),
+      ).toEqual(["p-decisions", "p-measure", "p-reviewer", "p-suggest", "trigger"]);
+      expect(store.journal.spent(day, "reader:ext:correo")).toBe(mailSpent);
+      expect(store.journal.spent(day, "reader:ext:correo:measure")).toBeGreaterThan(0);
+      // It waits in the Bandeja as a change of «Leer correo», not in the guide; nothing published changed.
+      expect(m.view(1)?.state.suggestion).toBeFalsy();
+      expect(pendingSuggestion(store)?.id).toBe(s?.id);
+      const [n] = instructionsNotices(store, REVIEW_FLOW);
+      expect(n?.rules.before.map((r) => r.sender)).toEqual(["ejemplo.viejo@example.org"]);
+      expect(n?.rules.added.map((r) => r.sender)).toEqual(["@lista.example.com"]);
+      expect(n?.examples.added).toHaveLength(1);
+      expect([publishedOf(store, MAIL_FLOW)?.n, publishedOf(store, MAIL_FLOW)?.hash]).toEqual([
+        published?.n,
+        published?.hash,
+      ]);
+      // One at a time and one a day: while it waits, and after his «No», it does not look again today.
+      expect(await m.reviewNow(1, true)).toBeNull();
+      expect(dropInstructions(store, s?.id ?? "", { trust: "personal", now })).toBeNull();
+      expect(await m.reviewNow(1, true)).toBeNull();
+      expect(reviewerAsked).toBe(1);
+      // What he turned down is not suggested again for a week, even on demand.
+      now = NOW + 2 * 86_400_000;
+      expect(await m.reviewNow(1)).toBeNull();
+      // After the week, on demand, it may come again; taken, it goes into the draft and waits for his «Publicar».
+      now = NOW + 8 * 86_400_000;
+      const s2 = await m.reviewNow(1);
+      expect(s2?.rules.map((r) => r.from)).toEqual(["@lista.example.com"]);
+      expect(
+        takeInstructions(store, s2?.id ?? "", { trust: "personal", device: "d_portatil", now }),
+      ).toEqual({ automation: MAIL_FLOW });
+      const draft = openAutomation(store, MAIL_FLOW)?.automation;
+      const rules = draft?.steps.find((x) => x.type === "boni.mailRule")?.params.rules as {
+        sender: string;
+      }[];
+      expect(rules.map((r) => r.sender)).toEqual([
+        "ejemplo.viejo@example.org",
+        "@lista.example.com",
+      ]);
+      expect(publishedOf(store, MAIL_FLOW)?.hash).toBe(published?.hash);
+      // With «Aprender» off, or its switch off, it does not look at all.
+      const asked = reviewerAsked;
+      now = NOW + 10 * 86_400_000;
+      setLearning(store, false);
+      expect(await m.reviewNow(1, true)).toBeNull();
+      setLearning(store, true);
+      setAutomationEnabled(store, REVIEW_FLOW, false, {
+        device: "d_portatil",
+        now,
+        trust: "personal",
+      });
+      expect(boniEnabled(store, REVIEW_FLOW)).toBe(false);
+      expect(m.reviewOff(1)).toBe(true);
+      expect(await m.reviewNow(1)).toBeNull();
+      expect(reviewerAsked).toBe(asked);
+    } finally {
+      wireBoni(null);
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("mail as an extension (docs/extensiones.md 3)", () => {
   it("is installed as a preset; off, nothing is fetched; its own module and fixed route are data", async () => {
     const d = mkdtempSync(join(tmpdir(), "boni-mail-ext-"));
@@ -3303,6 +3514,25 @@ describe("«Leer correo» converted (AU-249, AU-254)", () => {
       const c3 = inboxCard(store, third[0] as (typeof third)[number]);
       expect([c3.start, c3.end]).toEqual(["19:00", "20:00"]);
       expect(c3.before).toEqual({ day: "2026-10-28", start: "18:00", end: "19:00" });
+
+      // He corrects its title and accepts it: «Revisar instrucciones» learns from the row card as from a card of
+      // before, his title under the collection's own field, the one proposed as what the reading got wrong.
+      const accepted = await h.agent(1, true).acceptProposal(third[0]?.id as string, "personal", {
+        values: { titulo: "Reunión del equipo (19:00)" },
+      });
+      expect(accepted.error).toBeNull();
+      const st = m.state(1);
+      expect(decisions(store, st.type as string, () => "to")).toMatchObject([
+        {
+          proposal: third[0]?.id,
+          sender: "lucia.ejemplo@example.com",
+          collection: "Agenda",
+          title: "Reunión del equipo (19:00)",
+          corrected: { title: "Reunión del equipo" },
+          due: "2026-10-28",
+          accepted: true,
+        },
+      ]);
     } finally {
       wireBoni(null);
       wireAutomationModels(null);

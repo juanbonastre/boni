@@ -88,7 +88,7 @@ export const BONI_PARAMS = {
 
 /** What a piece lets change stays within these (AU-127); its own caps are in its code, never a parameter. */
 export const BONI_LIMITS = {
-  every: { min: 10, max: 500, born: 50 },
+  every: { min: 10, max: 500, born: 20 },
   days: { min: 1, max: 366, born: 60 },
   mails: { min: 1, max: 20, born: 20 },
   /** «Regla del remitente»: rows of its table; a sender's address. */

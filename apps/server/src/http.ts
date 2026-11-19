@@ -565,7 +565,8 @@ export function makeApp(opts: ServerOptions): App {
             ...(b.undo !== undefined ? { undo: b.undo } : {}),
           });
         }
-        // «Quitar pausa» and «No» to a suggestion (AU-209, AU-210): from a personal device only (decision 13).
+        // «Quitar pausa» and «No» to a suggestion (AU-209, AU-210), «Aceptar» or «No» to «Revisar instrucciones»'s
+        // (AU-211): from a personal device only (decision 13).
         case "POST /api/agent/automations/:id/learning": {
           const b = await bodyOf(req);
           return automation("automations.learn", {
@@ -574,6 +575,8 @@ export function makeApp(opts: ServerOptions): App {
             step: b.step,
             collection: b.collection,
             action: b.action,
+            // «Aceptar» and «No» in «Ver el cambio» (AU-211).
+            suggestion: b.suggestion,
           });
         }
         case "GET /api/agent/automations/:id/learning":

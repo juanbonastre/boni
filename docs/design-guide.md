@@ -1447,6 +1447,16 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   [Abrir] (primary) [No], a pause [Quitar pausa] (primary) [Abrir]. «Abrir» opens the automation. On a device that
   may not decide (the server's `mayDecide`) no buttons, and «Solo desde un dispositivo personal» in `--muted`. Never a
   button that sets «Sí»; every name on the card is plain text. The Bandeja's count counts these cards too.
+- **What «Revisar instrucciones» suggests** (F16 E2, `InstructionsCard.tsx`; AU-211): in the Bandeja, before the
+  cells' cards, a card per suggestion: «Sugerencia» with the lightbulb, the automation's name as its title («Leer
+  correo»), one line «Acertadas: 14 → 18 de 20» (published, with the change, of the cases repeated), and [Ver el
+  cambio] (primary) [No]. «Ver el cambio» opens a modal (`Modal`, 600 px, the whole width on the phone) with «Antes»
+  and «Después», each with «Reglas» and «Ejemplos» as lists of one line each («remitente · No leer», «remitente ·
+  Tareas», «asunto · títulos»); in «Después» what is added comes first, marked «Nuevo» in 11 px `--accent`; an empty
+  list says «Ninguno». Under them [Aceptar] (primary) [No]. «Aceptar» puts the change in the draft («Cambio en el
+  borrador» in a toast) and opens the automation, where he publishes it himself; never a «Sí», never a publish. On a
+  device that may not decide only [Ver el cambio], and «Solo desde un dispositivo personal» on the card and in the
+  modal. Every sender, subject and title is someone else's text, painted as plain text.
 - **«Fijo» or «Expresión»** (F14b F, `AutomationExpr.tsx`, `automations/cite.ts`; AU-20, AU-21): every value of the
   step's view, a parameter's, a field's of «Campo · Valor» and a condition's, ends with «{ }», small, always in
   sight. «{ }» closes every value's row, in one column: beside its control, with the same right edge, size and

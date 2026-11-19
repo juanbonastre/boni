@@ -70,9 +70,7 @@ describe("Boni's own automations (F16)", () => {
   it.todo(
     "AU-211 · the reviewer of an «Agente» is an automation of Boni of its own, with its switch; it starts from decisions made by hand on that step's proposals, measures its change dry on up to 20 of those cases, and suggests a draft change at most once a day, never a published one",
   );
-  it.todo(
-    "AU-211 · with «Aprender» off, or its automation off, the reviewer suggests nothing; the signals, the counts and the pause stay where F15 put them",
-  );
+  // «With «Aprender» off, or its automation off…» runs in review.test.ts, with «Revisar instrucciones» (AU-211).
 });
 
 describe("the port of Boni's code on the server (F16 S1)", () => {
@@ -109,6 +107,36 @@ describe("the port of Boni's code on the server (F16 S1)", () => {
       reader: "classify",
       input: { ref: "$input" },
     });
+  });
+
+  it("AU-211 · a piece gives back what its call of before had: the «Revisora» reads the input its arguments carry, and «Medir repitiendo» gets its «cuántos casos repite» as an argument", () => {
+    const reviewer = unitPlan(
+      call({
+        type: "boni.guideReviewer",
+        name: "review_reading",
+        values: { model: cell("") },
+        args: { input: cell("Decisiones de ejemplo", OUTSIDE as never), options: cell(["d1"]) },
+      }),
+    );
+    const read = (reviewer.plan as { steps: Record<string, unknown>[] }).steps[0];
+    expect(read).toMatchObject({ op: "read", reader: "review_reading", input: { ref: "$input" } });
+    expect(reviewer.bind.input?.label).toEqual(OUTSIDE);
+    // The input is not an argument too; no model named, none bound.
+    expect(Object.keys(reviewer.bind).sort()).toEqual(["input", "x0"]);
+    const measure = unitPlan(
+      call({
+        type: "boni.guideMeasure",
+        name: "guide.measure",
+        values: { mails: cell(20) },
+        args: { reading: cell({ rules: [] }) },
+      }),
+    );
+    expect((measure.plan as { steps: Record<string, unknown>[] }).steps[0]).toMatchObject({
+      op: "call",
+      tool: "guide.measure",
+      args: { mails: { ref: "$x0" }, reading: { ref: "$x1" } },
+    });
+    expect(measure.bind.x0).toMatchObject({ t: "v", value: 20 });
   });
 
   it("AU-221 · S2: which of Boni's automations a run is comes from its stored id and its author, never from the document: a person's automation under one of those ids is none of Boni's", () => {
