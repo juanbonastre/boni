@@ -89,8 +89,8 @@ function decodeText(raw: Uint8Array): string {
   }
 }
 
-/** CSV with quotes, its separator guessed from the first lines (comma, semicolon or tab). */
-export function readCsvRows(raw: Uint8Array): Row[] {
+/** CSV with quotes, its separator guessed from the first lines (comma, semicolon or tab); `maxRows` at most. */
+export function readCsvRows(raw: Uint8Array, maxRows = Number.POSITIVE_INFINITY): Row[] {
   const text = decodeText(raw);
   const sample = text.split(/\r?\n/).slice(0, 20).join("\n");
   const count = (d: string) => sample.split(d).length - 1;
@@ -118,9 +118,10 @@ export function readCsvRows(raw: Uint8Array): Row[] {
       rows.push(row);
       row = [];
       cell = "";
+      if (rows.length >= maxRows) break;
     } else cell += ch;
   }
-  if (cell !== "" || row.length) {
+  if ((cell !== "" || row.length) && rows.length < maxRows) {
     row.push(cell);
     rows.push(row);
   }
@@ -129,9 +130,32 @@ export function readCsvRows(raw: Uint8Array): Row[] {
 
 // ------------------------------------------------------------------ XLSX
 
-/** The files of a ZIP by name (central directory; stored or deflated entries). */
-function unzip(buf: Uint8Array): Map<string, Uint8Array> {
-  const out = new Map<string, Uint8Array>();
+/**
+ * What one reading of a sheet may take (task 164: a mail's .xlsx hung the server). `bytes`: the archive's files
+ * unpacked, together, at most (past it the reading throws, before anything is held whole); `cells`: cells laid out
+ * in rows, empty ones of a row's width included (past it, it throws); `rows`: rows read (the rest are left out).
+ */
+export interface SheetLimits {
+  bytes: number;
+  cells: number;
+  rows: number;
+}
+/** Unpacked bytes of one .xlsx, at most, for every reading: a statement of years is a few MB. */
+export const SHEET_UNPACKED_MAX = 32 * 1024 * 1024;
+/** Cells of one sheet, at most, for every reading: a statement of years is some hundred thousand. */
+export const SHEET_CELLS_MAX = 2_000_000;
+export const SHEET_LIMITS: SheetLimits = {
+  bytes: SHEET_UNPACKED_MAX,
+  cells: SHEET_CELLS_MAX,
+  rows: Number.POSITIVE_INFINITY,
+};
+
+/**
+ * The files of a ZIP by name (central directory; stored or deflated entries), each unpacked when asked and only up to
+ * the bytes it is given (past them, it throws).
+ */
+function unzip(buf: Uint8Array): Map<string, (max: number) => Uint8Array> {
+  const out = new Map<string, (max: number) => Uint8Array>();
   let eocd = -1;
   for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--)
     if (u32(buf, i) === 0x06054b50) {
@@ -152,15 +176,15 @@ function unzip(buf: Uint8Array): Map<string, Uint8Array> {
     const name = utf8(buf.subarray(p + 46, p + 46 + nameLen));
     const lh = local + 30 + u16(buf, local + 26) + u16(buf, local + 28);
     const data = buf.subarray(lh, lh + size);
-    out.set(name, method === 8 ? inflateRaw(data) : data);
+    out.set(name, (max) => (method === 8 ? inflateRaw(data, max) : data));
     p += 46 + nameLen + extra + comment;
   }
   return out;
 }
-
 const xmlText = (s: string) =>
   s
-    .replace(/<[^>]*>/g, "")
+    // A tag holds no «<» (XML escapes it), so each «<» starts at most one match: one pass.
+    .replace(/<[^<>]*>/g, "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -168,8 +192,8 @@ const xmlText = (s: string) =>
     .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(Number.parseInt(h, 16)))
     .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
     .replace(/&amp;/g, "&");
-const attr = (tag: string, name: string) =>
-  new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+const ATTR_R = /\sr="([^"]*)"/;
+const ATTR_T = /\st="([^"]*)"/;
 
 function colIndex(ref: string | null): number | null {
   const m = /^[A-Z]+/.exec(ref ?? "");
@@ -179,41 +203,87 @@ function colIndex(ref: string | null): number | null {
   return n - 1;
 }
 
+/**
+ * Each element `<tag …>body</tag>` or `<tag …/>` of `xml`, in order: its opening tag and its body ("" when it closes
+ * itself). One forward pass (task 164): each opening tag is found with `indexOf`, its end with `indexOf` from there,
+ * never a pattern spanning the element; an opening tag left open ends the scan with what was read before it. `<tag`
+ * counts when whitespace, «>» or «/» follows it (`<row`, not `<rowBreaks`).
+ */
+function* elements(xml: string, tag: string): Generator<{ open: string; body: string }> {
+  const start = `<${tag}`;
+  const close = `</${tag}>`;
+  for (let i = 0; ; ) {
+    const s = xml.indexOf(start, i);
+    if (s < 0) return;
+    const after = xml.charCodeAt(s + start.length);
+    i = s + start.length;
+    if (!(after === 62 || after === 47 || after === 32 || (after >= 9 && after <= 13))) continue;
+    const gt = xml.indexOf(">", i);
+    if (gt < 0) return;
+    const open = xml.slice(s, gt + 1);
+    if (xml.charCodeAt(gt - 1) === 47) {
+      yield { open, body: "" };
+      i = gt + 1;
+      continue;
+    }
+    const end = xml.indexOf(close, gt + 1);
+    if (end < 0) return;
+    yield { open, body: xml.slice(gt + 1, end) };
+    i = end + close.length;
+  }
+}
+
+/** The text of an `<si>` or an inline `<is>`: its `<t>` pieces joined. */
+const pieces = (body: string) => {
+  let out = "";
+  for (const t of elements(body, "t")) out += xmlText(t.body);
+  return out;
+};
+
 /** The first worksheet of an .xlsx. */
-export function readXlsxRows(raw: Uint8Array): Row[] {
+export function readXlsxRows(raw: Uint8Array, limits: SheetLimits = SHEET_LIMITS): Row[] {
   const files = unzip(raw);
+  let left = limits.bytes;
+  const take = (name: string) => {
+    const bytes = files.get(name)?.(left);
+    if (!bytes) return "";
+    if (bytes.byteLength > left) throw new Error("xlsx demasiado grande");
+    left -= bytes.byteLength;
+    return utf8(bytes);
+  };
   const shared: string[] = [];
-  const sstBytes = files.get("xl/sharedStrings.xml");
-  const sst = sstBytes ? utf8(sstBytes) : "";
-  if (sst)
-    for (const si of sst.match(/<si>[\s\S]*?<\/si>/g) ?? [])
-      shared.push((si.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? []).map(xmlText).join(""));
+  const sst = take("xl/sharedStrings.xml");
+  for (const si of elements(sst, "si")) shared.push(pieces(si.body));
   const sheets = [...files.keys()]
     .filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n))
     .sort((a, b) => Number(/(\d+)\.xml$/.exec(a)?.[1]) - Number(/(\d+)\.xml$/.exec(b)?.[1]));
   if (!sheets.length) throw new Error("xlsx sin hojas");
-  const sheet = files.get(sheets[0] as string);
-  const xml = sheet ? utf8(sheet) : "";
+  const xml = take(sheets[0] as string);
   const rows: Row[] = [];
-  for (const r of xml.match(/<row[\s>][\s\S]*?<\/row>|<row[^>]*\/>/g) ?? []) {
+  let laid = 0;
+  for (const r of elements(xml, "row")) {
+    if (rows.length >= limits.rows) break;
     const cells = new Map<number, Cell>();
     let next = 0;
-    for (const c of r.match(/<c[\s>][\s\S]*?<\/c>|<c[^>]*\/>/g) ?? []) {
-      const open = /^<c[^>]*>/.exec(c)?.[0] ?? c;
-      const col = colIndex(attr(open, "r")) ?? next;
+    let width = 0;
+    for (const c of elements(r.body, "c")) {
+      const col = colIndex(ATTR_R.exec(c.open)?.[1] ?? null) ?? next;
       next = col + 1;
-      const t = attr(open, "t");
-      const v = /<v>([\s\S]*?)<\/v>/.exec(c)?.[1];
+      width = Math.max(width, next);
+      const t = ATTR_T.exec(c.open)?.[1] ?? null;
+      const vAt = c.body.indexOf("<v>");
+      const vEnd = vAt < 0 ? -1 : c.body.indexOf("</v>", vAt + 3);
+      const v = vEnd < 0 ? undefined : c.body.slice(vAt + 3, vEnd);
       let val: Cell;
       if (t === "s") val = v !== undefined ? (shared[Number(v)] ?? "") : "";
-      else if (t === "inlineStr")
-        val = (c.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? []).map(xmlText).join("");
+      else if (t === "inlineStr") val = pieces(c.body);
       else if (v === undefined) val = "";
       else if (t === "str" || t === "e" || t === "b") val = xmlText(v);
       else val = Number(v);
       cells.set(col, val);
     }
-    const width = cells.size ? Math.max(...cells.keys()) + 1 : 0;
+    laid += width;
+    if (laid > limits.cells) throw new Error("hoja demasiado grande");
     rows.push(Array.from({ length: width }, (_x, i) => cells.get(i) ?? ""));
   }
   return rows;
@@ -236,22 +306,26 @@ function oleStream(data: Uint8Array, names = ["Workbook", "Book"]): Uint8Array {
   const nMfat = u32(data, 0x40);
   const firstDifat = u32(data, 0x44);
   const nDifat = u32(data, 0x48);
+  // No table has more sectors than the file (task 164: a forged count, or a chain that loops, never runs on).
+  const sectors = Math.ceil(data.length / ssz);
   const sector = (n: number) => data.subarray((n + 1) * ssz, (n + 2) * ssz);
   const u32s = (b: Uint8Array) => Array.from({ length: b.length >> 2 }, (_x, i) => u32(b, i * 4));
   const difat = u32s(data.subarray(0x4c, 0x4c + 109 * 4));
   let s = firstDifat;
   const per = ssz / 4 - 1;
-  for (let k = 0; k < nDifat && s < END; k++) {
+  for (let k = 0; k < Math.min(nDifat, sectors) && s < END; k++) {
     const vals = u32s(sector(s));
     difat.push(...vals.slice(0, per));
     s = vals[per] ?? END;
   }
   const fat: number[] = [];
-  for (const x of difat.slice(0, nFat)) fat.push(...u32s(sector(x)));
+  for (const x of difat.slice(0, Math.min(nFat, sectors))) fat.push(...u32s(sector(x)));
   const chain = (start: number, table: number[]) => {
     const out: number[] = [];
+    const seen = new Set<number>();
     let c = start;
-    for (let guard = 0; c < END && guard <= table.length; guard++) {
+    for (let guard = 0; c < END && guard <= table.length && !seen.has(c); guard++) {
+      seen.add(c);
       out.push(c);
       c = c < table.length ? (table[c] as number) : 0xfffffffe;
     }
@@ -355,7 +429,7 @@ function rk(raw: Uint8Array): number {
 }
 
 /** The first worksheet of an old binary .xls (BIFF8). */
-export function readXlsRows(raw: Uint8Array): Row[] {
+export function readXlsRows(raw: Uint8Array, limits: SheetLimits = SHEET_LIMITS): Row[] {
   const wb = oleStream(raw);
   const recs: [number, Uint8Array][] = [];
   for (let pos = 0; pos + 4 <= wb.length; ) {
@@ -417,24 +491,31 @@ export function readXlsRows(raw: Uint8Array): Row[] {
   if (!cells.size) return [];
   let maxR = 0;
   let maxC = 0;
+  const filled = new Set<number>();
   for (const k of cells.keys()) {
     const [r, c] = k.split(",").map(Number) as [number, number];
     maxR = Math.max(maxR, r);
     maxC = Math.max(maxC, c);
+    filled.add(r);
   }
+  // Every row with a cell is as wide as the widest; empty ones are []. Counted before laying out (task 164).
+  const count = Math.min(maxR + 1, limits.rows);
+  let laid = 0;
+  for (const r of filled) if (r < count) laid += maxC + 1;
+  if (laid > limits.cells) throw new Error("hoja demasiado grande");
   const rows: Row[] = [];
-  for (let r = 0; r <= maxR; r++) {
-    const any = Array.from({ length: maxC + 1 }, (_x, c) => cells.has(at(r, c))).some(Boolean);
-    rows.push(any ? Array.from({ length: maxC + 1 }, (_x, c) => cells.get(at(r, c)) ?? "") : []);
-  }
+  for (let r = 0; r < count; r++)
+    rows.push(
+      filled.has(r) ? Array.from({ length: maxC + 1 }, (_x, c) => cells.get(at(r, c)) ?? "") : [],
+    );
   return rows;
 }
 
-/** Any statement by its first bytes (and a .csv name for text). */
-export function readRows(raw: Uint8Array, name: string): Row[] {
-  if (raw[0] === 0x50 && raw[1] === 0x4b) return readXlsxRows(raw);
-  if (startsWith(raw, OLE)) return readXlsRows(raw);
-  if (name.toLowerCase().endsWith(".csv")) return readCsvRows(raw);
+/** Any statement by its first bytes (and a .csv name for text), within `limits` (`SHEET_LIMITS` by default). */
+export function readRows(raw: Uint8Array, name: string, limits: SheetLimits = SHEET_LIMITS): Row[] {
+  if (raw[0] === 0x50 && raw[1] === 0x4b) return readXlsxRows(raw, limits);
+  if (startsWith(raw, OLE)) return readXlsRows(raw, limits);
+  if (name.toLowerCase().endsWith(".csv")) return readCsvRows(raw, limits.rows);
   const ext = /\.[^.]*$/.exec(name)?.[0] ?? "";
   throw new Error(`formato no soportado (${ext}): guardalo como .xlsx o .csv`);
 }

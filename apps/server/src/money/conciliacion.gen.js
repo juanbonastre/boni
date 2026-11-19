@@ -407,15 +407,21 @@ var conciliacion = (() => {
   var FIXED_LIT = huffman(
     Array.from({ length: 288 }, (_x, i) => i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8)
   );
+  var InflateCapError = class extends Error {
+    constructor(max) {
+      super(`unpacks past ${max} bytes`);
+    }
+  };
   var FIXED_DIST = huffman(Array.from({ length: 30 }, () => 5));
-  function inflateRaw(d) {
+  function inflateRaw(d, max = Number.POSITIVE_INFINITY) {
     const end = d.length * 8;
     let pos = 0;
-    let out = new Uint8Array(Math.max(1024, d.length * 4));
+    let out = new Uint8Array(Math.min(max, Math.max(1024, d.length * 4)));
     let n = 0;
     const room = (k) => {
       if (n + k <= out.length) return;
-      const bigger = new Uint8Array(Math.max(out.length * 2, n + k));
+      if (n + k > max) throw new InflateCapError(max);
+      const bigger = new Uint8Array(Math.min(max, Math.max(out.length * 2, n + k)));
       bigger.set(out.subarray(0, n));
       out = bigger;
     };
@@ -555,7 +561,7 @@ var conciliacion = (() => {
       return cp1252(raw);
     }
   }
-  function readCsvRows(raw) {
+  function readCsvRows(raw, maxRows = Number.POSITIVE_INFINITY) {
     const text2 = decodeText(raw);
     const sample = text2.split(/\r?\n/).slice(0, 20).join("\n");
     const count2 = (d) => sample.split(d).length - 1;
@@ -583,14 +589,22 @@ var conciliacion = (() => {
         rows.push(row);
         row = [];
         cell = "";
+        if (rows.length >= maxRows) break;
       } else cell += ch;
     }
-    if (cell !== "" || row.length) {
+    if ((cell !== "" || row.length) && rows.length < maxRows) {
       row.push(cell);
       rows.push(row);
     }
     return rows.map((r) => r.length === 1 && r[0] === "" ? [] : r);
   }
+  var SHEET_UNPACKED_MAX = 32 * 1024 * 1024;
+  var SHEET_CELLS_MAX = 2e6;
+  var SHEET_LIMITS = {
+    bytes: SHEET_UNPACKED_MAX,
+    cells: SHEET_CELLS_MAX,
+    rows: Number.POSITIVE_INFINITY
+  };
   function unzip(buf) {
     const out = /* @__PURE__ */ new Map();
     let eocd = -1;
@@ -613,13 +627,14 @@ var conciliacion = (() => {
       const name = utf8(buf.subarray(p + 46, p + 46 + nameLen));
       const lh = local + 30 + u16(buf, local + 26) + u16(buf, local + 28);
       const data = buf.subarray(lh, lh + size);
-      out.set(name, method === 8 ? inflateRaw(data) : data);
+      out.set(name, (max) => method === 8 ? inflateRaw(data, max) : data);
       p += 46 + nameLen + extra + comment;
     }
     return out;
   }
-  var xmlText = (s) => s.replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(Number.parseInt(h, 16))).replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d))).replace(/&amp;/g, "&");
-  var attr = (tag, name) => new RegExp(`\\s${name}="([^"]*)"`).exec(tag)?.[1] ?? null;
+  var xmlText = (s) => s.replace(/<[^<>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(Number.parseInt(h, 16))).replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d))).replace(/&amp;/g, "&");
+  var ATTR_R = /\sr="([^"]*)"/;
+  var ATTR_T = /\st="([^"]*)"/;
   function colIndex(ref) {
     const m = /^[A-Z]+/.exec(ref ?? "");
     if (!m) return null;
@@ -627,38 +642,75 @@ var conciliacion = (() => {
     for (const ch of m[0]) n = n * 26 + ch.charCodeAt(0) - 64;
     return n - 1;
   }
-  function readXlsxRows(raw) {
+  function* elements(xml, tag) {
+    const start = `<${tag}`;
+    const close = `</${tag}>`;
+    for (let i = 0; ; ) {
+      const s = xml.indexOf(start, i);
+      if (s < 0) return;
+      const after = xml.charCodeAt(s + start.length);
+      i = s + start.length;
+      if (!(after === 62 || after === 47 || after === 32 || after >= 9 && after <= 13)) continue;
+      const gt = xml.indexOf(">", i);
+      if (gt < 0) return;
+      const open = xml.slice(s, gt + 1);
+      if (xml.charCodeAt(gt - 1) === 47) {
+        yield { open, body: "" };
+        i = gt + 1;
+        continue;
+      }
+      const end = xml.indexOf(close, gt + 1);
+      if (end < 0) return;
+      yield { open, body: xml.slice(gt + 1, end) };
+      i = end + close.length;
+    }
+  }
+  var pieces = (body) => {
+    let out = "";
+    for (const t of elements(body, "t")) out += xmlText(t.body);
+    return out;
+  };
+  function readXlsxRows(raw, limits = SHEET_LIMITS) {
     const files = unzip(raw);
+    let left = limits.bytes;
+    const take = (name) => {
+      const bytes = files.get(name)?.(left);
+      if (!bytes) return "";
+      if (bytes.byteLength > left) throw new Error("xlsx demasiado grande");
+      left -= bytes.byteLength;
+      return utf8(bytes);
+    };
     const shared = [];
-    const sstBytes = files.get("xl/sharedStrings.xml");
-    const sst = sstBytes ? utf8(sstBytes) : "";
-    if (sst)
-      for (const si of sst.match(/<si>[\s\S]*?<\/si>/g) ?? [])
-        shared.push((si.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? []).map(xmlText).join(""));
+    const sst = take("xl/sharedStrings.xml");
+    for (const si of elements(sst, "si")) shared.push(pieces(si.body));
     const sheets = [...files.keys()].filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)?.[1]) - Number(/(\d+)\.xml$/.exec(b)?.[1]));
     if (!sheets.length) throw new Error("xlsx sin hojas");
-    const sheet = files.get(sheets[0]);
-    const xml = sheet ? utf8(sheet) : "";
+    const xml = take(sheets[0]);
     const rows = [];
-    for (const r of xml.match(/<row[\s>][\s\S]*?<\/row>|<row[^>]*\/>/g) ?? []) {
+    let laid = 0;
+    for (const r of elements(xml, "row")) {
+      if (rows.length >= limits.rows) break;
       const cells = /* @__PURE__ */ new Map();
       let next = 0;
-      for (const c of r.match(/<c[\s>][\s\S]*?<\/c>|<c[^>]*\/>/g) ?? []) {
-        const open = /^<c[^>]*>/.exec(c)?.[0] ?? c;
-        const col = colIndex(attr(open, "r")) ?? next;
+      let width = 0;
+      for (const c of elements(r.body, "c")) {
+        const col = colIndex(ATTR_R.exec(c.open)?.[1] ?? null) ?? next;
         next = col + 1;
-        const t = attr(open, "t");
-        const v = /<v>([\s\S]*?)<\/v>/.exec(c)?.[1];
+        width = Math.max(width, next);
+        const t = ATTR_T.exec(c.open)?.[1] ?? null;
+        const vAt = c.body.indexOf("<v>");
+        const vEnd = vAt < 0 ? -1 : c.body.indexOf("</v>", vAt + 3);
+        const v = vEnd < 0 ? void 0 : c.body.slice(vAt + 3, vEnd);
         let val;
         if (t === "s") val = v !== void 0 ? shared[Number(v)] ?? "" : "";
-        else if (t === "inlineStr")
-          val = (c.match(/<t[^>]*>[\s\S]*?<\/t>/g) ?? []).map(xmlText).join("");
+        else if (t === "inlineStr") val = pieces(c.body);
         else if (v === void 0) val = "";
         else if (t === "str" || t === "e" || t === "b") val = xmlText(v);
         else val = Number(v);
         cells.set(col, val);
       }
-      const width = cells.size ? Math.max(...cells.keys()) + 1 : 0;
+      laid += width;
+      if (laid > limits.cells) throw new Error("hoja demasiado grande");
       rows.push(Array.from({ length: width }, (_x, i) => cells.get(i) ?? ""));
     }
     return rows;
@@ -676,22 +728,25 @@ var conciliacion = (() => {
     const nMfat = u32(data, 64);
     const firstDifat = u32(data, 68);
     const nDifat = u32(data, 72);
+    const sectors = Math.ceil(data.length / ssz);
     const sector = (n) => data.subarray((n + 1) * ssz, (n + 2) * ssz);
     const u32s = (b) => Array.from({ length: b.length >> 2 }, (_x, i) => u32(b, i * 4));
     const difat = u32s(data.subarray(76, 76 + 109 * 4));
     let s = firstDifat;
     const per = ssz / 4 - 1;
-    for (let k = 0; k < nDifat && s < END; k++) {
+    for (let k = 0; k < Math.min(nDifat, sectors) && s < END; k++) {
       const vals = u32s(sector(s));
       difat.push(...vals.slice(0, per));
       s = vals[per] ?? END;
     }
     const fat = [];
-    for (const x of difat.slice(0, nFat)) fat.push(...u32s(sector(x)));
+    for (const x of difat.slice(0, Math.min(nFat, sectors))) fat.push(...u32s(sector(x)));
     const chain = (start, table) => {
       const out = [];
+      const seen = /* @__PURE__ */ new Set();
       let c = start;
-      for (let guard = 0; c < END && guard <= table.length; guard++) {
+      for (let guard = 0; c < END && guard <= table.length && !seen.has(c); guard++) {
+        seen.add(c);
         out.push(c);
         c = c < table.length ? table[c] : 4294967294;
       }
@@ -789,7 +844,7 @@ var conciliacion = (() => {
     }
     return u & 1 ? x / 100 : x;
   }
-  function readXlsRows(raw) {
+  function readXlsRows(raw, limits = SHEET_LIMITS) {
     const wb = oleStream(raw);
     const recs = [];
     for (let pos = 0; pos + 4 <= wb.length; ) {
@@ -813,9 +868,9 @@ var conciliacion = (() => {
         const chunks = [d.subarray(8)];
         for (let j = k + 1; j < recs.length && recs[j][0] === 60; j++)
           chunks.push(recs[j][1]);
-        const pieces = new Pieces(chunks);
+        const pieces2 = new Pieces(chunks);
         const n = u32(d, 4);
-        for (let i = 0; i < n; i++) sst.push(pieces.xlstring());
+        for (let i = 0; i < n; i++) sst.push(pieces2.xlstring());
         continue;
       }
       if (sheet !== 1) {
@@ -851,22 +906,28 @@ var conciliacion = (() => {
     if (!cells.size) return [];
     let maxR = 0;
     let maxC = 0;
+    const filled = /* @__PURE__ */ new Set();
     for (const k of cells.keys()) {
       const [r, c] = k.split(",").map(Number);
       maxR = Math.max(maxR, r);
       maxC = Math.max(maxC, c);
+      filled.add(r);
     }
+    const count2 = Math.min(maxR + 1, limits.rows);
+    let laid = 0;
+    for (const r of filled) if (r < count2) laid += maxC + 1;
+    if (laid > limits.cells) throw new Error("hoja demasiado grande");
     const rows = [];
-    for (let r = 0; r <= maxR; r++) {
-      const any = Array.from({ length: maxC + 1 }, (_x, c) => cells.has(at(r, c))).some(Boolean);
-      rows.push(any ? Array.from({ length: maxC + 1 }, (_x, c) => cells.get(at(r, c)) ?? "") : []);
-    }
+    for (let r = 0; r < count2; r++)
+      rows.push(
+        filled.has(r) ? Array.from({ length: maxC + 1 }, (_x, c) => cells.get(at(r, c)) ?? "") : []
+      );
     return rows;
   }
-  function readRows(raw, name) {
-    if (raw[0] === 80 && raw[1] === 75) return readXlsxRows(raw);
-    if (startsWith(raw, OLE)) return readXlsRows(raw);
-    if (name.toLowerCase().endsWith(".csv")) return readCsvRows(raw);
+  function readRows(raw, name, limits = SHEET_LIMITS) {
+    if (raw[0] === 80 && raw[1] === 75) return readXlsxRows(raw, limits);
+    if (startsWith(raw, OLE)) return readXlsRows(raw, limits);
+    if (name.toLowerCase().endsWith(".csv")) return readCsvRows(raw, limits.rows);
     const ext = /\.[^.]*$/.exec(name)?.[0] ?? "";
     throw new Error(`formato no soportado (${ext}): guardalo como .xlsx o .csv`);
   }

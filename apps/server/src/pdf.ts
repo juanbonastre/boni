@@ -238,7 +238,9 @@ class Doc {
   constructor(b: Uint8Array) {
     this.b = b;
     const s = Buffer.from(b.buffer, b.byteOffset, b.byteLength).toString("latin1");
-    for (const m of s.matchAll(/(\d+)\s+(\d+)\s+obj\b/g))
+    // Only from the start of a run of digits: from inside one, the run was retried to its end at each digit, and a
+    // long run took the square of its length (task 164).
+    for (const m of s.matchAll(/(?<!\d)(\d+)\s+(\d+)\s+obj\b/g))
       this.offsets.set(Number(m[1]), (m.index ?? 0) + m[0].length);
     // The objects kept compressed inside object streams.
     for (const n of [...this.offsets.keys()]) {

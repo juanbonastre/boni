@@ -37,6 +37,7 @@ import { saveCalendarDefs } from "./calendarStore.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
+import { SHEET_READ_MAX } from "./fileReading.ts";
 import { flowMap } from "./flowMap.ts";
 import { FETCH_FLOW, MAIL_FLOW, REVIEW_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -53,6 +54,7 @@ import {
   userIn,
 } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
+import { xlsx } from "./money/xlsx.test-util.ts";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 
@@ -126,6 +128,32 @@ const mailWithFiles = (n: number, subject: string) =>
     "Content-Transfer-Encoding: base64",
     "",
     "iVBORw0KGgo=",
+    "--mix--",
+    "",
+  ].join("\r\n");
+
+/** A mail with one .xlsx attached (task 164): the sheet's bytes as given, in base64. */
+const mailWithSheet = (n: number, subject: string, sheet: Uint8Array) =>
+  [
+    "From: Lucía Ejemplo <lucia.ejemplo@example.com>",
+    "To: juan@example.com",
+    `Subject: ${subject}`,
+    "Date: Mon, 19 Oct 2026 09:30:00 +0200",
+    `Message-ID: <m${n}@example.com>`,
+    'Content-Type: multipart/mixed; boundary="mix"',
+    "",
+    "--mix",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Te paso la hoja.",
+    "--mix",
+    'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet; name="hoja.xlsx"',
+    'Content-Disposition: attachment; filename="hoja.xlsx"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    ...(Buffer.from(sheet)
+      .toString("base64")
+      .match(/.{1,76}/g) ?? []),
     "--mix--",
     "",
   ].join("\r\n");
@@ -646,6 +674,27 @@ describe("the mailbox", () => {
     expect(String(big?.entity.body)).toMatch(
       /\[Boni: el correo original \(2\.\d MB\) no se guarda: pasa de 2 MB\]$/,
     );
+    // A sheet that unpacks past its cap, and a damaged one, are kept as files without their text, and so is the mail
+    // (task 164: one such sheet stopped the server, and every start brought the same mail again).
+    const bomb = xlsx(
+      `<row r="1"><c r="A1"><v>1</v></c></row>${" ".repeat(SHEET_READ_MAX + 1024)}`,
+    );
+    box.mails.set(8, mailWithSheet(19, "Hoja enorme", bomb));
+    box.mails.set(9, mailWithSheet(20, "Hoja rota", Uint8Array.of(0x50, 0x4b, 3, 4, 9, 9, 9)));
+    box.mails.set(
+      10,
+      mailWithSheet(21, "Hoja buena", xlsx('<row r="1"><c r="A1"><v>7</v></c></row>')),
+    );
+    expect((await mails.check(1)).lastError).toBeNull();
+    for (const subject of ["Hoja enorme", "Hoja rota", "Hoja buena"]) {
+      const kept = store.list(def.id).find((e) => e.entity.values.f_asunto === subject);
+      expect(kept, subject).toBeDefined();
+      const sheetIds = kept?.entity.values.f_archivos as string[];
+      expect(store.get(sheetIds[0] as string)?.entity.values.f_title).toMatch(/^hoja( \(\d\))?\.xlsx$/);
+      expect(kept?.entity.values.f_adjuntos_texto).toBe(
+        subject === "Hoja buena" ? "[hoja.xlsx]\n7" : undefined,
+      );
+    }
   });
 });
 

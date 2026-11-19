@@ -5,6 +5,31 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-19 (forty-ninth) — server 0.8.125
+
+A hotfix of the server alone.
+
+Needs:
+- The server, 0.8.125. No store migration: the tables are as in 0.8.124, so going back to 0.8.124 is safe (but it
+  brings the hang back). Nothing of his data changed.
+- Boni desktop stays 0.4.91, Boni Calendar desktop 0.8.25, Boni Android 0.2.449: nothing in the web apps, the desktop
+  apps or Android changed.
+
+What it brings (task 164):
+- **A mail with a spreadsheet attached could stop the server** (since the mail's attachments are read for the reader,
+  2026-11-02, with the sheet reader of 2026-10-23): the way the .xlsx reader found each row and cell took the square of
+  the sheet's size on some sheets, so the server spent its whole time on one attachment and answered nothing; the
+  mail was never kept, so every start brought it again. Now each sheet is read in one pass, in time proportional to
+  its size, and within limits: an attached sheet unpacks to 8 MB at most, its first 2,000 rows and up to 1,000,000
+  cells are read, and nothing over 20 MB is opened. Past a limit the sheet's text is left out, as a damaged sheet's
+  is, and the mail is kept with the sheet as a file. The bank import keeps its own wider limits (32 MB unpacked,
+  2,000,000 cells), and an archive that unpacks past them stops before it is held whole.
+- The same kind of slowness in the PDF reader (a long run of digits) and in the old .xls reader (forged counts or
+  looping chains in its container) is gone too.
+- A row or cell written closed on itself (`<c r="A1" s="1"/>`, as spreadsheet programs write a formatted empty cell)
+  is now an empty cell; before, it took the next cell's value. His statements read as before (their tests pass
+  unchanged).
+
 ## 2026-11-19 (forty-eighth) — server 0.8.124 · Boni desktop 0.4.91 · Boni Android
 
 Needs:

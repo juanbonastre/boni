@@ -295,17 +295,28 @@ function huffman(lengths: ArrayLike<number>): { table: Uint16Array; bits: number
 const FIXED_LIT = huffman(
   Array.from({ length: 288 }, (_x, i) => (i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8)),
 );
+/** What `inflateRaw` throws when the output would pass its `max`. */
+export class InflateCapError extends Error {
+  constructor(max: number) {
+    super(`unpacks past ${max} bytes`);
+  }
+}
+
 const FIXED_DIST = huffman(Array.from({ length: 30 }, () => 5));
 
-/** Raw DEFLATE data (a ZIP entry's) uncompressed, as zlib's `inflateRawSync` does; throws if it is damaged. */
-export function inflateRaw(d: Uint8Array): Uint8Array {
+/**
+ * Raw DEFLATE data (a ZIP entry's) uncompressed, as zlib's `inflateRawSync` does; throws if it is damaged, or once
+ * its output would pass `max` bytes (a small archive that unpacks to something huge stops there, never held whole).
+ */
+export function inflateRaw(d: Uint8Array, max = Number.POSITIVE_INFINITY): Uint8Array {
   const end = d.length * 8;
   let pos = 0;
-  let out = new Uint8Array(Math.max(1024, d.length * 4));
+  let out = new Uint8Array(Math.min(max, Math.max(1024, d.length * 4)));
   let n = 0;
   const room = (k: number) => {
     if (n + k <= out.length) return;
-    const bigger = new Uint8Array(Math.max(out.length * 2, n + k));
+    if (n + k > max) throw new InflateCapError(max);
+    const bigger = new Uint8Array(Math.min(max, Math.max(out.length * 2, n + k)));
     bigger.set(out.subarray(0, n));
     out = bigger;
   };

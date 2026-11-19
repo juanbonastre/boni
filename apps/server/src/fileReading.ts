@@ -3,7 +3,7 @@
  * file, a PDF's text, or the image itself (a photo, a scan's pages). One reader for a mail's attachments and for a
  * file Juan drops on Boni's window. Each cap is here, and each says what the reading left out.
  */
-import { readRows } from "./money/sheets.ts";
+import { readRows, type SheetLimits } from "./money/sheets.ts";
 import { readPdf } from "./pdf.ts";
 
 /** Text handed to a reader of one file, at most (as of a mail's attachments together). */
@@ -21,6 +21,21 @@ export const IMAGE_TYPES: ReadonlySet<string> = new Set([
 ]);
 /** Rows of a sheet read, at most. */
 export const ROWS_MAX = 2000;
+/**
+ * An attached .xlsx's files unpacked, at most (task 164): 2,000 rows of a wide statement are well under 2 MB of XML,
+ * and of all of it the reader gets `TEXT_MAX` characters. Past it the sheet is not read, as a damaged one.
+ */
+export const SHEET_READ_MAX = 8 * 1024 * 1024;
+/**
+ * Cells of an attached sheet laid out, at most: `ROWS_MAX` rows of 500 columns. Each cell takes at least a tab of the
+ * reader's `TEXT_MAX`, so a wider sheet gives the reader nothing more; past it the sheet is not read.
+ */
+export const SHEET_CELLS_READ_MAX = ROWS_MAX * 500;
+const ATTACHED: SheetLimits = {
+  bytes: SHEET_READ_MAX,
+  cells: SHEET_CELLS_READ_MAX,
+  rows: ROWS_MAX,
+};
 /**
  * What a reader gets of a file, as a word the chip says: its text, its image, or only the file (too big to read,
  * or of a kind code does not read).
@@ -92,20 +107,24 @@ export function readFile(name: string, mime: string, bytes: Uint8Array): FileRea
 
 /**
  * What the code reads of an attachment for the reader: a sheet's rows (csv, xlsx, xls), a text file or a PDF's
- * text; else nothing.
+ * text; else nothing. Nothing over `READ_MAX` is opened, a sheet is read within `ATTACHED`, and it never throws: a
+ * file it cannot or may not read gives "".
  */
 export function attachmentText(a: { name: string; type: string; content?: Uint8Array }): string {
-  if (!a.content) return "";
-  const name = a.name.toLowerCase();
+  if (!a.content || a.content.byteLength > READ_MAX) return "";
   try {
+    const name = a.name.toLowerCase();
     if (SHEET.test(name) || a.type === "text/csv")
-      return readRows(a.content, name.endsWith(".csv") || a.type === "text/csv" ? "x.csv" : name)
-        .slice(0, ROWS_MAX)
+      return readRows(
+        a.content,
+        name.endsWith(".csv") || a.type === "text/csv" ? "x.csv" : name,
+        ATTACHED,
+      )
         .map((r) => r.map((c) => (c === null || c === undefined ? "" : String(c))).join("\t"))
         .join("\n");
     if (TEXT.test(name) || a.type === "text/plain")
       return new TextDecoder("utf-8").decode(a.content);
-    if (isPdf(name, a.type) && a.content.byteLength <= READ_MAX) return readPdf(a.content).text;
+    if (isPdf(name, a.type)) return readPdf(a.content).text;
   } catch {
     // an attachment the reader cannot parse: its name is still in the mail
   }
