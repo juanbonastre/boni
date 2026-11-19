@@ -32,7 +32,14 @@
  * lowered against the one that runs (`lowerYes`), so none is ever born.
  */
 
-import { CHANGES, type Change, type Plan, planToAutomation, runnableNames } from "@boni/agent";
+import {
+  CHANGES,
+  type Change,
+  chatTrigger,
+  type Plan,
+  planToAutomation,
+  runnableNames,
+} from "@boni/agent";
 import {
   type Automation,
   type BoniAutomation,
@@ -64,8 +71,11 @@ export const COPY_CHUNK = 200;
 export type FlowOutcome =
   | { id: string; state: "converted"; versions: number; skipped: number; changes: Change[] }
   | { id: string; state: "kept"; reasons: ConversionReason[]; skipped: number; changes: Change[] }
-  /** Not the conversion's in S1: Boni's or a preset's, started by something else than his hand or the clock. */
-  | { id: string; state: "left"; why: "notTheUsers" | "trigger" }
+  /**
+   * Not the conversion's: Boni's or a preset's, started by something else than his hand or the clock, or a page's
+   * chat, which stays on the engine of before until its turn goes the published way (F16 S2c, the switch).
+   */
+  | { id: string; state: "left"; why: LeftWhy }
   /** Converted, reverted or kept before, with nothing new: no write. */
   | { id: string; state: "already" };
 
@@ -87,8 +97,15 @@ export interface BoniFlow {
   changes?: (store: UserStore) => Change[];
 }
 
-/** Why a flow is not the conversion's, or null when it is. Boni's are, whoever saved a version and whatever starts them. */
-function leftOut(versions: readonly FlowRow[], b?: BoniFlow): "notTheUsers" | "trigger" | null {
+type LeftWhy = "notTheUsers" | "trigger" | "chat";
+
+/**
+ * Why a flow is not the conversion's, or null when it is. Boni's are, whoever saved a version and whatever starts them.
+ * A page's chat never is, whatever it says (AU-137): its turn still runs on the engine of before, so converting it
+ * would leave an automation nothing starts; it is left until the switch that sends its turn the published way.
+ */
+function leftOut(versions: readonly FlowRow[], b?: BoniFlow): LeftWhy | null {
+  if (versions.some((v) => chatTrigger(v.trigger))) return "chat";
   if (b) return versions.length ? null : "trigger";
   if (versions.some((v) => v.by !== "user")) return "notTheUsers";
   const latest = versions[0];

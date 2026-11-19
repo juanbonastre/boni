@@ -37,16 +37,21 @@ import {
   type Val,
 } from "@boni/agent";
 import {
+  AGENT_PARAMS,
   AGENT_TYPE,
   type Automation,
   type Connection,
+  chatPageOf,
   chatStarted,
   consentOf,
   type Decision,
   type Labelled,
   type Notice,
+  PAGE_ACTIONS,
+  type PageAbility,
   type Policy,
   type PolicyCall,
+  pageAbilitiesOf,
   type WriteAction,
 } from "@boni/automations";
 import { join, type Label } from "@boni/entities";
@@ -318,6 +323,111 @@ export function reachIn(
 }
 
 /**
+ * «Esta página» (AU-137, F16 S2c): each call of a chat's «Agente» on its page, told to `decide` as the list's page
+ * action that does the same (pageActions.ts), with the same effect, arguments and roles: reading a block's figures,
+ * putting a value in a control, adding a block. A test holds each pair together.
+ */
+const PAGE_ARG = { role: "page", required: true, describe: "the page" } as const;
+export const PAGE_ACTS: Readonly<Record<PageAbility, ToolDef>> = {
+  figures: {
+    name: "pages.figures",
+    title: "Leer cifras",
+    run: judgedOnly,
+    effect: "read",
+    area: "pages",
+    describe: "a chat's «Agente» reads one block of its page as the screen shows it",
+    args: { page: PAGE_ARG, block: { role: "option", required: true, describe: "the block" } },
+  },
+  value: {
+    name: "pages.set_value",
+    title: "Cambiar valor",
+    run: judgedOnly,
+    effect: "write",
+    area: "pages",
+    describe: "a chat's «Agente» changes what one of its page's controls holds",
+    args: {
+      page: PAGE_ARG,
+      control: { role: "option", required: true, describe: "the control" },
+      value: { role: "value", required: true, describe: "what it holds" },
+    },
+    undo: ["run"],
+  },
+  block: {
+    name: "pages.add_block",
+    title: "Añadir bloque",
+    run: judgedOnly,
+    effect: "write",
+    area: "pages",
+    describe: "a chat's «Agente» adds a block at the end of its page",
+    args: { page: PAGE_ARG, block: { role: "definition", required: true, describe: "the block" } },
+    undo: ["run"],
+  },
+};
+
+/**
+ * The one place where Juan's «yes» to a page change made alone goes (AU-137): the abilities whose change a chat's
+ * «Agente» saves without asking. Empty, the narrower reading (2026-11-19): a value of the page's own control is asked
+ * too, as a block is, in the run's proposal. AU-137's «pone un valor en un control suyo (P27) sin preguntar» is
+ * Juan's to decide; his «yes» is `["value"]` here, and the test «PAGE_ALONE» flips with it.
+ */
+export const PAGE_ALONE: readonly PageAbility[] = [];
+
+/** What the server reads of the page a run's chat lives in, as the store is now (P26). */
+export interface PageScope {
+  /** The page the stored version's «Mensaje de chat» names. */
+  page: string;
+  /** The collections that page shows, by id (pageChat.ts `pageTypes`). */
+  types: readonly string[];
+  /** A collection's id by its key, as a block names it; null: none a model may see. */
+  typeIdOf(key: string): string | null;
+}
+
+type PageRequest = Pick<PolicyRequest, "tool" | "args" | "scope" | "typeIds" | "yes">;
+
+/**
+ * A page call of `doc`'s run as `decide` reads it (AU-137), or null when the server cannot read one: an action that is
+ * no page ability, a call of another automation or version, of a step `doc` does not have or whose «Esta página»
+ * does not give it, or a version with no chat. Its scope (P26) is the stored version's: that step's abilities, the
+ * page its «Mensaje de chat» names and the collections that page shows; the page the call names is an argument
+ * checked against it, never the scope. `alone`: `PAGE_ALONE`, the «yes» of a change.
+ */
+export function pageRequest(
+  doc: Automation | undefined,
+  at: PageScope | undefined,
+  call: PolicyCall,
+  own: Label,
+  alone: readonly PageAbility[] = PAGE_ALONE,
+): PageRequest | null {
+  const ability = (Object.keys(PAGE_ACTIONS) as PageAbility[]).find(
+    (k) => PAGE_ACTIONS[k] === call.action,
+  );
+  if (!ability || call.page === undefined || !doc || !at) return null;
+  if (call.automation.id !== doc.id || call.automation.version !== doc.version) return null;
+  const step = doc.steps.find((s) => s.id === call.step);
+  const stored = chatPageOf(doc);
+  if (!step || step.type !== AGENT_TYPE || !stored || stored !== at.page) return null;
+  const tool = PAGE_ACTS[ability];
+  const args: Record<string, Val> = {
+    page: { t: "v", value: call.page, label: own, derived: false },
+  };
+  for (const [k, v] of Object.entries(call.values)) args[k] = val(v);
+  const typeIds: Record<string, string | null> = {};
+  const block = call.values.block?.value;
+  if (ability === "block" && block && typeof block === "object" && "collection" in block) {
+    const key = (block as { collection?: unknown }).collection;
+    typeIds["block.collection"] = typeof key === "string" ? at.typeIdOf(key) : null;
+  }
+  const abilities = pageAbilitiesOf(step.params[AGENT_PARAMS.page]) ?? [];
+  return {
+    tool,
+    args,
+    scope: { actions: abilities.map((a) => PAGE_ACTS[a].name), page: stored, types: at.types },
+    typeIds,
+    yes: tool.effect === "write" && alone.includes(ability),
+  };
+}
+
+/**
  * The policy of one run from `origin`: make one per run, never share it between two (its counter is the run's).
  * `yes`: what the server read of the «Sí» for each write (`consentIn`); none without it. `reached`: what an AI step's
  * call carries to P29 (`reachIn`).
@@ -327,11 +437,24 @@ export function runPolicy(
   own: Label,
   yes: (call: PolicyCall) => boolean = () => false,
   reached: (call: PolicyCall) => Reached = () => ({}),
+  paged: (call: PolicyCall) => PageRequest | null = () => null,
 ): Policy & { count: RunCount } {
   const count: RunCount = { writes: 0, sensitiveReads: 0 };
   return {
     count,
     decide(call): Decision {
+      // A page call (AU-137) is judged as its page action, within the stored chat's scope (P26), or not at all.
+      if (call.page !== undefined) {
+        const p = paged(call);
+        if (!p) return { kind: "deny", rule: "P26", reason: "not-the-chats-page" };
+        const d = decide(
+          { ...p, control: call.control, flow: true, dry: call.test },
+          origin,
+          count,
+        );
+        if (call.effect === "write" && d.kind === "allow") count.writes += 1;
+        return d;
+      }
       const said = yes(call);
       const d = decide(
         {
@@ -362,6 +485,9 @@ export function automationPolicy(
   doc: Automation | undefined,
   own: Label,
   from?: ReachStore,
+  page?: PageScope,
 ): Policy & { count: RunCount } {
-  return runPolicy(AUTOMATION, own, consentIn(doc), from ? reachIn(doc, from) : undefined);
+  return runPolicy(AUTOMATION, own, consentIn(doc), from ? reachIn(doc, from) : undefined, (call) =>
+    pageRequest(doc, page, call, own),
+  );
 }

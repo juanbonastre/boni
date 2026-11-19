@@ -34,6 +34,7 @@ import {
   type AgentCall,
   type AgentCodeTool,
   type AgentRecord,
+  type AgentToolReply,
   AgentTools,
   type AgentUnit,
   type AgentValue,
@@ -95,6 +96,7 @@ import {
   paramsOf,
   paramValue,
 } from "./catalogue.ts";
+import { CHAT_ROW } from "./chat.ts";
 import {
   AGENT_TYPE,
   CODE_LIMITS,
@@ -115,6 +117,8 @@ import {
   Denied,
   type Gate,
   guard,
+  type Labelled,
+  type PageAsked,
   type Policy,
   type WriteResult,
 } from "./effects.ts";
@@ -142,6 +146,15 @@ import {
 } from "./format.ts";
 import { arrowsInto, executionOrder } from "./graph.ts";
 import { type CodeContext, readCode } from "./javascript.ts";
+import {
+  chatPageOf,
+  PAGE_ACTIONS,
+  PAGE_TOOLS,
+  type PageAbility,
+  type PageChange,
+  type PagePort,
+  pageAbilitiesOf,
+} from "./page.ts";
 import {
   ANSWER_FIELD,
   ASK_LIMITS,
@@ -325,6 +338,8 @@ export interface Execution {
   steps: Record<string, StepRecord>;
   /** What the run wants to write and waits for Juan, in order: one proposal for the whole run (decision 4 of §10). */
   asked: Asked[];
+  /** The changes of «Esta página» it asked (AU-137), in order, in the same proposal. Absent when none. */
+  pageAsked?: PageAsked[];
   /** The step that stopped the run and why, when `state` is `failed`. */
   error?: StepError & { step: string };
   /** The run's answer (AU-202): the last «Responder» that ran, kept across a wait. Absent when none did. */
@@ -412,6 +427,11 @@ export interface RunDeps {
    * them (`step.unknownType`).
    */
   boni?: BoniPort;
+  /**
+   * «Esta página» (page.ts, AU-137): the page of the chat a run started from, bound by the server to the page its
+   * stored «Mensaje de chat» names. Without it, or bound to another page, an «Agente» with «Esta página» fails.
+   */
+  page?: PagePort;
 }
 
 /**
@@ -809,6 +829,7 @@ class Run {
   readonly first: Row;
   readonly records: Record<string, StepRecord> = {};
   readonly asked: Asked[] = [];
+  readonly pageAsked: PageAsked[] = [];
   readonly made = new WeakMap<Row, { step: string; inputs: readonly Row[] }>();
   readonly byId: Map<string, Step>;
   readonly byName: Map<string, Step>;
@@ -916,6 +937,7 @@ class Run {
         for (const [k, n] of Object.entries(counts.actionRows)) this.actionRows.set(k, n);
       }
       this.asked.push(...before.asked);
+      this.pageAsked.push(...(before.pageAsked ?? []));
     }
     this.order = this.plan?.order ?? executionOrder(automation, trigger);
     let error: Execution["error"];
@@ -1016,6 +1038,7 @@ class Run {
       order: this.order,
       steps: this.records,
       asked: this.asked,
+      ...(this.pageAsked.length ? { pageAsked: this.pageAsked } : {}),
       ...(error ? { error } : {}),
       ...(this.reply ? { reply: this.reply } : {}),
       ...(!error && until.length
@@ -1444,6 +1467,7 @@ class Run {
           await clock.sleep(settings.retry.waitMs);
         }
         const asked: Asked[] = [];
+        const pageAsked: PageAsked[] = [];
         const pending: Gathered[] = [];
         try {
           if (!action || !executor) throw new Error(`no executor for ${step.type}`);
@@ -1451,7 +1475,17 @@ class Run {
           if (evaluated) ctx.code = evaluated.rows;
           if (agent)
             ctx.agent = (r, rows) =>
-              this.agentUnit(step, { row: r, index, rows, scope, state: agent, pending, record });
+              this.agentUnit(step, {
+                row: r,
+                index,
+                rows,
+                scope,
+                state: agent,
+                pending,
+                record,
+                control: path,
+                pageAsked,
+              });
           if (step.type === NOTIFY_TYPE) ctx.notify = (t) => this.notify(step, record, t);
           if (isBoniType(step.type) && this.deps.boni) {
             const port = this.deps.boni;
@@ -1517,8 +1551,9 @@ class Run {
                   : null;
               (record.out[name] as Row[]).push(this.row(step.id, r, parent, path, units));
             }
-          record.asked += asked.length;
+          record.asked += asked.length + pageAsked.length;
           this.asked.push(...asked);
+          this.pageAsked.push(...pageAsked);
           agent?.writes.set(index, pending);
           return true;
         } catch (e) {
@@ -2049,6 +2084,9 @@ class Run {
       state: AgentState;
       pending: Gathered[];
       record: StepRecord;
+      /** The label of the unit's path (P15), and where its changes of «Esta página» wait (kept if it works). */
+      control: Label | null;
+      pageAsked: PageAsked[];
     },
   ): Promise<RowOut[]> {
     const port = this.deps.ai;
@@ -2072,6 +2110,7 @@ class Run {
         param: P.tools,
         detail: { why: "tools" },
       });
+    const page = this.pageOf(step);
     let answer: AgentCall["answer"] = { kind: "text" };
     if (step.params[P.answer] === "fields") {
       const fields = fieldsOf((step.params[P.fields] ?? null) as Cell);
@@ -2117,7 +2156,20 @@ class Run {
       unit,
       tools: codeTools,
       runTool: (tool, inputs, label) => this.agentTool(step, tool, inputs, label, u.state),
+      ...(page
+        ? {
+            page: {
+              tools: new Map(page.abilities.map((a) => [PAGE_TOOLS[a].name, a])),
+              call: (ability, inputs, label) =>
+                this.pageCall(step, page.port, ability, inputs, label, u.control, u.pageAsked),
+            },
+          }
+        : {}),
     });
+    const offered = [
+      ...codeTools.map((t) => ({ name: t.name, inputs: t.inputs })),
+      ...(page?.abilities ?? []).map((a) => PAGE_TOOLS[a]),
+    ];
     const reply = await port.agent({
       use: "agent",
       model: typeof model === "string" && model ? model : null,
@@ -2126,9 +2178,7 @@ class Run {
       connections: agentSchema(step.connections ?? [], (c) => collections.shape(c)),
       answer,
       reads: !byCode,
-      ...(codeTools.length
-        ? { codeTools: codeTools.map((t) => ({ name: t.name, inputs: t.inputs })) }
-        : {}),
+      ...(offered.length ? { codeTools: offered } : {}),
       maxRounds:
         typeof max === "number" && Number.isInteger(max)
           ? Math.min(Math.max(max, 1), AGENT_ROUNDS.max)
@@ -2171,6 +2221,101 @@ class Run {
     for (const [key, v] of Object.entries(reply.answer))
       setField(out, key, { value: v.json, label: v.label, derived: true });
     return [out];
+  }
+
+  /**
+   * «Esta página» of an «Agente» (AU-137): what it may do, and the port, only in a run that started from the stored
+   * version's «Mensaje de chat», for the page that trigger names, which the run's row and the port both are. Anything
+   * else fails the unit (`ai.params` «page»): no page is taken from a message or a model. Null: it has none.
+   */
+  pageOf(step: Step): { abilities: PageAbility[]; port: PagePort } | null {
+    const abilities = pageAbilitiesOf(step.params[AGENT_PARAMS.page]);
+    const fault = (why: string) =>
+      new AiFault(`«Esta página» ${why}`, {
+        code: "ai.params",
+        param: AGENT_PARAMS.page,
+        detail: { why: "page" },
+      });
+    if (!abilities) throw fault("is not a list of what it may do");
+    if (!abilities.length) return null;
+    const { automation, trigger } = this.input;
+    const stored = chatPageOf(automation);
+    const from = automation.steps.find((s) => s.id === trigger);
+    const port = this.deps.page;
+    if (!stored || from?.type !== BONI_TRIGGERS.chat || this.first.json[CHAT_ROW.page] !== stored)
+      throw fault("runs only from the chat of its page");
+    if (!port || port.page !== stored) throw fault("has no page to work on");
+    return { abilities, port };
+  }
+
+  /**
+   * One call of «Esta página» (AU-137): asked of the policy with the port's page, never another (P26 refuses it). Its
+   * figures are read when it allows; a change is saved when it allows (not in a test), or waits for Juan in the run's
+   * proposal when it asks, kept only if the unit works. Each change counts against «rows written» (AU-17). A no fails
+   * the unit (`Denied`).
+   */
+  async pageCall(
+    step: Step,
+    port: PagePort,
+    ability: PageAbility,
+    inputs: Record<string, Cell>,
+    label: Label,
+    control: Label | null,
+    asked: PageAsked[],
+  ): Promise<AgentToolReply> {
+    const values: Labelled = Object.fromEntries(
+      Object.entries(inputs).map(([k, v]) => [k, { value: v, label, derived: true }]),
+    );
+    const write = ability !== "figures";
+    if (write) {
+      this.reserve(1);
+      this.written++;
+    }
+    const d = this.deps.policy.decide({
+      automation: { id: this.input.automation.id, version: this.input.automation.version },
+      step: step.id,
+      type: step.type,
+      action: PAGE_ACTIONS[ability],
+      effect: write ? "write" : "read",
+      destroys: false,
+      collection: "",
+      values,
+      control,
+      test: this.input.test,
+      page: port.page,
+    });
+    if (d.kind === "deny") throw new Denied(d.rule, d.reason);
+    if (!write) {
+      if (d.kind !== "allow")
+        throw new Denied(d.rule, `a read cannot wait for Juan (${d.kind})`, true);
+      const got = await port.figures(String(inputs.block));
+      if (!got) return { refused: "no-such-block" };
+      return { value: { json: got.value, label: got.label } };
+    }
+    const change: PageChange =
+      ability === "value"
+        ? { kind: "value", control: String(inputs.control), value: inputs.value ?? null }
+        : { kind: "block", block: inputs.block ?? null };
+    // A change the page cannot take is told to the model, never asked of Juan nor saved.
+    const bad =
+      d.kind !== "allow" || this.input.test
+        ? await port.check(change)
+        : await port.apply(change, label);
+    if (bad) return { refused: bad };
+    if (d.kind !== "allow") {
+      asked.push({
+        step: step.id,
+        kind: d.kind,
+        rule: d.rule,
+        page: port.page,
+        edit: change,
+        values,
+      });
+      return {
+        planned: `will ask the user to ${ability === "value" ? "set a value of" : "add a block to"} the page`,
+      };
+    }
+    return { planned: `${ability === "value" ? "set a value of" : "added a block to"} the page` };
   }
 
   /**

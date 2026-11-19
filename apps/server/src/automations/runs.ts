@@ -29,6 +29,7 @@
 import { EventEmitter } from "node:events";
 import type { Trust } from "@boni/agent";
 import {
+  type AnyAsked,
   type AskRecord,
   type Automation,
   answerFits,
@@ -40,6 +41,7 @@ import {
   type Execution,
   executionOrder,
   type GivenAnswer,
+  isPageAsked,
   parseAutomation,
   type StartedBy,
   type StepError,
@@ -55,6 +57,7 @@ import {
   type UserStore,
 } from "@boni/store";
 import { handLabel } from "../actions.ts";
+import { getPage } from "../pages.ts";
 import { runRowOf } from "./acceptRunName.ts";
 import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
@@ -283,11 +286,17 @@ export function marksOf(e: Pick<Execution, "steps" | "reply"> | undefined): Part
   };
 }
 
+/** What a run asked, of rows and of its chat's page (AU-137), in the order each kind was asked. */
+export const askedOfRun = (e: Pick<Execution, "asked" | "pageAsked">): AnyAsked[] => [
+  ...e.asked,
+  ...(e.pageAsked ?? []),
+];
+
 /** What a run did in one line (AU-99, AU-182): what it saved by the log, what it asked by its record. */
 export function lineOf(
   store: UserStore,
   run: string,
-  asked: Execution["asked"],
+  asked: readonly AnyAsked[],
   e?: Pick<Execution, "steps" | "reply">,
 ): RunLine {
   const w = store.journal.automationRunWrites(run);
@@ -302,6 +311,20 @@ export function lineOf(
   });
   const byKey = new Map<string, RunCount>();
   for (const a of asked) {
+    // A change of the chat's page (AU-137) is counted as a change of no collection, by its page's title.
+    if (isPageAsked(a)) {
+      const k = `\u0000page:${a.page}`;
+      const had = byKey.get(k);
+      if (had) had.n++;
+      else
+        byKey.set(k, {
+          collection: "",
+          name: getPage(store, a.page)?.title ?? null,
+          action: "update",
+          n: 1,
+        });
+      continue;
+    }
     const collection = a.change.kind === "create" ? a.change.collection : a.change.row.collection;
     const k = `${collection}\u0000${a.change.kind}`;
     const had = byKey.get(k);
@@ -628,7 +651,7 @@ function wait(
   notifyAsks(store, id, run, e, automationLabel(id));
   store.journal.waitAutomationRun(run, {
     ms,
-    line: JSON.stringify(lineOf(store, run, e.asked, e)),
+    line: JSON.stringify(lineOf(store, run, askedOfRun(e), e)),
     automation: id,
     until: untilOf(e),
     execution: JSON.stringify(e),
@@ -647,16 +670,18 @@ function finish(
   ended: number,
 ): void {
   const state = result.state === "failed" ? "failed" : "done";
-  keepAsked(store, run, result.asked);
+  // What it asked of rows and of its chat's page (AU-137), kept together.
+  const asked = askedOfRun(result);
+  keepAsked(store, run, asked);
   // What it asked is one proposal in the inbox, for Juan to accept or reject (AU-193).
-  if (result.asked.length) proposeRun(store, id, run, result.asked);
+  if (asked.length) proposeRun(store, id, run, asked);
   store.journal.endAutomationRun(run, {
     state,
     ended,
     ms,
     step: result.error?.step ?? null,
     error: result.error ? JSON.stringify(result.error) : null,
-    line: JSON.stringify(lineOf(store, run, result.asked, result)),
+    line: JSON.stringify(lineOf(store, run, asked, result)),
   });
   // What it saved with «Sí» is one decision of each cell, judged later (AU-207).
   recordRun(store, run, result);
@@ -771,7 +796,7 @@ async function carryOn(store: UserStore, run: string, zone: string, box: Box): P
         message: e instanceof CannotRun ? e.message : "it could not go on",
         step: null,
       }),
-      line: r.line ?? JSON.stringify(lineOf(store, run, kept.asked)),
+      line: r.line ?? JSON.stringify(lineOf(store, run, askedOfRun(kept))),
     });
     if (!(e instanceof CannotRun)) console.error(`automation run ${run}:`, e);
     return hasEnded(store, id, run, "failed");

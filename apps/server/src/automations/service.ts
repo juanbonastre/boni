@@ -78,6 +78,7 @@ import { collectionNamed, reachStore, storeCollections } from "./collections.ts"
 import { serverDates } from "./dates.ts";
 import { pruneRuns } from "./keep.ts";
 import { mailCapOf } from "./mailCap.ts";
+import { pageOfRun } from "./page.ts";
 import { automationPolicy } from "./policy.ts";
 import { keepTestRun, type PinView, pinnedRecords, pinsView } from "./record.ts";
 import { cancelWaits } from "./runs.ts";
@@ -678,8 +679,15 @@ export function runDeps(
   const ai = aiFor(store, run ?? `test:${id}`, !run, cap ?? undefined);
   // Boni's steps (AU-127, AU-223): today's code through the account's agent, when the host wired it.
   const boni = boniPortFor(store, id, doc);
+  // «Esta página» (AU-137): the page the version's «Mensaje de chat» names, for its port and for the policy's P26.
+  const paged = pageOfRun(store, doc, {
+    actor: "user",
+    device: hand.device,
+    ...(run ? { run } : {}),
+  });
   return {
-    policy: automationPolicy(doc, own, reachStore(store, hand.zone)),
+    policy: automationPolicy(doc, own, reachStore(store, hand.zone), paged?.scope),
+    ...(paged ? { page: paged.port } : {}),
     ...(ai ? { ai } : {}),
     ...(boni ? { boni } : {}),
     // «Avisar» and «Preguntar» (AU-201, AU-203): a test's never notifies, and its waits are not counted.

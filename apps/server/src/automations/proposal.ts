@@ -32,17 +32,22 @@ import {
 } from "@boni/agent";
 import {
   AGENT_TYPE,
+  type AnyAsked,
   type Asked,
   BONI_TRIGGERS,
   type Cell,
+  isPageAsked,
   type Labelled,
+  type PageAsked,
   parseAutomation,
   StepFault,
 } from "@boni/automations";
 import { type Label, label } from "@boni/entities";
 import { StoreError, type UserStore } from "@boni/store";
+import { getPage } from "../pages.ts";
 import { ACCEPT_RUN, ROWS_AS_CARDS } from "./acceptRunName.ts";
 import { storeCollections } from "./collections.ts";
+import { askedLabel, checkPageChange, savePageChange } from "./page.ts";
 import { ASKED_STEP } from "./record.ts";
 import { automationLabel } from "./service.ts";
 
@@ -69,6 +74,11 @@ export interface AskedView {
   row: { id: string; title: string } | null;
   /** The values it would save, each with what the row holds now (a change's before) and whether it came from outside (AU-170). */
   values: Record<string, { value: Cell; before?: Cell; integrity: string; outside: boolean }>;
+  /**
+   * A change of the page a run's chat lives in (AU-137), not of a row: the page, with its title now, and what it
+   * changes (a control's value, or a block added at its end). Its `collection` is "" and its `row` null.
+   */
+  page?: { id: string; title: string; change: "value" | "block"; control?: string };
 }
 
 /** What the proposal of a run says, beside the inbox's `ConfirmView`. */
@@ -88,9 +98,16 @@ export interface RunProposalView extends ConfirmView {
   };
 }
 
-const actionOf = (a: Asked): AskedView["action"] =>
-  a.change.kind === "create" ? "create" : a.change.kind === "update" ? "update" : "trash";
-const collectionOf = (store: UserStore, a: Asked): string => {
+const actionOf = (a: AnyAsked): AskedView["action"] =>
+  isPageAsked(a)
+    ? "update"
+    : a.change.kind === "create"
+      ? "create"
+      : a.change.kind === "update"
+        ? "update"
+        : "trash";
+const collectionOf = (store: UserStore, a: AnyAsked): string => {
+  if (isPageAsked(a)) return "";
   if (a.change.kind === "create") return a.change.collection;
   const e = store.get(a.change.row.id);
   const t = e ? store.schema().types[e.entity.type] : undefined;
@@ -131,7 +148,33 @@ function agentStepsOf(store: UserStore, run: string): ReadonlySet<string> {
   }
 }
 
-function viewOf(store: UserStore, a: Asked, agents: ReadonlySet<string>): AskedView {
+/** A change of the chat's page as the inbox shows it (AU-137): its values with where each came from, never its labels. */
+function pageViewOf(store: UserStore, a: PageAsked, agents: ReadonlySet<string>): AskedView {
+  return {
+    step: a.step,
+    byAgent: agents.has(a.step),
+    kind: a.kind,
+    action: "update",
+    collection: "",
+    name: null,
+    row: null,
+    values: Object.fromEntries(
+      Object.entries(a.values).map(([k, v]) => [
+        k,
+        { value: v.value, integrity: v.label.integrity, outside: isOutside(v.label) },
+      ]),
+    ),
+    page: {
+      id: a.page,
+      title: getPage(store, a.page)?.title ?? "",
+      change: a.edit.kind,
+      ...(a.edit.kind === "value" ? { control: a.edit.control } : {}),
+    },
+  };
+}
+
+function viewOf(store: UserStore, a: AnyAsked, agents: ReadonlySet<string>): AskedView {
+  if (isPageAsked(a)) return pageViewOf(store, a, agents);
   const collection = collectionOf(store, a);
   const fields = a.change.kind === "trash" ? {} : a.change.fields;
   const row = a.change.kind === "update" ? a.change.row.id : null;
@@ -165,13 +208,13 @@ function viewOf(store: UserStore, a: Asked, agents: ReadonlySet<string>): AskedV
 }
 
 /** What a run asked, as it kept it (record.ts `keepAsked`): `offset` and `limit` page it. */
-function askedRows(store: UserStore, run: string, offset = 0, limit?: number): Asked[] {
+function askedRows(store: UserStore, run: string, offset = 0, limit?: number): AnyAsked[] {
   const step = store.journal.automationRunSteps(run).find((s) => s.step === ASKED_STEP);
   if (!step) return [];
   const total = (JSON.parse(step.record) as { asked: number }).asked;
   return store.journal
     .automationRunRows(run, ASKED_STEP, "asked", offset, limit ?? total)
-    .map((x) => (typeof x === "string" ? JSON.parse(x) : x) as Asked);
+    .map((x) => (typeof x === "string" ? JSON.parse(x) : x) as AnyAsked);
 }
 
 /**
@@ -190,6 +233,8 @@ export function askedCells(
   >();
   const all = askedRows(store, run);
   for (const a of row === undefined ? all : all.slice(row, row + 1)) {
+    // A change of the chat's page is no cell of a connection (AU-137): it asks every time.
+    if (isPageAsked(a)) continue;
     const collection = collectionOf(store, a);
     const act = actionOf(a);
     const action = act === "trash" ? "remove" : act;
@@ -264,7 +309,7 @@ export function proposeRun(
   store: UserStore,
   id: string,
   run: string,
-  asked: readonly Asked[],
+  asked: readonly AnyAsked[],
 ): string {
   const journal = store.journal;
   const r = journal.automationRun(run);
@@ -273,7 +318,7 @@ export function proposeRun(
   const name = kept ? String((JSON.parse(kept.doc) as { name?: unknown }).name ?? "") : "";
   const at = Date.now();
   const agentRun = randomUUID();
-  const countsOf = (rows: readonly Asked[]) => {
+  const countsOf = (rows: readonly AnyAsked[]) => {
     const counts = new Map<
       string,
       { collection: string; name: string | null; action: AskedView["action"]; n: number }
@@ -281,8 +326,12 @@ export function proposeRun(
     for (const a of rows) {
       const collection = collectionOf(store, a);
       const action = actionOf(a);
-      const k = `${collection}\u0000${action}`;
-      const c = counts.get(k) ?? { collection, name: nameOf(store, collection), action, n: 0 };
+      // A change of the chat's page is counted by its page, its name the page's title (AU-137).
+      const k = isPageAsked(a) ? `\u0000page:${a.page}` : `${collection}\u0000${action}`;
+      const name = isPageAsked(a)
+        ? (getPage(store, a.page)?.title ?? null)
+        : nameOf(store, collection);
+      const c = counts.get(k) ?? { collection, name, action, n: 0 };
       c.n++;
       counts.set(k, c);
     }
@@ -290,7 +339,7 @@ export function proposeRun(
   };
   const code = codeLabel("automations");
   const agents = agentStepsOf(store, run);
-  const sourcesOf = (rows: readonly Asked[]) => {
+  const sourcesOf = (rows: readonly AnyAsked[]) => {
     const sources = new Set<string>();
     for (const a of rows)
       for (const v of Object.values(a.values))
@@ -299,7 +348,7 @@ export function proposeRun(
   };
   const perRow =
     asked.length <= ROWS_AS_CARDS &&
-    asked.every((a) => a.kind === "propose" && a.change.kind === "create");
+    asked.every((a) => !isPageAsked(a) && a.kind === "propose" && a.change.kind === "create");
   const mail = perRow ? triggerMail(store, run) : null;
   journal.startRun({
     id: agentRun,
@@ -317,7 +366,7 @@ export function proposeRun(
     run,
     startedBy: r?.startedBy ?? "schedule",
   };
-  const add = (rows: readonly Asked[], row: number | null): string => {
+  const add = (rows: readonly AnyAsked[], row: number | null): string => {
     const proposal = randomUUID();
     const view: RunProposalView = {
       tool: ACCEPT_RUN,
@@ -356,6 +405,9 @@ export function proposeRun(
   return first;
 }
 
+/** A change of the chat's page that could not be saved on accepting (AU-137): the whole acceptance is taken back. */
+class PageStale extends Error {}
+
 /**
  * Saves what a run asked (AU-193), all or nothing, with the run's id (AU-18) and each value's label (AU-170).
  * `row`: only that row of it, its proposal being one card of one row (AU-251); the others go on waiting. `edits`:
@@ -375,23 +427,39 @@ export async function acceptRun(
   let asked = askedRows(store, run);
   if (o.row !== undefined) {
     const one = asked[o.row];
-    if (!one || one.change.kind !== "create") throw new ToolError("not-found");
+    if (!one || isPageAsked(one) || one.change.kind !== "create") throw new ToolError("not-found");
     const mine = o.mine ?? label("user", "personal", [{ kind: "user-edit", id: run }]);
     asked = [o.edits ? edited(store, one, o.edits, mine) : one];
   } else if (o.edits) throw new ToolError("edit-not-allowed");
   if (!asked.length) return { saved: 0 };
+  const own = automationLabel(id);
   const collections = storeCollections(store, {
     actor: "user",
     device: who.device,
     zone: who.zone,
-    own: automationLabel(id),
+    own,
     run,
   });
+  const rows = asked.filter((a): a is Asked => !isPageAsked(a));
+  const pages = asked.filter(isPageAsked);
+  // A change of the chat's page the page can no longer take (its control gone, AU-137): nothing saved.
+  if (pages.some((a) => checkPageChange(store, a.page, a.edit) !== null))
+    throw new ToolError("stale");
+  const meta = { actor: "user" as const, device: who.device ?? undefined, run };
   try {
-    await collections.applyAll(asked.map((a) => ({ change: a.change, values: a.values })));
+    // The rows and the page's changes in one transaction (AU-18): a page change that fails takes the rows back.
+    await collections.applyAll(
+      rows.map((a) => ({ change: a.change, values: a.values })),
+      () => {
+        for (const a of pages)
+          if (savePageChange(store, a.page, a.edit, askedLabel(a.values, own), meta) !== null)
+            throw new PageStale();
+      },
+    );
   } catch (e) {
     // A row changed or gone since it was asked (`current`, collections.ts), or the store refusing it: nothing saved.
-    if (e instanceof StoreError || e instanceof StepFault) throw new ToolError("stale");
+    if (e instanceof StoreError || e instanceof StepFault || e instanceof PageStale)
+      throw new ToolError("stale");
     throw e;
   }
   return { saved: asked.length };

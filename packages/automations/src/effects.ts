@@ -10,6 +10,7 @@
 import type { FieldType, Label, Labeled } from "@boni/entities";
 import type { FilterItem } from "@boni/views";
 import { StepFault } from "./failures.ts";
+import type { PageChange } from "./page.ts";
 import type { Cell, FieldLabel, Row, RowOrigin } from "./rows.ts";
 
 // ---------------------------------------------------------------- the policy
@@ -55,6 +56,11 @@ export interface PolicyCall {
    * was added (`narrow`). What P29 checks against «Solo estos campos» for an AI step (AU-205).
    */
   fields?: readonly string[];
+  /**
+   * A call of «Esta página» (AU-137, page.ts): the page it is for, the port's (bound by the server to the stored
+   * chat's page), never one a model or a message names. Its `collection` is "" and its `values` its inputs.
+   */
+  page?: string;
 }
 
 /**
@@ -187,6 +193,23 @@ export interface Asked {
    */
   values: Labelled;
 }
+
+/**
+ * A change of «Esta página» a run asked (AU-137, `Execution.pageAsked`): the page (the port's) and the change, with the
+ * labels of what it carries; accepting it saves it in the run, as a row's (the server's `acceptRun`).
+ */
+export interface PageAsked {
+  step: string;
+  kind: "confirm" | "propose";
+  rule: string;
+  page: string;
+  edit: PageChange;
+  values: Labelled;
+}
+
+/** What a run asked as the server keeps it: a row's change, or one of its page (AU-137). */
+export type AnyAsked = Asked | PageAsked;
+export const isPageAsked = (a: AnyAsked): a is PageAsked => "edit" in a;
 
 export type WriteResult =
   /** Written: the row as saved. */
