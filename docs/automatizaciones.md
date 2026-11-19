@@ -3750,7 +3750,15 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   el servidor real, cada fila con su «de fuera», aceptada sola). Hecho (S2b, PR 2b): «una en el
   registro» es una ejecución del agente con una propuesta por fila (`automations.accept_run` con `view.run.row`), la
   primera nombrada en la ejecución de la automatización, que el recorte guarda entera mientras una espera; «Plegar
-  hilo» retira la anterior tras proponer y nunca en una ejecución fallida.
+  hilo» retira la anterior tras proponer y nunca en una ejecución fallida. Hecho (S2b, PR 2b, tras la revisión):
+  `apps/server/src/mail.test.ts` («AU-251 · after conversion a run that proposed folds its thread: …»: convertida,
+  la ejecución de un correo del hilo retira la tarjeta del flujo de antes que esperaba, y la siguiente retira la suya;
+  cada tarjeta nueva dice su «Antes» y lo que se solapa en el calendario); el plegado lee el título por el campo de
+  título de la colección, no solo `values.title` (una fila de una ejecución nombra sus valores por las claves de su
+  colección, y sin eso no plegaba); `apps/server/src/automations/proposal.test.ts` («AU-251 · a run that asks to
+  create and also to modify or to send to the trash is the one summary card of AU-193, …» y «AU-251 · a row accepted
+  and then undone with its run counts as a miss for its cell, …»); deshacer una ejecución retira todas sus tarjetas
+  por fila, no solo la que nombra.
 - **AU-252** (F16, hecho) · La duda de la «Decisora» es un «Preguntar» (decisión 32). La «Decisora»
   tiene dos salidas: la principal, con la colección elegida, y «Duda», con la fila y sus opciones. En la de Boni,
   «Duda» va a un «Preguntar» del catálogo: «¿Dónde va «{{ título }}»?», «Una opción» entre las colecciones de la

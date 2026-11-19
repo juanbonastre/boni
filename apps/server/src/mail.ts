@@ -2946,8 +2946,16 @@ export class Mails {
     const j = store.journal;
     const rowsOf = (p: { view: unknown }) =>
       (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
+    // Its title is its collection's title field, whatever that field's name (as `inboxCard` reads it): a row's card
+    // of a run (AU-251) names its values by the collection's own field names, «title» only when the collection does.
+    const types = Object.values(store.schema().types);
     const titleOf = (p: { view: unknown }) => {
-      const v = rowsOf(p).find((r) => r.arg === "values.title")?.value;
+      const rows = rowsOf(p);
+      const value = (arg: string) => rows.find((r) => r.arg === arg)?.value;
+      const type = value("type");
+      const def = types.find((t) => t.key === type || t.id === type);
+      const field = def?.fields.find((f) => f.id === def.titleField)?.key;
+      const v = value("values.title") ?? (field ? value(`values.${field}`) : undefined);
       return typeof v === "string" ? v : "";
     };
     const earlier = j

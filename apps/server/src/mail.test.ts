@@ -15,6 +15,7 @@ import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
 import { wireAutomationModels } from "./automations/ai.ts";
 import { wireBoni } from "./automations/boni.ts";
 import { revertFlow as backToFlow } from "./automations/convert.ts";
+import { saveCalendarDefs } from "./calendarStore.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
@@ -3178,14 +3179,38 @@ describe("«Leer correo» converted (AU-249, AU-254)", () => {
       },
       { actor: "user" },
     );
-    // His own class that afternoon: the card at 18:00 overlaps it.
+    // The collection is a calendar of Boni Calendar, its columns its fields by name: the card crosses it.
+    saveCalendarDefs(store, [
+      {
+        type: "t_agenda",
+        raw: {
+          id: "agenda",
+          name: "Agenda",
+          folder: "agenda",
+          account: "Agenda",
+          color: "#60a5fa",
+          columns: [
+            { id: "title", name: "Título", type: "text" },
+            { id: "date", name: "Fecha", type: "date" },
+            { id: "startTime", name: "Hora de inicio", type: "time" },
+            { id: "endTime", name: "Hora de fin", type: "time" },
+          ],
+          mapping: {
+            title: "title",
+            when: { kind: "split", date: "date", startTime: "startTime", endTime: "endTime" },
+          },
+        },
+      },
+    ]);
+    // His own class that afternoon, 45 minutes after the card at 18:00 starts: it overlaps it, and is too far to be the
+    // same thing (half an hour at most, `crossCalendar`).
     store.create(
       "t_agenda",
       {
         t_agenda_t: { value: "Clase de ejemplo", label: own },
         t_agenda_d: { value: "2026-10-28", label: own },
-        t_agenda_h: { value: "18:30", label: own },
-        t_agenda_f: { value: "19:30", label: own },
+        t_agenda_h: { value: "18:45", label: own },
+        t_agenda_f: { value: "19:45", label: own },
       },
       { actor: "user" },
     );
