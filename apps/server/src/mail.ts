@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import {
   type Budget,
+  codeLabel,
   EndRun,
   FILL_LIMITS,
   type FillField,
@@ -20,7 +21,7 @@ import {
   type UserIn,
   type Val,
 } from "@boni/agent";
-import { BONI_MODULES, BONI_TRIGGERS } from "@boni/automations";
+import { type Automation, BONI_MODULES, BONI_PARAMS, BONI_TRIGGERS } from "@boni/automations";
 import { systemTimeZone } from "@boni/calendar";
 import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
@@ -32,10 +33,20 @@ import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import { ACCEPT_RUN } from "./automations/acceptRunName.ts";
 import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
-import { type BoniFlow, convertBoniFlows } from "./automations/convert.ts";
+import { type BoniFlow, convertBoniFlows, keepBoniFlows } from "./automations/convert.ts";
 import { drawReadMail } from "./automations/mailAutomation.ts";
 import { MAIL_CAP, mailCapLeft, mailSender } from "./automations/mailCap.ts";
 import { type MailHooks, mailLabel } from "./automations/mailPieces.ts";
+import {
+  drawReview,
+  type InstructionsSuggestion,
+  keepSuggestion,
+  parkedItems,
+  pendingSuggestion,
+  READER_TYPE,
+  RULE_TYPE,
+  type SuggestedRule,
+} from "./automations/review.ts";
 import { runBoni } from "./automations/runs.ts";
 import { publishedOf } from "./automations/service.ts";
 import type { Db } from "./db.ts";
@@ -897,6 +908,69 @@ const REVIEW_PLAN = {
 };
 
 /**
+ * «Leer correo»'s guide as its panels hold it (AU-249): what «Revisar instrucciones» reviews and measures once both
+ * are automations (AU-211). A rule's collection by key becomes its type's id, as the guide's; what a panel holds as an
+ * expression, or a collection no longer among the targets, is left out.
+ */
+function guideOfPanels(doc: Automation, targets: readonly Target[]): MailGuide {
+  const of = (type: string) => doc.steps.find((x) => x.type === type)?.params ?? {};
+  const rows = (v: unknown) =>
+    Array.isArray(v)
+      ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      : [];
+  const rule = of(RULE_TYPE);
+  const reader = of(READER_TYPE);
+  const instructions = reader[BONI_PARAMS.instructions];
+  return {
+    instructions: typeof instructions === "string" ? instructions : "",
+    rules: rows(rule[BONI_PARAMS.rules]).flatMap((r, i): MailRule[] => {
+      const from = typeof r.sender === "string" ? r.sender : "";
+      if (!from) return [];
+      if (r.do === "skip") return [{ id: `p-${i}`, from, action: "skip" }];
+      const t = targets.find((x) => x.key === r.collection);
+      return r.do === "collection" && t?.id
+        ? [{ id: `p-${i}`, from, action: "collection", collection: t.id }]
+        : [];
+    }),
+    examples: rows(reader[BONI_PARAMS.examples]).flatMap((e, i): GuideExample[] => {
+      if (typeof e.mail !== "string" || typeof e.want !== "string") return [];
+      try {
+        const want = JSON.parse(e.want) as GuideExample["want"];
+        return Array.isArray(want)
+          ? [{ id: `p-${i}`, subject: "", from: "", mail: e.mail, want }]
+          : [];
+      } catch {
+        return [];
+      }
+    }),
+  };
+}
+
+/** A measured suggestion as a change of «Leer correo»'s panels (AU-211): its rules by the collection's key. */
+function instructionsOf(s: Suggestion, targets: readonly Target[]): InstructionsSuggestion {
+  return {
+    id: s.id,
+    automation: MAIL_FLOW,
+    rules: s.rules.flatMap((r): SuggestedRule[] => {
+      if (r.action === "skip") return [{ sender: r.from, do: "skip" as const, collection: null }];
+      const key = targets.find((t) => t.id === r.collection)?.key;
+      return key ? [{ sender: r.from, do: "collection" as const, collection: key }] : [];
+    }),
+    examples: s.examples.map((e) => ({
+      id: e.id,
+      subject: e.subject,
+      mail: e.mail,
+      want: JSON.stringify(e.want),
+    })),
+    before: s.before,
+    after: s.after,
+    total: s.total,
+    at: s.at,
+    run: s.run ?? null,
+  };
+}
+
+/**
  * Whether the mail's two flows convert when the mail code keeps them current (`keepMailFlows`). Off until the Bandeja
  * paints a run's proposal as one card per row (AU-251, the next PR of task 130): converted before that, every mail
  * read would wait as one summary card, and the Bandeja would show the mail worse than today. That PR turns it on and
@@ -1339,11 +1413,18 @@ export class Mails {
       // Off, or without models, the reviewer does not look: nothing counts as looked at (D-51).
       if (this.reviewOff(account)) return null;
       const store = this.o.host.store(account);
-      const guide = this.guide(account);
       const targets = this.targets(store, s);
+      // «Revisar instrucciones» as an automation (AU-211): it reviews «Leer correo»'s panels once that is one too,
+      // and what it suggests waits as a change of its draft; else the guide, as before.
+      const { asAutomation, panels, guide } = this.reviewed(account, store, targets);
       const now = this.now();
       const tried = Object.entries(st.tried ?? {}).filter(([, at]) => now - at < TRIED_FOR);
-      const excluded = new Set([...(st.refused ?? []), ...tried.map(([from]) => from)]);
+      const excluded = new Set([
+        ...(st.refused ?? []),
+        ...tried.map(([from]) => from),
+        // A suggestion he turned down: a week (AU-211).
+        ...(asAutomation ? parkedItems(store, now) : []),
+      ]);
       const type = st.type;
       let ds: Decision[] | null = null;
       const theDs = () => (ds ??= decisions(store, type, (v) => userIn(s.user, v.f_para, v.f_cc)));
@@ -1355,15 +1436,18 @@ export class Mails {
       if (auto) {
         // How many new decisions make it look: the flow's trigger says it (F7), within the code's caps.
         const own = this.manifest(account).learning?.every;
-        const every =
-          own === undefined
-            ? undefined
-            : reviewEvery((flow?.trigger as { every?: unknown } | null)?.every, own);
+        // As an automation, its trigger's «Cada cuántas decisiones», as published.
+        const setting = asAutomation
+          ? publishedOf(store, REVIEW_FLOW)?.automation.steps.find(
+              (x) => x.type === BONI_TRIGGERS.decisions,
+            )?.params[BONI_PARAMS.every]
+          : (flow?.trigger as { every?: unknown } | null)?.every;
+        const every = own === undefined ? undefined : reviewEvery(setting, own);
         if (
           every === undefined ||
           !mayReview({
             learning: learningOn(store),
-            waiting: !!st.suggestion,
+            waiting: !!st.suggestion || (asAutomation && pendingSuggestion(store) !== null),
             // The budget is every learner's (AU-212): an automation's suggestion counts too.
             suggestedAt: Math.max(st.suggestedAt ?? 0, lastSuggested(store) ?? 0) || null,
             lookedAt: st.reviewedAt ?? null,
@@ -1393,32 +1477,37 @@ export class Mails {
       // What the code found is parked for a week only when it was measured (a review whose «Revisora» stopped
       // measured nothing: it is tried again next time).
       let measured = false;
-      if (flow?.enabled && agent && reviewInput(host.ds, host.targets)) {
+      const on = asAutomation ? boniEnabled(store, REVIEW_FLOW) : !!flow?.enabled;
+      if (on && flow && agent && reviewInput(host.ds, host.targets)) {
         const ctx: ReviewCtx = { host };
         this.reviewCtx.set(account, ctx);
-        let ran: Awaited<ReturnType<typeof agent.background>> | null = null;
+        let run: string | null = null;
         try {
-          ran = await agent.background(flow.plan, {}, ["r"], undefined, {
-            id: REVIEW_FLOW,
-            version: flow.version,
-            by: flow.by,
-          });
+          run = asAutomation
+            ? await this.reviewRun(account, store, host.ds.length)
+            : (
+                await agent.background(flow.plan, {}, ["r"], undefined, {
+                  id: REVIEW_FLOW,
+                  version: flow.version,
+                  by: flow.by,
+                })
+              ).run;
         } finally {
           this.reviewCtx.delete(account);
         }
         // Kept only when «Sugerencia» chose it: the measured candidate that gets more of his decisions right.
         const m = ctx.measured;
         measured = !!m;
-        if (ran && ctx.chosen && m && m.after > m.before)
+        if (run && ctx.chosen && m && m.after > m.before)
           suggestion = {
-            id: `g-${host.now}-${ran.run.slice(0, 8)}`,
+            id: `g-${host.now}-${run.slice(0, 8)}`,
             rules: m.candidate.rules,
             examples: m.candidate.examples,
             before: m.before,
             after: m.after,
             total: m.total,
             at: host.now,
-            run: ran.run,
+            run,
           };
       }
       const after = this.state(account);
@@ -1430,7 +1519,9 @@ export class Mails {
           [...tried, ...dropped.map((r) => [r.from, this.now()] as [string, number])].slice(-200),
         );
       if (suggestion) {
-        after.suggestion = suggestion;
+        // A change of «Leer correo»'s draft, waiting in the Bandeja (AU-211); else in the guide's place, as before.
+        if (panels) keepSuggestion(store, instructionsOf(suggestion, targets));
+        else after.suggestion = suggestion;
         after.suggestedAt = this.now();
         markSuggested(store, after.suggestedAt);
         // A suggestion is a decision of docs/fiabilidad.md: class B (it touches his guide), always asked, as sure
@@ -1452,11 +1543,53 @@ export class Mails {
         });
       }
       this.saveState(account, after);
-      if (suggestion) this.o.host.emit(account, "mail-suggestion", { id: suggestion.id });
+      if (suggestion && panels) this.o.host.emit(account, "requests", {});
+      else if (suggestion) this.o.host.emit(account, "mail-suggestion", { id: suggestion.id });
       return suggestion;
     } finally {
       this.reviewing.delete(account);
     }
+  }
+
+  /**
+   * What a review works on: whether «Revisar instrucciones» is an automation (AU-211), «Leer correo»'s published
+   * version when that is one too (its panels are the guide then), and the guide.
+   */
+  private reviewed(
+    account: number,
+    store: UserStore,
+    targets: readonly Target[],
+  ): { asAutomation: boolean; panels: Automation | null; guide: MailGuide } {
+    const asAutomation = onNewEngine(store, REVIEW_FLOW);
+    const panels =
+      asAutomation && onNewEngine(store, MAIL_FLOW)
+        ? (publishedOf(store, MAIL_FLOW)?.automation ?? null)
+        : null;
+    return {
+      asAutomation,
+      panels,
+      guide: panels ? guideOfPanels(panels, targets) : this.guide(account),
+    };
+  }
+
+  /**
+   * One run of «Revisar instrucciones» (AU-211): its published version, by `runBoni`; its trigger's row, how many
+   * decisions it looks at. Its run's id, or null when it did not start.
+   */
+  private async reviewRun(account: number, store: UserStore, n: number): Promise<string | null> {
+    const trigger =
+      publishedOf(store, REVIEW_FLOW)?.automation.steps.find(
+        (x) => x.type === BONI_TRIGGERS.decisions,
+      )?.id ?? "trigger";
+    const row: BoniRow = { json: { decisions: n }, label: codeLabel("review") };
+    const r = await runBoni(store, REVIEW_FLOW, { trigger, fields: row.json }, { row }, this.tz);
+    if ("refused" in r || !("id" in r)) {
+      console.warn(
+        `mail ${account}: «Revisar instrucciones» did not start (${"refused" in r ? r.refused : r.error})`,
+      );
+      return null;
+    }
+    return r.id;
   }
 
   /**
@@ -2300,10 +2433,15 @@ export class Mails {
     );
   }
 
-  /** Boni's «Revisar la guía» (D-51), kept as «Traer correo» is; null when it cannot be kept. */
+  /**
+   * Boni's «Revisar la guía» (D-51), kept as «Traer correo» is; null when it cannot be kept. Once «Leer correo» is an
+   * automation, it is one too, drawn by hand (AU-211): «Revisar instrucciones», with the flow's «Cada cuántas
+   * decisiones» and its switch. What cannot convert stays the flow, and runs on the engine of before.
+   */
   private reviewFlow(store: UserStore): FlowRow | null {
+    let flow: FlowRow;
     try {
-      return ensureFlow(
+      flow = ensureFlow(
         store,
         {
           id: REVIEW_FLOW,
@@ -2318,13 +2456,29 @@ export class Mails {
       console.warn(`mail: «Revisar la guía» not kept (${(e as Error).message})`);
       return null;
     }
+    if (onNewEngine(store, MAIL_FLOW) && !onNewEngine(store, REVIEW_FLOW)) {
+      const every = reviewEvery(
+        (flow.trigger as { every?: unknown } | null)?.every,
+        REVIEW_EVERY_DEFAULT,
+      );
+      const draw = () => drawReview({ id: REVIEW_FLOW, every, mails: MEASURE });
+      try {
+        keepBoniFlows(store, [{ id: REVIEW_FLOW, boni: "reviewGuide", draw }], this.now());
+      } catch (e) {
+        console.warn(`mail: «Revisar instrucciones» not converted (${(e as Error).message})`);
+      }
+    }
+    return flow;
   }
 
   /** «Revisar la guía» is off, or the account has no models: no review (D-51; Ajustes says so for «Revisar ahora»). */
   reviewOff(account: number): boolean {
     if (!this.o.host.hasData) return true;
-    const flow = this.reviewFlow(this.o.host.store(account));
-    return !flow?.enabled || !this.agentOf(account);
+    const store = this.o.host.store(account);
+    const flow = this.reviewFlow(store);
+    // As an automation, its own switch (AU-211).
+    const on = onNewEngine(store, REVIEW_FLOW) ? boniEnabled(store, REVIEW_FLOW) : !!flow?.enabled;
+    return !on || !this.agentOf(account);
   }
 
   /** «Probar» of «Revisar la guía»: what a review would work on now (nothing is kept, nothing measured). */
@@ -2333,11 +2487,15 @@ export class Mails {
     const st = this.state(account);
     if (!s || !st.type) return null;
     const store = this.o.host.store(account);
-    const guide = this.guide(account);
     const targets = this.targets(store, s);
+    const { asAutomation, guide } = this.reviewed(account, store, targets);
     const now = this.now();
     const tried = Object.entries(st.tried ?? {}).filter(([, at]) => now - at < TRIED_FOR);
-    const excluded = new Set([...(st.refused ?? []), ...tried.map(([from]) => from)]);
+    const excluded = new Set([
+      ...(st.refused ?? []),
+      ...tried.map(([from]) => from),
+      ...(asAutomation ? parkedItems(store, now) : []),
+    ]);
     const ds = decisions(store, st.type, (v) => userIn(s.user, v.f_para, v.f_cc));
     return {
       host: {

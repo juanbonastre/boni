@@ -21,6 +21,7 @@ import type { Cell } from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import { declineSuggestion, learningKey, learningOf, unpause } from "./learning.ts";
 import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
+import { dropInstructions, pendingSuggestion, takeInstructions } from "./review.ts";
 import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
 import {
   answerRun,
@@ -552,18 +553,29 @@ export function withRunActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.learn"),
     title: "Quitar la pausa de una celda de una automatización o decir «No» a su sugerencia",
     describe:
-      "Lift the pause of one cell of an automation's published version (do unpause), or say «No» to its suggestion (do decline): the step, the collection and the action name the cell. It never sets a «Sí»",
+      "Lift the pause of one cell of an automation's published version (do unpause), or say «No» to its suggestion (do decline): the step, the collection and the action name the cell. Or answer what «Revisar instrucciones» suggests for the automation (AU-211): do take puts the change into its draft for him to publish, do drop turns it down for a week (suggestion: its id). It never sets a «Sí»",
     args: {
       id,
-      do: { role: "option", required: true, describe: "unpause or decline" },
-      step: { role: "option", required: true, describe: "the step's id" },
-      collection: { role: "option", required: true, describe: "the collection's key" },
-      action: { role: "option", required: true, describe: "create, update or remove" },
+      do: { role: "option", required: true, describe: "unpause, decline, take or drop" },
+      step: { role: "option", describe: "the step's id (unpause, decline)" },
+      collection: { role: "option", describe: "the collection's key (unpause, decline)" },
+      action: { role: "option", describe: "create, update or remove (unpause, decline)" },
+      suggestion: { role: "option", describe: "the suggestion's id (take, drop)" },
     },
     run(c, a) {
       const s = handOf(c.service);
       const h = runHand(s);
       const what = textOf(a.do);
+      if (what === "take" || what === "drop") {
+        const automation = idOf(a.id);
+        const suggestion = idOf(a.suggestion);
+        if (pendingSuggestion(s.store)?.automation !== automation) throw new ToolError("not-found");
+        const r =
+          what === "take"
+            ? takeInstructions(s.store, suggestion, h)
+            : dropInstructions(s.store, suggestion, h);
+        return leaf(answer(r ?? { done: true }) as never, code);
+      }
       if (what !== "unpause" && what !== "decline") throw new ToolError("bad-argument");
       // The print is the published version's (learningKey): the screen only names the cell.
       const key = learningKey(s.store, idOf(a.id), {

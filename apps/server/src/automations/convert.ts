@@ -294,7 +294,8 @@ function prepareFlow(
   };
   return {
     adoption,
-    name: latest.name,
+    // A drawn one is named as Boni draws it («Revisar instrucciones», once «Revisar la guía»: AU-211).
+    name: b?.draw ? running.automation.name : latest.name,
     running: running.automation,
     outcome: {
       id,

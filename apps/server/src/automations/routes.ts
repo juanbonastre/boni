@@ -120,8 +120,9 @@ export const RUN_ACTIONS: Readonly<Record<string, AutomationAction>> = {
   },
   "automations.learn": {
     effect: "touch",
-    undo: "a pause comes back by the next failures; a «No» stays while the step stays the same (AU-209)",
-    control: "«Quitar pausa» and «No» in the Bandeja's card of a pause or a suggestion",
+    undo: "a pause comes back by the next failures; a «No» stays while the step stays the same (AU-209); a change taken waits unpublished until his hand publishes it, and a «No» to it lasts a week (AU-211)",
+    control:
+      "«Quitar pausa» and «No» in the Bandeja's card of a pause or a suggestion; «Aceptar» in «Ver el cambio» and «No» in the card of «Revisar instrucciones»",
   },
   "automations.answer": {
     effect: "touch",
@@ -153,7 +154,8 @@ export const RUN_ROUTES: Readonly<Record<string, { action: string; runs: string 
     action: "automations.pin",
     runs: "pinFromRun",
   },
-  // F15 P2 (learning.ts): «Quitar pausa» and «No» to a suggestion (AU-209, AU-210).
+  // F15 P2 (learning.ts): «Quitar pausa» and «No» to a suggestion (AU-209, AU-210); F16 (review.ts): «Aceptar» and
+  // «No» to «Revisar instrucciones»'s (AU-211).
   "POST /api/agent/automations/:id/learning": { action: "automations.learn", runs: "unpause" },
   // F15 P2 (C): a waiting run's question, answered from the run (AU-247, decision 29 of §10).
   "POST /api/agent/automations/:id/runs/:run/answer": {
