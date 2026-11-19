@@ -4,6 +4,7 @@ import { fromLocal, isoToDay, likeTitle, todayIn } from "@boni/calendar";
 import { branch, rolesOf, type Schema, type TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "./autoAccept.ts";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import { calendarDefs, taskDoneField } from "./calendarStore.ts";
 import type { ExternalItem } from "./externalItems.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -587,11 +588,15 @@ const sourceKey = (p: ProposalRow) =>
     /@[0-9a-f]{12}$/,
     "",
   );
-/** Proposals "like" each other: the same tool, source and collection. */
+/**
+ * Proposals "like" each other: the same tool, source and collection. One row of a run's proposal (AU-251) is a
+ * proposal to create, under the same key as one of the engine of before: his decisions on either count together.
+ */
 export const likeKey = (p: ProposalRow) => {
   const src = sourceKey(p);
+  const tool = runRowOf(p) !== null ? "entities.create" : p.tool;
   return src
-    ? `${p.tool}\u0000${src}\u0000${textOf(rowsOf(p).find((r) => r.arg === "type")?.value)}`
+    ? `${tool}\u0000${src}\u0000${textOf(rowsOf(p).find((r) => r.arg === "type")?.value)}`
     : "";
 };
 
@@ -688,7 +693,7 @@ export function inboxCard(
   const def = Object.values(schema).find((t) => t.key === typeKey || t.id === typeKey);
   const collection = textOf(typeRow?.detail) || def?.name || null;
   const action: InboxCard["action"] =
-    p.tool === "entities.create"
+    p.tool === "entities.create" || runRowOf(p) !== null
       ? "create"
       : p.tool === "entities.update"
         ? "update"

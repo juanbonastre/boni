@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { type Agent, backOff, type CostClass, resolve } from "@boni/agent";
 import type { ProposalRow, UserStore } from "@boni/store";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import { likeKey } from "./inboxCard.ts";
 
 /**
@@ -125,7 +126,8 @@ function decided(store: UserStore): { p: ProposalRow; right: boolean }[] {
   return [...store.journal.proposals("accepted"), ...store.journal.proposals("rejected")]
     .filter(
       (p) =>
-        p.tool === "entities.create" &&
+        // One row of a run's proposal (AU-251) is decided as one of before: the same key (`likeKey`).
+        (p.tool === "entities.create" || runRowOf(p) !== null) &&
         p.decided !== null &&
         // A mail's: its sender is among its sources, not always the first (inboxCard.ts `sourceKey`).
         p.sources.some((s) => s.startsWith("mail:")),

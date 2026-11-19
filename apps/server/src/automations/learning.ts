@@ -38,6 +38,7 @@ import {
 import type { AutomationRunRow, DecisionRow, LogRow, UserStore } from "@boni/store";
 import { CELL_AREA, DAY, learningOn, markSuggested, maySuggest } from "../learning.ts";
 import type { AutomationNotice } from "./notices.ts";
+import { runRowOf } from "./acceptRunName.ts";
 import { ACCEPT_RUN, askedCells } from "./proposal.ts";
 import { publishedOf, sha256 } from "./service.ts";
 
@@ -257,11 +258,13 @@ export function learnAnswer(
     return [];
   const x = ranOf(store, run);
   if (!x) return [];
-  const right = p.status === "accepted";
+  // One row's card (AU-251) is one decision of its own cell: accepted as it was, right; corrected or discarded, wrong.
+  const row = runRowOf(p);
+  const right = p.status === "accepted" && (row === null || !p.edits);
   const saved = right ? savedOf(store, run) : null;
   const print = printer(x.doc);
   const notices: AutomationNotice[] = [];
-  for (const c of askedCells(store, run)) {
+  for (const c of askedCells(store, run, row ?? undefined)) {
     const key: CellKey = {
       automation: x.r.automation,
       step: c.step,

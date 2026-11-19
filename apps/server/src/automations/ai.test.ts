@@ -834,13 +834,16 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     ok(a.publish());
     const r = await ran(t.s, a.id, a.step("Inicio"), { nota: "a mano" });
     expect(r.state).toBe("done");
+    // Two rows to create: one card per row (AU-251), both proposals of the run's one agent run, the run naming one.
     const pending = t.s.journal.proposals("pending");
-    expect(pending.map((p) => p.id)).toEqual([r.proposal]);
-    const view = pending[0]?.view as RunProposalView;
-    expect(view.run.count).toBe(2);
+    expect(pending).toHaveLength(2);
+    expect(new Set(pending.map((p) => p.run)).size).toBe(1);
+    expect(pending.map((p) => p.id)).toContain(r.proposal);
+    const views = pending.map((p) => p.view as RunProposalView);
+    expect(views.map((v) => v.run.count)).toEqual([1, 1]);
     // The two branches run side by side: which change comes first is not fixed.
     expect(
-      view.run.first.map((x) => [
+      views.flatMap((v) => v.run.first).map((x) => [
         x.step,
         x.byAgent,
         x.action,

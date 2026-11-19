@@ -28,9 +28,11 @@ import { clock, under } from "@boni/pace";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAIL_FLOW } from "../flows.ts";
+import { inboxCard, likeKey } from "../inboxCard.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { pieceRequest, wireAutomationModels } from "./ai.ts";
 import { BONI_AUTHOR, wireBoni } from "./boni.ts";
+import { runRowOf } from "./acceptRunName.ts";
 import { convertBoniFlows, followBoniFlow } from "./convert.ts";
 import {
   DOUBT_WAIT_DAYS,
@@ -880,9 +882,71 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
-  it.todo(
-    "AU-251 · a run that only asks to create five rows or fewer is one card per row: accepting one saves that row and leaves the others waiting, a corrected one counts as a miss, and a failed run withdraws no earlier card of the thread",
-  );
+  it("AU-251 · a mail's run that asks to create five rows or fewer is one card per row, each saying the mail it came from, and his decisions on those cards make its sender «conocido» under the same key as the cards of before", async () => {
+    const s = mailStore();
+    try {
+      const { hooks } = wired(s, {
+        read: () =>
+          reading([
+            { kind: "task", title: "Enviar el informe", due: "2026-11-20" },
+            { kind: "task", title: "Revisar el contrato", due: "2026-11-21" },
+          ]),
+      });
+      converted(s);
+      const first = mail(s, { from: KNOWN, subject: "Dos cosas", text: "El informe y el contrato." });
+      const done = await read(s, first);
+      const run = done.run;
+      const cards = (done.proposal ? s.journal.proposalsOf(done.proposal.run) : []).sort(
+        (a, b) => (runRowOf(a) ?? 0) - (runRowOf(b) ?? 0),
+      );
+      expect(cards).toHaveLength(2);
+      expect(cards.map((p) => (p.view as RunProposalView).run.row)).toEqual([0, 1]);
+      expect(cards.every((p) => (p.view as RunProposalView).run.run === run.id)).toBe(true);
+      // The card of always: what it creates and where, and where it came from, from the trigger's row (as text).
+      const painted = cards.map((p) => inboxCard(s, p, { decide: false }));
+      expect(painted.map((c) => [c.action, c.collection, c.title, c.day])).toEqual([
+        ["create", "Tareas", "Enviar el informe", "2026-11-20"],
+        ["create", "Tareas", "Revisar el contrato", "2026-11-21"],
+      ]);
+      expect(painted[0]?.source).toMatchObject({
+        kind: "mail",
+        from: KNOWN,
+        subject: "Dos cosas",
+        open: { type: CORREO, id: first },
+      });
+      // Each card's source is the mail's sender: the key of «conocido» is the one of before.
+      expect(cards.map((p) => likeKey(p))).toEqual([
+        `entities.create\u0000mail:${KNOWN}\u0000tarea`,
+        `entities.create\u0000mail:${KNOWN}\u0000tarea`,
+      ]);
+      const next = rowOf(s, mail(s, { from: KNOWN, subject: "Otra" }));
+      expect(knownSender(s, hooks, next, "tarea")).toBe(false);
+      // One card of before, and these two, accepted as proposed: three, and he is known for «Tareas» only.
+      proposal(s, {
+        id: "p_antes",
+        sender: KNOWN,
+        collection: "tarea",
+        title: "Antes",
+        status: "accepted",
+        at: NOW - 86_400_000,
+      });
+      for (const c of cards) s.journal.setProposal(c.id, "accepted", Date.now(), null);
+      expect(knownSender(s, hooks, next, "tarea")).toBe(true);
+      expect(knownSender(s, hooks, next, "evento")).toBe(false);
+      // A card he corrected before accepting it is a miss: no longer known.
+      const again = await read(s, mail(s, { from: KNOWN, subject: "Una más" }));
+      const third = again.proposal
+        ? s.journal.proposalsOf(again.proposal.run).find((p) => runRowOf(p) === 0)
+        : null;
+      expect(third).toBeTruthy();
+      s.journal.setProposal(third?.id as string, "accepted", Date.now(), {
+        values: { title: { from: "Enviar el informe", to: "Enviar el informe final" } },
+      });
+      expect(knownSender(s, hooks, next, "tarea")).toBe(false);
+    } finally {
+      s.close();
+    }
+  });
 
   it("AU-252 · a row the «Decisora» is unsure of leaves by «Duda» to a «Preguntar»: the run waits, the answer goes on to the chosen collection, and «Ninguna» or an expired question creates nothing", async () => {
     const s = mailStore();

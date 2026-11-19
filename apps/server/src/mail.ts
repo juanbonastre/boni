@@ -20,7 +20,7 @@ import {
   type UserIn,
   type Val,
 } from "@boni/agent";
-import { BONI_MODULES, BONI_TRIGGERS } from "@boni/automations";
+import { BONI_MODULES, BONI_PARAMS, BONI_TRIGGERS } from "@boni/automations";
 import { systemTimeZone } from "@boni/calendar";
 import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
@@ -30,7 +30,7 @@ import { BODY, type FlowRow, open, seal, type UserStore, wrappedKeyProvider } fr
 import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
-import { ACCEPT_RUN } from "./automations/acceptRunName.ts";
+import { ACCEPT_RUN, runRowOf } from "./automations/acceptRunName.ts";
 import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
 import { type BoniFlow, convertBoniFlows } from "./automations/convert.ts";
 import { drawReadMail } from "./automations/mailAutomation.ts";
@@ -2286,8 +2286,25 @@ export class Mails {
       if (!("id" in r)) return { ...none, stopped: r.error };
       const kept = store.journal.automationRun(r.id);
       const p = kept?.proposal ? store.journal.proposal(kept.proposal) : null;
-      const n =
-        p && p.status === "pending"
+      // One card per row (AU-251): each row is a proposal of the run's one agent run.
+      const cards = p && runRowOf(p) !== null ? store.journal.proposalsOf(p.run) : [];
+      // «Plegar hilo» (AU-251): the earlier card of the thread gives way only now that the new one is proposed, and
+      // only when the run did not fail; its step's days are the published version's.
+      const fold = publishedOf(store, MAIL_FLOW)?.automation.steps.find(
+        (x) => x.type === "boni.fold",
+      );
+      const e = store.get(id);
+      if (fold && cards.length && r.state !== "failed" && !again && e)
+        this.foldThread(
+          account,
+          store,
+          e,
+          cards.map((x) => x.id),
+          foldDays(fold.params?.[BONI_PARAMS.days]),
+        );
+      const n = cards.length
+        ? cards.filter((x) => store.journal.proposal(x.id)?.status === "pending").length
+        : p && p.status === "pending"
           ? ((p.view as { run?: { count?: number } }).run?.count ?? 1)
           : 0;
       return {
@@ -2908,7 +2925,7 @@ export class Mails {
         (p) =>
           p.created >= since &&
           p.status !== "stale" &&
-          p.tool === "entities.create" &&
+          (p.tool === "entities.create" || runRowOf(p) !== null) &&
           !made.includes(p.id) &&
           mails.has(mailOfRun(j, p.run)),
       );

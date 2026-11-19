@@ -3840,7 +3840,24 @@ export class Agent {
     const args = Object.fromEntries(Object.entries(stored.values).map(([k, v]) => [k, thaw(v)]));
     let changed: ProposalEdits | null = null;
     const mine = label("user", "personal", [{ kind: "user-edit", id }]);
-    if (edits && (edits.type !== undefined || edits.values)) {
+    if (edits && (edits.type !== undefined || edits.values) && tool.acceptsRun && args.row) {
+      // One row of a run's proposal (AU-251): what Juan corrected goes to the action as his, by field key; the
+      // collection is the step's, never moved.
+      if (edits.type !== undefined) return empty("edit-not-allowed");
+      const rows = (p.view as { rows?: { arg: string; value?: unknown }[] } | null)?.rows ?? [];
+      const out: Record<string, Json | null> = {};
+      const was: NonNullable<ProposalEdits["values"]> = {};
+      for (const [k, v] of Object.entries(edits.values ?? {})) {
+        const before = (rows.find((r) => r.arg === `values.${k}`)?.value ?? null) as Json | null;
+        if (JSON.stringify(before) === JSON.stringify(v)) continue;
+        out[k] = v;
+        was[k] = { from: before, to: v };
+      }
+      if (Object.keys(out).length) {
+        args.edits = leaf(out, mine);
+        changed = { values: was };
+      }
+    } else if (edits && (edits.type !== undefined || edits.values)) {
       if (tool.name !== "entities.create" || args.values?.t !== "rec")
         return empty("edit-not-allowed");
       changed = {};
