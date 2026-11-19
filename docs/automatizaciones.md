@@ -3726,7 +3726,9 @@ automatewithai) y las páginas de Zapier de correo a tarea.
 - **AU-253** (F16, en parte) · El tope del día, el registro y volver a leer. Toda automatización que empieza con
   «Llega un correo» tiene un tope al día en el código, no en un parámetro: 150 llamadas a modelos y 20 por
   remitente, los números de hoy (`extensions.ts`, `RUN_LIMITS`), contadas antes de hacerlas como las de una
-  ejecución (AU-206). El panel del disparador lo dice. Pasado el tope, la ejecución no empieza: el correo espera
+  ejecución (AU-206); una llamada cuenta en cuanto el tope la deja pasar, también si después se rechaza (sin
+  modelo en «Modelos», nada que leer) o falla (el proveedor no responde): así un correo que hace fallar las llamadas
+  no lo intenta gratis una y otra vez. El panel del disparador lo dice. Pasado el tope, la ejecución no empieza: el correo espera
   (hasta 500, como la cola de hoy) y se lee al día siguiente, en orden; avisa una vez por racha. El presupuesto del
   mes sigue aparte (AU-199). `logRead` se va: cada correo leído es una ejecución en «Ejecuciones», con su línea
   pintada por el código («1 propuesta en Tareas», «Nada que proponer») y sus pasos (AU-103); el remitente y el

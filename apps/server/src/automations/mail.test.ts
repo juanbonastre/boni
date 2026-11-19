@@ -1086,6 +1086,36 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
+  it("AU-253 · the cap counts a model call once it lets it go, before the provider is asked: a call refused after it (no decision model) and a call that fails both count", async () => {
+    const s = mailStore();
+    try {
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(Date.now());
+      const spent = (sender: string) =>
+        s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}\u0000${sender}`);
+      // A reader whose provider fails: the run fails, and the call it tried is counted.
+      const { reader } = wired(s, {
+        read: () => {
+          throw new Error("el proveedor no responde");
+        },
+        decide: null,
+      });
+      converted(s);
+      const failing = await read(s, mail(s, { from: OTHER, subject: "Falla" }));
+      expect(failing.run.state).toBe("failed");
+      expect(reader.requests.length).toBe(1);
+      expect(spent(OTHER)).toBe(1);
+      expect(s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}`)).toBe(1);
+      // A reader that answers, then a «Decisora» refused for want of a decision model: it doubts, and both count.
+      wired(s, { read: () => reading([{ kind: "task", title: "Una cosa" }]), decide: null });
+      const refused = await read(s, mail(s, { from: KNOWN, subject: "Duda" }));
+      expect(refused.run.state).not.toBe("failed");
+      expect(spent(KNOWN)).toBe(2);
+      expect(s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}`)).toBe(3);
+    } finally {
+      s.close();
+    }
+  });
+
   it("AU-253 · with a year of mail (11,000 read mails' proposals and his decisions), what each mail's run asks of the journal (the cap, «Solo conocidos», the sender's pending titles) stays within its time", () => {
     const s = mailStore();
     try {
