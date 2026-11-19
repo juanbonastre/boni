@@ -54,6 +54,10 @@ Known, and in the queue:
 - **A double run is possible** (task 162): pressing «Volver al flujo de antes» or «Convertir otra vez» while that
   automation runs does not stop the run in flight, so the other engine can start one of the same flow for as long as
   that run lasts. Not covered by a test.
+- **A time bound in quarantine** (task 163): the CPU time of a page of «Ejecuciones» over a year of runs
+  (`scheduler.test.ts`); the rest of that test runs.
+- **Another in quarantine** (task 161): the store's cost of a record saved alone among 12,000 against among 3,000
+  (`store.test.ts`); its absolute bound and the batch's still run.
 
 ## 2026-11-15 (forty-seventh) — server 0.8.123 · Boni desktop 0.4.90 · Boni Android
 
