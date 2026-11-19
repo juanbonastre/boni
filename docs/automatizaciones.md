@@ -2645,6 +2645,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   de la cuenta corre como un flujo en segundo plano (lo que crea, propuesto; las etiquetas de fuera, como hoy), y en
   seco con «Probar» (`boni.test.ts`). Falta (S2b): «Leer correo» convertida leyendo un correo inventado, con los
   pasos del §5.17: las 16 piezas de E1 se rehacen (ningún documento guardado las lleva).
+  Hecho en P1 de la F16: en la app, una de Boni («De: Boni») abre cada pieza con su panel de E1 y E2
+  (`AutomationMail.tsx`): «Llega un correo» dice su tope sin nada que cambiar, la «Decisora» solo sus colecciones y
+  su modelo, la «Lectora» lo que busca, sus indicaciones, su modelo y sus ejemplos; en otra automatización el panel de
+  añadir no tiene «Boni» y su búsqueda no encuentra ninguna pieza (`e2e-boni/automations-before.spec.ts`,
+  «AU-127 · …»; sin código nuevo: ya lo hacían `BONI_CATEGORY` fuera de `PANEL_CATEGORIES` y los paneles de E2).
+  Falta: lo de la S2b de arriba; los paneles de las piezas de «Traer correo», «Revisar instrucciones» y «Aviso del
+  presupuesto» en la app, con sus datos (los de sus sesiones); y que una copia pierda sus piezas y lo diga, en la app.
 - **AU-221** (F16, en parte) · Las automatizaciones de Boni son cuatro: «Traer correo», «Leer correo», «Revisar
   instrucciones» (que junta «Revisar la guía» de hoy y el revisor de los agentes: AU-211) y «Aviso del
   presupuesto». Están en la lista con «De: Boni», se abren en el lienzo, se cambian, se prueban y se apagan, y se
@@ -2674,8 +2681,8 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`followBoniFlow`), y «Modelos» dice si está apagada por su interruptor. En «Automatizaciones» dice «De: Boni» y
   no se elimina; en el mapa, su «Avisar» sigue llegando a «Dispositivos». Su traducción de un paso se lee, así que no
   se dibuja a mano. Falta: las tres del correo (su sesión) y «Revisar instrucciones».
-  Hecho en P1 de la F16: en el lienzo, la cabecera de una de Boni dice «De Boni» (`AutomationView.boni`, por
-  `boniOf`) y su «⋯» no tiene «Eliminar»; «⋯ → Volver al de Boni» sale cuando la que corre no es de Boni y no es igual
+  Hecho en P1 de la F16: en el lienzo, la cabecera de una de Boni dice «De: Boni» (`AutomationView.boni`, por
+  `boniOf`; `convert.test.ts`, «AU-221 · AU-225 · P1 …», con una convertida por `keepBoniFlows`) y su «⋯» no tiene «Eliminar»; «⋯ → Volver al de Boni» sale cuando la que corre no es de Boni y no es igual
   a la última «De Boni», y abre «Publicar» con ese documento, como «Volver a esta» (AU-98); publicada, deja de salir
   (`e2e-boni/automations-before.spec.ts`, «AU-221 · …»). Falta: lo de la S2b y la S2c de arriba.
 - **AU-128** (sin fase) · Lo que sale fuera (una petición HTTP, un webhook, enviar un correo) no entra en estas
@@ -3031,9 +3038,7 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   viene (`flow`), y las otras se cuentan (`skipped`); «Volver al flujo de antes» (`revertFlow`) y «Convertir otra vez»
   (`reconvertFlow`, que dice `changed` si el flujo tuvo una versión mientras corría como antes); y lo que la vista de
   la automatización necesita para la franja (`AutomationView.conversion`). La automatización nace con el
-  interruptor del flujo y no apagada: una que corría a su hora sigue haciéndolo, y lo que escribe propone. Falta (P1):
-  la franja, «⋯ → Conversión», «⋯ → Volver al flujo de antes» y sus rutas, que llegan con sus botones; el borrador a
-  medias (`flow_drafts`), que no se convierte; y `automations-before.spec.ts`.
+  interruptor del flujo y no apagada: una que corría a su hora sigue haciéndolo, y lo que escribe propone.
   Hecho en P1 de la F16: las rutas `GET` y `POST /api/agent/automations/conversion` (la lista; «Cerrar», guardado
   para la cuenta) y `POST /api/agent/automations/:id/conversion` («Volver al flujo de antes» y «Convertir otra
   vez»), por la acción `automations.convert` desde un dispositivo personal, y `automations.read` con la parte

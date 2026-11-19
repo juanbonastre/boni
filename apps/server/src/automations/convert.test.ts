@@ -23,6 +23,7 @@ import { ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
 import { AgentHost, trashFlow } from "../agent.ts";
 import { DataError } from "../data.ts";
 import { lastSlot } from "../flowScheduler.ts";
+import { REVIEW_FLOW } from "../flows.ts";
 import { deleteFlowRow, updateFlowRow } from "../flowsCollection.ts";
 import { ROUTES } from "../routes.ts";
 import { wireBoni } from "./boni.ts";
@@ -33,11 +34,13 @@ import {
   convertFlow,
   convertFlows,
   copyBeforeRuns,
+  keepBoniFlows,
   reconvertFlow,
   revertFlow,
   wireDryConversion,
 } from "./convert.ts";
 import { publish, setEnabled, versionsOf } from "./publish.ts";
+import { drawReview } from "./review.ts";
 import { CONVERSION_ROUTES, SHARED_DEVICE_ROUTES } from "./routes.ts";
 import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
 import { undoAutomationRun } from "./runs.ts";
@@ -768,6 +771,39 @@ describe("the saved flows converted to automations (F16)", () => {
       "Contar pedidos",
       "Viejo",
     ]);
+  });
+
+  it("AU-221 · AU-225 · P1: one of Boni's, converted by the code that keeps it, says `boni` in its view and in the conversion's list; a person's flow under another id does not", () => {
+    // «Revisar la guía» as Boni keeps it: its flow of before by «preset», then `keepBoniFlows` as mail.ts calls it.
+    flow({
+      id: REVIEW_FLOW,
+      name: "Revisar la guía",
+      trigger: { learning: "mail", every: 20 },
+      plans: [{ version: 1, steps: [] }],
+      by: "preset",
+    });
+    keepBoniFlows(
+      store,
+      [
+        {
+          id: REVIEW_FLOW,
+          boni: "reviewGuide",
+          draw: () => drawReview({ id: REVIEW_FLOW, every: 20, mails: 20 }),
+        },
+      ],
+      NOW,
+    );
+    const mine = flow({ name: "Contar pedidos", trigger: DAILY, plans: [COUNT] });
+    convertFlows(store, NOW);
+    const view = automationView(store, REVIEW_FLOW);
+    if ("error" in view) throw new Error(view.error);
+    expect(view.boni).toBe(true);
+    const by = new Map(conversionList(store).items.map((x) => [x.id, x]));
+    expect(by.get(REVIEW_FLOW)).toMatchObject({ state: "converted", boni: true });
+    expect(by.get(mine)?.boni).toBe(false);
+    const theirs = automationView(store, mine);
+    if ("error" in theirs) throw new Error(theirs.error);
+    expect(theirs.boni).toBe(false);
   });
 
   it("AU-225 · P1: «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» go through their action from a personal device only; a round trip loses nothing and sets no «Sí»", async () => {

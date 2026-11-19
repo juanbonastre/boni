@@ -1,7 +1,7 @@
 import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
 import { FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MAP, MODELS } from "./agent-scenarios.ts";
-import { TESTED } from "./automation-data.ts";
+import { readMail, TESTED } from "./automation-data.ts";
 import { type FakeRun, openApp } from "./fixtures.ts";
 
 /**
@@ -296,17 +296,81 @@ test.describe("what came from before, as automations (F16)", () => {
     expect(await asked()).toBe(before);
   });
 
-  test.fixme("AU-127 · a piece of Boni opens its panel with only what it lets change, and the add panel does not offer it in another automation", async () => {});
+  test("AU-127 · a piece of Boni opens its panel with only what it lets change, and the add panel does not offer it in another automation", async ({
+    page,
+  }) => {
+    // «Leer correo» as the server sends it: Boni's (`boni`), its pieces as steps of their own types. Its own name,
+    // since the flows of before (BEFORE) list a «Leer correo» too.
+    const mail = {
+      ...readMail("a_01jx8x0t2v4x6z8b0d2f4h6b05"),
+      name: "Leer el correo de prueba",
+      boni: true,
+    };
+    await openApp(page, "/?still", {
+      automations: [mail as never, CONVERTED],
+      agenda: true,
+      agent: BEFORE(),
+    });
+    await openCanvas(page, mail.name);
+    await expect(head(page).locator(".auto-head-boni")).toHaveText("De: Boni");
+    await expect(page.locator(".auto-card")).toHaveCount(mail.steps.length);
+    const view = page.locator(".auto-view");
+    const shown = () =>
+      view
+        .locator(".auto-view-look > .auto-param")
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-param")));
+    const open = async (step: string) => {
+      if (await view.count()) {
+        await page.keyboard.press("Escape");
+        await expect(view).toHaveCount(0);
+      }
+      await page.locator(`.auto-card[data-step="${step}"]`).dblclick();
+      await expect(view).toHaveAttribute("data-step", step);
+    };
+    // «Llega un correo» lets nothing change: its cap is said, with nothing to type or choose.
+    await open("trigger");
+    expect(await shown()).toEqual(["cap"]);
+    await expect(view.locator(".auto-view-look").locator("input, select, textarea")).toHaveCount(0);
+    // The «Decisora»: its collections and its model, nothing of a generic step's.
+    await open("p-decider");
+    expect(await shown()).toEqual(["collections", "model"]);
+    // The «Lectora»: what it looks for, his text, its model and his examples.
+    await open("p-reader");
+    expect(await shown()).toEqual(["modules", "instructions", "model", "examples"]);
+    // In another automation the add panel has no «Boni» and finds none of its pieces.
+    await openCanvas(page, CONVERTED.name);
+    await page.locator(".auto-add-top").click();
+    const panel = page.locator(".auto-panel");
+    await expect(panel.locator("h3")).toHaveText([
+      "Leer o escribir en una colección",
+      "Transformar filas",
+      "Decidir el camino",
+      "Usar IA",
+      "Preguntar o avisar",
+    ]);
+    const find = panel.getByRole("textbox", { name: "Buscar un paso" });
+    for (const piece of ["Llega un correo", "Regla del remitente", "Lectora", "Decisora"]) {
+      await find.fill("");
+      await find.pressSequentially(piece, { delay: 25 });
+      await expect(panel).toContainText(`Nada con «${piece}»`);
+      await expect(panel.locator(".auto-start-row")).toHaveCount(0);
+    }
+  });
 
   test("AU-221 · Boni's automations say «De: Boni» in the list, can be turned off and not deleted, and «Volver al de Boni» brings Boni's version back", async ({
     page,
   }) => {
     await openApp(page, "/?still", { automations: [BONI, CONVERTED], agent: BEFORE() });
     await openList(page);
-    await expect(page.locator(".db-table tbody tr", { hasText: BONI.name })).toContainText("Boni");
+    // «De» is «Boni» on Boni's and «Tú» on his, cell by cell.
+    const cells = (name: string) =>
+      page.locator(".db-table tbody tr", { hasText: name }).locator("td").allTextContents();
+    await expect.poll(() => cells(BONI.name)).toContain("Boni");
+    expect(await cells(CONVERTED.name)).toContain("Tú");
+    expect(await cells(CONVERTED.name)).not.toContain("Boni");
     await page.locator(".db-table tbody tr").getByText(BONI.name, { exact: true }).click();
     await expect(nameBox(page)).toHaveValue(BONI.name);
-    await expect(head(page).locator(".auto-head-boni")).toHaveText("De Boni");
+    await expect(head(page).locator(".auto-head-boni")).toHaveText("De: Boni");
     // Turned off and on by its switch; never deleted.
     await toggle(page).click();
     await expect(toggle(page)).not.toBeChecked();

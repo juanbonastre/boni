@@ -800,7 +800,9 @@ function Header({
       )}
       {/* «De: Boni» (AU-221): one of Boni's own, as the list says it. */}
       {exists && boni && (
-        <span className="auto-conv-state auto-head-state auto-head-boni">{t("auto.ver.boni")}</span>
+        <span className="auto-conv-state auto-head-state auto-head-boni">
+          {t("auto.head.boni")}
+        </span>
       )}
       {state && !phone && (exists || state.owed.draft) && (
         <span className={`auto-saved ${save}`} role="status">

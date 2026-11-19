@@ -1,5 +1,6 @@
 import { clock, under } from "@boni/pace";
 import { expect, type Page, test } from "@playwright/test";
+import { readMail } from "./automation-data.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -11,89 +12,9 @@ import { openApp } from "./fixtures.ts";
  * order, over the fixture's «Tareas», «Eventos» and «Libros». No model is called and nothing runs.
  */
 
-const READER = "boni.mailReader";
 /** A value that looks like HTML, Markdown and a link: read letter by letter wherever it is painted (A-01). */
 const LOOKS_LIKE_MARKUP =
   '<img src=x onerror="window.__pwned=1"> **negrita** [enlace](https://ejemplo.example.com/x)';
-
-/** «Leer correo» as Boni draws it: the trigger, the rules, the reader, the decider over three, and its creation. */
-function readMail(id: string, rules: unknown[] = [], cells = ["tareas", "eventos"]) {
-  const perRow = { mode: "perRow" };
-  const ids = ["trigger", "p-rule", "p-reader", "p-decider", "p-create"];
-  return {
-    id,
-    name: "Leer correo",
-    updated: 1761990000000,
-    steps: [
-      { id: "trigger", name: "Llega un correo", type: "boni.mail", params: {} },
-      {
-        id: "p-rule",
-        name: "Regla del remitente",
-        type: "boni.mailRule",
-        params: { ...perRow, rules },
-      },
-      {
-        id: "p-reader",
-        name: "Lectora",
-        type: READER,
-        params: {
-          ...perRow,
-          modules: ["tasks", "events"],
-          instructions: "",
-          model: "",
-          examples: [
-            {
-              mail: "De: ejemplo.ana@example.com\nAsunto: Cena del viernes\n\n¿Quedamos a las 21:00?",
-              want: "Un evento el viernes a las 21:00",
-            },
-          ],
-        },
-      },
-      {
-        id: "p-decider",
-        name: "Decisora",
-        type: "boni.mailDecider",
-        params: {
-          ...perRow,
-          collections: [
-            { collection: "tareas" },
-            { collection: "eventos" },
-            { collection: "libros" },
-          ],
-          model: "",
-        },
-      },
-      {
-        id: "p-create",
-        name: "Crear en la elegida",
-        type: "boni.createChosen",
-        params: { ...perRow, onlyKnown: true },
-        connections: cells.map((collection) => ({
-          collection,
-          read: false,
-          create: { mode: "ask" },
-          update: false,
-          remove: false,
-        })),
-      },
-    ],
-    arrows: ids.slice(1).map((to, i) => ({
-      from: { step: ids[i], output: "main" },
-      to: { step: to, input: "main" },
-    })),
-    places: ids.map((step, i) => ({ step, x: i * 300, y: 0 })),
-    learning: [
-      {
-        step: "p-create",
-        collection: "tareas",
-        action: "create",
-        mode: "ask",
-        decided: 20,
-        right: 18,
-      },
-    ],
-  };
-}
 
 const card = (page: Page, id: string) => page.locator(`.auto-card[data-step="${id}"]`);
 const view = (page: Page) => page.locator(".auto-view");

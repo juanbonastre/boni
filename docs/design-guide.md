@@ -1245,7 +1245,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   whose, and « · Convertida» in its bar. In the editor's «⋯», above «Duplicar»: «Volver al flujo de antes» on a
   converted one, which turns it off and leaves the flow running, the header saying «En el flujo de antes» in a muted
   pill where the switch was (on the phone too, where nothing switches it); then «Convertir otra vez», which turns it on
-  again. Neither changes a version or the draft. One of Boni's says «De Boni» in a muted pill after its name, has no
+  again. Neither changes a version or the draft. One of Boni's says «De: Boni» in a muted pill after its name, has no
   «Eliminar», and «Volver al de Boni» while the one that runs is not Boni's last: it opens «Publicar» about that
   version, as «Volver a esta». From a shared device «Cerrar», «Volver al flujo de antes» and «Convertir otra vez»
   say «Solo desde un dispositivo personal.» and change nothing.
