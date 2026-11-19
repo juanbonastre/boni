@@ -11,8 +11,8 @@
  * - «Lectora»: one read of the mail (and of what that sender already has waiting, as outside text), one row per
  *   thing it found.
  * - «Plegar hilo»: what the thread already proposed the same is dropped; what it changed keeps the earlier one as
- *   `before`. Putting that «Antes» on the card and withdrawing the earlier card are the card's (AU-251, S2b part 2):
- *   a failed run must withdraw nothing, so nothing is withdrawn before the run's own card exists.
+ *   `before`. Putting that «Antes» on the card and withdrawing the earlier card are the card's (AU-251, mail.ts
+ *   `foldThread`): a failed run must withdraw nothing, so nothing is withdrawn before the run's own card exists.
  * - «Decisora»: the rule's collection, or the only one, without a model; else two reads with the options in both
  *   orders, agreement and calibration as the old decider did (`decideChoice`), sure from 0.6; below it the row leaves
  *   by «Duda» (`BONI_DOUBT`).

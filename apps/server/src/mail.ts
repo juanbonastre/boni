@@ -915,14 +915,6 @@ const REVIEW_PLAN = {
 };
 
 /**
- * Whether the mail's two flows convert when the mail code keeps them current (`keepMailFlows`). Off until the Bandeja
- * paints a run's proposal as one card per row (AU-251, the next PR of task 130): converted before that, every mail
- * read would wait as one summary card, and the Bandeja would show the mail worse than today. That PR turns it on and
- * removes this switch. Off, everything runs on the engine of before, as in main today.
- */
-const MAIL_CONVERTS = false;
-
-/**
  * «Traer correo» and «Leer correo» converted together, in one transaction or none (AU-226, AU-254), the second
  * drawn by `draw`: a writer of drafts, listed in `DRAFT_WRITERS` (every «Sí» lowered by `convertBoniFlows`). What
  * cannot convert stays a flow and runs on the engine of before.
@@ -2175,7 +2167,6 @@ export class Mails {
     const store = c.store;
     if (onNewEngine(store, MAIL_FLOW) && onNewEngine(store, FETCH_FLOW)) return;
     if (!onNewEngine(store, MAIL_FLOW)) this.mailFlow(c);
-    if (!MAIL_CONVERTS) return;
     convertMailFlows(store, account, () => this.drawn(account, c), this.now());
   }
 
