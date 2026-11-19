@@ -41,12 +41,15 @@ import {
   runnableNames,
 } from "@boni/agent";
 import {
+  AGENT_PARAMS,
+  AGENT_TYPE,
   type Automation,
   type BoniAutomation,
   blocking,
   keptNames,
   lowerYes,
   type Problem,
+  pageAbilitiesOf,
   parseAutomation,
   publishChecks,
 } from "@boni/automations";
@@ -57,6 +60,8 @@ import type {
   FlowRow,
   UserStore,
 } from "@boni/store";
+import { pageTypes } from "../pageChat.ts";
+import { getPage } from "../pages.ts";
 import { type AutomationModels, wireAutomationModels } from "./ai.ts";
 import { BONI_AUTHOR, onNewEngine, wireBoni } from "./boni.ts";
 import { collectionNamed } from "./collections.ts";
@@ -71,10 +76,7 @@ export const COPY_CHUNK = 200;
 export type FlowOutcome =
   | { id: string; state: "converted"; versions: number; skipped: number; changes: Change[] }
   | { id: string; state: "kept"; reasons: ConversionReason[]; skipped: number; changes: Change[] }
-  /**
-   * Not the conversion's: Boni's or a preset's, started by something else than his hand or the clock, or a page's
-   * chat, which stays on the engine of before until its turn goes the published way (F16 S2c, the switch).
-   */
+  /** Not the conversion's: Boni's or a preset's, or started by something else than his hand, the clock or a chat. */
   | { id: string; state: "left"; why: LeftWhy }
   /** Converted, reverted or kept before, with nothing new: no write. */
   | { id: string; state: "already" };
@@ -97,21 +99,50 @@ export interface BoniFlow {
   changes?: (store: UserStore) => Change[];
 }
 
-type LeftWhy = "notTheUsers" | "trigger" | "chat";
+type LeftWhy = "notTheUsers" | "trigger";
 
 /**
  * Why a flow is not the conversion's, or null when it is. Boni's are, whoever saved a version and whatever starts them.
- * A page's chat never is, whatever it says (AU-137): its turn still runs on the engine of before, so converting it
- * would leave an automation nothing starts; it is left until the switch that sends its turn the published way.
+ * A page's chat is (AU-137, the switch): its message goes the published way once it is converted (chatTurn.ts), and
+ * one that does not translate whole stays on the engine of before, saying why.
  */
 function leftOut(versions: readonly FlowRow[], b?: BoniFlow): LeftWhy | null {
-  if (versions.some((v) => chatTrigger(v.trigger))) return "chat";
   if (b) return versions.length ? null : "trigger";
   if (versions.some((v) => v.by !== "user")) return "notTheUsers";
   const latest = versions[0];
-  if (!latest || runnableNames(latest.trigger) === null) return "trigger";
+  if (!latest || (runnableNames(latest.trigger) === null && !chatTrigger(latest.trigger)))
+    return "trigger";
   return null;
 }
+
+/**
+ * A page chat's collections as its translation takes them (AU-137): those its page shows now, by key (D-61), read
+ * from the page the flow's chat trigger names. Undefined for a flow that is no chat.
+ */
+function chatOf(store: UserStore, f: FlowRow): { collections: string[] } | undefined {
+  const t = chatTrigger(f.trigger);
+  if (!t) return undefined;
+  const p = getPage(store, t.page);
+  const types = store.schema().types;
+  return {
+    collections: (p ? pageTypes(store, p.spec.blocks) : []).flatMap((id) =>
+      types[id] ? [types[id].key] : [],
+    ),
+  };
+}
+
+/**
+ * A page chat whose «Agente» reads its figures stays on the engine of before (AU-137 with AU-222): until «Responder»
+ * paints a cited figure itself, its numbers would be the model's words, not the code's (D-62).
+ */
+const figuresLater = (a: Automation): ConversionReason[] =>
+  a.steps
+    .filter(
+      (s) =>
+        s.type === AGENT_TYPE &&
+        (pageAbilitiesOf(s.params[AGENT_PARAMS.page]) ?? []).includes("figures"),
+    )
+    .map((s) => ({ step: s.id, what: "chat:pages.figures", reason: "laterPhase" }));
 
 /** The names a flow version's code binds: its inputs (flows.ts `inputsOf`), each a field of its trigger's row. */
 const boundOf = (f: FlowRow): string[] =>
@@ -123,6 +154,7 @@ const boundOf = (f: FlowRow): string[] =>
 function translate(
   f: FlowRow,
   b?: BoniFlow,
+  chat?: { collections: readonly string[] },
 ):
   | { ok: true; automation: Automation; changes: Change[] }
   | { ok: false; reasons: ConversionReason[]; changes: Change[] } {
@@ -133,6 +165,7 @@ function translate(
     trigger: f.trigger,
     from: "flow",
     ...(b ? { boni: b.boni, bound: boundOf(f) } : {}),
+    ...(chat ? { chat } : {}),
   });
   if (!c.complete)
     return {
@@ -252,7 +285,7 @@ function prepareFlow(
         b.draw,
         CHANGES.filter((c) => b.changes?.(store).includes(c)),
       )
-    : translate(latest, b);
+    : translate(latest, b, chatOf(store, latest));
   const keep = (reasons: ConversionReason[], skipped: number, changes: Change[]): FlowOutcome => {
     const same =
       before &&
@@ -263,6 +296,8 @@ function prepareFlow(
     return same ? { id, state: "already" } : { id, state: "kept", reasons, skipped, changes };
   };
   if (!running.ok) return keep(running.reasons, versions.length - 1, running.changes);
+  const later = figuresLater(running.automation);
+  if (later.length) return keep(later, versions.length - 1, running.changes);
   const blocks = [
     ...publishChecks(running.automation, checksOf(store, id, b)).blocks,
     ...blocking(running.automation, aiProblems(store, running.automation)),
@@ -274,7 +309,7 @@ function prepareFlow(
   let skipped = 0;
   for (const v of [...versions].reverse()) {
     // A drawn one adopts the version that runs alone: the older ones were the plan's, never translated.
-    const t = v === latest ? running : b?.draw ? null : translate(v, b);
+    const t = v === latest ? running : b?.draw ? null : translate(v, b, chatOf(store, v));
     if (!t) {
       skipped++;
       continue;

@@ -268,16 +268,12 @@ describe("a page's chat writes nothing with a «Sí» (F16 S2c, AU-137)", () => 
 });
 
 describe("an automation in a conversation (F16)", () => {
-  it.todo(
-    "AU-137 · the «Chat» block names the same id, now an automation: «Mensaje de chat» with its page, welcome and buttons, an «Agente» born with the page's collections to read only, and «Responder» as the message",
-  );
   // «Esta página» itself runs in automations/page.test.ts (server) and packages/automations/src/page.test.ts (engine),
   // with the narrower reading: a value of the page is proposed too, until Juan says otherwise (policy.ts PAGE_ALONE).
+  // Each message as one run of the automation, its card, its memory and the list of automations (AU-137, AU-231 in
+  // part): automations/page.test.ts, «a page's chat as an automation, from its conversation».
   it.todo(
-    "AU-137 · each message is one run in the automation's runs, and the conversation, its messages and its memory stay where they are",
-  );
-  it.todo(
-    "AU-231 · the chat of a page is in the list of automations and opens in the canvas; the conversation with the assistant is not listed, has no runs of its own, and its record stays where a turn's is",
+    "AU-231 · the conversation with the assistant is not listed, has no runs of its own, and its record stays where a turn's is",
   );
   it.todo(
     "AU-222 · a «Preguntar» of a run that began in a chat is a card in that chat, with a number, a date, a row of a collection or a file as its answer, and it waits as any other",

@@ -26,12 +26,16 @@ import {
   type Automation,
   type AutomationDiff,
   abilities,
+  BONI_TRIGGERS,
   type Box,
   blocking,
   CannotRun,
   type Cell,
+  CHAT_ROW,
+  type ChatMessage,
   type CodeContext,
   type CodeProblem,
+  chatStart,
   diffAutomations,
   type Execution,
   type GivenAnswer,
@@ -49,7 +53,7 @@ import {
   type StartedBy,
   stepPrints,
 } from "@boni/automations";
-import type { Label } from "@boni/entities";
+import { type Label, label } from "@boni/entities";
 import type { AutomationVersionInfo, UserStore } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { modelsOf } from "./ai.ts";
@@ -397,10 +401,10 @@ export async function runPublished(
   hand: Hand & { trust: Trust; zone: string },
   run: string,
   box: Box = sandboxBox(),
-  watch: Pick<RunDeps, "onStep"> & { boni?: BoniStart } = {},
+  watch: Pick<RunDeps, "onStep"> & { boni?: BoniStart; chat?: ChatMessage } = {},
   startedBy: StartedBy,
 ): Promise<Execution | Refusal | ServiceError> {
-  const { boni: start, ...seen } = watch;
+  const { boni: start, chat: message, ...seen } = watch;
   if (start && !boniOf(store, id)) return BAD;
   const row = store.journal.automation(id);
   if (!row || row.deleted) return NOT_FOUND;
@@ -418,6 +422,14 @@ export async function runPublished(
   if (!version) return NOT_FOUND;
   // Its cells paused by what Boni learned ask instead (AU-210): lowered, never raised, the version as it is.
   const automation = pausedDoc(store, id, version.automation);
+  // A message of a page's chat (AU-137): its row is `chatStart`'s over the stored version, the message and the page's
+  // values each with the label the server read; by hand («Ejecutar»), what he typed in the run's form is his. A page
+  // other than the one its stored trigger names starts nothing.
+  const chatRun = chatTriggered(automation, request.trigger);
+  const chat = chatRun
+    ? chatStart(automation, message ?? typedChat(request.fields, handLabel(hand.device)))
+    : null;
+  if ((message && !chatRun) || (chatRun && chat?.trigger !== request.trigger)) return BAD;
   try {
     return await runAutomation(
       {
@@ -427,10 +439,12 @@ export async function runPublished(
         // made it.
         fields: start
           ? start.row
-          : {
-              json: request.fields,
-              label: startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
-            },
+          : chat
+            ? chat.fields
+            : {
+                json: request.fields,
+                label: startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
+              },
         test: false,
         startedBy,
       },
@@ -476,13 +490,17 @@ export async function resumePublished(
   // And a cell paused since it started asks too (AU-210): both only lower.
   const automation = pausedDoc(store, id, lowerYes(started, publishedOf(store, id)?.automation));
   const names = JSON.parse(v.names) as KeptNames;
+  const own = request.startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device);
   return resume(
     {
       automation,
       trigger: request.trigger,
       fields: {
         json: request.fields,
-        label: request.startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device),
+        label: own,
+        // A chat's run that waited (AU-137): the store keeps its row, not the labels its values and its last messages
+        // had, so they go on as from outside (a model does not see them, and nothing of theirs is saved alone).
+        ...(chatTriggered(automation, request.trigger) ? { fields: RESUMED_CHAT } : {}),
       },
       test: false,
       startedBy: request.startedBy,
@@ -492,5 +510,31 @@ export async function resumePublished(
     going.answers,
   );
 }
+
+/** Whether `trigger` is the automation's «Mensaje de chat» (AU-137). */
+const chatTriggered = (a: Automation, trigger: string) =>
+  a.steps.some((s) => s.id === trigger && s.type === BONI_TRIGGERS.chat);
+
+/** A chat's row typed by his hand in «Ejecutar»: the message, the page and the values, all his. */
+function typedChat(fields: Record<string, Cell>, own: Label): ChatMessage {
+  const values = fields[CHAT_ROW.values];
+  return {
+    text: { value: String(fields[CHAT_ROW.message] ?? ""), label: own, derived: false },
+    page: String(fields[CHAT_ROW.page] ?? ""),
+    ...(values && typeof values === "object" && !Array.isArray(values)
+      ? {
+          values: Object.fromEntries(
+            Object.entries(values).map(([k, x]) => [k, { value: x, label: own, derived: false }]),
+          ),
+        }
+      : {}),
+  };
+}
+
+const OUTSIDE_AGAIN = label("external", "personal", [{ kind: "code", id: "resumed-chat" }]);
+const RESUMED_CHAT = {
+  [CHAT_ROW.values]: { label: OUTSIDE_AGAIN, derived: true },
+  [CHAT_ROW.chat]: { label: OUTSIDE_AGAIN, derived: true },
+};
 
 export { refused as isRefusal };

@@ -476,6 +476,12 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Colección: Movimiento», «Qué cuenta: La suma», «De: Importe», «Periodo: Desde siempre»), never a text of code; «Sí,
   añadir bloque» adds it, and the run's Undo takes it away. «Añadir bloques a la página» is one more checkbox in
   «Lo que puede hacer» (a chat made before keeps its list until Juan ticks it).
+  **Once it is an automation** (F16 S2c, AU-137): its panel says «Este chat es una automatización: lo que dice, lo que
+  puede hacer y sus ejecuciones se cambian en Automatizaciones.» and has only «Abrir la automatización», which opens it on the canvas; the block's
+  welcome, buttons and on/off are what its published version says. A message looks as before; what its run would
+  change comes as the same confirmation card in the conversation (a value of the page included, titled «Cambiar valor»),
+  which «Sí» accepts only from a personal device and «No» declines; the chat is in the list of automations, and each
+  message is a row of its «Ejecuciones». A chat whose «Agente» reads its figures stays as above until part 2.
 - **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
   `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,
@@ -1275,7 +1281,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   vez» and «Quitar». Accepted, the toast says «Propuesta aceptada: Revisar pendientes» with «Ver la ejecución» and
   no «Deshacer»: what it saved is undone with its run's «Deshacer lo que hizo». From a shared device it is read, and
   «Aceptar» says «Solo desde un dispositivo personal.» under it and the proposal keeps waiting (decision 15). On the
-  phone it is in the Bandeja's tab, whole within the screen's width. **One card per row** (F16 S2b, AU-251): a run
+  phone it is in the Bandeja's tab, whole within the screen's width. A change of a page's chat (AU-137) is counted by
+  its page, «Chat de Ventas: cambiar «Ventas»» («hacer 3 cambios en «Ventas»»), and its row is «Mes en «Ventas»» over
+  «Valor: 2026-10», or «Un bloque nuevo en «Ventas»» over «Bloque». **One card per row** (F16 S2b, AU-251): a run
   that only creates, five rows or fewer, is not this summary but one card per row, each the card of every proposal to
   create (its title and values, each value from outside with the summary's «de fuera» pill after it, the mail it came
   from with «Ver correo», the day around it, its «Antes» when its thread changed it), accepted, corrected and rejected

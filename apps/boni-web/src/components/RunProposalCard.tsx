@@ -36,16 +36,33 @@ export function wantsWords(
   names: (key: string) => string | undefined,
 ): string {
   const parts = r.counts.map((c) =>
-    t(`inbox.run.${c.action}`, {
-      rows: rowsWords(t, lang, c.n),
-      collection: names(c.collection) ?? c.name ?? t("auto.run.did.gone"),
-    }),
+    // A change of the chat's page is counted by its page, named by its title (AU-137).
+    c.collection === ""
+      ? c.n === 1
+        ? t("inbox.run.page", { page: c.name ?? t("auto.run.did.gone") })
+        : t("inbox.run.pages", {
+            n: c.n.toLocaleString(lang === "en" ? "en-GB" : "es-ES"),
+            page: c.name ?? t("auto.run.did.gone"),
+          })
+      : t(`inbox.run.${c.action}`, {
+          rows: rowsWords(t, lang, c.n),
+          collection: names(c.collection) ?? c.name ?? t("auto.run.did.gone"),
+        }),
   );
   const what = parts.length
     ? new Intl.ListFormat(lang === "en" ? "en-GB" : "es-ES", { type: "conjunction" }).format(parts)
     : t("inbox.run.nothing");
   return t("inbox.run.wants", { name: r.name || t("inbox.run.unnamed"), what });
 }
+
+/** What a change of the chat's page is, as its row says it: «Mes en «Ventas»», «Un bloque nuevo en «Ventas»». */
+const pageWords = (t: T, page: NonNullable<AskedRow["page"]>) =>
+  page.change === "value"
+    ? t("inbox.run.row.page.value", { control: page.control ?? "", page: page.title })
+    : t("inbox.run.row.page.block", { page: page.title });
+/** A page change's values, as its row shows them: the control is in its words already, the rest by plain names. */
+const pageValues = (r: AskedRow) =>
+  r.page ? r.values.filter((v) => v.key !== "control") : r.values;
 
 /** One value as the card says it: its text, never markup; a list or a row by how many it holds. */
 const valueText = (t: T, v: unknown) => cellText(t, v as Parameters<typeof cellText>[1]);
@@ -133,15 +150,25 @@ export function RunProposalCard({ p, asked }: { p: Proposal; asked: RunProposal 
             data-action={r.action}
           >
             <span className="run-asked-what">
-              {t(`inbox.run.row.${r.action}`, {
-                collection: names(r.collection) ?? r.name ?? t("auto.run.did.gone"),
-                title: r.row?.title || t("auto.value.empty"),
-              })}
+              {r.page
+                ? pageWords(t, r.page)
+                : t(`inbox.run.row.${r.action}`, {
+                    collection: names(r.collection) ?? r.name ?? t("auto.run.did.gone"),
+                    title: r.row?.title || t("auto.value.empty"),
+                  })}
               {r.byAgent && <span className="run-asked-agent"> · {t("auto.conn.byAgent")}</span>}
             </span>
-            {r.values.map((v) => (
+            {pageValues(r).map((v) => (
               <span className="run-asked-value" key={v.key}>
-                <span className="run-asked-field">{fieldName(r.collection, v.key)}</span>
+                <span className="run-asked-field">
+                  {r.page
+                    ? t(
+                        v.key === "block"
+                          ? "inbox.run.row.page.blockField"
+                          : "inbox.run.row.page.valueField",
+                      )
+                    : fieldName(r.collection, v.key)}
+                </span>
                 {"before" in v && (
                   <>
                     <span className="run-asked-before">{valueText(t, v.before)}</span>

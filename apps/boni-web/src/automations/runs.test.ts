@@ -1,6 +1,8 @@
 // «Ejecuciones» as data and as words (docs/automatizaciones.md AU-99, AU-100, AU-101, AU-18; F14d P2).
 import { FORMAT } from "@boni/automations";
 import { describe, expect, it } from "vitest";
+import { wantsWords } from "../components/RunProposalCard.tsx";
+import { parseRunProposal } from "../core/agent.ts";
 import { translator } from "../i18n.ts";
 import { type RunStep, type RunSummary, type RunView, runSummaryOf } from "./client.ts";
 import { mergeRuns, runEditor, treeLines, treeOrder } from "./runs.ts";
@@ -314,5 +316,64 @@ describe("what «Ejecuciones» says of a run", () => {
       "No se pudo deshacer: «Comprar pan» cambió después",
     );
     expect(runRefusedWords(es, { refused: "algo-nuevo" })).toBe(es("error.generic"));
+  });
+});
+
+describe("a page chat's proposal in words (AU-137, F16 S2c, the switch)", () => {
+  it("AU-137 · a change of the chat's page is read with its page and counted by its title, never as rows of a collection", () => {
+    const r = parseRunProposal({
+      run: {
+        automation: "a_01jx8x0t2v4x6z8b0d2f4h6k9q",
+        name: "Chat de Ventas",
+        version: 2,
+        run: "r_01jx8x0t2v4x6z8b0d2f4h6k9r",
+        startedBy: "user",
+        row: null,
+        count: 1,
+        counts: [{ collection: "", name: "Ventas", action: "update", n: 1 }],
+        first: [
+          {
+            step: "s_01jagente",
+            byAgent: true,
+            action: "update",
+            collection: "",
+            name: null,
+            row: null,
+            values: {
+              control: { value: "Mes", outside: false },
+              value: { value: "2026-10", outside: false },
+            },
+            page: { id: "e_01jpagina", title: "Ventas", change: "value", control: "Mes" },
+          },
+          {
+            step: "s_01jagente",
+            action: "update",
+            page: { id: "e_01jpagina", change: "<b>x</b>" },
+          },
+        ],
+      },
+    });
+    expect(r?.first[0]?.page).toEqual({
+      id: "e_01jpagina",
+      title: "Ventas",
+      change: "value",
+      control: "Mes",
+    });
+    // A change the app does not know is no page change: painted as a row's, never by its words.
+    expect(r?.first[1]?.page).toBeUndefined();
+    const names = () => undefined;
+    expect(r && wantsWords(es, "es", r, names)).toBe("Chat de Ventas: cambiar «Ventas»");
+    expect(
+      r &&
+        wantsWords(
+          en,
+          "en",
+          { ...r, counts: [{ collection: "", name: "Ventas", action: "update", n: 3 }] },
+          names,
+        ),
+    ).toBe("Chat de Ventas: make 3 changes in “Ventas”");
+    expect(es("inbox.run.row.page.value", { control: "Mes", page: "Ventas" })).toBe(
+      "Mes en «Ventas»",
+    );
   });
 });

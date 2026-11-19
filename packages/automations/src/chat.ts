@@ -100,14 +100,30 @@ export interface ChatMessage {
   page: string;
   /** The values the page's controls hold (D-61), each with its own label: one read from outside stays so. */
   values?: Readonly<Record<string, Labeled<Cell>>>;
+  /**
+   * `$chat` (AU-137): the chat's last messages before this one, oldest first, each what was written and what was
+   * answered, with the label of what they are (the join of the person's words and the replies' labels).
+   */
+  chat?: Labeled<readonly ChatLine[]>;
 }
 
-/** The keys of the row «Mensaje de chat» gives. */
-export const CHAT_ROW = { message: "message", page: "page", values: "values" } as const;
+/** One earlier message of a chat in `$chat`: what was written and the text of what was answered. */
+export interface ChatLine {
+  message: string;
+  reply: string;
+}
+
+/** The keys of the row «Mensaje de chat» gives; `chat` is `$chat`. */
+export const CHAT_ROW = {
+  message: "message",
+  page: "page",
+  values: "values",
+  chat: "chat",
+} as const;
 
 /**
- * The run a message starts (AU-137): its automation's «Mensaje de chat» trigger and the row it gives, `message`, `page`
- * and `values`. The row's label is the message's; `values` keeps the join of its values' labels, so what came from
+ * The run a message starts (AU-137): its automation's «Mensaje de chat» trigger and the row it gives, `message`, `page`,
+ * `values` and, when the server gives them, the chat's last messages as `chat` (`$chat`), with their own label. The row's label is the message's; `values` keeps the join of its values' labels, so what came from
  * outside is still from outside downstream (this only says the labels, it joins them as `@boni/entities` does). Null for
  * an automation with no such trigger, or one whose stored trigger names another page: no message starts it.
  */
@@ -122,6 +138,10 @@ export function chatStart(a: Automation, m: ChatMessage, test = false): RunInput
     [CHAT_ROW.values]: Object.fromEntries(values.map(([k, v]) => [k, v.value])),
   };
   const fields: Record<string, FieldLabel> = {};
+  if (m.chat) {
+    json[CHAT_ROW.chat] = m.chat.value.map((l) => ({ message: l.message, reply: l.reply }));
+    fields[CHAT_ROW.chat] = { label: m.chat.label, derived: m.chat.derived };
+  }
   if (values.length) {
     const labels: Label[] = values.map(([, v]) => v.label);
     const [first, ...rest] = labels as [Label, ...Label[]];

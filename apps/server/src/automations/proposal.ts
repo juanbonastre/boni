@@ -48,6 +48,7 @@ import { getPage } from "../pages.ts";
 import { ACCEPT_RUN, ROWS_AS_CARDS } from "./acceptRunName.ts";
 import { storeCollections } from "./collections.ts";
 import { askedLabel, checkPageChange, savePageChange } from "./page.ts";
+import { PAGE_ACTS } from "./policy.ts";
 import { ASKED_STEP } from "./record.ts";
 import { automationLabel } from "./service.ts";
 
@@ -277,6 +278,70 @@ export function triggerMail(store: UserStore, run: string): string | null {
   }
 }
 
+/** Whether what a run asked is one proposal per row (AU-251): a few rows to create, and nothing else. */
+const asCards = (asked: readonly AnyAsked[]) =>
+  asked.length <= ROWS_AS_CARDS &&
+  asked.every((a) => !isPageAsked(a) && a.kind === "propose" && a.change.kind === "create");
+
+/** A row's change or removal as the agent's card says one: the row by its title, and what it would save. */
+const CHANGE_TOOL = {
+  args: { id: { role: "entity" }, values: { role: "value" } },
+} as unknown as ToolDef;
+
+/** At most this many changes are told in a chat's card (the inbox's card lists them all). */
+export const CHAT_CARD_CHANGES = 20;
+
+/**
+ * What a chat shows of its run's proposal (AU-137): the card of always, «Sí» and «No», with the rows of each change
+ * (a page's as its page action's card says it, a row's as the agent's card of one), for the one proposal the run
+ * made; `proposals`: it made one per row (AU-251), each in the inbox. Null: it asked nothing, or it was answered.
+ */
+export function chatCardOf(
+  store: UserStore,
+  run: string,
+): { proposal: string; view: ConfirmView } | { proposals: number } | null {
+  const r = store.journal.automationRun(run);
+  const p = r?.proposal ? store.journal.proposal(r.proposal) : null;
+  if (!r?.proposal || p?.status !== "pending") return null;
+  const asked = askedRows(store, run);
+  if (!asked.length) return null;
+  if (asCards(asked) && asked.length > 1) return { proposals: asked.length };
+  const code = codeLabel("automations");
+  const hand = readStore(store);
+  const rowsOf = (a: AnyAsked): ConfirmView["rows"] => {
+    if (isPageAsked(a)) {
+      const args: Record<string, Val> = { page: leaf(a.page, code) };
+      for (const [k, v] of Object.entries(a.values)) args[k] = leaf(v.value as Json, v.label);
+      return confirmView(PAGE_ACTS[a.edit.kind], args, hand).rows;
+    }
+    if (a.change.kind === "create") return rowCardRows(store, a);
+    const fields: Record<string, Val> = {};
+    if (a.change.kind === "update")
+      for (const [k, v] of Object.entries(a.change.fields)) {
+        const l = a.values[k];
+        fields[k] = leaf((l?.value ?? v) as Json, l?.label ?? code);
+      }
+    return confirmView(
+      CHANGE_TOOL,
+      {
+        id: leaf(a.change.row.id, code),
+        ...(a.change.kind === "update" ? { values: rec(fields, code) } : {}),
+      },
+      hand,
+    ).rows;
+  };
+  const one = asked.length === 1 ? (asked[0] as AnyAsked) : null;
+  const tool = one && isPageAsked(one) ? PAGE_ACTS[one.edit.kind] : null;
+  return {
+    proposal: r.proposal,
+    view: {
+      tool: tool?.name ?? ACCEPT_RUN,
+      title: tool?.title ?? "Guardar lo que propuso una automatización",
+      rows: asked.slice(0, CHAT_CARD_CHANGES).flatMap(rowsOf),
+    },
+  };
+}
+
 /** What a row's card says (AU-251): the rows of a proposal to create, as the agent's own card of one says them. */
 const ROW_TOOL = {
   args: { type: { role: "type" }, values: { role: "value" } },
@@ -346,9 +411,7 @@ export function proposeRun(
         for (const s of v.label.sources) sources.add(`${s.kind}:${s.id}`);
     return [...sources];
   };
-  const perRow =
-    asked.length <= ROWS_AS_CARDS &&
-    asked.every((a) => !isPageAsked(a) && a.kind === "propose" && a.change.kind === "create");
+  const perRow = asCards(asked);
   const mail = perRow ? triggerMail(store, run) : null;
   journal.startRun({
     id: agentRun,
