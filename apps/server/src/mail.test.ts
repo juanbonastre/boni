@@ -387,10 +387,32 @@ describe("the mailbox", () => {
       expect(l.thirdParty).toBe(true);
       expect(l.sources).toEqual([{ kind: "mail", id: "atacante@evil.example" }]);
     }
+    // What the provider said of its authentication is kept, as from outside, for «conocido» only (AU-250); the
+    // trusted authserv-id is no setting a request can make (no screen sets it yet), so nobody is authenticated.
+    box.mails.set(
+      13,
+      `Authentication-Results: mx.example.net; dmarc=pass header.from=example.com\r\n${mail(13, "Firmado", "Hola.")}`,
+    );
+    await mails.check(1);
+    const signed = store
+      .list(def?.id as string)
+      .find((e) => e.entity.values.f_asunto === "Firmado");
+    expect(JSON.parse(String(signed?.entity.values.f_autenticacion))).toEqual([
+      {
+        authserv: "mx.example.net",
+        results: [{ method: "dmarc", result: "pass", from: "example.com" }],
+      },
+    ]);
+    expect(signed?.labels.f_autenticacion?.integrity).toBe("external");
+    expect(oferta?.entity.values.f_autenticacion).toBeUndefined();
+    expect(mails.hooksFor(1)?.trustedAuthserv).toBeNull();
+    await mails.save(1, { trustedAuthserv: "mx.example.net" } as never);
+    expect(mails.settings(1)?.trustedAuthserv).toBeUndefined();
+    expect(mails.hooksFor(1)?.trustedAuthserv).toBeNull();
     // Again: nothing new. A new mail: only it.
-    expect((await mails.check(1)).count).toBe(2);
+    expect((await mails.check(1)).count).toBe(3);
     box.mails.set(15, mail(15, "Acta", "Te paso el acta."));
-    expect(await mails.check(1)).toMatchObject({ count: 3, lastUid: 15 });
+    expect(await mails.check(1)).toMatchObject({ count: 4, lastUid: 15 });
     expect(asked.some((l) => /SELECT|STORE|EXPUNGE|COPY|MOVE| BODY\[\]/.test(l))).toBe(false);
   });
 
@@ -481,7 +503,8 @@ describe("the mailbox", () => {
       [3, mail(15, "Acta", "Te paso el acta.")],
       [4, mail(16, "Nueva", "Hola")],
     ]);
-    expect(await mails.check(1)).toMatchObject({ count: 4, uidValidity: 8, lastUid: 4 });
+    // Five: the four of the test before, «Firmado» among them, and «Nueva».
+    expect(await mails.check(1)).toMatchObject({ count: 5, uidValidity: 8, lastUid: 4 });
     const st = mails.state(1);
     const titles = host
       .store(1)
@@ -504,7 +527,7 @@ describe("the mailbox", () => {
     const t = await token();
     expect((await call(t, "POST", "/api/mail/forget")).status).toBe(200);
     expect(mails.view(1)).toBeNull();
-    expect(host.store(1).list(st.type as string)).toHaveLength(4);
+    expect(host.store(1).list(st.type as string)).toHaveLength(5);
   });
 
   it("keeps a mail's attachments as files of the account, and what it can read of them for the reader", async () => {

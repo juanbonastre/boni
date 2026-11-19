@@ -1,3 +1,4 @@
+export { type AuthResult, type AuthResults, authenticated, parseAuthResults } from "./auth.ts";
 export { decodeEntities, htmlToText } from "./html.ts";
 export {
   gmailThreadUrl,

@@ -23,6 +23,7 @@ import {
   type Row,
 } from "@boni/automations";
 import { join, label } from "@boni/entities";
+import type { AuthResults } from "@boni/mail";
 import { clock, under } from "@boni/pace";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -66,6 +67,8 @@ afterEach(() => {
 const CORREO = typeId("correo");
 const KNOWN = "ejemplo.conocido@example.com";
 const OTHER = "ejemplo.otro@example.com";
+/** The authserv-id of his provider (invented), as the mailbox's settings would hold it. */
+const TRUSTED = "mx.example.net";
 /** His own words, as a step's panel carries them. */
 const MINE = label("user", "personal", []);
 
@@ -89,6 +92,7 @@ function mailStore(): UserStore {
           evento_uid: "text",
           evento_titulo: "text",
           evento_dia: "text",
+          autenticacion: "text",
         },
       },
       { key: "tarea", name: "Tareas", folder: "tareas/", fields: { dia: "date" } },
@@ -115,6 +119,11 @@ function mail(
     replyTo?: string;
     thread?: string;
     invite?: { uid: string; title: string; day: string };
+    /**
+     * Its Authentication-Results as the connector keeps them: by default the trusted provider's pass for its From
+     * domain (what a mail from a real provider brings); `null`, none.
+     */
+    auth?: AuthResults[] | null;
   },
 ): string {
   const l = label("external", "personal", [{ kind: "mail", id: o.from }], true);
@@ -128,6 +137,16 @@ function mail(
   if (o.name) values.f_de_nombre = w(o.name);
   if (o.replyTo) values.f_responder_a = w(o.replyTo);
   if (o.thread) values.f_hilo = w(o.thread);
+  const auth =
+    o.auth === undefined
+      ? [
+          {
+            authserv: TRUSTED,
+            results: [{ method: "dmarc", result: "pass", from: o.from.split("@")[1] }],
+          },
+        ]
+      : o.auth;
+  if (auth) values.f_autenticacion = w(JSON.stringify(auth));
   if (o.invite) {
     values.f_evento_uid = w(o.invite.uid);
     values.f_evento_titulo = w(o.invite.title);
@@ -137,10 +156,14 @@ function mail(
 }
 
 /** The mail's code as the pieces get it (mail.ts `hooksFor`), over the test's store. */
-function hooksOf(s: UserStore, o: { calendar?: Set<string> } = {}): MailHooks {
+function hooksOf(
+  s: UserStore,
+  o: { calendar?: Set<string>; trusted?: string | null } = {},
+): MailHooks {
   return {
     type: CORREO,
     mailbox: "ejemplo.juan@example.com",
+    trustedAuthserv: o.trusted === undefined ? TRUSTED : o.trusted,
     text: (v) => `De: ${v.f_de}\nAsunto: ${v.f_asunto}\n\n${v.f_texto ?? ""}`,
     userIn: () => "to",
     inCalendar: async (uid) => o.calendar?.has(uid) ?? false,
@@ -777,6 +800,81 @@ describe("mail as an automation (§5.17)", () => {
       const b = await read(s, spoof);
       expect(b.asked).toEqual([expect.objectContaining({ collection: "tarea", action: "create" })]);
       expect(titles(s, "tarea")).toEqual(["Revisar el contrato"]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("AU-250 · «conocido» rests on his provider's authentication too: without a pass from the trusted authserv-id for the From domain, or with no trusted id set, a sender with his decisions is not known", () => {
+    const s = mailStore();
+    try {
+      knownFor(s, KNOWN, "tarea");
+      const hooks = hooksOf(s);
+      const domain = KNOWN.split("@")[1] as string;
+      const pass = (authserv: string, d: string): AuthResults => ({
+        authserv,
+        results: [{ method: "dmarc", result: "pass", from: d }],
+      });
+      const of = (auth: AuthResults[] | null) =>
+        rowOf(s, mail(s, { from: KNOWN, subject: "Contrato", auth }));
+      // No passing authentication from the provider: none kept, a fail, an spf pass only.
+      expect(knownSender(s, hooks, of(null), "tarea")).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "dmarc", result: "fail", from: domain }] }]),
+          "tarea",
+        ),
+      ).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "spf", result: "pass" }] }]),
+          "tarea",
+        ),
+      ).toBe(false);
+      // A pass from a foreign authserv-id (one the mail brought) is not known.
+      expect(knownSender(s, hooks, of([pass("relay.example.org", domain)]), "tarea")).toBe(false);
+      // A pass for another domain is not known.
+      expect(knownSender(s, hooks, of([pass(TRUSTED, "example.org")]), "tarea")).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([
+            { authserv: TRUSTED, results: [{ method: "dkim", result: "pass", d: "evil.example" }] },
+          ]),
+          "tarea",
+        ),
+      ).toBe(false);
+      // The trusted id's pass for the From domain plus his decisions: known; by DKIM for that domain too.
+      const good = of([pass(TRUSTED, domain)]);
+      expect(knownSender(s, hooks, good, "tarea")).toBe(true);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "dkim", result: "pass", d: domain }] }]),
+          "tarea",
+        ),
+      ).toBe(true);
+      // The same mail with no trusted id in the mailbox's settings (no screen sets it yet): nobody is known.
+      expect(knownSender(s, hooksOf(s, { trusted: null }), good, "tarea")).toBe(false);
+      // An authentication value labelled as not the sender's (written by anything but the connector) is not read.
+      const id = good.json.id as string;
+      s.update(
+        id,
+        {
+          f_autenticacion: {
+            value: JSON.stringify([pass(TRUSTED, domain)]),
+            label: label("external", "personal", [{ kind: "mail", id: OTHER }], true),
+          },
+        } as never,
+        { actor: "connector" },
+      );
+      expect(knownSender(s, hooks, row({ id }, good.label), "tarea")).toBe(false);
     } finally {
       s.close();
     }

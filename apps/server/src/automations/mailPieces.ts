@@ -46,6 +46,7 @@ import {
   type Row,
 } from "@boni/automations";
 import { join, type Label, label } from "@boni/entities";
+import { type AuthResult, authenticated } from "@boni/mail";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "../autoAccept.ts";
 import { likeTitle, whenOf, whenParts } from "../thread.ts";
@@ -59,6 +60,11 @@ export interface MailHooks {
   type: string;
   /** His mailbox's address: where he is among a mail's recipients is worked out from it. */
   mailbox: string;
+  /**
+   * The authserv-id of his provider's own Authentication-Results, from the mailbox's stored settings (never from a
+   * mail); null while unset, and then nobody is authenticated (`authenticatedMail`).
+   */
+  trustedAuthserv: string | null;
   /** The mail as the reader reads it: its headers that have a value, its text, its attachments' text. */
   text(values: Record<string, unknown>, body: string | undefined): string;
   /** `to`, `cc` or `group`. */
@@ -118,8 +124,49 @@ export function senderOf(e: Mail): string | null {
 }
 
 /**
- * «Solo conocidos» (AU-250): whether `row` came from a mail whose sender Juan himself made known for `collection`.
- * Only from his own decisions: `decisionHistory(store)` (autoAccept.ts, over `store.journal.proposals("accepted")`
+ * Whether his provider authenticated the stored mail's sender (packages/mail `authenticated`, RFC 8601): the
+ * provider's own Authentication-Results, by the trusted authserv-id of the mailbox's settings, as the connector kept
+ * them (`f_autenticacion`, labelled as the rest of the mail, its only source the sender's). No trusted id, no header
+ * kept, a header the mail brought under another id, a pass for another domain, anything unreadable: false.
+ */
+export function authenticatedMail(e: Mail, sender: string, trustedId: string | null): boolean {
+  if (!trustedId) return false;
+  const raw = e.entity.values.f_autenticacion;
+  const l = e.labels.f_autenticacion;
+  const srcs = l?.sources.filter((x) => x.kind === "mail") ?? [];
+  if (typeof raw !== "string" || srcs.length !== 1 || srcs[0]?.id.toLowerCase() !== sender)
+    return false;
+  let headers: unknown;
+  try {
+    headers = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(headers)) return false;
+  const clean = headers.flatMap((h) =>
+    h && typeof h === "object" && typeof h.authserv === "string" && Array.isArray(h.results)
+      ? [
+          {
+            authserv: h.authserv as string,
+            results: (h.results as unknown[]).flatMap((r) =>
+              r &&
+              typeof r === "object" &&
+              typeof (r as AuthResult).method === "string" &&
+              typeof (r as AuthResult).result === "string"
+                ? [r as AuthResult]
+                : [],
+            ),
+          },
+        ]
+      : [],
+  );
+  return authenticated(clean, sender, trustedId);
+}
+
+/**
+ * «Solo conocidos» (AU-250): whether `row` came from a mail whose sender his provider authenticated
+ * (`authenticatedMail`) and whom Juan himself made known for `collection`. Fails closed: without the provider's
+ * authentication nobody is known, however many decisions. Of his own decisions: `decisionHistory(store)` (autoAccept.ts, over `store.journal.proposals("accepted")`
  * and `store.journal.proposals("rejected")` of `entities.create` with a mail source) under the key
  * `entities.create\0mail:<sender>\0<collection>`, judged by `wouldAccept`. The sender is the stored mail's (`senderOf`,
  * by the row's `id`), and the row must carry that mail's source and no other; nothing a mail carries, a reader wrote
@@ -141,6 +188,7 @@ export function knownSender(
     .filter((s) => s.kind === "mail" && s.id !== EXAMPLE_SOURCE.id)
     .map((s) => s.id.toLowerCase());
   if (!mails.length || mails.some((m) => m !== sender)) return false;
+  if (!authenticatedMail(e, sender, hooks.trustedAuthserv)) return false;
   const prior = decisionHistory(store).get(
     `entities.create\u0000mail:${sender}\u0000${collection}`,
   );

@@ -1,3 +1,4 @@
+import { type AuthResults, authResultsOf } from "./auth.ts";
 import { decodeEntities, htmlToText } from "./html.ts";
 
 /**
@@ -41,6 +42,11 @@ export interface Message {
   /** The thread's headers (RFC 5322): the message this one answers, and the thread's ids, oldest first. */
   inReplyTo: string | null;
   references: string[];
+  /**
+   * Its Authentication-Results headers (RFC 8601), topmost first, all of them: who wrote each is for the code that
+   * judges them (auth.ts `authenticated`), never taken on trust here.
+   */
+  authentication: AuthResults[];
 }
 
 const MAX_TEXT = 50_000;
@@ -107,6 +113,8 @@ function utf8IfValid(s: string): string {
 
 interface Part {
   headers: Map<string, string>;
+  /** Every Authentication-Results header, in order (there may be several, unlike the others kept once). */
+  auth: string[];
   body: string; // bytes as a binary string (one char per byte)
 }
 
@@ -115,13 +123,15 @@ function splitHead(raw: string): Part {
   const head = m ? raw.slice(0, m.index) : raw;
   const body = m ? raw.slice(m.index + m[0].length) : "";
   const headers = new Map<string, string>();
+  const auth: string[] = [];
   for (const line of head.replace(/\r?\n[ \t]+/g, " ").split(/\r?\n/)) {
     const i = line.indexOf(":");
     if (i <= 0) continue;
     const k = line.slice(0, i).trim().toLowerCase();
+    if (k === "authentication-results") auth.push(line.slice(i + 1).trim());
     if (!headers.has(k)) headers.set(k, utf8IfValid(line.slice(i + 1).trim()));
   }
-  return { headers, body };
+  return { headers, auth, body };
 }
 
 /** "text/plain; charset=utf-8; name=..." -> value and parameters (RFC 2231 `name*=` read as UTF-8). */
@@ -298,5 +308,6 @@ export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: numbe
     attachments: w.attachments.slice(0, 50),
     truncated: partial || cut,
     calendar: w.calendars.find((c) => /BEGIN:VEVENT/i.test(c)) ?? null,
+    authentication: authResultsOf(top.auth),
   };
 }

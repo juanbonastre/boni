@@ -110,6 +110,12 @@ export interface MailSettings {
   /** The collections (type ids) tasks from mail may be proposed into (the AI picks one; next step). */
   collections: string[];
   on: boolean;
+  /**
+   * The authserv-id of his provider's own Authentication-Results (RFC 8601), the only header that can make a sender
+   * authenticated, and so «conocido» (AU-250; packages/mail auth.ts). A value of the mailbox, never of a mail. No
+   * screen sets it yet (its shape is Juan's question): unset, nobody is authenticated and «Solo conocidos» asks.
+   */
+  trustedAuthserv?: string;
 }
 export interface MailState {
   type: string | null;
@@ -764,6 +770,16 @@ function extraFields(files: TypeDef | undefined): FieldDef[] {
           },
         ]
       : []),
+    // What his provider said of the mail's authentication (its Authentication-Results, as JSON): for the code that
+    // judges «conocido» only (AU-250), from outside like the rest.
+    {
+      id: "f_autenticacion",
+      key: "autenticacion",
+      name: "Autenticación",
+      type: "longtext" as const,
+      hidden: true,
+      label: CODE,
+    },
     {
       id: "f_adjuntos_texto",
       key: "adjuntos_texto",
@@ -1184,6 +1200,10 @@ export class Mails {
         : (old?.collections ?? [])
       ).filter((c): c is string => typeof c === "string" && c.length < 80),
       on: input.on ?? old?.on ?? true,
+      // Never from the request: the same server keeps it, another server drops it.
+      ...(old?.trustedAuthserv && old.host === String(input.host ?? old.host).trim()
+        ? { trustedAuthserv: old.trustedAuthserv }
+        : {}),
     };
     if (
       !/^[a-z0-9.-]{1,253}$/i.test(s.host) ||
@@ -1688,6 +1708,8 @@ export class Mails {
     if (original?.gmailThread && def.fields.some((f) => f.id === "f_gmail_hilo"))
       values.f_gmail_hilo = w(original.gmailThread);
     if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
+    if (m.authentication?.length && def.fields.some((f) => f.id === "f_autenticacion"))
+      values.f_autenticacion = w(JSON.stringify(m.authentication));
     const list = (as: typeof m.to) =>
       as
         .map((a) => (a.name ? `${a.name} <${a.address}>` : a.address))
@@ -2150,6 +2172,7 @@ export class Mails {
     return {
       type,
       mailbox: s.user,
+      trustedAuthserv: s.trustedAuthserv?.trim() || null,
       text: (values, body) => mailAsText(values, body),
       userIn: (v) => userIn(s.user, v.f_para, v.f_cc),
       inCalendar: async (uid) => !!(await this.calendarWith(account, uid)),
