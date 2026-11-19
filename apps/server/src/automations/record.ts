@@ -9,6 +9,7 @@
  */
 
 import {
+  type AnyAsked,
   type Automation,
   type Cell,
   type Execution,
@@ -112,7 +113,7 @@ export function keepStep(
 export const ASKED_STEP = "";
 
 /** Keeps what a run asked (the engine's `asked`, in order), for the proposal S3 makes of it (AU-193). */
-export function keepAsked(store: UserStore, run: string, asked: Execution["asked"]): void {
+export function keepAsked(store: UserStore, run: string, asked: readonly AnyAsked[]): void {
   if (!asked.length) return;
   store.journal.keepAutomationRunStep(run, {
     step: ASKED_STEP,

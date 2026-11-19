@@ -505,7 +505,7 @@ describe("a plan translated to an automation (F16)", () => {
     "AU-143 · a turn's plan is validated as today, translated by the same function and saved as a draft by «Guardar como automatización», every «Sí» lowered",
   );
 
-  it("AU-137 · a page's chat: its «Agente» with its instructions, reading only the page's collections and writing none, then «Responder» with its text; «Esta página» is said, and without the page's collections the «Agente» is not translated", () => {
+  it("AU-137 · a page's chat: its «Agente» with its instructions, reading only the page's collections and writing none, then «Responder» with its text; the page's own actions are «Esta página» with those abilities only, a value of the page now proposed («pageValueAsks»), and without the page's collections the «Agente» is not translated", () => {
     const trigger = { chat: { page: "e_pagina_ejemplo", welcome: "Hola", buttons: [] } };
     const agentPlan = (actions: string[]) =>
       ({
@@ -532,24 +532,30 @@ describe("a plan translated to an automation (F16)", () => {
     expect(arrowsTo(reading.automation, reply?.id as string)).toEqual([`${agent?.id}:main>main`]);
     expect(lowerYes(reading.automation)).toBe(reading.automation);
     expect(validate(reading.automation, context())).toEqual([]);
-    // The page's own actions are «Esta página», which comes later: said by its step, so the chat stays as it is.
+    expect(reading.changes).not.toContain("pageValueAsks");
+    expect(agent?.params).not.toHaveProperty("page");
+    // The page's own actions are «Esta página» with those abilities, in its order, and no others: complete.
     const page = convert(
-      agentPlan(["pages.figures", "entities.query", "pages.set_value", "pages.add_block"]),
+      agentPlan(["pages.add_block", "entities.query", "pages.set_value", "pages.figures"]),
       trigger,
       {
         chat: { collections: [TASKS.key] },
       },
     );
-    expect(page.untranslated).toEqual([
-      { step: "chat", what: "chat:pages.figures", reason: "laterPhase" },
-      { step: "chat", what: "chat:pages.set_value", reason: "laterPhase" },
-      { step: "chat", what: "chat:pages.add_block", reason: "laterPhase" },
-    ]);
-    expect(page.complete).toBe(false);
-    // An «Agente» that read nothing gets no collection: no more reach than it had.
+    expect(page.untranslated).toEqual([]);
+    expect(page.complete).toBe(true);
+    expect(page.automation.steps[1]?.params.page).toEqual(["figures", "value", "block"]);
+    // It set a value alone before (P27); now that is proposed, and the conversion says so.
+    expect(page.changes).toContain("pageValueAsks");
+    expect(lowerYes(page.automation)).toBe(page.automation);
+    expect(validate(page.automation, context())).toEqual([]);
+    // Only what it had: a chat that read the figures only cannot set a value nor add a block.
     const none = convert(agentPlan(["pages.figures"]), trigger, {
       chat: { collections: [TASKS.key] },
     });
+    expect(none.automation.steps[1]?.params.page).toEqual(["figures"]);
+    expect(none.changes).not.toContain("pageValueAsks");
+    // An «Agente» that read nothing gets no collection: no more reach than it had.
     expect(none.automation.steps[1]?.connections).toBeUndefined();
     // Any other action, a write among them, is said by its name and never dropped: that chat is not complete, so it
     // stays on the old engine; the «Agente» still gets no cell of writing.
@@ -560,7 +566,6 @@ describe("a plan translated to an automation (F16)", () => {
     );
     expect(writes.untranslated).toEqual([
       { step: "chat", what: "chat:entities.create", reason: "notExpressible" },
-      { step: "chat", what: "chat:pages.figures", reason: "laterPhase" },
       { step: "chat", what: "chat:entities.update", reason: "notExpressible" },
     ]);
     expect(writes.complete).toBe(false);

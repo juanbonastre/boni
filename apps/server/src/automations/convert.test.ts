@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { type Plan, planToAutomation } from "@boni/agent";
 import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
@@ -626,6 +627,50 @@ describe("the saved flows converted to automations (F16)", () => {
       }
     under(slowest, 100, "cpu", "a chunk of 200 runs of before copied over a year of runs");
     expect(total).toBe(20_000);
+  });
+
+  it("AU-137 · F16 S2c B2: every page's chat stays on the engine of before, even one whose «Agente» now translates whole with «Esta página»: left, with no automation, still in the flows, and the report says «chat»", () => {
+    const chat = {
+      chat: {
+        page: "e_pagina_ejemplo",
+        welcome: "Hola",
+        buttons: [{ label: "Resumen", text: "¿Cómo va el mes?" }],
+      },
+    };
+    const agent = plan({
+      id: "chat",
+      op: "agent",
+      instructions: "Contesta sobre la página",
+      actions: ["entities.query", "pages.figures", "pages.set_value", "pages.add_block"],
+    });
+    // Its own plan converts whole with the page's collections given: the translator does not keep it.
+    expect(
+      planToAutomation({
+        id: "e_chat",
+        name: "Chat",
+        plan: agent as unknown as Plan,
+        trigger: chat,
+        from: "flow",
+        chat: { collections: ["pedido"] },
+      }).complete,
+    ).toBe(true);
+    const id = flow({ name: "Chat de ejemplo", trigger: chat, plans: [agent, agent] });
+    const asked = flow({ name: "Chat de Boni", trigger: chat, plans: [agent], by: "boni" });
+    expect(convertFlow(store, id, NOW)).toEqual({ id, state: "left", why: "chat" });
+    expect(convertFlow(store, asked, NOW)).toEqual({ id: asked, state: "left", why: "chat" });
+    expect(store.journal.automation(id)).toBeNull();
+    expect(store.journal.flowConversion(id)).toBeNull();
+    expect(store.journal.flows().map((x) => x.id)).toContain(id);
+    const r = conversionReport(store, NOW);
+    expect(r.reasons.chat).toBe(2);
+    expect(
+      convertFlows(store, NOW)
+        .filter((o) => o.id === id || o.id === asked)
+        .sort((a, b) => (a.id === id ? -1 : b.id === id ? 1 : 0)),
+    ).toEqual([
+      { id, state: "left", why: "chat" },
+      { id: asked, state: "left", why: "chat" },
+    ]);
   });
 
   it("AU-230 · a flow that created a row, converted: none of its versions carries a «Sí», whoever starts it", () => {

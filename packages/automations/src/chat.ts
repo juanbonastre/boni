@@ -10,9 +10,10 @@
  * passes here (decision 19): its turns keep P4.
  */
 import { join, type Label, type Labeled } from "@boni/entities";
+import { AGENT_PARAMS } from "./agent.ts";
 import { BONI_TRIGGERS } from "./boni.ts";
 import { actionOf, PERMISSION } from "./catalogue.ts";
-import { type CodeProblem, WRITE_ACTIONS } from "./code.ts";
+import { AGENT_TYPE, type CodeProblem, WRITE_ACTIONS } from "./code.ts";
 import { hasConnections } from "./connections.ts";
 import type { RunInput } from "./engine.ts";
 import type { Automation, Step } from "./format.ts";
@@ -70,6 +71,24 @@ export function chatYesProblems(a: Automation): CodeProblem[] {
   );
 }
 
+/**
+ * «Esta página» outside a chat (AU-137): an «Agente» that has it, in an automation with no «Mensaje de chat», is
+ * `agent.page.notChat`, an error, so «Publicar» refuses it. Under a chat it has no «Sí» to refuse: what it changes is
+ * the policy's to ask (page.ts).
+ */
+export function chatPageProblems(a: Automation): CodeProblem[] {
+  if (chatStarted(a)) return [];
+  return a.steps
+    .filter((s) => s.type === AGENT_TYPE && hasPage(s.params[AGENT_PARAMS.page]))
+    .map((s) => ({
+      code: "agent.page.notChat",
+      severity: "error",
+      step: s.id,
+      param: AGENT_PARAMS.page,
+    }));
+}
+const hasPage = (v: unknown): boolean => v !== undefined && !(Array.isArray(v) && !v.length);
+
 /** One message of a page's chat, as the server gives it to start a run (AU-137). */
 export interface ChatMessage {
   /**
@@ -90,11 +109,12 @@ export const CHAT_ROW = { message: "message", page: "page", values: "values" } a
  * The run a message starts (AU-137): its automation's «Mensaje de chat» trigger and the row it gives, `message`, `page`
  * and `values`. The row's label is the message's; `values` keeps the join of its values' labels, so what came from
  * outside is still from outside downstream (this only says the labels, it joins them as `@boni/entities` does). Null for
- * an automation with no such trigger: no message starts it.
+ * an automation with no such trigger, or one whose stored trigger names another page: no message starts it.
  */
 export function chatStart(a: Automation, m: ChatMessage, test = false): RunInput | null {
   const trigger = a.steps.find((s) => s.type === BONI_TRIGGERS.chat);
-  if (!trigger) return null;
+  // A message of another page's chat starts nothing here: the page is the one the stored trigger names (AU-137).
+  if (!trigger || trigger.params.page !== m.page) return null;
   const values = Object.entries(m.values ?? {});
   const json: Record<string, Cell> = {
     [CHAT_ROW.message]: m.text.value,

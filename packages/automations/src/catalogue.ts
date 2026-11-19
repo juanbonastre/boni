@@ -42,6 +42,7 @@ import {
 } from "./boni.ts";
 import { AGENT_TYPE, CODE_PARAMS, CODE_TYPE } from "./code.ts";
 import { ACTION, MAIN, OUT, type ParamValue, type Step } from "./format.ts";
+import { PAGE_ABILITIES } from "./page.ts";
 import {
   ASK_ANSWERS,
   ASK_LIMITS,
@@ -1200,6 +1201,15 @@ const AGENT_STEP: StepTypeSpec = {
             { key: "inputs", control: "value", of: "any", place: "shown" },
             { key: "code", control: "value", of: "text", place: "shown", required: true },
           ],
+        },
+        // «Esta página» (AU-137): only under «Mensaje de chat» (`agent.page.notChat`).
+        {
+          key: A.page,
+          control: "choice",
+          options: PAGE_ABILITIES,
+          many: true,
+          place: "option",
+          shape: true,
         },
         RETRIES,
       ],
