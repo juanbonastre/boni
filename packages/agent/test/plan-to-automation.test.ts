@@ -528,7 +528,11 @@ describe("a plan translated to an automation (F16)", () => {
         { collection: NOTES.key, read: {}, create: false, update: false, remove: false },
       ],
     });
-    expect(reply).toMatchObject({ type: REPLY_TYPE, params: { text: "{{ $json.texto }}" } });
+    expect(reply).toMatchObject({
+      type: REPLY_TYPE,
+      // The «Agente»'s answer cited by its name: «Responder» works with all the rows, so `$json` has none (AU-223).
+      params: { text: { expr: "{{ $('chat').first().texto }}" } },
+    });
     expect(arrowsTo(reading.automation, reply?.id as string)).toEqual([`${agent?.id}:main>main`]);
     expect(lowerYes(reading.automation)).toBe(reading.automation);
     expect(validate(reading.automation, context())).toEqual([]);

@@ -20,6 +20,7 @@ import {
   runnableNames,
   ToolError,
   type ToolRegistry,
+  turnByRun,
   turnOfRun,
   turnViews,
   updateConversation,
@@ -32,6 +33,12 @@ import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { serverRegistry } from "./actions.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
+import {
+  automatedChatView,
+  chatCardAnswered,
+  chatIsAutomation,
+  chatTurn,
+} from "./automations/chatTurn.ts";
 import { convertFlows, copyBeforeRuns } from "./automations/convert.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
 import { learnAnswer, learningNotices } from "./automations/learning.ts";
@@ -1167,10 +1174,14 @@ async function serveConversations(
     }
     case "GET /api/agent/chats/:id": {
       const c = chatView(store, id);
-      return c ? send(res, 200, { chat: c }) : send(res, 404, { error: "not-found" });
+      return c
+        ? send(res, 200, { chat: automatedChatView(store, c) })
+        : send(res, 404, { error: "not-found" });
     }
     case "PUT /api/agent/chats/:id": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      // An automation now (AU-137): changed in «Automatizaciones», where its versions are.
+      if (chatIsAutomation(store, id)) return send(res, 409, { error: "flow-converted" });
       const b = ((await bodyOf(req)) ?? {}) as ChatEdit;
       if (typeof b.base !== "number") return send(res, 400, { error: "bad-request" });
       const r = updateChat(store, id, b, Date.now());
@@ -1314,6 +1325,18 @@ async function answerAgent(
           }),
         );
       if (!c) return bad();
+      // A page's chat that is an automation now (AU-137): its message is a run of its published version, read from
+      // what is stored; the engine of before does not see it. A correction takes back an engine of before's turn.
+      if (chatIsAutomation(store, c.flow)) {
+        if (b.corrects !== undefined) return send(res, 409, { error: "chat-is-automation" });
+        const r = await chatTurn(store, c, text, {
+          device: who.device,
+          now: Date.now(),
+          trust: who.trust,
+          zone: host.tz,
+        });
+        return "result" in r ? send(res, 200, after(r.result)) : send(res, r.status, r.body);
+      }
       // A page's chat (D-61): its mode read from what is saved now; its screen is its page, whatever window it is
       // written from.
       const chat = c.flow ? chatTurnOf(store, c.flow) : null;
@@ -1388,6 +1411,30 @@ async function answerAgent(
       const run = str(b.run, 80);
       const c = str(b.confirmation, 80);
       if (!run || !c) return bad();
+      // The card of a page chat's run (AU-137): its run's one proposal, accepted as the inbox accepts it (a personal
+      // device only, A-45) or rejected; the chat's turn then says how it stands.
+      const store = host.store(who.account);
+      const automationRun = store.journal.automationRun(run);
+      if (automationRun) {
+        const turn = turnByRun(store, run);
+        if (!turn || automationRun.proposal !== c) return send(res, 404, { error: "not-found" });
+        let error: string | null = null;
+        if (route.endsWith("confirm")) {
+          const r = await acceptCorrected(host, who, c, undefined, null);
+          if ("error" in r) return send(res, 400, { error: r.error });
+          error = r.done.error;
+          if (!error) learned(c);
+        } else if (store.journal.proposal(c)?.status === "pending") {
+          agent.rejectProposal(c);
+          learned(c);
+        }
+        const t = chatCardAnswered(store, turn.conversation, run, {
+          error,
+          device: who.device,
+          now: Date.now(),
+        });
+        return t ? send(res, 200, t) : send(res, 404, { error: "not-found" });
+      }
       return send(
         res,
         200,

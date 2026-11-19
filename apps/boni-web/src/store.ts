@@ -1573,6 +1573,9 @@ export function agentErrorText(t: T, code: string): string {
   if (code === "tool-cannot-undo") return t("agent.error.turnCannotUndo");
   if (code === "tool-busy") return t("agent.error.turnBusy");
   if (code === "tool-corrected") return t("agent.error.turnCorrected");
+  // A page chat's run that failed (AU-137): its runs, in «Automatizaciones», say why.
+  if (code === "run-failed") return t("agent.error.runFailed");
+  if (code === "chat-is-automation") return t("agent.error.chatIsAutomation");
   if (
     code === "undo-after-writes" ||
     code === "tool-turn-not-from-history" ||
@@ -1724,7 +1727,10 @@ async function agentCall(
     const code = e instanceof ApiError ? e.code : null;
     failed = code ?? "error";
     patchEntry(id, {
-      error: code === "agent-off" ? agentErrorText(get().t, code) : errorText(get().t, e),
+      error:
+        code === "agent-off" || code === "chat-is-automation"
+          ? agentErrorText(get().t, code)
+          : errorText(get().t, e),
     });
   } finally {
     running = false;

@@ -2756,9 +2756,32 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   chat de antes en esas capacidades, solo las que tenía, y «Lo que cambia» dice «pageValueAsks» si ponía un valor. Todo
   chat de una página sigue en el motor de antes («chat» en la conversión) hasta el cambio. La prueba:
   `apps/server/src/automations/page.test.ts` y `packages/automations/src/page.test.ts`.
-  Falta (el cambio, la siguiente PR): el turno del chat por el camino publicado, `$chat`, cada mensaje en
-  «Ejecuciones», el panel del bloque con «Abrir la automatización» y la lista, y lo que la web pinta de una propuesta de
-  página; con AU-222, sus tarjetas en el chat y «Se ve como».
+  Hecho en S2c (el cambio, parte 1): la conversión ya no deja fuera un chat por serlo; un chat convertido es su
+  automatización, y su mensaje va por la versión publicada (`apps/server/src/automations/chatTurn.ts`): la
+  automatización es la que nombra la conversación guardada y la página la de su «Mensaje de chat» con un bloque
+  «Chat» que la nombra, nunca lo que diga la petición. Cada mensaje es una ejecución que corre con la mano que lo
+  mandó (un dispositivo compartido lo manda como voz de ambiente: el modelo no lo lee) y lleva en `$chat` los últimos
+  diez mensajes de ese chat, con su etiqueta; el turno guarda el id de su ejecución y quién escribió su mensaje.
+  Las palabras de un mensaje que no escribió él en un dispositivo personal (uno compartido, o uno guardado por el motor
+  de antes, que no dice de quién era) no entran en `$chat`: su línea y su respuesta sí. Una sola etiqueta para toda la
+  lista no podría dejarlas como ambiente junto a la respuesta de un modelo (`join` se queda con «model», que el
+  planificador lee); ninguna cuenta como un «Sí» (A-46). Si la ejecución espera una respuesta, el mensaje sigue con la
+  etiqueta con la que se escribió, leída de su turno: quien contesta no la sube (lo de un dispositivo compartido sigue
+  siendo de ambiente aunque conteste uno personal; sin turno, va como de fuera). Lo que pide es la tarjeta de
+  siempre en el chat, la propuesta única de la ejecución: «Sí» la acepta solo desde un dispositivo personal, «No» la
+  rechaza, y se deshace con la ejecución. Las referencias a colecciones dentro de un bloque pasan por P26 y el texto
+  de fuera o de ambiente sigue sin poder escribir solo. El panel del bloque dice lo que dice la versión publicada,
+  «Abrir la automatización» y no deja cambiarlo (`flow-converted`); el chat sale en la lista de automatizaciones; la
+  tarjeta de la Bandeja dice «Mes en «Ventas»» o «Un bloque nuevo en «Ventas»» y lo cuenta por la página. El
+  «Responder» del traductor cita el texto del «Agente» como expresión (antes quedaba la plantilla literal). Límite
+  de esta parte: un chat cuyo «Agente» tiene «Leer sus cifras» (los chats por defecto lo tienen) sigue en el motor de
+  antes (`chat:pages.figures`, `laterPhase`), y un chat creado con el servidor en marcha se convierte al arrancar.
+  `pageValueAsks` no tiene palabras porque la app aún no enseña «Lo que cambia» en ningún sitio. La prueba:
+  `apps/server/src/automations/page.test.ts`, `apps/server/src/automations/convert.test.ts`,
+  `packages/agent/test/conversations.test.ts` (los turnos de una conversación leídos por una consulta, lo mismo que
+  antes) y `apps/boni-web/src/automations/runs.test.ts`.
+  Falta (parte 2): las cifras pintadas por código y el cambio de los chats que las leen; con AU-222, sus tarjetas de
+  «Preguntar» en el chat, «Se ve como» y «Memoria» de 0 a 20; la revisión de conformidad de S2c entera.
 - **AU-222** (F16, pendiente) · Dentro de una conversación, lo que una automatización pregunta y lo que responde se
   ve en esa conversación. Un «Preguntar» de una ejecución que empezó en un chat (el de una página, o el asistente al
   ejecutarla) es una tarjeta en ese chat y no una fila de la Bandeja (lo que AU-42 dejó para esta fase), con las
@@ -2853,7 +2876,11 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   Juan lo dejó así (decisión 19), porque el asistente tiene todas las acciones de Boni y las reglas de un turno (P4,
   P5, P8), que las conexiones de un paso no saben decir: como automatización sería un paso que se abre y no se puede
   cambiar de verdad. Así que la conversación no sale en la lista de automatizaciones ni tiene «Ejecuciones»; lo que
-  hizo sigue en «Registro». La prueba: `apps/server/src/automations/chat.test.ts`.
+  hizo sigue en «Registro». La prueba: `apps/server/src/automations/chat.test.ts` y
+  `apps/server/src/automations/page.test.ts`.
+  Hecho en S2c (el cambio, parte 1): un chat de una página convertido sale en la lista de automatizaciones y se abre
+  como una; su panel lo dice con «Abrir la automatización». Falta: los chats que leen sus cifras (AU-137, parte 2) y
+  la prueba de que la conversación con el asistente no sale en la lista ni tiene «Ejecuciones».
 - **AU-145** (F19, pendiente) · Un paquete (`docs/sistema.md`, F13; tarea 89) lleva automatizaciones además de
   colecciones, páginas y funciones. Al instalarlo llegan sin publicar: Juan abre cada una, ve «Lo que podrá hacer»
   (AU-96) y la publica o no. En la lista, su columna «De» dice el paquete.
@@ -4986,8 +5013,8 @@ los datos conservan sus nombres en español; «Publicar» sustituye a «Guardar�
     - La conversación con el asistente de Boni no es una automatización y no sale en «Automatizaciones» ni tiene
       «Ejecuciones». Se relaciona con ellas como dicen AU-140 (propone una nueva o un cambio, como borrador), AU-142
       (ejecuta las que lo permiten) y AU-143 (lo que hizo se guarda como una); «Pedir a Boni» en el editor es AU-141.
-      Prueba: `apps/server/src/automations/chat.test.ts` («AU-231 · the chat of a page is in the list of
-      automations…»).
+      Prueba: `apps/server/src/automations/page.test.ts` («AU-137 AU-231 · the chat is the automation's now, in
+      the list of automations…») y `apps/server/src/automations/chat.test.ts` (lo del asistente, pendiente).
 
 20. **Convertida, la «Decisora» de «Leer correo» elige entre las mismas colecciones que hoy.** El diseño de la F16
     (tarea 130) preguntó: «Cuando «Leer correo» se convierta, ¿entre qué colecciones elige su paso «Decisora»?», con

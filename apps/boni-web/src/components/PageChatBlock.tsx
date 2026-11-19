@@ -1,7 +1,7 @@
 import { MessageCircle, Plus, Send, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CHAT_ACTIONS, type PageChat } from "../core/agent.ts";
-import { loadPageChat, savePageChat, sendInPageChat, useStore } from "../store.ts";
+import { loadPageChat, savePageChat, sendInPageChat, showAutomation, useStore } from "../store.ts";
 
 /**
  * A page's chat (docs/sistema.md §4.6 point 6, D-61): the «Chat» block. Its welcome and its buttons are its flow's
@@ -107,6 +107,16 @@ export function PageChatSettings({ flow }: { flow: string }) {
   }, [chat]);
   if (chat === null) return <p className="muted">{t("pagechat.gone")}</p>;
   if (!chat || !draft) return <p className="muted">{t("pagechat.loading")}</p>;
+  // An automation now (AU-137): its versions, its runs and what it may do are changed in its editor.
+  if (chat.automation)
+    return (
+      <div className="pchat-settings">
+        <p className="muted">{t("pagechat.isAutomation")}</p>
+        <button type="button" className="btn" onClick={() => showAutomation(flow)}>
+          {t("pagechat.openAutomation")}
+        </button>
+      </div>
+    );
   const change = (d: Partial<Draft>) => {
     setDraft({ ...draft, ...d });
     setState("");

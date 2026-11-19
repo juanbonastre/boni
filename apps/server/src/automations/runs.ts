@@ -38,6 +38,8 @@ import {
   type Box,
   CannotRun,
   type Cell,
+  type ChatMessage,
+  chatStart,
   type Execution,
   executionOrder,
   type GivenAnswer,
@@ -457,6 +459,45 @@ export async function runBoni(
 }
 
 /**
+ * A message of a page's chat, as its automation's run (AU-137): in the account's lane as any run, `user`'s, from the
+ * device that sent it, its trigger's row `chatStart`'s over the stored version (runPublished). Any device of his
+ * sends one, a shared one too (the chat is open wherever the page is): nothing it writes is saved without a «Sí» on a
+ * personal device (A-45, A-46). It resolves once the run has ended or waits, with what it did; refused before it
+ * started (unpublished, off, one under way, no chat of that page), it says so and keeps nothing.
+ */
+export async function runChat(
+  store: UserStore,
+  id: string,
+  message: ChatMessage,
+  hand: RunHand,
+  o: { box?: Box } = {},
+): Promise<{ run: string; execution: Execution | null } | RunRefusal | ServiceError> {
+  const row = store.journal.automation(id);
+  if (!row || row.deleted) return NOT_FOUND;
+  if (row.published === null) return { refused: "unpublished" };
+  if (!row.enabled) return { refused: "off" };
+  const busy = store.journal.openAutomationRun(id);
+  if (busy) return { refused: "running", run: busy.id };
+  const doc = publishedOf(store, id)?.automation;
+  const start = doc ? chatStart(doc, message) : null;
+  if (!start) return { refused: "invalid", problems: [] };
+  let execution: Execution | null = null;
+  let ended = () => {};
+  const over = new Promise<void>((r) => {
+    ended = r;
+  });
+  const r = await enqueue(store, id, { trigger: start.trigger, fields: start.fields.json }, hand, {
+    ...(o.box ? { box: o.box } : {}),
+    startedBy: "user",
+    chat: { message, seen: (e) => (execution = e) },
+    ended: () => ended(),
+  });
+  if ("refused" in r || "error" in r) return r;
+  await over;
+  return { run: r.run.id, execution };
+}
+
+/**
  * An hour of a «Programada» past its margin (AU-114): kept as «No corrió», with no step, so «Ejecuciones» says it and
  * the hour is not tried again. False when the store already had that hour.
  */
@@ -494,6 +535,8 @@ async function enqueue(
     slot?: number;
     /** Boni's code starts it (`runBoni`), and is told when it has ended. */
     boni?: BoniStart;
+    /** A page's chat's message starts it (`runChat`), which is told what the run did. */
+    chat?: ChatRun;
     ended?: () => void;
   },
 ): Promise<{ run: RunSummary } | RunRefusal | ServiceError> {
@@ -533,6 +576,7 @@ async function enqueue(
           waiting,
           resolve,
           o.boni,
+          o.chat,
         ),
       )
       .catch((e) => {
@@ -564,6 +608,7 @@ async function execute(
   queued: boolean,
   begun: (refused: RunRefusal | ServiceError | null) => void,
   boni?: BoniStart,
+  chat?: ChatRun,
 ): Promise<void> {
   const started = Date.now();
   store.journal.startAutomationRun(run, started);
@@ -597,7 +642,7 @@ async function execute(
       hand,
       run,
       box,
-      { onStep, ...(boni ? { boni } : {}) },
+      { onStep, ...(boni ? { boni } : {}), ...(chat ? { chat: chat.message } : {}) },
       startedBy,
     );
   } catch (e) {
@@ -630,8 +675,15 @@ async function execute(
     }
     return;
   }
+  chat?.seen(result);
   if (result.state === "waiting") return wait(store, id, run, result, ended - started, ended);
   finish(store, id, run, result, ended - started, ended);
+}
+
+/** What `runChat` gives a run: the message, and where it is told what the run did. */
+interface ChatRun {
+  message: ChatMessage;
+  seen: (e: Execution) => void;
 }
 
 /**

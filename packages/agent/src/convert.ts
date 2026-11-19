@@ -1203,7 +1203,7 @@ class Translator {
         id: `p-${s.id}-reply`,
         name: `${s.id} · Responder`,
         type: REPLY_TYPE,
-        params: { [REPLY_PARAMS.text]: `{{ $json.${AGENT_TEXT} }}` },
+        params: { [REPLY_PARAMS.text]: { expr: `{{ ${triggerRow(agent.name)}.${AGENT_TEXT} }}` } },
         settings: { continueEmpty: true, firstRowOnly: true },
       },
       [{ step: agent.id, output: MAIN }],

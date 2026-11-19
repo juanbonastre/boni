@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { decide, fakePlanner, leaf, type Origin, type Plan, planToAutomation } from "@boni/agent";
+import { decide, fakePlanner, leaf, type Origin } from "@boni/agent";
 import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
@@ -660,48 +660,32 @@ describe("the saved flows converted to automations (F16)", () => {
     expect(total).toBe(20_000);
   });
 
-  it("AU-137 · F16 S2c B2: every page's chat stays on the engine of before, even one whose «Agente» now translates whole with «Esta página»: left, with no automation, still in the flows, and the report says «chat»", () => {
+  // A chat that converts whole, on a real page with its collections, is automations/page.test.ts's (the switch).
+  it("AU-137 · F16 S2c, the switch: a page's chat is the conversion's now, «chat» is no reason to leave one; one whose «Agente» reads its figures stays on the engine of before, saying why; one saved by Boni is left", () => {
     const chat = {
       chat: {
         page: "e_pagina_ejemplo",
         welcome: "Hola",
-        buttons: [{ label: "Resumen", text: "¿Cómo va el mes?" }],
+        buttons: [{ label: "Resumen", text: "¿Cómo va?" }],
       },
     };
-    const agent = plan({
-      id: "chat",
-      op: "agent",
-      instructions: "Contesta sobre la página",
-      actions: ["entities.query", "pages.figures", "pages.set_value", "pages.add_block"],
+    const agent = (actions: string[]) =>
+      plan({ id: "chat", op: "agent", instructions: "Contesta sobre la página", actions });
+    const plain = agent(["entities.query", "pages.set_value", "pages.add_block"]);
+    const figures = agent(["entities.query", "pages.figures", "pages.set_value"]);
+    const id = flow({ name: "Chat de ejemplo", trigger: chat, plans: [plain, plain] });
+    const later = flow({ name: "Chat con cifras", trigger: chat, plans: [figures] });
+    const boni = flow({ name: "Chat de Boni", trigger: chat, plans: [plain], by: "boni" });
+    // Its page is not in this store: tried, and kept for it, never left for being a chat.
+    expect(convertFlow(store, id, NOW)).toMatchObject({ id, state: "kept" });
+    expect(convertFlow(store, later, NOW)).toMatchObject({
+      id: later,
+      state: "kept",
+      reasons: [{ what: "chat:pages.figures", reason: "laterPhase" }],
     });
-    // Its own plan converts whole with the page's collections given: the translator does not keep it.
-    expect(
-      planToAutomation({
-        id: "e_chat",
-        name: "Chat",
-        plan: agent as unknown as Plan,
-        trigger: chat,
-        from: "flow",
-        chat: { collections: ["pedido"] },
-      }).complete,
-    ).toBe(true);
-    const id = flow({ name: "Chat de ejemplo", trigger: chat, plans: [agent, agent] });
-    const asked = flow({ name: "Chat de Boni", trigger: chat, plans: [agent], by: "boni" });
-    expect(convertFlow(store, id, NOW)).toEqual({ id, state: "left", why: "chat" });
-    expect(convertFlow(store, asked, NOW)).toEqual({ id: asked, state: "left", why: "chat" });
-    expect(store.journal.automation(id)).toBeNull();
-    expect(store.journal.flowConversion(id)).toBeNull();
-    expect(store.journal.flows().map((x) => x.id)).toContain(id);
-    const r = conversionReport(store, NOW);
-    expect(r.reasons.chat).toBe(2);
-    expect(
-      convertFlows(store, NOW)
-        .filter((o) => o.id === id || o.id === asked)
-        .sort((a, b) => (a.id === id ? -1 : b.id === id ? 1 : 0)),
-    ).toEqual([
-      { id, state: "left", why: "chat" },
-      { id: asked, state: "left", why: "chat" },
-    ]);
+    expect(store.journal.automation(later)).toBeNull();
+    expect(convertFlow(store, boni, NOW)).toEqual({ id: boni, state: "left", why: "notTheUsers" });
+    expect(conversionReport(store, NOW).reasons).not.toHaveProperty("chat");
   });
 
   it("AU-230 · a flow that created a row, converted: none of its versions carries a «Sí», whoever starts it", () => {

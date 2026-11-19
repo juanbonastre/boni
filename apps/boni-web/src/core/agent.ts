@@ -204,6 +204,8 @@ export interface PageChat {
   actions: string[];
   defaults: { instructions: string; actions: string[] };
   enabled: boolean;
+  /** An automation now (AU-137): changed in «Automatizaciones», never in its block's panel. */
+  automation?: boolean;
 }
 /** A turn of a conversation as the server keeps it. */
 export interface TurnView extends TurnResult {
@@ -281,6 +283,11 @@ export interface AskedRow {
   row: { id: string; title: string } | null;
   /** Each value, with what the row held (`before`, a change's only) and whether it came from outside (AU-170). */
   values: { key: string; value: unknown; before?: unknown; outside: boolean }[];
+  /**
+   * A change of the page a run's chat lives in (AU-137), not of a row: the page with its title, and what changes (a
+   * control's value, or a new block).
+   */
+  page?: { id: string; title: string; change: "value" | "block"; control?: string };
 }
 /** What the proposal of a run says (the server's `RunProposalView.run`): its counts and its first changes. */
 export interface RunProposal {
@@ -323,6 +330,18 @@ export function parseAskedRow(v: unknown): AskedRow | null {
             : [],
         )
     : [];
+  const pg = isObj(v.page) ? v.page : null;
+  const pageId = pg ? str(pg.id, 80) : null;
+  const control = pg ? str(pg.control, 120) : null;
+  const page =
+    pg && pageId && (pg.change === "value" || pg.change === "block")
+      ? {
+          id: pageId,
+          title: str(pg.title, 300) ?? "",
+          change: pg.change as "value" | "block",
+          ...(control ? { control } : {}),
+        }
+      : null;
   return {
     step: str(v.step, 80) ?? "",
     byAgent: v.byAgent === true,
@@ -331,6 +350,7 @@ export function parseAskedRow(v: unknown): AskedRow | null {
     name: str(v.name, 80),
     row,
     values,
+    ...(page ? { page } : {}),
   };
 }
 /** The proposal of a run, or undefined when its view does not carry one. */
@@ -2534,6 +2554,7 @@ function parsePageChat(v: unknown): PageChat | null {
       actions: texts(d.actions, 40, 10),
     },
     enabled: v.enabled !== false,
+    ...(v.automation === true ? { automation: true } : {}),
   };
 }
 

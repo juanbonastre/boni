@@ -5,7 +5,7 @@
  * `system`), never inside a run: undoing a run never takes back what was said. The agent reads a conversation's last
  * turns as its history, through `toPlannerView` as before.
  */
-import { label } from "@boni/entities";
+import { type Label, label } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
 import type { Pending, Reply } from "./agent.ts";
 import { type Painted, paint, type Val } from "./values.ts";
@@ -39,6 +39,11 @@ export interface HistoryTurn {
   corrected?: boolean;
   /** Its run: what `turns.undo` takes back, bound by code as `$history[i].turn` (never shown to a model). */
   run?: string;
+  /**
+   * Who wrote its request, when the turn was kept with it (a page's chat that is an automation, AU-137): the person's
+   * own from a personal device, an ambient voice's from a shared one. A turn kept without it has none.
+   */
+  requestLabel?: Label;
 }
 /** Something the user pointed at with a message, as its chip said it (a reference and its words; I-33). */
 export interface TurnChip {
@@ -171,11 +176,21 @@ export function deleteConversation(store: UserStore, id: string, device?: string
 
 function turnsOf(store: UserStore, id: string): StoredEntity[] {
   if (!store.schema().types[TURN]) return [];
-  return store
-    .list(TURN)
-    .filter((s) => alive(s) && text(s, "conversation") === id)
-    .sort((a, b) => (Number(text(a, "at")) || 0) - (Number(text(b, "at")) || 0));
+  // Only this conversation's turns are read, with their labels, never every turn of every conversation (A-15).
+  return turnsWhere(store, "conversation", id).sort(
+    (a, b) => (Number(text(a, "at")) || 0) - (Number(text(b, "at")) || 0),
+  );
 }
+
+/** The turns whose `key` holds `value`, found by one query and read one by one. */
+const turnsWhere = (store: UserStore, key: string, value: string): StoredEntity[] =>
+  store
+    .findByValue(`f_${key}`, value)
+    .filter((x) => x.type === TURN)
+    .flatMap((x) => {
+      const s = store.get(x.id);
+      return s && alive(s) && text(s, key) === value ? [s] : [];
+    });
 
 /** The last `n` turns of a conversation as the planner's history (their replies as the labelled values they were). */
 export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
@@ -186,8 +201,15 @@ export function history(store: UserStore, id: string, n = 10): HistoryTurn[] {
       replies: json<HistoryTurn["replies"]>(s.entity.values.f_replies, []),
       ...(text(s, "corrected") ? { corrected: true } : {}),
       ...(text(s, "run") ? { run: text(s, "run") } : {}),
+      ...(requestLabelOf(s) ? { requestLabel: requestLabelOf(s) as Label } : {}),
     }));
 }
+
+/** The label a turn's request was kept with, unless it is code's (a turn kept without one). */
+const requestLabelOf = (s: StoredEntity): Label | null => {
+  const l = s.labels.f_request;
+  return l && !l.sources.some((x) => x.kind === "code" && x.id === "conversations") ? l : null;
+};
 
 /** A conversation's turn by its run (the one a correction names), or null. */
 export function turnOfRun(
@@ -200,6 +222,23 @@ export function turnOfRun(
   return s
     ? { id: s.entity.id, corrected: text(s, "corrected") === "1", request: text(s, "request") }
     : null;
+}
+
+/** The turn of any conversation whose run is `run` (a page chat's automation run, AU-137), or null. */
+export function turnByRun(
+  store: UserStore,
+  run: string,
+): { id: string; conversation: string; request: string; requestLabel?: Label } | null {
+  if (!run || !store.schema().types[TURN]) return null;
+  const s = turnsWhere(store, "run", run)[0];
+  if (!s) return null;
+  const by = requestLabelOf(s);
+  return {
+    id: s.entity.id,
+    conversation: text(s, "conversation"),
+    request: text(s, "request"),
+    ...(by ? { requestLabel: by } : {}),
+  };
 }
 
 /** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */
@@ -260,6 +299,8 @@ export function recordTurn(
     error: string | null;
     at: number;
     device?: string;
+    /** Who wrote the request (`HistoryTurn.requestLabel`): written when the turn is first kept, kept after. */
+    requestLabel?: Label;
     /** What the user pointed at with it: written when the turn is first kept, never changed after. */
     chips?: TurnChip[];
     /**
@@ -285,7 +326,10 @@ export function recordTurn(
   store.batch(() => {
     const was = id ? store.get(id) : null;
     if (id && was) {
-      const all: Record<string, ReturnType<typeof v>> = { ...writes };
+      const all: Record<string, { value: string; label: Label }> = { ...writes };
+      // Its request keeps who wrote it.
+      const by = requestLabelOf(was);
+      if (by) all.f_request = { value: t.request, label: by };
       if (t.corrects && !was.entity.values.f_corrects && hasField(store, TURN, "corrects"))
         all.f_corrects = v(t.corrects);
       store.update(id, all, meta(t.device));
@@ -294,6 +338,7 @@ export function recordTurn(
         TURN,
         {
           ...writes,
+          ...(t.requestLabel ? { f_request: { value: t.request, label: t.requestLabel } } : {}),
           f_at: v(String(t.at)),
           ...(t.chips?.length && hasField(store, TURN, "pointed")
             ? { f_pointed: v(JSON.stringify(t.chips)) }

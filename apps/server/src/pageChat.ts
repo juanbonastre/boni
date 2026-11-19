@@ -33,6 +33,11 @@ export interface ChatView {
   /** Boni's default instructions (English), for «Restablecer». */
   defaults: { instructions: string; actions: readonly ChatAction[] };
   enabled: boolean;
+  /**
+   * True once the chat is an automation (AU-137, the switch): its welcome, its buttons and whether it is on are its
+   * published version's, and it is changed in «Automatizaciones», never in this panel.
+   */
+  automation?: boolean;
 }
 
 /** The chat a flow is, or null when it is no page's chat. */

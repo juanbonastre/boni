@@ -87,15 +87,23 @@ export function pageOfRun(
   const page = doc ? chatPageOf(doc) : null;
   const p = page ? pageNow(store, page) : null;
   if (!page || !p) return null;
+  const idOf = (key: string) => {
+    try {
+      return typeByKey(readStore(store), key).id;
+    } catch {
+      return null;
+    }
+  };
   const scope: PageScope = {
     page,
     types: pageTypes(store, p.spec.blocks),
-    typeIdOf(key) {
-      try {
-        return typeByKey(readStore(store), key).id;
-      } catch {
-        return null;
-      }
+    typeIdOf: (key) => idOf(key),
+    relationOf(key, field) {
+      const id = idOf(key);
+      const f = id
+        ? store.schema().types[id]?.fields.find((x) => x.key === field || x.id === field)
+        : null;
+      return f?.relation?.target ?? null;
     },
   };
   const port: PagePort = {

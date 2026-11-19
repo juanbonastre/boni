@@ -2323,8 +2323,10 @@ export function CallRows({ view }: { view: ConfirmView }) {
   const fmt = useDayFormat();
   return (
     <dl className="confirm-rows">
-      {view.rows.map((r) => (
-        <div key={r.arg} className="confirm-row">
+      {view.rows.map((r, i) => (
+        // A card of several changes repeats its arguments (two values of one page): the place keeps each apart.
+        // biome-ignore lint/suspicious/noArrayIndexKey: the rows are painted once, in the order the server gave
+        <div key={`${r.arg}:${i}`} className="confirm-row">
           <dt>
             {r.name ??
               functionRowName(t, r.arg) ??

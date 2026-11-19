@@ -1,10 +1,15 @@
+import type { UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LiveEvent } from "../src/agent.ts";
 import {
   createConversation,
   deleteConversation,
+  history,
   listConversations,
   markCorrected,
+  recordTurn,
+  TURN,
+  turnByRun,
   turnOfRun,
   turnViews,
   updateConversation,
@@ -708,5 +713,79 @@ describe("pinned conversations (task 63, point 7)", () => {
     ]);
     updateConversation(env.store, old, { pinned: false });
     expect(listConversations(env.store).map((x) => x.id)).toEqual([recent, old]);
+  });
+});
+
+describe("a conversation's turns, read by one query (A-15, AU-137)", () => {
+  /** The read as it was before: every turn listed with its labels, then filtered and sorted. The one query matches it. */
+  const listed = (store: UserStore, id: string, n: number) =>
+    store
+      .list(TURN)
+      .filter(
+        (s) => s.entity.deleted === undefined && String(s.entity.values.f_conversation) === id,
+      )
+      .sort((a, b) => (Number(a.entity.values.f_at) || 0) - (Number(b.entity.values.f_at) || 0))
+      .slice(-n)
+      .map((s) => ({
+        request: String(s.entity.values.f_request),
+        run: String(s.entity.values.f_run),
+      }));
+
+  it("history, turnOfRun and turnByRun read what listing every turn read: no other conversation's, the id matched whole, the order by time and the limit kept", () => {
+    env = makeEnv();
+    const store = env.store;
+    const c = createConversation(store, { now: now() });
+    const other = createConversation(store, { now: now() });
+    const keep = (conversation: string, request: string, run: string, at: number) =>
+      recordTurn(store, {
+        id: null,
+        conversation,
+        request,
+        run,
+        status: "done",
+        replies: [],
+        pending: null,
+        error: null,
+        at: now() + at,
+      }) as string;
+    // Kept out of time order, two at the same instant, the other conversation's in between.
+    keep(c, "tercero", "r_ejemplo_3", 3000);
+    keep(other, "de otra", "r_ejemplo_otra", 1500);
+    keep(c, "primero", "r_ejemplo_1", 1000);
+    keep(c, "segundo a", "r_ejemplo_2a", 2000);
+    keep(c, "segundo b", "r_ejemplo_2b", 2000);
+    // Turns whose conversation only prefixes, ends or starts with its id: not its.
+    for (const [i, near] of [c.slice(0, -1), `${c}x`, `x${c}`].entries()) {
+      const t = keep(other, `parecido ${i}`, `r_ejemplo_p${i}`, 2500);
+      store.update(
+        t,
+        { f_conversation: { value: near, label: codeLabel("prueba") } },
+        { actor: "system" },
+      );
+    }
+    // One in the trash.
+    store.remove(keep(c, "borrado", "r_ejemplo_b", 2200), { actor: "system" });
+    for (const n of [10, 4, 3, 1])
+      expect(history(store, c, n).map((t) => ({ request: t.request, run: t.run }))).toEqual(
+        listed(store, c, n),
+      );
+    expect(history(store, c).map((t) => t.request)).toEqual([
+      "primero",
+      "segundo a",
+      "segundo b",
+      "tercero",
+    ]);
+    expect(history(store, c, 2).map((t) => t.request)).toEqual(["segundo b", "tercero"]);
+    expect(history(store, other).map((t) => t.request)).toEqual(["de otra"]);
+    // By its run: the whole id only, never another conversation's, never one in the trash.
+    expect(turnByRun(store, "r_ejemplo_2a")).toMatchObject({
+      conversation: c,
+      request: "segundo a",
+    });
+    expect(turnByRun(store, "r_ejemplo_2")).toBeNull();
+    expect(turnByRun(store, "r_ejemplo_b")).toBeNull();
+    expect(turnOfRun(store, c, "r_ejemplo_1")).toMatchObject({ request: "primero" });
+    expect(turnOfRun(store, other, "r_ejemplo_1")).toBeNull();
+    expect(turnOfRun(store, c, "r_ejemplo_p0")).toBeNull();
   });
 });

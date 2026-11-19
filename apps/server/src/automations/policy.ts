@@ -380,6 +380,8 @@ export interface PageScope {
   types: readonly string[];
   /** A collection's id by its key, as a block names it; null: none a model may see. */
   typeIdOf(key: string): string | null;
+  /** The collection a relation field points to (by the collection's key and the field's), or null: not a relation. */
+  relationOf(key: string, field: string): string | null;
 }
 
 type PageRequest = Pick<PolicyRequest, "tool" | "args" | "scope" | "typeIds" | "yes">;
@@ -413,18 +415,52 @@ export function pageRequest(
   for (const [k, v] of Object.entries(call.values)) args[k] = val(v);
   const typeIds: Record<string, string | null> = {};
   const block = call.values.block?.value;
-  if (ability === "block" && block && typeof block === "object" && "collection" in block) {
-    const key = (block as { collection?: unknown }).collection;
-    typeIds["block.collection"] = typeof key === "string" ? at.typeIdOf(key) : null;
+  if (ability === "block" && block !== undefined) {
+    // Every collection the block reaches, at any depth (P26): one the page does not show refuses all of it.
+    const refs = collectionRefs(block, at);
+    if (refs.length) {
+      const ids = refs.map((r) => (typeof r === "string" ? at.typeIdOf(r) : r.id));
+      typeIds["block.collection"] = ids.every((id) => !!id && at.types.includes(id))
+        ? (ids[0] as string)
+        : null;
+    }
   }
   const abilities = pageAbilitiesOf(step.params[AGENT_PARAMS.page]) ?? [];
+  // A change saved alone is only one whose every value is Juan's or his data's: one labelled from outside or by an
+  // ambient voice is asked, whatever `alone` says (PAGE_ALONE).
+  const inside = [
+    ...Object.values(call.values).map((v) => v.label),
+    ...(call.control ? [call.control] : []),
+  ].every((l) => l.integrity !== "external" && l.integrity !== "ambient");
   return {
     tool,
     args,
     scope: { actions: abilities.map((a) => PAGE_ACTS[a].name), page: stored, types: at.types },
     typeIds,
-    yes: tool.effect === "write" && alone.includes(ability),
+    yes: tool.effect === "write" && alone.includes(ability) && inside,
   };
+}
+
+/**
+ * The collections a block names, at any depth (P26, AU-137): a figure's, a chart's or a control's `collection`, a
+ * table's `source` and the other collections its calendar also shows, a relation's target of a control's field, and
+ * the same in any block, list or object inside it. A key as the model wrote it, or an id read from the schema.
+ */
+function collectionRefs(x: unknown, at: PageScope, out: (string | { id: string | null })[] = []) {
+  if (Array.isArray(x)) {
+    for (const y of x) collectionRefs(y, at, out);
+    return out;
+  }
+  if (!x || typeof x !== "object") return out;
+  const o = x as Record<string, unknown>;
+  for (const k of ["collection", "source"] as const) if (k in o) out.push(String(o[k]));
+  if ("also" in o) for (const a of Array.isArray(o.also) ? o.also : [o.also]) out.push(String(a));
+  if (o.type === "control" && typeof o.collection === "string" && typeof o.field === "string") {
+    const target = at.relationOf(o.collection, o.field);
+    if (target !== null) out.push({ id: target });
+  }
+  for (const [k, v] of Object.entries(o)) if (k !== "also") collectionRefs(v, at, out);
+  return out;
 }
 
 /**
