@@ -5,6 +5,7 @@ export * from "./boni.ts";
 export * from "./box.ts";
 export * from "./catalogue.ts";
 export * from "./cells.ts";
+export * from "./chat.ts";
 export * from "./code.ts";
 export * from "./connections.ts";
 export * from "./effects.ts";

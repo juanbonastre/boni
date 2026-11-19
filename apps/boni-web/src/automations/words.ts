@@ -528,7 +528,7 @@ const WITH: Readonly<Record<"problem" | "failure", Readonly<Record<string, strin
 const SOME: Readonly<
   Record<"problem" | "failure", Readonly<Record<string, { by: string; of: readonly string[] }>>>
 > = {
-  problem: { "connection.notAllowed": { by: "why", of: ["private"] } },
+  problem: { "connection.notAllowed": { by: "why", of: ["private", "chat"] } },
   failure: {
     "code.write.notAllowed": { by: "why", of: ["many", "field"] },
     // Why an AI step failed (AU-50, AU-59): a parameter he set, and a call the port did not answer.

@@ -40,6 +40,7 @@ import {
   AGENT_TYPE,
   type Automation,
   type Connection,
+  chatStarted,
   consentOf,
   type Decision,
   type Labelled,
@@ -219,11 +220,14 @@ const WRITES: Readonly<Record<"create" | "update" | "trash", WriteAction>> = {
 /**
  * Whether `doc`, as the server keeps it, says «Sí» for what a call writes (AU-186): its step's connection cell, or
  * the «Permiso» of a «Colección» step (AU-187). A call of another automation or version, a step `doc` does not have,
- * a read, or no document at all, is no «Sí».
+ * a read, or no document at all, is no «Sí». Nor is any cell of an automation that starts in «Mensaje de chat»
+ * (AU-137): under a page's chat every write asks, whatever its version says, so a «Sí» that reached it without
+ * passing «Publicar» (an old version, a document no check read) writes nothing alone.
  */
 export function consentIn(doc: Automation | undefined): (call: PolicyCall) => boolean {
+  const chat = doc !== undefined && chatStarted(doc);
   return (call) => {
-    if (!doc || call.effect !== "write") return false;
+    if (!doc || chat || call.effect !== "write") return false;
     if (call.automation.id !== doc.id || call.automation.version !== doc.version) return false;
     const step = doc.steps.find((s) => s.id === call.step);
     if (!step) return false;
