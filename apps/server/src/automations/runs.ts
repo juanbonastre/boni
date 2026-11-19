@@ -58,6 +58,7 @@ import {
 } from "@boni/store";
 import { handLabel } from "../actions.ts";
 import { getPage } from "../pages.ts";
+import { runRowOf } from "./acceptRunName.ts";
 import { sandboxBox } from "./box.ts";
 import { pruneRuns } from "./keep.ts";
 import { learnUndo, recordRun } from "./learning.ts";
@@ -1091,9 +1092,13 @@ function undoAll(store: UserStore, r: AutomationRunRow, hand: Hand): RunRefusal 
   // His hand undid it (a personal device: `undoAutomationRun`, `retryRun`): what it saved was wrong (AU-207).
   tellLearned(store, learnUndo(store, r.id, hand.now));
   if (waiting) cancelWait(store, r, hand.now);
-  // What it still proposed goes with it: accepting it would save into a run undone (AU-193).
-  if (r.proposal && store.journal.proposal(r.proposal)?.status === "pending")
-    store.journal.setProposal(r.proposal, "stale", hand.now);
+  // What it still proposed goes with it: accepting it would save into a run undone (AU-193); each row's card of it
+  // (AU-251) too, not only the one the run names.
+  const named = r.proposal ? store.journal.proposal(r.proposal) : null;
+  const cards = named && runRowOf(named) !== null ? store.journal.proposalsOf(named.run) : [named];
+  for (const p of cards)
+    if (p && store.journal.proposal(p.id)?.status === "pending")
+      store.journal.setProposal(p.id, "stale", hand.now);
   return null;
 }
 

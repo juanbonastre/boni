@@ -12,8 +12,9 @@ import { saveExternals } from "./account.ts";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
+import { wireAutomationModels } from "./automations/ai.ts";
 import { boniEnabled, onNewEngine, wireBoni } from "./automations/boni.ts";
-import { convertBoniFlows } from "./automations/convert.ts";
+import { revertFlow as backToFlow, convertBoniFlows } from "./automations/convert.ts";
 import { drawReadMail } from "./automations/mailAutomation.ts";
 import { setEnabled as setAutomationEnabled } from "./automations/publish.ts";
 import {
@@ -24,6 +25,7 @@ import {
   takeInstructions,
 } from "./automations/review.ts";
 import { open as openAutomation, publishedOf } from "./automations/service.ts";
+import { saveCalendarDefs } from "./calendarStore.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
@@ -400,10 +402,32 @@ describe("the mailbox", () => {
       expect(l.thirdParty).toBe(true);
       expect(l.sources).toEqual([{ kind: "mail", id: "atacante@evil.example" }]);
     }
+    // What the provider said of its authentication is kept, as from outside, for «conocido» only (AU-250); the
+    // trusted authserv-id is no setting a request can make (no screen sets it yet), so nobody is authenticated.
+    box.mails.set(
+      13,
+      `Authentication-Results: mx.example.net; dmarc=pass header.from=example.com\r\n${mail(13, "Firmado", "Hola.")}`,
+    );
+    await mails.check(1);
+    const signed = store
+      .list(def?.id as string)
+      .find((e) => e.entity.values.f_asunto === "Firmado");
+    expect(JSON.parse(String(signed?.entity.values.f_autenticacion))).toEqual([
+      {
+        authserv: "mx.example.net",
+        results: [{ method: "dmarc", result: "pass", from: "example.com" }],
+      },
+    ]);
+    expect(signed?.labels.f_autenticacion?.integrity).toBe("external");
+    expect(oferta?.entity.values.f_autenticacion).toBeUndefined();
+    expect(mails.hooksFor(1)?.trustedAuthserv).toBeNull();
+    await mails.save(1, { trustedAuthserv: "mx.example.net" } as never);
+    expect(mails.settings(1)?.trustedAuthserv).toBeUndefined();
+    expect(mails.hooksFor(1)?.trustedAuthserv).toBeNull();
     // Again: nothing new. A new mail: only it.
-    expect((await mails.check(1)).count).toBe(2);
+    expect((await mails.check(1)).count).toBe(3);
     box.mails.set(15, mail(15, "Acta", "Te paso el acta."));
-    expect(await mails.check(1)).toMatchObject({ count: 3, lastUid: 15 });
+    expect(await mails.check(1)).toMatchObject({ count: 4, lastUid: 15 });
     expect(asked.some((l) => /SELECT|STORE|EXPUNGE|COPY|MOVE| BODY\[\]/.test(l))).toBe(false);
   });
 
@@ -494,7 +518,8 @@ describe("the mailbox", () => {
       [3, mail(15, "Acta", "Te paso el acta.")],
       [4, mail(16, "Nueva", "Hola")],
     ]);
-    expect(await mails.check(1)).toMatchObject({ count: 4, uidValidity: 8, lastUid: 4 });
+    // Five: the four of the test before, «Firmado» among them, and «Nueva».
+    expect(await mails.check(1)).toMatchObject({ count: 5, uidValidity: 8, lastUid: 4 });
     const st = mails.state(1);
     const titles = host
       .store(1)
@@ -517,7 +542,7 @@ describe("the mailbox", () => {
     const t = await token();
     expect((await call(t, "POST", "/api/mail/forget")).status).toBe(200);
     expect(mails.view(1)).toBeNull();
-    expect(host.store(1).list(st.type as string)).toHaveLength(4);
+    expect(host.store(1).list(st.type as string)).toHaveLength(5);
   });
 
   it("keeps a mail's attachments as files of the account, and what it can read of them for the reader", async () => {
@@ -1892,12 +1917,6 @@ describe("«Revisar instrucciones», Boni's automation over «Leer correo»'s pa
       now: () => now,
       connect: () => new Socket().connect(imapPort, "127.0.0.1"),
     });
-    // The server's wiring of Boni's steps (main.ts): the account's agent runs the pieces, the mail's code behind.
-    wireBoni({
-      reaches: (st) => h.accountOf(st) !== null,
-      agentOf: () => h.agent(1, true),
-      mail: () => m.hooksFor(1),
-    });
     try {
       box.uidValidity = 71;
       box.mails = new Map(
@@ -1926,6 +1945,13 @@ describe("«Revisar instrucciones», Boni's automation over «Leer correo»'s pa
           NOW,
         );
       }
+      // The server's wiring of Boni's steps (main.ts), once his decisions are made on the engine of before: wired
+      // before, the mail converts as it is kept current (AU-254).
+      wireBoni({
+        reaches: (st) => h.accountOf(st) !== null,
+        agentOf: () => h.agent(1, true),
+        mail: () => m.hooksFor(1),
+      });
       // «Leer correo» on the new engine, drawn from the configuration as mail.ts will (AU-254), with a rule of his.
       convertBoniFlows(
         store,
@@ -2972,6 +2998,548 @@ describe("Boni's «Leer correo» kept current (release 34)", () => {
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("«Leer correo» converted (AU-249, AU-254)", () => {
+  /**
+   * The same invented mails read by «Leer correo» on one engine: the flow of before (Boni's pieces not wired, so it is
+   * not converted) or the automation (wired as main.ts does, so it is). What it proposed and what accepting each card
+   * writes, with no id: a mail named by its subject.
+   */
+  async function readOn(automation: boolean) {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-differential-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", (req) => {
+      const content = JSON.stringify(req.input);
+      const item = (kind: string, title: string, due: string, quote: string, start?: string) => ({
+        quote,
+        actor: "recipient",
+        kind,
+        title,
+        due,
+        ...(start ? { start, end: `${String(Number(start.slice(0, 2)) + 1)}:00` } : {}),
+      });
+      if (/Entrega del informe/.test(content))
+        return {
+          items: [item("task", "Enviar el informe", "2026-10-23", "Envíame el informe el viernes")],
+        };
+      if (/Cena y memoria/.test(content))
+        return {
+          items: [
+            item("event", "Cena con el equipo", "2026-10-28", "Cena el miércoles 28", "21:00"),
+            item("task", "Revisar la memoria", "2026-10-26", "Revisa la memoria antes del lunes"),
+          ],
+        };
+      return { items: [] };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+            { id: "t_agenda_f", key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h", endTime: "t_agenda_f" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    if (automation) {
+      wireBoni({
+        reaches: (st) => h.accountOf(st) !== null,
+        agentOf: () => h.agent(1, true),
+        mail: () => m.hooksFor(1),
+        mailRow: (_st, id) => m.mailRow(1, id),
+      });
+      wireAutomationModels({
+        models: {
+          stepProvider: (_a, kind) =>
+            kind === "decision"
+              ? { refused: "no-model" }
+              : { provider: reader, model: reader.id, tag: null },
+          overBudget: () => false,
+          resolveModel: () => ({ refused: "no-model" }),
+          offered: () => false,
+        },
+        accountOf: () => 1,
+      });
+    }
+    try {
+      box.uidValidity = automation ? 82 : 81;
+      box.mails = new Map();
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+        collections: ["t_agenda"],
+      });
+      h.mailFlowCurrent?.(1);
+      const state = store.journal.flowConversion(MAIL_FLOW)?.state ?? null;
+      box.mails = new Map([
+        [1, mail(61, "Entrega del informe", "Envíame el informe el viernes, por favor.")],
+        [2, mail(62, "Cena y memoria", "Cena el miércoles 28. Revisa la memoria antes del lunes.")],
+        [3, mail(63, "Boletín de octubre", "Las novedades del mes, sin nada que hacer.")],
+      ]);
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      await m.check(1);
+      log.mockRestore();
+      const subjectOf = (id: string) => {
+        const e = store.get(id);
+        return e && e.entity.type === m.state(1).type ? String(e.entity.values.f_asunto) : id;
+      };
+      const pending = store.journal.proposals("pending");
+      const proposed = pending
+        .map((p) => {
+          const c = inboxCard(store, p);
+          return {
+            collection: c.collection,
+            kind: c.kind,
+            title: c.title,
+            day: c.day,
+            start: c.start,
+            end: c.end,
+            mail: c.source?.subject ?? null,
+            outside: [...p.sources].map((x) => x.replace(/^mail:/, "")).sort(),
+          };
+        })
+        .sort((a, b) => String(a.title).localeCompare(String(b.title)));
+      for (const p of pending)
+        expect((await h.agent(1).acceptProposal(p.id, "personal")).error).toBeNull();
+      const written = store
+        .list("t_agenda")
+        .map((e) => ({
+          values: Object.fromEntries(
+            Object.entries(e.entity.values).filter(([k]) => k.startsWith("t_agenda_")),
+          ),
+          labels: Object.fromEntries(
+            Object.entries(e.labels)
+              .filter(([k]) => k.startsWith("t_agenda_"))
+              .map(([k, l]) => [
+                k,
+                {
+                  integrity: l.integrity,
+                  sensitivity: l.sensitivity,
+                  outside: l.sources
+                    .filter((x) => x.kind === "mail")
+                    .map((x) => subjectOf(x.id))
+                    .sort(),
+                },
+              ]),
+          ),
+        }))
+        .sort((a, b) => String(a.values.t_agenda_t).localeCompare(String(b.values.t_agenda_t)));
+      // What made each value, besides the mail: the code and the model of the engine that read it.
+      const made = [
+        ...new Set(
+          store
+            .list("t_agenda")
+            .flatMap((e) => Object.values(e.labels).flatMap((l) => l.sources))
+            .filter((x) => x.kind !== "mail" && x.kind !== "user-edit")
+            .map((x) => `${x.kind}:${x.id}`),
+        ),
+      ].sort();
+      return { state, proposed, written, made };
+    } finally {
+      wireBoni(null);
+      wireAutomationModels(null);
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  }
+
+  it("AU-224 AU-254 · over the same invented mails and scripted readers, the automation proposes what the flow of before proposed (collection, title, day, hours, from outside) and accepting each card writes the same values with the same labels", async () => {
+    const before = await readOn(false);
+    const after = await readOn(true);
+    expect([before.state, after.state]).toEqual(["kept", "converted"]);
+    expect(before.proposed.map((p) => p.title)).toEqual([
+      "Cena con el equipo",
+      "Enviar el informe",
+      "Revisar la memoria",
+    ]);
+    // The mail each came from, not its id (the two stores give the mails different ids).
+    const bySubject = (r: typeof before) =>
+      r.proposed.map(({ outside: _o, ...p }) => ({ ...p, outside: _o.length > 0 }));
+    expect(bySubject(after)).toEqual(bySubject(before));
+    // The same values, as outside and as personal, from the same sender: no label is lost or gained.
+    expect(after.written).toEqual(before.written);
+    expect(
+      before.written.every((w) =>
+        Object.values(w.labels).every(
+          (l) => l.integrity === "external" && l.outside.includes("lucia.ejemplo@example.com"),
+        ),
+      ),
+    ).toBe(true);
+    // Where the design differs: what read it is said by the engine's own sources, the extension's code before and
+    // the step's model now (AU-255: the label follows the row).
+    expect(before.made).toEqual(["code:extension:correo", "code:mail"]);
+    expect(after.made).toEqual(["code:mail", "model:leer-correo:p-reader"]);
+  });
+
+  it("AU-249 AU-254 AU-251 · converted as the mail keeps it current: Ajustes names the automation, the conversation's guide comes from its published panels, a failed run withdraws no card of its thread, and «Volver al flujo de antes» brings back the flow and the guide as they were", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-converted-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    // The dinner is read from the first mail; the reply's reading fails.
+    const reader = new ScriptedProvider("fake", (req) => {
+      const content = JSON.stringify(req.input);
+      if (/Yo puedo/.test(content)) throw new Error("el lector de ejemplo falla");
+      if (/Cena/.test(content))
+        return {
+          items: [
+            {
+              quote: "Cena el miércoles 28 a las 21:00",
+              actor: "recipient",
+              kind: "event",
+              title: "Cena con el equipo",
+              due: "2026-10-28",
+              start: "21:00",
+              end: "22:00",
+            },
+          ],
+        };
+      return { items: [] };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    // As main.ts wires them: Boni's pieces by the mail's own code, the readers by «Modelos» (no decision model).
+    wireBoni({
+      reaches: (st) => h.accountOf(st) !== null,
+      agentOf: () => h.agent(1, true),
+      mail: () => m.hooksFor(1),
+      mailRow: (_st, id) => m.mailRow(1, id),
+    });
+    wireAutomationModels({
+      models: {
+        stepProvider: (_a, kind) =>
+          kind === "decision"
+            ? { refused: "no-model" }
+            : { provider: reader, model: reader.id, tag: null },
+        overBudget: () => false,
+        resolveModel: () => ({ refused: "no-model" }),
+        offered: () => false,
+      },
+      accountOf: () => 1,
+    });
+    try {
+      box.uidValidity = 71;
+      box.mails = new Map();
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+        collections: ["t_agenda"],
+      });
+      m.saveGuide(1, { instructions: "Lo del equipo va a la agenda." });
+      expect(m.view(1)?.automation).toBeNull();
+      // Opening «Flujos» keeps it current, and so converts it: «Lo que cambia» says the doubt, «Solo» was off.
+      h.mailFlowCurrent?.(1);
+      expect(store.journal.flowConversion(MAIL_FLOW)).toMatchObject({
+        state: "converted",
+        changes: ["doubtAsks"],
+      });
+      expect(store.journal.flowConversion(FETCH_FLOW)?.state).toBe("converted");
+      expect(m.view(1)?.automation).toBe(MAIL_FLOW);
+      // The conversation's guide is the published «Lectora»'s: what the mail's settings say after does not reach it.
+      const panels = m.readingGuide(1);
+      expect(JSON.stringify(panels)).toContain("Lo del equipo va a la agenda.");
+      m.saveGuide(1, { instructions: "Otra indicación que ya no cuenta." });
+      expect(m.readingGuide(1)).toEqual(panels);
+
+      // The dinner's card; the reply in its thread fails to be read, and withdraws nothing.
+      box.mails = new Map([
+        [1, mail(51, "Cena", "Cena el miércoles 28 a las 21:00, ¿vienes?")],
+        [
+          2,
+          mail(52, "Re: Cena", "Yo puedo. Cena el miércoles 28 a las 21:00").replace(
+            "Content-Type:",
+            "In-Reply-To: <m51@example.com>\r\nReferences: <m51@example.com>\r\nContent-Type:",
+          ),
+        ],
+      ]);
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      expect(await m.check(1)).toMatchObject({ count: 2 });
+      warn.mockRestore();
+      log.mockRestore();
+      const pending = store.journal.proposals("pending");
+      expect(pending).toHaveLength(1);
+      expect(inboxCard(store, pending[0] as NonNullable<(typeof pending)[number]>).title).toBe(
+        "Cena con el equipo",
+      );
+      expect(store.journal.proposals("stale")).toEqual([]);
+      expect(
+        store.journal
+          .automationRuns(MAIL_FLOW, { filter: "all", limit: 10 })
+          .map((r) => r.state)
+          .sort(),
+      ).toEqual(["done", "failed"]);
+
+      // Sent back: the flow of before runs again, the guide is the mail's as it was kept, Ajustes shows it again.
+      expect(backToFlow(store, MAIL_FLOW, NOW + 1000)).toBe(true);
+      h.mailFlowCurrent?.(1);
+      expect(store.journal.flowConversion(MAIL_FLOW)?.state).toBe("reverted");
+      expect(m.view(1)?.automation).toBeNull();
+      expect(JSON.stringify(m.readingGuide(1))).toContain("Otra indicación que ya no cuenta.");
+    } finally {
+      wireBoni(null);
+      wireAutomationModels(null);
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
+  it("AU-251 · after conversion a run that proposed folds its thread: the earlier card gives way to the new one, the flow of before's card too, and the new row card says its «Antes» and what it overlaps in the calendar", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-fold-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    // Each mail of the thread moves the meeting to another hour: the reader reads that hour, as a reader would.
+    const reader = new ScriptedProvider("fake", (req) => {
+      const hour = /a las (1\d):00/.exec(JSON.stringify(req.input))?.[1];
+      return {
+        items: hour
+          ? [
+              {
+                quote: `Reunión del equipo el miércoles 28 a las ${hour}:00`,
+                actor: "recipient",
+                kind: "event",
+                title: "Reunión del equipo",
+                due: "2026-10-28",
+                start: `${hour}:00`,
+                end: `${Number(hour) + 1}:00`,
+              },
+            ]
+          : [],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+            { id: "t_agenda_f", key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h", endTime: "t_agenda_f" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    // The collection is a calendar of Boni Calendar, its columns its fields by name: the card crosses it.
+    saveCalendarDefs(store, [
+      {
+        type: "t_agenda",
+        raw: {
+          id: "agenda",
+          name: "Agenda",
+          folder: "agenda",
+          account: "Agenda",
+          color: "#60a5fa",
+          columns: [
+            { id: "title", name: "Título", type: "text" },
+            { id: "date", name: "Fecha", type: "date" },
+            { id: "startTime", name: "Hora de inicio", type: "time" },
+            { id: "endTime", name: "Hora de fin", type: "time" },
+          ],
+          mapping: {
+            title: "title",
+            when: { kind: "split", date: "date", startTime: "startTime", endTime: "endTime" },
+          },
+        },
+      },
+    ]);
+    // His own class that afternoon, 45 minutes after the card at 18:00 starts: it overlaps it, and is too far to be the
+    // same thing (half an hour at most, `crossCalendar`).
+    store.create(
+      "t_agenda",
+      {
+        t_agenda_t: { value: "Clase de ejemplo", label: own },
+        t_agenda_d: { value: "2026-10-28", label: own },
+        t_agenda_h: { value: "18:45", label: own },
+        t_agenda_f: { value: "19:45", label: own },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    const inThread = (n: number, body: string) =>
+      mail(n, "Re: Reunión del equipo", body).replace(
+        "Content-Type:",
+        "In-Reply-To: <m81@example.com>\r\nReferences: <m81@example.com>\r\nContent-Type:",
+      );
+    const quiet = () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      return () => log.mockRestore();
+    };
+    try {
+      box.uidValidity = 91;
+      box.mails = new Map([
+        [1, mail(81, "Reunión del equipo", "Reunión del equipo el miércoles 28 a las 17:00.")],
+      ]);
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+        collections: ["t_agenda"],
+      });
+      // The flow of before reads the first mail (Boni's pieces not wired yet): its card waits.
+      let done = quiet();
+      await m.check(1);
+      done();
+      const before = store.journal.proposals("pending");
+      expect(before.map((p) => p.tool)).toEqual(["entities.create"]);
+      const old = before[0]?.id as string;
+      // Wired as main.ts does, «Leer correo» converts with that card waiting (AU-226).
+      wireBoni({
+        reaches: (st) => h.accountOf(st) !== null,
+        agentOf: () => h.agent(1, true),
+        mail: () => m.hooksFor(1),
+        mailRow: (_st, id) => m.mailRow(1, id),
+      });
+      wireAutomationModels({
+        models: {
+          stepProvider: (_a, kind) =>
+            kind === "decision"
+              ? { refused: "no-model" }
+              : { provider: reader, model: reader.id, tag: null },
+          overBudget: () => false,
+          resolveModel: () => ({ refused: "no-model" }),
+          offered: () => false,
+        },
+        accountOf: () => 1,
+      });
+      h.mailFlowCurrent?.(1);
+      expect(store.journal.flowConversion(MAIL_FLOW)?.state).toBe("converted");
+      expect(store.journal.proposal(old)?.status).toBe("pending");
+
+      // A reply moves it to 18:00: the run proposes its row card, and the flow of before's card gives way to it.
+      box.mails.set(2, inThread(82, "Mejor el miércoles 28 a las 18:00."));
+      done = quiet();
+      await m.check(1);
+      done();
+      const second = store.journal.proposals("pending");
+      expect(second.map((p) => p.tool)).toEqual(["automations.accept_run"]);
+      const row = second[0] as (typeof second)[number];
+      expect(store.journal.proposal(old)?.status).toBe("stale");
+      const c2 = inboxCard(store, row);
+      expect([c2.title, c2.day, c2.start, c2.end]).toEqual([
+        "Reunión del equipo",
+        "2026-10-28",
+        "18:00",
+        "19:00",
+      ]);
+      expect(c2.before).toEqual({ day: "2026-10-28", start: "17:00", end: "18:00" });
+      expect(c2.calendar?.overlaps.map((o) => o.title)).toEqual(["Clase de ejemplo"]);
+
+      // Another moves it to 19:00: the converted card gives way in its turn, the new one says it was at 18:00.
+      box.mails.set(3, inThread(83, "Al final el miércoles 28 a las 19:00."));
+      done = quiet();
+      await m.check(1);
+      done();
+      const third = store.journal.proposals("pending");
+      expect(third).toHaveLength(1);
+      expect(third[0]?.id).not.toBe(row.id);
+      expect(store.journal.proposal(row.id)?.status).toBe("stale");
+      const c3 = inboxCard(store, third[0] as (typeof third)[number]);
+      expect([c3.start, c3.end]).toEqual(["19:00", "20:00"]);
+      expect(c3.before).toEqual({ day: "2026-10-28", start: "18:00", end: "19:00" });
+
+      // He corrects its title and accepts it: «Revisar instrucciones» learns from the row card as from a card of
+      // before, his title under the collection's own field, the one proposed as what the reading got wrong.
+      const accepted = await h.agent(1, true).acceptProposal(third[0]?.id as string, "personal", {
+        values: { titulo: "Reunión del equipo (19:00)" },
+      });
+      expect(accepted.error).toBeNull();
+      const st = m.state(1);
+      expect(decisions(store, st.type as string, () => "to")).toMatchObject([
+        {
+          proposal: third[0]?.id,
+          sender: "lucia.ejemplo@example.com",
+          collection: "Agenda",
+          title: "Reunión del equipo (19:00)",
+          corrected: { title: "Reunión del equipo" },
+          due: "2026-10-28",
+          accepted: true,
+        },
+      ]);
+    } finally {
+      wireBoni(null);
+      wireAutomationModels(null);
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 });
 

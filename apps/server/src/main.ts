@@ -11,7 +11,7 @@ import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { FlowScheduler } from "./flowScheduler.ts";
 import { makeApp, serve } from "./http.ts";
-import { guideOf, Mails } from "./mail.ts";
+import { Mails } from "./mail.ts";
 import { AccountModels } from "./models.ts";
 import { note, watchSlowness } from "./perf.ts";
 import { Push } from "./reminders.ts";
@@ -221,10 +221,7 @@ agent.mailTypeOf = (account) => mails.state(account).type;
 agent.mailModulesOf = (account) => mails.moduleIdsOf(account);
 agent.mailSample = (account, mail, plan) => mails.sample(account, mail, plan);
 // Juan's reading guide reaches the readers of mail in the conversation too (docs/correo.md §4.1, task 23).
-agent.readingGuideOf = (account) => {
-  const g = mails.guide(account);
-  return g.instructions || g.examples.length ? guideOf(g) : null;
-};
+agent.readingGuideOf = (account) => mails.readingGuide(account);
 mails.start(() => listUsers(db));
 // Each account's flows on a schedule (docs/flujos.md F4), checked once a minute in the server's zone.
 const flowScheduler = new FlowScheduler({

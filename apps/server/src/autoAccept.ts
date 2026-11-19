@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { type Agent, backOff, type CostClass, resolve } from "@boni/agent";
 import type { ProposalRow, UserStore } from "@boni/store";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import { likeKey } from "./inboxCard.ts";
 
 /**
@@ -125,7 +126,8 @@ function decided(store: UserStore): { p: ProposalRow; right: boolean }[] {
   return [...store.journal.proposals("accepted"), ...store.journal.proposals("rejected")]
     .filter(
       (p) =>
-        p.tool === "entities.create" &&
+        // One row of a run's proposal (AU-251) is decided as one of before: the same key (`likeKey`).
+        (p.tool === "entities.create" || runRowOf(p) !== null) &&
         p.decided !== null &&
         // A mail's: its sender is among its sources, not always the first (inboxCard.ts `sourceKey`).
         p.sources.some((s) => s.startsWith("mail:")),
@@ -149,6 +151,17 @@ export function decisionHistory(store: UserStore): Map<string, boolean[]> {
     else out.set(k, [right]);
   }
   return out;
+}
+
+/**
+ * His decisions on the mail's proposals of the engine of before that create in the collection `key`, oldest first,
+ * each right when accepted as proposed: they count under the cell «Crear» of that collection of «Crear en la
+ * elegida» (AU-250). One row of a run's proposal is not among them: its cell judged it already (AU-251).
+ */
+export function mailDecisionsOf(store: UserStore, key: string): boolean[] {
+  return decided(store)
+    .filter(({ p }) => p.tool === "entities.create" && likeKey(p).split("\u0000")[2] === key)
+    .map(({ right }) => right);
 }
 
 /**

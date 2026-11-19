@@ -31,10 +31,10 @@ import { BODY, type FlowRow, open, seal, type UserStore, wrappedKeyProvider } fr
 import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
-import { ACCEPT_RUN } from "./automations/acceptRunName.ts";
+import { ACCEPT_RUN, runRowOf } from "./automations/acceptRunName.ts";
 import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
 import { type BoniFlow, convertBoniFlows, keepBoniFlows } from "./automations/convert.ts";
-import { drawReadMail } from "./automations/mailAutomation.ts";
+import { drawReadMail, readMailChanges } from "./automations/mailAutomation.ts";
 import { MAIL_CAP, mailCapLeft, mailSender } from "./automations/mailCap.ts";
 import { type MailHooks, mailLabel } from "./automations/mailPieces.ts";
 import {
@@ -121,6 +121,12 @@ export interface MailSettings {
   /** The collections (type ids) tasks from mail may be proposed into (the AI picks one; next step). */
   collections: string[];
   on: boolean;
+  /**
+   * The authserv-id of his provider's own Authentication-Results (RFC 8601), the only header that can make a sender
+   * authenticated, and so «conocido» (AU-250; packages/mail auth.ts). A value of the mailbox, never of a mail. No
+   * screen sets it yet (its shape is Juan's question): unset, nobody is authenticated and «Solo conocidos» asks.
+   */
+  trustedAuthserv?: string;
 }
 export interface MailState {
   type: string | null;
@@ -675,6 +681,8 @@ export const usesPieces = (plan: unknown): boolean =>
 export type MailView = Omit<MailSettings, "password"> & {
   configured: true;
   state: Omit<MailState, "readWith" | "refused">;
+  /** «Leer correo»'s id once it runs as an automation (Ajustes → Correo opens it, AU-249); null before. */
+  automation: string | null;
 };
 
 const EMPTY: MailState = {
@@ -775,6 +783,16 @@ function extraFields(files: TypeDef | undefined): FieldDef[] {
           },
         ]
       : []),
+    // What his provider said of the mail's authentication (its Authentication-Results, as JSON): for the code that
+    // judges «conocido» only (AU-250), from outside like the rest.
+    {
+      id: "f_autenticacion",
+      key: "autenticacion",
+      name: "Autenticación",
+      type: "longtext" as const,
+      hidden: true,
+      label: CODE,
+    },
     {
       id: "f_adjuntos_texto",
       key: "adjuntos_texto",
@@ -971,14 +989,6 @@ function instructionsOf(s: Suggestion, targets: readonly Target[]): Instructions
 }
 
 /**
- * Whether the mail's two flows convert when the mail code keeps them current (`keepMailFlows`). Off until the Bandeja
- * paints a run's proposal as one card per row (AU-251, the next PR of task 130): converted before that, every mail
- * read would wait as one summary card, and the Bandeja would show the mail worse than today. That PR turns it on and
- * removes this switch. Off, everything runs on the engine of before, as in main today.
- */
-const MAIL_CONVERTS = false;
-
-/**
  * «Traer correo» and «Leer correo» converted together, in one transaction or none (AU-226, AU-254), the second
  * drawn by `draw`: a writer of drafts, listed in `DRAFT_WRITERS` (every «Sí» lowered by `convertBoniFlows`). What
  * cannot convert stays a flow and runs on the engine of before.
@@ -990,7 +1000,11 @@ function convertMailFlows(
   now: number,
 ): void {
   try {
-    convertBoniFlows(store, [FETCH_BONI, { id: MAIL_FLOW, boni: "readMail", draw }], now);
+    convertBoniFlows(
+      store,
+      [FETCH_BONI, { id: MAIL_FLOW, boni: "readMail", draw, changes: readMailChanges }],
+      now,
+    );
   } catch (e) {
     console.warn(`mail ${account}: «Leer correo» not converted (${(e as Error).message})`);
   }
@@ -1235,7 +1249,14 @@ export class Mails {
     if (!s) return null;
     const { password: _p, ...rest } = s;
     const { readWith: _r, refused: _x, ...state } = this.state(account);
-    return { ...rest, configured: true, state };
+    let automation: string | null = null;
+    try {
+      if (this.o.host.hasData && onNewEngine(this.o.host.store(account), MAIL_FLOW))
+        automation = MAIL_FLOW;
+    } catch {
+      automation = null;
+    }
+    return { ...rest, configured: true, state, automation };
   }
 
   /**
@@ -1258,6 +1279,10 @@ export class Mails {
         : (old?.collections ?? [])
       ).filter((c): c is string => typeof c === "string" && c.length < 80),
       on: input.on ?? old?.on ?? true,
+      // Never from the request: the same server keeps it, another server drops it.
+      ...(old?.trustedAuthserv && old.host === String(input.host ?? old.host).trim()
+        ? { trustedAuthserv: old.trustedAuthserv }
+        : {}),
     };
     if (
       !/^[a-z0-9.-]{1,253}$/i.test(s.host) ||
@@ -1284,6 +1309,33 @@ export class Mails {
       this.saveState(account, { ...EMPTY, type: st.type, count: 0 });
     }
     return this.view(account) as MailView;
+  }
+
+  /**
+   * The guide the readers of mail in the conversation get (docs/correo.md §7, AU-249), or null without one. With
+   * «Leer correo» as an automation, the panels of its published «Lectora» («Indicaciones», «Ejemplos»), never a plan
+   * nor a draft; no «Lectora» in that version, no guide. Before it, the guide kept with the mailbox.
+   */
+  readingGuide(account: number): Val | null {
+    const store = this.o.host.store(account);
+    if (onNewEngine(store, MAIL_FLOW)) {
+      const p =
+        publishedOf(store, MAIL_FLOW)?.automation.steps.find((x) => x.type === "boni.mailReader")
+          ?.params ?? null;
+      if (!p) return null;
+      const said = p[BONI_PARAMS.instructions];
+      const instructions = typeof said === "string" ? said : "";
+      const given = p[BONI_PARAMS.examples];
+      const examples = (Array.isArray(given) ? given : []).flatMap((e) => {
+        const x = e as { mail?: unknown; want?: unknown } | null;
+        return x && typeof x.mail === "string" && Array.isArray(x.want)
+          ? [{ mail: x.mail, want: x.want as ReadingGuide["examples"][number]["want"] }]
+          : [];
+      });
+      return instructions || examples.length ? guideValue({ instructions, examples }) : null;
+    }
+    const g = this.guide(account);
+    return g.instructions || g.examples.length ? guideOf(g) : null;
   }
 
   /** Juan's reading guide (empty until he writes one). */
@@ -1821,6 +1873,8 @@ export class Mails {
     if (original?.gmailThread && def.fields.some((f) => f.id === "f_gmail_hilo"))
       values.f_gmail_hilo = w(original.gmailThread);
     if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
+    if (m.authentication?.length && def.fields.some((f) => f.id === "f_autenticacion"))
+      values.f_autenticacion = w(JSON.stringify(m.authentication));
     const list = (as: typeof m.to) =>
       as
         .map((a) => (a.name ? `${a.name} <${a.address}>` : a.address))
@@ -2246,7 +2300,6 @@ export class Mails {
     const store = c.store;
     if (onNewEngine(store, MAIL_FLOW) && onNewEngine(store, FETCH_FLOW)) return;
     if (!onNewEngine(store, MAIL_FLOW)) this.mailFlow(c);
-    if (!MAIL_CONVERTS) return;
     convertMailFlows(store, account, () => this.drawn(account, c), this.now());
   }
 
@@ -2283,6 +2336,7 @@ export class Mails {
     return {
       type,
       mailbox: s.user,
+      trustedAuthserv: s.trustedAuthserv?.trim() || null,
       text: (values, body) => mailAsText(values, body),
       userIn: (v) => userIn(s.user, v.f_para, v.f_cc),
       inCalendar: async (uid) => !!(await this.calendarWith(account, uid)),
@@ -2396,8 +2450,25 @@ export class Mails {
       if (!("id" in r)) return { ...none, stopped: r.error };
       const kept = store.journal.automationRun(r.id);
       const p = kept?.proposal ? store.journal.proposal(kept.proposal) : null;
-      const n =
-        p && p.status === "pending"
+      // One card per row (AU-251): each row is a proposal of the run's one agent run.
+      const cards = p && runRowOf(p) !== null ? store.journal.proposalsOf(p.run) : [];
+      // «Plegar hilo» (AU-251): the earlier card of the thread gives way only now that the new one is proposed, and
+      // only when the run did not fail; its step's days are the published version's.
+      const fold = publishedOf(store, MAIL_FLOW)?.automation.steps.find(
+        (x) => x.type === "boni.fold",
+      );
+      const e = store.get(id);
+      if (fold && cards.length && r.state !== "failed" && !again && e)
+        this.foldThread(
+          account,
+          store,
+          e,
+          cards.map((x) => x.id),
+          foldDays(fold.params?.[BONI_PARAMS.days]),
+        );
+      const n = cards.length
+        ? cards.filter((x) => store.journal.proposal(x.id)?.status === "pending").length
+        : p && p.status === "pending"
           ? ((p.view as { run?: { count?: number } }).run?.count ?? 1)
           : 0;
       return {
@@ -3033,8 +3104,16 @@ export class Mails {
     const j = store.journal;
     const rowsOf = (p: { view: unknown }) =>
       (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
+    // Its title is its collection's title field, whatever that field's name (as `inboxCard` reads it): a row's card
+    // of a run (AU-251) names its values by the collection's own field names, «title» only when the collection does.
+    const types = Object.values(store.schema().types);
     const titleOf = (p: { view: unknown }) => {
-      const v = rowsOf(p).find((r) => r.arg === "values.title")?.value;
+      const rows = rowsOf(p);
+      const value = (arg: string) => rows.find((r) => r.arg === arg)?.value;
+      const type = value("type");
+      const def = types.find((t) => t.key === type || t.id === type);
+      const field = def?.fields.find((f) => f.id === def.titleField)?.key;
+      const v = value("values.title") ?? (field ? value(`values.${field}`) : undefined);
       return typeof v === "string" ? v : "";
     };
     const earlier = j
@@ -3043,7 +3122,7 @@ export class Mails {
         (p) =>
           p.created >= since &&
           p.status !== "stale" &&
-          p.tool === "entities.create" &&
+          (p.tool === "entities.create" || runRowOf(p) !== null) &&
           !made.includes(p.id) &&
           mails.has(mailOfRun(j, p.run)),
       );

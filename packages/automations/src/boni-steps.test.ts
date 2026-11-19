@@ -83,7 +83,12 @@ const one = (type: string, params: Record<string, ParamValue> = {}) =>
 const go = (
   a: Automation,
   over: Parameters<typeof deps>[0],
-  opts: { test?: boolean; json?: Record<string, string>; outside?: boolean } = {},
+  opts: {
+    test?: boolean;
+    json?: Record<string, string>;
+    outside?: boolean;
+    startedBy?: "user" | "schedule";
+  } = {},
 ): Promise<Execution> =>
   run(
     {
@@ -91,6 +96,7 @@ const go = (
       trigger: a.steps[0]?.id as string,
       fields: { json: opts.json ?? {}, label: opts.outside ? OUTSIDE : OWN },
       test: opts.test ?? false,
+      ...(opts.startedBy ? { startedBy: opts.startedBy } : {}),
     },
     deps({ collections: { ...deps().collections, shape: (k) => shapes.collection(k) }, ...over }),
   );
@@ -303,6 +309,27 @@ describe("the steps of the category «Boni» (F16)", () => {
     await expect(
       go(a, { boni: port("reviewGuide") }, { json: MAIL, outside: true }),
     ).rejects.toBeInstanceOf(CannotRun);
+  });
+
+  it("AU-253 · a run whose caller does not say his hand started it is not a hand's: Boni's code is told `schedule`, so a «Regla del remitente» «No leer» is not passed, and only a `user` given says `user`", async () => {
+    const s = sketch(133)
+      .step("Llega un correo", BONI_TRIGGERS.mail)
+      .step("Regla del remitente", "boni.mailRule")
+      .arrow("Llega un correo", "Regla del remitente");
+    const a = s.build();
+    const said = async (startedBy?: "user" | "schedule") => {
+      const boni = port("readMail");
+      const e = await go(
+        a,
+        { boni },
+        { json: MAIL, outside: true, ...(startedBy ? { startedBy } : {}) },
+      );
+      expect(e.state).toBe("done");
+      return boni.calls.map((c) => c.startedBy);
+    };
+    expect(await said()).toEqual(["schedule"]);
+    expect(await said("schedule")).toEqual(["schedule"]);
+    expect(await said("user")).toEqual(["user"]);
   });
 
   it("AU-127 · «Acción de Boni» names one action as a literal and «Lector de Boni» one reader; the add panel offers neither", async () => {

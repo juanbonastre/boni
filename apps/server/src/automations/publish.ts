@@ -400,7 +400,7 @@ export async function runPublished(
   run: string,
   box: Box = sandboxBox(),
   watch: Pick<RunDeps, "onStep"> & { boni?: BoniStart } = {},
-  startedBy: StartedBy = "user",
+  startedBy: StartedBy,
 ): Promise<Execution | Refusal | ServiceError> {
   const { boni: start, ...seen } = watch;
   if (start && !boniOf(store, id)) return BAD;

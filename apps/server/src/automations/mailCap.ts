@@ -4,6 +4,11 @@
  * correo» gets 150 model calls a day, and 20 a day for each sender, counted before each call (the journal's
  * `spend`, under the automation's id and the sender's address, by the civil day of his zone). Past it no model is
  * called (`daily-cap`), and the mail's code starts no run: the mail waits in its queue (up to 500) for the next day.
+ *
+ * A call is counted when the cap lets it go, before anything else is asked: a call refused after that (no model in
+ * «Modelos», nothing to read, the provider's refusal) or one that fails (a timeout, an error of the provider) still
+ * counts. Conservative on purpose: a mail that makes calls fail cannot try again and again for free. A call the
+ * month's budget refuses (`over()` in ai.ts, AU-199) is refused before the cap is looked at, and is not counted.
  */
 
 import type { Automation } from "@boni/automations";

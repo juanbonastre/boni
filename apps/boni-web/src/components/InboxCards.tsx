@@ -21,6 +21,7 @@ import type {
   InboxCard,
   InboxRequest,
   Proposal,
+  RunProposal,
 } from "../core/agent.ts";
 import { textOf } from "../core/agent.ts";
 import { chipTitle, pointAttrs } from "../core/pointing.ts";
@@ -40,6 +41,7 @@ import {
   openWebmail,
   peekMail,
   rejectProposal,
+  showAutomation,
   showRun,
   toggleInbox,
   useStore,
@@ -354,23 +356,26 @@ function useCorrection(p: Proposal) {
           onChange={(e) => setEdit({ ...edit, title: e.target.value })}
         />
       </label>
-      <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
-        <span>{t("inbox.correctCollection")}</span>
-        <SearchList
-          id={`correct-collection-${p.id}`}
-          source={null}
-          inline={listOptions}
-          multi={false}
-          required
-          selected={[edit.collection]}
-          loadOptions={NO_OPTIONS}
-          onChange={([id]) => id && changeCollection(id)}
-          onCreate={async (name) => {
-            const id = await createCollectionNamed(name);
-            if (id) changeCollection(id);
-          }}
-        />
-      </label>
+      {/* A row of a run's proposal stays in the collection its cell lets it write (AU-251, AU-250). */}
+      {!p.runRow && (
+        <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
+          <span>{t("inbox.correctCollection")}</span>
+          <SearchList
+            id={`correct-collection-${p.id}`}
+            source={null}
+            inline={listOptions}
+            multi={false}
+            required
+            selected={[edit.collection]}
+            loadOptions={NO_OPTIONS}
+            onChange={([id]) => id && changeCollection(id)}
+            onCreate={async (name) => {
+              const id = await createCollectionNamed(name);
+              if (id) changeCollection(id);
+            }}
+          />
+        </label>
+      )}
       {when.length > 0 && <div className="inbox-props inbox-when">{when.map(cell)}</div>}
       {props.length > 0 && (
         <button
@@ -577,7 +582,11 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
       {more &&
         rest &&
         rest.rows.length > 0 &&
-        (c ? <FieldRows view={rest} card={c} day={fmt.long} /> : <CallRows view={rest} />)}
+        (c ? (
+          <FieldRows view={rest} card={c} day={fmt.long} outside={!!p.runRow} />
+        ) : (
+          <CallRows view={rest} />
+        ))}
       {more && body && typeof body.value === "string" && (
         <div className="inbox-body">
           <MarkdownPreview text={body.value} />
@@ -611,6 +620,17 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
                   void openProposal(p.id);
                 }}
               />
+              {/* A row of a run's proposal (AU-251): the run of its automation that asked it. */}
+              {p.runRow && (
+                <MenuRow
+                  label={t("inbox.run.open")}
+                  onClick={() => {
+                    close();
+                    const r = p.runRow as RunProposal;
+                    showAutomation(r.automation, { run: r.run });
+                  }}
+                />
+              )}
               {/* Its Recorrido: the map with the run that proposed it drawn on it (task 90). */}
               {p.run && (
                 <MenuRow
@@ -1117,12 +1137,15 @@ function FieldRows({
   card,
   day,
   all = false,
+  outside = false,
 }: {
   view: ConfirmView;
   card: InboxCard;
   day: (d: string) => string;
   /** Every value, the title and the day too (the proposal's own page). */
   all?: boolean;
+  /** Each value that came from outside says so (a row of a run's proposal, AU-251, as its summary card did). */
+  outside?: boolean;
 }) {
   const t = useStore((s) => s.t);
   // What the card's line already says (the title, the day, the times) is not repeated below it.
@@ -1151,7 +1174,12 @@ function FieldRows({
         return (
           <div key={r.arg} className={`inbox-field${ignored ? " warn" : ""}`}>
             <dt>{name}</dt>
-            <dd>{/^\d{4}-\d{2}-\d{2}$/.test(text) ? day(text) : text}</dd>
+            <dd>
+              {/^\d{4}-\d{2}-\d{2}$/.test(text) ? day(text) : text}
+              {outside && r.integrity === "external" && (
+                <span className="run-asked-outside">{t("inbox.run.outside")}</span>
+              )}
+            </dd>
           </div>
         );
       })}
@@ -1376,7 +1404,11 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       {rows && rows.rows.length > 0 && (
         <section className="pp-section">
           <h3>{t("inbox.properties")}</h3>
-          {c ? <FieldRows view={rows} card={c} day={fmt.long} all /> : <CallRows view={rows} />}
+          {c ? (
+            <FieldRows view={rows} card={c} day={fmt.long} all outside={!!p.runRow} />
+          ) : (
+            <CallRows view={rows} />
+          )}
         </section>
       )}
       {body && typeof body.value === "string" && body.value.trim() && (
