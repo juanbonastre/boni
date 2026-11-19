@@ -136,7 +136,7 @@ describe("the port of Boni's code on the server (F16 S1)", () => {
       tool: "guide.measure",
       args: { mails: { ref: "$x0" }, reading: { ref: "$x1" } },
     });
-    expect(measure.bind.x0?.value).toBe(20);
+    expect(measure.bind.x0).toMatchObject({ t: "v", value: 20 });
   });
 
   it("AU-221 · S2: which of Boni's automations a run is comes from its stored id and its author, never from the document: a person's automation under one of those ids is none of Boni's", () => {

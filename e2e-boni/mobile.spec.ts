@@ -710,6 +710,56 @@ test("the Bandeja is a place: its proposals under its large title", async ({ pag
   await page.screenshot({ path: `${SHOTS}/phone-inbox.png` });
 });
 
+test("AU-211 · on the phone, «Ver el cambio» of «Revisar instrucciones» fits the screen and a shared phone only reads it", async ({
+  page,
+}) => {
+  const long = `ejemplo.${"remitente".repeat(8)}@example.com`;
+  await openApp(page, "/?still", {
+    sharedDevice: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [] }],
+      "GET api/agent/requests": [
+        {
+          requests: [],
+          instructions: [
+            {
+              kind: "instructions",
+              id: "r_01jx8x0t2v4x6z8b0d2f4h6r13",
+              automation: "a_01jx8x0t2v4x6z8b0d2f4h6r14",
+              name: "Leer correo",
+              rules: {
+                before: Array.from({ length: 40 }, (_, i) => ({
+                  sender: `ejemplo.${i}@example.com`,
+                  do: "skip",
+                  collection: null,
+                })),
+                added: [{ sender: long, do: "skip", collection: null }],
+              },
+              examples: { before: [], added: [] },
+              before: 12,
+              after: 16,
+              total: 20,
+              at: 1,
+              mayDecide: false,
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await tab(page, "Bandeja");
+  const card = page.locator(".instructions-card");
+  await expect(card).toContainText("Acertadas: 12 → 16 de 20");
+  await expect(card.getByRole("button")).toHaveText(["Ver el cambio"]);
+  await card.getByRole("button", { name: "Ver el cambio" }).tap();
+  const dialog = page.getByRole("dialog", { name: "Ver el cambio" });
+  await expect(dialog.locator("li[data-new]")).toHaveText([`Nuevo${long} · No leer`]);
+  await expect(dialog.getByRole("button", { name: "Aceptar" })).toHaveCount(0);
+  const box = await dialog.boundingBox();
+  expect((box?.x ?? -1) >= 0 && (box?.x ?? 0) + (box?.width ?? 0) <= 412).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(412);
+});
+
 test("on the phone too, a long sender never hides a mail card's icons (task 68, I-21)", async ({
   page,
 }) => {

@@ -7,7 +7,9 @@ import {
   MAIL_CAP,
   type Step,
 } from "@boni/automations";
+import { cpu, under } from "@boni/pace";
 import { describe, expect, it } from "vitest";
+import { instructionsCardOf } from "../core/agent.ts";
 import { translator } from "../i18n.ts";
 import { setChosenCell, setParam } from "./edit.ts";
 import {
@@ -19,6 +21,7 @@ import {
   rulesOf,
   setRule,
 } from "./mail.ts";
+import { rowsOf } from "./panel.ts";
 import { namer } from "./words.ts";
 
 const t = translator("es");
@@ -98,6 +101,37 @@ describe("«Leer correo»'s panels", () => {
     expect(rulesOf(undefined)).toEqual([]);
   });
 
+  it("AU-249 · a parameter a piece's panel hides keeps its stored value when the step is saved: «Se ejecuta», and «Argumentos» and «Por qué» while empty", () => {
+    const drawn = readMail();
+    const hidden = {
+      [BONI_PARAMS.mode]: "perRow",
+      [BONI_PARAMS.args]: [],
+      [BONI_PARAMS.why]: "",
+    };
+    const withHidden: Automation = {
+      ...drawn,
+      steps: drawn.steps.map((s) =>
+        s.id === "p-reader" ? { ...s, params: { ...s.params, ...hidden } } : s,
+      ),
+    };
+    const shown = rowsOf(stepOf(withHidden, "p-reader")).map((r) => r.param.key);
+    for (const key of Object.keys(hidden)) expect(shown).not.toContain(key);
+    // Changing what the panel shows, then saving (the draft goes as JSON), leaves what it hides as it was.
+    const changed = setParam(
+      withHidden,
+      "p-reader",
+      BONI_PARAMS.instructions,
+      "Lee los correos de ejemplo.",
+      names,
+    );
+    const saved = JSON.parse(JSON.stringify(changed)) as Automation;
+    expect(stepOf(saved, "p-reader").params).toMatchObject({
+      ...hidden,
+      [BONI_PARAMS.instructions]: "Lee los correos de ejemplo.",
+    });
+    expect(stepOf(saved, "p-rule").params[BONI_PARAMS.mode]).toBe("perRow");
+  });
+
   it("AU-249 · «A una colección» names the «Decisora»'s collections, in its order, each once", () => {
     const a = readMail([KEY_B, KEY_A, KEY_B]);
     expect(chosenAmong(a)).toEqual([KEY_B, KEY_A]);
@@ -161,5 +195,71 @@ describe("«Leer correo»'s panels", () => {
     );
     // An unknown step is left alone.
     expect(setChosenCell(drawn, "p-none", KEY_A, "yes")).toBe(drawn);
+  });
+});
+
+describe("«Ver el cambio» of «Revisar instrucciones» (AU-211)", () => {
+  const rule = (i: number) => ({ sender: `ejemplo.remitente${i}@example.com`, do: "skip" });
+  const wire = {
+    kind: "instructions",
+    id: "r_01k3vd9x7a8m2q4r6t0w",
+    automation: "leer-correo",
+    name: "<b>Leer correo</b>",
+    rules: {
+      before: [rule(0)],
+      added: [
+        {
+          sender: "<script>ejemplo@example.com</script>",
+          do: "collection",
+          collection: "<i>Tareas</i>",
+        },
+        "x",
+        null,
+      ],
+    },
+    examples: {
+      before: [],
+      added: [{ subject: "<img src=x>", want: ["<b>Pagar</b>", 3] }],
+    },
+    before: 14,
+    after: 18,
+    total: 20,
+    at: 5,
+    mayDecide: "true",
+  };
+  it("AU-211 · the card reads the server's fields as plain text, drops what is not a rule or an example, and decides only with the server's own true", () => {
+    const [card] = instructionsCardOf(wire);
+    expect(card).toMatchObject({
+      name: "<b>Leer correo</b>",
+      before: 14,
+      after: 18,
+      total: 20,
+      mayDecide: false,
+    });
+    expect(card?.rules.added).toEqual([
+      {
+        sender: "<script>ejemplo@example.com</script>",
+        do: "collection",
+        collection: "<i>Tareas</i>",
+      },
+    ]);
+    expect(card?.examples.added).toEqual([{ subject: "<img src=x>", want: ["<b>Pagar</b>"] }]);
+    expect(instructionsCardOf({ ...wire, mayDecide: true })[0]?.mayDecide).toBe(true);
+    expect(instructionsCardOf({ ...wire, kind: "suggested" })).toEqual([]);
+    expect(instructionsCardOf({ ...wire, automation: "" })).toEqual([]);
+    // A-15: his panel's most (500 rules, 20 examples), read each time the Bandeja looks, within a frame.
+    const full = {
+      ...wire,
+      rules: { before: Array.from({ length: 480 }, (_, i) => rule(i)), added: [rule(500)] },
+      examples: {
+        before: Array.from({ length: 20 }, (_, i) => ({ subject: `Asunto ${i}`, want: ["Tarea"] })),
+        added: [],
+      },
+    };
+    instructionsCardOf(full);
+    const t0 = cpu();
+    const [big] = instructionsCardOf(full);
+    under(cpu() - t0, 16, "cpu", "a suggestion over 480 rules and 20 examples");
+    expect(big?.rules.before).toHaveLength(480);
   });
 });

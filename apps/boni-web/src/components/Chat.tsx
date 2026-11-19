@@ -117,6 +117,7 @@ import {
   useDayFormat,
   useInboxQueue,
 } from "./InboxCards.tsx";
+import { InstructionsCard } from "./InstructionsCard.tsx";
 import { LearningCard } from "./LearningCard.tsx";
 import { RunPath } from "./RunPath.tsx";
 
@@ -131,7 +132,9 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   const t = useStore((s) => s.t);
   const chat = useStore((s) => s.chat);
   const live = useStore((s) => s.live);
-  const waiting = useStore((s) => s.inbox.length + s.requests.length + s.cellNotices.length);
+  const waiting = useStore(
+    (s) => s.inbox.length + s.requests.length + s.cellNotices.length + s.instructionNotices.length,
+  );
   // On the phone the list is a drawer the top bar opens.
   const list = useStore((s) => s.chatList);
   const setList = (open: boolean) => toggleChatList(open);
@@ -2407,13 +2410,14 @@ export function InboxView() {
   const t = useStore((s) => s.t);
   const queue = useInboxQueue();
   const learning = useStore((s) => s.cellNotices);
+  const instructions = useStore((s) => s.instructionNotices);
   useEffect(() => {
     void loadInbox();
   }, []);
   return (
     <div className="agent-page">
       <p className="muted small">{t("inbox.help")}</p>
-      {queue.length + learning.length === 0 && (
+      {queue.length + learning.length + instructions.length === 0 && (
         <p className="muted center-note">{t("inbox.empty")}</p>
       )}
       {queue.map((x) =>
@@ -2423,6 +2427,9 @@ export function InboxView() {
           <RequestCard key={x.r.id} r={x.r} />
         ),
       )}
+      {instructions.map((c) => (
+        <InstructionsCard key={c.id} c={c} />
+      ))}
       {learning.map((c) => (
         <LearningCard key={learningKey(c)} c={c} />
       ))}

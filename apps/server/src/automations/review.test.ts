@@ -7,7 +7,7 @@
 
 import { ToolRegistry } from "@boni/agent";
 import { type Automation, BONI_PARAMS, BONI_TRIGGERS } from "@boni/automations";
-import { clock, under } from "@boni/pace";
+import { cpu, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { runAction } from "../actions.ts";
@@ -382,14 +382,15 @@ describe("«Revisar instrucciones», one of Boni's automations (AU-211)", () => 
         dropInstructions(s, `g-${w}`, { ...JUAN, now: NOW - (52 - w) * 7 * 86_400_000 });
       }
       keepSuggestion(s, suggestion());
-      const t = clock();
+      const t = cpu();
       for (let i = 0; i < 10; i++) expect(instructionsNotices(s, REVIEW_FLOW)).toHaveLength(1);
-      const listed = (clock() - t) / 10;
+      const listed = (cpu() - t) / 10;
       under(listed, 30, "cpu", "the waiting suggestion, listed for the Bandeja");
-      const t2 = clock();
+      const t2 = cpu();
       expect(parkedItems(s, NOW).size).toBeLessThanOrEqual(2);
       expect(takeInstructions(s, "g-ejemplo-1", JUAN)).toEqual({ automation: MAIL_FLOW });
-      under(clock() - t2, 200, "cpu", "«Aceptar» over his panels");
+      const took = cpu() - t2;
+      under(took, 200, "cpu", "«Aceptar» over his panels");
       // Within what the panel holds: the 20th example fits, a 21st would not.
       const reader = open(s, MAIL_FLOW)?.automation.steps.find((x) => x.type === "boni.mailReader");
       expect(reader?.params[BONI_PARAMS.examples]).toHaveLength(20);
