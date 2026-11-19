@@ -1,6 +1,6 @@
 import { createServer, type Server, Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { authenticated, parseAuthResults } from "./auth.ts";
+import { authenticated, authResultsOf, parseAuthResults } from "./auth.ts";
 import { htmlToText } from "./html.ts";
 import { gmailThreadUrl, ImapError, ImapReader, imapDate, quote } from "./imap.ts";
 import { decodeWords, parseAddresses, parseMessage } from "./mime.ts";
@@ -514,5 +514,72 @@ Hola.
         "mx.example.net",
       ),
     ).toBe(false);
+  });
+
+  it("a header the mail brought with the trusted id below the provider's own is never read; among several, only the provider's topmost counts", () => {
+    // As a provider stamps a mail: its own header on top, then what the mail brought, a forged pass among it.
+    const forged = CRLF(`Authentication-Results: mx.example.net;
+ spf=pass smtp.mailfrom=ejemplo.ana@example.com;
+ dkim=none;
+ dmarc=none header.from=example.com
+Authentication-Results: mx.example.net; dmarc=pass header.from=example.com;
+ dkim=pass header.d=example.com
+From: Ana <ejemplo.ana@example.com>
+Subject: Hola
+Content-Type: text/plain
+
+Hola.
+`);
+    const h = parseMessage(new TextEncoder().encode(forged)).authentication;
+    expect(h.map((x) => x.authserv)).toEqual(["mx.example.net", "mx.example.net"]);
+    expect(authenticated(h, "ejemplo.ana@example.com", "mx.example.net")).toBe(false);
+    // Several: a filter's header above the provider's, relays below it; only the provider's topmost is read.
+    const one = (v: string) => [parseAuthResults(v)].filter((x) => x !== null);
+    const several = (provider: string) => [
+      ...one("filtro.example.net; dmarc=pass header.from=example.com"),
+      ...one(provider),
+      ...one("mx.example.net; dmarc=pass header.from=example.com"),
+      ...one("relay.example.org; dkim=pass header.d=example.com"),
+    ];
+    expect(
+      authenticated(
+        several("mx.example.net; dmarc=fail header.from=example.com"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
+    expect(
+      authenticated(
+        several("mx.example.net; dkim=pass header.d=example.com"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(true);
+    // Past the 20 headers kept, nothing is read: a mail cannot push the provider's header out of reach.
+    const many = Array.from({ length: 25 }, () => "relay.example.org; none");
+    expect(
+      authenticated(
+        authResultsOf([...many, "mx.example.net; dmarc=pass header.from=example.com"]),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
+  });
+
+  it("what it does today when the provider adds none: the only header with the trusted id is the sender's, and it counts", () => {
+    // RFC 8601 §5: the receiving side removes (or renames) every header bearing its own authserv-id that arrives from
+    // outside, so a header with that id is the provider's own. A provider that stamps nothing and removes nothing
+    // breaks that, and from the headers alone no reader can tell its header from the sender's. Today this passes:
+    // `known` rests on the trusted id being one his provider stamps on every mail it delivers, which is
+    // how that id is set: still Juan's call.
+    const sent = CRLF(`Authentication-Results: mx.example.net; dmarc=pass header.from=example.com
+From: Ana <ejemplo.ana@example.com>
+Subject: Hola
+Content-Type: text/plain
+
+Hola.
+`);
+    const h = parseMessage(new TextEncoder().encode(sent)).authentication;
+    expect(authenticated(h, "ejemplo.ana@example.com", "mx.example.net")).toBe(true);
   });
 });
