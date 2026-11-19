@@ -217,7 +217,7 @@ export function askedOf(
 }
 
 /** The mail a run started with, when its trigger is Boni's «Llega un correo»: its card says where it came from (AU-251). */
-function triggerMail(store: UserStore, run: string): string | null {
+export function triggerMail(store: UserStore, run: string): string | null {
   const r = store.journal.automationRun(run);
   const kept = r?.version != null ? store.journal.automationVersion(r.automation, r.version) : null;
   const doc = kept?.doc ?? r?.doc ?? null;

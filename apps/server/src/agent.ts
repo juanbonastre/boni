@@ -35,7 +35,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { convertFlows, copyBeforeRuns } from "./automations/convert.ts";
 import { pruneAllRuns } from "./automations/keep.ts";
 import { learnAnswer, learningNotices } from "./automations/learning.ts";
-import { ACCEPT_RUN, type RunsService } from "./automations/proposal.ts";
+import { ACCEPT_RUN, type RunsService, triggerMail } from "./automations/proposal.ts";
 import {
   type AskGiven,
   answerAsk,
@@ -100,7 +100,7 @@ import { type ChatEdit, chatTurnOf, chatView, createChat, updateChat } from "./p
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
-import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
+import { mailWhat, proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 import { keep as keepForRun, keptInTheWay, undoable, undoKept } from "./runUndo.ts";
 import {
   blockFigures,
@@ -1491,17 +1491,20 @@ async function answerAgent(
             let about: RunInfo["what"] | null = null;
             let open: { type: string; id: string } | null = null;
             const run = store.journal.run(r.run);
-            try {
-              if (run) about = runInfo(store, run, { mailAccount }).what;
-              const mail = mailOfRun(store, r.run);
-              const m = mail ? store.get(mail) : null;
-              if (m) open = { type: m.entity.type, id: m.entity.id };
-            } catch {
-              // the question shows without where it came from
-            }
             // Whether this device answers it (decision 26 of §10): the screen reads it, it keeps no rule of its own.
             // The agent's own questions take any device's answer, as they did.
             const place = askPlace(r.view);
+            try {
+              if (run) about = runInfo(store, run, { mailAccount }).what;
+              // An automation's question of a run that began with a mail (the «Duda» of «Leer correo», AU-252):
+              // the mail of its trigger's row, so the card says where it came from as a proposal of it does.
+              const mail = place ? triggerMail(store, place.run) : mailOfRun(store, r.run);
+              const m = mail ? store.get(mail) : null;
+              if (m) open = { type: m.entity.type, id: m.entity.id };
+              if (m && place) about = mailWhat(store, m.entity.id, mailAccount);
+            } catch {
+              // the question shows without where it came from
+            }
             // A notice's card (AU-246): put away from any device of the account, a speaker never.
             const notice = place ? null : noticePlace(r.view);
             const from = place ?? notice;

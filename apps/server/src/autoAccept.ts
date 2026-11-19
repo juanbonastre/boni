@@ -154,6 +154,17 @@ export function decisionHistory(store: UserStore): Map<string, boolean[]> {
 }
 
 /**
+ * His decisions on the mail's proposals of the engine of before that create in the collection `key`, oldest first,
+ * each right when accepted as proposed: they count under the cell «Crear» of that collection of «Crear en la
+ * elegida» (AU-250). One row of a run's proposal is not among them: its cell judged it already (AU-251).
+ */
+export function mailDecisionsOf(store: UserStore, key: string): boolean[] {
+  return decided(store)
+    .filter(({ p }) => p.tool === "entities.create" && likeKey(p).split("\u0000")[2] === key)
+    .map(({ right }) => right);
+}
+
+/**
  * The rule replayed over the past decisions (each judged only by what came before it): of the last `LAST`,
  * how many Boni would have accepted alone, and how many of those were kept as proposed. What earns the area its
  * «Solo» (docs/fiabilidad.md §3.4), and what the Registro shows.

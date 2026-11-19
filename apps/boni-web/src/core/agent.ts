@@ -259,6 +259,11 @@ export interface Proposal {
   flow?: FlowProposalView;
   /** What a run of an automation asked (AU-193): painted by the app's code from the server's `RunProposalView`. */
   runAsked?: RunProposal;
+  /**
+   * One row of what a run asked, as its own card (AU-251): painted as a proposal to create, accepted or discarded
+   * alone; this says the run it belongs to.
+   */
+  runRow?: RunProposal;
 }
 
 /** The tool of a run's proposal (apps/server/src/automations/proposal.ts `ACCEPT_RUN`). */
@@ -284,6 +289,8 @@ export interface RunProposal {
   version: number | null;
   run: string;
   startedBy: string;
+  /** The row this card is, when the run's proposal is one card per row (AU-251); null for the summary card. */
+  row: number | null;
   count: number;
   counts: { collection: string; name: string | null; action: AskedRow["action"]; n: number }[];
   first: AskedRow[];
@@ -339,6 +346,7 @@ export function parseRunProposal(v: unknown): RunProposal | undefined {
     version: typeof r.version === "number" ? r.version : null,
     run,
     startedBy: str(r.startedBy, 40) ?? "user",
+    row: typeof r.row === "number" && Number.isInteger(r.row) && r.row >= 0 ? r.row : null,
     count: num(r.count),
     counts: (Array.isArray(r.counts) ? r.counts : []).slice(0, 50).flatMap((c) => {
       const action = isObj(c) ? askedAction(c.action) : null;
@@ -351,6 +359,11 @@ export function parseRunProposal(v: unknown): RunProposal | undefined {
       .map(parseAskedRow)
       .filter((x): x is AskedRow => x !== null),
   };
+}
+/** A run's proposal is the summary card, or one card per row painted as a proposal to create (AU-251). */
+function runCard(tool: unknown, view: unknown): Pick<Proposal, "runAsked" | "runRow"> {
+  const r = tool === ACCEPT_RUN ? parseRunProposal(view) : undefined;
+  return !r ? {} : r.row === null ? { runAsked: r } : { runRow: r };
 }
 /** Who reads or writes a collection (F6, apps/server/src/usage.ts): a flow, or who did in the period. */
 export interface Who {
@@ -3425,9 +3438,7 @@ export class AgentApi {
           ...(p.tool === "flows.save" && parseFlowProposal(p.flow)
             ? { flow: parseFlowProposal(p.flow) }
             : {}),
-          ...(p.tool === ACCEPT_RUN && parseRunProposal(p.view)
-            ? { runAsked: parseRunProposal(p.view) }
-            : {}),
+          ...runCard(p.tool, p.view),
         },
       ];
     });

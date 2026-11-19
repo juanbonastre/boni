@@ -27,6 +27,7 @@ import { randomUUID } from "node:crypto";
 import { BACK_OFF, backOff, earned, type Trust } from "@boni/agent";
 import {
   type Automation,
+  CREATE_CHOSEN,
   cellPrint,
   type Execution,
   lowerCells,
@@ -36,6 +37,7 @@ import {
   writeCells,
 } from "@boni/automations";
 import type { AutomationRunRow, DecisionRow, LogRow, UserStore } from "@boni/store";
+import { mailDecisionsOf } from "../autoAccept.ts";
 import { CELL_AREA, DAY, learningOn, markSuggested, maySuggest } from "../learning.ts";
 import type { AutomationNotice } from "./notices.ts";
 import { runRowOf } from "./acceptRunName.ts";
@@ -536,7 +538,13 @@ export function learningOf(store: UserStore, automation: string): CellLearning[]
       print: print(c.step),
     };
     const area = cellArea(key);
-    const results = resultsOf(store, area);
+    // «Crear en la elegida» (AU-250): his decisions on the mail's proposals of before count under its cell too.
+    const before =
+      c.action === "create" &&
+      pub.automation.steps.find((x) => x.id === c.step)?.type === CREATE_CHOSEN
+        ? mailDecisionsOf(store, c.collection)
+        : [];
+    const results = [...before, ...resultsOf(store, area)].slice(-LAST);
     const s = state[area];
     return [
       {

@@ -21,6 +21,7 @@ import type {
   InboxCard,
   InboxRequest,
   Proposal,
+  RunProposal,
 } from "../core/agent.ts";
 import { textOf } from "../core/agent.ts";
 import { chipTitle, pointAttrs } from "../core/pointing.ts";
@@ -40,6 +41,7 @@ import {
   openWebmail,
   peekMail,
   rejectProposal,
+  showAutomation,
   showRun,
   toggleInbox,
   useStore,
@@ -352,6 +354,8 @@ function useCorrection(p: Proposal) {
           onChange={(e) => setEdit({ ...edit, title: e.target.value })}
         />
       </label>
+      {/* A row of a run's proposal stays in the collection its cell lets it write (AU-251, AU-250). */}
+      {!p.runRow && (
       <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
         <span>{t("inbox.correctCollection")}</span>
         <SearchList
@@ -369,6 +373,7 @@ function useCorrection(p: Proposal) {
           }}
         />
       </label>
+      )}
       {when.length > 0 && <div className="inbox-props inbox-when">{when.map(cell)}</div>}
       {props.length > 0 && (
         <button
@@ -609,6 +614,17 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
                   void openProposal(p.id);
                 }}
               />
+              {/* A row of a run's proposal (AU-251): the run of its automation that asked it. */}
+              {p.runRow && (
+                <MenuRow
+                  label={t("inbox.run.open")}
+                  onClick={() => {
+                    close();
+                    const r = p.runRow as RunProposal;
+                    showAutomation(r.automation, { run: r.run });
+                  }}
+                />
+              )}
               {/* Its Recorrido: the map with the run that proposed it drawn on it (task 90). */}
               {p.run && (
                 <MenuRow

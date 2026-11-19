@@ -2653,7 +2653,8 @@ export function acceptProposal(
     try {
       // The word the card showed goes with it: the server checks the card again before acting (task 73).
       const seen = get().inbox.find((p) => p.id === id)?.card?.now.state ?? null;
-      const asked = get().inbox.find((p) => p.id === id)?.runAsked ?? null;
+      const card = get().inbox.find((p) => p.id === id);
+      const asked = card?.runAsked ?? card?.runRow ?? null;
       const r = await agent.accept(id, opts.done ? { ...edits, done: true } : edits, seen);
       if (r.pending?.kind === "confirm") {
         // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.

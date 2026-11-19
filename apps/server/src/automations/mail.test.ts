@@ -28,6 +28,7 @@ import { clock, under } from "@boni/pace";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { MAIL_FLOW } from "../flows.ts";
+import { mailWhat } from "../runInfo.ts";
 import { inboxCard, likeKey } from "../inboxCard.ts";
 import { seed, typeId } from "../seed.test-util.ts";
 import { pieceRequest, wireAutomationModels } from "./ai.ts";
@@ -49,13 +50,14 @@ import {
   pendingTitles,
   runMailPiece,
 } from "./mailPieces.ts";
+import { learningOf } from "./learning.ts";
 import { automationPolicy, consentIn } from "./policy.ts";
-import type { RunProposalView } from "./proposal.ts";
+import { type RunProposalView, triggerMail } from "./proposal.ts";
 import { publish } from "./publish.ts";
 import { folder, HAND, JUAN, NOW, ok, ZONE } from "./run.test-util.ts";
 import { answerAsk, runBoni } from "./runs.ts";
 import { automationLabel, keepDraft, publishedOf } from "./service.ts";
-import { askCardId } from "./waits.ts";
+import { askCardId, askPlace } from "./waits.ts";
 
 /** A mail's text, as the trigger labels it: from outside (invented). */
 const MAIL = label("external", "personal", [{ kind: "mail", id: "m_ejemplo" }]);
@@ -807,6 +809,26 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
+  it("AU-250 · the count under each «Crear» cell of «Crear en la elegida» counts his decisions on the mail's proposals of before in that collection, right when accepted as proposed, and none of another collection", () => {
+    const s = mailStore();
+    try {
+      knownFor(s, KNOWN, "tarea");
+      proposal(s, { id: "p_t_corr", sender: KNOWN, collection: "tarea", title: "Uno", status: "accepted", edits: true });
+      proposal(s, { id: "p_t_no", sender: OTHER, collection: "tarea", title: "Dos", status: "rejected" });
+      proposal(s, { id: "p_t_esp", sender: OTHER, collection: "tarea", title: "Tres" });
+      proposal(s, { id: "p_e_si", sender: OTHER, collection: "evento", title: "Cuatro", status: "accepted" });
+      wired(s);
+      converted(s);
+      const cells = learningOf(s, MAIL_FLOW).filter((c) => c.action === "create");
+      const of = (key: string) => cells.find((c) => c.collection === key);
+      // Three as proposed, one corrected and one rejected; the one still waiting is no decision.
+      expect(of("tarea")).toMatchObject({ mode: "ask", decided: 5, right: 3 });
+      expect(of("evento")).toMatchObject({ mode: "ask", decided: 1, right: 1 });
+    } finally {
+      s.close();
+    }
+  });
+
   it("AU-250 · «conocido» rests on his provider's authentication too: without a pass from the trusted authserv-id for the From domain, or with no trusted id set, a sender with his decisions is not known", () => {
     const s = mailStore();
     try {
@@ -983,6 +1005,11 @@ describe("mail as an automation (§5.17)", () => {
       expect(a.run.state).toBe("waiting");
       const card = askCardId(a.run.id, ask?.id as string, 0);
       expect(s.journal.request(card)?.status).toBe("pending");
+      // Its card in the Bandeja says the mail it came from, as a row's card does («Ver correo», the sender and the
+      // subject): the mail of the trigger's row of the run that asks (GET /api/agent/requests).
+      const place = askPlace(s.journal.request(card)?.view);
+      expect(place && triggerMail(s, place.run)).toBe(one);
+      expect(mailWhat(s, one, null)).toMatchObject({ kind: "mail", subject: "Presentación" });
       // «Tareas»: it goes on to the «Rellenadora» and proposes in that collection.
       expect(answerAsk(s, card, { choice: 0 }, JUAN)).toEqual({ run: a.run.id });
       await new Promise((r) => setTimeout(r, 50));
