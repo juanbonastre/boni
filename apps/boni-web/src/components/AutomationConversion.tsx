@@ -209,7 +209,12 @@ export function useConversionNotice() {
           // Without storage it may be given again: the band is still the server's.
         }
         if (useStore.getState().view.kind === "flows") return;
-        toast(t("auto.conv.title"), { label: t("auto.conv.open"), run: showFlows });
+        // On the phone the list is under «Páginas»; the desktop has no tabs.
+        const open = () => {
+          useStore.setState({ tab: "pages" });
+          showFlows();
+        };
+        toast(t("auto.conv.title"), { label: t("auto.conv.open"), run: open });
       },
       () => undefined,
     );

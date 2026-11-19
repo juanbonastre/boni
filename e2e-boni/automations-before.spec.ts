@@ -203,10 +203,10 @@ test.describe("what came from before, as automations (F16)", () => {
     // Given once: the app opened again says nothing.
     await page.reload();
     await expect(page.locator(".sidebar")).toBeVisible();
-    await page.waitForFunction(
-      () => ((window as unknown as { __automations?: string[] }).__automations ?? []).length > 0,
-    );
+    // The notice is not asked again: the list is not read until «Automatizaciones» opens.
+    await page.waitForTimeout(1000);
     await expect(toast(page)).toHaveCount(0);
+    expect(await recorded(page, "__automations")).not.toContain("GET conversion");
   });
 
   test("AU-225 · a converted automation opens in the canvas with its steps, «Versiones» marks the converted ones, and «Volver al flujo de antes» leaves it off with the flow running", async ({
@@ -374,8 +374,12 @@ test.describe("what came from before, on a phone (F16)", () => {
     await toggle(page).tap();
     await expect(toggle(page)).toBeChecked();
     // One on the flow of before says so and cannot be switched from here.
-    await page.locator(".m-top").getByRole("button", { name: "Atrás" }).tap();
-    await page.getByText(reverted.name, { exact: true }).last().tap();
+    await page
+      .locator(".m-tabs")
+      .getByRole("button", { name: /^Páginas/ })
+      .tap();
+    await page.locator(".m-item-main", { hasText: "Automatizaciones" }).tap();
+    await page.locator(".db-table, .m-scroll").getByText(reverted.name, { exact: true }).last().tap();
     await expect(head(page).locator(".auto-name")).toHaveText(reverted.name);
     await expect(head(page).locator(".auto-conv-state")).toHaveText("En el flujo de antes");
     await expect(toggle(page)).toHaveCount(0);
