@@ -10,6 +10,8 @@ import {
   ASK_TYPE,
   type Automation,
   actionOf,
+  BONI_PARAMS,
+  boniPiece,
   type CodeFailure,
   type FieldsOf,
   isExpr,
@@ -47,7 +49,7 @@ export interface PanelRow {
  * one row: what is inside one of its entries is painted only once that entry is opened.
  */
 export function rowsOf(step: Step): PanelRow[] {
-  const all = paramsOf(step);
+  const all = paramsOf(step).filter((p) => !pieceHides(step, p));
   const row = (param: ParamSpec, added: boolean): PanelRow => ({
     param,
     value: step.params[param.key],
@@ -84,7 +86,26 @@ export function peopleAction(step: Step): ParamSpec | null {
 
 /** What «Añadir opción» lists (AU-76): the action's options not added yet; empty hides the button. */
 export function optionsLeft(step: Step): ParamSpec[] {
-  return paramsOf(step).filter((p) => p.place === "option" && !(p.key in step.params));
+  return paramsOf(step).filter(
+    (p) =>
+      p.place === "option" &&
+      !(p.key in step.params) &&
+      !pieceHides(step, p) &&
+      !(boniPiece(step.type) && PIECE_KEPT.has(p.key)),
+  );
+}
+
+/** What a Boni piece takes besides its panel (AU-127): what its call of before passed, why, and how it runs. */
+const PIECE_KEPT = new Set<string>([BONI_PARAMS.args, BONI_PARAMS.why, BONI_PARAMS.mode]);
+
+/**
+ * A Boni piece's panel is what §5.17's table says (AU-249): its parameters, and its options behind «Añadir opción».
+ * «Argumentos» and «Por qué» are a row only while they hold something (a plan of before passed them); «Se ejecuta» is
+ * the drawing's («Una vez por fila») and never a row, so few options show at once. Every other step shows them all.
+ */
+function pieceHides(step: Step, p: ParamSpec): boolean {
+  if (!boniPiece(step.type) || !PIECE_KEPT.has(p.key)) return false;
+  return p.key === BONI_PARAMS.mode || isEmpty(step.params[p.key]);
 }
 
 /** «Ajustes» (AU-78): the same six rows for every step, in this order. */

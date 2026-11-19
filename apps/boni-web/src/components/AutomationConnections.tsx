@@ -36,10 +36,11 @@ import { DO } from "../automations/words.ts";
 import type { T } from "../i18n.ts";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
-const CELLS: readonly WriteCell[] = [false, "ask", "yes"];
-const cellValue = (c: WriteCell) => (c === false ? "no" : c);
+/** A write cell's three values, in the order a select lists them; «Crear en la elegida»'s table lists the same. */
+export const CELLS: readonly WriteCell[] = [false, "ask", "yes"];
+export const cellValue = (c: WriteCell) => (c === false ? "no" : c);
 /** «No», «Preguntar», «Sí»: the last two are the words of «Colección»'s «Permiso», by its keys (AU-85, AU-187). */
-const modeWord = (t: T, c: WriteCell) =>
+export const modeWord = (t: T, c: WriteCell) =>
   c === false ? t("auto.conn.mode.no") : t(`auto.choice.collection.permission.${c}`);
 const FILLS: readonly FieldFill[] = ["none", "ai", "fixed"];
 

@@ -2,7 +2,7 @@
  * The step's view, D of F14b (docs/automatizaciones.md §5.7: AU-63, AU-70, AU-73, AU-74, AU-75 to AU-83): one step
  * over the dimmed canvas in three columns, ENTRADA · «Parámetros | Ajustes» · SALIDA, two under 1100 px. Every
  * parameter is painted by the component of its control (`PARAM_CONTROLS`, AU-80), never by anything of its step's
- * type; what the panel holds is `rowsOf` and its kin (automations/panel.ts), and every change is a pure function of
+ * type, but for Boni's own steps of «Leer correo», whose panels §5.17 draws (AutomationMail.tsx); what the panel holds is `rowsOf` and its kin (automations/panel.ts), and every change is a pure function of
  * automations/edit.ts made into one change of automations/state.ts, as on the canvas. There is no «Guardar»: the
  * draft is saved as it changes. ENTRADA and SALIDA show the step's last test and «Probar paso» tests it (E,
  * AutomationTest.tsx).
@@ -14,8 +14,12 @@ import {
   ASK_PARAMS,
   ASK_TYPE,
   type Automation,
+  BONI_PARAMS,
+  BONI_TRIGGERS,
+  boniPiece,
   CODE_PARAMS,
   type Control,
+  CREATE_CHOSEN,
   callKindOf,
   isExpr,
   isPeopleType,
@@ -42,6 +46,7 @@ import {
   removeOption,
   rename,
   setCell,
+  setChosenCell,
   setFixedValue,
   setParam,
   setRead,
@@ -50,6 +55,7 @@ import {
   setWriteField,
   setWriteLimits,
 } from "../automations/edit.ts";
+import { chosenAmong, chosenRows } from "../automations/mail.ts";
 import {
   type ConditionField,
   cannotTest,
@@ -76,6 +82,13 @@ import { agentApi, loadModelChoices, useStore } from "../store.ts";
 import { CodeConsole, CodeParams, CodeWould } from "./AutomationCode.tsx";
 import { type AgentConnections, ConnectionsTable } from "./AutomationConnections.tsx";
 import { CiteContext, type CiteView, citeNames, ValueBox } from "./AutomationExpr.tsx";
+import {
+  ChosenCells,
+  MailCap,
+  MailExamples,
+  MailInstructions,
+  SenderRules,
+} from "./AutomationMail.tsx";
 import { PeopleOut } from "./AutomationPeople.tsx";
 import {
   KeptContext,
@@ -1196,6 +1209,11 @@ export function AutomationStepView({
       )
     : null;
   const tableContext = codeContext ?? agentContext;
+  // A step of Boni's own (AU-249): its rules, its instructions and its examples have their own panels.
+  const piece = boniPiece(step.type) !== undefined;
+  const collectionList = piece
+    ? chosenAmong(state.draft).map((key) => ({ key, name: collectionNames[key] ?? key }))
+    : [];
   const connected = new Set((step.connections ?? []).map((c) => c.collection));
   const agent: AgentConnections | undefined = isAgent
     ? {
@@ -1348,6 +1366,19 @@ export function AutomationStepView({
             </button>
           </div>
         )}
+        {step.type === BONI_TRIGGERS.mail && <MailCap t={t} />}
+        {step.type === CREATE_CHOSEN && (
+          <ChosenCells
+            t={t}
+            type={step.type}
+            rows={chosenRows(state.draft, step)}
+            nameOf={(key) => collectionNames[key] ?? key}
+            readOnly={still}
+            onlyKnown={step.params[BONI_PARAMS.onlyKnown] === true}
+            counts={counts}
+            set={(key, cell) => edit((d) => setChosenCell(d, step.id, key, cell))}
+          />
+        )}
         {rowsOf(step).flatMap((row) => {
           const { param } = row;
           // «Agente» (AU-50, AU-51): its code is read only with «Las hace este código», and kept when it is not.
@@ -1389,6 +1420,24 @@ export function AutomationStepView({
                   : PARAM_CONTROLS[row.param.control];
           const name = paramName(param.key);
           const isMarked = marked.has(param.key);
+          const setValue = (value: ParamValue, typing?: string) =>
+            param.key === ACTION && typeof value === "string"
+              ? setAction(value)
+              : edit((d) => setParam(d, step.id, param.key, value, names), typing);
+          // «Leer correo»'s own panels (AU-249): called, not drawn as a component, so each keeps its own type.
+          const mail = piece
+            ? {
+                t,
+                type: step.type,
+                value: row.value,
+                set: setValue,
+                path: param.key,
+                label: name,
+                marked: isMarked,
+                readOnly: still,
+                typing: view.typing,
+              }
+            : null;
           const shown = (
             <div
               key={param.key}
@@ -1403,18 +1452,22 @@ export function AutomationStepView({
             >
               <span className="auto-param-name">{name}</span>
               <div className="auto-param-control">
-                <Painted
-                  param={param}
-                  value={row.value}
-                  path={param.key}
-                  label={name}
-                  marked={isMarked}
-                  set={(value, typing) =>
-                    param.key === ACTION && typeof value === "string"
-                      ? setAction(value)
-                      : edit((d) => setParam(d, step.id, param.key, value, names), typing)
-                  }
-                />
+                {mail && param.key === BONI_PARAMS.rules ? (
+                  <SenderRules {...mail} collections={collectionList} />
+                ) : mail && param.key === BONI_PARAMS.instructions ? (
+                  <MailInstructions {...mail} />
+                ) : mail && param.key === BONI_PARAMS.examples ? (
+                  <MailExamples {...mail} />
+                ) : (
+                  <Painted
+                    param={param}
+                    value={row.value}
+                    path={param.key}
+                    label={name}
+                    marked={isMarked}
+                    set={setValue}
+                  />
+                )}
               </div>
               {row.added && (
                 <button

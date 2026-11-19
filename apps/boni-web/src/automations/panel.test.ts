@@ -330,6 +330,32 @@ describe("«Parámetros»", () => {
       for (const p of [...spec.params, ...spec.actions.flatMap((a) => a.params)])
         expect(CONTROLS).toContain(p.control);
   });
+  it("AU-249 · a piece of «Leer correo» shows its table's parameters: its rows and options are the piece's, «Argumentos» and «Por qué» only with a value, and never «Se ejecuta»", () => {
+    const piece = (type: string, params: Step["params"] = {}): Step => ({
+      id: "p_01k3vd9x7a",
+      name: type,
+      type,
+      params: { mode: "perRow", ...params },
+    });
+    const reader = piece("boni.mailReader", { modules: ["tasks"], instructions: "", model: "" });
+    expect(rowsOf(reader).map((r) => r.param.key)).toEqual(["modules", "instructions", "model"]);
+    expect(optionsLeft(reader).map((p) => p.key)).toEqual(["examples"]);
+    const create = piece("boni.createChosen", { onlyKnown: true });
+    expect(rowsOf(create).map((r) => r.param.key)).toEqual(["onlyKnown"]);
+    expect(optionsLeft(piece("boni.createChosen")).map((p) => p.key)).toEqual(["onlyKnown"]);
+    const rule = piece("boni.mailRule", { rules: [], args: [{ key: "x", value: "1" }] });
+    expect(rowsOf(rule).map((r) => r.param.key)).toEqual(["rules", "args"]);
+    expect(labelsOf(reader)).toEqual([]);
+    // Boni's «Acción» keeps its rows as they were.
+    const action: Step = {
+      id: "p_01k3vd9x7b",
+      name: "a",
+      type: "boni.action",
+      params: { action: "x" },
+    };
+    expect(rowsOf(action).map((r) => r.param.key)).toEqual(["action", "args"]);
+    expect(optionsLeft(action).map((p) => p.key)).toEqual(["why", "mode"]);
+  });
   it("AU-76 · «Añadir opción» lists the action's options that are not added, in the catalogue's order, and none when all are", () => {
     const find: Step = {
       id: "s_b",
