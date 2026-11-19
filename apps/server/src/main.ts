@@ -204,6 +204,15 @@ wireBoni({
     const account = agent.accountOf(store);
     return automation === "budgetNotice" && account !== null ? models.noticeRow(account) : null;
   },
+  // «Leer correo»'s pieces and «Probar» of «Llega un correo» (AU-249): the mail's own code (mail.ts).
+  mail: (store) => {
+    const account = agent.accountOf(store);
+    return account === null ? null : mails.hooksFor(account);
+  },
+  mailRow: (store, id) => {
+    const account = agent.accountOf(store);
+    return account === null ? null : mails.mailRow(account, id);
+  },
 });
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent, feeds });

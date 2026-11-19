@@ -43,6 +43,7 @@ const call = (o: Partial<BoniCall>): BoniCall => ({
   values: {},
   args: {},
   row: null,
+  startedBy: "schedule",
   test: false,
   ...o,
 });

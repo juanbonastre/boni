@@ -20,6 +20,7 @@ import {
   type UserIn,
   type Val,
 } from "@boni/agent";
+import { BONI_MODULES, BONI_TRIGGERS } from "@boni/automations";
 import { systemTimeZone } from "@boni/calendar";
 import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
@@ -29,6 +30,14 @@ import { BODY, type FlowRow, open, seal, type UserStore, wrappedKeyProvider } fr
 import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
+import { ACCEPT_RUN } from "./automations/acceptRunName.ts";
+import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
+import { type BoniFlow, convertBoniFlows } from "./automations/convert.ts";
+import { drawReadMail } from "./automations/mailAutomation.ts";
+import { MAIL_CAP, mailCapLeft, mailSender } from "./automations/mailCap.ts";
+import { type MailHooks, mailLabel } from "./automations/mailPieces.ts";
+import { runBoni } from "./automations/runs.ts";
+import { publishedOf } from "./automations/service.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
@@ -132,6 +141,8 @@ export interface MailState {
   rescans?: string[];
   /** The version of «Traer correo» that ran without bringing the mail (D-50): no run until it changes. */
   fetchStopped?: number;
+  /** When «Leer correo» first found its day's cap reached in this streak (AU-253): told once, cleared when it reads. */
+  capped?: number;
 }
 /**
  * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
@@ -191,6 +202,29 @@ function mailOfRun(j: UserStore["journal"], run: string): string {
   const first = plan?.steps?.[0];
   return first?.tool === "entities.get" ? String(first.args?.id?.lit ?? "") : "";
 }
+
+/**
+ * The mail a proposal came from, on either engine: an old one's run input, or the trigger's row of the run a
+ * proposal of «Leer correo» as an automation asks to accept (its `id`, AU-253).
+ */
+function mailOfProposal(
+  j: UserStore["journal"],
+  p: { tool: string; run: string; args: unknown },
+): string {
+  if (p.tool !== ACCEPT_RUN) return p.run ? mailOfRun(j, p.run) : "";
+  const run = (p.args as { values?: { run?: { value?: unknown } } }).values?.run?.value;
+  const r = typeof run === "string" ? j.automationRun(run) : null;
+  if (!r || r.automation !== MAIL_FLOW) return "";
+  try {
+    const id = (JSON.parse(r.fields ?? "{}") as { id?: unknown }).id;
+    return typeof id === "string" ? id : "";
+  } catch {
+    return "";
+  }
+}
+
+/** Boni's «Traer correo» and «Leer correo» as automations: converted together (AU-226), the second drawn (AU-254). */
+const FETCH_BONI: BoniFlow = { id: FETCH_FLOW, boni: "fetchMail" };
 
 /**
  * A mail as the reader reads it (docs/flujos.md: bound to the flow as `$text`): its headers that have a value, its
@@ -861,6 +895,24 @@ const REVIEW_PLAN = {
     { id: "s", op: "call", tool: "guide.suggest", args: {} },
   ],
 };
+
+/**
+ * «Traer correo» and «Leer correo» converted together, in one transaction or none (AU-226, AU-254), the second
+ * drawn by `draw`: a writer of drafts, listed in `DRAFT_WRITERS` (every «Sí» lowered by `convertBoniFlows`). What
+ * cannot convert stays a flow and runs on the engine of before.
+ */
+function convertMailFlows(
+  store: UserStore,
+  account: number,
+  draw: NonNullable<BoniFlow["draw"]>,
+  now: number,
+): void {
+  try {
+    convertBoniFlows(store, [FETCH_BONI, { id: MAIL_FLOW, boni: "readMail", draw }], now);
+  } catch (e) {
+    console.warn(`mail ${account}: «Leer correo» not converted (${(e as Error).message})`);
+  }
+}
 
 export class Mails {
   private o: MailsOptions;
@@ -1565,7 +1617,7 @@ export class Mails {
   ): Promise<void> {
     const ids = new Set<string>();
     for (const p of store.journal.proposals("pending")) {
-      const mail = p.run ? mailOfRun(store.journal, p.run) : "";
+      const mail = mailOfProposal(store.journal, p);
       if (mail) ids.add(mail);
     }
     const unread = [...ids]
@@ -1780,7 +1832,7 @@ export class Mails {
     const j = store.journal;
     let withdrawn = 0;
     for (const p of j.proposals("pending")) {
-      if (set.has(mailOfRun(j, p.run))) {
+      if (set.has(mailOfProposal(j, p))) {
         j.setProposal(p.id, "stale", this.now());
         withdrawn++;
       }
@@ -1808,9 +1860,13 @@ export class Mails {
     }
     // Off, or stopped at this version without bringing the mail (D-50): the mailbox is not looked at, Ajustes says
     // why, and no run is made until it is turned on or changed.
+    // As an automation (F16 S2b), its switch is the automation's.
+    const fetchOn = onNewEngine(store, FETCH_FLOW)
+      ? boniEnabled(store, FETCH_FLOW)
+      : !!fetching?.enabled;
     const idle = !fetching
       ? null
-      : !fetching.enabled
+      : !fetchOn
         ? "fetch-off"
         : st.fetchStopped === fetching.version
           ? "fetch-stopped"
@@ -1905,13 +1961,15 @@ export class Mails {
       if (uids.length || rescan.length) {
         if (agent && fetching) {
           this.bringing.set(account, bring);
-          let ran: Awaited<ReturnType<typeof agent.background>> | null = null;
+          let ran: { status: string } | null = null;
           try {
-            ran = await agent.background(fetching.plan, {}, [], undefined, {
-              id: FETCH_FLOW,
-              version: fetching.version,
-              by: fetching.by,
-            });
+            ran = onNewEngine(store, FETCH_FLOW)
+              ? await this.fetchByAutomation(store)
+              : await agent.background(fetching.plan, {}, [], undefined, {
+                  id: FETCH_FLOW,
+                  version: fetching.version,
+                  by: fetching.by,
+                });
           } finally {
             // The piece never took what was found: the run stopped before «Guardar en Correos».
             stopped = this.bringing.delete(account);
@@ -2029,11 +2087,186 @@ export class Mails {
       this.fetchFlow(this.o.host.store(account));
       this.reviewFlow(this.o.host.store(account));
       const c = this.planContext(account, s);
-      if (c) this.mailFlow(c);
+      if (c) this.keepMailFlows(account, c);
     } catch (e) {
       console.warn(
         `mail ${account}: «Leer correo» not brought up to date (${(e as Error).message})`,
       );
+    }
+  }
+
+  /**
+   * «Leer correo» kept as it runs: while it is a flow, its version kept current (`mailFlow`); then «Traer correo» and
+   * «Leer correo» converted together, in one transaction or none (AU-226, AU-254): the first translated, the second
+   * drawn from the configuration (`drawReadMail`), born «Preguntar» in every collection. Once it is an automation,
+   * nothing regenerates it (AU-249): what runs is what was adopted, or what he published.
+   */
+  private keepMailFlows(account: number, c: PlanContext): void {
+    const store = c.store;
+    if (onNewEngine(store, MAIL_FLOW) && onNewEngine(store, FETCH_FLOW)) return;
+    if (!onNewEngine(store, MAIL_FLOW)) this.mailFlow(c);
+    convertMailFlows(store, account, () => this.drawn(account, c), this.now());
+  }
+
+  /** «Leer correo» as Boni draws it from this configuration (AU-254): its collections, guide and rules by key. */
+  private drawn(account: number, c: PlanContext) {
+    const keyOf = (typeId: string | undefined) =>
+      c.targets.find((t) => t.id === typeId)?.key ?? null;
+    return drawReadMail({
+      id: MAIL_FLOW,
+      name: "Leer correo",
+      collections: c.targets.map((t) => ({ key: t.key, name: t.name })),
+      rules: c.guide.rules.map((r) => ({
+        sender: r.from,
+        do: r.action,
+        collection: r.action === "collection" ? keyOf(r.collection) : null,
+      })),
+      instructions: c.guide.instructions,
+      examples: c.guide.examples.map((e) => ({ mail: e.mail, want: JSON.stringify(e.want) })),
+      modules: moduleIds(c.m).filter((m) => (BONI_MODULES as readonly string[]).includes(m)),
+      days: FOLD_DAYS,
+    });
+  }
+
+  /**
+   * What «Leer correo»'s pieces get of the mail's code (automations/mailPieces.ts): the connector's own, by the
+   * store's account. Null without a mailbox.
+   */
+  hooksFor(account: number): MailHooks | null {
+    const s = this.settings(account);
+    const st = this.state(account);
+    if (!s || !st.type || !this.o.host.hasData) return null;
+    const store = this.o.host.store(account);
+    const type = st.type;
+    return {
+      type,
+      mailbox: s.user,
+      text: (values, body) => mailAsText(values, body),
+      userIn: (v) => userIn(s.user, v.f_para, v.f_cc),
+      inCalendar: async (uid) => !!(await this.calendarWith(account, uid)),
+      relations: (mail, collection) => {
+        const e = store.get(mail);
+        if (!e) return {};
+        const v = this.relationsOf(account, store, e, [collection])[collection];
+        const found = v ? (plain(v) as { key?: unknown; id?: unknown }[] | null) : null;
+        const out: Record<string, string> = {};
+        for (const p of Array.isArray(found) ? found : [])
+          if (typeof p?.key === "string" && typeof p.id === "string" && !(p.key in out))
+            out[p.key] = p.id;
+        return out;
+      },
+      target: (collection) => {
+        const def = Object.values(store.schema().types).find((t) => t.key === collection);
+        const t = def ? this.targetsFor(store, [def.id])[0] : undefined;
+        return t
+          ? { date: t.date, time: t.time ?? null, endTime: t.endTime ?? null, fill: t.fill ?? [] }
+          : null;
+      },
+      threadMails: (mail, days) => {
+        const e = store.get(mail);
+        const hilo = e?.entity.values.f_hilo;
+        if (!e || typeof hilo !== "string" || !hilo) return new Set();
+        const since = this.now() - foldDays(days) * 86_400_000;
+        return new Set(
+          store
+            .list(type)
+            .filter(
+              (x) =>
+                x.entity.id !== mail &&
+                x.entity.values.f_hilo === hilo &&
+                x.entity.created >= since,
+            )
+            .map((x) => x.entity.id),
+        );
+      },
+      mailOfProposal: (p) => mailOfProposal(store.journal, p),
+    };
+  }
+
+  /**
+   * The row «Llega un correo» gives a run of «Leer correo» (AU-249): the mail's id and subject, labelled as the mail
+   * is stored, from outside; for «Probar», the mail `id` names or the latest kept. Null without one.
+   */
+  mailRow(account: number, id: string | null): BoniRow | null {
+    const st = this.state(account);
+    if (!st.type || !this.o.host.hasData) return null;
+    const store = this.o.host.store(account);
+    const e = id
+      ? store.get(id)
+      : (store
+          .list(st.type)
+          .filter((x) => x.entity.deleted === undefined)
+          .sort((a, b) => b.entity.created - a.entity.created)[0] ?? null);
+    if (!e || e.entity.type !== st.type || e.entity.deleted !== undefined) return null;
+    const subject = e.entity.values.f_asunto;
+    return {
+      json: { id: e.entity.id, subject: typeof subject === "string" ? subject : "" },
+      label: mailLabel(e),
+    };
+  }
+
+  /**
+   * «Traer correo» as an automation (F16 S2b): its published version run by `runBoni`, its trigger's row empty (the
+   * code's); its «Guardar en Correos» takes the bring set for this account, as the flow's did.
+   */
+  private async fetchByAutomation(store: UserStore): Promise<{ status: string }> {
+    const trigger =
+      publishedOf(store, FETCH_FLOW)?.automation.steps.find((x) => x.type === BONI_TRIGGERS.mailbox)
+        ?.id ?? "trigger";
+    const r = await runBoni(
+      store,
+      FETCH_FLOW,
+      { trigger, fields: {} },
+      { row: { json: {}, label: label("own", "public", [{ kind: "code", id: "mail" }]) } },
+      this.tz,
+    );
+    return { status: "refused" in r ? r.refused : "id" in r ? r.state : r.error };
+  }
+
+  /**
+   * One mail read by «Leer correo» as an automation (AU-249, AU-253): its published version run by `runBoni`, the
+   * trigger's row the mail (`mailRow`). `asked`: his hand started it («Proponer tarea», «Otra vez»), so the sender's
+   * rule does not skip it. Off, it is not read. What it made is the run's proposal, one per run (its cards are AU-251's).
+   */
+  private async proposeByAutomation(
+    account: number,
+    store: UserStore,
+    id: string,
+    asked: boolean,
+    again: boolean,
+  ): Promise<{ n: number; stopped: string | null; already: number; decided: number }> {
+    const none = { n: 0, stopped: null, already: 0, decided: 0 };
+    if (!boniEnabled(store, MAIL_FLOW)) return { ...none, stopped: "flow-off" };
+    const mine = asked ? this.proposalsOf(store, id) : { pending: [], decided: [] };
+    if (asked && !again && (mine.pending.length || mine.decided.length))
+      return { ...none, already: mine.pending.length, decided: mine.decided.length };
+    if (again) for (const p of mine.pending) store.journal.setProposal(p.id, "stale", this.now());
+    const row = this.mailRow(account, id);
+    if (!row) return none;
+    const trigger =
+      publishedOf(store, MAIL_FLOW)?.automation.steps.find((x) => x.type === BONI_TRIGGERS.mail)
+        ?.id ?? "trigger";
+    try {
+      const r = await runBoni(store, MAIL_FLOW, { trigger, fields: row.json }, { row }, this.tz, {
+        startedBy: asked ? "user" : "schedule",
+      });
+      if ("refused" in r) return { ...none, stopped: r.refused };
+      if (!("id" in r)) return { ...none, stopped: r.error };
+      const kept = store.journal.automationRun(r.id);
+      const p = kept?.proposal ? store.journal.proposal(kept.proposal) : null;
+      const n =
+        p && p.status === "pending"
+          ? ((p.view as { run?: { count?: number } }).run?.count ?? 1)
+          : 0;
+      return {
+        n,
+        stopped: r.state === "failed" ? "failed" : null,
+        already: 0,
+        decided: mine.decided.length,
+      };
+    } catch (err) {
+      console.error(`mail ${account}: «Leer correo» failed (${(err as Error).message})`);
+      return { ...none, stopped: "failed" };
     }
   }
 
@@ -2325,6 +2558,9 @@ export class Mails {
     const none = { n: 0, stopped: null, already: 0, decided: 0 };
     const e = c.store.get(id);
     if (!e || e.entity.deleted !== undefined) return none;
+    // As an automation (AU-249): its document alone, run by `runBoni`; nothing of the engine of before.
+    if (onNewEngine(c.store, MAIL_FLOW))
+      return this.proposeByAutomation(account, c.store, id, asked, again);
     const v = e.entity.values;
     const from = String(v.f_de ?? "");
     // The flow «Leer correo» (docs/flujos.md): the version the user saved, or Boni's kept current with the
@@ -2388,9 +2624,9 @@ export class Mails {
       .filter(
         (p) =>
           p.created >= since &&
-          p.tool === "entities.create" &&
+          (p.tool === "entities.create" || p.tool === ACCEPT_RUN) &&
           (p.status === "pending" || p.status === "accepted") &&
-          mailOfRun(j, p.run) === mail,
+          mailOfProposal(j, p) === mail,
       );
     return {
       pending: mine.filter((p) => p.status === "pending"),
@@ -2490,8 +2726,23 @@ export class Mails {
     const c = this.planContext(account, s);
     if (!c) return;
     const version = this.readingVersion(account);
+    try {
+      this.keepMailFlows(account, c);
+    } catch (e) {
+      console.warn(`mail ${account}: «Leer correo» not kept (${(e as Error).message})`);
+    }
+    const byAutomation = onNewEngine(c.store, MAIL_FLOW);
     let n = 0;
+    let capped = false;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
+      // The day's cap (AU-253): past it no run starts and the mail waits in the queue for the next day.
+      if (
+        byAutomation &&
+        !mailCapLeft(c.store, MAIL_FLOW, mailSender(c.store, id), this.tz, this.now())
+      ) {
+        capped = true;
+        continue;
+      }
       st.pending = st.pending.filter((x) => x !== id);
       const read = { ...(st.readWith ?? {}) };
       delete read[id];
@@ -2501,6 +2752,19 @@ export class Mails {
       st.readWith = read;
       this.saveState(account, st);
       n += (await this.proposeOne(account, c, id)).n;
+    }
+    // Said once per streak: the first check that finds the cap reached, until a day reads again.
+    if (capped && !st.capped) {
+      st.capped = this.now();
+      this.saveState(account, st);
+      this.o.host.notify(
+        account,
+        `«Leer correo» llegó a su tope de hoy (${MAIL_CAP.perDay} llamadas a modelos, ${MAIL_CAP.perSender} por remitente): el correo que falta espera a mañana.`,
+        "own",
+      );
+    } else if (!capped && st.capped) {
+      delete st.capped;
+      this.saveState(account, st);
     }
     if (n) this.o.host.emit(account, "proposals", { n });
     // The learner looks in the background when learning.ts says it may: every `learning.every` new decisions

@@ -106,8 +106,10 @@ export {
   FILL_LIMITS,
   FILL_THRESHOLDS,
   type FillField,
+  fieldsForReader,
   fillDecisions,
   fillQuestions,
+  fillSchema,
   fromAnswers,
   readFields,
 } from "./filling.ts";
@@ -211,6 +213,7 @@ export {
   type Reading,
   type ReadingGuide,
   type ReadingModule,
+  readMessagePiecePrompt,
   readMessagePrompt,
   readMessageSchema,
   resolveModules,

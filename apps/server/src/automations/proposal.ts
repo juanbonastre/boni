@@ -34,11 +34,12 @@ import {
   StepFault,
 } from "@boni/automations";
 import { StoreError, type UserStore } from "@boni/store";
+import { ACCEPT_RUN } from "./acceptRunName.ts";
 import { storeCollections } from "./collections.ts";
 import { ASKED_STEP } from "./record.ts";
 import { automationLabel } from "./service.ts";
 
-export const ACCEPT_RUN = "automations.accept_run";
+export { ACCEPT_RUN };
 
 /** How many changes the proposal's view carries; the rest are read a page at a time (`askedOf`). */
 export const PROPOSAL_FIRST = 20;

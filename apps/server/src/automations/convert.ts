@@ -76,6 +76,13 @@ export type FlowOutcome =
 export interface BoniFlow {
   id: string;
   boni: BoniAutomation;
+  /**
+   * An automation Boni's code draws for itself from its configuration (AU-254: «Leer correo» from the mail's
+   * settings), instead of translating the flow's plan: only the version that runs is adopted, drawn; the older ones
+   * are not translated (counted `skipped`), a version saved by him keeps the flow on the engine of before (`his`), and
+   * nothing follows it afterwards (`followBoniFlow` leaves it). Null: it cannot be drawn now (kept, tried again).
+   */
+  draw?: (store: UserStore) => Automation | null;
 }
 
 /** Why a flow is not the conversion's, or null when it is. Boni's are, whoever saved a version and whatever starts them. */
@@ -116,6 +123,23 @@ function translate(
     };
   // The translator lowers every «Sí» already; asked again here, so this file alone keeps decision 13.
   return { ok: true, automation: lowerYes(c.automation), changes: c.changes };
+}
+
+/**
+ * The version that runs of a flow Boni's code draws (`BoniFlow.draw`), its «Sí» lowered: only one of Boni's own
+ * versions; one he saved stays his (`his`), on the engine of before, as he left it.
+ */
+function drawn(
+  store: UserStore,
+  latest: FlowRow,
+  draw: (store: UserStore) => Automation | null,
+): ReturnType<typeof translate> {
+  if (latest.by !== "preset")
+    return { ok: false, reasons: [{ step: "", what: "version", reason: "his" }], changes: [] };
+  const a = draw(store);
+  if (!a)
+    return { ok: false, reasons: [{ step: "", what: "draw", reason: "notReady" }], changes: [] };
+  return { ok: true, automation: lowerYes(a), changes: [] };
 }
 
 /** A problem that would stop publishing the running version, as a reason to keep the flow. */
@@ -202,7 +226,7 @@ function prepareFlow(
   const latest = versions[0];
   const why = leftOut(versions, b);
   if (!latest || why) return { id, state: "left", why: why ?? "trigger" };
-  const running = translate(latest, b);
+  const running = b?.draw ? drawn(store, latest, b.draw) : translate(latest, b);
   const keep = (reasons: ConversionReason[], skipped: number, changes: Change[]): FlowOutcome => {
     const same =
       before &&
@@ -223,7 +247,12 @@ function prepareFlow(
   const adopted: AdoptedVersion[] = [];
   let skipped = 0;
   for (const v of [...versions].reverse()) {
-    const t = v === latest ? running : translate(v, b);
+    // A drawn one adopts the version that runs alone: the older ones were the plan's, never translated.
+    const t = v === latest ? running : b?.draw ? null : translate(v, b);
+    if (!t) {
+      skipped++;
+      continue;
+    }
     if (!t.ok) {
       skipped++;
       continue;
@@ -281,6 +310,8 @@ export function followBoniFlow(
   now: number,
 ): "published" | "same" | "his" | "not" {
   const j = store.journal;
+  // A drawn one (AU-254) is never regenerated: what runs is the version adopted, or his.
+  if (b.draw) return "not";
   if (j.flowConversion(b.id)?.state !== "converted") return "not";
   const row = j.automation(b.id);
   if (!row || row.deleted || row.by !== BONI_AUTHOR) return "not";
