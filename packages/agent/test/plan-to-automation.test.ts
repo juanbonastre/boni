@@ -505,6 +505,64 @@ describe("a plan translated to an automation (F16)", () => {
     "AU-143 · a turn's plan is validated as today, translated by the same function and saved as a draft by «Guardar como automatización», every «Sí» lowered",
   );
 
+  it("AU-137 · a page's chat: its «Agente» with its instructions, reading only the page's collections and writing none, then «Responder» with its text; «Esta página» is said, and without the page's collections the «Agente» is not translated", () => {
+    const trigger = { chat: { page: "e_pagina_ejemplo", welcome: "Hola", buttons: [] } };
+    const agentPlan = (actions: string[]) =>
+      ({
+        version: 1,
+        steps: [{ id: "chat", op: "agent", instructions: "Responde con {{ cifras }}", actions }],
+      }) as unknown as Plan;
+    const reading = convert(agentPlan(["entities.query", "entities.aggregate"]), trigger, {
+      chat: { collections: [TASKS.key, NOTES.key, TASKS.key] },
+    });
+    expect(reading.untranslated).toEqual([]);
+    expect(reading.complete).toBe(true);
+    const [start, agent, reply] = reading.automation.steps;
+    expect(start?.type).toBe(BONI_TRIGGERS.chat);
+    expect(agent).toMatchObject({
+      type: "agent",
+      // Text with `{{` is a literal, never an expression the instructions did not have.
+      params: { instructions: '{{ "Responde con {{ cifras }}" }}' },
+      connections: [
+        { collection: TASKS.key, read: {}, create: false, update: false, remove: false },
+        { collection: NOTES.key, read: {}, create: false, update: false, remove: false },
+      ],
+    });
+    expect(reply).toMatchObject({ type: REPLY_TYPE, params: { text: "{{ $json.texto }}" } });
+    expect(arrowsTo(reading.automation, reply?.id as string)).toEqual([`${agent?.id}:main>main`]);
+    expect(lowerYes(reading.automation)).toBe(reading.automation);
+    expect(validate(reading.automation, context())).toEqual([]);
+    // The page's own actions are «Esta página», which comes later: said by its step, so the chat stays as it is.
+    const page = convert(
+      agentPlan(["pages.figures", "entities.query", "pages.set_value", "pages.add_block"]),
+      trigger,
+      {
+        chat: { collections: [TASKS.key] },
+      },
+    );
+    expect(page.untranslated).toEqual([
+      { step: "chat", what: "chat:pages.figures", reason: "laterPhase" },
+      { step: "chat", what: "chat:pages.set_value", reason: "laterPhase" },
+      { step: "chat", what: "chat:pages.add_block", reason: "laterPhase" },
+    ]);
+    expect(page.complete).toBe(false);
+    // An «Agente» that read nothing gets no collection: no more reach than it had.
+    const none = convert(agentPlan(["pages.figures"]), trigger, {
+      chat: { collections: [TASKS.key] },
+    });
+    expect(none.automation.steps[1]?.connections).toBeUndefined();
+    // Without the page's collections, or under another trigger, it is the later phase, as before.
+    for (const c of [
+      convert(agentPlan(["entities.query"]), trigger),
+      convert(
+        agentPlan(["entities.query"]),
+        { manual: true },
+        { chat: { collections: [TASKS.key] } },
+      ),
+    ])
+      expect(c.untranslated).toEqual([{ step: "chat", what: "op:agent", reason: "laterPhase" }]);
+  });
+
   it("AU-220 · each trigger of before is its step: by hand with its inputs, the clock with its rule, the mail, the mailbox, the decisions, the spending and the chat", () => {
     const empty = plan();
     const t = (trigger: unknown, boni?: (typeof BONI_PIECES)[number]["owner"]) =>

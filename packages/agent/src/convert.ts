@@ -26,6 +26,8 @@
  */
 import {
   ACTION,
+  AGENT_PARAMS,
+  AGENT_TYPE,
   ANSWER_FIELD,
   type Arrow,
   ASK_LIMITS,
@@ -47,9 +49,11 @@ import {
   lowerYes,
   MAIN,
   NOTIFY_TYPE,
+  newConnection,
   OUT,
   type ParamValue,
   READER_TYPES,
+  REPLY_PARAMS,
   REPLY_TYPE,
   resultName,
   type StepSettings,
@@ -124,7 +128,14 @@ export const TRANSLATION: Readonly<Record<string, string>> = {
   "op:read": "by its reader",
   "op:ask": "by its control",
   "op:reply": "by its component",
-  "op:agent": "untranslated:laterPhase",
+  // A page's chat (AU-137): its «Agente» and «Responder» under «Mensaje de chat», given the page's collections.
+  "op:agent": `${AGENT_TYPE} + ${REPLY_TYPE} under «Mensaje de chat» · untranslated:laterPhase elsewhere`,
+  "chat:entities.query": `${AGENT_TYPE} · «Leer» of the page's collections`,
+  "chat:entities.aggregate": `${AGENT_TYPE} · «Leer» of the page's collections`,
+  // «Esta página» (AU-137) comes with the chat's turn on the server (F16 S2c part B2).
+  "chat:pages.figures": "untranslated:laterPhase",
+  "chat:pages.set_value": "untranslated:laterPhase",
+  "chat:pages.add_block": "untranslated:laterPhase",
   "form:when": "if",
   "form:each": "split",
   "form:zip": "combine",
@@ -213,6 +224,8 @@ const HELPERS = {
 /** The field a `when`'s condition is set in, and the one an `each`'s list is (AU-223). */
 export const WHEN_FIELD = "cumple";
 export const ITEMS_FIELD = "items";
+/** The field of an «Agente»'s «Texto» answer (AU-53; rounds.ts gives the model its `texto`). */
+const AGENT_TEXT = "texto";
 
 // ---------------------------------------------------------------- the input and the result
 
@@ -235,6 +248,11 @@ export interface ConvertInput {
   bound?: readonly string[];
   /** «Leer correo»'s «Decisora»: the collections it chooses among today, by key (decision 20). */
   decides?: readonly string[];
+  /**
+   * A page's chat (AU-137): the collections its page shows (D-61), by key, as the server reads them from the page.
+   * Its «Agente» reads them and nothing else, and writes none. Without it, a chat's «Agente» is not translated.
+   */
+  chat?: { collections: readonly string[] };
 }
 
 export interface Conversion {
@@ -534,6 +552,8 @@ class Translator {
     const id = s.id;
     this.current = { id, each: false, zip: null };
     if (s.op === "agent") {
+      if (this.input.chat && chatTrigger(this.input.trigger))
+        return this.chatAgent(s, this.input.chat.collections, tail);
       this.miss("op:agent", "laterPhase");
       return { tail, one };
     }
@@ -1113,6 +1133,48 @@ class Translator {
     }
     const step = this.main(s, REPLY_TYPE, { text }, feed);
     return { step, out: { kind: "none" }, one: true };
+  }
+
+  // ------------------------------------------------------------ a page's chat
+
+  /**
+   * A chat's «Agente» of before (AU-137): an «Agente» with its instructions, given the page's collections with «Leer»
+   * only when it could read them (`entities.query`, `entities.aggregate`) and no cell of writing, then «Responder» with
+   * its text. No step has more reach than the flow had, and nothing writes. «Esta página» (the page's figures, a value
+   * set, a block added) is said, not dropped: until it exists the chat stays on the old engine.
+   */
+  private chatAgent(
+    s: AgentStep,
+    collections: readonly string[],
+    tail: Arrow["from"][],
+  ): { tail: Arrow["from"][]; one: boolean } {
+    const actions: readonly string[] = Array.isArray(s.actions) ? s.actions : [];
+    const reads = actions.includes("entities.query") || actions.includes("entities.aggregate");
+    for (const a of actions)
+      if (TRANSLATION[`chat:${a}`] === "untranslated:laterPhase")
+        this.miss(`chat:${a}`, "laterPhase");
+    const agent = this.add(
+      {
+        id: `p-${s.id}`,
+        name: s.id,
+        type: AGENT_TYPE,
+        params: { [AGENT_PARAMS.instructions]: escapeText(String(s.instructions ?? "")) },
+        settings: { continueEmpty: true, firstRowOnly: true },
+        ...(reads ? { connections: [...new Set(collections)].map(newConnection) } : {}),
+      },
+      tail,
+    );
+    const reply = this.add(
+      {
+        id: `p-${s.id}-reply`,
+        name: `${s.id} · Responder`,
+        type: REPLY_TYPE,
+        params: { [REPLY_PARAMS.text]: `{{ $json.${AGENT_TEXT} }}` },
+        settings: { continueEmpty: true, firstRowOnly: true },
+      },
+      [{ step: agent.id, output: MAIN }],
+    );
+    return { tail: [{ step: reply.id, output: MAIN }], one: true };
   }
 
   // ------------------------------------------------------------ expressions

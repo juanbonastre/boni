@@ -2722,6 +2722,17 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   automatización recibe en `$chat` los últimos mensajes de ese chat, marcados como lo que son. Solo el chat de una
   página es una automatización; la conversación con el asistente no (decisión 19). La prueba:
   `apps/server/src/automations/chat.test.ts` y `e2e-boni/automations-before.spec.ts`.
+  Hecho en S2c (parte B1): en una automatización que empieza en «Mensaje de chat» ningún paso escribe con «Sí», ni
+  el «Agente» ni otro: al publicar, cada «Sí» de una celda o de un «Permiso» es `connection.notAllowed` («En el chat
+  de una página nada se escribe con «Sí»: pon «Preguntar»») y la publicación no sale; al correr, el servidor no lee
+  ninguno (`consentIn`), así que una versión que lo tuviera propone (P28). Fuera del chat nada cambia. Un mensaje
+  empieza su ejecución con la fila `message`, `page` y `values` (`chatStart`), el mensaje con la etiqueta que le pone
+  el servidor y cada valor de la página con la suya. El traductor convierte el «Agente» de un chat de antes en un
+  «Agente» con sus instrucciones, que lee las colecciones de su página solo si antes podía leerlas y no escribe
+  ninguna, y un «Responder» con su texto. Falta (parte B2): «Esta página» (sus cifras, poner un valor, añadir un
+  bloque) y lo que pide del servidor, por lo que un chat con esas acciones sigue en el motor de antes y lo dice; el
+  turno del chat por el camino publicado, `$chat`, cada mensaje en «Ejecuciones», el panel del bloque con «Abrir la
+  automatización» y la lista.
 - **AU-222** (F16, pendiente) · Dentro de una conversación, lo que una automatización pregunta y lo que responde se
   ve en esa conversación. Un «Preguntar» de una ejecución que empezó en un chat (el de una página, o el asistente al
   ejecutarla) es una tarjeta en ese chat y no una fila de la Bandeja (lo que AU-42 dejó para esta fase), con las
