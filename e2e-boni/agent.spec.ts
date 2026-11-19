@@ -1598,9 +1598,11 @@ test("AU-251 · each row of a run's proposal is a card of its own, from its mail
   await expect(page.locator("#correct-collection-p_fila1")).toHaveCount(0);
   await second.getByRole("button", { name: "Corregir" }).click();
   // Its menu leads to its run.
-  await first.getByRole("button", { name: "Opciones de la propuesta" }).click();
-  await expect(page.getByRole("menuitem", { name: "Ver la ejecución" })).toBeVisible();
+  await first.locator("h3").click({ button: "right" });
+  const menu = page.getByRole("dialog", { name: "Opciones de la propuesta" });
+  await expect(menu.getByRole("menuitemradio", { name: "Ver la ejecución" })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
   // Accepted alone: the other row keeps waiting; the toast opens the run, and has no «Deshacer».
   await first.getByRole("button", { name: "Aceptar", exact: true }).click();
   await expect(cards).toHaveCount(1);
