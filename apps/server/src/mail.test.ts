@@ -5,7 +5,15 @@ import type { AddressInfo } from "node:net";
 import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { callFn, leaf, plain, readStore, rec, ScriptedProvider } from "@boni/agent";
+import {
+  callFn,
+  leaf,
+  type ModelRequest,
+  plain,
+  readStore,
+  rec,
+  ScriptedProvider,
+} from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { saveExternals } from "./account.ts";
@@ -57,6 +65,25 @@ const mailOfRun = (
 const PASSWORD = "una contraseña larga de ejemplo";
 const APP_PASSWORD = "abcdabcdabcdabcd";
 const NOW = Date.UTC(2026, 9, 20, 12);
+
+/**
+ * What the reviewer got of his decisions (D-51): the lines that quote his mail between one marker, never outside it in
+ * its prompt or its options, on the engine of before and on «Revisar instrucciones» as an automation alike.
+ */
+function expectBetweenMarkers(req: ModelRequest | null, quoted: readonly string[]): void {
+  const input = (req?.input ?? {}) as { marker?: unknown; content?: unknown; options?: unknown };
+  const marker = String(input.marker ?? "");
+  expect(marker).toMatch(/^BONI-[0-9a-f]{24}$/);
+  const content = String(input.content ?? "");
+  expect(content.startsWith(`<<${marker}>>\n`)).toBe(true);
+  expect(content.endsWith(`\n<<${marker}>>`)).toBe(true);
+  expect(content.split(`<<${marker}>>`)).toHaveLength(3);
+  for (const q of quoted) {
+    expect(content).toContain(q);
+    expect(req?.system ?? "").not.toContain(q);
+    expect(JSON.stringify(input.options ?? null)).not.toContain(q);
+  }
+}
 
 const mail = (n: number, subject: string, body: string, from = "lucia.ejemplo@example.com") =>
   [
@@ -1491,8 +1518,12 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     const sdb = openDb(join(d, "system.db"));
     addUser(sdb, "juan", PASSWORD);
     let reviewerSays: unknown = null;
+    let reviewerReq: ModelRequest | null = null;
     const reader = new ScriptedProvider("fake", (req) => {
-      if (/decisions a user made/.test(req.system)) return reviewerSays;
+      if (/decisions a user made/.test(req.system)) {
+        reviewerReq = req;
+        return reviewerSays;
+      }
       if (/choose the one option/.test(req.system)) return { choice: "Docencia" };
       const content = String((req.input as { content: string }).content);
       const item = (title: string) => ({
@@ -1581,6 +1612,7 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     }).format(Date.now());
     const mailSpent = store.journal.spent(day, "reader:ext:correo");
     const s = await m.reviewNow(1);
+    expectBetweenMarkers(reviewerReq, ["noticias0@lista.example.com", "Inscribirse en la feria"]);
     expect(store.journal.spent(day, "reader:ext:correo")).toBe(mailSpent);
     expect(store.journal.spent(day, "reader:ext:correo:measure")).toBeGreaterThan(0);
     expect(s?.rules.map((r) => [r.from, r.action])).toEqual([["@lista.example.com", "skip"]]);
@@ -1870,9 +1902,11 @@ describe("«Revisar instrucciones», Boni's automation over «Leer correo»'s pa
     addUser(sdb, "juan", PASSWORD);
     let reviewerSays: unknown = null;
     let reviewerAsked = 0;
+    let reviewerReq: ModelRequest | null = null;
     const reader = new ScriptedProvider("fake", (req) => {
       if (/decisions a user made/.test(req.system)) {
         reviewerAsked++;
+        reviewerReq = req;
         return reviewerSays;
       }
       if (/choose the one option/.test(req.system)) return { choice: "Docencia" };
@@ -1994,6 +2028,8 @@ describe("«Revisar instrucciones», Boni's automation over «Leer correo»'s pa
       expect(onNewEngine(store, REVIEW_FLOW)).toBe(true);
       expect(publishedOf(store, REVIEW_FLOW)?.automation.name).toBe(REVIEW_NAME);
       expect(reviewerAsked).toBe(1);
+      // By `runBoni` as on the engine of before: his decisions quote the mail between the marker.
+      expectBetweenMarkers(reviewerReq, ["noticias0@lista.example.com", "Inscribirse en la feria"]);
       expect(s?.rules.map((r) => [r.from, r.action])).toEqual([["@lista.example.com", "skip"]]);
       expect(s && s.after > s.before).toBe(true);
       // A run of the automation, its five steps; measuring spent from its own cap, never the mail's.
