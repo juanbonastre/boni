@@ -273,6 +273,9 @@ export function refusedWords(t: T, refused: string): string {
       return t("auto.run.off");
     case "running":
       return t("auto.run.running");
+    // F16 (decision 21): on the flow of before, its automation is neither published nor turned on.
+    case "reverted":
+      return t("auto.conv.refused.reverted");
     default:
       return t("error.generic");
   }

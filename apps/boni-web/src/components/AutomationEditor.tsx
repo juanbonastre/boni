@@ -13,7 +13,12 @@ import { type Automation, type Cell, isTrigger } from "@boni/automations";
 import { SYS } from "@boni/views";
 import { ArrowLeft, MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { automationsClient, isRefused, type PublishView } from "../automations/client.ts";
+import {
+  automationsClient,
+  type Conversion,
+  isRefused,
+  type PublishView,
+} from "../automations/client.ts";
 import { triggerFor } from "../automations/panel.ts";
 import {
   PUBLISH_WORDS,
@@ -51,6 +56,7 @@ import {
   useStore,
 } from "../store.ts";
 import { AutomationCanvas } from "./AutomationCanvas.tsx";
+import { convertStep } from "./AutomationConversion.tsx";
 import { PublishScreen, RunScreen, SettingsScreen } from "./AutomationPublish.tsx";
 import { RunsPane, touchError } from "./AutomationRuns.tsx";
 import {
@@ -78,6 +84,30 @@ async function readPublished(id: string): Promise<Published | null> {
     if (v.running === null) return { running: null, enabled: v.enabled, doc: null };
     const { automation, names } = await client.version(id, v.running);
     return { running: v.running, enabled: v.enabled, doc: automation, names };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * «Volver al de Boni» (AU-221): the newest of Boni's versions when the one that runs is not one of them and differs
+ * from it, or null (Boni's runs, none of Boni's, or it cannot be read). Asked once when the editor opens one of Boni's
+ * and after each publish.
+ */
+async function boniLastOf(id: string): Promise<number | null> {
+  try {
+    const v = await client.versions(id);
+    const running = v.versions.find((x) => x.n === v.running);
+    if (!running || running.by === "preset") return null;
+    const last = v.versions.filter((x) => x.by === "preset").sort((a, b) => b.n - a.n)[0];
+    if (!last) return null;
+    // Brought back already (its document as a new version of Juan's): nothing to go back to.
+    const [now, boni] = await Promise.all([
+      client.version(id, running.n),
+      client.version(id, last.n),
+    ]);
+    const bare = (a: Automation) => JSON.stringify({ ...a, version: 0 });
+    return bare(now.automation) === bare(boni.automation) ? null : last.n;
   } catch {
     return null;
   }
@@ -114,6 +144,15 @@ export function AutomationPage({
   /** «⋯ → Versiones» open over the canvas (AU-98); `shown` is new after each publish, for its list to be asked again. */
   const [versions, setVersions] = useState<{ shown: number } | null>(null);
   const [running, setRunning] = useState(false);
+  /**
+   * Where it came from (F16 P1): the conversion of a flow of before (decision 21) and whether it is one of Boni's
+   * own (AU-221); `boniLast`, the newest of Boni's versions when the one that runs is not one («Volver al de Boni»).
+   */
+  const [origin, setOrigin] = useState<{
+    conversion: Conversion | null;
+    boni: boolean;
+    boniLast: number | null;
+  }>({ conversion: null, boni: false, boniLast: null });
   /** «Ejecutar»'s box open (AU-97). */
   const [asking, setAsking] = useState(false);
   const latest = useRef(state);
@@ -211,7 +250,9 @@ export function AutomationPage({
           latest.current = openedEditor(o);
           setState(latest.current);
           setPublished(null);
+          setOrigin({ conversion: o.conversion, boni: o.boni, boniLast: null });
           void readPublished(o.id).then((p) => !gone && setPublished(p));
+          if (o.boni) void boniLastOf(o.id).then((n) => !gone && setBoniLast(n));
         },
         (e) =>
           !gone &&
@@ -433,6 +474,7 @@ export function AutomationPage({
         () => undefined,
       );
       if (version !== undefined) setVersions((v) => (v ? { shown: v.shown + 1 } : v));
+      if (origin.boni) void boniLastOf(at).then((n) => latest.current?.id === at && setBoniLast(n));
       void loadRows(SYS.flows.id);
       toast(t("auto.pub.done", { n: r.version }), {
         label: t(DO.run),
@@ -443,6 +485,31 @@ export function AutomationPage({
       toast(touchError(t, e));
     } finally {
       setRunning(false);
+    }
+  };
+  const setBoniLast = (n: number | null) => setOrigin((o) => ({ ...o, boniLast: n }));
+  /**
+   * «Volver al flujo de antes» and «Convertir otra vez» (decision 21): the flow runs as it was and this is off, or
+   * this runs again, its switch as Juan left it before going back. Neither changes a version nor sets a «Sí».
+   */
+  const convert = async (step: "back" | "again") => {
+    const s = latest.current;
+    if (!s?.id || !origin.conversion) return;
+    const done = await convertStep(t, s.id, s.draft.name, step);
+    if (!done) return;
+    const { state, enabled } = done;
+    setOrigin((o) => (o.conversion ? { ...o, conversion: { ...o.conversion, state } } : o));
+    setPublished((p) => (p ? { ...p, enabled } : p));
+  };
+  /** «Volver al de Boni» (AU-221): «Volver a esta» on Boni's newest version, with its screen. */
+  const toBoni = async () => {
+    const s = latest.current;
+    if (!s?.id || origin.boniLast === null) return;
+    try {
+      const v = await client.version(s.id, origin.boniLast);
+      await openRestore(origin.boniLast, v.automation);
+    } catch (e) {
+      toast(touchError(t, e));
     }
   };
   /** The switch (AU-194): on or off, nothing runs on turning it on. */
@@ -548,6 +615,10 @@ export function AutomationPage({
           onRun={() => void startRun()}
           onSettings={() => apply((s) => ({ ...s, ajustes: { limit: null } }))}
           onVersions={() => setVersions((v) => v ?? { shown: 0 })}
+          conversion={origin.conversion}
+          boni={origin.boni}
+          onConvert={(step) => void convert(step)}
+          onToBoni={origin.boniLast !== null ? () => void toBoni() : null}
           tab={id ? tab : null}
         />
         {error ? (
@@ -643,6 +714,10 @@ function Header({
   onRun,
   onSettings,
   onVersions,
+  conversion,
+  boni,
+  onConvert,
+  onToBoni,
   tab,
 }: {
   state: EditorState | null;
@@ -658,6 +733,13 @@ function Header({
   onSettings: () => void;
   /** «⋯ → Versiones» (AU-98). */
   onVersions: () => void;
+  /** F16 P1: the conversion it came from, if any, and whether it is one of Boni's own (no «Eliminar»). */
+  conversion: Conversion | null;
+  boni: boolean;
+  /** «⋯ → Volver al flujo de antes» (`back`) and «⋯ → Convertir otra vez» (`again`), decision 21. */
+  onConvert: (step: "back" | "again") => void;
+  /** «⋯ → Volver al de Boni» (AU-221): null while Boni's runs, or for one that is not Boni's. */
+  onToBoni: (() => void) | null;
   /** «Editor | Ejecuciones» (pantalla 8): null on «Nueva»'s empty canvas, which has no runs. */
   tab: "editor" | "runs" | null;
 }) {
@@ -674,6 +756,8 @@ function Header({
   const words = t(SAVE_WORDS[save]);
   const pub = state && exists ? publishWord(state.draft, published) : null;
   const isPublished = published !== null && published.running !== null;
+  // On the flow of before (decision 21): its state instead of the switch, which would be refused (AU-228).
+  const reverted = conversion?.state === "reverted";
   return (
     <header className={phone ? "auto-head phone" : "auto-head"}>
       {/* On the phone its own bar goes back. */}
@@ -714,6 +798,12 @@ function Header({
             if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
           }}
         />
+      )}
+      {/* «De: Boni» (AU-221): one of Boni's own, as the list says it. */}
+      {exists && boni && (
+        <span className="auto-conv-state auto-head-state auto-head-boni">
+          {t("auto.head.boni")}
+        </span>
       )}
       {state && !phone && (exists || state.owed.draft) && (
         <span className={`auto-saved ${save}`} role="status">
@@ -757,8 +847,14 @@ function Header({
           ))}
         </div>
       )}
+      {/* Seen everywhere, the phone too; changed only from «⋯» on a personal device. */}
+      {exists && reverted && (
+        <span className="auto-conv-state auto-head-state" role="status">
+          {t("auto.conv.state.reverted")}
+        </span>
+      )}
       {/* The switch is on the phone too (decision 15): turning it off or on changes no document. */}
-      {exists && isPublished && (
+      {exists && isPublished && !reverted && (
         <label className="toggle-row auto-switch">
           <input
             type="checkbox"
@@ -824,6 +920,27 @@ function Header({
                   }}
                 />
               )}
+              {/* F16 P1 (decision 21, AU-221): back to the flow of before and again; back to Boni's version. */}
+              {conversion && conversion.state !== "kept" && (
+                <MenuRow
+                  label={t(reverted ? "auto.conv.again" : "auto.conv.back")}
+                  boniAction="automations.convert"
+                  onClick={() => {
+                    close();
+                    onConvert(reverted ? "again" : "back");
+                  }}
+                />
+              )}
+              {onToBoni && !reverted && (
+                <MenuRow
+                  label={t("auto.conv.toBoni")}
+                  boniAction="automations.publish"
+                  onClick={() => {
+                    close();
+                    onToBoni();
+                  }}
+                />
+              )}
               <MenuSep />
               <MenuRow
                 label={t(DO.duplicate)}
@@ -833,15 +950,18 @@ function Header({
                   onDuplicate();
                 }}
               />
-              <MenuRow
-                label={t(DO.remove)}
-                danger
-                boniAction="automations.delete"
-                onClick={() => {
-                  close();
-                  onRemove();
-                }}
-              />
+              {/* Boni's own are never deleted (AU-221): the server refuses it, so it is not offered. */}
+              {!boni && (
+                <MenuRow
+                  label={t(DO.remove)}
+                  danger
+                  boniAction="automations.delete"
+                  onClick={() => {
+                    close();
+                    onRemove();
+                  }}
+                />
+              )}
             </>
           )}
         </PopButton>

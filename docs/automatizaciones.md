@@ -2645,6 +2645,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   de la cuenta corre como un flujo en segundo plano (lo que crea, propuesto; las etiquetas de fuera, como hoy), y en
   seco con «Probar» (`boni.test.ts`). Falta (S2b): «Leer correo» convertida leyendo un correo inventado, con los
   pasos del §5.17: las 16 piezas de E1 se rehacen (ningún documento guardado las lleva).
+  Hecho en P1 de la F16: en la app, una de Boni («De: Boni») abre cada pieza con su panel de E1 y E2
+  (`AutomationMail.tsx`): «Llega un correo» dice su tope sin nada que cambiar, la «Decisora» solo sus colecciones y
+  su modelo, la «Lectora» lo que busca, sus indicaciones, su modelo y sus ejemplos; en otra automatización el panel de
+  añadir no tiene «Boni» y su búsqueda no encuentra ninguna pieza (`e2e-boni/automations-before.spec.ts`,
+  «AU-127 · …»; sin código nuevo: ya lo hacían `BONI_CATEGORY` fuera de `PANEL_CATEGORIES` y los paneles de E2).
+  Falta: lo de la S2b de arriba; los paneles de las piezas de «Traer correo», «Revisar instrucciones» y «Aviso del
+  presupuesto» en la app, con sus datos (los de sus sesiones); y que una copia pierda sus piezas y lo diga, en la app.
 - **AU-221** (F16, en parte) · Las automatizaciones de Boni son cuatro: «Traer correo», «Leer correo», «Revisar
   instrucciones» (que junta «Revisar la guía» de hoy y el revisor de los agentes: AU-211) y «Aviso del
   presupuesto». Están en la lista con «De: Boni», se abren en el lienzo, se cambian, se prueban y se apagan, y se
@@ -2674,6 +2681,10 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   (`followBoniFlow`), y «Modelos» dice si está apagada por su interruptor. En «Automatizaciones» dice «De: Boni» y
   no se elimina; en el mapa, su «Avisar» sigue llegando a «Dispositivos». Su traducción de un paso se lee, así que no
   se dibuja a mano. Falta: las tres del correo (su sesión) y «Revisar instrucciones».
+  Hecho en P1 de la F16: en el lienzo, la cabecera de una de Boni dice «De: Boni» (`AutomationView.boni`, por
+  `boniOf`; `convert.test.ts`, «AU-221 · AU-225 · P1 …», con una convertida por `keepBoniFlows`) y su «⋯» no tiene «Eliminar»; «⋯ → Volver al de Boni» sale cuando la que corre no es de Boni y no es igual
+  a la última «De Boni», y abre «Publicar» con ese documento, como «Volver a esta» (AU-98); publicada, deja de salir
+  (`e2e-boni/automations-before.spec.ts`, «AU-221 · …»). Falta: lo de la S2b y la S2c de arriba.
 - **AU-128** (sin fase) · Lo que sale fuera (una petición HTTP, un webhook, enviar un correo) no entra en estas
   fases: va después, en la F20 (decisión 9 del §10). Cuando entre, el destino lo escribe Juan y nunca sale de un
   dato ni de un modelo (P2), lo que vuelve cuenta como de fuera, y las claves se guardan en el servidor sin que el
@@ -3027,9 +3038,22 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   viene (`flow`), y las otras se cuentan (`skipped`); «Volver al flujo de antes» (`revertFlow`) y «Convertir otra vez»
   (`reconvertFlow`, que dice `changed` si el flujo tuvo una versión mientras corría como antes); y lo que la vista de
   la automatización necesita para la franja (`AutomationView.conversion`). La automatización nace con el
-  interruptor del flujo y no apagada: una que corría a su hora sigue haciéndolo, y lo que escribe propone. Falta (P1):
-  la franja, «⋯ → Conversión», «⋯ → Volver al flujo de antes» y sus rutas, que llegan con sus botones; el borrador a
-  medias (`flow_drafts`), que no se convierte; y `automations-before.spec.ts`.
+  interruptor del flujo y no apagada: una que corría a su hora sigue haciéndolo, y lo que escribe propone.
+  Hecho en P1 de la F16: las rutas `GET` y `POST /api/agent/automations/conversion` (la lista; «Cerrar», guardado
+  para la cuenta) y `POST /api/agent/automations/:id/conversion` («Volver al flujo de antes» y «Convertir otra
+  vez»), por la acción `automations.convert` desde un dispositivo personal, y `automations.read` con la parte
+  `conversion` (`apps/server/src/automations/conversion.ts`). La lista sale de las filas de la conversión y de dos
+  cuentas por el índice de las ejecuciones (`automationRunsIn`, `automationFailedIn`): con 200 y un año de
+  ejecuciones, dentro de su tiempo (A-15). En la app: la franja encima de la lista, por nombre, cada una con su
+  estado si no es «Convertida», «N ejecuciones desde la conversión · ninguna falló» y «Hace lo mismo» o «Lo que
+  cambia» plegado; «N versiones de antes no se pudieron convertir»; «Cerrar» la lleva a «⋯ → Conversión»; el aviso
+  de la app, una vez por dispositivo, con «Ver»; «Convertida» en «Versiones»; y «⋯ → Volver al flujo de antes»,
+  que la deja apagada con «En el flujo de antes» en lugar del interruptor y cancela en el mismo paso lo que esperaba
+  respuesta, y «⋯ → Convertir otra vez», con el interruptor como Juan lo dejó antes de volver (apagada sigue
+  apagada). Ninguna de las dos cambia una versión ni pone un «Sí», «Volver al de Boni» tampoco; ninguna es de un
+  modelo ni del MCP; desde un dispositivo compartido se ven y se niegan
+  (`convert.test.ts` y `e2e-boni/automations-before.spec.ts`, «AU-225 · …»). Falta: el borrador a medias
+  (`flow_drafts`), que no se convierte; y, después de AU-152, «Convertir otra vez» desde el archivo.
 - **AU-226** (F16, en parte) · Lo que estaba a medias al convertir no se pierde ni se hace dos veces. Una propuesta
   de un flujo que espera en la Bandeja guarda el acto ya resuelto: se acepta o se rechaza como siempre, sin motor.
   Una ejecución de antes que espera (una pregunta, o una confirmación en una conversación: `waiting_runs`) la
@@ -3113,13 +3137,18 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   arriba que los sustituye este documento, y la guía de diseño pierde el editor de antes. La prueba:
   `e2e-boni/automations-before.spec.ts` (ningún «Formato anterior») y `apps/server/src/automations/convert.test.ts`
   (nada importa lo que se fue).
-- **AU-229** (F16, pendiente) · El teléfono, el escritorio y el MCP no se quedan atrás. El teléfono ve, ejecuta,
+- **AU-229** (F16, en parte) · El teléfono, el escritorio y el MCP no se quedan atrás. El teléfono ve, ejecuta,
   enciende y apaga las convertidas como cualquier otra (AU-74), ve el aviso de la conversión y sigue sin editar. Una
   app anterior al despliegue no se rompe: cuando el motor de antes se quita (AU-152), `GET /api/agent/flows` contesta
   una versión más con la lista vacía, y después se va. `Net.kt` y `paths.cjs` no cambian: dejan pasar `api/agent`
   entero; si un PR de la fase necesita una ruta fuera de ahí, entra en los dos a la vez. Cada cambio de
   `apps/boni-web` sale con su versión de escritorio (I-05). Para el MCP, AU-144. La prueba:
   `e2e-boni/automations-before.spec.ts`.
+  Hecho en P1 de la F16: en el teléfono, el aviso de la conversión lleva a la lista con la franja; una convertida se
+  mira, se ejecuta y se enciende o apaga, sin «Publicar» ni «⋯»; una en el flujo de antes dice «En el flujo de
+  antes» y no tiene interruptor; ir y volver entre el flujo y la automatización no se ofrece. Las rutas nuevas están
+  bajo `api/agent`, así que `Net.kt` y `paths.cjs` no cambian («AU-229 · …»). Falta: `GET /api/agent/flows` con la
+  lista vacía cuando se quite el motor de antes (AU-152), y el MCP (AU-144).
 
 ### 5.14 Dónde se cumple cada condición
 

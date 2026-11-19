@@ -11,7 +11,7 @@ import {
   automationsTriggerMigration,
   automationsVersionsMigration,
 } from "./automations.ts";
-import { conversionsMigration } from "./conversions.ts";
+import { conversionsMigration, conversionsWasOn } from "./conversions.ts";
 
 /**
  * The per-user database's tables (docs/nucleo.md, 5.1). Numbered migrations, as in the calendar
@@ -432,6 +432,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 35: flows of before made automations (F16 S1, AU-225 to AU-228): what each conversion did, «Convertida» on a
   // version, «De antes» on a run (conversions.ts). Nothing of the flows is changed or deleted.
   conversionsMigration,
+  // 36: «Convertir otra vez» leaves the automation's switch as it was when it went back (F16 P1, conversions.ts).
+  conversionsWasOn,
 ];
 
 export function migrate(db: DatabaseSync): void {

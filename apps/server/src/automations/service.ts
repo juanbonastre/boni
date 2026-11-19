@@ -195,6 +195,11 @@ export interface AutomationView {
     changes: string[];
     skipped: number;
   } | null;
+  /**
+   * One of Boni's own (`BONI_STORED`, made by `BONI_AUTHOR`; AU-221): «De: Boni», never «Eliminar», and «Volver al de
+   * Boni» in its «⋯» when the version that runs is not Boni's.
+   */
+  boni: boolean;
 }
 
 export type ServiceError = { error: "not-found" | "bad-request" | "too-large" };
@@ -422,6 +427,7 @@ export function automationView(store: UserStore, id: string): AutomationView | S
     device: o.draft.device,
     updated: o.draft.updated,
     conversion: conversionOf(store, id),
+    boni: boniOf(store, id) !== undefined,
   };
 }
 

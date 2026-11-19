@@ -22,6 +22,12 @@ import {
   useStore,
   useViews,
 } from "../store.ts";
+import {
+  bandShows,
+  ConversionBand,
+  ConversionScreen,
+  useConversion,
+} from "./AutomationConversion.tsx";
 import { DeletedMenu } from "./AutomationDeleted.tsx";
 import { AutomationPage } from "./AutomationEditor.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
@@ -51,14 +57,32 @@ function FlowsCollection() {
     if (map) views.control.onSwitch(map.id);
     else views.control.onAdd("diagram");
   }, [asked?.n]);
+  // The conversion's band until «Cerrar», then «⋯ → Conversión» (AU-225): asked once, as the list opens.
+  const [conversion, setConversion] = useConversion();
+  const [seeing, setSeeing] = useState(false);
+  const phone = phoneLayout();
   return (
     <div className="content page-doc full is-collection flows-page">
       <div className="doc">
         <div className="flows-head">
           <h1 className="cols-title">{t("nav.flows")}</h1>
-          {/* «⋯ → Eliminadas» (AU-191): not on the phone, where the list is looked at. */}
-          {!phoneLayout() && <DeletedMenu />}
+          {/* «⋯ → Eliminadas» (AU-191) and «⋯ → Conversión»: not on the phone, where the list is looked at. */}
+          {!phone && (
+            <DeletedMenu
+              onConversion={
+                conversion?.items.length && !bandShows(conversion)
+                  ? () => setSeeing(true)
+                  : undefined
+              }
+            />
+          )}
         </div>
+        {conversion && bandShows(conversion) && (
+          <ConversionBand list={conversion} onClosed={setConversion} />
+        )}
+        {seeing && conversion && (
+          <ConversionScreen list={conversion} onClose={() => setSeeing(false)} />
+        )}
         <DatabaseBlock
           source={FLOWS}
           view={views.view}

@@ -60,6 +60,8 @@ const opened: Opened = {
   pins: {},
   device: "d_portatil",
   updated: 1,
+  conversion: null,
+  boni: false,
 };
 
 describe("the draft saves itself", () => {

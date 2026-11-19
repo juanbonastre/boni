@@ -102,9 +102,13 @@ describe("the words of «Automatizaciones»", () => {
     expect(es("map.group.flow")).toBe("Por automatización");
     expect(es("find.action.automations.create")).toContain("Automatizaciones");
     expect(en("nav.flows")).toBe("Automations");
-    // No word of the app says «flujo» (nor «flow»): the mark of the editor of before says «Formato anterior».
-    expect(KEYS.filter((k) => /flujo/i.test(es(k)))).toEqual([]);
-    expect(KEYS.filter((k) => /\bflows?\b/i.test(en(k)))).toEqual([]);
+    // No word of the app says «flujo» (nor «flow»): the mark of the editor of before says «Formato anterior». The
+    // conversion's own words (AU-225, decision 21) name the flow of before, which still runs on «Volver al flujo de
+    // antes» until AU-152: only those, `auto.conv.*`.
+    const conversion = (k: string) => k.startsWith("auto.conv.");
+    expect(KEYS.filter((k) => !conversion(k) && /flujo/i.test(es(k)))).toEqual([]);
+    expect(KEYS.filter((k) => !conversion(k) && /\bflows?\b/i.test(en(k)))).toEqual([]);
+    expect(es("auto.conv.back")).toBe("Volver al flujo de antes");
     expect(es("auto.formerFormat")).toBe("Formato anterior");
     expect(en("auto.formerFormat")).toBe("Former format");
   });

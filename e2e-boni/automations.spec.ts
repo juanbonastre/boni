@@ -61,8 +61,16 @@ async function list(page: Page) {
   return page.locator(".db-table tbody tr");
 }
 /** What the app asked of the automations' routes ("POST", "GET a_…", "PUT a_…/draft"), as the mock saw it. */
+/**
+ * What the app asked of the automations' routes, but the conversion's list (asked once by its notice and once by the
+ * list's band, AU-225).
+ */
 const asked = (page: Page) =>
-  page.evaluate(() => (window as unknown as { __automations?: string[] }).__automations ?? []);
+  page.evaluate(() =>
+    ((window as unknown as { __automations?: string[] }).__automations ?? []).filter(
+      (x) => x !== "GET conversion",
+    ),
+  );
 /** The server down (each automations' route answers 503), or back. */
 const serverDown = (page: Page, down: boolean) =>
   page.evaluate((d) => {

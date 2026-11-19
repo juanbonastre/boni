@@ -178,7 +178,23 @@ export interface Options {
     manyRuns?: number;
     /** The published cells with their counts (AU-208), as `GET automations/:id/learning` answers them. */
     learning?: Record<string, unknown>[];
+    /** F16 P1 (AU-221): one of Boni's own: «De: Boni» in the list and its view, never deleted. */
+    boni?: boolean;
+    /**
+     * F16 P1 (AU-225): the flow of before it was converted from, as `AutomationView.conversion` says it; `flows`, the
+     * flow's version each of its versions came from («Convertida» in «Versiones»), by its number. It is in the band's
+     * list (`GET automations/conversion`), with its runs since `at` and those of them that failed.
+     */
+    conversion?: {
+      state: "converted" | "reverted" | "kept";
+      at: number;
+      changes?: string[];
+      skipped?: number;
+      flows?: Record<number, number>;
+    };
   }[];
+  /** F16 P1 (AU-225): when the band was closed (the account's setting), or absent while it shows. */
+  conversionClosed?: number;
   /** A shared device (decision 13): every touch but a test is refused with 403 «personal-device-only». */
   sharedDevice?: boolean;
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
@@ -1025,6 +1041,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           doc: AutoHere["doc"];
           by?: string;
           names?: Record<string, Record<string, string>>;
+          flow?: number;
         }[];
         enabled: boolean;
         publish?: Record<string, unknown>;
@@ -1032,6 +1049,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         /** F14d P2: its runs (each view asked counted, for `advancing`) and the draft's pins (AU-93). */
         runs: (FakeRun & { seenAt?: number })[];
         pins: Record<string, { at: number; out: Record<string, number>; stale: boolean }>;
+        /** F16 P1: one of Boni's, and the conversion it came from (its state changes with «⋯»). */
+        boni?: boolean;
+        conversion?: NonNullable<Options["automations"]>[number]["conversion"];
       };
       const autoDoc = (id: string, name: string, trigger?: string | null) => ({
         format: 1,
@@ -1067,7 +1087,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         run: a.run,
         runs: (a.runs ?? []).map((r) => ({ ...r })),
         pins: {},
+        boni: a.boni,
+        conversion: a.conversion ? { ...a.conversion } : undefined,
       }));
+      let conversionClosed = opts.conversionClosed ?? null;
       for (const [i, a] of autos.entries()) {
         const p = opts.automations?.[i]?.published;
         if (!p) continue;
@@ -1078,6 +1101,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             doc: { ...a.doc, ...p.docs?.[n], version: n },
             by: p.by?.[n],
             names: n === p.versions ? p.names : undefined,
+            flow: opts.automations?.[i]?.conversion?.flows?.[n],
           });
         a.enabled = p.enabled ?? true;
       }
@@ -1189,6 +1213,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           pins: a.pins ?? {},
           device: "d_portatil",
           updated: a.updated,
+          conversion: a.conversion
+            ? {
+                state: a.conversion.state,
+                at: a.conversion.at,
+                changes: a.conversion.changes ?? [],
+                skipped: a.conversion.skipped ?? 0,
+              }
+            : null,
+          boni: a.boni === true,
         });
       /** The steps in the order a run reaches them: from the first trigger along the arrows, then the rest. */
       const orderOf = (a: AutoHere) => {
@@ -1335,6 +1368,36 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         };
         const bad: [number, string] = [400, '{"error":"bad-request"}'];
         const gone: [number, string] = [404, '{"error":"not-found"}'];
+        // F16 P1 (AU-225): the band's list, by name, each with its runs since and how many failed; «Cerrar» for
+        // the account (`window.__autoConversion` has every touch). A shared device is refused (http.ts).
+        if (id === "conversion" && !rest) {
+          if (method === "GET") {
+            const items = autos
+              .filter((x) => x.conversion && !x.deleted)
+              .map((x) => {
+                const c = x.conversion as NonNullable<AutoHere["conversion"]>;
+                const since = x.runs.filter((r) => r.at >= c.at);
+                return {
+                  id: x.id,
+                  name: x.doc.name,
+                  boni: x.boni === true,
+                  state: c.state,
+                  at: c.at,
+                  changes: c.changes ?? [],
+                  skipped: c.skipped ?? 0,
+                  runs: since.length,
+                  failed: since.filter((r) => r.state === "failed").length,
+                };
+              })
+              .sort((x, y) => x.name.localeCompare(y.name, "es"));
+            return [200, JSON.stringify({ closed: conversionClosed, items })];
+          }
+          if (method !== "POST") return bad;
+          if (opts.sharedDevice) return [403, '{"error":"personal-device-only"}'];
+          record("__autoConversion", "close");
+          conversionClosed ??= Date.now();
+          return [200, JSON.stringify({ closed: conversionClosed })];
+        }
         if (!id) {
           if (method !== "POST" || !Array.isArray(b.automation?.steps)) return bad;
           const made = `a_01jejemplo${String(autos.length + 1).padStart(4, "0")}`;
@@ -1367,6 +1430,30 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         // A shared device sees and tests; every other touch is refused (decision 13, http.ts).
         if (opts.sharedDevice && method !== "GET" && rest !== "/test")
           return [403, '{"error":"personal-device-only"}'];
+        // «Volver al flujo de antes» and «Convertir otra vez» (decision 21): off with the flow running, or again with
+        // its switch as it was before going back (conversion.ts); no version changes. Every touch:
+        // `window.__autoConversion`.
+        if (rest === "/conversion" && method === "POST") {
+          const req = (body ?? {}) as { do?: unknown };
+          record("__autoConversion", `${id} ${String(req.do)}`);
+          const c = a.conversion as (typeof a.conversion & { wasOn?: boolean }) | undefined;
+          if (!c || c.state === "kept") return gone;
+          if (req.do === "back") {
+            if (c.state === "converted") c.wasOn = a.enabled;
+            c.state = "reverted";
+            a.enabled = false;
+          } else if (req.do === "again") {
+            if (c.state === "reverted") a.enabled = c.wasOn ?? true;
+            c.state = "converted";
+          } else return bad;
+          return [200, JSON.stringify({ state: c.state, enabled: a.enabled })];
+        }
+        // While the flow of before runs, it is neither published nor switched (`publish.ts`).
+        if (
+          a.conversion?.state === "reverted" &&
+          (rest === "/enabled" || (rest === "/publish" && method === "POST"))
+        )
+          return [200, '{"refused":"reverted"}'];
         // «Publicar» (AU-96): what the screen shows of the draft; publishing it by its `rev`, the first turning it on
         // (AU-194). Every publish asked: `window.__autoPublish`.
         const running = runningOf(a);
@@ -1445,6 +1532,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 at: v.at,
                 device: "d_portatil",
                 by: v.by ?? "user",
+                ...(v.flow !== undefined ? { flow: v.flow } : {}),
               })),
               running: running?.n ?? null,
               enabled: a.enabled,
@@ -2024,7 +2112,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 ? "o_estado_encendido"
                 : "o_estado_apagado",
             f_ejecuciones: 0,
-            f_de: "o_de_tu",
+            f_de: a.boni ? "o_de_boni" : "o_de_tu",
           },
           updated: a.updated,
           fixed: ["f_titulo", "f_estado"],
@@ -2158,6 +2246,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           const a = autos.find((x) => `${AR}${x.id}` === am[1]);
           if (!a) return [404, '{"error":"not-found"}'];
           if (am[2] && method === "POST") a.deleted = false;
+          else if (method === "DELETE" && a.boni) return [400, '{"error":"flow-boni-delete"}'];
           else if (method === "DELETE") a.deleted = true;
           else return [400, '{"error":"read-only"}'];
           return [200, "{}"];
@@ -2686,7 +2775,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         const automation =
-          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked|\/answer)?)?|\/pins\/[^/]+|\/learning)?$/.exec(
+          /^api\/agent\/automations(?:\/([^/]+))?(\/draft|\/layout|\/duplicate|\/restore|\/test(?:\/rows|\/sample|\/preview)?|\/publish|\/versions(?:\/\d+)?|\/enabled|\/run|\/runs(?:\/[^/]+(?:\/rows|\/retry|\/undo|\/pin|\/asked|\/answer)?)?|\/pins\/[^/]+|\/learning|\/conversion)?$/.exec(
             p,
           );
         if (automation)

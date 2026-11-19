@@ -129,6 +129,11 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "PUT /api/agent/automations/:id/pins/:step": "tailnet",
   "DELETE /api/agent/automations/:id/pins/:step": "tailnet",
   "POST /api/agent/automations/:id/runs/:run/pin": "tailnet",
+  // F16 P1: the conversion's band and «⋯ → Conversión» (automations.read), «Volver al flujo de antes», «Convertir
+  // otra vez» and «Cerrar» on the band (automations.convert; automations/conversion.ts).
+  "GET /api/agent/automations/conversion": "tailnet",
+  "POST /api/agent/automations/conversion": "tailnet",
+  "POST /api/agent/automations/:id/conversion": "tailnet",
   "GET /api/agent/models": "tailnet",
   "GET /api/agent/models/catalogue": "tailnet",
   "PUT /api/agent/models/roles/:role": "tailnet",

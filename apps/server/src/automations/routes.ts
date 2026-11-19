@@ -175,6 +175,30 @@ export const SHARED_DEVICE_ROUTES: ReadonlySet<string> = new Set([
   "POST /api/agent/automations/:id/runs/:run/answer",
 ]);
 
+/**
+ * F16 P1's touch (conversion.ts; decision 21, AU-225): «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» on
+ * the band «Tus flujos son ahora automatizaciones». Juan's, from a personal device only (decision 13). Its read, the
+ * band's list, is `automations.read`'s part `conversion`.
+ */
+export const CONVERSION_ACTIONS: Readonly<Record<string, AutomationAction>> = {
+  "automations.convert": {
+    effect: "touch",
+    undo: "the other way: «Convertir otra vez» after «Volver al flujo de antes» and back; a closed band stays in «⋯ → Conversión»",
+    control:
+      "«Volver al flujo de antes» and «Convertir otra vez» in the editor's «⋯»; «Cerrar» on the list's band",
+  },
+};
+
+/** F16 P1's routes (conversion.ts), each with its action and the function it runs. */
+export const CONVERSION_ROUTES: Readonly<Record<string, { action: string; runs: string }>> = {
+  "GET /api/agent/automations/conversion": { action: "automations.read", runs: "conversionList" },
+  "POST /api/agent/automations/conversion": { action: "automations.convert", runs: "closeBand" },
+  "POST /api/agent/automations/:id/conversion": {
+    action: "automations.convert",
+    runs: "convertAgain",
+  },
+};
+
 /** The routes P1 adds with the controls, each with its action and the function of publish.ts it runs. */
 export const PUBLISH_ROUTES: Readonly<Record<string, { action: string; runs: string }>> = {
   "POST /api/agent/automations/:id/publish": { action: "automations.publish", runs: "publish" },
