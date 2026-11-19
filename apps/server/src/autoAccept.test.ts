@@ -194,6 +194,54 @@ describe("accepting alone, with «Solo» on (docs/fiabilidad.md §3.4, F3)", () 
     expect(await acceptAlone(store, agent, [sure.id], 101)).toBe(0);
   });
 
+  it("AU-251 · a row card of a run is never accepted alone, however sure; a proposal of before (a flow that did not convert, or went back) counts his decisions on row cards", async () => {
+    const store = env();
+    // One row of a «Leer correo» run's proposal, as proposal.ts `proposeRun` keeps it (AU-251).
+    const row = (sender: string, decided?: boolean): ProposalRow => {
+      const id = `p${++n}`;
+      store.journal.startRun({
+        id: `r${n}`,
+        turn: null,
+        origin: "automation",
+        device: null,
+        started: n,
+      });
+      store.journal.addProposal({
+        id,
+        run: `r${n}`,
+        tool: "automations.accept_run",
+        args: { values: { run: leaf(`ar${n}`, l), row: leaf("0", l) }, origins: [] },
+        view: {
+          tool: "automations.accept_run",
+          title: "Guardar lo que propuso una automatización",
+          rows: [
+            { arg: "type", role: "type", value: "tarea", detail: "Tareas" },
+            { arg: "values.title", value: "Tarea inventada" },
+          ],
+          run: { automation: "leer-correo", run: `ar${n}`, row: 0 },
+        },
+        sources: ["model:leer-correo:p-reader", `mail:${sender}`],
+        created: n,
+      });
+      if (decided !== undefined)
+        store.journal.setProposal(id, decided ? "accepted" : "rejected", n, null);
+      return store.journal.proposal(id) as ProposalRow;
+    };
+    for (let i = 0; i < 3; i++) row("boletin@example.edu", true);
+    setAutoState(store, AUTO_AREA, true, "juan", 50);
+    const agent = acceptor(store, 100);
+    // Sure by his three row decisions, a waiting row card stays his to decide: «Solo» accepts only cards of before.
+    const waiting = row("boletin@example.edu");
+    expect(await acceptAlone(store, agent, [waiting.id], 100)).toBe(0);
+    expect(store.journal.proposal(waiting.id)?.status).toBe("pending");
+    expect(store.journal.decisions(AUTO_AREA)).toEqual([]);
+    // The flow of before's proposal of that sender, made when «Leer correo» runs on the engine of before: the row
+    // decisions are its history (`likeKey`), so «Solo», which he switched on, accepts it.
+    const before = proposal(store, "boletin@example.edu");
+    expect(await acceptAlone(store, agent, [before.id], 100)).toBe(1);
+    expect(store.journal.proposal(before.id)?.status).toBe("accepted");
+  });
+
   it("judging: undone or deleted is wrong at once, kept a week is right (the reading's own decisions too); then the back-off", async () => {
     const store = env();
     const senders = ["a@example.edu", "b@example.edu", "c@example.edu"];

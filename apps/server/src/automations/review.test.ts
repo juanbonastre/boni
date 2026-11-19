@@ -18,7 +18,7 @@ import { withAutomationActions, withPublishActions, withRunActions } from "./act
 import { BONI_AUTHOR, boniEnabled, onNewEngine, wireBoni } from "./boni.ts";
 import { convertBoniFlows, keepBoniFlows } from "./convert.ts";
 import { drawReadMail, type ReadMailConfig } from "./mailAutomation.ts";
-import { setEnabled } from "./publish.ts";
+import { publish, setEnabled } from "./publish.ts";
 import {
   drawReview,
   dropInstructions,
@@ -272,6 +272,41 @@ describe("«Revisar instrucciones», one of Boni's automations (AU-211)", () => 
       expect(yeses(open(s, MAIL_FLOW)?.automation as Automation)).toEqual(his);
       // And the published version has none: only his «Publicar» would carry one.
       expect(yeses(publishedOf(s, MAIL_FLOW)?.automation as Automation)).toEqual([]);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("AU-211 · a «Sí» he published and then lowered in his draft stays lowered when a change is taken into it", () => {
+    const s = both();
+    try {
+      withHisYes(s);
+      const his = yeses(open(s, MAIL_FLOW)?.automation as Automation);
+      expect(his).toHaveLength(1);
+      const published = publish(s, MAIL_FLOW, { rev: open(s, MAIL_FLOW)?.draft.rev }, JUAN);
+      expect(isError(published) || "refused" in published).toBe(false);
+      expect(yeses(publishedOf(s, MAIL_FLOW)?.automation as Automation)).toEqual(his);
+      // He lowers it to «Preguntar» in a new draft, and leaves that draft unpublished.
+      const doc = publishedOf(s, MAIL_FLOW)?.automation as Automation;
+      const lowered = doc.steps.map((step) =>
+        step.connections?.length
+          ? {
+              ...step,
+              connections: step.connections.map((c, i) =>
+                i === 0 ? { ...c, create: { mode: "ask" as const } } : c,
+              ),
+            }
+          : step,
+      );
+      expect(isError(keepDraft(s, MAIL_FLOW, { ...doc, steps: lowered }, HAND))).toBe(false);
+      expect(yeses(open(s, MAIL_FLOW)?.automation as Automation)).toEqual([]);
+      keepSuggestion(s, suggestion());
+      expect(takeInstructions(s, "g-ejemplo-1", JUAN)).toEqual({ automation: MAIL_FLOW });
+      // The change is in the draft, written over his lowered one: the published «Sí» does not come back.
+      const draft = open(s, MAIL_FLOW)?.automation as Automation;
+      expect(yeses(draft)).toEqual([]);
+      expect(JSON.stringify(draft)).toContain("@ofertas.example.com");
+      expect(yeses(publishedOf(s, MAIL_FLOW)?.automation as Automation)).toEqual(his);
     } finally {
       s.close();
     }
