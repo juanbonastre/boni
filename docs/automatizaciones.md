@@ -2731,10 +2731,23 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   el servidor y cada valor de la página con la suya. El traductor convierte el «Agente» de un chat de antes en un
   «Agente» con sus instrucciones, que lee las colecciones de su página solo si antes podía leerlas y no escribe
   ninguna, y un «Responder» con su texto; cualquier otra acción (una de escribir, una que no conoce) se dice y la
-  conversión no queda completa. Falta (parte B2): «Esta página» (sus cifras, poner un valor, añadir un
-  bloque) y lo que pide del servidor, por lo que un chat con esas acciones sigue en el motor de antes y lo dice; el
-  turno del chat por el camino publicado, `$chat`, cada mensaje en «Ejecuciones», el panel del bloque con «Abrir la
-  automatización» y la lista.
+  conversión no queda completa.
+  Hecho en S2c (parte B2): «Esta página» es una opción del «Agente» («Añadir opción»), con lo que deja: «Leer sus
+  cifras», «Poner un valor en un control», «Añadir un bloque»; solo bajo «Mensaje de chat» (`agent.page.notChat`).
+  La página es la que nombra el disparador de la versión guardada, y la ejecución la trae en su fila: el servidor ata
+  a ella el puerto de la página y la política (P26), y una llamada de otra página, de una capacidad que el paso no da
+  o con un bloque de una colección que la página no enseña se rechaza; ni el mensaje ni el modelo nombran página. Las
+  cifras las calcula el código, como en la pantalla. Un valor y un bloque se proponen en la propuesta única de la
+  ejecución (P28), con las etiquetas de lo que llevan; aceptar, solo en un dispositivo personal, los guarda en la
+  misma transacción que las filas y con el id de la ejecución, y «Deshacer lo que hizo» los quita con ella. Esto es la
+  lectura estrecha de «poner un valor… (P27, se deshace)»: que un valor vaya solo es de Juan, y se cambia en un único
+  sitio (`PAGE_ALONE` de `apps/server/src/automations/policy.ts`). El traductor convierte las acciones de página de un
+  chat de antes en esas capacidades, solo las que tenía, y «Lo que cambia» dice «pageValueAsks» si ponía un valor. Todo
+  chat de una página sigue en el motor de antes («chat» en la conversión) hasta el cambio. La prueba:
+  `apps/server/src/automations/page.test.ts` y `packages/automations/src/page.test.ts`.
+  Falta (el cambio, la siguiente PR): el turno del chat por el camino publicado, `$chat`, cada mensaje en
+  «Ejecuciones», el panel del bloque con «Abrir la automatización» y la lista, y lo que la web pinta de una propuesta de
+  página; con AU-222, sus tarjetas en el chat y «Se ve como».
 - **AU-222** (F16, pendiente) · Dentro de una conversación, lo que una automatización pregunta y lo que responde se
   ve en esa conversación. Un «Preguntar» de una ejecución que empezó en un chat (el de una página, o el asistente al
   ejecutarla) es una tarjeta en ese chat y no una fila de la Bandeja (lo que AU-42 dejó para esta fase), con las

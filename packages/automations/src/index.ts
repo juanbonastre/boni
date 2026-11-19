@@ -15,6 +15,7 @@ export * from "./failures.ts";
 export * from "./format.ts";
 export * from "./graph.ts";
 export * from "./javascript.ts";
+export * from "./page.ts";
 export * from "./partial.ts";
 export * from "./people.ts";
 export * from "./preview.ts";

@@ -271,9 +271,8 @@ describe("an automation in a conversation (F16)", () => {
   it.todo(
     "AU-137 · the «Chat» block names the same id, now an automation: «Mensaje de chat» with its page, welcome and buttons, an «Agente» born with the page's collections to read only, and «Responder» as the message",
   );
-  it.todo(
-    "AU-137 · «Esta página», only under «Mensaje de chat»: the «Agente» reads the page's figures, sets a value of its own page alone and undoably (P27), and adding a block asks",
-  );
+  // «Esta página» itself runs in automations/page.test.ts (server) and packages/automations/src/page.test.ts (engine),
+  // with the narrower reading: a value of the page is proposed too, until Juan says otherwise (policy.ts PAGE_ALONE).
   it.todo(
     "AU-137 · each message is one run in the automation's runs, and the conversation, its messages and its memory stay where they are",
   );
