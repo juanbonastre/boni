@@ -51,15 +51,18 @@ export function serverRegistry(): ToolRegistry {
   const all = withRunProposal(
     withRunActions(
       withConversionActions(
-      withPublishActions(
-        withAutomationActions(
-          withConnectorActions(
-            withCalendarActions(
-              withInboxActions(
-                withFlowActions(
-                  withFileActions(
-                    withTurnActions(
-                      withDataActions(withPageActions(withFunctionSteps(withPieces(coreTools())))),
+        withPublishActions(
+          withAutomationActions(
+            withConnectorActions(
+              withCalendarActions(
+                withInboxActions(
+                  withFlowActions(
+                    withFileActions(
+                      withTurnActions(
+                        withDataActions(
+                          withPageActions(withFunctionSteps(withPieces(coreTools()))),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -67,7 +70,6 @@ export function serverRegistry(): ToolRegistry {
             ),
           ),
         ),
-      ),
       ),
     ),
   );

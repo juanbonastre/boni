@@ -19,11 +19,14 @@ import { AUTOMATION_FAILED_IN_SQL, openUserStore, type UserStore } from "@boni/s
 import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { jsBox } from "../../../../packages/agent/test/convert.test-util.ts";
+import { ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
 import { AgentHost, trashFlow } from "../agent.ts";
 import { DataError } from "../data.ts";
 import { lastSlot } from "../flowScheduler.ts";
 import { deleteFlowRow, updateFlowRow } from "../flowsCollection.ts";
+import { ROUTES } from "../routes.ts";
 import { wireBoni } from "./boni.ts";
+import { BAND_CLOSED, conversionList } from "./conversion.ts";
 import {
   COPY_CHUNK,
   conversionReport,
@@ -35,12 +38,9 @@ import {
   wireDryConversion,
 } from "./convert.ts";
 import { publish, setEnabled, versionsOf } from "./publish.ts";
+import { CONVERSION_ROUTES, SHARED_DEVICE_ROUTES } from "./routes.ts";
 import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
 import { undoAutomationRun } from "./runs.ts";
-import { ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
-import { ROUTES } from "../routes.ts";
-import { BAND_CLOSED, conversionList } from "./conversion.ts";
-import { CONVERSION_ROUTES, SHARED_DEVICE_ROUTES } from "./routes.ts";
 import { automationView, testAutomation } from "./service.ts";
 
 const DAY = 24 * HOUR;
@@ -797,9 +797,7 @@ describe("the saved flows converted to automations (F16)", () => {
     expect(store.journal.automationDraft(id)?.doc).toBe(was.draft);
     expect(store.journal.automation(id)?.published).toBe(was.published);
     for (const n of [1, 2]) {
-      const doc = parseAutomation(
-        JSON.parse(store.journal.automationVersion(id, n)?.doc ?? "{}"),
-      );
+      const doc = parseAutomation(JSON.parse(store.journal.automationVersion(id, n)?.doc ?? "{}"));
       expect(doc.steps.map((x) => consentOf(x, "pedido", "create"))).not.toContain("yes");
     }
     // «Cerrar»: kept for the account; the list stays.
@@ -850,7 +848,12 @@ describe("the saved flows converted to automations (F16)", () => {
     store = openUserStore(path, { now: () => NOW });
     let start = clock();
     const list = conversionList(store);
-    under(clock() - start, 150, "cpu", "the conversion's band with 200 automations and 40,000 runs");
+    under(
+      clock() - start,
+      150,
+      "cpu",
+      "the conversion's band with 200 automations and 40,000 runs",
+    );
     expect(list.items).toHaveLength(200);
     const runs = list.items.reduce((n, x) => n + x.runs, 0);
     expect(runs).toBeGreaterThan(19_000);

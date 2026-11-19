@@ -113,6 +113,70 @@ export interface Opened {
   pins: Record<string, Pin>;
   device: string | null;
   updated: number;
+  /** A flow of before made it (F16, AU-225): its state, «Lo que cambia» and the versions not converted; or null. */
+  conversion: Conversion | null;
+  /** One of Boni's own (AU-221): «De: Boni», no «Eliminar», and «Volver al de Boni». */
+  boni: boolean;
+}
+
+/** Where a converted flow is (decision 21): `converted`, `reverted` («Volver al flujo de antes») or `kept`. */
+export type ConversionState = "converted" | "reverted" | "kept";
+export interface Conversion {
+  state: ConversionState;
+  at: number;
+  /** The keys of «Lo que cambia» (`CHANGES` of @boni/agent); none is «Hace lo mismo». */
+  changes: string[];
+  skipped: number;
+}
+
+/** One flow of the conversion's band and «⋯ → Conversión» (AU-225). */
+export interface ConvertedItem extends Conversion {
+  id: string;
+  name: string;
+  boni: boolean;
+  /** Real runs since the conversion, and how many failed. */
+  runs: number;
+  failed: number;
+}
+
+/** `GET automations/conversion`: every flow the conversion reached, and when the band was closed. */
+export interface ConversionList {
+  closed: number | null;
+  items: ConvertedItem[];
+}
+
+const STATES: readonly string[] = ["converted", "reverted", "kept"];
+const strings = (v: unknown) =>
+  Array.isArray(v) ? v.filter((s): s is string => typeof s === "string") : [];
+const count0 = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : 0);
+/** A conversion as the server sent it, or null. */
+export function conversionOf(x: unknown): Conversion | null {
+  if (!isObj(x) || !STATES.includes(x.state as string)) return null;
+  return {
+    state: x.state as ConversionState,
+    at: typeof x.at === "number" ? x.at : 0,
+    changes: strings(x.changes),
+    skipped: count0(x.skipped),
+  };
+}
+/** The conversion's list as the server sent it: what does not read as one item is left out; 2,000 at most. */
+export function conversionListOf(x: unknown): ConversionList {
+  const o = isObj(x) ? x : {};
+  const items = (Array.isArray(o.items) ? o.items : []).slice(0, 2_000).flatMap((i) => {
+    const c = conversionOf(i);
+    if (!c || !isObj(i) || typeof i.id !== "string") return [];
+    return [
+      {
+        ...c,
+        id: i.id,
+        name: typeof i.name === "string" ? i.name : "",
+        boni: i.boni === true,
+        runs: count0(i.runs),
+        failed: count0(i.failed),
+      },
+    ];
+  });
+  return { closed: typeof o.closed === "number" ? o.closed : null, items };
 }
 
 /** A pinned output (AU-93): when it was tested, its rows by output and whether the step changed since. */
@@ -212,6 +276,8 @@ export interface VersionInfo {
   at: number;
   device: string | null;
   by: string;
+  /** «Convertida» (AU-225): the flow version it came from, or null for one published here. */
+  flow?: number | null;
 }
 
 /** `GET automations/:id/versions`: the versions, the one that runs and the switch (AU-194). */
@@ -516,6 +582,12 @@ export interface AutomationsClient {
     what: "take" | "drop",
     suggestion: string,
   ): Promise<{ done: true } | Refused>;
+  /** `GET automations/conversion` (AU-225): the band's and «⋯ → Conversión»'s list. */
+  conversion(): Promise<ConversionList>;
+  /** `POST automations/:id/conversion`: «Volver al flujo de antes» (`back`) or «Convertir otra vez» (`again`). */
+  convert(id: string, step: "back" | "again"): Promise<{ state: ConversionState } | Refused>;
+  /** `POST automations/conversion`: «Cerrar» on the band, for every device. */
+  closeBand(): Promise<{ closed: number } | Refused>;
 }
 
 /**
@@ -548,6 +620,8 @@ export function openedOf(x: unknown): Opened {
     pins: pinsOf(x.pins),
     device: typeof x.device === "string" ? x.device : null,
     updated: typeof x.updated === "number" ? x.updated : 0,
+    conversion: conversionOf(x.conversion),
+    boni: x.boni === true,
   };
 }
 
@@ -851,6 +925,18 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
       if (isRefused(r)) return r;
       const o = isObj(r) ? r : {};
       return { pins: pinsOf(o.pins), trigger: typeof o.trigger === "string" ? o.trigger : "" };
+    },
+    conversion: async () => conversionListOf(await api.automations("GET", "conversion")),
+    convert: async (id, step) => {
+      const r = await api.automations("POST", path(id, "/conversion"), { do: step });
+      if (isRefused(r)) return r;
+      const state = isObj(r) && STATES.includes(r.state as string) ? r.state : "converted";
+      return { state: state as ConversionState };
+    },
+    closeBand: async () => {
+      const r = await api.automations("POST", "conversion", {});
+      if (isRefused(r)) return r;
+      return { closed: isObj(r) && typeof r.closed === "number" ? r.closed : Date.now() };
     },
   };
 }

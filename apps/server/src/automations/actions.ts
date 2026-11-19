@@ -19,10 +19,10 @@ import {
 } from "@boni/agent";
 import type { Cell } from "@boni/automations";
 import type { UserStore } from "@boni/store";
+import { closeBand, conversionList, convertAgain } from "./conversion.ts";
 import { declineSuggestion, learningKey, learningOf, unpause } from "./learning.ts";
 import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
 import { dropInstructions, pendingSuggestion, takeInstructions } from "./review.ts";
-import { closeBand, conversionList, convertAgain } from "./conversion.ts";
 import { AUTOMATION_ACTIONS, CONVERSION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
 import {
   answerRun,
@@ -480,7 +480,8 @@ export function withConversionActions(r: ToolRegistry): ToolRegistry {
       const s = handOf(c.service);
       if (!s.trust) throw new ToolError("not-available");
       const step = textOf(a.do);
-      if (step === "close") return leaf(closeBand(s.store, { ...hand(s), trust: s.trust }) as never, code);
+      if (step === "close")
+        return leaf(closeBand(s.store, { ...hand(s), trust: s.trust }) as never, code);
       if (step !== "back" && step !== "again") throw new ToolError("bad-argument");
       return leaf(
         answer(convertAgain(s.store, idOf(a.id), step, { ...hand(s), trust: s.trust })) as never,
