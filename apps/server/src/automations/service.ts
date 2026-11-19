@@ -77,6 +77,7 @@ import { sandboxBox } from "./box.ts";
 import { collectionNamed, reachStore, storeCollections } from "./collections.ts";
 import { serverDates } from "./dates.ts";
 import { pruneRuns } from "./keep.ts";
+import { mailCapOf } from "./mailCap.ts";
 import { pageOfRun } from "./page.ts";
 import { automationPolicy } from "./policy.ts";
 import { keepTestRun, type PinView, pinnedRecords, pinsView } from "./record.ts";
@@ -295,6 +296,8 @@ export const DRAFT_WRITERS: Readonly<Record<string, "hand" | "outside">> = {
   convertBoniFlows: "outside",
   followBoniFlow: "outside",
   keepBoniFlows: "outside",
+  // «Traer correo» and «Leer correo» converted together (mail.ts, F16 S2b), through `convertBoniFlows`.
+  convertMailFlows: "outside",
 };
 
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */
@@ -671,9 +674,11 @@ export function runDeps(
     return s && version ? namedFor(s, version.names, today)(name) : today(name);
   };
   // The AI steps' models (AU-199): a run's calls are kept under its id, a test's under the automation's.
-  const ai = aiFor(store, run ?? `test:${id}`, !run);
+  // A real run that started with a mail holds to the day's cap of its automation and sender (AU-253, mailCap.ts).
+  const cap = run && doc ? mailCapOf(store, id, run, doc, hand.zone) : null;
+  const ai = aiFor(store, run ?? `test:${id}`, !run, cap ?? undefined);
   // Boni's steps (AU-127, AU-223): today's code through the account's agent, when the host wired it.
-  const boni = boniPortFor(store, id);
+  const boni = boniPortFor(store, id, doc);
   // «Esta página» (AU-137): the page the version's «Mensaje de chat» names, for its port and for the policy's P26.
   const paged = pageOfRun(store, doc, {
     actor: "user",
@@ -736,7 +741,8 @@ export async function testAutomation(
   // One of Boni's triggers whose row its code makes is tried with what that code would give it now, with the code's
   // label, whatever the screen typed (F16 S2c: «El gasto llega al aviso», the month's spending and the budget), as
   // the flow's «Probar» bound it.
-  const boniRow = boniTestRow(store, id, triggerType);
+  // «Llega un correo» of «Leer correo» (AU-249): the mail whose id the screen gave, else the latest.
+  const boniRow = boniTestRow(store, id, triggerType, request.fields);
   const fields: Record<string, Cell> = boniRow
     ? boniRow.json
     : scheduled && request.fields.date === undefined

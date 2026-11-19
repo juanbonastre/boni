@@ -30,23 +30,40 @@ import {
   AGENT_PROMPT,
   type AgentRequest,
   type AgentCall as AgentRoundsCall,
+  checkAnswers,
   classifySchema,
+  type DecisionQuestion,
   delimit,
   extractSchema,
+  fieldsForReader,
+  fillSchema,
   labelEachSchema,
   type ModelProvider,
   type ModelRequest,
+  modulesOf,
   planSchema,
   READER_PROMPTS,
   READER_SCHEMAS,
+  readMessagePiecePrompt,
+  readMessageSchema,
   roundArgNames,
   runRounds,
   shortenInput,
   summarizeEachSchema,
+  weekdayOf,
 } from "@boni/agent";
-import type { AgentCall, AgentReply, AiPort, ReaderCall, ReaderReply } from "@boni/automations";
+import type {
+  AgentCall,
+  AgentReply,
+  AiPort,
+  PieceCall,
+  ReaderCall,
+  ReaderReply,
+} from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import type { AccountModels } from "../models.ts";
+import { mailHooksOf } from "./boni.ts";
+import { fillOf } from "./mailPieces.ts";
 
 /** How long one call may take before it is given up (ms): a reader's batch, and one round of an «Agente». */
 export const AI_TIMEOUTS = { reader: 60_000, planner: 180_000 } as const;
@@ -65,6 +82,11 @@ export interface AiFor {
   now?: () => number;
   /** Tests only: shorter timeouts. */
   timeouts?: Partial<Record<keyof typeof AI_TIMEOUTS, number>>;
+  /**
+   * The day's cap of a run that started with a mail (AU-253, `mailCap.ts`): asked before every call, and it counts
+   * the call it allows; false, and the call is not made (`daily-cap`).
+   */
+  cap?: () => boolean;
 }
 
 type Called = { json: unknown; model: string } | { refused: string; transient?: true };
@@ -132,6 +154,108 @@ export function readerRequest(call: ReaderCall): ModelRequest {
   };
 }
 
+/** The civil day of an instant in a zone, as YYYY-MM-DD. */
+export const dayIn = (now: number, zone: string): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+
+/** What the «Decisora» asks the decision model, in each order of its options. */
+const DECIDE_INSTRUCTIONS =
+  "Which collection does the item after «Elemento:» at the end of the text belong in?";
+
+/**
+ * A piece's call (AU-249, AU-255) as the request its model takes. Everything that came from a mail is between markers
+ * no one can guess (`delimit`), and only the step's panel and the closed lists the code checked are outside them:
+ *
+ * - **«Lectora»** (`read_message`): the first text is the mail; the others are what that sender already has proposed
+ *   (and an invitation's title), all from outside, in their own markers as «known» (`readMessagePiecePrompt`). Its
+ *   prompt differs from the measured one only in that: it must be measured again by hand with the evaluation before
+ *   it is deployed (docs/correo.md §4.5). «Ejemplos» go each between their own markers, as the guide's did.
+ * - **«Decisora»** (`decide`): the decision model (Jev) gets the text between markers as its state and one choice
+ *   among the options in the order given; the piece asks twice, in both orders.
+ * - **«Rellenadora»** (`fill`): the chosen collection's fields as the code reads them from its definition
+ *   (`fillOf`: its closed choices and checkboxes, as today; no relation), never a value of a row.
+ *
+ * Null when the call asks for nothing a model can answer (a fill with no field to fill).
+ */
+export function pieceRequest(call: PieceCall, store: UserStore): ModelRequest | null {
+  const texts = call.again ? (shortenInput(call.texts) as string[]) : call.texts;
+  const [first = "", ...rest] = texts;
+  const { marker, text } = delimit(first);
+  const today = dayIn(call.now, call.zone);
+  const again = call.again ? { shortened: true, refused: call.again.fault } : {};
+  if (call.reader === "read_message") {
+    const mods = modulesOf(call.modules ?? []);
+    const known = rest.length ? delimit(rest.join("\n")) : null;
+    const examples = (call.examples ?? []).map((e) => {
+      const d = delimit(e.mail);
+      // What the guide's example wanted, as the conversion wrote it (a list, as JSON), or his text as it is.
+      let want: unknown = e.want;
+      try {
+        const w = JSON.parse(e.want) as unknown;
+        if (Array.isArray(w)) want = w;
+      } catch {
+        // his own text
+      }
+      return { marker: d.marker, mail: d.text, want };
+    });
+    const guide =
+      call.instructions || examples.length
+        ? { instructions: call.instructions ?? "", examples }
+        : null;
+    return {
+      role: "reader",
+      kind: "read_message",
+      system: readMessagePiecePrompt(mods),
+      input: {
+        marker,
+        today,
+        weekday: weekdayOf(today),
+        user_in: call.userIn ?? "group",
+        ...(guide ? { guide } : {}),
+        content: text,
+        ...(known ? { known: { marker: known.marker, content: known.text } } : {}),
+        ...again,
+      },
+      schema: readMessageSchema(mods),
+      maxTokens: 4000,
+    };
+  }
+  if (call.reader === "decide") {
+    const criteria = Object.fromEntries(
+      (call.options ?? []).map((o) => [
+        o.key,
+        o.description ? `${o.name}: ${o.description}`.slice(0, 300) : o.name,
+      ]),
+    );
+    const questions: Record<string, DecisionQuestion> = {
+      c: { type: "choice", instructions: DECIDE_INSTRUCTIONS, criteria },
+    };
+    return {
+      role: "decider",
+      system: "",
+      input: { state: text, questions },
+      schema: {},
+      maxTokens: 0,
+    };
+  }
+  const key = call.collection;
+  const fields = key ? fillOf(store, key, mailHooksOf(store)?.target(key)?.fill) : [];
+  if (!fields.length) return null;
+  return {
+    role: "reader",
+    kind: "fill",
+    system: READER_PROMPTS.fill,
+    input: { marker, today, content: text, fields: fieldsForReader(fields), ...again },
+    schema: fillSchema(fields),
+    maxTokens: 4000,
+  };
+}
+
 /** The port of one run (or one «Probar») for `o.account`. */
 export function serverAi(o: AiFor): AiPort {
   const now = o.now ?? Date.now;
@@ -142,7 +266,7 @@ export function serverAi(o: AiFor): AiPort {
    * model it gave first, whatever the list does meanwhile. A failed call fails its step: no other model is tried.
    */
   const resolved = new Map<string, ReturnType<AiModels["stepProvider"]>>();
-  const providerOf = (kind: "agent" | "reading", value: string | null) => {
+  const providerOf = (kind: "agent" | "reading" | "decision", value: string | null) => {
     const k = `${kind}|${value ?? ""}`;
     const had = resolved.get(k);
     if (had) return had;
@@ -197,6 +321,7 @@ export function serverAi(o: AiFor): AiPort {
   return {
     async read(call: ReaderCall): Promise<ReaderReply> {
       if (over()) return { refused: "budget" };
+      if (o.cap && !o.cap()) return { refused: "daily-cap" };
       const p = providerOf("reading", call.model);
       if ("refused" in p) return { refused: p.refused };
       const req = readerRequest(call);
@@ -214,6 +339,39 @@ export function serverAi(o: AiFor): AiPort {
           }
         : { answer: got.json, model: said(got.model, p.tag) };
     },
+    /**
+     * A piece's reader (AU-249, AU-255): the «Decisora» on the account's decision model («Modelos», the kind
+     * `decision`; none there, the call is refused `no-model` and the piece doubts), the «Lectora» and the
+     * «Rellenadora» on its reading one. Counted, kept and never retried here, as `read`.
+     */
+    async piece(call: PieceCall): Promise<ReaderReply> {
+      if (over()) return { refused: "budget" };
+      if (o.cap && !o.cap()) return { refused: "daily-cap" };
+      const req = pieceRequest(call, o.store);
+      if (!req) return { refused: "no-fields" };
+      const p = providerOf(call.use === "decision" ? "decision" : "reading", call.model);
+      if ("refused" in p) return { refused: p.refused };
+      const hash = hashOf(req.role === "decider" ? JSON.stringify(req.input) : req.system);
+      const got = await complete(p.provider, req, hash);
+      if ("refused" in got)
+        return {
+          refused: got.refused,
+          model: said(p.model, p.tag),
+          ...(got.transient ? { transient: true } : {}),
+        };
+      if (req.role === "decider") {
+        // The decision model's answers checked again here: one choice among the options asked, and its confidence.
+        const asked = (req.input as { questions: Record<string, DecisionQuestion> }).questions;
+        const a = checkAnswers(got.json, asked)?.c;
+        return a?.type === "choice"
+          ? {
+              answer: { choice: a.choice, confidence: a.confidence },
+              model: said(got.model, p.tag),
+            }
+          : { refused: "model-bad-answer", model: said(got.model, p.tag) };
+      }
+      return { answer: got.json, model: said(got.model, p.tag) };
+    },
     async agent(call: AgentCall): Promise<AgentReply> {
       // `AgentCall` of packages/automations mirrors the rounds' one field by field (A-02: it imports nothing of
       // packages/agent).
@@ -221,6 +379,7 @@ export function serverAi(o: AiFor): AiPort {
       const schema = planSchema(roundArgNames(rounds));
       const reply = await runRounds(rounds, async (request: AgentRequest) => {
         if (over()) return { refused: "budget" };
+        if (o.cap && !o.cap()) return { refused: "daily-cap" };
         const p = providerOf("agent", request.model);
         if ("refused" in p) return { refused: p.refused };
         const got = await complete(
@@ -274,7 +433,12 @@ export function modelsOf(
 }
 
 /** The port of one run or test over `store`, or none when the server has no «Modelos». */
-export function aiFor(store: UserStore, run: string, test: boolean): AiPort | undefined {
+export function aiFor(
+  store: UserStore,
+  run: string,
+  test: boolean,
+  cap?: () => boolean,
+): AiPort | undefined {
   const m = modelsOf(store);
-  return m ? serverAi({ ...m, store, run, test }) : undefined;
+  return m ? serverAi({ ...m, store, run, test, ...(cap ? { cap } : {}) }) : undefined;
 }

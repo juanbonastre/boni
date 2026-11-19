@@ -250,6 +250,11 @@ export interface BoniCall {
   /** «Probar»: Boni's code changes nothing and answers what it would do (A-19, D-43). */
   test: boolean;
   /**
+   * How the run started (AU-195, AU-253): `user` when his hand started it («Proponer tarea», «Otra vez», a run by
+   * hand), so «Regla del remitente» does not skip it; `schedule` when Boni's code did, for a mail that arrived.
+   */
+  startedBy: "user" | "schedule";
+  /**
    * A piece that reads (`BoniPieceDef.reads`): its one way to a model, through `RunDeps.ai` (AU-249, AU-255). The
    * engine counts each call first (AU-206), refuses a value no model may receive or one of his outside the panel
    * (`ai.private`), and labels the answer with all it read; it never lowers a label.

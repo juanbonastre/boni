@@ -433,15 +433,19 @@ export async function runBoni(
   request: RunRequest,
   start: BoniStart,
   zone: string,
-  o: { box?: Box } = {},
+  /**
+   * `startedBy`: `user` when his hand asked for it through Boni's code («Proponer tarea», «Otra vez» of a mail,
+   * AU-253), so «Regla del remitente» does not skip it; by default `schedule`, a run that started alone (AU-167).
+   */
+  o: { box?: Box; startedBy?: StartedBy } = {},
 ): Promise<RunSummary | RunRefusal | ServiceError> {
   let ended = () => {};
   const over = new Promise<void>((r) => {
     ended = r;
   });
   const r = await enqueue(store, id, request, scheduledHand(zone), {
-    ...o,
-    startedBy: "schedule",
+    ...(o.box ? { box: o.box } : {}),
+    startedBy: o.startedBy ?? "schedule",
     boni: start,
     ended: () => ended(),
   });
