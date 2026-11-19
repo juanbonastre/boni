@@ -2,6 +2,7 @@ import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AllPagesView } from "./components/AllPages.tsx";
 import { AuditView } from "./components/Audit.tsx";
+import { useConversionNotice } from "./components/AutomationConversion.tsx";
 import { BoniCircle, BoniWindow } from "./components/BoniWindow.tsx";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
@@ -58,6 +59,8 @@ export function App() {
   // Narrower than 640 px (a phone, the Android app): its own layout, made for the phone (MobileApp).
   const mobile = useMedia(PHONE_QUERY);
   useShortcuts(mobile);
+  // The conversion's one notice (AU-225), on the phone too.
+  useConversionNotice();
   const settingsOpen = useStore((s) => s.settingsOpen);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const panelOpen = useStore((s) => s.panel != null);

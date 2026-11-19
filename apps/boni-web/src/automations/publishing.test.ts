@@ -330,5 +330,7 @@ function opened(automation: Automation): Opened {
     pins: {},
     device: "d_portatil",
     updated: 1,
+    conversion: null,
+    boni: false,
   };
 }

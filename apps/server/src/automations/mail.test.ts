@@ -1476,6 +1476,55 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
+  it("AU-221 · P1: «Volver al de Boni» republishes Boni's own version, which never holds a «Sí»: the one Juan set since by hand is not brought back, and every cell asks again", () => {
+    const s = mailStore();
+    try {
+      wired(s);
+      // His «Solo» was on before: even so, Boni's version is born asking (decision 30).
+      setAutoState(s, AUTO_AREA, true, "juan", NOW - 86_400_000);
+      converted(s);
+      const doc = publishedOf(s, MAIL_FLOW)?.automation as Automation;
+      const withYes = {
+        ...doc,
+        steps: doc.steps.map((x) =>
+          x.type === CREATE_CHOSEN
+            ? {
+                ...x,
+                connections: x.connections?.map((c) => ({
+                  ...c,
+                  create: { mode: "yes" as const },
+                })),
+              }
+            : x,
+        ),
+      };
+      // His «Sí», by his hand: it runs.
+      const { rev } = ok(keepDraft(s, MAIL_FLOW, withYes, HAND));
+      ok(publish(s, MAIL_FLOW, { rev }, JUAN));
+      const cells = () =>
+        publishedOf(s, MAIL_FLOW)
+          ?.automation.steps.filter((x) => x.type === CREATE_CHOSEN)
+          .flatMap((x) => x.connections?.map((c) => c.create) ?? []);
+      expect(cells()).toEqual([{ mode: "yes" }, { mode: "yes" }]);
+      const versions = s.journal.automationVersions(MAIL_FLOW);
+      const boni = versions.filter((v) => v.by === "preset").map((v) => v.n);
+      expect(boni.length).toBeGreaterThan(0);
+      // Every version of Boni's holds none: the conversion lowered them, and Boni's code follows only its own.
+      for (const n of boni)
+        expect(s.journal.automationVersion(MAIL_FLOW, n)?.doc, String(n)).not.toMatch(
+          /"(mode|permission)":"yes"/,
+        );
+      // «Volver al de Boni»: «Volver a esta» on Boni's newest; what runs asks in every cell, as Boni's did.
+      ok(publish(s, MAIL_FLOW, { version: Math.max(...boni) }, JUAN));
+      expect(cells()).toEqual([{ mode: "ask" }, { mode: "ask" }]);
+      expect(JSON.stringify(publishedOf(s, MAIL_FLOW)?.automation)).not.toMatch(
+        /"(mode|permission)":"yes"/,
+      );
+    } finally {
+      s.close();
+    }
+  });
+
   it("AU-255 · a piece's reader gets what came from a mail only between the markers and labelled as from outside, the sender's pending titles included, and beside it only its panel and closed lists: a row of the person's, or a field label set on the trigger's row, fails with ai.private", async () => {
     const s = mailStore();
     try {

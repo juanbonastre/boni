@@ -100,6 +100,8 @@ export type Refusal =
    * automation is neither published nor turned on until «Convertir otra vez» (AU-228: one id, one engine).
    */
   | { refused: "reverted" }
+  /** «Convertir otra vez» (conversion.ts): the flow got a version while it ran as before, which the automation lacks. */
+  | { refused: "changed" }
   /** The run did not start: the trigger, or a field of it, is not the version's (`CannotRun`). */
   | { refused: "invalid"; problems: Problem[] };
 

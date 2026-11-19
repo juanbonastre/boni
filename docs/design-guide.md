@@ -1237,6 +1237,24 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   with an ellipsis) and «Recuperar» (small button). Recovered, it leaves the modal and comes back to the list as
   «Apagada» (or «Sin publicar»), the notice saying «Nombre» recuperada y apagada; with none, «No hay ninguna
   eliminada». From a shared device «Recuperar» says «Solo desde un dispositivo personal.».
+- **The conversion** (F16 P1, `AutomationConversion.tsx`; AU-225, AU-221, AU-229, decision 21). Over the list, under
+  its title, a band of `--accent-soft` with radius 10: «Tus flujos son ahora automatizaciones» (14 px, 600) and an X
+  «Cerrar» on its right; under it one row per flow the conversion reached, by name: the name (500, plain text, cut
+  with an ellipsis; a button that opens it, plain for one kept as a flow), a muted pill with its state when it is not
+  «Convertida» («En el flujo de antes», «Sigue como flujo»), and «3 ejecuciones desde la conversión · 1 falló» (12 px,
+  muted; «Sin ejecuciones desde la conversión» with none); on the next line «Hace lo mismo» (muted) or «Lo que cambia»
+  folded (`details`), its lines a list. At the end, once for all, «2 versiones de antes no se pudieron convertir».
+  The rows scroll past half the screen. «Cerrar» closes it for the account (no device shows it again), and the list's
+  «⋯» gains «Conversión» under «Eliminadas»: a modal with the same rows. The app gives one notice, once per device,
+  wherever it opens but on the list: «Tus flujos son ahora automatizaciones» with «Ver», which opens the list (on the
+  phone, under «Páginas»). In «Versiones» a version that came from the flow's has a muted pill «Convertida» beside
+  whose, and « · Convertida» in its bar. In the editor's «⋯», above «Duplicar»: «Volver al flujo de antes» on a
+  converted one, which turns it off and leaves the flow running, the header saying «En el flujo de antes» in a muted
+  pill where the switch was (on the phone too, where nothing switches it); then «Convertir otra vez», which leaves
+  the switch as Juan had it before going back (off stays off). Neither changes a version or the draft. One of
+  Boni's says «De: Boni» in a muted pill after its name, has no «Eliminar», and «Volver al de Boni» while the one that runs is not Boni's last: it opens «Publicar» about that
+  version, as «Volver a esta». From a shared device «Cerrar», «Volver al flujo de antes» and «Convertir otra vez»
+  say «Solo desde un dispositivo personal.» and change nothing.
 - **«Ejecuciones»** (F14d P2, `AutomationRuns.tsx`, `automations/runs.ts`, `automations/runWords.ts`; AU-18, AU-93,
   AU-97, AU-99 to AU-101, AU-103, AU-190; the sketch's screen 8). «Ejecutar» (the header, «⋯», the notice of
   publishing, and a ▶ in the list's row of a published automation, which opens it and asks its fields) goes to this

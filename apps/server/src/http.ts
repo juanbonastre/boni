@@ -456,6 +456,16 @@ export function makeApp(opts: ServerOptions): App {
       switch (route) {
         case "GET /api/agent/automations/:id":
           return automation("automations.read", { id });
+        // F16 P1 (automations/conversion.ts): the conversion's band and «⋯ → Conversión», by any of his devices;
+        // «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» on the band, from a personal one only.
+        case "GET /api/agent/automations/conversion":
+          return automation("automations.read", { id: "conversion", part: "conversion" });
+        case "POST /api/agent/automations/conversion":
+          return automation("automations.convert", { do: "close" });
+        case "POST /api/agent/automations/:id/conversion": {
+          const b = await bodyOf(req);
+          return automation("automations.convert", { id, do: b.do });
+        }
         case "POST /api/agent/automations": {
           const b = await bodyOf(req);
           return automation("automations.create", { automation: b.automation });

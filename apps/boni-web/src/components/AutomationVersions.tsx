@@ -151,6 +151,10 @@ export function VersionsPane({
                 </span>
                 <span className="auto-runs-who">
                   {t(whoseKey(v))}
+                  {/* «Convertida» (AU-225): it came from a version of the flow of before. */}
+                  {typeof v.flow === "number" && (
+                    <span className="auto-vers-converted">{t("auto.ver.converted")}</span>
+                  )}
                   {v.n === running && (
                     <span className="auto-vers-running">{t("auto.ver.running")}</span>
                   )}
@@ -176,6 +180,7 @@ export function VersionsPane({
               <strong className="auto-run-when">{t("auto.ver.n", { n: chosen })}</strong>
               <span className="auto-run-line">
                 {`${fullWhen(lang, zone, info.at)} · ${t(whoseKey(info))}`}
+                {typeof info.flow === "number" ? ` · ${t("auto.ver.converted")}` : ""}
                 {chosen === running ? ` · ${t("auto.ver.running")}` : ""}
               </span>
             </div>

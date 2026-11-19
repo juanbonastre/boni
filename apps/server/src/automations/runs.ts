@@ -775,7 +775,8 @@ export function goOn(store: UserStore, run: string, o: { zone: string; box?: Box
 /**
  * Goes on with a waiting run by its turn: the version it started with, its steps as they were, and the lowest «Sí»
  * between that version's and the one published now (`lowerYes`: a step that is not the same in both asks, so waiting
- * never keeps a «Sí» Juan took back), and a cell paused since asks (AU-210). Off or deleted meanwhile, it is cancelled.
+ * never keeps a «Sí» Juan took back), and a cell paused since asks (AU-210). Off, deleted or sent back to its flow
+ * meanwhile, it is cancelled.
  */
 async function carryOn(store: UserStore, run: string, zone: string, box: Box): Promise<void> {
   const r = store.journal.automationRun(run);
@@ -784,7 +785,10 @@ async function carryOn(store: UserStore, run: string, zone: string, box: Box): P
   const id = r.automation;
   const row = store.journal.automation(id);
   const v = r.version === null ? null : store.journal.automationVersion(id, r.version);
-  if (!row || row.deleted || !row.enabled || !v) return cancelWait(store, r, Date.now());
+  // Back on the flow of before (AU-225, AU-228: one id, one engine), it is cancelled as when off.
+  const reverted = store.journal.flowConversion(id)?.state === "reverted";
+  if (!row || row.deleted || !row.enabled || !v || reverted)
+    return cancelWait(store, r, Date.now());
   const kept = JSON.parse(w.execution) as Execution;
   // The steps whose every question has an entry go on; the rest stay as they were, past their limit or not.
   const given = keptAnswers(w.answers);

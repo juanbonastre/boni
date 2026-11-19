@@ -18,8 +18,8 @@ import { MenuRow, PopButton } from "./Popover.tsx";
 
 const client = automationsClient(agentApi);
 
-/** The list's «⋯»: «Eliminadas» and its screen. */
-export function DeletedMenu() {
+/** The list's «⋯»: «Eliminadas» and its screen; «Conversión» (AU-225) when the conversion reached a flow. */
+export function DeletedMenu({ onConversion }: { onConversion?: (() => void) | undefined } = {}) {
   const t = useStore((s) => s.t);
   const [open, setOpen] = useState(false);
   return (
@@ -30,14 +30,26 @@ export function DeletedMenu() {
         className="icon-btn flows-more"
       >
         {(close) => (
-          <MenuRow
-            label={t(DO.deletedList)}
-            boniAction="automations.read"
-            onClick={() => {
-              close();
-              setOpen(true);
-            }}
-          />
+          <>
+            <MenuRow
+              label={t(DO.deletedList)}
+              boniAction="automations.read"
+              onClick={() => {
+                close();
+                setOpen(true);
+              }}
+            />
+            {onConversion && (
+              <MenuRow
+                label={t("auto.conv.menu")}
+                boniAction="automations.read"
+                onClick={() => {
+                  close();
+                  onConversion();
+                }}
+              />
+            )}
+          </>
         )}
       </PopButton>
       {open && <DeletedScreen onClose={() => setOpen(false)} />}
