@@ -15,7 +15,7 @@ import { type Plan, planToAutomation } from "@boni/agent";
 import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
-import { openUserStore, type UserStore } from "@boni/store";
+import { AUTOMATION_FAILED_IN_SQL, openUserStore, type UserStore } from "@boni/store";
 import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { jsBox } from "../../../../packages/agent/test/convert.test-util.ts";
@@ -37,6 +37,10 @@ import {
 import { publish, setEnabled, versionsOf } from "./publish.ts";
 import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
 import { undoAutomationRun } from "./runs.ts";
+import { ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
+import { ROUTES } from "../routes.ts";
+import { BAND_CLOSED, conversionList } from "./conversion.ts";
+import { CONVERSION_ROUTES, SHARED_DEVICE_ROUTES } from "./routes.ts";
 import { automationView, testAutomation } from "./service.ts";
 
 const DAY = 24 * HOUR;
@@ -173,9 +177,6 @@ describe("the saved flows converted to automations (F16)", () => {
   );
   it.todo(
     "AU-150 · the dry report of a conversion replays each flow's last runs in both engines without writing, and names counts, steps and how many agree, and none of the person's texts",
-  );
-  it.todo(
-    "AU-225 · the conversion's list says for each automation «Hace lo mismo» or «Lo que cambia», and how many runs it has had since and how many failed",
   );
   it.todo(
     "AU-227 · with a year of runs the conversion, the copy and the list of runs of the mail automation stay within their times",
@@ -694,5 +695,180 @@ describe("the saved flows converted to automations (F16)", () => {
     // An action of Boni's converts as «Acción de Boni», which has no «Sí»: its acts are decided behind the port.
     const doc = parseAutomation(JSON.parse(store.journal.automationDraft(action)?.doc ?? "{}"));
     expect(doc.steps.map((s) => s.type)).toContain(BONI_ACTION_TYPE);
+  });
+
+  /** A real run of an automation, as its engine keeps it once ended. */
+  function ranAt(s: UserStore, automation: string, at: number, state = "done", test = false) {
+    const id = `ar_${randomUUID()}`;
+    s.journal.createAutomationRun({
+      id,
+      automation,
+      version: test ? null : 1,
+      test,
+      state: "running",
+      trigger: "t",
+      fields: "{}",
+      startedBy: "user",
+      device: "d_portatil",
+      retryOf: null,
+      at,
+      started: at,
+      doc: test ? "{}" : null,
+    });
+    s.journal.endAutomationRun(id, {
+      state: state as "done",
+      ended: at + 40,
+      ms: 40,
+      step: null,
+      error: state === "failed" ? "x" : null,
+      line: JSON.stringify({ writes: [], asked: [], outside: false }),
+    });
+  }
+
+  it("AU-225 · the conversion's list says for each automation «Hace lo mismo» or «Lo que cambia», and how many runs it has had since and how many failed", () => {
+    const same = flow({ name: "Contar pedidos", trigger: DAILY, plans: [COUNT] });
+    const changes = flow({
+      name: "Apuntar pedido",
+      trigger: MANUAL,
+      plans: [CREATE(ref("$nota"))],
+    });
+    const kept = flow({ name: "Arreglar pedido", plans: [UPDATE] });
+    const old = flow({ name: "Viejo", plans: [COUNT, UPDATE, COUNT] });
+    convertFlows(store, NOW);
+    // Since the conversion: three real runs, one failed; a test and a run of before do not count.
+    for (const h of [1, 2, 3]) ranAt(store, same, NOW + h * HOUR, h === 2 ? "failed" : "done");
+    ranAt(store, same, NOW + 4 * HOUR, "done", true);
+    ranAt(store, same, NOW - HOUR);
+    const list = conversionList(store);
+    expect(list.closed).toBeNull();
+    const by = new Map(list.items.map((x) => [x.id, x]));
+    // A count only changes its limits («Sus límites son los de una automatización»); a write by hand asks now.
+    expect(by.get(same)).toMatchObject({
+      state: "converted",
+      changes: ["automationLimits"],
+      runs: 3,
+      failed: 1,
+    });
+    expect(by.get(same)?.boni).toBe(false);
+    expect(by.get(changes)?.changes).toContain("asksNow");
+    expect(by.get(changes)).toMatchObject({ runs: 0, failed: 0, name: "Apuntar pedido" });
+    // Kept as it was: its name from the flow, no runs of an automation.
+    expect(by.get(kept)).toMatchObject({ state: "kept", name: "Arreglar pedido", runs: 0 });
+    // «N versiones de antes no se pudieron convertir».
+    expect(by.get(old)?.skipped).toBe(1);
+    // By name, for the band.
+    expect(list.items.map((x) => x.name)).toEqual([
+      "Apuntar pedido",
+      "Arreglar pedido",
+      "Contar pedidos",
+      "Viejo",
+    ]);
+  });
+
+  it("AU-225 · P1: «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» go through their action from a personal device only; a round trip loses nothing and sets no «Sí»", async () => {
+    const id = flow({ trigger: MANUAL, plans: [CREATE(lit("una")), CREATE(ref("$nota"))] });
+    convertFlows(store, NOW);
+    const was = {
+      versions: versionsOf(store, id),
+      draft: store.journal.automationDraft(id)?.doc,
+      published: store.journal.automation(id)?.published,
+    };
+    const personal = { store, trust: "personal" as const, device: "d_portatil" };
+    const shared = { store, trust: "shared" as const, device: "d_salon" };
+    // A shared device sees the state and cannot switch it.
+    const refused = await runAction("automations.convert", { id, do: "back" }, shared);
+    expect(JSON.stringify(refused)).toMatch(/not-personal|refused/);
+    expect(store.journal.flowConversion(id)?.state).toBe("converted");
+    const closed = await runAction("automations.convert", { do: "close" }, shared);
+    expect(JSON.stringify(closed)).toMatch(/not-personal|refused/);
+    expect(store.setting(BAND_CLOSED)).toBeNull();
+    // His own: back, and again.
+    expect(await runAction("automations.convert", { id, do: "back" }, personal)).toEqual({
+      out: { state: "reverted" },
+    });
+    expect(store.journal.automation(id)?.enabled).toBe(false);
+    expect(conversionList(store).items[0]?.state).toBe("reverted");
+    expect(await runAction("automations.convert", { id, do: "again" }, personal)).toEqual({
+      out: { state: "converted" },
+    });
+    expect(store.journal.automation(id)?.enabled).toBe(true);
+    // Nothing lost, nothing more: the same versions, draft and running version, and no step says «Sí».
+    expect(versionsOf(store, id)).toEqual(was.versions);
+    expect(store.journal.automationDraft(id)?.doc).toBe(was.draft);
+    expect(store.journal.automation(id)?.published).toBe(was.published);
+    for (const n of [1, 2]) {
+      const doc = parseAutomation(
+        JSON.parse(store.journal.automationVersion(id, n)?.doc ?? "{}"),
+      );
+      expect(doc.steps.map((x) => consentOf(x, "pedido", "create"))).not.toContain("yes");
+    }
+    // «Cerrar»: kept for the account; the list stays.
+    expect(await runAction("automations.convert", { do: "close" }, personal)).toMatchObject({
+      out: { closed: expect.any(Number) },
+    });
+    expect(conversionList(store).closed).not.toBeNull();
+    expect(conversionList(store).items).toHaveLength(1);
+    // Every route is listed, on the tailnet, run by its action, and none is a shared device's (decision 13).
+    for (const [route, { action }] of Object.entries(CONVERSION_ROUTES)) {
+      expect(ROUTES[route], route).toBe("tailnet");
+      expect(SHARED_DEVICE_ROUTES.has(route), route).toBe(false);
+      if (route.startsWith("GET ")) continue;
+      expect(ROUTE_RUNS[route], route).toBe(action);
+      expect(ROUTE_ACTIONS[route], route).toEqual([action]);
+    }
+  });
+
+  it("AU-225 · P1 A-15: with 200 automations and a year of 40,000 runs, the band's list and «Versiones» answer within their times, by the runs' index", () => {
+    const path = join(f.dir, `banda-${randomUUID()}.db`);
+    store.close();
+    store = openUserStore(path, { now: () => NOW });
+    seeded(store);
+    const ids: string[] = [];
+    for (let i = 0; i < 200; i++)
+      ids.push(
+        flow({
+          name: `Flujo ${i}`,
+          trigger: i % 2 ? DAILY : ALONE,
+          plans: Array.from({ length: 6 }, (_, k) => (k === 2 ? UPDATE : CREATE(lit(`v${k}`)))),
+        }),
+      );
+    convertFlows(store, NOW);
+    // A year of runs, half before the conversion and half after, one in twenty failed.
+    store.close();
+    const raw = new DatabaseSync(path);
+    raw.exec("BEGIN");
+    const run = raw.prepare(
+      `INSERT INTO automation_runs (id, automation, version, test, state, trigger, fields, started_by, device, at, started, ended, ms)
+       VALUES (?, ?, 1, 0, ?, 't', '{}', 'user', 'd_portatil', ?, ?, ?, 40)`,
+    );
+    for (let i = 0; i < 40_000; i++) {
+      const at = NOW - 182 * DAY + i * 790_000;
+      run.run(`ar_${i}`, ids[i % 200] as string, i % 20 ? "done" : "failed", at, at, at + 40);
+    }
+    raw.exec("COMMIT");
+    raw.close();
+    store = openUserStore(path, { now: () => NOW });
+    let start = clock();
+    const list = conversionList(store);
+    under(clock() - start, 150, "cpu", "the conversion's band with 200 automations and 40,000 runs");
+    expect(list.items).toHaveLength(200);
+    const runs = list.items.reduce((n, x) => n + x.runs, 0);
+    expect(runs).toBeGreaterThan(19_000);
+    expect(runs).toBeLessThan(21_000);
+    // «Versiones» of one of them, with «Convertida» on each.
+    start = clock();
+    const v = versionsOf(store, ids[7] as string);
+    under(clock() - start, 30, "cpu", "«Versiones» of a converted automation");
+    if ("error" in v) throw new Error(v.error);
+    expect(v.versions.every((x) => x.flow !== null)).toBe(true);
+    // The count is the covering index's: no run is read.
+    const sql = new DatabaseSync(path);
+    const plan = sql
+      .prepare(`EXPLAIN QUERY PLAN ${AUTOMATION_FAILED_IN_SQL}`)
+      .all(ids[0] as string, 0, NOW) as { detail: string }[];
+    sql.close();
+    expect(plan.map((p) => p.detail).join(" | ")).toMatch(
+      /USING COVERING INDEX automation_runs_count/,
+    );
   });
 });

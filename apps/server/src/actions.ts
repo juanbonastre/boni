@@ -18,6 +18,7 @@ import { type Label, label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import {
   withAutomationActions,
+  withConversionActions,
   withPublishActions,
   withRunActions,
 } from "./automations/actions.ts";
@@ -49,6 +50,7 @@ import { withTurnActions } from "./turnActions.ts";
 export function serverRegistry(): ToolRegistry {
   const all = withRunProposal(
     withRunActions(
+      withConversionActions(
       withPublishActions(
         withAutomationActions(
           withConnectorActions(
@@ -65,6 +67,7 @@ export function serverRegistry(): ToolRegistry {
             ),
           ),
         ),
+      ),
       ),
     ),
   );
@@ -132,6 +135,9 @@ export const ROUTE_ACTIONS: Readonly<Record<string, readonly string[]>> = {
   "PUT /api/agent/automations/:id/pins/:step": ["automations.pin"],
   "DELETE /api/agent/automations/:id/pins/:step": ["automations.pin"],
   "POST /api/agent/automations/:id/runs/:run/pin": ["automations.pin"],
+  // F16 P1: «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» on the band (automations/conversion.ts).
+  "POST /api/agent/automations/:id/conversion": ["automations.convert"],
+  "POST /api/agent/automations/conversion": ["automations.convert"],
   // A page's chat (pageChat.ts, D-61) is a flow: made for its page and changed in its block's panel.
   "POST /api/agent/chats": ["flows.save"],
   "PUT /api/agent/chats/:id": ["flows.save"],
@@ -255,6 +261,8 @@ export const ROUTE_RUNS: Readonly<Record<string, string>> = {
   "PUT /api/agent/automations/:id/pins/:step": "automations.pin",
   "DELETE /api/agent/automations/:id/pins/:step": "automations.pin",
   "POST /api/agent/automations/:id/runs/:run/pin": "automations.pin",
+  "POST /api/agent/automations/:id/conversion": "automations.convert",
+  "POST /api/agent/automations/conversion": "automations.convert",
 };
 
 /**
@@ -604,6 +612,7 @@ export const ACTION_MCP: Readonly<Record<string, string | { why: string }>> = {
   "automations.learn": { why: NO_MCP_YET },
   "automations.answer": { why: NO_MCP_YET },
   "automations.pin": { why: NO_MCP_YET },
+  "automations.convert": { why: NO_MCP_YET },
   "automations.accept_run": {
     why: "Juan's touch: a run's proposal is his card in the Bandeja, accepted from a personal device (AU-193)",
   },

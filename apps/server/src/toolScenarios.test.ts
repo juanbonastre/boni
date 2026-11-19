@@ -256,6 +256,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
     },
   ],
   "automations.pin": [{ file: AUTOMATION_RUNS, test: RUNS_TEST }],
+  "automations.convert": [
+    {
+      file: "apps/server/src/automations/convert.test.ts",
+      test: "AU-225 · P1: «Volver al flujo de antes», «Convertir otra vez» and «Cerrar» go through their action from a personal device only; a round trip loses nothing and sets no «Sí»",
+    },
+  ],
   "automations.answer": [
     {
       file: "apps/server/src/automations/ai.test.ts",

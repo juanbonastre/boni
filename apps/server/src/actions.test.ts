@@ -120,6 +120,7 @@ describe("one list of actions (D-41, F10)", () => {
       // «Automatizaciones» (automations/routes.ts): what changes one is his touch (AU-168).
       "automations.answer",
       "automations.arrange",
+      "automations.convert",
       "automations.create",
       "automations.delete",
       "automations.duplicate",

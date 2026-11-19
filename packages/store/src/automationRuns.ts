@@ -63,6 +63,10 @@ import { OUTSIDE_INTEGRITY, TEST_ROWS_CHUNK } from "./automations.ts";
 export const AUTOMATION_RUNS_IN_SQL = `SELECT count(*) AS n FROM automation_runs INDEXED BY automation_runs_count
   WHERE automation = ? AND test = 0 AND at >= ? AND at < ? AND state <> 'missed'`;
 
+/** The same count for the runs that failed (AU-225: «ninguna falló»), by the same covering index. */
+export const AUTOMATION_FAILED_IN_SQL = `SELECT count(*) AS n FROM automation_runs INDEXED BY automation_runs_count
+  WHERE automation = ? AND test = 0 AND at >= ? AND at < ? AND state = 'failed'`;
+
 /** How a run ends (AU-99, AU-190): it is `queued` and `running` before. */
 export type AutomationRunState =
   | "queued"
@@ -242,6 +246,8 @@ export interface AutomationRunsJournal {
   automationRunCounts(): Map<string, { runs: number; last: number | null }>;
   /** How many real runs of an automation were asked in `[from, to)`, missed hours left out, by the index (AU-47). */
   automationRunsIn(automation: string, from: number, to: number): number;
+  /** How many of those failed (AU-225, the conversion's band), by the same index. */
+  automationFailedIn(automation: string, from: number, to: number): number;
   /**
    * A run starts to wait (AU-203): `waiting`, with how long it ran so far, its line and what it needs to go on. One
    * transaction.
@@ -623,6 +629,8 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
       ),
     automationRunsIn: (automation, from, to) =>
       Number((db.prepare(AUTOMATION_RUNS_IN_SQL).get(automation, from, to) as { n: number }).n),
+    automationFailedIn: (automation, from, to) =>
+      Number((db.prepare(AUTOMATION_FAILED_IN_SQL).get(automation, from, to) as { n: number }).n),
     automationRun: (id) => {
       const r = db.prepare("SELECT * FROM automation_runs WHERE id = ?").get(id) as
         | Record<string, unknown>

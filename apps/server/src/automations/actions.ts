@@ -22,7 +22,8 @@ import type { UserStore } from "@boni/store";
 import { declineSuggestion, learningKey, learningOf, unpause } from "./learning.ts";
 import { publish, publishView, setEnabled, versionOf, versionsOf } from "./publish.ts";
 import { dropInstructions, pendingSuggestion, takeInstructions } from "./review.ts";
-import { AUTOMATION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
+import { closeBand, conversionList, convertAgain } from "./conversion.ts";
+import { AUTOMATION_ACTIONS, CONVERSION_ACTIONS, PUBLISH_ACTIONS, RUN_ACTIONS } from "./routes.ts";
 import {
   answerRun,
   askGivenOf,
@@ -107,7 +108,13 @@ const id = {
 /** The zone «hoy» is in when the hand brings none: the server's default (agent.ts `tz`). */
 const DEFAULT_ZONE = "Europe/Madrid";
 const undoOf = (name: string) => ({
-  none: (AUTOMATION_ACTIONS[name] ?? PUBLISH_ACTIONS[name] ?? RUN_ACTIONS[name])?.undo ?? "",
+  none:
+    (
+      AUTOMATION_ACTIONS[name] ??
+      PUBLISH_ACTIONS[name] ??
+      RUN_ACTIONS[name] ??
+      CONVERSION_ACTIONS[name]
+    )?.undo ?? "",
 });
 /** A version's number, given as text in a query or as a number in a body; absent is undefined. */
 const numberOf = (v: Val | undefined): number | undefined => {
@@ -129,13 +136,13 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
     undo: undoOf("automations.read"),
     title: "Abrir automatización",
     describe:
-      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset); with part asked, a page of what a run asked, as its card in the inbox shows it (run, offset); with part learning, the cells of its published version with their counts, pauses and suggestions",
+      "Open one of Juan's automations in its editor: its draft, where its boxes are and its last tests; with part rows, a page of a step's last test (step, side in or out, name of the input or output, offset); with part sample, what a step's expressions preview with (step); with part preview, what one expression is worth with one row of its last test (step, param, row, and expr: the text being typed); with part publish, what «Publicar» shows for the draft or, with version, for that version's document; with part versions, its versions without their documents; with part version, one version (version); with part runs, a page of its runs, 50 at a time, the newest first (filter all, failed or tests; before, the last run of the page before); with part run, one run (run); with part runRows, a page of one of a run's steps' rows (run, step, side, name, offset); with part asked, a page of what a run asked, as its card in the inbox shows it (run, offset); with part learning, the cells of its published version with their counts, pauses and suggestions; with part conversion (any id), every flow the conversion reached with «Lo que cambia», its runs since and how many failed, and whether the band was closed",
     args: {
       id,
       part: {
         role: "option",
         describe:
-          "view (the default), rows, sample, preview, publish, versions, version, runs, run, runRows, asked or learning",
+          "view (the default), rows, sample, preview, publish, versions, version, runs, run, runRows, asked, learning or conversion",
       },
       run: { role: "option", describe: "run, runRows and asked: the run's id" },
       filter: { role: "option", describe: "runs: all (the default), failed or tests" },
@@ -153,6 +160,7 @@ export function withAutomationActions(r: ToolRegistry): ToolRegistry {
       const s = handOf(c.service);
       const automation = idOf(a.id);
       const part = textOf(a.part) ?? "view";
+      if (part === "conversion") return leaf(conversionList(s.store) as never, code);
       if (part === "view") return leaf(answer(automationView(s.store, automation)) as never, code);
       if (part === "publish")
         return leaf(answer(publishView(s.store, automation, numberOf(a.version))) as never, code);
@@ -442,6 +450,40 @@ export function withPublishActions(r: ToolRegistry): ToolRegistry {
       if (typeof on !== "boolean") throw new ToolError("bad-argument");
       return leaf(
         answer(setEnabled(s.store, idOf(a.id), on, { ...hand(s), trust: s.trust })) as never,
+        code,
+      );
+    },
+  });
+  return r;
+}
+
+/**
+ * «Volver al flujo de antes» and «Convertir otra vez» (decision 21), and «Cerrar» on the conversion's band (F16 P1,
+ * AU-225; conversion.ts). Juan's touch, from a personal device only (decision 13): neither way sets a «Sí».
+ */
+export function withConversionActions(r: ToolRegistry): ToolRegistry {
+  r.register({
+    name: "automations.convert",
+    icon: "Undo2",
+    effect: "touch",
+    area: "flows",
+    service: "automations",
+    undo: undoOf("automations.convert"),
+    title: "Volver al flujo de antes o a la automatización",
+    describe:
+      "do back: a converted flow runs again as it was and its automation is off; do again: back to its automation, on from now; do close (no id): the conversion's band is not shown again",
+    args: {
+      id: { role: "option", describe: "the automation's id (back and again)" },
+      do: { role: "option", required: true, describe: "back, again or close" },
+    },
+    run(c, a) {
+      const s = handOf(c.service);
+      if (!s.trust) throw new ToolError("not-available");
+      const step = textOf(a.do);
+      if (step === "close") return leaf(closeBand(s.store, { ...hand(s), trust: s.trust }) as never, code);
+      if (step !== "back" && step !== "again") throw new ToolError("bad-argument");
+      return leaf(
+        answer(convertAgain(s.store, idOf(a.id), step, { ...hand(s), trust: s.trust })) as never,
         code,
       );
     },
