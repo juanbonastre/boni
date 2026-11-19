@@ -92,7 +92,13 @@ function decodeText(raw: Uint8Array): string {
 /** CSV with quotes, its separator guessed from the first lines (comma, semicolon or tab); `maxRows` at most. */
 export function readCsvRows(raw: Uint8Array, maxRows = Number.POSITIVE_INFINITY): Row[] {
   const text = decodeText(raw);
-  const sample = text.split(/\r?\n/).slice(0, 20).join("\n");
+  // The first 20 lines, found from the start (task 164: a split of the whole text held every line of a big file).
+  let end = 0;
+  for (let k = 0; k < 20 && end < text.length; k++) {
+    const nl = text.indexOf("\n", end);
+    end = nl < 0 ? text.length : nl + 1;
+  }
+  const sample = text.slice(0, end);
   const count = (d: string) => sample.split(d).length - 1;
   const delim = [",", ";", "\t"].reduce((a, b) => (count(b) > count(a) ? b : a));
   const rows: Row[] = [];

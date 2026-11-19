@@ -563,7 +563,12 @@ var conciliacion = (() => {
   }
   function readCsvRows(raw, maxRows = Number.POSITIVE_INFINITY) {
     const text2 = decodeText(raw);
-    const sample = text2.split(/\r?\n/).slice(0, 20).join("\n");
+    let end = 0;
+    for (let k = 0; k < 20 && end < text2.length; k++) {
+      const nl = text2.indexOf("\n", end);
+      end = nl < 0 ? text2.length : nl + 1;
+    }
+    const sample = text2.slice(0, end);
     const count2 = (d) => sample.split(d).length - 1;
     const delim = [",", ";", "	"].reduce((a, b) => count2(b) > count2(a) ? b : a);
     const rows = [];

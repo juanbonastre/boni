@@ -690,7 +690,9 @@ describe("the mailbox", () => {
       const kept = store.list(def.id).find((e) => e.entity.values.f_asunto === subject);
       expect(kept, subject).toBeDefined();
       const sheetIds = kept?.entity.values.f_archivos as string[];
-      expect(store.get(sheetIds[0] as string)?.entity.values.f_title).toMatch(/^hoja( \(\d\))?\.xlsx$/);
+      expect(store.get(sheetIds[0] as string)?.entity.values.f_title).toMatch(
+        /^hoja( \(\d\))?\.xlsx$/,
+      );
       expect(kept?.entity.values.f_adjuntos_texto).toBe(
         subject === "Hoja buena" ? "[hoja.xlsx]\n7" : undefined,
       );
