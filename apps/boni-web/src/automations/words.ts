@@ -10,6 +10,9 @@ import {
   AI_FAILURES,
   type Automation,
   actionOf,
+  BONI_CATEGORY,
+  BONI_TYPES,
+  boniSpec,
   CATALOGUE,
   CATEGORIES,
   type Cell,
@@ -18,6 +21,7 @@ import {
   CODE_LIMITS,
   CODE_PROBLEMS,
   HARD_LIMITS,
+  isBoniType,
   isExpr,
   OUT,
   type ParamSpec,
@@ -40,14 +44,21 @@ import type { RowView } from "./client.ts";
 import { type CardLabel, type ConditionField, isEmpty } from "./panel.ts";
 import type { LogLine } from "./state.ts";
 
+/**
+ * Whose words a parameter is said with: its type's; the Boni steps (F16, E2) share one set, since a parameter of
+ * theirs means the same in each («Modelo», «Se ejecuta», «Colección»).
+ */
+const paramScope = (type: string) => (isBoniType(type) ? BONI_CATEGORY : type);
+
 /** The key that says each thing of the catalogue. */
 export const KEY = {
   category: (category: string) => `auto.category.${category}`,
   step: (type: string) => `auto.step.${type}`,
   /** An action as a phrase («Buscar filas»): in the panel of adding, in the action's choice and in a step's name. */
   action: (type: string, action: string) => `auto.action.${type}.${action}`,
-  param: (type: string, param: string) => `auto.param.${type}.${param}`,
-  choice: (type: string, param: string, value: string) => `auto.choice.${type}.${param}.${value}`,
+  param: (type: string, param: string) => `auto.param.${paramScope(type)}.${param}`,
+  choice: (type: string, param: string, value: string) =>
+    `auto.choice.${paramScope(type)}.${param}.${value}`,
   output: (output: string) => `auto.output.${output}`,
   /** An input, said only where a step has more than one («Combinar»: A and B). */
   input: (input: string) => `auto.input.${input}`,
@@ -123,7 +134,8 @@ export const DO = {
 /** Every key of `i18n.ts` the catalogue needs as it is today: what a test asks `i18n.ts` for. */
 export function catalogueKeys(): string[] {
   const keys = new Set<string>();
-  for (const c of [...CATEGORIES, AI_CATEGORY, PEOPLE_CATEGORY]) keys.add(KEY.category(c));
+  for (const c of [...CATEGORIES, AI_CATEGORY, PEOPLE_CATEGORY, BONI_CATEGORY])
+    keys.add(KEY.category(c));
   const params = (type: string, list: readonly ParamSpec[]) => {
     for (const p of list) {
       if (p.place === "hidden") continue;
@@ -135,8 +147,9 @@ export function catalogueKeys(): string[] {
   };
   const measures = new Set<string>();
   // «Código», «Agente» and the three that talk to Juan (AU-30, AU-50, AU-69): in the panel beside the catalogue
-  // (adding.ts), worded the same.
-  for (const spec of [...CATALOGUE, ...BESIDE_CATALOGUE]) {
+  // (adding.ts), worded the same. Boni's steps (AU-127, AU-249): only in Boni's automations, worded all the same.
+  const boni = BONI_TYPES.flatMap((type) => boniSpec(type) ?? []);
+  for (const spec of [...CATALOGUE, ...BESIDE_CATALOGUE, ...boni]) {
     keys.add(KEY.step(spec.type));
     params(spec.type, spec.params);
     if (spec.actions.length > 1) {

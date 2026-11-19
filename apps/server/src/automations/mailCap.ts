@@ -7,12 +7,13 @@
  */
 
 import type { Automation } from "@boni/automations";
-import { BONI_TRIGGERS } from "@boni/automations";
+import { BONI_TRIGGERS, MAIL_CAP } from "@boni/automations";
 import type { UserStore } from "@boni/store";
 import { mailHooksOf } from "./boni.ts";
 import { senderOf } from "./mailPieces.ts";
 
-export const MAIL_CAP = { perDay: 150, perSender: 20, queue: 500 } as const;
+/** In the core, so the trigger's panel says the same numbers (AU-253). */
+export { MAIL_CAP };
 
 /** The civil day of `now` in `zone`, as the journal counts it. */
 const dayOf = (now: number, zone: string) =>
