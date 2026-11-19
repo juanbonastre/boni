@@ -56,6 +56,7 @@ import {
   pageRequest,
 } from "./policy.ts";
 import type { RunProposalView } from "./proposal.ts";
+import { publish } from "./publish.ts";
 import {
   docOf,
   folder,
@@ -69,7 +70,6 @@ import {
   type StepSpec,
   seeded,
 } from "./run.test-util.ts";
-import { publish } from "./publish.ts";
 import { answerAsk, runView, settled, startRun, undoAutomationRun } from "./runs.ts";
 import { automationLabel, automationView, keepDraft, publishedOf } from "./service.ts";
 import { askCardId } from "./waits.ts";
