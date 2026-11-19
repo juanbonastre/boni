@@ -1473,6 +1473,7 @@ test.describe("«Revisar instrucciones» and «Ver el cambio» (F16, AU-211)", (
 
   test("AU-211 · «No» turns the suggestion down and its card goes", async ({ page }) => {
     await openApp(page, "/?still", {
+      automations: [{ ...ordering(MAIL_ID), name: "Leer correo" } as never],
       agent: {
         ...AGENT(),
         "GET api/agent/proposals": [{ proposals: [] }],
