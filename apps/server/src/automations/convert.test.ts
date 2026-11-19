@@ -576,7 +576,12 @@ describe("the saved flows converted to automations (F16)", () => {
     expect(store.journal.automationRun(wrote)?.undone).toBe(NOW);
   });
 
-  it("AU-227 · S1: with 50 flows of 60 versions and a year of 20,000 runs with 200,000 steps, the conversion and each chunk of the copy stay within their times", async () => {
+  // Quarantined under task 159 (2026-11-19): the copy's time bound tripped in main's `ci` on #536's merge (141.0 ms
+  // of CPU against 100 ms × 1.03 at a load of 0.47 per core) while #536's own check passed. Alone the slowest chunk
+  // takes 22–29 ms (three runs on main, 28.0, 29.1 and 29.2 ms; three on F16 S2b PR 2b, 22.1, 29.1 and 22.5 ms), so it
+  // trips only inside the whole suite. That old runs are copied in chunks, with their ids, is still checked in the
+  // test above.
+  it.skip("AU-227 · task 159 · S1: with 50 flows of 60 versions and a year of 20,000 runs with 200,000 steps, the conversion and each chunk of the copy stay within their times", async () => {
     const path = join(f.dir, `volumen-${randomUUID()}.db`);
     store.close();
     store = openUserStore(path, { now: () => NOW });
