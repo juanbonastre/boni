@@ -1538,6 +1538,22 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   then each unit (with «Una vez por fila», «Fila 3» as a 13 px heading) with its lines as a list; at most 20 units,
   then «y 4980 filas más». Every line is plain text. In «Publicar», «Lo que podrá hacer» adds «· decidido por un modelo · como
   mucho 20» to the line. On the phone everything is disabled and there is no «Conectar» (AU-74).
+- **«Leer correo»'s steps** (F16 E2, `AutomationMail.tsx`, `automations/mail.ts`; AU-249, AU-250, AU-253, AU-197):
+  Boni's pieces show only their table's parameters; «Argumentos» and «Por qué» are rows only when they hold a value,
+  and «Se ejecuta» is never a row, an option nor a label on their cards. Icons: `Mail` for «Llega un correo», `UserCheck`
+  «Regla del remitente», `CalendarPlus` «Leer invitación», `ScanText` «Lectora», `FoldVertical` «Plegar hilo», `Scale`
+  «Decisora», `TextCursorInput` «Rellenadora», `Link` «Buscar relaciones», `FilePlus` «Crear en la elegida».
+  «Llega un correo» says «Tope» first, one line in `--muted`: «150 llamadas al día · 20 por remitente · 500 en cola»,
+  with nothing to change (it is in the code). «Reglas» is a table «Remitente | Qué hacer | Colección», a text box, a
+  select «No leer / A una colección» and a select of the «Decisora»'s collections (disabled under «No leer», «—» when
+  none); a row is born «No leer»; «Borrar» at the row's end and «Añadir» under the table, up to 500; «Sin reglas» when
+  empty. «Indicaciones» is a text box (72 px high, it grows by hand). «Ejemplos» (an option) is a list of pairs: «Correo» with the
+  «de fuera» pill beside its name, and «Debe dar», each a plain text box, «Borrar» under the pair and «Añadir» under the
+  list, up to 20. «Crear en la elegida» shows «Colecciones», the connections table with one column, «Crear» («No /
+  Preguntar / Sí»), one row per collection of the «Decisora» (a collection with no cell reads «No»); under a published
+  cell the count of his answers («18 de 20 aceptadas»), and under a «Sí» with «Solo conocidos» on, «Solo conocidos». No
+  «Leer», no «Conectar» nor «Desconectar»; «No» takes the cell away. On the phone everything is disabled and there is no
+  «Añadir» nor «Borrar» (AU-74).
 - **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
   references): everything that brings, starts, reads and writes the account's data, computed by the server
   (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an

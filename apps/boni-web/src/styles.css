@@ -13511,6 +13511,73 @@ button.auto-log-line {
 .auto-ask-option-add {
   align-self: flex-start;
 }
+/* «Leer correo»'s own panels (AU-249, AU-250, AU-253): the cap said, the senders' table, the reader's texts. */
+.auto-boni-said {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.auto-boni-text {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  font: inherit;
+  white-space: pre-wrap;
+}
+.auto-rules,
+.auto-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.auto-rules-table td {
+  padding: 2px 4px;
+}
+.auto-rules-table .auto-input {
+  min-width: 160px;
+}
+.auto-rules-table select {
+  font: inherit;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.auto-rules-table select:disabled {
+  opacity: 0.5;
+}
+.auto-rules-add,
+.auto-examples-add,
+.auto-example-erase {
+  align-self: flex-start;
+}
+.auto-example {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.auto-example-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.auto-example-name {
+  font-size: 12px;
+  color: var(--muted);
+}
+/* A mail's words keep their mark (AU-255): the pill of «de fuera» of the Bandeja. */
+.auto-outside {
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+}
 /* A test that waits for an answer (AU-203): its questions just above «Probar», in the test's own panel. */
 .auto-ask {
   position: absolute;

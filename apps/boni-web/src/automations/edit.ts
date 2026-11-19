@@ -286,6 +286,36 @@ export function setCell(
 }
 
 /**
+ * The «Crear» cell of «Crear en la elegida» for one collection (AU-250), from its table's row: out of «No» its
+ * connection is made, creating only (it reads nothing and changes nothing); to «No», its connection goes, as a step
+ * born without cells has none. Only the person's hand sets a «Sí» (AU-188): this is the table's, never a default's.
+ */
+export function setChosenCell(
+  draft: Automation,
+  step: string,
+  collection: string,
+  cell: false | WriteMode,
+): Automation {
+  const before = draft.steps.find((s) => s.id === step);
+  if (!before) return draft;
+  const connections = before.connections ?? [];
+  if (connections.some((c) => c.collection === collection))
+    return cell === false
+      ? withConnection(draft, step, collection, () => null)
+      : setCell(draft, step, collection, "create", cell);
+  if (cell === false) return draft;
+  const born: Connection = {
+    collection,
+    read: false,
+    create: bornCell(before.type, cell),
+    update: false,
+    remove: false,
+  };
+  const after: Step = { ...before, connections: [...connections, born] };
+  return { ...draft, steps: draft.steps.map((s) => (s.id === step ? after : s)) };
+}
+
+/**
  * «Leer» of an «Agente»'s row (AU-41): «No» or «Sí». Back to «Sí» it reads with no limits; to «No» its read limits
  * go with it.
  */

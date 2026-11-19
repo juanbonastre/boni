@@ -106,6 +106,13 @@ export const BONI_LIMITS = {
   why: 2000,
 } as const;
 
+/**
+ * The day's cap of an automation that starts with «Llega un correo» (AU-253): model calls a day, a day for each sender,
+ * and how many mails wait for the next day. In the code, never a parameter: the server counts it
+ * (apps/server/src/automations/mailCap.ts) and the trigger's panel says it, from here.
+ */
+export const MAIL_CAP = { perDay: 150, perSender: 20, queue: 500 } as const;
+
 /** What «Regla del remitente» does with a sender (AU-249): not read, or always to one collection. */
 export const RULE_DOES = ["skip", "collection"] as const;
 /** «Busca» of the «Lectora»: the kinds of thing it looks for (packages/agent `MODULES` ids). */
