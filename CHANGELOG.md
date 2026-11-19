@@ -5,6 +5,56 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-19 (forty-eighth) — server 0.8.124 · Boni desktop 0.4.91 · Boni Android
+
+Needs:
+- The server, 0.8.124, to deploy first. It brings store migrations 26 to 36: the tables of «Automatizaciones» (versions,
+  runs step by step, the scheduled hours, the waits for his answer, the decisions of a few days, the search index found
+  by rowid) and, in 35 and 36, the conversion of his flows. **On its first start it converts his saved flows into
+  automations** (below): this changes his data. Going back to 0.8.123 was not checked against these migrations.
+- Boni desktop 0.4.91 (`release/boni_0.4.91_amd64.deb`), after the server: «Automatizaciones», «Modelos» and the
+  conversion's screens. It replaces 0.4.90.
+- Boni Calendar desktop stays 0.8.25: nothing of the calendar changed (`apps/calendar-web` and `apps/calendar-desktop`
+  are as in the forty-seventh; `packages/calendar` only gained its timed tests' script).
+- Boni Android 0.2.449 from main, through Obtainium (`boni-android` run 449 on abe8104, green, its GitHub release; it
+  replaces 0.2.344). It carries the same web as the desktop. Boni Calendar Android: no new APK. `Net.kt` and
+  `paths.cjs` did not change.
+
+What it brings (#457–#541):
+- **«Automatizaciones»** (tasks 126 to 129; F14b to F15): the list and the editor (the canvas, a step's «Parámetros |
+  Ajustes», citing a field with «{ }»), «Probar» on the draft and on a step, the «Código» step with its connections,
+  «Versiones» and «Publicar» (only a published version runs for real), «Ejecuciones» step by step with «Deshacer»,
+  «Programada» at its hours, the «Agente» step and the reader steps («Extraer datos», «Clasificar», «Resumir»,
+  «Escribir texto»), and «Preguntar»/«Avisar» as one step whose question waits in the Bandeja.
+- **His flows become automations** (task 130; F16): converted when the server starts, the old engine asleep and
+  nothing of the flows removed. A converted one says «Convertida»; «⋯ → Volver al flujo de antes» puts it back on the
+  old engine (decision 21), and «Convertir otra vez» brings it back with its switch as he left it. Boni's own
+  («Aviso del presupuesto», «Leer correo») run as Boni's automations, with «Volver al de Boni».
+- **Mail on the new engine** (task 130): «Leer correo» step by step in the editor, one card per row, Ajustes → Correo.
+- **«Modelos»** (task 154): one list of the loaded models with tags, «De la cuenta», one evaluation per model, the
+  step's «Modelo» and the chat's chip.
+- **A page's chat is its automation** when its «Agente» does not read figures (part 1 of the switch).
+- Inside: tests bounded by time read the machine's load and run alone after the rest (tasks 134, 143, 155); the test
+  queue listens for Ctrl+C (task 152); a «Colección» step's change of many rows in one transaction (task 137).
+
+For Juan to look at, because they change his data or where it goes:
+- **His converted flows**: that each one does what his flow did. If one does not, «⋯ → Volver al flujo de antes».
+- **More cards in the Bandeja**: every converted step that writes is born «Preguntar», until he sets a «Sí» by hand.
+  «Aceptar solas» is gone (decision 30): the step's cell does it, with «Solo conocidos».
+- **«Solo conocidos» asks for everyone** for now: nobody is «conocido» until his mail provider's trusted
+  authentication id is set in Ajustes → Correo, which is his to decide.
+- **«Evaluar» in «Modelos»** with the real models, after the deploy: his to run.
+
+Still on the old engine, or not in this release:
+- The chat of a page whose «Agente» reads figures («Leer sus cifras», his default one): part 2 of the switch.
+- A flow that modifies or deletes a row by its id.
+- The assistant's and the MCP's tools for automations (AU-140, AU-144): the assistant proposes flows as before.
+
+Known, and in the queue:
+- **A double run is possible** (task 162): pressing «Volver al flujo de antes» or «Convertir otra vez» while that
+  automation runs does not stop the run in flight, so the other engine can start one of the same flow for as long as
+  that run lasts. Not covered by a test.
+
 ## 2026-11-15 (forty-seventh) — server 0.8.123 · Boni desktop 0.4.90 · Boni Android
 
 Needs:
