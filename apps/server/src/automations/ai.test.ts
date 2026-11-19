@@ -843,13 +843,15 @@ describe("what an «Agente» writes on the real store (AU-204, AU-42)", () => {
     expect(views.map((v) => v.run.count)).toEqual([1, 1]);
     // The two branches run side by side: which change comes first is not fixed.
     expect(
-      views.flatMap((v) => v.run.first).map((x) => [
-        x.step,
-        x.byAgent,
-        x.action,
-        x.collection,
-        x.values[Object.keys(x.values)[0] as string]?.value,
-      ]),
+      views
+        .flatMap((v) => v.run.first)
+        .map((x) => [
+          x.step,
+          x.byAgent,
+          x.action,
+          x.collection,
+          x.values[Object.keys(x.values)[0] as string]?.value,
+        ]),
     ).toEqual(
       expect.arrayContaining([
         [a.step("Crear"), false, "create", "pedido", "a mano"],

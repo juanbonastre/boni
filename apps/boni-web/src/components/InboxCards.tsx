@@ -356,23 +356,23 @@ function useCorrection(p: Proposal) {
       </label>
       {/* A row of a run's proposal stays in the collection its cell lets it write (AU-251, AU-250). */}
       {!p.runRow && (
-      <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
-        <span>{t("inbox.correctCollection")}</span>
-        <SearchList
-          id={`correct-collection-${p.id}`}
-          source={null}
-          inline={listOptions}
-          multi={false}
-          required
-          selected={[edit.collection]}
-          loadOptions={NO_OPTIONS}
-          onChange={([id]) => id && changeCollection(id)}
-          onCreate={async (name) => {
-            const id = await createCollectionNamed(name);
-            if (id) changeCollection(id);
-          }}
-        />
-      </label>
+        <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
+          <span>{t("inbox.correctCollection")}</span>
+          <SearchList
+            id={`correct-collection-${p.id}`}
+            source={null}
+            inline={listOptions}
+            multi={false}
+            required
+            selected={[edit.collection]}
+            loadOptions={NO_OPTIONS}
+            onChange={([id]) => id && changeCollection(id)}
+            onCreate={async (name) => {
+              const id = await createCollectionNamed(name);
+              if (id) changeCollection(id);
+            }}
+          />
+        </label>
       )}
       {when.length > 0 && <div className="inbox-props inbox-when">{when.map(cell)}</div>}
       {props.length > 0 && (

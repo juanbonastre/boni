@@ -1,7 +1,7 @@
-import { runRowOf } from "./automations/acceptRunName.ts";
 import { type Json, plain, readStore, type Val } from "@boni/agent";
 import { type FieldDef, rolesOf } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import { taskDoneField } from "./calendarStore.ts";
 import { dueField } from "./mail.ts";
 

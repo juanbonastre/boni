@@ -464,11 +464,13 @@ export function withRunProposal(r: ToolRegistry): ToolRegistry {
       run: { role: "option", required: true, describe: "the run's id" },
       row: {
         role: "option",
-        describe: "the one row of what the run asked this proposal saves, when it is one card per row",
+        describe:
+          "the one row of what the run asked this proposal saves, when it is one card per row",
       },
       edits: {
         role: "value",
-        describe: "what Juan corrected of that row on its card, by field key: only his acceptance sets it",
+        describe:
+          "what Juan corrected of that row on its card, by field key: only his acceptance sets it",
       },
     },
     async run(c, a) {

@@ -1121,7 +1121,10 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   la guía"; "Más
   opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
-  shown again.
+  shown again. Once «Leer correo» is an automation (F16 S2b, AU-249), the collections and the guide are its steps'
+  panels: under who and the last check one row «Leer correo» with «Abrir» (it opens the automation;
+  `connectors.mail_automation`) takes the place of "Colecciones de destino" and "Guía de lectura", and "Más opciones"
+  stays as it is.
 - **Dashboards** (Boni: «Registro», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
   large, not the whole width, charts, detail on click). A page column of at most 1200 px, centred; the title large with
   its period beside it (a segmented control where the period can change). First a row of four number tiles (label,
@@ -1272,7 +1275,14 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   vez» and «Quitar». Accepted, the toast says «Propuesta aceptada: Revisar pendientes» with «Ver la ejecución» and
   no «Deshacer»: what it saved is undone with its run's «Deshacer lo que hizo». From a shared device it is read, and
   «Aceptar» says «Solo desde un dispositivo personal.» under it and the proposal keeps waiting (decision 15). On the
-  phone it is in the Bandeja's tab, whole within the screen's width.
+  phone it is in the Bandeja's tab, whole within the screen's width. **One card per row** (F16 S2b, AU-251): a run
+  that only creates, five rows or fewer, is not this summary but one card per row, each the card of every proposal to
+  create (its title and values, the outside mark, the mail it came from with «Ver correo», the day around it, its
+  «Antes» when its thread changed it), accepted, corrected and rejected alone while the others wait. Corrected, it
+  keeps its collection (no collection picker: only a «Crear» cell of the step lets it write there); its menu adds
+  «Ver la ejecución»; accepted, the toast says «Propuesta aceptada: Leer correo» with «Ver la ejecución» and no
+  «Deshacer», as the summary. A question of a run that began with a mail («Duda» of the «Decisora», AU-252) says that
+  mail under its prompt, as a mail's proposal does.
 - **The canvas** (F14b C2 and D, `AutomationCanvas.tsx`; AU-05, AU-63, AU-65, AU-66, AU-68, AU-69, AU-86, AU-87; the
   sketch's screens 2 and 3), on React Flow like the map and the flow editor, on a dotted `--surface`: it reads left to
   right. A step is a card of 220 px: its type's icon in a rounded square of `--hover` (the app's choice per type: the

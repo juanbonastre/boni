@@ -39,6 +39,7 @@ import {
   setDecisionAuto,
   setLearning,
   setWidgetHidden,
+  showAutomation,
   suggestedDevice,
   toast,
   useStore,
@@ -828,43 +829,68 @@ function MailSettings() {
               </button>
             </div>
           </div>
-          {(() => {
-            const offered = (types ?? []).filter(
-              (v) => (v.level === "visible" || v.level === "opaque") && v.id !== mail.state.type,
-            );
-            const marked = offered.filter((v) => mail.collections.includes(v.id));
-            return (
-              <Disclosure
-                title={t("mail.collections.title")}
-                summary={
-                  marked.length ? marked.map((v) => v.name).join(", ") : t("mail.collections.none")
-                }
-                defaultOpen={types !== null && !marked.length}
-              >
-                <p className="muted small setting-note">{t("mail.collections")}</p>
-                {offered.map((v) => (
-                  <div className="setting" key={v.id}>
-                    <div className="setting-label">{v.name}</div>
-                    <div className="setting-control">
-                      <input
-                        type="checkbox"
-                        className="switch"
-                        aria-label={v.name}
-                        data-boni-action="connectors.mail"
-                        checked={mail.collections.includes(v.id)}
-                        onChange={(e) => void toggle(v.id, e.target.checked)}
-                      />
+          {mail.automation ? (
+            // As an automation (AU-249): the mailbox stays here; what it reads and where it creates are its steps.
+            <div className="setting" data-boni-action="connectors.mail_automation">
+              <div className="setting-label">
+                <span>{t("mail.automation")}</span>
+              </div>
+              <div className="setting-control">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    openSettings(false);
+                    showAutomation(mail.automation as string);
+                  }}
+                >
+                  {t("mail.automation.open")}
+                </button>
+              </div>
+            </div>
+          ) : (
+            (() => {
+              const offered = (types ?? []).filter(
+                (v) => (v.level === "visible" || v.level === "opaque") && v.id !== mail.state.type,
+              );
+              const marked = offered.filter((v) => mail.collections.includes(v.id));
+              return (
+                <Disclosure
+                  title={t("mail.collections.title")}
+                  summary={
+                    marked.length
+                      ? marked.map((v) => v.name).join(", ")
+                      : t("mail.collections.none")
+                  }
+                  defaultOpen={types !== null && !marked.length}
+                >
+                  <p className="muted small setting-note">{t("mail.collections")}</p>
+                  {offered.map((v) => (
+                    <div className="setting" key={v.id}>
+                      <div className="setting-label">{v.name}</div>
+                      <div className="setting-control">
+                        <input
+                          type="checkbox"
+                          className="switch"
+                          aria-label={v.name}
+                          data-boni-action="connectors.mail"
+                          checked={mail.collections.includes(v.id)}
+                          onChange={(e) => void toggle(v.id, e.target.checked)}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </Disclosure>
-            );
-          })()}
-          <MailGuideSettings
-            collections={(types ?? []).filter((v) => mail.collections.includes(v.id))}
-            mail={mail}
-            onMail={setMail}
-          />
+                  ))}
+                </Disclosure>
+              );
+            })()
+          )}
+          {!mail.automation && (
+            <MailGuideSettings
+              collections={(types ?? []).filter((v) => mail.collections.includes(v.id))}
+              mail={mail}
+              onMail={setMail}
+            />
+          )}
           <Disclosure title={t("mail.more")}>
             <div className="setting">
               <div className="setting-label">

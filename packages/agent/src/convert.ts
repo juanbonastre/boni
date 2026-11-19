@@ -108,6 +108,10 @@ export const CHANGES = [
   "undoWhole",
   /** «Sus límites son los de una automatización» (AU-17). */
   "automationLimits",
+  /** «Ya no acepta sola: lo decide «Permiso»» (AU-254): the mail's «Solo» was on; its cells are born «Preguntar». */
+  "permissionDecides",
+  /** «Su duda es una pregunta en la Bandeja, y caduca» (AU-254, AU-252): the «Decisora»'s doubt is a «Preguntar». */
+  "doubtAsks",
 ] as const;
 export type Change = (typeof CHANGES)[number];
 

@@ -87,7 +87,12 @@ export interface MailSeen {
 export function mailWhat(store: UserStore, id: string, account: string | null): RunWhat | null {
   const v = store.get(id)?.entity.values;
   return v
-    ? { kind: "mail", subject: text(v.f_asunto), from: text(v.f_de_nombre) || text(v.f_de), account }
+    ? {
+        kind: "mail",
+        subject: text(v.f_asunto),
+        from: text(v.f_de_nombre) || text(v.f_de),
+        account,
+      }
     : null;
 }
 

@@ -9,6 +9,7 @@
  * days, once per row) → «Rellenadora» → «Buscar relaciones» → «Crear en la elegida» («Solo conocidos» on, one
  * «Crear» cell per collection, every one «Preguntar»: decision 13, nothing is born «Sí»).
  */
+import type { Change } from "@boni/agent";
 import {
   type Arrow,
   ASK_PARAMS,
@@ -22,6 +23,8 @@ import {
   MAIN,
   type Step,
 } from "@boni/automations";
+import type { UserStore } from "@boni/store";
+import { AUTO_AREA, autoOn } from "../autoAccept.ts";
 
 /** The configuration «Leer correo» is drawn from, by keys of collections (never their ids). */
 export interface ReadMailConfig {
@@ -35,6 +38,16 @@ export interface ReadMailConfig {
   modules: string[];
   days: number;
 }
+
+/**
+ * «Lo que cambia» of «Leer correo» drawn (AU-254), two sentences of the closed list (AU-224): «Ya no acepta sola: lo
+ * decide «Permiso»» when its «Solo» was on (every cell is born «Preguntar»), and always «Su duda es una pregunta en la
+ * Bandeja, y caduca» (its «Decisora» doubted into the conversation before; now a «Preguntar» of seven days).
+ */
+export const readMailChanges = (store: UserStore): Change[] => [
+  ...(autoOn(store, AUTO_AREA) ? (["permissionDecides"] as const) : []),
+  "doubtAsks",
+];
 
 /** What the «Preguntar» on «Duda» answers when nothing fits: nothing is created. */
 export const NONE_OPTION = "Ninguna";

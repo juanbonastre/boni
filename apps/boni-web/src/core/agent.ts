@@ -2614,6 +2614,11 @@ export interface MailView {
   folder: string;
   collections: string[];
   on: boolean;
+  /**
+   * «Leer correo» as an automation (AU-249): its id, and then what it reads, where it creates and its guide are
+   * changed in its steps, not here. Null (or absent, from an older server) while it runs on the engine of before.
+   */
+  automation?: string | null;
   /** `type`: the "Correos" collection's id (null before the first check). */
   state: {
     lastCheck: number;
@@ -2668,6 +2673,7 @@ export function parseMail(v: unknown): MailView | null {
       type: str(v.state.type, 80),
       suggestion: parseSuggestion(v.state.suggestion),
     },
+    automation: str(v.automation, 80),
   };
 }
 /** A page of the user's (docs/extensiones.md 6): its place in the tree, and its blocks when opened. */

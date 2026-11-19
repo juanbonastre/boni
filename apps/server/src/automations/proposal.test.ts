@@ -114,7 +114,6 @@ function server() {
   return { host, s, agent: host.agent(1) };
 }
 
-
 /** A route of the server's agent, as the app calls it from Juan's personal device. */
 async function routed(
   host: AgentHost,
@@ -137,7 +136,14 @@ async function routed(
   const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
     url: "/",
   }) as unknown as IncomingMessage;
-  await serveAgent(host, req, res, route, { id }, { account: 1, device: JUAN.device, trust: "personal" });
+  await serveAgent(
+    host,
+    req,
+    res,
+    route,
+    { id },
+    { account: 1, device: JUAN.device, trust: "personal" },
+  );
   return { status: got.status, json: JSON.parse(got.body || "null") as Record<string, unknown> };
 }
 
@@ -752,11 +758,9 @@ describe("the proposal of a run (F14d)", () => {
     const { host, s } = server();
     try {
       const names = ["Uno", "Dos", "Tres"];
-      const a = made(
-        s,
-        [SCHEDULE(), ...names.map((n) => CREATE(n.toLowerCase(), "ask", n))],
-        { arrows: names.map((n) => ["A su hora", n] as [string, string]) },
-      );
+      const a = made(s, [SCHEDULE(), ...names.map((n) => CREATE(n.toLowerCase(), "ask", n))], {
+        arrows: names.map((n) => ["A su hora", n] as [string, string]),
+      });
       ok(a.publish());
       const r = await atItsHour(s, a.id);
       const cards = pending(s);
@@ -785,13 +789,21 @@ describe("the proposal of a run (F14d)", () => {
       );
 
       // «Aceptar» one: that row is saved with the run, the others go on waiting.
-      expect((await routed(host, "POST /api/agent/proposals/:id/accept", of("uno").id)).status).toBe(200);
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/accept", of("uno").id)).status,
+      ).toBe(200);
       expect(notes(s)).toContain("uno");
       expect(notes(s)).not.toContain("dos");
       expect(s.runOps(r.id).map((o) => o.kind)).toEqual(["create"]);
       expect(s.journal.proposal(of("dos").id)?.status).toBe("pending");
       // The run waits whole while a card of it waits, not only the one it names.
-      const keep = { keep: 0, since: Date.now() + 86_400_000, tests: 0, now: Date.now(), batch: 10 };
+      const keep = {
+        keep: 0,
+        since: Date.now() + 86_400_000,
+        tests: 0,
+        now: Date.now(),
+        batch: 10,
+      };
       s.journal.setAutomationRunProposal(r.id, of("uno").id);
       expect(s.journal.pruneAutomationRuns(a.id, keep)).toBe(0);
 
@@ -815,7 +827,9 @@ describe("the proposal of a run (F14d)", () => {
       expect(fixed && s.get(fixed.entity.id)?.labels[nota]?.integrity).toBe("user");
       expect(notes(s)).not.toContain("dos");
       // «Descartar» the last: nothing of it is saved.
-      expect((await routed(host, "POST /api/agent/proposals/:id/reject", of("tres").id)).status).toBe(200);
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/reject", of("tres").id)).status,
+      ).toBe(200);
       expect(notes(s)).not.toContain("tres");
       expect(s.runOps(r.id).map((o) => o.kind)).toEqual(["create", "create"]);
       // Each row counts for its cell (AU-207): accepted as it was, right; corrected or discarded, wrong.
@@ -842,8 +856,9 @@ describe("the proposal of a run (F14d)", () => {
       const q = await atItsHour(s, b.id, at(11, 5));
       const summary = pending(s).filter((p) => (p.view as RunProposalView).run.run === q.id);
       expect(summary.map((p) => p.id)).toEqual([q.proposal]);
-      expect((summary[0]?.view as RunProposalView).run).toMatchObject({ count: many.length });
-      expect((summary[0]?.view as RunProposalView).run.row).toBeUndefined();
+      const view = summary[0]?.view as RunProposalView | undefined;
+      expect(view?.run).toMatchObject({ count: many.length });
+      expect(view?.run.row).toBeUndefined();
     } finally {
       host.close();
     }

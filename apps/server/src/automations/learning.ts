@@ -39,8 +39,8 @@ import {
 import type { AutomationRunRow, DecisionRow, LogRow, UserStore } from "@boni/store";
 import { mailDecisionsOf } from "../autoAccept.ts";
 import { CELL_AREA, DAY, learningOn, markSuggested, maySuggest } from "../learning.ts";
-import type { AutomationNotice } from "./notices.ts";
 import { runRowOf } from "./acceptRunName.ts";
+import type { AutomationNotice } from "./notices.ts";
 import { ACCEPT_RUN, askedCells } from "./proposal.ts";
 import { publishedOf, sha256 } from "./service.ts";
 

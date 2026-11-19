@@ -33,7 +33,7 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import { ACCEPT_RUN, runRowOf } from "./automations/acceptRunName.ts";
 import { type BoniRow, boniEnabled, onNewEngine } from "./automations/boni.ts";
 import { type BoniFlow, convertBoniFlows } from "./automations/convert.ts";
-import { drawReadMail } from "./automations/mailAutomation.ts";
+import { drawReadMail, readMailChanges } from "./automations/mailAutomation.ts";
 import { MAIL_CAP, mailCapLeft, mailSender } from "./automations/mailCap.ts";
 import { type MailHooks, mailLabel } from "./automations/mailPieces.ts";
 import { runBoni } from "./automations/runs.ts";
@@ -670,6 +670,8 @@ export const usesPieces = (plan: unknown): boolean =>
 export type MailView = Omit<MailSettings, "password"> & {
   configured: true;
   state: Omit<MailState, "readWith" | "refused">;
+  /** «Leer correo»'s id once it runs as an automation (Ajustes → Correo opens it, AU-249); null before. */
+  automation: string | null;
 };
 
 const EMPTY: MailState = {
@@ -932,7 +934,11 @@ function convertMailFlows(
   now: number,
 ): void {
   try {
-    convertBoniFlows(store, [FETCH_BONI, { id: MAIL_FLOW, boni: "readMail", draw }], now);
+    convertBoniFlows(
+      store,
+      [FETCH_BONI, { id: MAIL_FLOW, boni: "readMail", draw, changes: readMailChanges }],
+      now,
+    );
   } catch (e) {
     console.warn(`mail ${account}: «Leer correo» not converted (${(e as Error).message})`);
   }
@@ -1177,7 +1183,14 @@ export class Mails {
     if (!s) return null;
     const { password: _p, ...rest } = s;
     const { readWith: _r, refused: _x, ...state } = this.state(account);
-    return { ...rest, configured: true, state };
+    let automation: string | null = null;
+    try {
+      if (this.o.host.hasData && onNewEngine(this.o.host.store(account), MAIL_FLOW))
+        automation = MAIL_FLOW;
+    } catch {
+      automation = null;
+    }
+    return { ...rest, configured: true, state, automation };
   }
 
   /**
@@ -1230,6 +1243,33 @@ export class Mails {
       this.saveState(account, { ...EMPTY, type: st.type, count: 0 });
     }
     return this.view(account) as MailView;
+  }
+
+  /**
+   * The guide the readers of mail in the conversation get (docs/correo.md §7, AU-249), or null without one. With
+   * «Leer correo» as an automation, the panels of its published «Lectora» («Indicaciones», «Ejemplos»), never a plan
+   * nor a draft; no «Lectora» in that version, no guide. Before it, the guide kept with the mailbox.
+   */
+  readingGuide(account: number): Val | null {
+    const store = this.o.host.store(account);
+    if (onNewEngine(store, MAIL_FLOW)) {
+      const p =
+        publishedOf(store, MAIL_FLOW)?.automation.steps.find((x) => x.type === "boni.mailReader")
+          ?.params ?? null;
+      if (!p) return null;
+      const said = p[BONI_PARAMS.instructions];
+      const instructions = typeof said === "string" ? said : "";
+      const given = p[BONI_PARAMS.examples];
+      const examples = (Array.isArray(given) ? given : []).flatMap((e) => {
+        const x = e as { mail?: unknown; want?: unknown } | null;
+        return x && typeof x.mail === "string" && Array.isArray(x.want)
+          ? [{ mail: x.mail, want: x.want as ReadingGuide["examples"][number]["want"] }]
+          : [];
+      });
+      return instructions || examples.length ? guideValue({ instructions, examples }) : null;
+    }
+    const g = this.guide(account);
+    return g.instructions || g.examples.length ? guideOf(g) : null;
   }
 
   /** Juan's reading guide (empty until he writes one). */

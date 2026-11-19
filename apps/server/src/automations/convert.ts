@@ -32,7 +32,7 @@
  * lowered against the one that runs (`lowerYes`), so none is ever born.
  */
 
-import { type Change, type Plan, planToAutomation, runnableNames } from "@boni/agent";
+import { CHANGES, type Change, type Plan, planToAutomation, runnableNames } from "@boni/agent";
 import {
   type Automation,
   type BoniAutomation,
@@ -83,6 +83,8 @@ export interface BoniFlow {
    * nothing follows it afterwards (`followBoniFlow` leaves it). Null: it cannot be drawn now (kept, tried again).
    */
   draw?: (store: UserStore) => Automation | null;
+  /** «Lo que cambia» of a drawn one (AU-254), from its configuration of before; none without it. */
+  changes?: (store: UserStore) => Change[];
 }
 
 /** Why a flow is not the conversion's, or null when it is. Boni's are, whoever saved a version and whatever starts them. */
@@ -133,13 +135,13 @@ function drawn(
   store: UserStore,
   latest: FlowRow,
   draw: (store: UserStore) => Automation | null,
+  changes: Change[],
 ): ReturnType<typeof translate> {
   if (latest.by !== "preset")
-    return { ok: false, reasons: [{ step: "", what: "version", reason: "his" }], changes: [] };
+    return { ok: false, reasons: [{ step: "", what: "version", reason: "his" }], changes };
   const a = draw(store);
-  if (!a)
-    return { ok: false, reasons: [{ step: "", what: "draw", reason: "notReady" }], changes: [] };
-  return { ok: true, automation: lowerYes(a), changes: [] };
+  if (!a) return { ok: false, reasons: [{ step: "", what: "draw", reason: "notReady" }], changes };
+  return { ok: true, automation: lowerYes(a), changes };
 }
 
 /** A problem that would stop publishing the running version, as a reason to keep the flow. */
@@ -226,7 +228,14 @@ function prepareFlow(
   const latest = versions[0];
   const why = leftOut(versions, b);
   if (!latest || why) return { id, state: "left", why: why ?? "trigger" };
-  const running = b?.draw ? drawn(store, latest, b.draw) : translate(latest, b);
+  const running = b?.draw
+    ? drawn(
+        store,
+        latest,
+        b.draw,
+        CHANGES.filter((c) => b.changes?.(store).includes(c)),
+      )
+    : translate(latest, b);
   const keep = (reasons: ConversionReason[], skipped: number, changes: Change[]): FlowOutcome => {
     const same =
       before &&
