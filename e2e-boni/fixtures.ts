@@ -355,6 +355,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             }
           | undefined
       )?.learning;
+      // What «Revisar instrucciones» suggests (AU-211): «Aceptar» or «No» takes it out.
+      let suggested = (
+        opts.agent?.["GET api/agent/requests"]?.[0] as
+          | { instructions?: { id: string }[] }
+          | undefined
+      )?.instructions;
       // The pages as the server keeps them (apps/server/src/pages.ts), with its trash for Undo.
       const pageList = (pages ?? []).map((x, i) => ({
         icon: "",
@@ -1468,8 +1474,18 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             JSON.stringify({ cells: opts.automations?.find((x) => x.id === id)?.learning ?? [] }),
           ];
         if (rest === "/learning" && method === "POST") {
-          const req = (body ?? {}) as { step?: unknown; collection?: unknown; action?: unknown };
+          const req = (body ?? {}) as {
+            do?: unknown;
+            suggestion?: unknown;
+            step?: unknown;
+            collection?: unknown;
+            action?: unknown;
+          };
           record("__autoLearn", JSON.stringify(body));
+          if (req.do === "take" || req.do === "drop") {
+            suggested = suggested?.filter((x) => x.id !== req.suggestion);
+            return [200, '{"done":true}'];
+          }
           learned = learned?.filter(
             (x) =>
               !(
@@ -2686,7 +2702,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         if (p === "api/agent/requests" && asked)
           return [
             200,
-            JSON.stringify({ requests: asked, ...(learned ? { learning: learned } : {}) }),
+            JSON.stringify({
+              requests: asked,
+              ...(learned ? { learning: learned } : {}),
+              ...(suggested ? { instructions: suggested } : {}),
+            }),
           ];
         if (opts.live && p.startsWith("api/agent/live/") && method === "GET") {
           const from = Number(new URLSearchParams(path.split("?")[1] ?? "").get("after")) || 0;

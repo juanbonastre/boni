@@ -1027,6 +1027,91 @@ export function learningCardOf(x: unknown): LearningCard[] {
   ];
 }
 
+/** A sender rule as «Ver el cambio» lists it (AU-211): his text and the collection's name now. */
+export interface InstructionsRule {
+  sender: string;
+  do: "skip" | "collection";
+  collection: string | null;
+}
+/** An example as «Ver el cambio» lists it: the mail's subject (someone else's text) and the titles kept. */
+export interface InstructionsExample {
+  subject: string;
+  want: string[];
+}
+/**
+ * What «Revisar instrucciones» suggests, waiting in the Bandeja (AU-211): a change of an automation's draft, with its
+ * rules and examples before and what it adds, measured on his decisions. Every text is his or someone else's, painted
+ * as plain text; `mayDecide` is the server's word for this device.
+ */
+export interface InstructionsCard {
+  kind: "instructions";
+  id: string;
+  automation: string;
+  name: string;
+  rules: { before: InstructionsRule[]; added: InstructionsRule[] };
+  examples: { before: InstructionsExample[]; added: InstructionsExample[] };
+  before: number;
+  after: number;
+  total: number;
+  at: number;
+  mayDecide: boolean;
+}
+const ruleOfWire = (x: unknown): InstructionsRule[] =>
+  isObj(x) && typeof x.sender === "string"
+    ? [
+        {
+          sender: x.sender.slice(0, 320),
+          do: x.do === "collection" ? "collection" : "skip",
+          collection: x.do === "collection" ? plainName(x.collection) : null,
+        },
+      ]
+    : [];
+const exampleOfWire = (x: unknown): InstructionsExample[] =>
+  isObj(x)
+    ? [
+        {
+          subject: plainName(x.subject),
+          want: Array.isArray(x.want)
+            ? x.want
+                .filter((t): t is string => typeof t === "string")
+                .slice(0, 20)
+                .map(plainName)
+            : [],
+        },
+      ]
+    : [];
+const listOf = <T>(v: unknown, of: (x: unknown) => T[], n: number): T[] =>
+  Array.isArray(v) ? v.slice(0, n).flatMap(of) : [];
+export function instructionsCardOf(x: unknown): InstructionsCard[] {
+  if (!isObj(x) || x.kind !== "instructions") return [];
+  const id = str(x.id, 120);
+  const automation = str(x.automation, 80);
+  if (!id || !automation) return [];
+  const rules = isObj(x.rules) ? x.rules : {};
+  const examples = isObj(x.examples) ? x.examples : {};
+  return [
+    {
+      kind: "instructions",
+      id,
+      automation,
+      name: plainName(x.name),
+      rules: {
+        before: listOf(rules.before, ruleOfWire, 500),
+        added: listOf(rules.added, ruleOfWire, 500),
+      },
+      examples: {
+        before: listOf(examples.before, exampleOfWire, 20),
+        added: listOf(examples.added, exampleOfWire, 20),
+      },
+      before: counted(x.before),
+      after: counted(x.after),
+      total: counted(x.total),
+      at: typeof x.at === "number" ? x.at : 0,
+      mayDecide: x.mayDecide === true,
+    },
+  ];
+}
+
 /**
  * A question from background work waiting in the panel (Juan, 2026-10-24): what it asks, until when, and where it
  * came from (the mail being read; outside text, shown only as text).
@@ -3470,14 +3555,23 @@ export class AgentApi {
   async requests(): Promise<InboxRequest[]> {
     return (await this.asks()).requests;
   }
-  /** `GET requests`: the questions that wait, and the pauses and suggestions of the automations (AU-209, AU-210). */
-  async asks(): Promise<{ requests: InboxRequest[]; learning: LearningCard[] }> {
+  /**
+   * `GET requests`: the questions that wait, the pauses and suggestions of the automations (AU-209, AU-210), and what
+   * «Revisar instrucciones» suggests (AU-211).
+   */
+  async asks(): Promise<{
+    requests: InboxRequest[];
+    learning: LearningCard[];
+    instructions: InstructionsCard[];
+  }> {
     const b = await this.call("GET", "requests");
     const list = isObj(b) && Array.isArray(b.requests) ? b.requests : [];
     const learning = isObj(b) && Array.isArray(b.learning) ? b.learning : [];
+    const instructions = isObj(b) && Array.isArray(b.instructions) ? b.instructions : [];
     return {
       requests: this.requestsOf(list),
       learning: learning.slice(0, 200).flatMap(learningCardOf),
+      instructions: instructions.slice(0, 5).flatMap(instructionsCardOf),
     };
   }
   private requestsOf(list: unknown[]): InboxRequest[] {

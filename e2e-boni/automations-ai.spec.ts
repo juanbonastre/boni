@@ -1386,3 +1386,125 @@ test.describe("the AI steps of an automation (F15, P2)", () => {
     }
   });
 });
+
+test.describe("«Revisar instrucciones» and «Ver el cambio» (F16, AU-211)", () => {
+  const MAIL_ID = "a_01jx8x0t2v4x6z8b0d2f4h6r11";
+  const SUGGESTION = "r_01jx8x0t2v4x6z8b0d2f4h6r12";
+  /** What the server lists in `instructions`: one rule and one example added over his panels. */
+  const SUGGESTED = (mayDecide: boolean) => [
+    {
+      kind: "instructions",
+      id: SUGGESTION,
+      automation: MAIL_ID,
+      name: "Leer correo",
+      rules: {
+        before: [{ sender: "ejemplo.boletin@example.com", do: "skip", collection: null }],
+        added: [{ sender: LOOKS_LIKE_MARKUP, do: "collection", collection: "Tareas" }],
+      },
+      examples: {
+        before: [],
+        added: [{ subject: LOOKS_LIKE_MARKUP, want: ["Pagar la cuota de ejemplo"] }],
+      },
+      before: 14,
+      after: 18,
+      total: 20,
+      at: Date.now() - HOUR,
+      mayDecide,
+    },
+  ];
+  const openInbox = async (page: Page) => {
+    await page
+      .locator(".topbar")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
+    return page.locator(".inbox-panel .instructions-card");
+  };
+  const change = (page: Page) => page.getByRole("dialog", { name: "Ver el cambio" });
+
+  test("AU-211 · the Bandeja's «Sugerencia» shows the change before and after as plain text, and «Aceptar» sends only which suggestion, never a «Sí» nor a publish", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...ordering(MAIL_ID), name: "Leer correo" } as never],
+      agent: {
+        ...AGENT(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], instructions: SUGGESTED(true) }],
+      },
+      agenda: true,
+    });
+    const cards = await openInbox(page);
+    await expect(cards).toHaveCount(1);
+    await expect(cards.locator(".inbox-kind")).toHaveText("Sugerencia");
+    await expect(cards.locator("h3")).toHaveText("Leer correo");
+    await expect(cards).toContainText("Acertadas: 14 → 18 de 20");
+    await cards.getByRole("button", { name: "Ver el cambio" }).click();
+    const dialog = change(page);
+    await expect(dialog.getByRole("heading", { level: 3 })).toHaveText(["Antes", "Después"]);
+    const before = dialog.getByRole("region", { name: "Antes" });
+    const after = dialog.getByRole("region", { name: "Después" });
+    await expect(before.locator("li")).toHaveText(["ejemplo.boletin@example.com · No leer"]);
+    await expect(before).toContainText("Ninguno");
+    await expect(after.locator("li[data-new]")).toHaveText([
+      `Nuevo${LOOKS_LIKE_MARKUP} · Tareas`,
+      `Nuevo${LOOKS_LIKE_MARKUP} · Pagar la cuota de ejemplo`,
+    ]);
+    // Someone else's text, letter by letter: no image, no bold, no link made of it.
+    await expect(dialog.locator("img, strong, a")).toHaveCount(0);
+    expect(await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned)).toBe(
+      undefined,
+    );
+    await dialog.getByRole("button", { name: "Aceptar" }).click();
+    await expect(dialog).toHaveCount(0);
+    // It opens the automation, where his own hand publishes the draft.
+    await expect(page.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(
+      "Leer correo",
+    );
+    const asked = await page.evaluate(() => (window as { __autoLearn?: string[] }).__autoLearn);
+    expect(asked?.map((x) => JSON.parse(x))).toEqual([{ do: "take", suggestion: SUGGESTION }]);
+    expect(JSON.stringify(asked)).not.toMatch(/yes|publish|print|byAgent/);
+    const sent = (await recorded(page)).requests.filter((r) =>
+      /\/(publish|draft)\b/.test(r.split(" ")[1] ?? ""),
+    );
+    expect(sent.filter((r) => r.startsWith("POST") || r.startsWith("PUT"))).toEqual([]);
+    if (!(await cards.first().isVisible())) await openInbox(page);
+    await expect(page.locator(".inbox-panel .instructions-card")).toHaveCount(0);
+  });
+
+  test("AU-211 · «No» turns the suggestion down and its card goes", async ({ page }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...ordering(MAIL_ID), name: "Leer correo" } as never],
+      agent: {
+        ...AGENT(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], instructions: SUGGESTED(true) }],
+      },
+    });
+    const cards = await openInbox(page);
+    await cards.getByRole("button", { name: "No", exact: true }).click();
+    await expect(cards).toHaveCount(0);
+    const asked = await page.evaluate(() => (window as { __autoLearn?: string[] }).__autoLearn);
+    expect(asked?.map((x) => JSON.parse(x))).toEqual([{ do: "drop", suggestion: SUGGESTION }]);
+  });
+
+  test("AU-211 · on a shared device the change can be seen and not decided: no «Aceptar», no «No»", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      sharedDevice: true,
+      agent: {
+        ...BEFORE(),
+        "GET api/agent/proposals": [{ proposals: [] }],
+        "GET api/agent/requests": [{ requests: [], instructions: SUGGESTED(false) }],
+      },
+    });
+    const cards = await openInbox(page);
+    await expect(cards).toContainText("Solo desde un dispositivo personal");
+    await expect(cards.getByRole("button")).toHaveText(["Ver el cambio"]);
+    await cards.getByRole("button", { name: "Ver el cambio" }).click();
+    const dialog = change(page);
+    await expect(dialog).toContainText("Solo desde un dispositivo personal");
+    await expect(dialog.getByRole("button", { name: "Aceptar" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "No", exact: true })).toHaveCount(0);
+  });
+});

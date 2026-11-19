@@ -343,13 +343,17 @@ export function reviewCandidate(
       .map((x) => checkRule(x, ds, h.targets, h.guide, h.excluded))
       .filter((x): x is MailRule => !!x && !found.some((c) => c.from === x.from)),
   ];
-  const have = new Set(h.guide.examples.map((e) => e.id));
+  // An example is had by its id, or by its mail's text: one in «Leer correo»'s panel carries no id (AU-211).
+  const have = new Set(h.guide.examples.flatMap((e) => [e.id, e.mail]));
   const mails = [
     ...new Set((out?.examples ?? []).map((id) => ds.find((d) => d.id === id)?.mail)),
   ].filter((m): m is string => !!m);
   const examples = mails
     .map((m) => exampleOf(h.store, m, ds))
-    .filter((e): e is GuideExample => !!e && !have.has(e.id) && !h.excluded.has(e.id));
+    .filter(
+      (e): e is GuideExample =>
+        !!e && !have.has(e.id) && !have.has(e.mail) && !h.excluded.has(e.id),
+    );
   if (!rules.length && !examples.length) return null;
   return {
     rules,

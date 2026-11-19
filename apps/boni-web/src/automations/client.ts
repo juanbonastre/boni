@@ -507,6 +507,15 @@ export interface AutomationsClient {
   learning(id: string): Promise<CellCount[]>;
   /** `POST automations/:id/learning` (AU-209, AU-210): «Quitar pausa» or «No» to a suggestion; never a «Sí». */
   learn(id: string, what: "unpause" | "decline", cell: CellName): Promise<{ done: true } | Refused>;
+  /**
+   * `POST automations/:id/learning` (AU-211): «Aceptar» puts what «Revisar instrucciones» suggests into the draft of
+   * `id`, for his «Publicar»; «No» turns it down for a week. Never a «Sí».
+   */
+  instructions(
+    id: string,
+    what: "take" | "drop",
+    suggestion: string,
+  ): Promise<{ done: true } | Refused>;
 }
 
 /**
@@ -831,6 +840,10 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
     },
     learn: async (id, what, cell) => {
       const r = await api.automations("POST", path(id, "/learning"), { do: what, ...cell });
+      return isRefused(r) ? r : { done: true };
+    },
+    instructions: async (id, what, suggestion) => {
+      const r = await api.automations("POST", path(id, "/learning"), { do: what, suggestion });
       return isRefused(r) ? r : { done: true };
     },
     pinFromRun: async (id, run) => {

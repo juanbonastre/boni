@@ -298,6 +298,8 @@ export const DRAFT_WRITERS: Readonly<Record<string, "hand" | "outside">> = {
   keepBoniFlows: "outside",
   // «Traer correo» and «Leer correo» converted together (mail.ts, F16 S2b), through `convertBoniFlows`.
   convertMailFlows: "outside",
+  // «Aceptar» of «Revisar instrucciones»'s suggestion (review.ts, AU-211): his hand, a change a model proposed.
+  takeInstructions: "outside",
 };
 
 /** The first step added to a new canvas: the automation and its first draft. The id is made here. */

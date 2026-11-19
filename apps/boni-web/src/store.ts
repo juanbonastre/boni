@@ -35,6 +35,7 @@ import {
   type ExtensionView,
   fieldEditable,
   type InboxRequest,
+  type InstructionsCard,
   type LearningCard,
   type LiveEvent,
   type MailGuide,
@@ -434,6 +435,8 @@ interface State {
   requests: InboxRequest[];
   /** The pauses and the suggestions of the automations' cells that wait (AU-209, AU-210). */
   cellNotices: LearningCard[];
+  /** What «Revisar instrucciones» suggests, waiting (AU-211). */
+  instructionNotices: InstructionsCard[];
   /** The inbox is being read for a proposal opened by its id (its page waits instead of saying it is gone). */
   inboxLoading: boolean;
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
@@ -589,6 +592,7 @@ export const useStore = create<State>(() => ({
   inbox: [],
   requests: [],
   cellNotices: [],
+  instructionNotices: [],
   inboxLoading: false,
   deciding: {},
   decideErrors: {},
@@ -2513,8 +2517,13 @@ export async function loadInbox() {
     ]);
     const requests = asked?.requests ?? get().requests;
     const cellNotices = asked?.learning ?? get().cellNotices;
+    const instructionNotices = asked?.instructions ?? get().instructionNotices;
     // Something new since the last look (not the first one, when the window opens): the panel comes out.
-    const ids = [...inbox.map((p) => p.id), ...requests.map((r) => r.id)];
+    const ids = [
+      ...inbox.map((p) => p.id),
+      ...requests.map((r) => r.id),
+      ...instructionNotices.map((n) => n.id),
+    ];
     const fresh = inboxSeen !== null && ids.some((id) => !inboxSeen?.has(id));
     inboxSeen = new Set([...(inboxSeen ?? []), ...ids]);
     // A card whose decision failed stays, saying why, until Juan takes it out (the server no longer lists it).
@@ -2527,6 +2536,7 @@ export async function loadInbox() {
       inbox: [...kept, ...inbox],
       requests: [...keptAsked, ...requests],
       cellNotices,
+      instructionNotices,
       ...(fresh ? { inboxOpen: true } : {}),
     });
   } catch {
@@ -2547,6 +2557,9 @@ export const dropLearning = (c: LearningCard) =>
         ),
     ),
   });
+/** A suggestion of «Revisar instrucciones» taken or turned down (AU-211): its card goes. */
+export const dropInstructions = (id: string) =>
+  set({ instructionNotices: get().instructionNotices.filter((x) => x.id !== id) });
 export const toggleInbox = (open = !get().inboxOpen) => {
   set({ inboxOpen: open });
   if (open) void loadInbox();
