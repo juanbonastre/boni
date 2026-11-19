@@ -138,8 +138,8 @@ describe("«Esta página» of a page's chat (AU-137)", () => {
     );
     expect(ai.asked[1]?.rounds[0]).toMatchObject({
       s1: { total: 42, count: 3 },
-      s2: { planned: expect.stringContaining("ask Juan") },
-      s3: { planned: expect.stringContaining("ask Juan") },
+      s2: { planned: expect.stringContaining("ask the user") },
+      s3: { planned: expect.stringContaining("ask the user") },
       s4: { refused: "no-such-block" },
     });
     // Nothing saved: both changes wait in the run's proposal, with the port's page.
