@@ -3732,7 +3732,9 @@ automatewithai) y las páginas de Zapier de correo a tarea.
   nueva ya está propuesta: una ejecución que falla no retira nada. Las tarjetas del correo que esperaban al
   convertir siguen siendo las suyas (AU-226) y el plegado las ve. La prueba:
   `apps/server/src/automations/proposal.test.ts`, `apps/server/src/automations/mail.test.ts`,
-  `apps/server/src/mail.test.ts` y `e2e-boni/agent.spec.ts` («AU-251 · …»). Hecho (S2b, PR 2b): «una en el
+  `apps/server/src/mail.test.ts`, `e2e-boni/agent.spec.ts` («AU-251 · …») y
+  `e2e-boni-desktop/automations-publish.spec.ts` («AU-167 AU-193 AU-170 AU-251 · …»: en la app de escritorio, sobre
+  el servidor real, cada fila con su «de fuera», aceptada sola). Hecho (S2b, PR 2b): «una en el
   registro» es una ejecución del agente con una propuesta por fila (`automations.accept_run` con `view.run.row`), la
   primera nombrada en la ejecución de la automatización, que el recorte guarda entera mientras una espera; «Plegar
   hilo» retira la anterior tras proponer y nunca en una ejecución fallida.

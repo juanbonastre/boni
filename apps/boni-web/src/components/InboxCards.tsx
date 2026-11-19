@@ -580,7 +580,11 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
       {more &&
         rest &&
         rest.rows.length > 0 &&
-        (c ? <FieldRows view={rest} card={c} day={fmt.long} /> : <CallRows view={rest} />)}
+        (c ? (
+          <FieldRows view={rest} card={c} day={fmt.long} outside={!!p.runRow} />
+        ) : (
+          <CallRows view={rest} />
+        ))}
       {more && body && typeof body.value === "string" && (
         <div className="inbox-body">
           <MarkdownPreview text={body.value} />
@@ -1131,12 +1135,15 @@ function FieldRows({
   card,
   day,
   all = false,
+  outside = false,
 }: {
   view: ConfirmView;
   card: InboxCard;
   day: (d: string) => string;
   /** Every value, the title and the day too (the proposal's own page). */
   all?: boolean;
+  /** Each value that came from outside says so (a row of a run's proposal, AU-251, as its summary card did). */
+  outside?: boolean;
 }) {
   const t = useStore((s) => s.t);
   // What the card's line already says (the title, the day, the times) is not repeated below it.
@@ -1165,7 +1172,12 @@ function FieldRows({
         return (
           <div key={r.arg} className={`inbox-field${ignored ? " warn" : ""}`}>
             <dt>{name}</dt>
-            <dd>{/^\d{4}-\d{2}-\d{2}$/.test(text) ? day(text) : text}</dd>
+            <dd>
+              {/^\d{4}-\d{2}-\d{2}$/.test(text) ? day(text) : text}
+              {outside && r.integrity === "external" && (
+                <span className="run-asked-outside">{t("inbox.run.outside")}</span>
+              )}
+            </dd>
           </div>
         );
       })}
@@ -1390,7 +1402,11 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       {rows && rows.rows.length > 0 && (
         <section className="pp-section">
           <h3>{t("inbox.properties")}</h3>
-          {c ? <FieldRows view={rows} card={c} day={fmt.long} all /> : <CallRows view={rows} />}
+          {c ? (
+            <FieldRows view={rows} card={c} day={fmt.long} all outside={!!p.runRow} />
+          ) : (
+            <CallRows view={rows} />
+          )}
         </section>
       )}
       {body && typeof body.value === "string" && body.value.trim() && (

@@ -1277,8 +1277,9 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   «Aceptar» says «Solo desde un dispositivo personal.» under it and the proposal keeps waiting (decision 15). On the
   phone it is in the Bandeja's tab, whole within the screen's width. **One card per row** (F16 S2b, AU-251): a run
   that only creates, five rows or fewer, is not this summary but one card per row, each the card of every proposal to
-  create (its title and values, the outside mark, the mail it came from with «Ver correo», the day around it, its
-  «Antes» when its thread changed it), accepted, corrected and rejected alone while the others wait. Corrected, it
+  create (its title and values, each value from outside with the summary's «de fuera» pill after it, the mail it came
+  from with «Ver correo», the day around it, its «Antes» when its thread changed it), accepted, corrected and rejected
+  alone while the others wait; «Ver en la Bandeja» of its run opens the first row's page. Corrected, it
   keeps its collection (no collection picker: only a «Crear» cell of the step lets it write there); its menu adds
   «Ver la ejecución»; accepted, the toast says «Propuesta aceptada: Leer correo» with «Ver la ejecución» and no
   «Deshacer», as the summary. A question of a run that began with a mail («Duda» of the «Decisora», AU-252) says that
