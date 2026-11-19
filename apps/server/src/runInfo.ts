@@ -83,6 +83,19 @@ export interface MailSeen {
   from: string;
 }
 
+/** What a run says of the stored mail `id` it began with (an automation's, AU-252), or null when it is gone. */
+export function mailWhat(store: UserStore, id: string, account: string | null): RunWhat | null {
+  const v = store.get(id)?.entity.values;
+  return v
+    ? {
+        kind: "mail",
+        subject: text(v.f_asunto),
+        from: text(v.f_de_nombre) || text(v.f_de),
+        account,
+      }
+    : null;
+}
+
 export function whatOf(
   store: UserStore,
   r: RunRow,

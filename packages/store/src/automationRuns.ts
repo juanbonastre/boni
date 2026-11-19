@@ -591,9 +591,11 @@ export function automationRunsJournal(db: DatabaseSync): AutomationRunsJournal {
             `SELECT id FROM automation_runs INDEXED BY automation_runs_whole
              WHERE automation = ? AND pruned IS NULL AND test = 0 AND state NOT IN ('queued', 'running', 'waiting')
                AND (at < ? ${real ? "OR at < ? OR (at = ? AND id < ?)" : ""})
-               -- What it asked is read from it when its proposal is accepted (proposal.ts): it waits whole.
+               -- What it asked is read from it when its proposal is accepted (proposal.ts): it waits whole, while
+               -- it or any proposal of the same agent run waits (one card per row, AU-251).
                AND (automation_runs.proposal IS NULL OR NOT EXISTS (SELECT 1 FROM proposals p
-                                                    WHERE p.id = automation_runs.proposal AND p.status = 'pending'))
+                                                    JOIN proposals q ON q.run = p.run
+                                                    WHERE p.id = automation_runs.proposal AND q.status = 'pending'))
              LIMIT ?`,
           )
           .all(

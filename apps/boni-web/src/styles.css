@@ -14107,6 +14107,10 @@ button.auto-log-line {
   color: var(--muted);
   font-size: 11px;
 }
+/* On a row's card of always (AU-251): after its value. */
+.inbox-field .run-asked-outside {
+  margin-left: 6px;
+}
 .run-asked-agent {
   font-weight: 400;
   color: var(--muted);

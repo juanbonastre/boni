@@ -114,6 +114,10 @@ export const CHANGES = [
   "undoWhole",
   /** «Sus límites son los de una automatización» (AU-17). */
   "automationLimits",
+  /** «Ya no acepta sola: lo decide «Permiso»» (AU-254): the mail's «Solo» was on; its cells are born «Preguntar». */
+  "permissionDecides",
+  /** «Su duda es una pregunta en la Bandeja, y caduca» (AU-254, AU-252): the «Decisora»'s doubt is a «Preguntar». */
+  "doubtAsks",
   /**
    * «Antes ponía un valor en su página sin preguntar; ahora lo pregunta» (AU-137, F16 S2c B2): a page's chat set a
    * control's value alone (P27); its «Esta página» proposes it, as it proposes a block, until Juan says otherwise.

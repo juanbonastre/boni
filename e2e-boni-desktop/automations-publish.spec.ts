@@ -636,7 +636,7 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("AU-167 AU-193 AU-170 · in the desktop app over the real server, a scheduled run with a value from outside and «Preguntar» writes nothing and leaves one proposal in the inbox; accepted, its rows are saved, read as from outside, and undone with the run", async () => {
+  test("AU-167 AU-193 AU-170 AU-251 · in the desktop app over the real server, a scheduled run with a value from outside and «Preguntar» writes nothing and leaves one card per row in the inbox (AU-251); accepted one by one, its rows are saved, read as from outside, and undone with the run", async () => {
     test.setTimeout(300_000);
     const w = await (app as ElectronApplication).firstWindow();
     await openAutomation(w, "Copiar lo del correo", 3);
@@ -653,24 +653,37 @@ test.describe("what a run tells and asks in the desktop app (F14d P3)", () => {
     // Nothing saved yet (the other runs of that hour are done by now: the one with «Sí» made 3, the trash took 5).
     await expect.poll(() => tareas(w), { timeout: 30_000 }).toBe(ROWS + 3 - 5);
     const before = await tareas(w);
-    // One proposal in the Bandeja, painted by code: its three rows, each value of the mail marked.
+    // One card per row (AU-251), painted by code: «Ver en la Bandeja» opens the first row's own page, the value of
+    // the mail marked.
     await runBar(w).getByRole("button", { name: "Ver en la Bandeja" }).click();
-    const card = cardOf(w, "Copiar lo del correo");
-    await expect(card).toHaveCount(1);
-    await expect(card.locator("h3")).toHaveText("Copiar lo del correo: crear 3 filas en Tareas");
-    await expect(card.locator(".run-proposal-line")).toHaveText(
-      "versión 1 · Programada · Pendiente en la Bandeja",
-    );
-    await expect(card.locator(".run-asked-row")).toHaveCount(3);
-    await expect(card.locator(".run-asked-outside")).toHaveCount(3);
-    await card.getByRole("button", { name: "Aceptar", exact: true }).click();
-    await expect(card).toHaveCount(0, { timeout: 30_000 });
+    const own = w.locator(".proposal-page");
+    await expect(own.locator(".pp-title")).toHaveText("Copia del correo");
+    await expect(
+      own.locator(".inbox-field", { hasText: "de un correo" }).locator(".run-asked-outside"),
+    ).toHaveText("de fuera");
+    await expect(own.locator(".run-asked-outside")).toHaveCount(1);
+    await own.getByRole("button", { name: "Aceptar", exact: true }).click();
     const toast = w.locator(".toast");
     await expect(toast).toContainText("Propuesta aceptada: Copiar lo del correo");
     await expect(toast.getByRole("button", { name: "Deshacer" })).toHaveCount(0);
-    expect(await tareas(w)).toBe((before as number) + 3);
-    // Its run says so.
-    await toast.getByRole("button", { name: "Ver la ejecución" }).click();
+    await expect.poll(() => tareas(w), { timeout: 30_000 }).toBe((before as number) + 1);
+    // The other two wait in the Bandeja, each accepted alone.
+    const panel = w.locator(".inbox-panel");
+    if (!(await panel.isVisible()))
+      await w
+        .locator(".topbar")
+        .getByRole("button", { name: /^Bandeja/ })
+        .click();
+    const rows = panel.locator(".inbox-card").filter({ hasText: "Copia del correo" });
+    await expect(rows).toHaveCount(2);
+    await rows.first().getByRole("button", { name: "Aceptar", exact: true }).click();
+    await expect(rows).toHaveCount(1, { timeout: 30_000 });
+    await expect.poll(() => tareas(w), { timeout: 30_000 }).toBe((before as number) + 2);
+    await rows.first().getByRole("button", { name: "Aceptar", exact: true }).click();
+    await expect(rows).toHaveCount(0, { timeout: 30_000 });
+    await expect.poll(() => tareas(w), { timeout: 30_000 }).toBe((before as number) + 3);
+    // Its run says so (the last row's toast).
+    await toast.last().getByRole("button", { name: "Ver la ejecución" }).click();
     await expect(runBar(w).locator(".auto-run-proposal")).toHaveText("Propuesta aceptada");
     // Read again by another run, what was accepted is still from outside (AU-170).
     await runsOf(w, "Releer las copias", 3, 0);

@@ -23,19 +23,27 @@ import {
   type Row,
 } from "@boni/automations";
 import { join, label } from "@boni/entities";
+import type { AuthResults } from "@boni/mail";
 import { clock, under } from "@boni/pace";
 import type { ProposalRow, UserStore } from "@boni/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AUTO_AREA, setAutoState } from "../autoAccept.ts";
 import { MAIL_FLOW } from "../flows.ts";
+import { inboxCard, likeKey } from "../inboxCard.ts";
+import { mailWhat } from "../runInfo.ts";
 import { seed, typeId } from "../seed.test-util.ts";
+import { runRowOf } from "./acceptRunName.ts";
 import { pieceRequest, wireAutomationModels } from "./ai.ts";
 import { BONI_AUTHOR, wireBoni } from "./boni.ts";
-import { convertBoniFlows, followBoniFlow } from "./convert.ts";
+import { convertBoniFlows, followBoniFlow, revertFlow } from "./convert.ts";
+import { PRUNE_BATCH, pruneRuns } from "./keep.ts";
+import { learningOf } from "./learning.ts";
 import {
   DOUBT_WAIT_DAYS,
   drawReadMail,
   NONE_OPTION,
   type ReadMailConfig,
+  readMailChanges,
 } from "./mailAutomation.ts";
 import { MAIL_CAP, mailCapLeft, mailCapOf } from "./mailCap.ts";
 import {
@@ -47,12 +55,12 @@ import {
   runMailPiece,
 } from "./mailPieces.ts";
 import { automationPolicy, consentIn } from "./policy.ts";
-import type { RunProposalView } from "./proposal.ts";
+import { type RunProposalView, triggerMail } from "./proposal.ts";
 import { publish } from "./publish.ts";
 import { folder, HAND, JUAN, NOW, ok, ZONE } from "./run.test-util.ts";
-import { answerAsk, runBoni } from "./runs.ts";
+import { answerAsk, expireWaits, runBoni, runsOf } from "./runs.ts";
 import { automationLabel, keepDraft, publishedOf } from "./service.ts";
-import { askCardId } from "./waits.ts";
+import { askCardId, askPlace } from "./waits.ts";
 
 /** A mail's text, as the trigger labels it: from outside (invented). */
 const MAIL = label("external", "personal", [{ kind: "mail", id: "m_ejemplo" }]);
@@ -66,6 +74,8 @@ afterEach(() => {
 const CORREO = typeId("correo");
 const KNOWN = "ejemplo.conocido@example.com";
 const OTHER = "ejemplo.otro@example.com";
+/** The authserv-id of his provider (invented), as the mailbox's settings would hold it. */
+const TRUSTED = "mx.example.net";
 /** His own words, as a step's panel carries them. */
 const MINE = label("user", "personal", []);
 
@@ -89,6 +99,7 @@ function mailStore(): UserStore {
           evento_uid: "text",
           evento_titulo: "text",
           evento_dia: "text",
+          autenticacion: "text",
         },
       },
       { key: "tarea", name: "Tareas", folder: "tareas/", fields: { dia: "date" } },
@@ -115,6 +126,11 @@ function mail(
     replyTo?: string;
     thread?: string;
     invite?: { uid: string; title: string; day: string };
+    /**
+     * Its Authentication-Results as the connector keeps them: by default the trusted provider's pass for its From
+     * domain (what a mail from a real provider brings); `null`, none.
+     */
+    auth?: AuthResults[] | null;
   },
 ): string {
   const l = label("external", "personal", [{ kind: "mail", id: o.from }], true);
@@ -128,6 +144,16 @@ function mail(
   if (o.name) values.f_de_nombre = w(o.name);
   if (o.replyTo) values.f_responder_a = w(o.replyTo);
   if (o.thread) values.f_hilo = w(o.thread);
+  const auth =
+    o.auth === undefined
+      ? [
+          {
+            authserv: TRUSTED,
+            results: [{ method: "dmarc", result: "pass", from: o.from.split("@")[1] }],
+          },
+        ]
+      : o.auth;
+  if (auth) values.f_autenticacion = w(JSON.stringify(auth));
   if (o.invite) {
     values.f_evento_uid = w(o.invite.uid);
     values.f_evento_titulo = w(o.invite.title);
@@ -137,10 +163,14 @@ function mail(
 }
 
 /** The mail's code as the pieces get it (mail.ts `hooksFor`), over the test's store. */
-function hooksOf(s: UserStore, o: { calendar?: Set<string> } = {}): MailHooks {
+function hooksOf(
+  s: UserStore,
+  o: { calendar?: Set<string>; trusted?: string | null } = {},
+): MailHooks {
   return {
     type: CORREO,
     mailbox: "ejemplo.juan@example.com",
+    trustedAuthserv: o.trusted === undefined ? TRUSTED : o.trusted,
     text: (v) => `De: ${v.f_de}\nAsunto: ${v.f_asunto}\n\n${v.f_texto ?? ""}`,
     userIn: () => "to",
     inCalendar: async (uid) => o.calendar?.has(uid) ?? false,
@@ -361,7 +391,14 @@ function converted(s: UserStore, config: ReadMailConfig = CONFIG, by = "preset")
   });
   return convertBoniFlows(
     s,
-    [{ id: MAIL_FLOW, boni: "readMail", draw: () => drawReadMail(config) }],
+    [
+      {
+        id: MAIL_FLOW,
+        boni: "readMail",
+        draw: () => drawReadMail(config),
+        changes: readMailChanges,
+      },
+    ],
     NOW,
   );
 }
@@ -782,9 +819,189 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
-  it.todo(
-    "AU-251 · a run that only asks to create five rows or fewer is one card per row: accepting one saves that row and leaves the others waiting, a corrected one counts as a miss, and a failed run withdraws no earlier card of the thread",
-  );
+  it("AU-250 · the count under each «Crear» cell of «Crear en la elegida» counts his decisions on the mail's proposals of before in that collection, right when accepted as proposed, and none of another collection", () => {
+    const s = mailStore();
+    try {
+      knownFor(s, KNOWN, "tarea");
+      proposal(s, {
+        id: "p_t_corr",
+        sender: KNOWN,
+        collection: "tarea",
+        title: "Uno",
+        status: "accepted",
+        edits: true,
+      });
+      proposal(s, {
+        id: "p_t_no",
+        sender: OTHER,
+        collection: "tarea",
+        title: "Dos",
+        status: "rejected",
+      });
+      proposal(s, { id: "p_t_esp", sender: OTHER, collection: "tarea", title: "Tres" });
+      proposal(s, {
+        id: "p_e_si",
+        sender: OTHER,
+        collection: "evento",
+        title: "Cuatro",
+        status: "accepted",
+      });
+      wired(s);
+      converted(s);
+      const cells = learningOf(s, MAIL_FLOW).filter((c) => c.action === "create");
+      const of = (key: string) => cells.find((c) => c.collection === key);
+      // Three as proposed, one corrected and one rejected; the one still waiting is no decision.
+      expect(of("tarea")).toMatchObject({ mode: "ask", decided: 5, right: 3 });
+      expect(of("evento")).toMatchObject({ mode: "ask", decided: 1, right: 1 });
+    } finally {
+      s.close();
+    }
+  });
+
+  it("AU-250 · «conocido» rests on his provider's authentication too: without a pass from the trusted authserv-id for the From domain, or with no trusted id set, a sender with his decisions is not known", () => {
+    const s = mailStore();
+    try {
+      knownFor(s, KNOWN, "tarea");
+      const hooks = hooksOf(s);
+      const domain = KNOWN.split("@")[1] as string;
+      const pass = (authserv: string, d: string): AuthResults => ({
+        authserv,
+        results: [{ method: "dmarc", result: "pass", from: d }],
+      });
+      const of = (auth: AuthResults[] | null) =>
+        rowOf(s, mail(s, { from: KNOWN, subject: "Contrato", auth }));
+      // No passing authentication from the provider: none kept, a fail, an spf pass only.
+      expect(knownSender(s, hooks, of(null), "tarea")).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "dmarc", result: "fail", from: domain }] }]),
+          "tarea",
+        ),
+      ).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "spf", result: "pass" }] }]),
+          "tarea",
+        ),
+      ).toBe(false);
+      // A pass from a foreign authserv-id (one the mail brought) is not known.
+      expect(knownSender(s, hooks, of([pass("relay.example.org", domain)]), "tarea")).toBe(false);
+      // A pass for another domain is not known.
+      expect(knownSender(s, hooks, of([pass(TRUSTED, "example.org")]), "tarea")).toBe(false);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([
+            { authserv: TRUSTED, results: [{ method: "dkim", result: "pass", d: "evil.example" }] },
+          ]),
+          "tarea",
+        ),
+      ).toBe(false);
+      // The trusted id's pass for the From domain plus his decisions: known; by DKIM for that domain too.
+      const good = of([pass(TRUSTED, domain)]);
+      expect(knownSender(s, hooks, good, "tarea")).toBe(true);
+      expect(
+        knownSender(
+          s,
+          hooks,
+          of([{ authserv: TRUSTED, results: [{ method: "dkim", result: "pass", d: domain }] }]),
+          "tarea",
+        ),
+      ).toBe(true);
+      // The same mail with no trusted id in the mailbox's settings (no screen sets it yet): nobody is known.
+      expect(knownSender(s, hooksOf(s, { trusted: null }), good, "tarea")).toBe(false);
+      // An authentication value labelled as not the sender's (written by anything but the connector) is not read.
+      const id = good.json.id as string;
+      s.update(
+        id,
+        {
+          f_autenticacion: {
+            value: JSON.stringify([pass(TRUSTED, domain)]),
+            label: label("external", "personal", [{ kind: "mail", id: OTHER }], true),
+          },
+        } as never,
+        { actor: "connector" },
+      );
+      expect(knownSender(s, hooks, row({ id }, good.label), "tarea")).toBe(false);
+    } finally {
+      s.close();
+    }
+  });
+
+  it("AU-251 · a mail's run that asks to create five rows or fewer is one card per row, each saying the mail it came from, and his decisions on those cards make its sender «conocido» under the same key as the cards of before", async () => {
+    const s = mailStore();
+    try {
+      const { hooks } = wired(s, {
+        read: () =>
+          reading([
+            { kind: "task", title: "Enviar el informe", due: "2026-11-20" },
+            { kind: "task", title: "Revisar el contrato", due: "2026-11-21" },
+          ]),
+      });
+      converted(s);
+      const first = mail(s, {
+        from: KNOWN,
+        subject: "Dos cosas",
+        text: "El informe y el contrato.",
+      });
+      const done = await read(s, first);
+      const run = done.run;
+      const cards = (done.proposal ? s.journal.proposalsOf(done.proposal.run) : []).sort(
+        (a, b) => (runRowOf(a) ?? 0) - (runRowOf(b) ?? 0),
+      );
+      expect(cards).toHaveLength(2);
+      expect(cards.map((p) => (p.view as RunProposalView).run.row)).toEqual([0, 1]);
+      expect(cards.every((p) => (p.view as RunProposalView).run.run === run.id)).toBe(true);
+      // The card of always: what it creates and where, and where it came from, from the trigger's row (as text).
+      const painted = cards.map((p) => inboxCard(s, p, { decide: false }));
+      expect(painted.map((c) => [c.action, c.collection, c.title, c.day])).toEqual([
+        ["create", "Tareas", "Enviar el informe", "2026-11-20"],
+        ["create", "Tareas", "Revisar el contrato", "2026-11-21"],
+      ]);
+      expect(painted[0]?.source).toMatchObject({
+        kind: "mail",
+        from: KNOWN,
+        subject: "Dos cosas",
+        open: { type: CORREO, id: first },
+      });
+      // Each card's source is the mail's sender: the key of «conocido» is the one of before.
+      expect(cards.map((p) => likeKey(p))).toEqual([
+        `entities.create\u0000mail:${KNOWN}\u0000tarea`,
+        `entities.create\u0000mail:${KNOWN}\u0000tarea`,
+      ]);
+      const next = rowOf(s, mail(s, { from: KNOWN, subject: "Otra" }));
+      expect(knownSender(s, hooks, next, "tarea")).toBe(false);
+      // One card of before, and these two, accepted as proposed: three, and he is known for «Tareas» only.
+      proposal(s, {
+        id: "p_antes",
+        sender: KNOWN,
+        collection: "tarea",
+        title: "Antes",
+        status: "accepted",
+        at: NOW - 86_400_000,
+      });
+      for (const c of cards) s.journal.setProposal(c.id, "accepted", Date.now(), null);
+      expect(knownSender(s, hooks, next, "tarea")).toBe(true);
+      expect(knownSender(s, hooks, next, "evento")).toBe(false);
+      // A card he corrected before accepting it is a miss: no longer known.
+      const again = await read(s, mail(s, { from: KNOWN, subject: "Una más" }));
+      const third = again.proposal
+        ? s.journal.proposalsOf(again.proposal.run).find((p) => runRowOf(p) === 0)
+        : null;
+      expect(third).toBeTruthy();
+      s.journal.setProposal(third?.id as string, "accepted", Date.now(), {
+        values: { title: { from: "Enviar el informe", to: "Enviar el informe final" } },
+      });
+      expect(knownSender(s, hooks, next, "tarea")).toBe(false);
+    } finally {
+      s.close();
+    }
+  });
 
   it("AU-252 · a row the «Decisora» is unsure of leaves by «Duda» to a «Preguntar»: the run waits, the answer goes on to the chosen collection, and «Ninguna» or an expired question creates nothing", async () => {
     const s = mailStore();
@@ -821,6 +1038,11 @@ describe("mail as an automation (§5.17)", () => {
       expect(a.run.state).toBe("waiting");
       const card = askCardId(a.run.id, ask?.id as string, 0);
       expect(s.journal.request(card)?.status).toBe("pending");
+      // Its card in the Bandeja says the mail it came from, as a row's card does («Ver correo», the sender and the
+      // subject): the mail of the trigger's row of the run that asks (GET /api/agent/requests).
+      const place = askPlace(s.journal.request(card)?.view);
+      expect(place && triggerMail(s, place.run)).toBe(one);
+      expect(mailWhat(s, one, null)).toMatchObject({ kind: "mail", subject: "Presentación" });
       // «Tareas»: it goes on to the «Rellenadora» and proposes in that collection.
       expect(answerAsk(s, card, { choice: 0 }, JUAN)).toEqual({ run: a.run.id });
       await new Promise((r) => setTimeout(r, 50));
@@ -842,7 +1064,30 @@ describe("mail as an automation (§5.17)", () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(s.journal.automationRun(b.run.id)?.proposal ?? null).toBeNull();
       expect(titles(s, "tarea")).toEqual([]);
+      // Unanswered past its seven days: the scheduler's tick takes it by «sin respuesta», which goes nowhere. Nothing is
+      // created nor proposed, its card no longer holds, and the run's line says it ended with no answer.
+      const three = mail(s, { from: OTHER, subject: "Presentación sin respuesta" });
+      const c = await read(s, three);
+      expect(c.run.state).toBe("waiting");
+      const card3 = askCardId(c.run.id, ask?.id as string, 0);
+      const until = s.journal.automationWait(c.run.id)?.until as number;
+      const waiting = s.journal.proposals("pending").map((x) => x.id);
+      expect(until - Date.now()).toBeGreaterThan((DOUBT_WAIT_DAYS - 1) * 86_400_000);
+      vi.useFakeTimers({ toFake: ["Date"], now: until + 1 });
+      await Promise.all(expireWaits(s, { now: until + 1, zone: ZONE }));
+      expect(s.journal.automationRun(c.run.id)?.state).toBe("done");
+      expect(s.journal.request(card3)?.status).toBe("expired");
+      expect(s.journal.automationRun(c.run.id)?.proposal ?? null).toBeNull();
+      expect(s.journal.proposals("pending").map((x) => x.id)).toEqual(waiting);
+      expect(titles(s, "tarea")).toEqual([]);
+      const line = ok(runsOf(s, MAIL_FLOW, {})).runs.find((r) => r.id === c.run.id)?.line;
+      expect(line?.noAnswer).toBe(true);
+      expect(line?.asked).toEqual([]);
+      expect(answerAsk(s, card3, { choice: 0 }, { ...JUAN, now: until + 1 })).toEqual({
+        gone: true,
+      });
     } finally {
+      vi.useRealTimers();
       s.close();
     }
   });
@@ -988,6 +1233,36 @@ describe("mail as an automation (§5.17)", () => {
     }
   });
 
+  it("AU-253 · the cap counts a model call once it lets it go, before the provider is asked: a call refused after it (no decision model) and a call that fails both count", async () => {
+    const s = mailStore();
+    try {
+      const day = new Intl.DateTimeFormat("en-CA", { timeZone: ZONE }).format(Date.now());
+      const spent = (sender: string) =>
+        s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}\u0000${sender}`);
+      // A reader whose provider fails: the run fails, and the call it tried is counted.
+      const { reader } = wired(s, {
+        read: () => {
+          throw new Error("el proveedor no responde");
+        },
+        decide: null,
+      });
+      converted(s);
+      const failing = await read(s, mail(s, { from: OTHER, subject: "Falla" }));
+      expect(failing.run.state).toBe("failed");
+      expect(reader.requests.length).toBe(1);
+      expect(spent(OTHER)).toBe(1);
+      expect(s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}`)).toBe(1);
+      // A reader that answers, then a «Decisora» refused for want of a decision model: it doubts, and both count.
+      wired(s, { read: () => reading([{ kind: "task", title: "Una cosa" }]), decide: null });
+      const refused = await read(s, mail(s, { from: KNOWN, subject: "Duda" }));
+      expect(refused.run.state).not.toBe("failed");
+      expect(spent(KNOWN)).toBe(2);
+      expect(s.journal.spent(day, `mail-cap\u0000${MAIL_FLOW}`)).toBe(3);
+    } finally {
+      s.close();
+    }
+  });
+
   it("AU-253 · with a year of mail (11,000 read mails' proposals and his decisions), what each mail's run asks of the journal (the cap, «Solo conocidos», the sender's pending titles) stays within its time", () => {
     const s = mailStore();
     try {
@@ -1015,6 +1290,81 @@ describe("mail as an automation (§5.17)", () => {
       expect(pending.length).toBeLessThanOrEqual(PENDING_TITLES.n);
       expect(left).toBe(true);
       under(ms, 400, "cpu", "a mail's journal reads over a year of mail");
+    } finally {
+      s.close();
+    }
+  });
+
+  it("AU-253 AU-220 · with a year of its runs (11,000, each with its steps kept), starting the next mail's run, listing the runs and trimming them stay within their time", async () => {
+    const s = mailStore();
+    try {
+      wired(s, { read: () => reading([{ kind: "task", title: "Una cosa inventada" }]) });
+      converted(s);
+      const sample = await read(s, mail(s, { from: OTHER, subject: "Muestra" }));
+      const steps = s.journal.automationRunSteps(sample.run.id);
+      const kept = s.journal.automationRun(sample.run.id);
+      expect(steps.length).toBeGreaterThan(3);
+      const ids: string[] = [];
+      s.batch(() => {
+        for (let i = 0; i < 11_000; i++) {
+          const id = `r_correo${String(i).padStart(5, "0")}`;
+          ids.push(id);
+          const at = NOW - (11_000 - i) * 2_800_000;
+          s.journal.createAutomationRun({
+            id,
+            automation: MAIL_FLOW,
+            version: kept?.version ?? 1,
+            test: false,
+            state: "running",
+            trigger: kept?.trigger ?? "trigger",
+            fields: kept?.fields ?? "{}",
+            startedBy: "schedule",
+            device: null,
+            retryOf: null,
+            at,
+            started: at,
+            doc: null,
+          });
+          for (const [k, x] of steps.entries())
+            s.journal.keepAutomationRunStep(id, {
+              step: x.step,
+              n: k,
+              record: x.record,
+              rows: { main: ['{"json":{"title":"Una cosa inventada"},"label":null}'] },
+            });
+          s.journal.endAutomationRun(id, {
+            state: i % 40 === 0 ? "failed" : "done",
+            ended: at + 900,
+            ms: 900,
+            step: null,
+            error: null,
+            line: JSON.stringify({ writes: [], asked: [], outside: true }),
+          });
+        }
+      });
+      // Listing: the first page and one deep in the year, by the index.
+      let t = clock();
+      const page = ok(runsOf(s, MAIL_FLOW, {}));
+      const listMs = clock() - t;
+      expect(page.runs).toHaveLength(50);
+      t = clock();
+      const deep = ok(runsOf(s, MAIL_FLOW, { before: ids[1_000] as string }));
+      const deepMs = clock() - t;
+      expect(deep.runs[0]?.id).toBe(ids[999]);
+      // Trimming: one short write, as a run's end does (AU-103), lets go of a batch.
+      t = clock();
+      const let_go = pruneRuns(s, MAIL_FLOW, NOW);
+      const trimMs = clock() - t;
+      expect(let_go).toBe(PRUNE_BATCH);
+      // Starting: the next mail read whole, its end's trim included.
+      t = clock();
+      const next = await read(s, mail(s, { from: OTHER, subject: "La siguiente" }));
+      const startMs = clock() - t;
+      expect(next.run.state).toBe("done");
+      under(listMs, 40, "clock", "the first page of 11,000 runs");
+      under(deepMs, 40, "clock", "a page deep in 11,000 runs");
+      under(trimMs, 200, "cpu", "one trim of 200 of 11,000 runs");
+      under(startMs, 500, "cpu", "a mail's run with 11,000 runs kept");
     } finally {
       s.close();
     }
@@ -1080,6 +1430,49 @@ describe("mail as an automation (§5.17)", () => {
       }
     } finally {
       s.close();
+    }
+  });
+
+  it("AU-254 AU-224 · «Lo que cambia» of the mail says its two sentences: «Ya no acepta sola: lo decide «Permiso»» only when its «Solo» was on, and always «Su duda es una pregunta en la Bandeja, y caduca»; «Volver al flujo de antes» leaves the flow as it was and it is not converted again", () => {
+    const s = mailStore();
+    try {
+      wired(s);
+      expect(converted(s)).toEqual([
+        expect.objectContaining({ state: "converted", changes: ["doubtAsks"] }),
+      ]);
+      const before = s.journal.flow(MAIL_FLOW);
+      expect(s.journal.flowConversion(MAIL_FLOW)?.changes).toEqual(["doubtAsks"]);
+      // Sent back: the flow of before runs again, as it was; a later keeping does not convert it again.
+      expect(revertFlow(s, MAIL_FLOW, NOW + 1000)).toBe(true);
+      expect(s.journal.flowConversion(MAIL_FLOW)?.state).toBe("reverted");
+      expect(s.journal.flow(MAIL_FLOW)).toMatchObject({
+        version: before?.version,
+        by: "preset",
+        plan: before?.plan,
+      });
+      convertBoniFlows(
+        s,
+        [{ id: MAIL_FLOW, boni: "readMail", draw: () => drawReadMail(CONFIG) }],
+        NOW + 2000,
+      );
+      expect(s.journal.flowConversion(MAIL_FLOW)?.state).toBe("reverted");
+    } finally {
+      s.close();
+    }
+    const t = mailStore();
+    try {
+      wired(t);
+      setAutoState(t, AUTO_AREA, true, "juan", NOW - 86_400_000);
+      expect(converted(t)).toEqual([
+        expect.objectContaining({ changes: ["permissionDecides", "doubtAsks"] }),
+      ]);
+      // «Solo» on still gives no «Sí»: the notice says it, and every cell asks.
+      const create = publishedOf(t, MAIL_FLOW)?.automation.steps.find(
+        (x) => x.type === CREATE_CHOSEN,
+      );
+      expect(create?.connections?.map((c) => c.create)).toEqual([{ mode: "ask" }, { mode: "ask" }]);
+    } finally {
+      t.close();
     }
   });
 

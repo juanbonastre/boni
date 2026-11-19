@@ -1,5 +1,6 @@
 import { createServer, type Server, Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
+import { authenticated, parseAuthResults } from "./auth.ts";
 import { htmlToText } from "./html.ts";
 import { gmailThreadUrl, ImapError, ImapReader, imapDate, quote } from "./imap.ts";
 import { decodeWords, parseAddresses, parseMessage } from "./mime.ts";
@@ -416,5 +417,102 @@ describe("the read-only IMAP client", () => {
       }),
     ).rejects.toBeInstanceOf(ImapError);
     expect(imapDate("2026-10-07")).toBe("7-Oct-2026");
+  });
+});
+
+describe("Authentication-Results (RFC 8601)", () => {
+  /** An invented mail as a provider whose authserv-id is `mx.example.net` delivers it, below a header it brought. */
+  const SIGNED = CRLF(`Authentication-Results: mx.example.net;
+ dkim=pass (2048-bit key) header.d=example.com header.i=@example.com header.s=s1;
+ spf=pass smtp.mailfrom=ejemplo.ana@example.com;
+ dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=example.com
+Authentication-Results: mx.example.net; dmarc=fail header.from=example.org
+Authentication-Results: relay.example.org; dmarc=pass header.from=example.org
+From: Ana <ejemplo.ana@example.com>
+Subject: Hola
+Content-Type: text/plain
+
+Hola.
+`);
+
+  it("keeps every header, topmost first, with its authserv-id, its results and the domains they name", () => {
+    const m = parseMessage(new TextEncoder().encode(SIGNED));
+    expect(m.authentication.map((h) => h.authserv)).toEqual([
+      "mx.example.net",
+      "mx.example.net",
+      "relay.example.org",
+    ]);
+    expect(m.authentication[0]?.results).toEqual([
+      { method: "dkim", result: "pass", d: "example.com" },
+      { method: "spf", result: "pass" },
+      { method: "dmarc", result: "pass", from: "example.com" },
+    ]);
+    // A mail without the header has none; a header without an authserv-id is dropped; `none` has no results.
+    expect(parseMessage(new TextEncoder().encode(PLAIN)).authentication).toEqual([]);
+    expect(parseAuthResults("; dkim=pass header.d=example.com")).toBeNull();
+    expect(parseAuthResults("mx.example.net 1; none")).toEqual({
+      authserv: "mx.example.net",
+      results: [],
+    });
+    expect(
+      parseAuthResults('mx.example.net; dkim=pass reason="a; b" header.d="Example.COM"'),
+    ).toEqual({
+      authserv: "mx.example.net",
+      results: [{ method: "dkim", result: "pass", d: "example.com" }],
+    });
+  });
+
+  it("authenticates only by the trusted provider's topmost header, for the From domain, and fails closed otherwise", () => {
+    const h = parseMessage(new TextEncoder().encode(SIGNED)).authentication;
+    expect(authenticated(h, "ejemplo.ana@example.com", "mx.example.net")).toBe(true);
+    expect(authenticated(h, "ejemplo.ana@example.com", "MX.Example.NET")).toBe(true);
+    // No trusted id, another id, another domain, a pass the mail brought under another id: none.
+    expect(authenticated(h, "ejemplo.ana@example.com", null)).toBe(false);
+    expect(authenticated(h, "ejemplo.ana@example.com", "")).toBe(false);
+    expect(authenticated(h, "ejemplo.ana@example.com", "mx.example.org")).toBe(false);
+    expect(authenticated(h, "ejemplo.luis@example.org", "mx.example.net")).toBe(false);
+    expect(authenticated(h, "ejemplo.luis@example.org", "relay.example.org")).toBe(true);
+    expect(authenticated(h, "sin-arroba", "mx.example.net")).toBe(false);
+    // A dkim pass for the domain counts; one for another domain, an spf pass or a dmarc fail does not.
+    const one = (v: string) => [parseAuthResults(v)].filter((x) => x !== null);
+    expect(
+      authenticated(
+        one("mx.example.net; dkim=pass header.d=example.com"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(true);
+    expect(
+      authenticated(
+        one("mx.example.net; dkim=pass header.d=evil.example"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
+    expect(
+      authenticated(
+        one("mx.example.net; spf=pass smtp.mailfrom=a@example.com"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
+    expect(
+      authenticated(
+        one("mx.example.net; dmarc=fail header.from=example.com"),
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
+    // Only the topmost of the provider's counts: a pass below its own fail is not read.
+    expect(
+      authenticated(
+        [
+          ...one("mx.example.net; dmarc=fail header.from=example.com"),
+          ...one("mx.example.net; dmarc=pass header.from=example.com"),
+        ],
+        "a@example.com",
+        "mx.example.net",
+      ),
+    ).toBe(false);
   });
 });

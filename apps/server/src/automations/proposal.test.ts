@@ -5,17 +5,20 @@
 // (`make check` reads them, T-10). A store per test with data shaped like the user's (seed.test-util.ts), a scheduled
 // run started by the test's clock, and no model call; accepting goes through the real agent's `acceptProposal`.
 import { appendFileSync, mkdtempSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { fakePlanner } from "@boni/agent";
 import { type Cell, newConnection } from "@boni/automations";
 import { label, SYSTEM_TYPES } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, describe, expect, it } from "vitest";
-import { AgentHost } from "../agent.ts";
+import { AgentHost, serveAgent } from "../agent.ts";
 import { typeId } from "../seed.test-util.ts";
 import { collectionNamed } from "./collections.ts";
-import { ACCEPT_RUN, acceptRun, type RunProposalView } from "./proposal.ts";
+import { CELL_AREA } from "./learning.ts";
+import { ACCEPT_RUN, acceptRun, ROWS_AS_CARDS, type RunProposalView } from "./proposal.ts";
 import { publish } from "./publish.ts";
 import {
   answering,
@@ -109,6 +112,39 @@ function server() {
   const s = host.store(1);
   seeded(s);
   return { host, s, agent: host.agent(1) };
+}
+
+/** A route of the server's agent, as the app calls it from Juan's personal device. */
+async function routed(
+  host: AgentHost,
+  route: string,
+  id: string,
+  body: unknown = {},
+): Promise<{ status: number; json: Record<string, unknown> }> {
+  const got = { status: 0, body: "" };
+  const res = {
+    writeHead: (st: number) => {
+      got.status = st;
+      return res;
+    },
+    end: (b?: string) => {
+      got.body = b ?? "";
+      return res;
+    },
+    setHeader: () => res,
+  } as unknown as ServerResponse;
+  const req = Object.assign(Readable.from([Buffer.from(JSON.stringify(body))]), {
+    url: "/",
+  }) as unknown as IncomingMessage;
+  await serveAgent(
+    host,
+    req,
+    res,
+    route,
+    { id },
+    { account: 1, device: JUAN.device, trust: "personal" },
+  );
+  return { status: got.status, json: JSON.parse(got.body || "null") as Record<string, unknown> };
 }
 
 describe("what a scheduled run writes alone (F14d)", () => {
@@ -535,12 +571,32 @@ describe("the proposal of a run (F14d)", () => {
   it("AU-193 · accepting it passes through the policy again as accepted, from a personal device only, and saves every change in one transaction with the run in the log; with one change that cannot be saved, none is", async () => {
     const { host, s, agent } = server();
     try {
-      const a = made(s, [SCHEDULE(), CREATE("uno", "ask", "Uno"), CREATE("dos", "ask", "Dos")], {
-        arrows: [
-          ["A su hora", "Uno"],
-          ["A su hora", "Dos"],
+      // A create and a change: not only creates, so one proposal accepted whole (AU-193; one card per row is AU-251).
+      const a = made(
+        s,
+        [
+          SCHEDULE(),
+          CREATE("uno", "ask", "Uno"),
+          [
+            "Dos",
+            "collection",
+            {
+              collection: "pedido",
+              action: "update",
+              target: "matching",
+              where: [{ field: "nota", op: "is", value: "primero" }],
+              fields: [{ field: "nota", value: "dos" }],
+              permission: "ask",
+            },
+          ],
         ],
-      });
+        {
+          arrows: [
+            ["A su hora", "Uno"],
+            ["A su hora", "Dos"],
+          ],
+        },
+      );
       ok(a.publish());
       const r = await atItsHour(s, a.id);
       const id = r.proposal as string;
@@ -564,7 +620,10 @@ describe("the proposal of a run (F14d)", () => {
       const done = await agent.acceptProposal(id, "personal");
       expect(done.error ?? null).toBeNull();
       expect(notes(s)).toEqual(expect.arrayContaining(["uno", "dos"]));
-      expect(s.runOps(r.id).map((o) => o.kind)).toEqual(["create", "create"]);
+      expect(s.runOps(r.id).map((o) => o.kind)).toEqual(
+        expect.arrayContaining(["create", "update"]),
+      );
+      expect(s.runOps(r.id)).toHaveLength(2);
       expect(s.journal.proposal(id)?.status).toBe("accepted");
       expect(ok(runView(s, a.id, r.id)).proposal).toEqual({ id, status: "accepted" });
       // The inbox's «Deshacer» does not take it back: the run's does.
@@ -690,6 +749,189 @@ describe("the proposal of a run (F14d)", () => {
       ok(undoAutomationRun(s, c.id, u.id, JUAN));
       expect(ok(runView(s, c.id, u.id)).proposal?.status).toBe("stale");
       await expect(acceptRun(s, c.id, u.id, { device: null, zone: ZONE })).rejects.toThrow();
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-251 · a run that only asks to create five rows or fewer is one card per row, the card of always: each is accepted or discarded on its own, a corrected one is his and counts as a miss, the run stays whole while one waits; more rows are the one summary card", async () => {
+    const { host, s } = server();
+    try {
+      const names = ["Uno", "Dos", "Tres"];
+      const a = made(s, [SCHEDULE(), ...names.map((n) => CREATE(n.toLowerCase(), "ask", n))], {
+        arrows: names.map((n) => ["A su hora", n] as [string, string]),
+      });
+      ok(a.publish());
+      const r = await atItsHour(s, a.id);
+      const cards = pending(s);
+      expect(cards).toHaveLength(3);
+      // One agent run proposed them all; the automation's run names one of them.
+      expect(new Set(cards.map((p) => p.run)).size).toBe(1);
+      expect(cards.map((p) => p.id)).toContain(r.proposal);
+      expect(cards.every((p) => p.tool === ACCEPT_RUN)).toBe(true);
+      const of = (nota: string) =>
+        cards.find(
+          (p) => (p.view as RunProposalView).run.first[0]?.values.nota?.value === nota,
+        ) as (typeof cards)[number];
+      // The Bandeja paints each as a proposal to create, with its collection and its values as text.
+      const listed = (await routed(host, "GET /api/agent/proposals", "")).json.proposals as {
+        id: string;
+        card: { action: string; collection: string | null } | null;
+        view: { rows: { arg: string; value: string }[] };
+      }[];
+      expect(listed.map((p) => p.card?.action)).toEqual(["create", "create", "create"]);
+      expect(listed.map((p) => p.card?.collection)).toEqual(["Pedido", "Pedido", "Pedido"]);
+      expect(listed.find((p) => p.id === of("uno").id)?.view.rows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ arg: "type", value: "pedido", detail: "Pedido" }),
+          expect.objectContaining({ arg: "values.nota", value: "uno" }),
+        ]),
+      );
+
+      // «Aceptar» one: that row is saved with the run, the others go on waiting.
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/accept", of("uno").id)).status,
+      ).toBe(200);
+      expect(notes(s)).toContain("uno");
+      expect(notes(s)).not.toContain("dos");
+      expect(s.runOps(r.id).map((o) => o.kind)).toEqual(["create"]);
+      expect(s.journal.proposal(of("dos").id)?.status).toBe("pending");
+      // The run waits whole while a card of it waits, not only the one it names.
+      const keep = {
+        keep: 0,
+        since: Date.now() + 86_400_000,
+        tests: 0,
+        now: Date.now(),
+        batch: 10,
+      };
+      s.journal.setAutomationRunProposal(r.id, of("uno").id);
+      expect(s.journal.pruneAutomationRuns(a.id, keep)).toBe(0);
+
+      // «Corregir» one: what he changed is his, and the collection stays the step's.
+      expect(
+        (
+          await routed(host, "POST /api/agent/proposals/:id/accept", of("dos").id, {
+            edits: { collection: typeId("cliente") },
+          })
+        ).json.error,
+      ).toBe("edit-not-allowed");
+      expect(
+        (
+          await routed(host, "POST /api/agent/proposals/:id/accept", of("dos").id, {
+            edits: { values: { nota: "dos, corregido" } },
+          })
+        ).status,
+      ).toBe(200);
+      const nota = fieldOf(s, PEDIDO, "nota");
+      const fixed = s.list(PEDIDO).find((e) => e.entity.values[nota] === "dos, corregido");
+      expect(fixed && s.get(fixed.entity.id)?.labels[nota]?.integrity).toBe("user");
+      expect(notes(s)).not.toContain("dos");
+      // «Descartar» the last: nothing of it is saved.
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/reject", of("tres").id)).status,
+      ).toBe(200);
+      expect(notes(s)).not.toContain("tres");
+      expect(s.runOps(r.id).map((o) => o.kind)).toEqual(["create", "create"]);
+      // Each row counts for its cell (AU-207): accepted as it was, right; corrected or discarded, wrong.
+      const cell = (step: string) =>
+        s.journal
+          .decisionsOf(r.id)
+          .filter((d) => d.area.startsWith(CELL_AREA) && d.area.includes(a.step(step)))
+          .map((d) => d.result);
+      expect([cell("Uno"), cell("Dos"), cell("Tres")]).toEqual([["right"], ["wrong"], ["wrong"]]);
+      // None waits now: the run is let go as any other.
+      expect(s.journal.pruneAutomationRuns(a.id, keep)).toBe(1);
+
+      // More rows than five: the one summary card, accepted whole.
+      const many = Array.from({ length: ROWS_AS_CARDS + 1 }, (_, i) => `Fila ${i + 1}`);
+      const b = made(
+        s,
+        [
+          SCHEDULE([{ key: "r_dia", every: "day", at: "12:00" }]),
+          ...many.map((n) => CREATE(n.toLowerCase(), "ask", n)),
+        ],
+        { arrows: many.map((n) => ["A su hora", n] as [string, string]) },
+      );
+      ok(b.publish());
+      const q = await atItsHour(s, b.id, at(11, 5));
+      const summary = pending(s).filter((p) => (p.view as RunProposalView).run.run === q.id);
+      expect(summary.map((p) => p.id)).toEqual([q.proposal]);
+      const view = summary[0]?.view as RunProposalView | undefined;
+      expect(view?.run).toMatchObject({ count: many.length });
+      expect(view?.run.row).toBeUndefined();
+    } finally {
+      host.close();
+    }
+  });
+
+  it("AU-251 · a run that asks to create and also to modify or to send to the trash is the one summary card of AU-193, never a card per row", async () => {
+    const update: StepSpec = [
+      "Modificar",
+      "collection",
+      {
+        collection: "pedido",
+        action: "update",
+        target: "matching",
+        where: [{ field: "nota", op: "is", value: "primero" }],
+        fields: [{ field: "nota", value: "cambiado" }],
+        permission: "ask",
+      },
+    ];
+    for (const [other, name] of [
+      [update, "Modificar"],
+      [TRASH("primero", "ask"), "Eliminar"],
+    ] as const) {
+      const s = files.store();
+      const a = made(s, [SCHEDULE(), CREATE("nueva", "ask"), other], {
+        arrows: [
+          ["A su hora", "Crear"],
+          ["A su hora", name],
+        ],
+      });
+      ok(a.publish());
+      const r = await atItsHour(s, a.id);
+      const p = s.journal.proposal(r.proposal as string);
+      // One proposal of its agent run, the summary: no row of its own, both changes in it.
+      expect(s.journal.proposalsOf(p?.run as string).map((x) => x.id)).toEqual([r.proposal]);
+      const view = p?.view as RunProposalView;
+      expect(view.run.row).toBeUndefined();
+      expect(view.run.count).toBe(2);
+      expect(view.run.first.map((x) => x.action).sort()).toEqual(
+        ["create", name === "Modificar" ? "update" : "trash"].sort(),
+      );
+    }
+  });
+
+  it("AU-251 · a row accepted and then undone with its run counts as a miss for its cell, and the run's other row cards no longer wait", async () => {
+    const { host, s } = server();
+    try {
+      const names = ["Uno", "Dos"];
+      const a = made(s, [SCHEDULE(), ...names.map((n) => CREATE(n.toLowerCase(), "ask", n))], {
+        arrows: names.map((n) => ["A su hora", n] as [string, string]),
+      });
+      ok(a.publish());
+      const r = await atItsHour(s, a.id);
+      const cards = pending(s);
+      expect(cards).toHaveLength(2);
+      const of = (nota: string) =>
+        cards.find(
+          (p) => (p.view as RunProposalView).run.first[0]?.values.nota?.value === nota,
+        ) as (typeof cards)[number];
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/accept", of("uno").id)).status,
+      ).toBe(200);
+      const cell = (step: string) =>
+        s.journal
+          .decisionsOf(r.id)
+          .filter((d) => d.area.startsWith(CELL_AREA) && d.area.includes(a.step(step)))
+          .map((d) => d.result);
+      expect(cell("Uno")).toEqual(["right"]);
+      // «Deshacer lo que hizo»: what he accepted goes, his acceptance is now a miss, the other row waits no more.
+      ok(undoAutomationRun(s, a.id, r.id, JUAN));
+      expect(notes(s)).not.toContain("uno");
+      expect(cell("Uno")).toEqual(["wrong"]);
+      expect(s.journal.proposal(of("dos").id)?.status).toBe("stale");
+      expect(pending(s)).toEqual([]);
     } finally {
       host.close();
     }

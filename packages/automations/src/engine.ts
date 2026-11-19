@@ -354,6 +354,10 @@ export interface Execution {
 /** What `$run.startedBy` says (AU-195): by hand, or a «Programada» at its hour (F18 adds one per trigger). */
 export type StartedBy = "user" | "schedule";
 
+/** How a run started, missing taken as not a hand (`RunInput.startedBy`). */
+export const startedByOf = (input: Pick<RunInput, "startedBy">): StartedBy =>
+  input.startedBy === "user" ? "user" : "schedule";
+
 export interface RunInput {
   automation: Automation;
   /** The id of the trigger step this run starts in. */
@@ -368,7 +372,9 @@ export interface RunInput {
   test: boolean;
   /**
    * How it started, as `$run.startedBy` gives it (AU-195): `user` (by hand) or `schedule` (a «Programada» at its
-   * hour); `user` when not given. A closed list, never a name or an id; no decision about a write reads it.
+   * hour, or Boni's code on its own). Not given, it is `schedule`, the restrictive side (`startedByOf`): only a
+   * caller that knows his hand started it says `user`, since a hand is what lets a «Regla del remitente» «No leer»
+   * be passed (AU-253). A closed list, never a name or an id; no decision about a write reads it.
    */
   startedBy?: StartedBy;
   /**
@@ -1493,7 +1499,7 @@ class Run {
                 step: step.id,
                 type: step.type,
                 test: this.input.test,
-                startedBy: this.input.startedBy ?? "user",
+                startedBy: startedByOf(this.input),
                 // A piece that reads reaches a model only through here (AU-249, AU-255): counted, checked, labelled.
                 ...(reads && ai
                   ? {
@@ -1799,7 +1805,7 @@ class Run {
         locale,
         today: dates.day(this.started, clock.zone),
         seed: seedOf(this.seed, step.id),
-        run: { test: this.input.test, startedBy: this.input.startedBy ?? "user" },
+        run: { test: this.input.test, startedBy: startedByOf(this.input) },
       },
       box,
       gate,
@@ -2395,7 +2401,7 @@ class Run {
         locale,
         today: dates.day(this.started, clock.zone),
         seed: seedOf(this.seed, step.id),
-        run: { test: this.input.test, startedBy: this.input.startedBy ?? "user" },
+        run: { test: this.input.test, startedBy: startedByOf(this.input) },
         reader: state.reader,
       },
       box,

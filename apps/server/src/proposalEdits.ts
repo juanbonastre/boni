@@ -1,6 +1,7 @@
 import { type Json, plain, readStore, type Val } from "@boni/agent";
 import { type FieldDef, rolesOf } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
+import { runRowOf } from "./automations/acceptRunName.ts";
 import { taskDoneField } from "./calendarStore.ts";
 import { dueField } from "./mail.ts";
 
@@ -26,13 +27,32 @@ export function acceptEdits(
     req.values === undefined
   )
     return {};
-  if (p.tool !== "entities.create") return { error: "edit-not-allowed" };
-  const stored = (p.args as { values?: { type?: Val; values?: Val } }).values ?? {};
+  // One row of a run's proposal (AU-251) is corrected as a proposal to create, in the collection its step writes.
+  const ofRun = runRowOf(p) !== null;
+  if (p.tool !== "entities.create" && !ofRun) return { error: "edit-not-allowed" };
+  const stored = ofRun ? {} : ((p.args as { values?: { type?: Val; values?: Val } }).values ?? {});
   const ro = readStore(store);
   const types = Object.values(ro.schema().types);
-  const oldKey = stored.type ? plain(stored.type) : null;
+  const viewRows = (p.view as { rows?: { arg: string; value?: unknown }[] } | null)?.rows ?? [];
+  const oldKey = ofRun
+    ? (viewRows.find((r) => r.arg === "type")?.value ?? null)
+    : stored.type
+      ? plain(stored.type)
+      : null;
   const old = types.find((t) => t.key === oldKey);
-  const vals = (stored.values ? plain(stored.values) : {}) as Record<string, Json>;
+  const vals = (
+    ofRun
+      ? Object.fromEntries(
+          viewRows
+            .filter((r) => r.arg.startsWith("values."))
+            .map((r) => [r.arg.slice("values.".length), r.value]),
+        )
+      : stored.values
+        ? plain(stored.values)
+        : {}
+  ) as Record<string, Json>;
+  if (ofRun && req.collection !== undefined && req.collection !== old?.id)
+    return { error: "edit-not-allowed" };
   const titleKey =
     "title" in vals ? "title" : (old?.fields.find((f) => f.id === old.titleField)?.key ?? "title");
   const out: { type?: string; values: Record<string, Json | null> } = { values: {} };

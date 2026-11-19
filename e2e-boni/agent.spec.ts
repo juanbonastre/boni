@@ -1536,6 +1536,93 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
   await expect(page.locator(".title")).toHaveText("Conversación");
 });
 
+/** One row of «Leer correo»'s run as the server lists it (AU-251): a card of its own, painted as a proposal to create. */
+const rowCard = (id: string, row: number, title: string) => ({
+  ...CARD_DETAILED,
+  id,
+  tool: "automations.accept_run",
+  view: {
+    ...CARD_DETAILED.view,
+    tool: "automations.accept_run",
+    rows: CARD_DETAILED.view.rows.map((r) =>
+      r.arg === "values.title" ? { ...r, value: title } : r,
+    ),
+    run: {
+      automation: "leer-correo",
+      name: "Leer correo",
+      version: 1,
+      run: "r_01jcorreo",
+      startedBy: "schedule",
+      row,
+      count: 2,
+      counts: [{ collection: "docencia", name: "Docencia", action: "create", n: 2 }],
+      first: [],
+    },
+  },
+  card: {
+    ...CARD_DETAILED.card,
+    title,
+    mode: "compact",
+    source: { ...CARD_DETAILED.card.source, account: "ejemplo.juan@example.com" },
+  },
+});
+
+test("AU-251 · each row of a run's proposal is a card of its own, from its mail, kept in its collection and accepted alone, with no «Deshacer» of its own: it opens its run", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [
+        {
+          proposals: [
+            rowCard("p_fila0", 0, "Revisar actas"),
+            rowCard("p_fila1", 1, "Enviar notas"),
+          ],
+        },
+      ],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const panel = page.locator(".inbox-panel");
+  const cards = panel.locator(".inbox-card");
+  // Two cards of one run, each the card of always (no summary of the run), each saying its mail.
+  await expect(cards).toHaveCount(2);
+  await expect(panel.locator(".run-proposal")).toHaveCount(0);
+  const first = cards.filter({ hasText: "Revisar actas" });
+  const second = cards.filter({ hasText: "Enviar notas" });
+  await expect(first.locator(".inbox-source-text")).toHaveText(
+    "ejemplo.juan@example.com · Coordinación de ejemplo",
+  );
+  // Corrected, it keeps its collection: only a «Crear» cell of the step lets it write there (AU-250).
+  await second.getByRole("button", { name: "Corregir" }).click();
+  await expect(second.locator(".inbox-correct-row", { hasText: "Título" })).toBeVisible();
+  await expect(page.locator("#correct-collection-p_fila1")).toHaveCount(0);
+  await second.getByRole("button", { name: "Corregir" }).click();
+  // Its menu leads to its run.
+  await first.locator("h3").click({ button: "right" });
+  const menu = page.getByRole("dialog", { name: "Opciones de la propuesta" });
+  await expect(menu.getByRole("menuitemradio", { name: "Ver la ejecución" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  // Accepted alone: the other row keeps waiting; the toast opens the run, and has no «Deshacer».
+  await first.getByRole("button", { name: "Aceptar", exact: true }).click();
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first().locator("h3")).toHaveText("Enviar notas");
+  await expect(page.locator(".toast")).toContainText("Leer correo");
+  await expect(page.locator(".toast").getByRole("button", { name: "Deshacer" })).toHaveCount(0);
+  await expect(
+    page.locator(".toast").getByRole("button", { name: "Ver la ejecución" }),
+  ).toBeVisible();
+  await expect
+    .poll(() => requests(page, "POST api/agent/proposals/"))
+    .toEqual([expect.stringMatching(/^POST api\/agent\/proposals\/p_fila0\/accept/)]);
+  await page.screenshot({ path: `${SHOTS}/inbox-run-rows.png` });
+});
+
 test("the inbox panel: cards say what, from where and the day around it; it opens by itself for new ones", async ({
   page,
 }) => {
@@ -2168,6 +2255,32 @@ test("the reading guide: his words saved, rules added and removed, examples only
   expect(puts[3]).toContain('"keepExamples":[]');
   await modal.locator("#mail-guide-text").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${SHOTS}/agent-mail-guide.png` });
+});
+
+test("AU-249 · once «Leer correo» is an automation, Ajustes → Correo keeps the mailbox and has «Leer correo · Abrir», which opens it; its collections and guide are no longer there", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    automations: [{ id: "leer-correo", name: "Leer correo", trigger: "boni.mailArrives" }],
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [{ mail: { ...MAIL.mail, automation: "leer-correo" } }],
+      "GET api/mail/guide": [GUIDE],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Correo" }).click();
+  await expect(modal).toContainText("ejemplo@example.com");
+  await expect(modal.getByRole("button", { name: /Guía de lectura/ })).toHaveCount(0);
+  await expect(modal.getByRole("button", { name: /Colecciones de destino/ })).toHaveCount(0);
+  await expect(modal.getByRole("button", { name: /Más opciones/ })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/agent-mail-automation.png` });
+  await modal.getByRole("button", { name: "Abrir", exact: true }).click();
+  await expect(modal).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(
+    "Leer correo",
+  );
 });
 
 test("the reviewer's suggestion: measured, shown with what it changes, added only when Juan says", async ({
