@@ -304,8 +304,10 @@ test.describe("«Leer correo»'s panels on the phone (F16 E2)", () => {
       const a = readMail(id, [
         { sender: "ejemplo.banco@example.org", do: "collection", collection: "libros" },
       ]);
-      // In a column, so the phone's canvas shows every card.
-      a.places = a.places.map((p, i) => ({ ...p, x: 0, y: i * 140 }));
+      // In a column, the step opened first: the phone's canvas keeps a zoom it can read, so the last cards of a
+      // long column sit under its tabs.
+      const order = [step, ...a.places.map((p) => p.step).filter((s) => s !== step)];
+      a.places = a.places.map((p) => ({ ...p, x: 0, y: order.indexOf(p.step) * 140 }));
       await openApp(page, "/?still", { automations: [a as never], agenda: true });
       await page
         .locator(".m-tabs")
