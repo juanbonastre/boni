@@ -3130,6 +3130,162 @@ describe("«Leer correo» converted (AU-249, AU-254)", () => {
       rmSync(d, { recursive: true, force: true });
     }
   });
+  it("AU-251 · after conversion a run that proposed folds its thread: the earlier card gives way to the new one, the flow of before's card too, and the new row card says its «Antes» and what it overlaps in the calendar", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-fold-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    // Each mail of the thread moves the meeting to another hour: the reader reads that hour, as a reader would.
+    const reader = new ScriptedProvider("fake", (req) => {
+      const hour = /a las (1\d):00/.exec(JSON.stringify(req.input))?.[1];
+      return {
+        items: hour
+          ? [
+              {
+                quote: `Reunión del equipo el miércoles 28 a las ${hour}:00`,
+                actor: "recipient",
+                kind: "event",
+                title: "Reunión del equipo",
+                due: "2026-10-28",
+                start: `${hour}:00`,
+                end: `${Number(hour) + 1}:00`,
+              },
+            ]
+          : [],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+            { id: "t_agenda_f", key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h", endTime: "t_agenda_f" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    // His own class that afternoon: the card at 18:00 overlaps it.
+    store.create(
+      "t_agenda",
+      {
+        t_agenda_t: { value: "Clase de ejemplo", label: own },
+        t_agenda_d: { value: "2026-10-28", label: own },
+        t_agenda_h: { value: "18:30", label: own },
+        t_agenda_f: { value: "19:30", label: own },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    const inThread = (n: number, body: string) =>
+      mail(n, "Re: Reunión del equipo", body).replace(
+        "Content-Type:",
+        "In-Reply-To: <m81@example.com>\r\nReferences: <m81@example.com>\r\nContent-Type:",
+      );
+    const quiet = () => {
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      return () => log.mockRestore();
+    };
+    try {
+      box.uidValidity = 91;
+      box.mails = new Map([
+        [1, mail(81, "Reunión del equipo", "Reunión del equipo el miércoles 28 a las 17:00.")],
+      ]);
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+        collections: ["t_agenda"],
+      });
+      // The flow of before reads the first mail (Boni's pieces not wired yet): its card waits.
+      let done = quiet();
+      await m.check(1);
+      done();
+      const before = store.journal.proposals("pending");
+      expect(before.map((p) => p.tool)).toEqual(["entities.create"]);
+      const old = before[0]?.id as string;
+      // Wired as main.ts does, «Leer correo» converts with that card waiting (AU-226).
+      wireBoni({
+        reaches: (st) => h.accountOf(st) !== null,
+        agentOf: () => h.agent(1, true),
+        mail: () => m.hooksFor(1),
+        mailRow: (_st, id) => m.mailRow(1, id),
+      });
+      wireAutomationModels({
+        models: {
+          stepProvider: (_a, kind) =>
+            kind === "decision"
+              ? { refused: "no-model" }
+              : { provider: reader, model: reader.id, tag: null },
+          overBudget: () => false,
+          resolveModel: () => ({ refused: "no-model" }),
+          offered: () => false,
+        },
+        accountOf: () => 1,
+      });
+      h.mailFlowCurrent?.(1);
+      expect(store.journal.flowConversion(MAIL_FLOW)?.state).toBe("converted");
+      expect(store.journal.proposal(old)?.status).toBe("pending");
+
+      // A reply moves it to 18:00: the run proposes its row card, and the flow of before's card gives way to it.
+      box.mails.set(2, inThread(82, "Mejor el miércoles 28 a las 18:00."));
+      done = quiet();
+      await m.check(1);
+      done();
+      const second = store.journal.proposals("pending");
+      expect(second.map((p) => p.tool)).toEqual(["automations.accept_run"]);
+      const row = second[0] as (typeof second)[number];
+      expect(store.journal.proposal(old)?.status).toBe("stale");
+      const c2 = inboxCard(store, row);
+      expect([c2.title, c2.day, c2.start, c2.end]).toEqual([
+        "Reunión del equipo",
+        "2026-10-28",
+        "18:00",
+        "19:00",
+      ]);
+      expect(c2.before).toEqual({ day: "2026-10-28", start: "17:00", end: "18:00" });
+      expect(c2.calendar?.overlaps.map((o) => o.title)).toEqual(["Clase de ejemplo"]);
+
+      // Another moves it to 19:00: the converted card gives way in its turn, the new one says it was at 18:00.
+      box.mails.set(3, inThread(83, "Al final el miércoles 28 a las 19:00."));
+      done = quiet();
+      await m.check(1);
+      done();
+      const third = store.journal.proposals("pending");
+      expect(third).toHaveLength(1);
+      expect(third[0]?.id).not.toBe(row.id);
+      expect(store.journal.proposal(row.id)?.status).toBe("stale");
+      const c3 = inboxCard(store, third[0] as (typeof third)[number]);
+      expect([c3.start, c3.end]).toEqual(["19:00", "20:00"]);
+      expect(c3.before).toEqual({ day: "2026-10-28", start: "18:00", end: "19:00" });
+    } finally {
+      wireBoni(null);
+      wireAutomationModels(null);
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the mail's actions in the conversation (docs/sistema.md §4.1, F10)", () => {

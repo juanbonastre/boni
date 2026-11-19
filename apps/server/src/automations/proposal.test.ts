@@ -864,6 +864,79 @@ describe("the proposal of a run (F14d)", () => {
     }
   });
 
+  it("AU-251 · a run that asks to create and also to modify or to send to the trash is the one summary card of AU-193, never a card per row", async () => {
+    const update: StepSpec = [
+      "Modificar",
+      "collection",
+      {
+        collection: "pedido",
+        action: "update",
+        target: "matching",
+        where: [{ field: "nota", op: "is", value: "primero" }],
+        fields: [{ field: "nota", value: "cambiado" }],
+        permission: "ask",
+      },
+    ];
+    for (const [other, name] of [
+      [update, "Modificar"],
+      [TRASH("primero", "ask"), "Eliminar"],
+    ] as const) {
+      const s = files.store();
+      const a = made(s, [SCHEDULE(), CREATE("nueva", "ask"), other], {
+        arrows: [
+          ["A su hora", "Crear"],
+          ["A su hora", name],
+        ],
+      });
+      ok(a.publish());
+      const r = await atItsHour(s, a.id);
+      const p = s.journal.proposal(r.proposal as string);
+      // One proposal of its agent run, the summary: no row of its own, both changes in it.
+      expect(s.journal.proposalsOf(p?.run as string).map((x) => x.id)).toEqual([r.proposal]);
+      const view = p?.view as RunProposalView;
+      expect(view.run.row).toBeUndefined();
+      expect(view.run.count).toBe(2);
+      expect(view.run.first.map((x) => x.action).sort()).toEqual(
+        ["create", name === "Modificar" ? "update" : "trash"].sort(),
+      );
+    }
+  });
+
+  it("AU-251 · a row accepted and then undone with its run counts as a miss for its cell, and the run's other row cards no longer wait", async () => {
+    const { host, s } = server();
+    try {
+      const names = ["Uno", "Dos"];
+      const a = made(s, [SCHEDULE(), ...names.map((n) => CREATE(n.toLowerCase(), "ask", n))], {
+        arrows: names.map((n) => ["A su hora", n] as [string, string]),
+      });
+      ok(a.publish());
+      const r = await atItsHour(s, a.id);
+      const cards = pending(s);
+      expect(cards).toHaveLength(2);
+      const of = (nota: string) =>
+        cards.find(
+          (p) => (p.view as RunProposalView).run.first[0]?.values.nota?.value === nota,
+        ) as (typeof cards)[number];
+      expect(
+        (await routed(host, "POST /api/agent/proposals/:id/accept", of("uno").id)).status,
+      ).toBe(200);
+      const cell = (step: string) =>
+        s.journal
+          .decisionsOf(r.id)
+          .filter((d) => d.area.startsWith(CELL_AREA) && d.area.includes(a.step(step)))
+          .map((d) => d.result);
+      expect(cell("Uno")).toEqual(["right"]);
+      // «Deshacer lo que hizo»: what he accepted goes, his acceptance is now a miss, the other row waits no more.
+      ok(undoAutomationRun(s, a.id, r.id, JUAN));
+      expect(notes(s)).not.toContain("uno");
+      expect(cell("Uno")).toEqual(["wrong"]);
+      expect(s.journal.proposal(of("dos").id)?.status).toBe("stale");
+      expect(pending(s)).toEqual([]);
+    } finally {
+      host.close();
+    }
+  });
+
   it("AU-18 AU-193 · what Juan accepted of a run's proposal was written with the same run and is undone with it: «Deshacer lo que hizo» takes back what it saved alone and what he accepted, in one", async () => {
     const { host, s, agent } = server();
     try {

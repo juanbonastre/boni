@@ -26,7 +26,7 @@ import { join, label } from "@boni/entities";
 import type { AuthResults } from "@boni/mail";
 import { clock, under } from "@boni/pace";
 import type { ProposalRow, UserStore } from "@boni/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AUTO_AREA, setAutoState } from "../autoAccept.ts";
 import { MAIL_FLOW } from "../flows.ts";
 import { inboxCard, likeKey } from "../inboxCard.ts";
@@ -58,7 +58,7 @@ import { automationPolicy, consentIn } from "./policy.ts";
 import { type RunProposalView, triggerMail } from "./proposal.ts";
 import { publish } from "./publish.ts";
 import { folder, HAND, JUAN, NOW, ok, ZONE } from "./run.test-util.ts";
-import { answerAsk, runBoni, runsOf } from "./runs.ts";
+import { answerAsk, expireWaits, runBoni, runsOf } from "./runs.ts";
 import { automationLabel, keepDraft, publishedOf } from "./service.ts";
 import { askCardId, askPlace } from "./waits.ts";
 
@@ -1064,7 +1064,30 @@ describe("mail as an automation (§5.17)", () => {
       await new Promise((r) => setTimeout(r, 50));
       expect(s.journal.automationRun(b.run.id)?.proposal ?? null).toBeNull();
       expect(titles(s, "tarea")).toEqual([]);
+      // Unanswered past its seven days: the scheduler's tick takes it by «sin respuesta», which goes nowhere. Nothing is
+      // created nor proposed, its card no longer holds, and the run's line says it ended with no answer.
+      const three = mail(s, { from: OTHER, subject: "Presentación sin respuesta" });
+      const c = await read(s, three);
+      expect(c.run.state).toBe("waiting");
+      const card3 = askCardId(c.run.id, ask?.id as string, 0);
+      const until = s.journal.automationWait(c.run.id)?.until as number;
+      const waiting = s.journal.proposals("pending").map((x) => x.id);
+      expect(until - Date.now()).toBeGreaterThan((DOUBT_WAIT_DAYS - 1) * 86_400_000);
+      vi.useFakeTimers({ toFake: ["Date"], now: until + 1 });
+      await Promise.all(expireWaits(s, { now: until + 1, zone: ZONE }));
+      expect(s.journal.automationRun(c.run.id)?.state).toBe("done");
+      expect(s.journal.request(card3)?.status).toBe("expired");
+      expect(s.journal.automationRun(c.run.id)?.proposal ?? null).toBeNull();
+      expect(s.journal.proposals("pending").map((x) => x.id)).toEqual(waiting);
+      expect(titles(s, "tarea")).toEqual([]);
+      const line = ok(runsOf(s, MAIL_FLOW, {})).runs.find((r) => r.id === c.run.id)?.line;
+      expect(line?.noAnswer).toBe(true);
+      expect(line?.asked).toEqual([]);
+      expect(answerAsk(s, card3, { choice: 0 }, { ...JUAN, now: until + 1 })).toEqual({
+        gone: true,
+      });
     } finally {
+      vi.useRealTimers();
       s.close();
     }
   });

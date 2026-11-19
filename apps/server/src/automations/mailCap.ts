@@ -7,7 +7,8 @@
  *
  * A call is counted when the cap lets it go, before anything else is asked: a call refused after that (no model in
  * «Modelos», nothing to read, the provider's refusal) or one that fails (a timeout, an error of the provider) still
- * counts. Conservative on purpose: a mail that makes calls fail cannot try again and again for free.
+ * counts. Conservative on purpose: a mail that makes calls fail cannot try again and again for free. A call the
+ * month's budget refuses (`over()` in ai.ts, AU-199) is refused before the cap is looked at, and is not counted.
  */
 
 import type { Automation } from "@boni/automations";

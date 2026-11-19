@@ -1559,7 +1559,12 @@ const rowCard = (id: string, row: number, title: string) => ({
       first: [],
     },
   },
-  card: { ...CARD_DETAILED.card, title, mode: "compact" },
+  card: {
+    ...CARD_DETAILED.card,
+    title,
+    mode: "compact",
+    source: { ...CARD_DETAILED.card.source, account: "ejemplo.juan@example.com" },
+  },
 });
 
 test("AU-251 · each row of a run's proposal is a card of its own, from its mail, kept in its collection and accepted alone, with no «Deshacer» of its own: it opens its run", async ({
@@ -1590,7 +1595,7 @@ test("AU-251 · each row of a run's proposal is a card of its own, from its mail
   const first = cards.filter({ hasText: "Revisar actas" });
   const second = cards.filter({ hasText: "Enviar notas" });
   await expect(first.locator(".inbox-source-text")).toHaveText(
-    "ejemplo@example.edu · Coordinación de ejemplo",
+    "ejemplo.juan@example.com · Coordinación de ejemplo",
   );
   // Corrected, it keeps its collection: only a «Crear» cell of the step lets it write there (AU-250).
   await second.getByRole("button", { name: "Corregir" }).click();
