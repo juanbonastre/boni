@@ -1123,7 +1123,7 @@ A reason may follow the word after a colon («Caducada: una fila cambió despué
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
   shown again. Once «Leer correo» is an automation (F16 S2b, AU-249), the collections and the guide are its steps'
   panels: under who and the last check one row «Leer correo» with «Abrir» (it opens the automation;
-  `connectors.mail_automation`) takes the place of "Colecciones de destino" and "Guía de lectura", and "Más opciones"
+  `automations.read`) takes the place of "Colecciones de destino" and "Guía de lectura", and "Más opciones"
   stays as it is.
 - **Dashboards** (Boni: «Registro», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
   large, not the whole width, charts, detail on click). A page column of at most 1200 px, centred; the title large with

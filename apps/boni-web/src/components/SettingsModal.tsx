@@ -831,7 +831,7 @@ function MailSettings() {
           </div>
           {mail.automation ? (
             // As an automation (AU-249): the mailbox stays here; what it reads and where it creates are its steps.
-            <div className="setting" data-boni-action="connectors.mail_automation">
+            <div className="setting" data-boni-action="automations.read">
               <div className="setting-label">
                 <span>{t("mail.automation")}</span>
               </div>

@@ -2273,7 +2273,9 @@ test("AU-249 · once «Leer correo» is an automation, Ajustes → Correo keeps 
   await page.screenshot({ path: `${SHOTS}/agent-mail-automation.png` });
   await modal.getByRole("button", { name: "Abrir", exact: true }).click();
   await expect(modal).toHaveCount(0);
-  await expect(page.locator(".auto-head")).toContainText("Leer correo");
+  await expect(page.getByRole("textbox", { name: "Nombre de la automatización" })).toHaveValue(
+    "Leer correo",
+  );
 });
 
 test("the reviewer's suggestion: measured, shown with what it changes, added only when Juan says", async ({
