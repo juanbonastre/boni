@@ -22,10 +22,11 @@ import {
   READERS,
   type Val,
 } from "@boni/agent";
-import type { BoniAnswer, BoniAutomation, BoniCall, BoniPort } from "@boni/automations";
-import { BONI_PARAMS, BONI_TRIGGER_OWNER } from "@boni/automations";
+import type { Automation, BoniAnswer, BoniAutomation, BoniCall, BoniPort } from "@boni/automations";
+import { BONI_PARAMS, BONI_TRIGGER_OWNER, BONI_TRIGGERS } from "@boni/automations";
 import type { Label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
+import { knownSender, type MailHooks, runMailPiece } from "./mailPieces.ts";
 
 export interface BoniWiring {
   /** Whether a store is an account's, whose agent can run Boni's code: asked without making the agent. */
@@ -38,6 +39,16 @@ export interface BoniWiring {
    * the code gives none.
    */
   triggerRow?(store: UserStore, automation: BoniAutomation): BoniRow | null;
+  /**
+   * The mail's code for «Leer correo»'s pieces (mail.ts `Mails.hooksFor`): null without a mailbox. Absent, the pieces
+   * do not run (`no-mailbox`) and nobody is «known».
+   */
+  mail?(store: UserStore): MailHooks | null;
+  /**
+   * The row «Llega un correo» gives for «Probar» (AU-249): the mail `id` names, else the latest kept; its values the
+   * mail's id and subject, its label the stored mail's, from outside. Null without a mailbox or a mail.
+   */
+  mailRow?(store: UserStore, id: string | null): BoniRow | null;
 }
 
 /** A trigger's row as Boni's code makes it: its values, and its label, the code's (never a hand's). */
@@ -96,8 +107,15 @@ export function boniTestRow(
   store: UserStore,
   id: string,
   type: string | undefined,
+  fields: Record<string, unknown> = {},
 ): BoniRow | null {
   const automation = boniOf(store, id);
+  // «Llega un correo» of «Leer correo»: the mail asked for by its id, else the latest (as the flow's «Probar»).
+  if (automation === "readMail" && type === BONI_TRIGGERS.mail) {
+    const w = wired;
+    if (!w?.reaches(store)) return null;
+    return w.mailRow?.(store, typeof fields.id === "string" ? fields.id : null) ?? null;
+  }
   if (!automation || !type || BONI_TRIGGER_OWNER[type] !== automation) return null;
   const w = wired;
   if (!w?.reaches(store)) return null;
@@ -113,14 +131,33 @@ export class BoniFault extends Error {
   }
 }
 
-/** The port of one run of automation `id` in `store`, or null when no agent is wired (Boni steps then do not validate). */
-export function boniPortFor(store: UserStore, id: string): BoniPort | null {
+/** The mail's code of a store, for «Leer correo»'s pieces and the «Rellenadora»'s fields; null without it. */
+export function mailHooksOf(store: UserStore): MailHooks | null {
+  const w = wired;
+  return w?.reaches(store) ? (w.mail?.(store) ?? null) : null;
+}
+
+/**
+ * The port of one run of automation `id` in `store`, or null when no agent is wired (Boni steps then do not validate).
+ * `doc`: the version that runs, as stored (or the draft of a «Probar»). In «Leer correo», its pieces run the mail's
+ * code over the row (`mailPieces.ts`, AU-249) and `known` answers «Solo conocidos» from his own decisions (AU-250);
+ * every other Boni step runs as a plan of one step, as before.
+ */
+export function boniPortFor(store: UserStore, id: string, doc?: Automation): BoniPort | null {
   const w = wired;
   if (!w?.reaches(store)) return null;
   const automation = boniOf(store, id);
+  const mail = automation === "readMail";
   return {
     ...(automation ? { automation } : {}),
-    run: (call) => runUnit(w.agentOf(store), call),
+    run: async (call) =>
+      (mail ? await runMailPiece(store, mailHooksOf(store), call, doc) : null) ??
+      runUnit(w.agentOf(store), call),
+    ...(mail
+      ? {
+          known: async (row, collection) => knownSender(store, mailHooksOf(store), row, collection),
+        }
+      : {}),
   };
 }
 

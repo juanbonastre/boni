@@ -641,13 +641,12 @@ export const modelLabelOf = (automation: string, step: string): Label =>
 export const PIECE_TEXTS = 40;
 export const PIECE_OPTIONS = 50;
 
-/** A label for what is read as from outside: an «Ejemplo» cites a mail (AU-249, AU-255), whoever wrote it. */
-const EXAMPLE_LABEL: Label = makeLabel(
-  "external",
-  "personal",
-  [{ kind: "mail", id: "example" }],
-  true,
-);
+/**
+ * A label for what is read as from outside: an «Ejemplo» cites a mail (AU-249, AU-255), whoever wrote it. Its source
+ * names no sender: «Solo conocidos» (the server's `knownSender`) passes over it, and only it.
+ */
+export const EXAMPLE_SOURCE = { kind: "mail", id: "example" } as const;
+const EXAMPLE_LABEL: Label = makeLabel("external", "personal", [EXAMPLE_SOURCE], true);
 
 interface PieceInput {
   reader: PieceReader;

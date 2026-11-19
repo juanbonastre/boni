@@ -1459,6 +1459,7 @@ class Run {
                 step: step.id,
                 type: step.type,
                 test: this.input.test,
+                startedBy: this.input.startedBy ?? "user",
                 // A piece that reads reaches a model only through here (AU-249, AU-255): counted, checked, labelled.
                 ...(reads && ai
                   ? {
