@@ -2754,7 +2754,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Las palabras de un mensaje que no escribió él en un dispositivo personal (uno compartido, o uno guardado por el motor
   de antes, que no dice de quién era) no entran en `$chat`: su línea y su respuesta sí. Una sola etiqueta para toda la
   lista no podría dejarlas como ambiente junto a la respuesta de un modelo (`join` se queda con «model», que el
-  planificador lee); ninguna cuenta como un «Sí» (A-46). Lo que pide es la tarjeta de
+  planificador lee); ninguna cuenta como un «Sí» (A-46). Si la ejecución espera una respuesta, el mensaje sigue con la
+  etiqueta con la que se escribió, leída de su turno: quien contesta no la sube (lo de un dispositivo compartido sigue
+  siendo de ambiente aunque conteste uno personal; sin turno, va como de fuera). Lo que pide es la tarjeta de
   siempre en el chat, la propuesta única de la ejecución: «Sí» la acepta solo desde un dispositivo personal, «No» la
   rechaza, y se deshace con la ejecución. Las referencias a colecciones dentro de un bloque pasan por P26 y el texto
   de fuera o de ambiente sigue sin poder escribir solo. El panel del bloque dice lo que dice la versión publicada,
@@ -2764,8 +2766,9 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   de esta parte: un chat cuyo «Agente» tiene «Leer sus cifras» (los chats por defecto lo tienen) sigue en el motor de
   antes (`chat:pages.figures`, `laterPhase`), y un chat creado con el servidor en marcha se convierte al arrancar.
   `pageValueAsks` no tiene palabras porque la app aún no enseña «Lo que cambia» en ningún sitio. La prueba:
-  `apps/server/src/automations/page.test.ts`, `apps/server/src/automations/convert.test.ts` y
-  `apps/boni-web/src/automations/runs.test.ts`.
+  `apps/server/src/automations/page.test.ts`, `apps/server/src/automations/convert.test.ts`,
+  `packages/agent/test/conversations.test.ts` (los turnos de una conversación leídos por una consulta, lo mismo que
+  antes) y `apps/boni-web/src/automations/runs.test.ts`.
   Falta (parte 2): las cifras pintadas por código y el cambio de los chats que las leen; con AU-222, sus tarjetas de
   «Preguntar» en el chat, «Se ve como» y «Memoria» de 0 a 20; la revisión de conformidad de S2c entera.
 - **AU-222** (F16, pendiente) · Dentro de una conversación, lo que una automatización pregunta y lo que responde se

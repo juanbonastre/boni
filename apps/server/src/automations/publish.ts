@@ -19,7 +19,7 @@
  * touched, and the old version keeps its «Sí», which «Publicar» shows before (decision 13).
  */
 
-import { codeLabel, type Trust } from "@boni/agent";
+import { codeLabel, type Trust, turnByRun } from "@boni/agent";
 import {
   type Ability,
   AGENT_TYPE,
@@ -490,7 +490,15 @@ export async function resumePublished(
   // And a cell paused since it started asks too (AU-210): both only lower.
   const automation = pausedDoc(store, id, lowerYes(started, publishedOf(store, id)?.automation));
   const names = JSON.parse(v.names) as KeptNames;
-  const own = request.startedBy === "schedule" ? codeLabel("schedule") : handLabel(hand.device);
+  const chatRun = chatTriggered(automation, request.trigger);
+  // A chat's message keeps the label it was written with across the wait, read from its turn (AU-137): never raised
+  // by who answers, so a shared device's stays ambient when a personal one answers. No turn naming the run (typed in
+  // «Ejecutar»), or one kept without who wrote it, goes on as from outside.
+  const own = chatRun
+    ? (turnByRun(store, run)?.requestLabel ?? OUTSIDE_AGAIN)
+    : request.startedBy === "schedule"
+      ? codeLabel("schedule")
+      : handLabel(hand.device);
   return resume(
     {
       automation,
@@ -500,7 +508,7 @@ export async function resumePublished(
         label: own,
         // A chat's run that waited (AU-137): the store keeps its row, not the labels its values and its last messages
         // had, so they go on as from outside (a model does not see them, and nothing of theirs is saved alone).
-        ...(chatTriggered(automation, request.trigger) ? { fields: RESUMED_CHAT } : {}),
+        ...(chatRun ? { fields: RESUMED_CHAT } : {}),
       },
       test: false,
       startedBy: request.startedBy,

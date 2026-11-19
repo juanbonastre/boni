@@ -31,7 +31,7 @@ import {
   type PageAbility,
   type PolicyCall,
 } from "@boni/automations";
-import { label } from "@boni/entities";
+import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
 import type { UserStore } from "@boni/store";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -69,8 +69,10 @@ import {
   type StepSpec,
   seeded,
 } from "./run.test-util.ts";
-import { runView, settled, startRun, undoAutomationRun } from "./runs.ts";
-import { automationLabel, automationView, publishedOf } from "./service.ts";
+import { publish } from "./publish.ts";
+import { answerAsk, runView, settled, startRun, undoAutomationRun } from "./runs.ts";
+import { automationLabel, automationView, keepDraft, publishedOf } from "./service.ts";
+import { askCardId } from "./waits.ts";
 
 const files = folder("pagina");
 const closing: (() => void)[] = [];
@@ -992,5 +994,93 @@ describe("a page's chat as an automation, from its conversation (F16 S2c, the sw
       device: JUAN.device,
     });
     expect(chatMemory(t.s, other)?.label.integrity).toBe(OUTSIDE.integrity);
+  });
+
+  /** The chat's automation with `doc` published as its next version, by his hand. */
+  function republish(t: ReturnType<typeof server>, flow: string, doc: Automation) {
+    ok(keepDraft(t.s, flow, { ...doc, id: flow }, JUAN));
+    ok(publish(t.s, flow, { rev: ok(automationView(t.s, flow)).rev }, JUAN));
+  }
+  const chatStep = (doc: Automation) =>
+    doc.steps.find((s) => s.type === BONI_TRIGGERS.chat) as Automation["steps"][number];
+
+  it("AU-137 A-46 · a shared device's message keeps its label across a wait: a personal device answers, the model still reads none of it, and what it would write still asks", async () => {
+    const t = server();
+    const c = converted(t);
+    const before = getPage(t.s, c.page.id)?.spec;
+    // A «Preguntar» between the message and its «Agente»: the run waits for an answer.
+    const doc = publishedOf(t.s, c.flow)?.automation as Automation;
+    const trigger = chatStep(doc).id;
+    const ask = {
+      id: newId("o").replace(/^o_/, "s_"),
+      name: "Preguntar",
+      type: "ask",
+      params: { question: "¿Sigo?", answer: "yesNo" },
+    };
+    republish(t, c.flow, {
+      ...doc,
+      steps: [...doc.steps, ask],
+      arrows: doc.arrows.flatMap((a) =>
+        a.from.step === trigger
+          ? [
+              { from: a.from, to: { step: ask.id, input: "main" } },
+              { from: { step: ask.id, output: "main" }, to: a.to },
+            ]
+          : [a],
+      ),
+    } as Automation);
+    t.answers.plan = say("Visto", "2026-12");
+    const shared = await serve(t.host, "POST /api/agent/turn", {
+      trust: "shared",
+      body: { text: "desde la tableta de la cocina", conversation: c.conversation },
+    });
+    expect(shared.status, JSON.stringify(shared.json)).toBe(200);
+    const turn = shared.json as unknown as TurnResult;
+    expect(turn.status).toBe("waiting");
+    expect(t.answers.seen).toEqual([]);
+    // The turn names its run and who wrote its message: an ambient voice.
+    expect(turnByRun(t.s, turn.run as string)?.requestLabel?.integrity).toBe("ambient");
+    // His own device answers: the run goes on, and the message is still the ambient voice's, never his.
+    expect(answerAsk(t.s, askCardId(turn.run as string, ask.id, 0), { yes: true }, JUAN)).toEqual({
+      run: turn.run,
+    });
+    await settled(t.s);
+    const r = ok(runView(t.s, c.flow, turn.run as string)).run;
+    expect(r.state, JSON.stringify(r)).toBe("done");
+    expect(t.answers.seen.length).toBeGreaterThan(0);
+    expect(t.answers.seen.join("\n")).not.toContain("desde la tableta de la cocina");
+    // What it would write is still a proposal: nothing saved (A-46).
+    expect(r.proposal).not.toBeNull();
+    expect(getPage(t.s, c.page.id)?.spec).toEqual(before);
+  });
+
+  it("AU-137 · a published version with no «Mensaje de chat» is no chat: its turn gets `no-chat`, and nothing runs", async () => {
+    const t = server();
+    const c = converted(t);
+    const doc = publishedOf(t.s, c.flow)?.automation as Automation;
+    const trigger = chatStep(doc);
+    // The same step, by hand now, and its «Agente» with no ability on a page (publishing refuses one with no chat):
+    // the page still has its «Chat» block naming the automation.
+    republish(t, c.flow, {
+      ...doc,
+      steps: doc.steps.map((s) => {
+        if (s.id === trigger.id) return { ...trigger, type: "manual", params: {} };
+        if (s.type !== "agent") return s;
+        const { page: _, ...rest } = s.params;
+        return { ...s, params: rest };
+      }),
+    } as Automation);
+    expect(
+      getPage(t.s, c.page.id)?.spec.blocks.some(
+        (b) => b.type === "chat" && "flow" in b && b.flow === c.flow,
+      ),
+    ).toBe(true);
+    t.answers.plan = say("Visto", "2026-12");
+    const got = await serve(t.host, "POST /api/agent/turn", {
+      body: { text: "hola", conversation: c.conversation },
+    });
+    expect([got.status, got.json]).toEqual([409, { error: "no-chat" }]);
+    expect(t.answers.seen).toEqual([]);
+    expect(t.s.journal.automationRuns(c.flow, { filter: "all", limit: 10 })).toEqual([]);
   });
 });

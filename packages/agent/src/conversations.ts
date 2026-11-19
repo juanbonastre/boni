@@ -228,12 +228,17 @@ export function turnOfRun(
 export function turnByRun(
   store: UserStore,
   run: string,
-): { id: string; conversation: string; request: string } | null {
+): { id: string; conversation: string; request: string; requestLabel?: Label } | null {
   if (!run || !store.schema().types[TURN]) return null;
   const s = turnsWhere(store, "run", run)[0];
-  return s
-    ? { id: s.entity.id, conversation: text(s, "conversation"), request: text(s, "request") }
-    : null;
+  if (!s) return null;
+  const by = requestLabelOf(s);
+  return {
+    id: s.entity.id,
+    conversation: text(s, "conversation"),
+    request: text(s, "request"),
+    ...(by ? { requestLabel: by } : {}),
+  };
 }
 
 /** Juan edited this turn's message (§3.1): marked once its run is taken back; it stays in the history. */
