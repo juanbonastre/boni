@@ -490,15 +490,16 @@ export function AutomationPage({
   const setBoniLast = (n: number | null) => setOrigin((o) => ({ ...o, boniLast: n }));
   /**
    * «Volver al flujo de antes» and «Convertir otra vez» (decision 21): the flow runs as it was and this is off, or
-   * this runs again, on from now. Neither changes a version nor sets a «Sí».
+   * this runs again, its switch as Juan left it before going back. Neither changes a version nor sets a «Sí».
    */
   const convert = async (step: "back" | "again") => {
     const s = latest.current;
     if (!s?.id || !origin.conversion) return;
-    const state = await convertStep(t, s.id, s.draft.name, step);
-    if (!state) return;
+    const done = await convertStep(t, s.id, s.draft.name, step);
+    if (!done) return;
+    const { state, enabled } = done;
     setOrigin((o) => (o.conversion ? { ...o, conversion: { ...o.conversion, state } } : o));
-    setPublished((p) => (p ? { ...p, enabled: state === "converted" } : p));
+    setPublished((p) => (p ? { ...p, enabled } : p));
   };
   /** «Volver al de Boni» (AU-221): «Volver a esta» on Boni's newest version, with its screen. */
   const toBoni = async () => {

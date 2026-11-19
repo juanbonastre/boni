@@ -585,7 +585,11 @@ export interface AutomationsClient {
   /** `GET automations/conversion` (AU-225): the band's and «⋯ → Conversión»'s list. */
   conversion(): Promise<ConversionList>;
   /** `POST automations/:id/conversion`: «Volver al flujo de antes» (`back`) or «Convertir otra vez» (`again`). */
-  convert(id: string, step: "back" | "again"): Promise<{ state: ConversionState } | Refused>;
+  /** The state, and the switch after it: coming again, as Juan left it before going back. */
+  convert(
+    id: string,
+    step: "back" | "again",
+  ): Promise<{ state: ConversionState; enabled: boolean } | Refused>;
   /** `POST automations/conversion`: «Cerrar» on the band, for every device. */
   closeBand(): Promise<{ closed: number } | Refused>;
 }
@@ -931,7 +935,7 @@ export function automationsClient(api: AutomationsApi): AutomationsClient {
       const r = await api.automations("POST", path(id, "/conversion"), { do: step });
       if (isRefused(r)) return r;
       const state = isObj(r) && STATES.includes(r.state as string) ? r.state : "converted";
-      return { state: state as ConversionState };
+      return { state: state as ConversionState, enabled: isObj(r) && r.enabled === true };
     },
     closeBand: async () => {
       const r = await api.automations("POST", "conversion", {});

@@ -1430,21 +1430,23 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         // A shared device sees and tests; every other touch is refused (decision 13, http.ts).
         if (opts.sharedDevice && method !== "GET" && rest !== "/test")
           return [403, '{"error":"personal-device-only"}'];
-        // «Volver al flujo de antes» and «Convertir otra vez» (decision 21): off with the flow running, or on again;
-        // no version changes. Every touch: `window.__autoConversion`.
+        // «Volver al flujo de antes» and «Convertir otra vez» (decision 21): off with the flow running, or again with
+        // its switch as it was before going back (conversion.ts); no version changes. Every touch:
+        // `window.__autoConversion`.
         if (rest === "/conversion" && method === "POST") {
           const req = (body ?? {}) as { do?: unknown };
           record("__autoConversion", `${id} ${String(req.do)}`);
-          const c = a.conversion;
+          const c = a.conversion as (typeof a.conversion & { wasOn?: boolean }) | undefined;
           if (!c || c.state === "kept") return gone;
           if (req.do === "back") {
+            if (c.state === "converted") c.wasOn = a.enabled;
             c.state = "reverted";
             a.enabled = false;
           } else if (req.do === "again") {
+            if (c.state === "reverted") a.enabled = c.wasOn ?? true;
             c.state = "converted";
-            a.enabled = true;
           } else return bad;
-          return [200, JSON.stringify({ state: c.state })];
+          return [200, JSON.stringify({ state: c.state, enabled: a.enabled })];
         }
         // While the flow of before runs, it is neither published nor switched (`publish.ts`).
         if (

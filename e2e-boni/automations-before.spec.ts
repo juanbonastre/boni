@@ -251,6 +251,22 @@ test.describe("what came from before, as automations (F16)", () => {
     await expect(page.locator(".auto-vers-item")).toHaveCount(2);
   });
 
+  test("AU-225 · off when it went back, «Convertir otra vez» leaves it off: the switch comes as Juan left it", async ({
+    page,
+  }) => {
+    await openApp(page, "/?still", {
+      automations: [{ ...CONVERTED, published: { versions: 2, enabled: false } }],
+      agent: BEFORE(),
+    });
+    await openCanvas(page, CONVERTED.name);
+    await expect(toggle(page)).not.toBeChecked();
+    await more(page, "Volver al flujo de antes");
+    await expect(head(page).locator(".auto-conv-state")).toHaveText("En el flujo de antes");
+    await more(page, "Convertir otra vez");
+    await expect(head(page).locator(".auto-conv-state")).toHaveCount(0);
+    await expect(toggle(page)).not.toBeChecked();
+  });
+
   test("AU-225 · on a shared device the band and the editor say the state, and going back or closing is refused with nothing changed", async ({
     page,
   }) => {

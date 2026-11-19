@@ -225,15 +225,15 @@ export function useConversionNotice() {
 }
 
 /**
- * «Volver al flujo de antes» or «Convertir otra vez» (decision 21): the new state, or null when refused (its words
- * shown). From a personal device only: the server refuses another, and nothing changes.
+ * «Volver al flujo de antes» or «Convertir otra vez» (decision 21): the new state and the switch after it (coming
+ * again, as Juan left it before going back), or null when refused (its words shown). From a personal device only: the server refuses another, and nothing changes.
  */
 export async function convertStep(
   t: T,
   id: string,
   name: string,
   step: "back" | "again",
-): Promise<"converted" | "reverted" | null> {
+): Promise<{ state: "converted" | "reverted"; enabled: boolean } | null> {
   try {
     const r = await client.convert(id, step);
     if (isRefused(r)) {
@@ -248,7 +248,7 @@ export async function convertStep(
     }
     void loadRows(SYS.flows.id);
     toast(t(step === "back" ? "auto.conv.backDone" : "auto.conv.againDone", { name }));
-    return r.state === "kept" ? null : r.state;
+    return r.state === "kept" ? null : { state: r.state, enabled: r.enabled };
   } catch (e) {
     toast(touchError(t, e));
     return null;

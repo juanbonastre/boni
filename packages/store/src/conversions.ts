@@ -24,6 +24,10 @@ import type { DatabaseSync } from "node:sqlite";
  *   ALTER TABLE automation_versions ADD COLUMN flow INTEGER;   -- «Convertida»: the flow version it came from
  *   ALTER TABLE automation_runs ADD COLUMN before INTEGER;     -- «De antes»: a run of the flow, as a summary row
  *
+ * Entry 36 (`conversionsWasOn`, F16 P1) adds one column:
+ *
+ *   ALTER TABLE flow_conversions ADD COLUMN was_on INTEGER;   -- while reverted: its switch when it went back
+ *
  * States: `converted`, the automation runs and the flow does not; `reverted` («Volver al flujo de antes»), the flow
  * runs again as it was and its automation is off, not deleted; `kept`, the flow's running version could not be
  * converted (its `reasons`), so it goes on in the engine of before and the conversion tries again at the next
@@ -109,11 +113,15 @@ export interface ConversionsJournal {
     at: number,
     k: { reasons: ConversionReason[]; skipped: number; changes: string[] },
   ): void;
-  /** «Volver al flujo de antes» (AU-225): the flow runs again, its automation is off. False when not converted. */
+  /**
+   * «Volver al flujo de antes» (AU-225): the flow runs again, its automation is off, and its switch as it was is kept
+   * for «Convertir otra vez». False when not converted.
+   */
   revertFlow(id: string, at: number): boolean;
   /**
-   * «Convertir otra vez»: back to the automation, on from now. Refused (`changed`) when the flow has a version the
-   * automation does not have (it was changed while it ran as before), and `no` when it was not reverted.
+   * «Convertir otra vez»: back to the automation, its switch as Juan left it when it went back (off stays off), its
+   * hours counting from now. Refused (`changed`) when the flow has a version the automation does not have (it was
+   * changed while it ran as before), and `no` when it was not reverted.
    */
   reconvertFlow(id: string, at: number): "ok" | "changed" | "no";
   /**
@@ -133,14 +141,25 @@ export function conversionsMigration(db: DatabaseSync): void {
      state TEXT NOT NULL CHECK (state IN ('converted', 'reverted', 'kept')), changed INTEGER NOT NULL,
      versions TEXT NOT NULL, skipped INTEGER NOT NULL, changes TEXT NOT NULL, reasons TEXT NOT NULL, copied INTEGER
    ) WITHOUT ROWID`);
-  const has = (table: string, col: string) =>
-    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
-      (c) => c.name === col,
-    );
-  if (!has("automation_versions", "flow"))
+  if (!has(db, "automation_versions", "flow"))
     db.exec("ALTER TABLE automation_versions ADD COLUMN flow INTEGER");
-  if (!has("automation_runs", "before"))
+  if (!has(db, "automation_runs", "before"))
     db.exec("ALTER TABLE automation_runs ADD COLUMN before INTEGER");
+}
+
+const has = (db: DatabaseSync, table: string, col: string) =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some(
+    (c) => c.name === col,
+  );
+
+/**
+ * Migration 36: the switch of an automation as it was when it went back to its flow, so «Convertir otra vez» leaves
+ * it as Juan left it (null while converted or kept). Run again over a store that has it (a store set back to an older
+ * `user_version`), it adds nothing.
+ */
+export function conversionsWasOn(db: DatabaseSync): void {
+  if (!has(db, "flow_conversions", "was_on"))
+    db.exec("ALTER TABLE flow_conversions ADD COLUMN was_on INTEGER");
 }
 
 /** Whether a flow id is not converted: `flows()` leaves the converted ones out (journal.ts). */
@@ -275,11 +294,14 @@ export function conversionsJournal(db: DatabaseSync): ConversionsJournal {
         .run(id, at, at, k.skipped, j(k.changes), j(k.reasons)),
     revertFlow: (id, at) =>
       atomic(() => {
+        // Its switch as Juan left it, kept for «Convertir otra vez» (`was_on`), then off.
         const r = db
           .prepare(
-            "UPDATE flow_conversions SET state = 'reverted', changed = ? WHERE id = ? AND state = 'converted'",
+            `UPDATE flow_conversions SET state = 'reverted', changed = ?,
+               was_on = (SELECT enabled FROM automations WHERE id = ?)
+             WHERE id = ? AND state = 'converted'`,
           )
-          .run(at, id);
+          .run(at, id, id);
         if (Number(r.changes) === 0) return false;
         db.prepare("UPDATE automations SET enabled = 0 WHERE id = ?").run(id);
         return true;
@@ -290,11 +312,22 @@ export function conversionsJournal(db: DatabaseSync): ConversionsJournal {
         if (!c || c.state !== "reverted") return "no";
         const mapped = Math.max(0, ...c.versions.map((v) => v.flow));
         if (latestFlowVersion(id) !== mapped) return "changed";
+        // As Juan left it when it went back: on stays on, off stays off (one reverted before `was_on` was kept
+        // comes back off: nothing is turned on that is not known to have been on).
+        const on = (
+          db.prepare("SELECT was_on FROM flow_conversions WHERE id = ?").get(id) as {
+            was_on: number | null;
+          }
+        ).was_on;
         db.prepare(
-          "UPDATE flow_conversions SET state = 'converted', changed = ?, copied = NULL WHERE id = ?",
+          "UPDATE flow_conversions SET state = 'converted', changed = ?, copied = NULL, was_on = NULL WHERE id = ?",
         ).run(at, id);
-        // On from now: what the flow ran while it was back is its own, so its hours count from here.
-        db.prepare("UPDATE automations SET enabled = 1, since = ? WHERE id = ?").run(at, id);
+        // Its hours count from now: what the flow ran while it was back is its own.
+        db.prepare("UPDATE automations SET enabled = ?, since = ? WHERE id = ?").run(
+          on === 1 ? 1 : 0,
+          at,
+          id,
+        );
         return "ok";
       }),
     copyBeforeRuns: (id, limit, at) =>

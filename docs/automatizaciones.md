@@ -3048,8 +3048,10 @@ nada), los ajustes de Boni y lo que está fuera de Boni (decisión 9 del §10).
   estado si no es «Convertida», «N ejecuciones desde la conversión · ninguna falló» y «Hace lo mismo» o «Lo que
   cambia» plegado; «N versiones de antes no se pudieron convertir»; «Cerrar» la lleva a «⋯ → Conversión»; el aviso
   de la app, una vez por dispositivo, con «Ver»; «Convertida» en «Versiones»; y «⋯ → Volver al flujo de antes»,
-  que la deja apagada con «En el flujo de antes» en lugar del interruptor, y «⋯ → Convertir otra vez». Ninguna de
-  las dos cambia una versión ni pone un «Sí»; desde un dispositivo compartido se ven y se niegan
+  que la deja apagada con «En el flujo de antes» en lugar del interruptor y cancela en el mismo paso lo que esperaba
+  respuesta, y «⋯ → Convertir otra vez», con el interruptor como Juan lo dejó antes de volver (apagada sigue
+  apagada). Ninguna de las dos cambia una versión ni pone un «Sí», «Volver al de Boni» tampoco; ninguna es de un
+  modelo ni del MCP; desde un dispositivo compartido se ven y se niegan
   (`convert.test.ts` y `e2e-boni/automations-before.spec.ts`, «AU-225 · …»). Falta: el borrador a medias
   (`flow_drafts`), que no se convierte; y, después de AU-152, «Convertir otra vez» desde el archivo.
 - **AU-226** (F16, en parte) · Lo que estaba a medias al convertir no se pierde ni se hace dos veces. Una propuesta

@@ -11,7 +11,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { type Plan, planToAutomation } from "@boni/agent";
+import { decide, fakePlanner, leaf, type Origin, type Plan, planToAutomation } from "@boni/agent";
 import { BONI_ACTION_TYPE, consentOf, parseAutomation } from "@boni/automations";
 import { label, newId } from "@boni/entities";
 import { clock, under } from "@boni/pace";
@@ -19,12 +19,13 @@ import { AUTOMATION_FAILED_IN_SQL, openUserStore, type UserStore } from "@boni/s
 import { SYS } from "@boni/views";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { jsBox } from "../../../../packages/agent/test/convert.test-util.ts";
-import { ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
+import { ACTION_MCP, ACTIONS, ROUTE_ACTIONS, ROUTE_RUNS, runAction } from "../actions.ts";
 import { AgentHost, trashFlow } from "../agent.ts";
 import { DataError } from "../data.ts";
 import { lastSlot } from "../flowScheduler.ts";
 import { REVIEW_FLOW } from "../flows.ts";
 import { deleteFlowRow, updateFlowRow } from "../flowsCollection.ts";
+import { mcpToolNames } from "../mcp.ts";
 import { ROUTES } from "../routes.ts";
 import { wireBoni } from "./boni.ts";
 import { BAND_CLOSED, conversionList } from "./conversion.ts";
@@ -41,10 +42,29 @@ import {
 } from "./convert.ts";
 import { publish, setEnabled, versionsOf } from "./publish.ts";
 import { drawReview } from "./review.ts";
-import { CONVERSION_ROUTES, SHARED_DEVICE_ROUTES } from "./routes.ts";
-import { folder, HOUR, JUAN, NOW, PEDIDO, scheduler, seeded, ZONE } from "./run.test-util.ts";
-import { undoAutomationRun } from "./runs.ts";
-import { automationView, testAutomation } from "./service.ts";
+import { CONVERSION_ROUTES, NO_MCP_YET, SHARED_DEVICE_ROUTES } from "./routes.ts";
+import {
+  CREATE as CREATE_STEP,
+  docOf,
+  folder,
+  HAND,
+  HOUR,
+  JUAN,
+  NOW,
+  notes,
+  OUTSIDE,
+  ok,
+  PEDIDO,
+  ran,
+  START,
+  type StepSpec,
+  scheduler,
+  seeded,
+  ZONE,
+} from "./run.test-util.ts";
+import { answerAsk, runView, settled, undoAutomationRun } from "./runs.ts";
+import { automationView, keepDraft, testAutomation } from "./service.ts";
+import { askCardId } from "./waits.ts";
 
 const DAY = 24 * HOUR;
 const lit = (v: unknown) => ({ lit: v });
@@ -96,6 +116,8 @@ const CLASSIFY = plan({
 const MANUAL = { manual: true, inputs: [{ name: "nota" }] };
 const ALONE = { manual: true };
 const DAILY = { schedule: { every: "day", at: "08:00" } };
+/** A «Preguntar» that waits for his «Sí» or «No» (AU-203). */
+const ASKS: StepSpec = ["Preguntar", "ask", { question: "¿Lo creo?", answer: "yesNo" }];
 
 const f = folder("conversion");
 afterAll(() => f.done());
@@ -825,12 +847,12 @@ describe("the saved flows converted to automations (F16)", () => {
     expect(store.setting(BAND_CLOSED)).toBeNull();
     // His own: back, and again.
     expect(await runAction("automations.convert", { id, do: "back" }, personal)).toEqual({
-      out: { state: "reverted" },
+      out: { state: "reverted", enabled: false },
     });
     expect(store.journal.automation(id)?.enabled).toBe(false);
     expect(conversionList(store).items[0]?.state).toBe("reverted");
     expect(await runAction("automations.convert", { id, do: "again" }, personal)).toEqual({
-      out: { state: "converted" },
+      out: { state: "converted", enabled: true },
     });
     expect(store.journal.automation(id)?.enabled).toBe(true);
     // Nothing lost, nothing more: the same versions, draft and running version, and no step says «Sí».
@@ -855,6 +877,121 @@ describe("the saved flows converted to automations (F16)", () => {
       expect(ROUTE_RUNS[route], route).toBe(action);
       expect(ROUTE_ACTIONS[route], route).toEqual([action]);
     }
+  });
+
+  it("AU-225 · P1: automations.convert, which changes the engine a flow runs on, is never a model's nor the MCP's: a turn only as a card Juan confirms, every other origin refused, the agent's runner has no service for it, and the MCP no tool", async () => {
+    const id = flow({ trigger: MANUAL, plans: [CREATE(lit("una"))] });
+    convertFlows(store, NOW);
+    const tool = ACTIONS.get("automations.convert");
+    if (!tool?.run) throw new Error("no action automations.convert");
+    expect(tool.effect).toBe("touch");
+    const at = (origin: Origin, inFlow = false) =>
+      decide({ tool, args: {}, control: null, flow: inFlow }, origin, {
+        writes: 0,
+        sensitiveReads: 0,
+      }).kind;
+    expect(at({ kind: "hand", trust: "personal", device: "d_portatil" })).toBe("allow");
+    // A shared device's hand reaches it and is refused by the action itself (`not-personal`, the round trip above).
+    // A model's turn: at most a card he confirms with his hand (P21); nothing runs it on its own.
+    expect(at({ kind: "turn", trust: "personal" })).toBe("confirm");
+    for (const kind of ["background", "miniapp", "accepted", "assistant"] as const)
+      expect(at({ kind, trust: "personal" }), kind).toBe("deny");
+    expect(at({ kind: "background", trust: "personal" }, true)).toBe("deny");
+    expect(at({ kind: "turn", trust: "ambient" })).toBe("deny");
+    // Through the agent's runner (a confirmed card, a flow, an assistant) the host names no «automations» service:
+    // the action answers `not-available` and the conversion stays as it was.
+    const dataDir = join(f.dir, `host-${randomUUID()}`);
+    mkdirSync(dataDir);
+    const planner = fakePlanner([]);
+    const host = new AgentHost({ dataDir, providers: { planner, reader: planner } });
+    const services = host as unknown as {
+      service(account: number, name: string, run: { run: string; inFlow?: boolean }): unknown;
+    };
+    const fromHost = services.service(1, "automations", { run: "r_ejemplo" });
+    expect(fromHost).toBeNull();
+    const asAgent = { store, meta: { actor: "agent", run: "r_ejemplo" } };
+    for (const step of ["back", "again"])
+      for (const service of [fromHost, asAgent, undefined]) {
+        const vals = { id: leaf(id as never, OUTSIDE), do: leaf(step as never, OUTSIDE) };
+        let code = "";
+        try {
+          await tool.run({ store: null, service } as never, vals, OUTSIDE);
+        } catch (e) {
+          code = (e as { code?: string }).code ?? String(e);
+        }
+        expect(code, step).toBe("not-available");
+        expect(store.journal.flowConversion(id)?.state).toBe("converted");
+        expect(store.journal.automation(id)?.enabled).toBe(true);
+      }
+    // The MCP has no tool for it, and says why.
+    expect(ACTION_MCP["automations.convert"]).toEqual({ why: NO_MCP_YET });
+    expect(mcpToolNames().filter((t) => /automation|conver/.test(t))).toEqual([]);
+  });
+
+  it("AU-225 · AU-203 · P1: «Volver al flujo de antes» cancels the automation's waits with its state, so a «Preguntar» answered after it resumes nothing; and a wait that finds its automation back on the flow of before is cancelled by its own check, even with the switch on", async () => {
+    const personal = { store, trust: "personal" as const, device: "d_portatil" };
+    const NOTA = "creado tras la respuesta";
+    const id = flow({ trigger: MANUAL, plans: [CREATE(lit("una"))] });
+    convertFlows(store, NOW);
+    const ids = new Map<string, string>();
+    const doc = { ...docOf([START, ASKS, CREATE_STEP(NOTA)], ids), id };
+    ok(publish(store, id, { rev: ok(keepDraft(store, id, doc, HAND)).rev }, JUAN));
+    const start = ids.get("Inicio") as string;
+    const ask = ids.get("Preguntar") as string;
+    const first = await ran(store, id, start, { nota: "uno" });
+    expect(first.state).toBe("waiting");
+    expect(await runAction("automations.convert", { id, do: "back" }, personal)).toEqual({
+      out: { state: "reverted", enabled: false },
+    });
+    // With the state, no wait of it holds: its card answered later says so and starts nothing.
+    expect(store.journal.waitingAutomationRuns(id)).toEqual([]);
+    expect(answerAsk(store, askCardId(first.id, ask, 0), { yes: true }, JUAN)).toEqual({
+      gone: true,
+      cancelled: true,
+    });
+    await settled(store);
+    expect(ok(runView(store, id, first.id)).run.state).toBe("cancelled");
+    expect(notes(store)).not.toContain(NOTA);
+    // The other order, by the store alone: the state says «reverted» and the switch was put back on by hand, while a
+    // wait still holds. Answered, its run checks the conversion before going on, and is cancelled: nothing is saved.
+    expect(await runAction("automations.convert", { id, do: "again" }, personal)).toEqual({
+      out: { state: "converted", enabled: true },
+    });
+    const second = await ran(store, id, start, { nota: "dos" });
+    expect(second.state).toBe("waiting");
+    expect(revertFlow(store, id, NOW)).toBe(true);
+    store.journal.setAutomationEnabled(id, true, NOW);
+    expect(answerAsk(store, askCardId(second.id, ask, 0), { yes: true }, JUAN)).toEqual({
+      run: second.id,
+    });
+    await settled(store);
+    expect(ok(runView(store, id, second.id)).run.state).toBe("cancelled");
+    expect(notes(store)).not.toContain(NOTA);
+  });
+
+  it("AU-225 · P1: «Convertir otra vez» leaves the switch as Juan left it before going back: off stays off, on stays on, however many times", async () => {
+    const personal = { store, trust: "personal" as const, device: "d_portatil" };
+    const off = flow({ name: "Apagado", trigger: MANUAL, plans: [CREATE(lit("una"))] });
+    const on = flow({ name: "Encendido", trigger: MANUAL, plans: [CREATE(lit("dos"))] });
+    convertFlows(store, NOW);
+    ok(setEnabled(store, off, false, JUAN));
+    for (let round = 0; round < 2; round++)
+      for (const id of [off, on]) {
+        expect(await runAction("automations.convert", { id, do: "back" }, personal)).toEqual({
+          out: { state: "reverted", enabled: false },
+        });
+        expect(store.journal.automation(id)?.enabled).toBe(false);
+        expect(await runAction("automations.convert", { id, do: "again" }, personal)).toEqual({
+          out: { state: "converted", enabled: id === on },
+        });
+      }
+    expect(store.journal.automation(off)?.enabled).toBe(false);
+    expect(store.journal.automation(on)?.enabled).toBe(true);
+    // Turned on by his hand afterwards, it goes back and comes again on.
+    ok(setEnabled(store, off, true, JUAN));
+    await runAction("automations.convert", { id: off, do: "back" }, personal);
+    await runAction("automations.convert", { id: off, do: "again" }, personal);
+    expect(store.journal.automation(off)?.enabled).toBe(true);
   });
 
   it("AU-225 · P1 A-15: with 200 automations and a year of 40,000 runs, the band's list and «Versiones» answer within their times, by the runs' index", () => {

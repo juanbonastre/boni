@@ -8,7 +8,7 @@
  * Going back and forth is Juan's touch from a personal device only (decision 13), as the switch: a shared device and
  * the phone see the state and cannot change it. Neither way sets a «Sí» or gives a step more reach: «Volver al flujo
  * de antes» turns the automation off and leaves its versions as they are, and «Convertir otra vez» turns the same
- * versions on again (AU-228: one id, one engine). Closing the band is kept for the account (a store setting), so no
+ * versions on again, or leaves them off when Juan had them off (AU-228: one id, one engine). Closing the band is kept for the account (a store setting), so no
  * device shows it again; the list stays in «⋯ → Conversión».
  */
 import type { Trust } from "@boni/agent";
@@ -80,7 +80,8 @@ export function conversionList(store: UserStore): ConversionList {
 export type ConversionStep = "back" | "again";
 
 /**
- * «Volver al flujo de antes» and «Convertir otra vez» (decision 21). Refused from a device that is not personal;
+ * «Volver al flujo de antes» and «Convertir otra vez» (decision 21): the state, and the automation's switch after it
+ * (off going back; coming again, as Juan left it before going back). Refused from a device that is not personal;
  * `changed` when the flow got a version while it ran as before (its automation does not have it).
  */
 export function convertAgain(
@@ -88,24 +89,28 @@ export function convertAgain(
   id: string,
   step: ConversionStep,
   hand: Hand & { trust: Trust },
-): { state: FlowConversionState } | Refusal | ServiceError {
+): { state: FlowConversionState; enabled: boolean } | Refusal | ServiceError {
   if (hand.trust !== "personal") return { refused: "not-personal" };
   if (step !== "back" && step !== "again") return BAD;
   const c = store.journal.flowConversion(id);
   const automation = store.journal.automation(id);
   if (!c || c.state === "kept" || !automation || automation.deleted) return NOT_FOUND;
   if (step === "back") {
-    if (c.state === "reverted") return { state: "reverted" };
-    revertFlow(store, id, hand.now);
-    // Off, as with the switch: what waited for an answer is cancelled (AU-203).
-    cancelWaits(store, id, hand.now);
-    return { state: "reverted" };
+    if (c.state === "reverted") return { state: "reverted", enabled: false };
+    // Off, as with the switch, and in the same transaction: what waited for an answer is cancelled (AU-203), so no
+    // state says «reverted» while a wait of it still holds. A wait answered later finds its run cancelled; and one
+    // that goes on is cancelled by its own check of the switch and of the conversion (runs.ts `carryOn`).
+    store.batch(() => {
+      if (revertFlow(store, id, hand.now)) cancelWaits(store, id, hand.now);
+    });
+    return { state: "reverted", enabled: false };
   }
-  if (c.state === "converted") return { state: "converted" };
+  const on = () => store.journal.automation(id)?.enabled === true;
+  if (c.state === "converted") return { state: "converted", enabled: on() };
   const r = reconvertFlow(store, id, hand.now);
   if (r === "changed") return { refused: "changed" };
   if (r === "no") return NOT_FOUND;
-  return { state: "converted" };
+  return { state: "converted", enabled: on() };
 }
 
 /** «Cerrar» on the band: it is not shown again on any device; the list stays in «⋯ → Conversión». */
