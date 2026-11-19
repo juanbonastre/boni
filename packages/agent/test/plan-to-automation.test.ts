@@ -551,6 +551,34 @@ describe("a plan translated to an automation (F16)", () => {
       chat: { collections: [TASKS.key] },
     });
     expect(none.automation.steps[1]?.connections).toBeUndefined();
+    // Any other action, a write among them, is said by its name and never dropped: that chat is not complete, so it
+    // stays on the old engine; the «Agente» still gets no cell of writing.
+    const writes = convert(
+      agentPlan(["entities.query", "entities.create", "pages.figures", "entities.update"]),
+      trigger,
+      { chat: { collections: [TASKS.key] } },
+    );
+    expect(writes.untranslated).toEqual([
+      { step: "chat", what: "chat:entities.create", reason: "notExpressible" },
+      { step: "chat", what: "chat:pages.figures", reason: "laterPhase" },
+      { step: "chat", what: "chat:entities.update", reason: "notExpressible" },
+    ]);
+    expect(writes.complete).toBe(false);
+    expect(writes.automation.steps[1]?.connections).toEqual([
+      { collection: TASKS.key, read: {}, create: false, update: false, remove: false },
+    ]);
+    const unknown = convert(agentPlan(["entities.query", "algo.nuevo"]), trigger, {
+      chat: { collections: [TASKS.key] },
+    });
+    expect(unknown.untranslated).toEqual([
+      { step: "chat", what: "chat:algo.nuevo", reason: "notExpressible" },
+    ]);
+    expect(unknown.complete).toBe(false);
+    // Only reads: still complete.
+    expect(
+      convert(agentPlan(["entities.aggregate"]), trigger, { chat: { collections: [TASKS.key] } })
+        .complete,
+    ).toBe(true);
     // Without the page's collections, or under another trigger, it is the later phase, as before.
     for (const c of [
       convert(agentPlan(["entities.query"]), trigger),

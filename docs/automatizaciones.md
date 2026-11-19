@@ -2725,11 +2725,13 @@ flujos de antes ya hacen, puesto sobre el formato nuevo y sin tocar el suyo, que
   Hecho en S2c (parte B1): en una automatización que empieza en «Mensaje de chat» ningún paso escribe con «Sí», ni
   el «Agente» ni otro: al publicar, cada «Sí» de una celda o de un «Permiso» es `connection.notAllowed` («En el chat
   de una página nada se escribe con «Sí»: pon «Preguntar»») y la publicación no sale; al correr, el servidor no lee
-  ninguno (`consentIn`), así que una versión que lo tuviera propone (P28). Fuera del chat nada cambia. Un mensaje
+  ninguno (`consentIn`), así que una versión que lo tuviera propone (P28), y una ejecución ni siquiera la corre (su
+  validación la para); vale también con otro disparador además del chat (A-46). Fuera del chat nada cambia. Un mensaje
   empieza su ejecución con la fila `message`, `page` y `values` (`chatStart`), el mensaje con la etiqueta que le pone
   el servidor y cada valor de la página con la suya. El traductor convierte el «Agente» de un chat de antes en un
   «Agente» con sus instrucciones, que lee las colecciones de su página solo si antes podía leerlas y no escribe
-  ninguna, y un «Responder» con su texto. Falta (parte B2): «Esta página» (sus cifras, poner un valor, añadir un
+  ninguna, y un «Responder» con su texto; cualquier otra acción (una de escribir, una que no conoce) se dice y la
+  conversión no queda completa. Falta (parte B2): «Esta página» (sus cifras, poner un valor, añadir un
   bloque) y lo que pide del servidor, por lo que un chat con esas acciones sigue en el motor de antes y lo dice; el
   turno del chat por el camino publicado, `$chat`, cada mensaje en «Ejecuciones», el panel del bloque con «Abrir la
   automatización» y la lista.

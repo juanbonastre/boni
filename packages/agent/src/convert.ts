@@ -136,6 +136,8 @@ export const TRANSLATION: Readonly<Record<string, string>> = {
   "chat:pages.figures": "untranslated:laterPhase",
   "chat:pages.set_value": "untranslated:laterPhase",
   "chat:pages.add_block": "untranslated:laterPhase",
+  // Any other action of a chat's «Agente», a write among them: said, never dropped, so that chat stays on the old engine.
+  "chat:*": "untranslated:notExpressible",
   "form:when": "if",
   "form:each": "split",
   "form:zip": "combine",
@@ -1141,18 +1143,25 @@ class Translator {
    * A chat's «Agente» of before (AU-137): an «Agente» with its instructions, given the page's collections with «Leer»
    * only when it could read them (`entities.query`, `entities.aggregate`) and no cell of writing, then «Responder» with
    * its text. No step has more reach than the flow had, and nothing writes. «Esta página» (the page's figures, a value
-   * set, a block added) is said, not dropped: until it exists the chat stays on the old engine.
+   * set, a block added) is said, not dropped: until it exists the chat stays on the old engine. So is any other action
+   * (a write, an action it does not know): it has no step here, and the conversion is not complete.
    */
   private chatAgent(
     s: AgentStep,
     collections: readonly string[],
     tail: Arrow["from"][],
   ): { tail: Arrow["from"][]; one: boolean } {
-    const actions: readonly string[] = Array.isArray(s.actions) ? s.actions : [];
+    if (s.actions !== undefined && !Array.isArray(s.actions))
+      this.miss("chat:actions", "notExpressible");
+    const actions: readonly string[] = Array.isArray(s.actions) ? s.actions.map(String) : [];
     const reads = actions.includes("entities.query") || actions.includes("entities.aggregate");
-    for (const a of actions)
-      if (TRANSLATION[`chat:${a}`] === "untranslated:laterPhase")
-        this.miss(`chat:${a}`, "laterPhase");
+    // Every action that is not a read of the page's collections is said by its name: «Esta página» comes later, and
+    // anything else (a write among them) has no step here. None is dropped, so the conversion is not complete.
+    for (const a of actions) {
+      const row = TRANSLATION[`chat:${a}`];
+      if (row === "untranslated:laterPhase") this.miss(`chat:${a}`, "laterPhase");
+      else if (row === undefined) this.miss(`chat:${a}`, "notExpressible");
+    }
     const agent = this.add(
       {
         id: `p-${s.id}`,
